@@ -3571,3 +3571,5 @@ export function DetailTab({
     </div>
   );
 }
+
+export default DetailTab;
