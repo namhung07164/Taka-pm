@@ -185,7 +185,10 @@ function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, da
   } as any);
 }
 
+import { validateFirestoreData } from './validation';
+
 export function setDoc(docRef: any, data: any, options?: any) {
+  validateFirestoreData(docRef.path, data, options?.merge === true);
   writeAuditLogAsync("CREATE", docRef, data);
   return firestoreSetDoc(docRef, data, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
@@ -195,6 +198,7 @@ export function setDoc(docRef: any, data: any, options?: any) {
 }
 
 export function updateDoc(docRef: any, data: any) {
+  validateFirestoreData(docRef.path, data, true);
   writeAuditLogAsync("UPDATE", docRef, data);
   return firestoreUpdateDoc(docRef, data).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
@@ -222,12 +226,14 @@ export function writeBatch(dbInstance: any): WriteBatch {
   const operations: any[] = [];
 
   (batch as any).set = (docRef: any, data: any, options?: any) => {
+    validateFirestoreData(docRef.path, data, options?.merge === true);
     operations.push({ action: 'set', docRef, data, options });
     writeAuditLogAsync("CREATE", docRef, data);
     return originalSet(docRef, data, options);
   };
   
   (batch as any).update = (docRef: any, data: any, ...moreFieldsAndValues: any[]) => {
+    validateFirestoreData(docRef.path, data, true);
     operations.push({ action: 'update', docRef, data });
     writeAuditLogAsync("UPDATE", docRef, data);
     return (originalUpdate as any)(docRef, data, ...moreFieldsAndValues);
