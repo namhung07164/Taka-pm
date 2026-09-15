@@ -579,32 +579,33 @@ export function useFirebaseData() {
 
   }, [querySignature, buildStoreAndYearQuery, globalYearFilter]);
 
-  // 2.2 Lightweight Always-on Notification Query for Tasks (Only needed when full tasksPool is not active)
+  // 2.2 Lightweight Always-on Notification Query for Tasks (Polling instead of onSnapshot to save Reads)
   useEffect(() => {
     let isCancelled = false;
-    let unsub: (() => void) | null = null;
+    let intervalId: NodeJS.Timeout | null = null;
 
     if (!querySignature || isTasksRequested) {
       return;
     }
 
-    const now = new Date();
-    const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-    const future30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+    const fetchNotifs = async () => {
+      if (isCancelled) return;
+      try {
+        const now = new Date();
+        const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+        const future30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
 
-    const qNotifTasks = query(
-      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-      where("finish", ">=", past30),
-      where("finish", "<=", future30),
-      limit(150)
-    );
+        const qNotifTasks = query(
+          collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+          where("finish", ">=", past30),
+          where("finish", "<=", future30),
+          limit(150)
+        );
 
-    usePerformanceStore.getState().registerListener("taka_tasks_notif");
-    unsub = onSnapshot(
-      qNotifTasks,
-      (snapshot) => {
-        usePerformanceStore.getState().trackSnapshot("taka_tasks_notif", snapshot);
+        // Uses getDocs instead of onSnapshot to prevent continuous read storms for background data
+        const snapshot = await getDocs(qNotifTasks);
         if (isCancelled) return;
+
         const loadedNotifTasks: Task[] = [];
         snapshot.forEach((docSnap) => {
           const data = { id: docSnap.id, ...docSnap.data() } as Task;
@@ -613,18 +614,21 @@ export function useFirebaseData() {
           }
         });
         setAllTasksForNotifs(loadedNotifTasks);
-      },
-      (e) => {
+      } catch (e) {
         console.warn("[useFirebaseData] Notification lightweight tasks query error:", e);
       }
-    );
+    };
+
+    // Initial fetch
+    fetchNotifs();
+
+    // Poll every 4 hours (14400000 ms)
+    const POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
+    intervalId = setInterval(fetchNotifs, POLL_INTERVAL_MS);
 
     return () => {
       isCancelled = true;
-      if (unsub) {
-        unsub();
-        usePerformanceStore.getState().unregisterListener("taka_tasks_notif");
-      }
+      if (intervalId) clearInterval(intervalId);
     };
   }, [querySignature, isTasksRequested]);
 
