@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
@@ -2290,6 +2291,123 @@ export function DetailTab({
 
   const lowerSearchTerm = searchTerm.toLowerCase().trim();
 
+
+  const flattenedRows = useMemo(() => {
+    const rows = [];
+    filteredProjects.forEach((p, pIdx) => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const sortedTasks = pInfo.sortedTasks || [];
+      const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
+        let valA = '';
+        let valB = '';
+        let direction = 'asc';
+        if (sortConfig.key === 'start') {
+          valA = a.start || '9999-12-31';
+          valB = b.start || '9999-12-31';
+        } else if (sortConfig.key === 'finish') {
+          valA = a.finish || '9999-12-31';
+          valB = b.finish || '9999-12-31';
+        } else if (sortConfig.key === 'taskName') {
+          valA = a.name || '';
+          valB = b.name || '';
+        } else if (sortConfig.key === 'duration') {
+          valA = a.duration || '0';
+          valB = b.duration || '0';
+          direction = sortConfig.direction;
+          const numA = Number(valA);
+          const numB = Number(valB);
+          if (numA < numB) return direction === 'asc' ? -1 : 1;
+          if (numA > numB) return direction === 'asc' ? 1 : -1;
+          return 0;
+        }
+        direction = sortConfig.direction;
+        if (valA < valB) return direction === 'asc' ? -1 : 1;
+        if (valA > valB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      }) : sortedTasks;
+      const isExpanded = expandedCodes.includes(String(p.id!));
+      const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
+      const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
+      const planProgressPercent = computePlanProgressPercent(groupTasks);
+      const actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
+      const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
+      const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
+        const taskFields = [
+          t.taskCodePhu,
+          `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+          t.name,
+          t.duration,
+          t.start,
+          t.finish,
+          t.party,
+          formatDisplayDateMain(t.start),
+          formatDisplayDateTime(t.start),
+          formatDisplayDateMain(t.finish),
+          formatDisplayDateTime(t.finish)
+        ];
+        const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
+        const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm)) || false;
+        return fieldMatch || notesMatch;
+      });
+
+      if (isProjectMatch || tasksToRender.length > 0) {
+        rows.push({
+          type: 'project',
+          key: p.id || `${p.code}-${p.year}-${p.no}`,
+          p,
+          pIdx,
+          isExpanded,
+          isProjDelegationOn,
+          planProgressPercent,
+          actProgressPercent,
+          tasksToRender,
+          groupTasks
+        });
+
+        if (isExpanded) {
+          tasksToRender.forEach((t) => {
+            const originalIndex = groupTasks.findIndex(gt => gt.id === t.id);
+            const i = originalIndex !== -1 ? originalIndex : 0;
+            const taskStatus = getTaskStatus(t.start, t.finish);
+            let taskStatusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
+            if (taskStatus === 'Completed') taskStatusColorClass = 'bg-green-50 text-green-600 dark:text-emerald-400 border-green-200';
+            else if (taskStatus === 'On process') taskStatusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
+
+            const delegationGroup = delegationGroupByParentKey.get(t.id);
+            const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || []);
+            const delStatusText = actStatus.label;
+            const delStatusColorClass = actStatus.color;
+
+            rows.push({
+              type: 'task',
+              key: t.id,
+              p,
+              t,
+              i,
+              groupTasks,
+              taskStatus,
+              taskStatusColorClass,
+              delStatusText,
+              delStatusColorClass
+            });
+          });
+        }
+      }
+    });
+    return rows;
+  }, [filteredProjects, projectInfoMap, expandedCodes, sortConfig, lowerSearchTerm, delegationGroups, delegationGroupByParentKey]);
+
+  const rowVirtualizer = useWindowVirtualizer({
+    count: flattenedRows.length,
+    estimateSize: () => 50,
+    overscan: 10,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom = virtualItems.length > 0 ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end : 0;
+
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm">
       <ConfirmModal 
@@ -2618,72 +2736,15 @@ export function DetailTab({
               {visibleColumns.includes('action') && <ResizableHeader width={colWidths.action} onResize={(w) => handleResize('action', w)} className="px-4 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('action')}>Action</ResizableHeader>}
             </tr>
           </thead>
-          <tbody>
-            {filteredProjects.slice(0, visibleCount).map((p, pIdx) => {
-              const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-              const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
-              const sortedTasks = pInfo.sortedTasks || [];
-              const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
-                let valA = '';
-                let valB = '';
-                let direction = 'asc';
-                
-                if (sortConfig.key === 'start') {
-                  valA = a.start || '9999-12-31';
-                  valB = b.start || '9999-12-31';
-                } else if (sortConfig.key === 'finish') {
-                  valA = a.finish || '9999-12-31';
-                  valB = b.finish || '9999-12-31';
-                } else if (sortConfig.key === 'taskName') {
-                  valA = a.name || '';
-                  valB = b.name || '';
-                } else if (sortConfig.key === 'duration') {
-                  valA = a.duration || '0';
-                  valB = b.duration || '0';
-                  direction = sortConfig.direction;
-                  const numA = Number(valA);
-                  const numB = Number(valB);
-                  if (numA < numB) return direction === 'asc' ? -1 : 1;
-                  if (numA > numB) return direction === 'asc' ? 1 : -1;
-                  return 0;
-                }
-                direction = sortConfig.direction;
-                
-                if (valA < valB) return direction === 'asc' ? -1 : 1;
-                if (valA > valB) return direction === 'asc' ? 1 : -1;
-                return 0;
-              }) : sortedTasks;
-
-              const isExpanded = expandedCodes.includes(String(p.id!));
-              const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
-              const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
-
-              const planProgressPercent = computePlanProgressPercent(groupTasks);
-              const actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
-
-              const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
-              const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
-                const taskFields = [
-                  t.taskCodePhu,
-                  `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-                  t.name,
-                  t.duration,
-                  t.start,
-                  t.finish,
-                  t.party,
-                  formatDisplayDateMain(t.start),
-                  formatDisplayDateTime(t.start),
-                  formatDisplayDateMain(t.finish),
-                  formatDisplayDateTime(t.finish)
-                ];
-                const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
-                const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm)) || false;
-                return fieldMatch || notesMatch;
-              });
-
-              return (
-                <React.Fragment key={p.id || `${p.code}-${p.year}-${p.no}`}>
-                  <tr 
+          <tbody className="relative">
+            {paddingTop > 0 && <tr><td colSpan={visibleColumns.length} style={{ height: paddingTop }} /></tr>}
+            {virtualItems.map((virtualRow) => {
+              const row = flattenedRows[virtualRow.index];
+              if (row.type === 'project') {
+                const { p, pIdx, isExpanded, isProjDelegationOn, planProgressPercent, actProgressPercent, tasksToRender, groupTasks } = row;
+                return (
+                  <React.Fragment key={virtualRow.key}>
+                  <tr ref={rowVirtualizer.measureElement} data-index={virtualRow.index} 
                     id={`detail-project-${p.no ?? p.code}`}
                     data-project-item="true"
                     data-project-code={p.code}
@@ -2864,20 +2925,12 @@ export function DetailTab({
                       </td>
                     )}
                   </tr>
-                  {isExpanded && tasksToRender.map((t) => {
-                    const originalIndex = groupTasks.findIndex(gt => gt.id === t.id);
-                    const i = originalIndex !== -1 ? originalIndex : 0;
-                    const taskStatus = getTaskStatus(t.start, t.finish);
-                    let taskStatusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
-                    if (taskStatus === 'Completed') taskStatusColorClass = 'bg-green-50 text-green-600 dark:text-emerald-400 border-green-200';
-                    else if (taskStatus === 'On process') taskStatusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
-
-                    const delegationGroup = delegationGroupByParentKey.get(t.id);
-                    const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || []);
-                    let delStatusText = actStatus.label;
-                    let delStatusColorClass = actStatus.color;
-
-                    return (
+                  </React.Fragment>
+                );
+              } else {
+                const { p, t, i, groupTasks, taskStatus, taskStatusColorClass, delStatusText, delStatusColorClass } = row;
+                return (
+                  <React.Fragment key={virtualRow.key}>
                       <tr
                         id={`detail-task-${t.id}`}
                         key={t.id}
@@ -3116,22 +3169,11 @@ export function DetailTab({
                         </td>
                       )}
                     </tr>
-                  )})}
-                </React.Fragment>
-              );
+                  </React.Fragment>
+                );
+              }
             })}
-            {visibleCount < filteredProjects.length && (
-              <tr>
-                <td colSpan={visibleColumns.length} className="py-4 text-center">
-                  <button
-                    onClick={() => setVisibleCount(prev => prev + 20)}
-                    className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm"
-                  >
-                    Load More Projects ({filteredProjects.length - visibleCount} remaining)
-                  </button>
-                </td>
-              </tr>
-            )}
+            {paddingBottom > 0 && <tr><td colSpan={visibleColumns.length} style={{ height: paddingBottom }} /></tr>}
           </tbody>
         </table>
       </div>
