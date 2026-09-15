@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronRight, Map } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Project, Task } from '../../types';
 import { getStatus, computeActProgressPercent } from '../../lib/utils';
@@ -253,15 +253,6 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                     <span>•</span>
                     <span className="font-semibold text-slate-600 dark:text-slate-300">{p.location}</span>
                   </>
-                )}
-                {onNavigateToLayout && !isEditMode && (
-                  <span 
-                    className="inline-flex items-center text-[9px] text-blue-500 dark:text-[#8ab4f8] ml-1 opacity-70 group-hover/pname:opacity-100 transition-opacity"
-                    title={`Mặt bằng: ${p.store}${p.location ? ` - ${p.location}` : ''}`}
-                  >
-                    <Map className="w-2.5 h-2.5 mr-0.5 inline-block shrink-0" />
-                    Layout
-                  </span>
                 )}
               </span>
             </div>
