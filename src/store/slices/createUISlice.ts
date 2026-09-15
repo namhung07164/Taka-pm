@@ -49,6 +49,9 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
     set({ expandedProjectIds: ids });
   },
 
+  searchActiveProjectIds: [],
+  setSearchActiveProjectIds: (ids) => set({ searchActiveProjectIds: ids }),
+
   printFilterHeader: safeGetItemLocal("taka_print_filter_header") !== "false",
   setPrintFilterHeader: (val) => {
     safeSetItemLocal("taka_print_filter_header", String(val));

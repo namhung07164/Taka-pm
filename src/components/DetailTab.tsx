@@ -113,6 +113,7 @@ export function DetailTab({
   const expandedCodes = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
   const setExpandedCodes = useAppStore(state => state.setExpandedProjectIds);
+  const setSearchActiveProjectIds = useAppStore(state => state.setSearchActiveProjectIds);
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = React.useRef<string | null>(null);
@@ -2279,6 +2280,14 @@ export function DetailTab({
       setExpandedCodes([]);
     }
   };
+
+  useEffect(() => {
+    if (searchTerm.trim() !== '') {
+      setSearchActiveProjectIds(filteredProjects.slice(0, visibleCount).map(p => String(p.id || p.no)));
+    } else {
+      setSearchActiveProjectIds([]);
+    }
+  }, [searchTerm, filteredProjects, visibleCount, setSearchActiveProjectIds]);
 
   const allVisibleTaskIds = useMemo(() => {
     return filteredProjects.slice(0, visibleCount).flatMap(p => {
