@@ -2287,6 +2287,9 @@ export function DetailTab({
     } else {
       setSearchActiveProjectIds([]);
     }
+    return () => {
+      setSearchActiveProjectIds([]);
+    };
   }, [searchTerm, filteredProjects, visibleCount, setSearchActiveProjectIds]);
 
   const allVisibleTaskIds = useMemo(() => {
