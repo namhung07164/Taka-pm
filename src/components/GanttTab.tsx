@@ -1112,6 +1112,7 @@ export function GanttTab({
   }, [initialFocusTaskId]);
 
   const toggleProject = (id: string) => {
+    // VFS sync trigger
     toggleProjectExpansion(id);
   };
 

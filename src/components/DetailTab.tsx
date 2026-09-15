@@ -732,6 +732,7 @@ export function DetailTab({
   const stores = allowedStores;
 
   const toggleGroup = (id: string | number) => {
+    // VFS sync trigger
     toggleProjectExpansion(String(id));
   };
 
