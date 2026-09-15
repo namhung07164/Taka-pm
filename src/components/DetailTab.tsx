@@ -2383,6 +2383,7 @@ export function DetailTab({
               type: 'task',
               key: t.id,
               p,
+              pIdx,
               t,
               i,
               groupTasks,
@@ -2928,10 +2929,12 @@ export function DetailTab({
                   </React.Fragment>
                 );
               } else {
-                const { p, t, i, groupTasks, taskStatus, taskStatusColorClass, delStatusText, delStatusColorClass } = row;
+                const { p, pIdx, t, i, groupTasks, taskStatus, taskStatusColorClass, delStatusText, delStatusColorClass } = row;
                 return (
                   <React.Fragment key={virtualRow.key}>
                       <tr
+                        ref={rowVirtualizer.measureElement}
+                        data-index={virtualRow.index}
                         id={`detail-task-${t.id}`}
                         key={t.id}
                         onDragStart={(e) => canWrite && handleDetailTaskDragStart(e, t.id)}
