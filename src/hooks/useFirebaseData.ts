@@ -628,47 +628,69 @@ export function useFirebaseData() {
     };
   }, [querySignature, isTasksRequested]);
 
-  // 2.3 Unified Global Delta Sync for Tasks (Native Firebase Cache)
+  // 2.3 Unified Global Delta Sync for Tasks (Native Firebase Cache with TTL)
   const tasksPool = useRef<Map<string, () => void>>(new Map());
   const prevSigTasks = useRef<string>("");
+  const tasksTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
   useEffect(() => {
     return () => {
       tasksPool.current.forEach(u => u());
       tasksPool.current.clear();
+      tasksTTLTimeouts.current.forEach(t => clearTimeout(t));
+      tasksTTLTimeouts.current.clear();
     };
   }, []);
 
   useEffect(() => {
     if (!querySignature) return;
 
-    if (!isTasksRequested || expandedProjectIds.length === 0) {
-      if (tasksPool.current.size > 0) {
-        tasksPool.current.forEach(u => u());
-        tasksPool.current.clear();
-        prevSigTasks.current = "";
-      }
-      return;
-    }
-
-    const currentSig = `${querySignature}_${expandedProjectIds.join(',')}`;
+    const activeProjectIds = isTasksRequested ? expandedProjectIds : [];
+    const currentSig = `${querySignature}_${activeProjectIds.join(',')}_${isTasksRequested}`;
 
     if (prevSigTasks.current !== currentSig) {
-      // Remove listeners for projects that are no longer expanded
-      const currentExpandedSet = new Set(expandedProjectIds);
-      Array.from(tasksPool.current.keys()).forEach(projectId => {
-        if (!currentExpandedSet.has(projectId)) {
-          const unsub = tasksPool.current.get(projectId);
-          if (unsub) unsub();
-          tasksPool.current.delete(projectId);
-        }
-      });
+      // If querySignature (role/perms) changes, clear everything immediately
+      const isSignatureChanged = prevSigTasks.current.split('_')[0] !== querySignature;
+      if (isSignatureChanged && prevSigTasks.current !== "") {
+        tasksPool.current.forEach(u => u());
+        tasksPool.current.clear();
+        tasksTTLTimeouts.current.forEach(t => clearTimeout(t));
+        tasksTTLTimeouts.current.clear();
+      } else {
+        const currentExpandedSet = new Set(activeProjectIds);
+        Array.from(tasksPool.current.keys()).forEach(projectId => {
+          if (!currentExpandedSet.has(projectId)) {
+            // Project is no longer active, start TTL garbage collection
+            if (!tasksTTLTimeouts.current.has(projectId)) {
+              const timeoutId = setTimeout(() => {
+                const unsub = tasksPool.current.get(projectId);
+                if (unsub) unsub();
+                tasksPool.current.delete(projectId);
+                tasksTTLTimeouts.current.delete(projectId);
+                usePerformanceStore.getState().unregisterListener(`taka_tasks_${projectId}`);
+              }, TTL_DURATION_MS);
+              tasksTTLTimeouts.current.set(projectId, timeoutId);
+            }
+          } else {
+            // Project is active, clear any pending TTL
+            if (tasksTTLTimeouts.current.has(projectId)) {
+              clearTimeout(tasksTTLTimeouts.current.get(projectId)!);
+              tasksTTLTimeouts.current.delete(projectId);
+            }
+          }
+        });
+      }
       prevSigTasks.current = currentSig;
+    }
+
+    if (activeProjectIds.length === 0) {
+      return;
     }
 
     setIsTasksLoading(true);
 
-    expandedProjectIds.forEach(projectId => {
+    activeProjectIds.forEach(projectId => {
       // Find the project object to get its actual 'code' because taka_tasks stores 'projectCode', not 'projectId'.
       // If we don't have the exact code, we can fallback to projectId assuming it might be the code in some cases.
       const currentProjects = useAppStore.getState().projects || [];
@@ -727,40 +749,67 @@ export function useFirebaseData() {
     });
   }, [querySignature, isTasksRequested, expandedProjectIds]);
 
-  // 2.4 Delta Sync for Costs (Native Firebase Cache)
+  // 2.4 Delta Sync for Costs (Native Firebase Cache with TTL)
   const costsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigCosts = useRef<string>("");
+  const costsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   useEffect(() => {
     return () => {
       costsPool.current.forEach(u => u());
       costsPool.current.clear();
+      costsTTLTimeouts.current.forEach(t => clearTimeout(t));
+      costsTTLTimeouts.current.clear();
     };
   }, []);
 
   useEffect(() => {
     if (!querySignature) return;
 
-    if (!isCostsRequested) {
-      if (costsPool.current.size > 0) {
+    const targetYears = isCostsRequested ? (globalYearFilter === 'all' || globalYearFilter === 'ALL' ? ACTIVE_YEARS : [globalYearFilter]) : [];
+    const currentSig = `${querySignature}_${targetYears.join(',')}_${isCostsRequested}`;
+
+    if (prevSigCosts.current !== currentSig) {
+      // If querySignature (role/perms) changes, clear everything immediately
+      const isSignatureChanged = prevSigCosts.current.split('_')[0] !== querySignature;
+      
+      if (isSignatureChanged && prevSigCosts.current !== "") {
         costsPool.current.forEach(u => u());
         costsPool.current.clear();
-        prevSigCosts.current = "";
+        costsTTLTimeouts.current.forEach(t => clearTimeout(t));
+        costsTTLTimeouts.current.clear();
+      } else {
+        const activeYearsSet = new Set(targetYears);
+        Array.from(costsPool.current.keys()).forEach(year => {
+          if (!activeYearsSet.has(year)) {
+            // Year is no longer active, start TTL garbage collection
+            if (!costsTTLTimeouts.current.has(year)) {
+              const timeoutId = setTimeout(() => {
+                const unsub = costsPool.current.get(year);
+                if (unsub) unsub();
+                costsPool.current.delete(year);
+                costsTTLTimeouts.current.delete(year);
+                usePerformanceStore.getState().unregisterListener(`taka_costs_${year}`);
+              }, TTL_DURATION_MS);
+              costsTTLTimeouts.current.set(year, timeoutId);
+            }
+          } else {
+            // Year is active, clear any pending TTL
+            if (costsTTLTimeouts.current.has(year)) {
+              clearTimeout(costsTTLTimeouts.current.get(year)!);
+              costsTTLTimeouts.current.delete(year);
+            }
+          }
+        });
       }
+      prevSigCosts.current = currentSig;
+    }
+
+    if (targetYears.length === 0) {
       return;
     }
 
-    if (prevSigCosts.current !== querySignature) {
-      costsPool.current.forEach(u => u());
-      costsPool.current.clear();
-      prevSigCosts.current = querySignature;
-    }
-
     setIsCostsLoading(true);
-
-    const targetYears = (globalYearFilter === 'all' || globalYearFilter === 'ALL')
-      ? ACTIVE_YEARS
-      : [globalYearFilter];
 
     targetYears.forEach(year => {
       if (!costsPool.current.has(year)) {
@@ -800,40 +849,67 @@ export function useFirebaseData() {
 
   }, [querySignature, isCostsRequested, buildStoreAndYearQuery, globalYearFilter]);
 
-  // 2.5 Delta Sync for Delegation Groups (Native Firebase Cache)
+  // 2.5 Delta Sync for Delegation Groups (Native Firebase Cache with TTL)
   const delegationsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigDelegations = useRef<string>("");
+  const delegationsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   useEffect(() => {
     return () => {
       delegationsPool.current.forEach(u => u());
       delegationsPool.current.clear();
+      delegationsTTLTimeouts.current.forEach(t => clearTimeout(t));
+      delegationsTTLTimeouts.current.clear();
     };
   }, []);
 
   useEffect(() => {
     if (!querySignature) return;
 
-    if (!isDelegationsRequested) {
-      if (delegationsPool.current.size > 0) {
+    const targetYears = isDelegationsRequested ? (globalYearFilter === 'all' || globalYearFilter === 'ALL' ? ACTIVE_YEARS : [globalYearFilter]) : [];
+    const currentSig = `${querySignature}_${targetYears.join(',')}_${isDelegationsRequested}`;
+
+    if (prevSigDelegations.current !== currentSig) {
+      // If querySignature (role/perms) changes, clear everything immediately
+      const isSignatureChanged = prevSigDelegations.current.split('_')[0] !== querySignature;
+      
+      if (isSignatureChanged && prevSigDelegations.current !== "") {
         delegationsPool.current.forEach(u => u());
         delegationsPool.current.clear();
-        prevSigDelegations.current = "";
+        delegationsTTLTimeouts.current.forEach(t => clearTimeout(t));
+        delegationsTTLTimeouts.current.clear();
+      } else {
+        const activeYearsSet = new Set(targetYears);
+        Array.from(delegationsPool.current.keys()).forEach(year => {
+          if (!activeYearsSet.has(year)) {
+            // Year is no longer active, start TTL garbage collection
+            if (!delegationsTTLTimeouts.current.has(year)) {
+              const timeoutId = setTimeout(() => {
+                const unsub = delegationsPool.current.get(year);
+                if (unsub) unsub();
+                delegationsPool.current.delete(year);
+                delegationsTTLTimeouts.current.delete(year);
+                usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
+              }, TTL_DURATION_MS);
+              delegationsTTLTimeouts.current.set(year, timeoutId);
+            }
+          } else {
+            // Year is active, clear any pending TTL
+            if (delegationsTTLTimeouts.current.has(year)) {
+              clearTimeout(delegationsTTLTimeouts.current.get(year)!);
+              delegationsTTLTimeouts.current.delete(year);
+            }
+          }
+        });
       }
+      prevSigDelegations.current = currentSig;
+    }
+
+    if (targetYears.length === 0) {
       return;
     }
 
-    if (prevSigDelegations.current !== querySignature) {
-      delegationsPool.current.forEach(u => u());
-      delegationsPool.current.clear();
-      prevSigDelegations.current = querySignature;
-    }
-
     setIsDelegationsLoading(true);
-
-    const targetYears = (globalYearFilter === 'all' || globalYearFilter === 'ALL')
-      ? ACTIVE_YEARS
-      : [globalYearFilter];
 
     targetYears.forEach(year => {
       if (!delegationsPool.current.has(year)) {
