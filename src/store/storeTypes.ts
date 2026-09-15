@@ -1,0 +1,185 @@
+import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
+import { User } from "firebase/auth";
+import { Project, Task, Cost, AppUser, DelegationGroup, PermissionMatrix, TabId } from "../types";
+import { UndoAction } from "../lib/undoManager";
+
+export interface UISlice {
+  isFocusMode: boolean;
+  setIsFocusMode: (val: boolean) => void;
+  isPrintPreview: boolean;
+  setIsPrintPreview: (val: boolean) => void;
+  printOrientation: "portrait" | "landscape";
+  setPrintOrientation: (val: "portrait" | "landscape") => void;
+  printPaperSize: "A2" | "A3" | "A4";
+  setPrintPaperSize: (val: "A2" | "A3" | "A4") => void;
+  printDate: boolean;
+  setPrintDate: (val: boolean) => void;
+  printFilterHeader: boolean;
+  setPrintFilterHeader: (val: boolean) => void;
+  printScaleMode: "default" | "fit-cols" | "fit-rows" | "fit-page" | "custom";
+  setPrintScaleMode: (val: "default" | "fit-cols" | "fit-rows" | "fit-page" | "custom") => void;
+  printScaleCustom: number;
+  setPrintScaleCustom: (val: number) => void;
+  printDpi: number;
+  setPrintDpi: (val: number) => void;
+  printWatermark: "none" | "draft" | "confidential";
+  setPrintWatermark: (val: "none" | "draft" | "confidential") => void;
+  printTarget: "pdf" | "excel";
+  setPrintTarget: (val: "pdf" | "excel") => void;
+  showTour: boolean;
+  setShowTour: (val: boolean) => void;
+  isExportingPDF: boolean;
+  setIsExportingPDF: (val: boolean) => void;
+
+  // UI State
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
+  tabHistory: TabId[];
+  setTabHistory: (history: TabId[] | ((prev: TabId[]) => TabId[])) => void;
+
+  theme: "light" | "dark";
+  setTheme: (theme: "light" | "dark") => void;
+  
+  printRangeType: "entire" | "custom";
+  setPrintRangeType: (type: "entire" | "custom") => void;
+  printStartDate: string | null;
+  setPrintStartDate: (date: string | null) => void;
+  printEndDate: string | null;
+  setPrintEndDate: (date: string | null) => void;
+
+  toast: { title: string; message: string; type?: "success" | "error" | "info" | "warning" } | null;
+  setToast: (toast: { title: string; message: string; type?: "success" | "error" | "info" | "warning" } | null) => void;
+
+  // Modals
+  isLoginModalOpen: boolean;
+  setIsLoginModalOpen: (isOpen: boolean) => void;
+  isProjectModalOpen: boolean;
+  setIsProjectModalOpen: (isOpen: boolean) => void;
+  isTaskModalOpen: boolean;
+  setIsTaskModalOpen: (isOpen: boolean) => void;
+  isUserModalOpen: boolean;
+  setIsUserModalOpen: (isOpen: boolean) => void;
+  isCalendarSyncModalOpen: boolean;
+  setIsCalendarSyncModalOpen: (isOpen: boolean) => void;
+
+  editingProject: Project | null;
+  setEditingProject: (project: Project | null) => void;
+  editingTask: Task | null;
+  setEditingTask: (task: Task | null) => void;
+  editingUser: AppUser | null;
+  setEditingUser: (user: AppUser | null) => void;
+
+  modalInitialTab: "details" | "chat" | "delegation";
+  setModalInitialTab: (tab: "details" | "chat" | "delegation") => void;
+  focusCommentId: string | null;
+  setFocusCommentId: (id: string | null) => void;
+  isReadOnlyModal: boolean;
+  setIsReadOnlyModal: (isReadOnly: boolean) => void;
+
+  prefillProjectCode: string | null;
+  setPrefillProjectCode: (code: string | null) => void;
+  prefillProjectYear: number | string | null;
+  setPrefillProjectYear: (year: number | string | null) => void;
+  prefillProjectStore: string | null;
+  setPrefillProjectStore: (store: string | null) => void;
+
+  // Filters & Navigation
+  costTabSearchTerm: string;
+  setCostTabSearchTerm: (term: string) => void;
+  budgetTabSearchTerm: string;
+  setBudgetTabSearchTerm: (term: string) => void;
+  detailTabFilterCode: string;
+  setDetailTabFilterCode: (code: string) => void;
+  globalStoreFilter: string;
+  setGlobalStoreFilter: (filter: string) => void;
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (location: string[]) => void;
+  pinnedProjects: string[];
+  setPinnedProjects: (pinned: string[]) => void;
+  setDetailTabStoreFilter: (store: string) => void;
+  detailTabFocusTaskId: string;
+  setDetailTabFocusTaskId: (id: string) => void;
+  detailReturnScrollId: string;
+  setDetailReturnScrollId: (id: string) => void;
+  ganttTabFocusTaskId: string;
+  setGanttTabFocusTaskId: (id: string) => void;
+  ganttTriggerToday: number;
+  triggerGanttToday: () => void;
+  layoutTabFilters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string } | null;
+  setLayoutTabFilters: (filters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string } | null) => void;
+  notificationFilterId: string | null;
+  setNotificationFilterId: (id: string | null) => void;
+}
+
+export interface DataSlice {
+  // Data State (Firebase)
+  user: User | null;
+  setUser: (user: User | null) => void;
+  currentUser: AppUser;
+  setCurrentUser: (user: AppUser) => void;
+  
+  projects: Project[];
+  setProjects: (projects: Project[]) => void;
+  tasks: Task[];
+  setTasks: (tasks: Task[]) => void;
+  isTasksRequested: boolean;
+  setIsTasksRequested: (isTasksRequested: boolean) => void;
+  isTasksLoading: boolean;
+  setIsTasksLoading: (isTasksLoading: boolean) => void;
+  allProjectsForNotifs: Project[];
+  setAllProjectsForNotifs: (projects: Project[]) => void;
+  allTasksForNotifs: Task[];
+  setAllTasksForNotifs: (tasks: Task[]) => void;
+  costs: Cost[];
+  setCosts: (costs: Cost[]) => void;
+  isCostsRequested: boolean;
+  setIsCostsRequested: (isCostsRequested: boolean) => void;
+  isCostsLoading: boolean;
+  setIsCostsLoading: (isCostsLoading: boolean) => void;
+  appUsers: AppUser[];
+  setAppUsers: (users: AppUser[]) => void;
+  subAppUsers: any[];
+  setSubAppUsers: (users: any[]) => void;
+  notificationRules: any[];
+  setNotificationRules: (rules: any[]) => void;
+  locations: string[];
+  setLocations: (locations: string[]) => void;
+  locationVisibility: Record<string, boolean>;
+  setLocationVisibility: (visibility: Record<string, boolean>) => void;
+  parties: string[];
+  setParties: (parties: string[]) => void;
+  delegationGroups: DelegationGroup[];
+  setDelegationGroups: (groups: DelegationGroup[]) => void;
+  isDelegationsRequested: boolean;
+  setIsDelegationsRequested: (isDelegationsRequested: boolean) => void;
+  isDelegationsLoading: boolean;
+  setIsDelegationsLoading: (isDelegationsLoading: boolean) => void;
+  permissionMatrix: PermissionMatrix;
+  setPermissionMatrix: (matrix: PermissionMatrix) => void;
+  activeNotifications: any[];
+  setActiveNotifications: (notifications: any[]) => void;
+  cloudStatus: "online" | "offline" | "syncing";
+  setCloudStatus: (status: "online" | "offline" | "syncing") => void;
+
+  undoStack: UndoAction[];
+  setUndoStack: (stack: UndoAction[]) => void;
+
+  currency: 'VND' | 'JPY' | 'USD';
+  setCurrency: (currency: 'VND' | 'JPY' | 'USD') => void;
+  jpyRate: number;
+  setJpyRate: (rate: number) => void;
+  usdRate: number;
+  setUsdRate: (rate: number) => void;
+}
+
+export interface OptimisticSlice {
+  optimisticUpdateTasks: (updatedTasks: Partial<Task>[]) => void;
+  optimisticUpdateCosts: (updatedCosts: Partial<Cost>[]) => void;
+  optimisticUpdateProjects: (updatedProjects: Partial<Project>[]) => void;
+  optimisticUpdateProjectFinancial: (projectId: string, updates: any) => void;
+  rollbackProjectFinancial: (projectId: string, oldFinancial: any) => void;
+}
+
+export type AppState = UISlice & DataSlice & OptimisticSlice;
