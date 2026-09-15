@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Lockfiles
+bun.lock
+bun.lockb

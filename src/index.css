@@ -1,0 +1,425 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@variant dark (&:is(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+html, body {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: none;
+}
+
+#root {
+  width: 100%;
+  overflow-x: hidden;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+canvas {
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* Hide scrollbar for elements with no-scrollbar class */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Fix for iOS/iPadOS keyboard and zoom issues */
+@media (max-width: 1024px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Ensure inputs are always interactable */
+input, textarea {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  cursor: text;
+}
+
+select {
+  -webkit-user-select: auto !important;
+  user-select: auto !important;
+  cursor: pointer;
+}
+
+/* Zero-Delay Visual Responsiveness for Buttons */
+button:not(:disabled):not(.no-scale) {
+  touch-action: manipulation !important;
+  transition: transform 0.1s ease !important;
+}
+button:not(:disabled):not(.no-scale):active {
+  transform: scale(0.95) !important;
+}
+
+input, textarea {
+  color: #0f172a;
+  background-color: transparent;
+}
+input:disabled, textarea:disabled,
+input[readonly], textarea[readonly] {
+  color: #64748b;
+}
+
+select, option {
+  color: #0f172a;
+  background-color: #ffffff;
+}
+
+.dark input, .dark textarea {
+  color: #e3e3e3;
+}
+.dark input:disabled, .dark textarea:disabled,
+.dark input[readonly], .dark textarea[readonly] {
+  color: #a3a3a3;
+}
+
+.dark select, .dark option {
+  color: #e3e3e3;
+  background-color: #1e1e20;
+}
+
+.markdown-body h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body lI {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+}
+
+/* React Big Calendar Event Overrides for better text visibility */
+.rbc-month-view .rbc-event {
+  min-height: 42px;
+  height: auto;
+  white-space: normal;
+}
+
+.rbc-month-view .rbc-event-content {
+  white-space: normal;
+  display: block;
+}
+
+@media print {
+  @page {
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 10pt;
+      font-family: sans-serif;
+      color: #64748b;
+    }
+  }
+
+  /* Force tables and Gantt containers to show everything without scrolling */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  body, html, #root {
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  
+  /* Make table layouts look good */
+  table {
+    border-collapse: collapse;
+  }
+  
+  th, td {
+    border: 1px solid #e2e8f0; /* Default tailwind gray-200 */
+    padding: 2px 4px !important;
+    font-size: 10pt !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Simulate X-axis scroll in print for Gantt Tab */
+  .print-gantt-table {
+    transform: translateX(calc(-1 * var(--print-scroll-x, 0px))) !important;
+  }
+  .print-sticky-x {
+    transform: translateX(var(--print-scroll-x, 0px)) !important;
+  }
+
+  
+  /* Ensure table headers repeat on every page */
+  thead {
+    display: table-header-group !important;
+  }
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  /* Fix sticky headers overlapping content on subsequent pages */
+  th {
+    position: static !important;
+    top: auto !important;
+  }
+  /* Don't break tasks inside the gantt or tables across pages */
+  tr {
+    page-break-inside: avoid;
+  }
+}
+
+
+
+/* Dark Mode Overrides for React Big Calendar */
+.dark .rbc-calendar {
+  color: #e3e3e3;
+}
+.dark .rbc-month-view,
+.dark .rbc-time-view,
+.dark .rbc-agenda-view,
+.dark .rbc-month-view .rbc-header {
+  border-color: #444446;
+}
+.dark .rbc-day-bg,
+.dark .rbc-month-row,
+.dark .rbc-time-content,
+.dark .rbc-time-header.rbc-overflowing {
+  border-color: #444446;
+}
+.dark .rbc-header + .rbc-header,
+.dark .rbc-day-bg + .rbc-day-bg,
+.dark .rbc-month-row + .rbc-month-row,
+.dark .rbc-time-header-content {
+  border-color: #444446;
+}
+.dark .rbc-off-range-bg {
+  background-color: #1a1a1c;
+}
+.dark .rbc-today {
+  background-color: #28282a;
+}
+.dark .rbc-button-link {
+  color: #e3e3e3;
+}
+.dark .rbc-show-more {
+  color: #8ab4f8;
+}
+.dark .rbc-agenda-view table.rbc-agenda-table {
+  border-color: #444446;
+}
+.dark .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  border-bottom-color: #444446;
+}
+.dark .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  border-top-color: #444446;
+}
+.dark .rbc-event {
+  color: #e3e3e3;
+}
+
+
+/* More exhaustive dark mode CSS for Big Calendar */
+.dark .rbc-month-view,
+.dark .rbc-time-view,
+.dark .rbc-agenda-view {
+  background-color: #1e1e20;
+}
+
+.dark .rbc-day-slot {
+  background-color: #1e1e20;
+}
+
+.dark .rbc-time-header {
+  background-color: #1e1e20;
+}
+
+.dark .rbc-date-cell {
+  background-color: #1e1e20;
+}
+
+.dark .rbc-agenda-table tbody > tr > td {
+  background-color: #1e1e20;
+}
+
+.dark .rbc-agenda-table thead > tr > th {
+  background-color: #1e1e20;
+}
+
+.dark .rbc-time-content > * + * > * {
+  border-left-color: #444446;
+}
+
+.dark .rbc-timeslot-group {
+  border-bottom-color: #444446;
+}
+
+.dark .rbc-day-bg + .rbc-day-bg {
+  border-left-color: #444446;
+}
+
+/* Export visual overrides for Gantt */
+html:not(.dark) .exporting-active .text-slate-500,
+html:not(.dark) .exporting-active .text-slate-600,
+html:not(.dark) .exporting-active .text-slate-700 {
+  color: #0f172a !important; /* text-slate-900 */
+  font-weight: 700 !important;
+}
+
+html:not(.dark) .exporting-active .text-xs,
+html:not(.dark) .exporting-active .text-sm {
+  font-weight: 700 !important;
+}
+
+/* Các đường chia ô tháng và chia dòng task cũng làm đậm lên 1 tone để nhìn rõ */
+html:not(.dark) .exporting-active .border-slate-100 {
+  border-color: #cbd5e1 !important; /* slate-300 */
+}
+
+html:not(.dark) .exporting-active .border-slate-200 {
+  border-color: #94a3b8 !important; /* slate-400 */
+}
+
+/* Force disable transitions during export */
+.exporting-active, .exporting-active * {
+  transition: none !important;
+}
+
+/* Print Preview Mode */
+body.print-preview-active .print\:hidden {
+  display: none !important;
+}
+body.print-preview-active .print\:block {
+  display: block !important;
+}
+body.print-preview-active .print\:w-full {
+  width: 100% !important;
+}
+body.print-preview-active .print\:max-w-full {
+  max-width: 100% !important;
+}
+body.print-preview-active .print\:border-none {
+  border: none !important;
+}
+body.print-preview-active .print\:shadow-none {
+  box-shadow: none !important;
+}
+body.print-preview-active .print\:rounded-none {
+  border-radius: 0 !important;
+}
+body.print-preview-active .print\:p-0 {
+  padding: 0 !important;
+}
+body.print-preview-active .print\:overflow-hidden {
+  overflow: hidden !important;
+}
+
+@media print {
+  .hide-on-actual-print {
+    display: none !important;
+  }
+}
+
+/* Hide number input arrows */
+.hide-arrows::-webkit-outer-spin-button,
+.hide-arrows::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.hide-arrows {
+  -moz-appearance: textfield;
+}
+
+/* Force exact heights for Gantt table rows to prevent html2canvas drift */
+.project-row, .project-row td, .project-row th {
+    height: 40px !important;
+    max-height: 40px !important;
+    min-height: 40px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    box-sizing: border-box !important;
+    line-height: 40px !important;
+}
+
+.task-row, .task-row td, .task-row th {
+    height: 32px !important;
+    max-height: 32px !important;
+    min-height: 32px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    box-sizing: border-box !important;
+    line-height: 32px !important;
+}
+
+/* Force htmlToImage to respect table layout rigidly */
+.print-preview-content-active table {
+    border-collapse: collapse !important;
+}
+.print-preview-content-active td, .print-preview-content-active th {
+    overflow: hidden !important;
+    white-space: nowrap !important;
+}

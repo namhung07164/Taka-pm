@@ -1,0 +1,108 @@
+import React, { Suspense } from 'react';
+import { useAppStore } from '../store/useAppStore';
+import { useEnrichedData } from '../hooks/useEnrichedData';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { TabErrorBoundary } from './TabErrorBoundary';
+import { AppUser } from '../types';
+
+const LoginModal = lazyWithRetry(() => import('./LoginModal').then(m => ({ default: m.LoginModal })), 'LoginModal');
+const ProjectModal = lazyWithRetry(() => import('./ProjectModal').then(m => ({ default: m.ProjectModal })), 'ProjectModal');
+const TaskModal = lazyWithRetry(() => import('./TaskModal').then(m => ({ default: m.TaskModal })), 'TaskModal');
+const UserModal = lazyWithRetry(() => import('./UserModal').then(m => ({ default: m.UserModal })), 'UserModal');
+const CalendarSyncModal = lazyWithRetry(() => import('./CalendarSyncModal').then(m => ({ default: m.CalendarSyncModal })), 'CalendarSyncModal');
+
+interface AppModalsProps {
+  onLogin: (appUser: AppUser) => void;
+  onTabChange: (tab: any) => void;
+}
+
+export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabChange }) => {
+  const isLoginModalOpen = useAppStore(state => state.isLoginModalOpen);
+  const setIsLoginModalOpen = useAppStore(state => state.setIsLoginModalOpen);
+  
+  const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
+  const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  
+  const isTaskModalOpen = useAppStore(state => state.isTaskModalOpen);
+  const setIsTaskModalOpen = useAppStore(state => state.setIsTaskModalOpen);
+  
+  const isUserModalOpen = useAppStore(state => state.isUserModalOpen);
+  const setIsUserModalOpen = useAppStore(state => state.setIsUserModalOpen);
+  
+  const editingProject = useAppStore(state => state.editingProject);
+  const editingTask = useAppStore(state => state.editingTask);
+  const setEditingTask = useAppStore(state => state.setEditingTask);
+  const editingUser = useAppStore(state => state.editingUser);
+  
+  const modalInitialTab = useAppStore(state => state.modalInitialTab);
+  const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
+  const isReadOnlyModal = useAppStore(state => state.isReadOnlyModal);
+  const setIsReadOnlyModal = useAppStore(state => state.setIsReadOnlyModal);
+  
+  const prefillProjectCode = useAppStore(state => state.prefillProjectCode);
+  const prefillProjectYear = useAppStore(state => state.prefillProjectYear);
+  const prefillProjectStore = useAppStore(state => state.prefillProjectStore);
+
+  const { filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
+
+  return (
+    <Suspense fallback={null}>
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onLogin={onLogin}
+      />
+
+      <ProjectModal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        project={editingProject}
+        isReadOnly={isReadOnlyModal}
+        initialTab={modalInitialTab}
+        onOpenTask={(taskId) => {
+          const t = tasks.find((item) => item.id === taskId);
+          if (t) {
+            setEditingTask(t);
+            setIsReadOnlyModal(false);
+            setModalInitialTab("chat");
+            setIsProjectModalOpen(false);
+            setIsTaskModalOpen(true);
+          }
+        }}
+      />
+
+      <TabErrorBoundary tabKey="TaskModal">
+        <TaskModal
+          isOpen={isTaskModalOpen}
+          onClose={() => setIsTaskModalOpen(false)}
+          task={editingTask}
+          visibleDelegationGroups={visibleDelegationGroups}
+          prefillProjectCode={prefillProjectCode}
+          prefillProjectYear={prefillProjectYear}
+          prefillProjectStore={prefillProjectStore}
+          isReadOnly={isReadOnlyModal}
+          initialTab={modalInitialTab === "chat" ? "chat" : "details"}
+          onNavigateToDelegation={(groupId) => {
+            setIsTaskModalOpen(false);
+            onTabChange("taskDelegation");
+            setTimeout(() => {
+              window.dispatchEvent(
+                new CustomEvent("taka_open_delegation_group", {
+                  detail: { groupId },
+                })
+              );
+            }, 400);
+          }}
+        />
+      </TabErrorBoundary>
+
+      <UserModal
+        isOpen={isUserModalOpen}
+        onClose={() => setIsUserModalOpen(false)}
+        user={editingUser}
+      />
+
+      <CalendarSyncModal />
+    </Suspense>
+  );
+});

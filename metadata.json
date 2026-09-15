@@ -1,0 +1,8 @@
+{
+  "name": "Takashimaya PM - cloud (offical) ver10042026",
+  "description": "A comprehensive project management tool with cloud sync, budget tracking, and real-time notifications.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
