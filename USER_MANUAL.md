@@ -112,9 +112,9 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
 
 *Mẹo nhỏ (Shift + Click)*: Bạn có thể tích chọn Task đầu tiên, sau đó **giữ phím Shift** và tích chọn Task tiếp theo để chọn nhanh hàng loạt tất cả các Task nằm ở giữa.
 
-#### 🔹 Cơ Chế Cuộn Mượt & Ảo Hóa Danh Sách (Virtual Scrolling):
-- Bảng danh sách Detail Tab được tích hợp công nghệ Ảo hóa danh sách (Window Virtualization).
-- Khi mở các dự án lớn có hàng trăm hoặc hàng ngàn Task con, hệ thống chỉ kết xuất vào bộ nhớ những dòng đang nằm trong tầm nhìn màn hình, giúp cuộn trang siêu mượt (60 FPS), không bị đơ giật hay tràn RAM trên iPad, máy tính bảng và thiết bị cấu hình yếu.
+
+
+
 
 #### 🔹 Hướng dẫn Thao tác Dự án Mẹ (Project Row Operations):
 1. **Chỉnh sửa thông tin Dự án**: Nhấp biểu tượng Cây bút (✏️ Edit Project) trên dòng dự án mẹ để mở cửa sổ Modal hiệu chỉnh đầy đủ thông tin dự án (Mã, Tên, Chi nhánh, Vị trí, Niên độ, Ngày thi công).
