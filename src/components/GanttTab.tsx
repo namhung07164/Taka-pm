@@ -232,21 +232,9 @@ export function GanttTab({
     }
   }, [searchTerm]);
 
-  const [expandedProjects, setExpandedProjects] = useState<string[]>(() => {
-    const saved = safeGetItemSession("taka_gantt_expanded_projects");
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    safeSetItemSession(
-      "taka_gantt_expanded_projects",
-      JSON.stringify(expandedProjects),
-    );
-  }, [expandedProjects]);
+  const expandedProjects = useAppStore(state => state.expandedProjectIds);
+  const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
+  const setExpandedProjects = useAppStore(state => state.setExpandedProjectIds);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -746,17 +734,14 @@ export function GanttTab({
   useEffect(() => {
     if (searchTerm && searchTerm.trim() !== '' && searchTerm !== lastAutoExpandedSearchRef.current && sortedProjects.length > 0) {
       const exactMatch = sortedProjects.find(p => p.code?.trim().toLowerCase() === searchTerm.trim().toLowerCase());
-      if (exactMatch && exactMatch.no) {
+      if (exactMatch && exactMatch.id) {
         lastAutoExpandedSearchRef.current = searchTerm;
-        setExpandedProjects(prev => {
-          if (!prev.includes(String(exactMatch.no))) {
-            return [...prev, String(exactMatch.no)];
-          }
-          return prev;
-        });
+        if (!expandedProjects.includes(exactMatch.id)) {
+          toggleProjectExpansion(exactMatch.id);
+        }
       }
     }
-  }, [searchTerm, sortedProjects]);
+  }, [searchTerm, sortedProjects, expandedProjects, toggleProjectExpansion]);
 
   // Auto-expand modular parent tasks if search matches a child task directly
   useEffect(() => {
@@ -1109,12 +1094,9 @@ export function GanttTab({
         if (p) {
           lastFocusedTaskIdRef.current = initialFocusTaskId;
           if (p.code) setSearchTerm(p.code);
-          setExpandedProjects((prev) => {
-            if (!prev.includes(String(p.no))) {
-              return [...prev, String(p.no)];
-            }
-            return prev;
-          });
+          if (!expandedProjects.includes(p.id!)) {
+            toggleProjectExpansion(p.id!);
+          }
 
           setTimeout(() => {
             const el = document.getElementById(
@@ -1129,12 +1111,8 @@ export function GanttTab({
     }
   }, [initialFocusTaskId]);
 
-  const toggleProject = (no: number) => {
-    setExpandedProjects((prev) =>
-      prev.includes(String(no))
-        ? prev.filter((c) => c !== String(no))
-        : [...prev, String(no)],
-    );
+  const toggleProject = (id: string) => {
+    toggleProjectExpansion(id);
   };
 
   const hasAnyExpanded = expandedProjects.length > 0;
@@ -1142,7 +1120,7 @@ export function GanttTab({
     if (hasAnyExpanded) {
       setExpandedProjects([]);
     } else {
-      setExpandedProjects(sortedProjects.map((p) => String(p.no)));
+      setExpandedProjects(sortedProjects.map((p) => String(p.id!)));
     }
   };
 
@@ -1193,10 +1171,8 @@ export function GanttTab({
       setExpandedModularTasks(allModularParentIds);
       // Ensure projects containing modular tasks are also expanded so they are visible
       if (modularProjectNoSet.length > 0) {
-        setExpandedProjects((prev) => {
-          const next = new Set([...prev, ...modularProjectNoSet]);
-          return Array.from(next);
-        });
+        const next = new Set([...expandedProjects, ...modularProjectNoSet]);
+        setExpandedProjects(Array.from(next));
       }
     }
   };
@@ -1714,7 +1690,7 @@ export function GanttTab({
         if (first && first.realtimeUpdate) newToggleState = false;
       } else if (selectedProjectIds.length > 0) {
         const first = projects.find(p =>
-            String(p.no) === selectedProjectIds[0] ||
+            p.id! === selectedProjectIds[0] ||
             p.id === selectedProjectIds[0],
         );
         if (first && first.realtimeUpdate) newToggleState = false;
@@ -2076,7 +2052,7 @@ export function GanttTab({
           let writeCount = 0;
 
           selectedProjectIds.forEach((pId) => {
-            const proj = projects.find(p => String(p.no) === pId || p.id === pId,
+            const proj = projects.find(p => p.id! === pId || p.id === pId,
             );
             if (proj) {
               const docId = proj.id || String(proj.no);
@@ -2151,7 +2127,7 @@ export function GanttTab({
 
   const handleTogglePin = async (p: Project) => {
     try {
-      const docId = p.id || String(p.no);
+      const docId = p.id || p.id!;
       const projectRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docId);
       updateDoc(projectRef, {
         isPinned: !p.isPinned,
@@ -2441,7 +2417,7 @@ export function GanttTab({
   const isAllSelected = useMemo(() => {
     if (filteredProjects.length === 0) return false;
     for (const p of filteredProjects) {
-      if (!selectedProjectSet.has(String(p.no))) return false;
+      if (!selectedProjectSet.has(p.id!)) return false;
       const pKey = getPKey(p.code, p.year, p.store);
       let pTasks = tasksByProject.get(pKey) || [];
       if (filterStartDate || filterEndDate) {
@@ -2474,7 +2450,7 @@ export function GanttTab({
   const handleToggleSelectAll = useCallback(
     (checked: boolean) => {
       if (checked) {
-        const pIds = filteredProjects.map((p) => String(p.no));
+        const pIds = filteredProjects.map((p) => p.id!);
         let tIds: string[] = [];
         filteredProjects.forEach((p) => {
           const pKey = getPKey(p.code, p.year, p.store);
@@ -2647,7 +2623,7 @@ export function GanttTab({
             />
             <tbody className="relative">
               {paginatedProjects.map((p, pIdx) => {
-                const isExpanded = expandedProjects.includes(String(p.no));
+                const isExpanded = expandedProjects.includes(p.id!);
                 const pKey = getPKey(p.code, p.year, p.store);
                 let projectTasks = tasksByProject.get(pKey);
                 if (!projectTasks || projectTasks.length === 0) {

@@ -63,6 +63,7 @@ export function useFirebaseData() {
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
   const activeTab = useAppStore((state) => state.activeTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
+  const expandedProjectIds = useAppStore((state) => state.expandedProjectIds);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
   const setIsTasksLoading = useAppStore((state) => state.setIsTasksLoading);
   const isCostsRequested = useAppStore((state) => state.isCostsRequested);
@@ -641,7 +642,7 @@ export function useFirebaseData() {
   useEffect(() => {
     if (!querySignature) return;
 
-    if (!isTasksRequested) {
+    if (!isTasksRequested || expandedProjectIds.length === 0) {
       if (tasksPool.current.size > 0) {
         tasksPool.current.forEach(u => u());
         tasksPool.current.clear();
@@ -650,27 +651,41 @@ export function useFirebaseData() {
       return;
     }
 
-    if (prevSigTasks.current !== querySignature) {
-      tasksPool.current.forEach(u => u());
-      tasksPool.current.clear();
-      prevSigTasks.current = querySignature;
+    const currentSig = `${querySignature}_${expandedProjectIds.join(',')}`;
+
+    if (prevSigTasks.current !== currentSig) {
+      // Remove listeners for projects that are no longer expanded
+      const currentExpandedSet = new Set(expandedProjectIds);
+      Array.from(tasksPool.current.keys()).forEach(projectId => {
+        if (!currentExpandedSet.has(projectId)) {
+          const unsub = tasksPool.current.get(projectId);
+          if (unsub) unsub();
+          tasksPool.current.delete(projectId);
+        }
+      });
+      prevSigTasks.current = currentSig;
     }
 
     setIsTasksLoading(true);
 
-    const targetYears = (globalYearFilter === 'all' || globalYearFilter === 'ALL')
-      ? ACTIVE_YEARS
-      : [globalYearFilter];
+    expandedProjectIds.forEach(projectId => {
+      // Find the project object to get its actual 'code' because taka_tasks stores 'projectCode', not 'projectId'.
+      // If we don't have the exact code, we can fallback to projectId assuming it might be the code in some cases.
+      const currentProjects = useAppStore.getState().projects || [];
+      const proj = currentProjects.find(p => p.id === projectId || p.no === Number(projectId));
+      const codeToQuery = proj?.code || projectId;
 
-    targetYears.forEach(year => {
-      if (!tasksPool.current.has(year)) {
-        const qTasks = buildStoreAndYearQuery(collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"), "projectStore", "projectYear", year);
+      if (!tasksPool.current.has(projectId)) {
+        const qTasks = query(
+          collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+          where("projectCode", "==", codeToQuery)
+        );
         
-        usePerformanceStore.getState().registerListener(`taka_tasks_${year}`);
+        usePerformanceStore.getState().registerListener(`taka_tasks_${projectId}`);
         const unsub = onSnapshot(
           qTasks,
           (snapshot) => {
-            usePerformanceStore.getState().trackSnapshot(`taka_tasks_${year}`, snapshot);
+            usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projectId}`, snapshot);
             setIsTasksLoading(false);
             
             const currentTasks = useAppStore.getState().tasks || [];
@@ -707,11 +722,10 @@ export function useFirebaseData() {
             setCloudStatus("offline");
           }
         );
-        tasksPool.current.set(year, unsub);
+        tasksPool.current.set(projectId, unsub);
       }
     });
-
-  }, [querySignature, isTasksRequested, buildStoreAndYearQuery, globalYearFilter]);
+  }, [querySignature, isTasksRequested, expandedProjectIds]);
 
   // 2.4 Delta Sync for Costs (Native Firebase Cache)
   const costsPool = useRef<Map<string, () => void>>(new Map());

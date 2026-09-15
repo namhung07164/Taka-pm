@@ -109,7 +109,11 @@ export function DetailTab({
     }
   }, [searchTerm]);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
-  const [expandedCodes, setExpandedCodes] = useState<string[]>([]);
+  
+  const expandedCodes = useAppStore(state => state.expandedProjectIds);
+  const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
+  const setExpandedCodes = useAppStore(state => state.setExpandedProjectIds);
+
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = React.useRef<string | null>(null);
   const lastFocusedTaskIdRef = React.useRef<string | null>(null);
@@ -274,12 +278,7 @@ export function DetailTab({
             setStatusFilter('all');
           }
 
-          setExpandedCodes((prev) => {
-            if (p.no !== undefined && !prev.includes(String(p.no))) {
-              return [...prev, String(p.no)];
-            }
-            return prev;
-          });
+          setExpandedCodes([...new Set([...expandedCodes, p.id!])]);
 
           setTimeout(() => {
             const el = document.getElementById(`detail-task-${initialFocusTaskId}`);
@@ -690,10 +689,8 @@ export function DetailTab({
       ) || projects.find(
         (p) => p.code && String(initialFilterCode).trim().toUpperCase().startsWith(String(p.code).trim().toUpperCase() + '-')
       );
-      if (matchedProj && matchedProj.no !== undefined) {
-        setExpandedCodes((prev) =>
-          prev.includes(String(matchedProj.no)) ? prev : [...prev, String(matchedProj.no)]
-        );
+      if (matchedProj && matchedProj.id) {
+        setExpandedCodes([...new Set([...expandedCodes, matchedProj.id])]);
       }
       setTimeout(() => {
         const el =
@@ -735,10 +732,7 @@ export function DetailTab({
   const stores = allowedStores;
 
   const toggleGroup = (id: string | number) => {
-    const code = String(id);
-    setExpandedCodes(prev => 
-      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
-    );
+    toggleProjectExpansion(String(id));
   };
 
   const handleDeleteProject = async (p: Project) => {
@@ -748,7 +742,7 @@ export function DetailTab({
       message: `Delete project ${p.code} and all Sub-?`,
       onConfirm: async () => {
         try {
-          const docId = p.id || String(p.no);
+          const docId = p.id || p.id!;
           const relatedTasks = tasks.filter(t=> 
             t.projectCode === p.code && 
             (t.projectYear == p.year || (!t.projectYear && !p.year)) &&
@@ -897,7 +891,7 @@ export function DetailTab({
 
       if ((field === 'code' || field === 'year' || field === 'store') && value !== p[field]) {
         const batch = writeBatch(db);
-        const docId = p.id || String(p.no);
+        const docId = p.id || p.id!;
         const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
         const dataToSave = { ...p, [field]: value, updatedAt: new Date().toISOString() };
         
@@ -976,7 +970,7 @@ export function DetailTab({
           }
         });
       } else {
-        const docId = p.id || String(p.no);
+        const docId = p.id || p.id!;
         const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
         const dataToSave = { ...p, [field]: value, updatedAt: new Date().toISOString() };
         
@@ -2279,7 +2273,7 @@ export function DetailTab({
 
   const toggleAll = () => {
     if (expandedCodes.length === 0) {
-      setExpandedCodes(projects.map(p=> String(p.no)));
+      setExpandedCodes(projects.map(p=> String(p.id!)));
     } else {
       setExpandedCodes([]);
     }
@@ -2565,7 +2559,7 @@ export function DetailTab({
                       />
                     )}
                     No.
-                    <button onClick={() => setExpandedCodes(expandedCodes.length === 0 ? sortedProjects.map(p => String(p.no)) : [])} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8]">
+                    <button onClick={() => setExpandedCodes(expandedCodes.length === 0 ? sortedProjects.map(p => String(p.id!)) : [])} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8]">
                       {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                   </div>
@@ -2659,7 +2653,7 @@ export function DetailTab({
                 return 0;
               }) : sortedTasks;
 
-              const isExpanded = expandedCodes.includes(String(p.no));
+              const isExpanded = expandedCodes.includes(String(p.id!));
               const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
               const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
 
@@ -2717,7 +2711,7 @@ export function DetailTab({
                           )}
                           {groupTasks.length > 0 ? (
                             <button 
-                               onClick={() => toggleGroup(p.no)} 
+                               onClick={() => toggleGroup(p.id!)} 
                                className={cn(
                                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
                                  groupTasks.length >= 2
@@ -3144,7 +3138,7 @@ export function DetailTab({
       <div className="xl:hidden flex justify-between items-center px-2 pb-2">
         <span className="text-sm font-bold text-slate-600 dark:text-[#a3a3a3]">Projects ({sortedProjects.length})</span>
         <button 
-          onClick={() => setExpandedCodes(expandedCodes.length === 0 ? projects.map(p=> String(p.no)) : [])} 
+          onClick={() => setExpandedCodes(expandedCodes.length === 0 ? projects.map(p=> String(p.id!)) : [])} 
           className="flex items-center gap-1 text-sm text-blue-600 dark:text-[#8ab4f8] font-medium hover:text-blue-800 dark:text-[#8ab4f8] transition-colors"
         >
           {expandedCodes.length === 0 ? (
@@ -3196,7 +3190,7 @@ export function DetailTab({
           else if (status === 'On process') statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
           else if (status === 'Canceled') statusColorClass = 'bg-red-50 text-red-600 dark:text-red-400 border-red-200';
 
-          const isExpanded = expandedCodes.includes(String(p.no));
+          const isExpanded = expandedCodes.includes(String(p.id!));
           const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
           const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
 
@@ -3239,7 +3233,7 @@ export function DetailTab({
               <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base leading-snug pr-20 flex items-start gap-2">
                 {groupTasks.length > 0 ? (
                   <button 
-                    onClick={() => toggleGroup(p.no)} 
+                    onClick={() => toggleGroup(p.id!)} 
                     className={cn(
                       "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
                       groupTasks.length >= 2

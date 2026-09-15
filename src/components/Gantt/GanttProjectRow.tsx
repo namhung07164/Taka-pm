@@ -20,7 +20,7 @@ export interface GanttProjectRowProps {
   selectedProjectIds: string[];
   setSelectedProjectIds: (ids: string[]) => void;
   setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
-  toggleProject: (no: number) => void;
+  toggleProject: (id: string) => void;
   isResizingSide: boolean;
   startResizingSide: (e: React.MouseEvent) => void;
   sideWidth: number;
@@ -104,7 +104,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
         Array.from(new Set([...prev, ...projectModularParentIds]))
       );
       if (!isExpanded) {
-        toggleProject(p.no);
+        toggleProject(p.id!);
       }
     }
   };
@@ -153,7 +153,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               onClick={(e) => {
                 e.stopPropagation();
                 if (projectTasks.length > 0) {
-                  toggleProject(p.no);
+                  toggleProject(p.id!);
                 }
               }}
               disabled={projectTasks.length === 0}
@@ -214,12 +214,12 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 e.stopPropagation();
                 onNavigateToLayout(p.store || 'all', p.location || 'all', p.code);
               } else {
-                toggleProject(p.no);
+                toggleProject(p.id!);
               }
             }}
             onDoubleClick={(e) => {
               e.stopPropagation();
-              toggleProject(p.no);
+              toggleProject(p.id!);
             }}
             className={cn(
               "flex items-center gap-1.5 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1.5 rounded transition-colors group/pname",

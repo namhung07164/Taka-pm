@@ -14,6 +14,9 @@ export interface UISlice {
   setPrintPaperSize: (val: "A2" | "A3" | "A4") => void;
   printDate: boolean;
   setPrintDate: (val: boolean) => void;
+  expandedProjectIds: string[];
+  toggleProjectExpansion: (projectId: string) => void;
+  setExpandedProjectIds: (ids: string[]) => void;
   printFilterHeader: boolean;
   setPrintFilterHeader: (val: boolean) => void;
   printScaleMode: "default" | "fit-cols" | "fit-rows" | "fit-page" | "custom";

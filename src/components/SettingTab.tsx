@@ -146,6 +146,7 @@ export function SettingTab({ rules}: SettingTabProps) {
   const handleClearLocalCache = async () => {
     if (window.confirm("Do you want to clear all local IndexedDB cache and resync fresh data from server?")) {
       try {
+        localStorage.removeItem("taka_expanded_projects");
         await clearAllIDB();
         useAppStore.getState().setToast({ title: "Success", message: "Local cache cleared. Reloading app..." });
         setTimeout(() => window.location.reload(), 600);
