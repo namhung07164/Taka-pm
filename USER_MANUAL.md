@@ -900,4 +900,6 @@ Hệ thống tuân thủ nghiêm ngặt các quy tắc kiến trúc chuẩn Ente
 * **Safe Boot Protocol**: Ứng dụng luôn khởi động an toàn tại phân hệ `general` (Tổng quan), không ghi nhớ tab nhạy cảm vào cache để đảm bảo tính sẵn sàng.
 * **Decoupled Modal Host (`<AppModals />`)**: Hệ thống cửa sổ giao tiếp (Login, Project, Task, User, Calendar Sync) được đóng gói tách biệt hoàn toàn khỏi vòng đời kết xuất (render tree) của các tab làm việc chính. Giúp các phân hệ xử lý nặng như Gantt Chart, Chi tiết công việc và Mặt bằng không bị kích hoạt re-render ngoài ý muốn khi mở modal.
 * **Tri-Gate Lazy Loading & Anti-Read-Storm**: Chỉ nạp dữ liệu Công việc (Tasks), Chi phí (Costs) và Phân công (Delegations) khi người dùng mở tab tương ứng. Sử dụng multi-listener pooling giữ delta-sync giá rẻ, ngăn chặn việc đọc lặp lại dữ liệu từ Firestore.
+* **Bảo vệ toàn vẹn Dữ liệu (Runtime Schema Validation)**: Tích hợp thư viện Zod kiểm soát trực tiếp tại tầng Firebase wrapper (`setDoc`, `updateDoc`, `writeBatch`). Dữ liệu bất thường hoặc sai quy tắc nghiệp vụ sẽ bị chặn ngay tại Client trước khi gửi lên Cloud Firestore.
+* **Kiến trúc Zustand Slices (Bound-Store Pattern)**: Module hóa State thành các slices độc lập (`createUISlice`, `createDataSlice`, `createOptimisticSlice`) và tách biệt Interface kiểu tĩnh (`storeTypes.ts`) giúp ngăn ngừa xung đột mã nguồn và tối ưu hiệu suất render.
 
