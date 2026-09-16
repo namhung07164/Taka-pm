@@ -132,67 +132,92 @@ export function DetailTab({
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
   const [draggingTaskIds, setDraggingTaskIds] = useState<string[]>([]);
 
-  // Smart Viewport Project Tracking (RAF-throttled to eliminate scroll lag & forced reflows)
+  // Smart Viewport Project Tracking using IntersectionObserver (zero scroll lag, off-main-thread layout engine)
   useEffect(() => {
-    let rafId: number | null = null;
+    if (typeof IntersectionObserver === 'undefined') return;
 
-    const handleScroll = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const projectElements = document.querySelectorAll<HTMLElement>('[data-project-item="true"]');
-        if (!projectElements || projectElements.length === 0) return;
+    // Track intersection ratios / bounding tops of observed project rows
+    const visibleEntriesMap = new Map<Element, IntersectionObserverEntry>();
 
-        let closestProject: Project | null = null;
-        let minDistance = Infinity;
-        const targetTop = 150; // Reference viewport threshold near the top navigation bar
+    const updateActiveProject = () => {
+      let topProjectEl: Element | null = null;
+      let minTop = Infinity;
 
-        for (let i = 0; i < projectElements.length; i++) {
-          const el = projectElements[i];
-          const rect = el.getBoundingClientRect();
-          const distance = Math.abs(rect.top - targetTop);
-          if (rect.bottom > targetTop && distance < minDistance) {
-            minDistance = distance;
-            const code = el.getAttribute('data-project-code');
-            const year = el.getAttribute('data-project-year');
-            const store = el.getAttribute('data-project-store');
-            if (code) {
-              const found = projects.find(
-                (p) =>
-                  p.code === code &&
-                  (String(p.year || '') === String(year || '') || (!p.year && !year)) &&
-                  (String(p.store || '') === String(store || '') || (!p.store && !store))
-              );
-              if (found) {
-                closestProject = found;
-                if (distance < 50) break;
-              }
-            }
+      // Find visible project row closest to the top offset (or most visible)
+      visibleEntriesMap.forEach((entry, el) => {
+        if (entry.isIntersecting) {
+          const top = entry.boundingClientRect.top;
+          if (top >= 0 && top < minTop) {
+            minTop = top;
+            topProjectEl = el;
+          } else if (topProjectEl === null) {
+            topProjectEl = el;
           }
         }
-
-        if (closestProject) {
-          setActiveProjectInView((prev) => {
-            if (
-              prev &&
-              prev.code === closestProject!.code &&
-              String(prev.year || '') === String(closestProject!.year || '') &&
-              String(prev.store || '') === String(closestProject!.store || '')
-            ) {
-              return prev;
-            }
-            return closestProject;
-          });
-        }
       });
+
+      if (topProjectEl) {
+        const code = (topProjectEl as HTMLElement).getAttribute('data-project-code');
+        const year = (topProjectEl as HTMLElement).getAttribute('data-project-year');
+        const store = (topProjectEl as HTMLElement).getAttribute('data-project-store');
+        if (code) {
+          const found = projects.find(
+            (p) =>
+              p.code === code &&
+              (String(p.year || '') === String(year || '') || (!p.year && !year)) &&
+              (String(p.store || '') === String(store || '') || (!p.store && !store))
+          );
+          if (found) {
+            setActiveProjectInView((prev) => {
+              if (
+                prev &&
+                prev.code === found.code &&
+                String(prev.year || '') === String(found.year || '') &&
+                String(prev.store || '') === String(found.store || '')
+              ) {
+                return prev;
+              }
+              return found;
+            });
+          }
+        }
+      }
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll(); // Initial check
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            visibleEntriesMap.set(entry.target, entry);
+          } else {
+            visibleEntriesMap.delete(entry.target);
+          }
+        });
+        updateActiveProject();
+      },
+      {
+        root: null,
+        // RootMargin shifts active viewport area so project entering top 100px-500px triggers active state
+        rootMargin: '-60px 0px -40% 0px',
+        threshold: [0, 0.25, 0.5, 0.75, 1.0],
+      }
+    );
+
+    const projectElements = document.querySelectorAll<HTMLElement>('[data-project-item="true"]');
+    projectElements.forEach((el) => observer.observe(el));
+
+    // Also observe newly rendered items if DOM updates
+    const mutationObserver = new MutationObserver(() => {
+      const currentElements = document.querySelectorAll<HTMLElement>('[data-project-item="true"]');
+      currentElements.forEach((el) => observer.observe(el));
+    });
+
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
 
     return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      window.removeEventListener('scroll', handleScroll);
+      observer.disconnect();
+      mutationObserver.disconnect();
+      visibleEntriesMap.clear();
     };
   }, [projects]);
 
@@ -2750,6 +2775,7 @@ export function DetailTab({
                   <tr 
                     id={`detail-project-${p.no ?? p.code}`}
                     data-project-item="true"
+                    data-project-id={String(p.id || p.no || p.code)}
                     data-project-code={p.code}
                     data-project-year={p.year || ''}
                     data-project-store={p.store || ''}

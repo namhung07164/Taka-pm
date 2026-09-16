@@ -64,7 +64,6 @@ export function useFirebaseData() {
   const activeTab = useAppStore((state) => state.activeTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const expandedProjectIds = useAppStore((state) => state.expandedProjectIds);
-  const visibleActiveProjectIds = useAppStore((state) => state.visibleActiveProjectIds);
   const searchActiveProjectIds = useAppStore((state) => state.searchActiveProjectIds);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
   const setIsTasksLoading = useAppStore((state) => state.setIsTasksLoading);
@@ -653,7 +652,7 @@ export function useFirebaseData() {
     if (!querySignature) return;
 
     const activeProjectIds = isTasksRequested
-      ? [...new Set([...expandedProjectIds, ...visibleActiveProjectIds, ...searchActiveProjectIds])]
+      ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])]
       : [];
     const currentSig = `${querySignature}_${activeProjectIds.join(',')}_${isTasksRequested}`;
 
@@ -755,7 +754,7 @@ export function useFirebaseData() {
         tasksPool.current.set(projectId, unsub);
       }
     });
-  }, [querySignature, isTasksRequested, expandedProjectIds, visibleActiveProjectIds, searchActiveProjectIds]);
+  }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds]);
 
   // 2.4 Delta Sync for Costs (Native Firebase Cache with TTL)
   const costsPool = useRef<Map<string, () => void>>(new Map());
