@@ -24,9 +24,9 @@ const firebaseConfigDev = {
   appId: "1:855584353883:web:8819bcbf8c58a28fb8997e"
 };
 
-// Tự động nhận diện môi trường (Đã tắt chế độ DEV để hiển thị dữ liệu thật trong AI Studio)
-const isDevMode = false; // (import.meta as any).env?.DEV || window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev');
-const firebaseConfig = firebaseConfigProd;
+// Tự động nhận diện môi trường
+const isDevMode = (import.meta as any).env?.DEV || window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev');
+const firebaseConfig = isDevMode ? firebaseConfigDev : firebaseConfigProd;
 
 console.log(`🔥 Firebase Initialized in ${isDevMode ? 'DEVELOPMENT' : 'PRODUCTION'} mode. Project: ${firebaseConfig.projectId}`);
 

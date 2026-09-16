@@ -307,22 +307,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     };
     
     updateSize();
-    
-    let observer: ResizeObserver | null = null;
-    if (containerRef.current) {
-        observer = new ResizeObserver(() => {
-            updateSize();
-        });
-        observer.observe(containerRef.current);
-    }
-    
     window.addEventListener('resize', updateSize);
-    return () => {
-        window.removeEventListener('resize', updateSize);
-        if (observer) {
-            observer.disconnect();
-        }
-    };
+    return () => window.removeEventListener('resize', updateSize);
   }, []);
 
   const convertPdfToImage = async (file: File): Promise<string> => {

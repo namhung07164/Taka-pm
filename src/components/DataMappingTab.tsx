@@ -1,6 +1,5 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Split, Edit3, GitMerge, Eye, Maximize2, X, CloudUpload, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -166,8 +165,8 @@ export default React.memo(function DataMappingTab() {
   };
 
   return (
-    <div className="flex flex-col w-full h-[calc(100dvh-220px)] min-h-[600px] overflow-hidden pb-4 pr-2 relative">
-      <div className="z-20 p-2 shrink-0">
+    <div className="flex flex-col h-full overflow-hidden pb-4 pr-2 relative">
+      <div className="z-50 p-2">
         <div className="glass rounded-xl p-3 border border-slate-800 shadow-2xl flex items-center justify-between bg-slate-950/80 backdrop-blur-xl">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-brand-600/20 border border-brand-500/30 rounded-lg flex items-center justify-center text-brand-400">
@@ -270,15 +269,14 @@ export default React.memo(function DataMappingTab() {
       </div>
 
       {/* Fullscreen Overlay */}
-      {createPortal(
-        <AnimatePresence>
-          {isTabFullscreen && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-0 z-[9999] bg-bg-dark p-6 lg:p-12 overflow-hidden flex flex-col"
-            >
+      <AnimatePresence>
+        {isTabFullscreen && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed inset-0 z-[100] bg-bg-dark p-6 lg:p-12 overflow-hidden flex flex-col"
+          >
             <div className="flex items-center justify-between mb-8">
               <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">
                 <button
@@ -353,9 +351,7 @@ export default React.memo(function DataMappingTab() {
             </div>
           </motion.div>
         )}
-        </AnimatePresence>,
-        document.body
-      )}
+      </AnimatePresence>
     </div>
   );
 });
