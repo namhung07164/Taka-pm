@@ -9,6 +9,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { useState, useMemo } from 'react';
 import { cn, matchesAdvancedSearch } from '../lib/utils';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
+import { bumpConfigVersion } from '../lib/configCacheService';
 
 interface AccControlTabProps {
   users: AppUser[];
@@ -84,6 +85,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     try {
       const newList = [...parties, party];
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties'), { list: newList }, { merge: true });
+      bumpConfigVersion('parties');
       setNewParty('');
     } catch (e) { console.error(e); }
   };
@@ -92,6 +94,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     try {
       const newList = parties.filter(p => p !== party);
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties'), { list: newList }, { merge: true });
+      bumpConfigVersion('parties');
     } catch (e) { console.error(e); }
   };
 
@@ -133,6 +136,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     try {
       const newList = [...locations, loc];
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { list: newList }, { merge: true });
+      bumpConfigVersion('locations');
       setNewLocation('');
     } catch (e) { console.error(e); }
   };
@@ -141,6 +145,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     try {
       const newList = locations.filter(l => l !== loc);
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { list: newList }, { merge: true });
+      bumpConfigVersion('locations');
     } catch (e) { console.error(e); }
   };
 
@@ -148,6 +153,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     try {
       const newVisibility = { ...locationVisibility, [loc]: !currentVisible };
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { visibility: newVisibility }, { merge: true });
+      bumpConfigVersion('locations');
     } catch (e) { console.error(e); }
   };
 

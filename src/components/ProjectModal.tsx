@@ -22,6 +22,7 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { addPendingUpdate } from '../lib/syncQueue';
+import { bumpConfigVersion } from '../lib/configCacheService';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -531,6 +532,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                         useAppStore.getState().setLocations(newLocs);
                         try {
                           setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations"), { list: newLocs }, { merge: true });
+                          bumpConfigVersion('locations');
                         } catch (e) {
                           console.error(e);
                         }

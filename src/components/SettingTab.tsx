@@ -14,6 +14,7 @@ import { clearAllIDB } from "../lib/idb";
 import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
 import { DesktopOptimizationModal } from "./DesktopOptimizationModal";
 import { syncAllProjectsTaskCountsToFirestore } from "../lib/projectDatesService";
+import { bumpConfigVersion } from "../lib/configCacheService";
 
 interface SettingTabProps {
   rules: NotificationRule[];
@@ -84,6 +85,7 @@ export function SettingTab({ rules}: SettingTabProps) {
         jpyRate: parsedJpy,
         usdRate: parsedUsd
       }, { merge: true });
+      bumpConfigVersion('rates');
       useAppStore.getState().setToast({ title: "Notice", message: String("Exchange rates updated successfully.") });
     } catch (error) { 
       console.error(error); 
@@ -117,6 +119,7 @@ export function SettingTab({ rules}: SettingTabProps) {
     };
     try {
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_rules', newRule.id), newRule);
+      bumpConfigVersion('rules');
       setCustomMessage('');
     } catch (e) { console.error(e); }
   };
@@ -129,6 +132,7 @@ export function SettingTab({ rules}: SettingTabProps) {
       onConfirm: async () => {
         try {
           deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_rules', id));
+          bumpConfigVersion('rules');
         } catch (e) { console.error(e); }
       }
     });

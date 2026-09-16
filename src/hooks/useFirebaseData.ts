@@ -25,6 +25,7 @@ import {
   TabId,
   NotificationRule,
 } from "../types";
+import { setupStaticConfigSync } from "../lib/configCacheService";
 
 let isArchiveLoaded = false;
 
@@ -342,30 +343,6 @@ export function useFirebaseData() {
       (e) => handleFetchError("sub users", e),
     );
 
-    usePerformanceStore.getState().registerListener("taka_config/locations");
-    const unsubLocations = onSnapshot(
-      doc(
-        db,
-        "artifacts",
-        APP_ID,
-        "public",
-        "data",
-        "taka_config",
-        "locations",
-      ),
-      (docSnap) => {
-        usePerformanceStore.getState().trackSnapshot("taka_config/locations", docSnap);
-        if (docSnap.exists()) {
-          if (docSnap.data()?.list)
-            setLocations([...new Set(docSnap.data()?.list)] as string[]);
-          if (docSnap.data()?.visibility)
-            setLocationVisibility(docSnap.data()?.visibility);
-          else setLocationVisibility({});
-        }
-      },
-      (e) => handleFetchError("loc config", e),
-    );
-
     // Load permissions from IDB first for instant startup
     // Load global project and task caches from IDB for zero-read instant notification calculation
     usePerformanceStore.getState().registerListener("taka_settings/permissions");
@@ -390,57 +367,9 @@ export function useFirebaseData() {
       (e) => handleFetchError("perms", e),
     );
 
-    usePerformanceStore.getState().registerListener("taka_settings/exchange_rates");
-    const unsubExchange = onSnapshot(
-      doc(
-        db,
-        "artifacts",
-        APP_ID,
-        "public",
-        "data",
-        "taka_settings",
-        "exchange_rates",
-      ),
-      (docSnap) => {
-        usePerformanceStore.getState().trackSnapshot("taka_settings/exchange_rates", docSnap);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.jpyRate !== undefined) setJpyRate(data.jpyRate);
-          if (data.usdRate !== undefined) setUsdRate(data.usdRate);
-        }
-      },
-      (e) => handleFetchError("exchange_rates", e),
-    );
-
-    usePerformanceStore.getState().registerListener("taka_rules");
-    const unsubRules = onSnapshot(
-      collection(db, "artifacts", APP_ID, "public", "data", "taka_rules"),
-      (snapshot) => {
-        usePerformanceStore.getState().trackSnapshot("taka_rules", snapshot);
-        const loaded: NotificationRule[] = [];
-        snapshot.forEach((docSnap) =>
-          loaded.push({
-            id: docSnap.id,
-            ...docSnap.data(),
-          } as NotificationRule),
-        );
-
-        setNotificationRules(loaded);
-      },
-      (e) => handleFetchError("rules", e),
-    );
-
-    usePerformanceStore.getState().registerListener("taka_config/parties");
-    const unsubParties = onSnapshot(
-      doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "parties"),
-      (docSnap) => {
-        usePerformanceStore.getState().trackSnapshot("taka_config/parties", docSnap);
-        if (docSnap.exists() && docSnap.data()?.list)
-          setParties(docSnap.data()?.list);
-        else setParties(["Shimizu", "Landlord", "Takashimaya", "CP"]);
-      },
-      (e) => handleFetchError("parties config", e),
-    );
+    // Enterprise Cache + Versioning for truly static configs (locations, parties, exchange rates, notification rules)
+    // Replaces 4 continuous listeners with 1 lightweight version watcher (Zero-Read on unchanged sessions)
+    const unsubStaticConfig = setupStaticConfigSync();
 
     // Delegation groups are now fetched in a separate useEffect
     
@@ -448,18 +377,11 @@ export function useFirebaseData() {
       window.removeEventListener('online', testConnection);
       unsubUsers();
       unsubSubUsers();
-      unsubLocations();
       unsubPerms();
-      unsubExchange();
-      unsubRules();
-      unsubParties();
+      unsubStaticConfig();
       usePerformanceStore.getState().unregisterListener("taka_users");
       usePerformanceStore.getState().unregisterListener("taka_sub_app_users");
-      usePerformanceStore.getState().unregisterListener("taka_config/locations");
       usePerformanceStore.getState().unregisterListener("taka_settings/permissions");
-      usePerformanceStore.getState().unregisterListener("taka_settings/exchange_rates");
-      usePerformanceStore.getState().unregisterListener("taka_rules");
-      usePerformanceStore.getState().unregisterListener("taka_config/parties");
     };
   }, [user?.uid]);
 

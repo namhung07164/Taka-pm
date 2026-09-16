@@ -1,9 +1,11 @@
 import { StateCreator } from "zustand";
 import { safeGetItemLocal } from "../../lib/storage";
+import { loadCachedStaticConfig } from "../../lib/configCacheService";
 import { PermissionMatrix } from "../../types";
 import { AppState, DataSlice } from "../storeTypes";
 
 const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {} as PermissionMatrix;
+const initialStaticConfig = loadCachedStaticConfig();
 
 export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) => ({
   user: null,
@@ -44,13 +46,13 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
   setAppUsers: (appUsers) => set({ appUsers }),
   subAppUsers: [],
   setSubAppUsers: (subAppUsers) => set({ subAppUsers }),
-  notificationRules: [],
+  notificationRules: initialStaticConfig.rules,
   setNotificationRules: (notificationRules) => set({ notificationRules }),
-  locations: [],
+  locations: initialStaticConfig.locations,
   setLocations: (locations) => set({ locations }),
-  locationVisibility: {},
+  locationVisibility: initialStaticConfig.locationVisibility,
   setLocationVisibility: (locationVisibility) => set({ locationVisibility }),
-  parties: [],
+  parties: initialStaticConfig.parties,
   setParties: (parties) => set({ parties }),
   delegationGroups: [],
   setDelegationGroups: (delegationGroups) => set({ delegationGroups }),
@@ -70,8 +72,8 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
 
   currency: 'VND',
   setCurrency: (currency) => set({ currency }),
-  jpyRate: 160,
+  jpyRate: initialStaticConfig.jpyRate,
   setJpyRate: (jpyRate) => set({ jpyRate }),
-  usdRate: 25000,
+  usdRate: initialStaticConfig.usdRate,
   setUsdRate: (usdRate) => set({ usdRate }),
 });
