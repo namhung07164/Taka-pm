@@ -427,7 +427,29 @@ export function useTaskModalLogic({
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
         setIsSubmitting(false); return;
       }
-      syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear);
+      // Dirty Check: Chỉ kích hoạt đồng bộ project dates nếu có thay đổi về ngày (start, finish), trạng thái (runningStatus/approval/status/isCompleted), đổi dự án, hoặc dời lịch các task phụ thuộc
+      const isNewTask = !task;
+      const oldAny = (task || {}) as any;
+      const newAny = dataToSave as any;
+      const datesOrStatusChanged =
+        isNewTask ||
+        task.start !== dataToSave.start ||
+        task.finish !== dataToSave.finish ||
+        task.runningStatus !== dataToSave.runningStatus ||
+        task.approval !== dataToSave.approval ||
+        Boolean(oldAny.isCompleted) !== Boolean(newAny.isCompleted) ||
+        (oldAny.status || '') !== (newAny.status || '') ||
+        task.projectCode !== dataToSave.projectCode ||
+        task.projectStore !== dataToSave.projectStore ||
+        task.projectYear !== dataToSave.projectYear ||
+        depUpdates.length > 0;
+
+      if (datesOrStatusChanged) {
+        syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear);
+        if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
+          syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear);
+        }
+      }
       
       undoManager.push({
         description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,

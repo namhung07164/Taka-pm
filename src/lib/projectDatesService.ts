@@ -92,6 +92,8 @@ export function calculateProjectComputedDates(
 /**
  * Cập nhật các trường computed dates lên document taka_projects trong Firestore
  * và cập nhật nhanh vào Zustand Store để giao diện phản hồi tức thời.
+ * Đã tích hợp Dirty Check: Chỉ ghi vào Firestore khi có sự thay đổi thực sự
+ * về mốc thời gian (start, finish/compl, opening), tiến độ hoặc số lượng task.
  */
 export async function syncProjectDatesToFirestore(
   projectId: string,
@@ -100,6 +102,39 @@ export async function syncProjectDatesToFirestore(
   if (!projectId) return;
 
   try {
+    const { projects, setProjects } = useAppStore.getState();
+    const existingProject = projects.find((p) => p.id === projectId);
+
+    // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task) thực sự thay đổi.
+    // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).
+    const hasChanged =
+      !existingProject ||
+      (existingProject.computedTakStart || "") !== (dates.computedTakStart || "") ||
+      (existingProject.computedTakCompl || "") !== (dates.computedTakCompl || "") ||
+      (existingProject.computedOpening || "") !== (dates.computedOpening || "") ||
+      Number(existingProject.computedPlanProgress ?? 0) !== Number(dates.computedPlanProgress ?? 0) ||
+      Number(existingProject.computedActProgress ?? 0) !== Number(dates.computedActProgress ?? 0) ||
+      Number(existingProject.taskCount ?? 0) !== Number(dates.taskCount ?? 0);
+
+    // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
+    if (existingProject) {
+      const updated = projects.map((p) => {
+        if (p.id === projectId) {
+          return {
+            ...p,
+            ...dates,
+          };
+        }
+        return p;
+      });
+      setProjects(updated);
+    }
+
+    if (!hasChanged) {
+      // Dữ liệu tổng hợp không đổi -> Tiết kiệm 100% lượt Write cho project tổng hợp
+      return;
+    }
+
     const projectRef = doc(
       db,
       "artifacts",
@@ -137,19 +172,6 @@ export async function syncProjectDatesToFirestore(
     }
 
     updateDoc(projectRef, updatePayload).catch(console.error);
-
-    // Optimistic store update
-    const { projects, setProjects } = useAppStore.getState();
-    const updated = projects.map((p) => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          ...dates,
-        };
-      }
-      return p;
-    });
-    setProjects(updated);
   } catch (error) {
     console.error(`Error syncing computed dates for project ${projectId}:`, error);
   }
