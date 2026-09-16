@@ -216,6 +216,15 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     }
   }, [activeVersionId, activeVersion]);
 
+  useEffect(() => {
+    return () => {
+      // Cleanup previous Object URLs to prevent memory leaks
+      if (localImageUrl && localImageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(localImageUrl);
+      }
+    };
+  }, [localImageUrl]);
+
   const [image] = useImage(localImageUrl || '', 'anonymous');
   const [activeTool, setActiveTool] = useState<ShapeType | 'select' | 'edit-bg'>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -353,11 +362,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
           const imageUrl = await convertPdfToImage(file);
           setLocalImageUrl(imageUrl);
         } else {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            setLocalImageUrl(e.target?.result as string);
-          };
-          reader.readAsDataURL(file);
+          // Optimize Memory: Use Object URL instead of Base64 to prevent RAM bloat
+          const objectUrl = URL.createObjectURL(file);
+          setLocalImageUrl(objectUrl);
         }
         setIsLocked(false);
         setActiveVersionId(null);
@@ -713,11 +720,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       if (file.type === 'application/pdf') {
         imageUrl = await convertPdfToImage(file);
       } else {
-        const reader = new FileReader();
-        imageUrl = await new Promise((resolve) => {
-          reader.onload = (ev) => resolve(ev.target?.result as string);
-          reader.readAsDataURL(file);
-        });
+        // Memory optimization
+        imageUrl = URL.createObjectURL(file);
       }
       setLocalImageUrl(imageUrl);
       setVersions(versions.map(v => v.id === activeVersionId ? { ...v, backgroundUrl: imageUrl } : v));

@@ -10,6 +10,8 @@ import ReviewTab from './DataMapping/ReviewTab';
 import { UnitShape, Group, MapVersion } from './DataMapping/types';
 import { useDataStore } from '../DataContext';
 
+import CloudSyncManager from './CloudSync/CloudSyncManager';
+
 export type SubTab = 'edit' | 'hierarchy' | 'dynamic-hierarchy' | 'review';
 
 export default React.memo(function DataMappingTab() {
@@ -105,6 +107,7 @@ export default React.memo(function DataMappingTab() {
           </div>
 
           <div className="flex items-center gap-2">
+            <CloudSyncManager />
             <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-800/50">
               <button
                 onClick={() => setActiveSubTab('edit')}
