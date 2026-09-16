@@ -166,7 +166,7 @@ export default React.memo(function DataMappingTab() {
   };
 
   return (
-    <div className="flex flex-col flex-1 w-full h-full min-h-0 overflow-hidden pb-4 pr-2 relative">
+    <div className="flex flex-col w-full h-[calc(100dvh-220px)] min-h-[600px] overflow-hidden pb-4 pr-2 relative">
       <div className="z-20 p-2 shrink-0">
         <div className="glass rounded-xl p-3 border border-slate-800 shadow-2xl flex items-center justify-between bg-slate-950/80 backdrop-blur-xl">
           <div className="flex items-center gap-2">
