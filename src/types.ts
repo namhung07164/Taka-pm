@@ -1,19 +1,3 @@
-export interface UnitInfo {
-  unit?: string;
-  size?: number;
-  floor?: string;
-  status?: string;
-  vendorCode?: string;
-  brandCode?: string;
-  brandName?: string;
-  classCode?: string;
-  [key: string]: any;
-}
-
-export interface SalesInfo {
-  [key: string]: any;
-}
-
 export interface FinancialMetric {
   totalBudget: number;
   totalApproved: number;

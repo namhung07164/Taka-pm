@@ -98,7 +98,7 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
                           duration: t.duration,
                           taskCode: taskCode,
                           predecessors: t.predecessor,
-                          highlight: (isHighlightDelegationOn ? getUserDelegationRoleForTask(t, currentUser, delegationGroups) : null) as any,
+                          highlight: isHighlightDelegationOn ? getUserDelegationRoleForTask(t, currentUser, delegationGroups) : null,
                         };
                         return (
                           <tr
