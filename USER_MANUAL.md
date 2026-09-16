@@ -648,6 +648,15 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
      - **Đối với Dự án (Project-level)**: Do cùng một mã dự án (ví dụ `CP-01` hay `PRJ-01`) có thể xuất hiện độc lập ở các chi nhánh khác nhau (HCM vs HN) hoặc giữa các niên độ (2026 vs 2027), định danh nhóm ủy quyền dự án được tạo theo cấu trúc đa tầng chuẩn xác: `del_proj_[code]_[store]_[year]` (ví dụ: `del_proj_CP-01_HCM_2026`). Điều này đảm bảo dữ liệu ủy quyền giữa HCM và HN, hoặc giữa năm 2026 và 2027 hoàn toàn tách biệt, không bao giờ bị ghi đè hay gộp nhầm lẫn sang nhau.
    - **Công Cụ Quản Trị Dọn Dẹp Bản Ghi Trùng Lặp (Admin Tool)**: Trong tab Cài đặt (Settings), Quản trị viên có nút **Dọn dẹp Ủy quyền trùng lặp** (màu tím sang trọng bên cạnh nút Chuẩn hóa Năm). Khi nhấn, hệ thống sẽ quét toàn bộ bộ sưu tập `taka_delegation_groups`, tự động phân tách theo đúng từng nhánh `projectCode + store + year` (đối với dự án) và `taskId` (đối với công việc), bảo toàn 100% các subtask và xóa sạch các bản ghi dư thừa. Giảm kích thước collection từ hàng ngàn bản ghi xuống còn đúng số lượng thực tế, triệt tiêu đột biến lượt đọc (Read Storm).
 
+39. **Công Cụ Đồng Bộ Task Counts Toàn Bộ Dự Án (One-Time Task Counts & Progress Sync Tool)**:
+   - **Vị trí**: Tab **Cài đặt (Setting Tab)** ➔ Bấm mở **Database Maintenance** ➔ Nút **"Cập nhật Task Counts toàn bộ Dự án"** (màu xanh ngọc teal với biểu tượng lấp lánh `Sparkles`).
+   - **Mục đích & Cơ chế hoạt động**:
+     - Quét toàn bộ danh sách `taka_projects` và `taka_tasks` trên Firestore.
+     - Gom nhóm các task con theo từng dự án (`projectCode + year + store`).
+     - Tính toán chính xác số lượng task con (`taskCount`), tóm tắt công việc (`taskSummaries`), ngày bắt đầu sớm nhất (`computedTakStart`), ngày hoàn thành muộn nhất (`computedTakCompl`), tiến độ kế hoạch (`computedPlanProgress`) và tiến độ thực tế (`computedActProgress`).
+     - Ghi đồng loạt (Batch Write tối đa 400 thao tác/mẻ) trực tiếp vào tài liệu từng dự án trên Firestore.
+   - **Lợi ích**: Giúp hoàn thiện 100% cơ chế **On-Demand Expansion Loading**, cho phép người dùng mở ứng dụng và xem ngay số lượng task con, tiến độ, thời gian của mọi dự án mà không cần tải bất kỳ task con nào (đạt chuẩn Zero-Read khi chưa mở rộng). Admin chỉ cần chạy nút này 1 lần duy nhất cho toàn bộ hệ thống.
+
 ### 🔄 Cơ Chế Tải Dữ Liệu Tối Ưu (Firestore Read Optimization)
 - **Tải Dữ Liệu Đóng Băng Theo Năm & Chi Nhánh**: Hệ thống tự động giới hạn việc tải dữ liệu từ server Firebase dựa trên Niên độ (ví dụ 2026) và Chi nhánh (ví dụ HCM) mà người dùng đang chọn ở Header. Việc này giúp tiết kiệm hàng trăm ngàn lượt đọc (Firestore Reads) không cần thiết so với việc tải toàn bộ database, đảm bảo app luôn chạy mượt mà ngay cả khi dữ liệu lên tới hàng chục năm.
 - **Client-Side Filtering (Lọc Bảo Mật Tại Trình Duyệt)**: 

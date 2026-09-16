@@ -210,7 +210,15 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
       setIsSubmitting(false); return;
     }
 
-    const dataToSave = { ...formData, no, year: yearNum };
+    const dataToSave = { 
+      ...formData, 
+      no, 
+      year: yearNum,
+      taskCount: project?.taskCount !== undefined ? project.taskCount : 0,
+      taskSummaries: project?.taskSummaries || [],
+      computedPlanProgress: project?.computedPlanProgress !== undefined ? project.computedPlanProgress : 0,
+      computedActProgress: project?.computedActProgress !== undefined ? project.computedActProgress : 0
+    };
     // Draft mechanism when offline
     if (cloudStatus === 'offline') {
       const payload = { ...dataToSave, updatedAt: new Date().toISOString() };

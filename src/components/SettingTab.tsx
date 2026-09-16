@@ -13,6 +13,7 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { clearAllIDB } from "../lib/idb";
 import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
 import { DesktopOptimizationModal } from "./DesktopOptimizationModal";
+import { syncAllProjectsTaskCountsToFirestore } from "../lib/projectDatesService";
 
 interface SettingTabProps {
   rules: NotificationRule[];
@@ -214,6 +215,43 @@ export function SettingTab({ rules}: SettingTabProps) {
   const [isStandardizingYears, setIsStandardizingYears] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeduplicatingDelegations, setIsDeduplicatingDelegations] = useState(false);
+  const [isSyncingTaskCounts, setIsSyncingTaskCounts] = useState(false);
+
+  const handleSyncAllTaskCounts = async () => {
+    if (!isAdmin) return;
+    setConfirmModal({
+      isOpen: true,
+      title: "Cập nhật Task Counts toàn bộ Dự án",
+      message: "Hệ thống sẽ quét toàn bộ các Dự án và Tasks con trên Firestore để tính toán chính xác số lượng taskCon (taskCount), tiến độ và ngày thực tế, sau đó lưu trực tiếp vào từng Dự án. Thao tác này chỉ cần chạy 1 lần để kích hoạt cơ chế On-Demand Expansion Loading không tốn lượt đọc. Bạn có muốn thực hiện không?",
+      onConfirm: async () => {
+        setIsSyncingTaskCounts(true);
+        useAppStore.getState().setToast({
+          title: "Đang đồng bộ...",
+          message: "Đang tổng hợp và cập nhật taskCount cho toàn bộ Dự án trên Firestore...",
+          type: "info"
+        });
+        try {
+          const result = await syncAllProjectsTaskCountsToFirestore((processed, total) => {
+            console.log(`[TaskCountSync] Processed ${processed}/${total} projects`);
+          });
+          useAppStore.getState().setToast({
+            title: "Đồng bộ hoàn tất!",
+            message: `Đã cập nhật taskCount thành công cho ${result.updatedCount}/${result.totalProjects} dự án trên Firestore.`,
+            type: "success"
+          });
+        } catch (error: any) {
+          console.error("Error syncing task counts:", error);
+          useAppStore.getState().setToast({
+            title: "Lỗi đồng bộ",
+            message: error?.message || "Không thể đồng bộ taskCount",
+            type: "error"
+          });
+        } finally {
+          setIsSyncingTaskCounts(false);
+        }
+      }
+    });
+  };
 
   const handleDeduplicateDelegationGroups = async () => {
     if (!isAdmin) return;
@@ -774,6 +812,16 @@ export function SettingTab({ rules}: SettingTabProps) {
           >
             <FolderOutput className="w-4 h-4 text-purple-500" />
             {isDeduplicatingDelegations ? "Đang xử lý..." : "Dọn dẹp Ủy quyền trùng lặp"}
+          </button>
+
+          <button 
+            onClick={handleSyncAllTaskCounts}
+            disabled={isSyncingTaskCounts}
+            title="Quét toàn bộ dự án và task trên Firestore để tính và cập nhật taskCount, tiến độ trực tiếp vào Dự án (Chạy 1 lần)"
+            className="px-5 py-2.5 rounded-lg border border-teal-200 dark:border-teal-900/40 bg-white dark:bg-[#1e1e20] hover:bg-teal-50 dark:hover:bg-teal-950/20 transition-colors flex items-center gap-3 font-medium text-teal-700 dark:text-teal-400 shadow-sm text-sm disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4 text-teal-500" />
+            {isSyncingTaskCounts ? "Đang cập nhật Task Counts..." : "Cập nhật Task Counts toàn bộ Dự án"}
           </button>
         </div>
       )}

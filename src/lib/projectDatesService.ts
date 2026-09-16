@@ -1,6 +1,6 @@
-import { updateDoc } from "../lib/firebase";
+import { updateDoc, writeBatch } from "../lib/firebase";
 import { db, APP_ID } from "./firebase";
-import { doc } from 'firebase/firestore';
+import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { getTaskStatus, computeActProgressPercent } from "./utils";
@@ -243,4 +243,121 @@ export async function backfillMissingProjectDates(
   }
   return count;
 }
+
+/**
+ * Đồng bộ toàn bộ taskCount và thông số tiến độ cho toàn bộ Dự án trên Firestore (Chạy 1 lần cho toàn hệ thống).
+ * Đọc tất cả taka_tasks và taka_projects trên Firestore, gom nhóm và ghi batch cập nhật taskCount, taskSummaries,
+ * computedTakStart, computedTakCompl, computedPlanProgress, computedActProgress.
+ */
+export async function syncAllProjectsTaskCountsToFirestore(
+  onProgress?: (processed: number, total: number) => void
+): Promise<{ updatedCount: number; totalProjects: number }> {
+  try {
+    const projectsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
+    const tasksCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks");
+    const delegationsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups");
+
+    const [projectsSnap, tasksSnap, delegationsSnap] = await Promise.all([
+      getDocs(projectsCol),
+      getDocs(tasksCol),
+      getDocs(delegationsCol),
+    ]);
+
+    const allProjects: Project[] = [];
+    projectsSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (!data.isDeleted) {
+        allProjects.push({ id: d.id, ...data });
+      }
+    });
+
+    const allTasks: Task[] = [];
+    tasksSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (!data.isDeleted) {
+        allTasks.push({ id: d.id, ...data });
+      }
+    });
+
+    const allDelegations: DelegationGroup[] = [];
+    delegationsSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (!data.isDeleted) {
+        allDelegations.push({ id: d.id, ...data });
+      }
+    });
+
+    // Gom tasks theo project code, year, store
+    const tasksByProject = new Map<string, Task[]>();
+    allTasks.forEach((t) => {
+      const key = `${t.projectCode || ""}-${t.projectYear || ""}-${t.projectStore || ""}`.toLowerCase();
+      if (!tasksByProject.has(key)) tasksByProject.set(key, []);
+      tasksByProject.get(key)!.push(t);
+    });
+
+    let updatedCount = 0;
+    const batchSize = 400;
+    let currentBatch = writeBatch(db);
+    let batchOpCount = 0;
+
+    const total = allProjects.length;
+
+    for (let i = 0; i < total; i++) {
+      const p = allProjects[i];
+      if (!p.id || !p.code) continue;
+
+      const key = `${p.code || ""}-${p.year || ""}-${p.store || ""}`.toLowerCase();
+      const pTasks = tasksByProject.get(key) || [];
+
+      const computed = calculateProjectComputedDates(p, pTasks, allDelegations);
+
+      const needsUpdate =
+        p.taskCount === undefined ||
+        p.taskCount !== computed.taskCount ||
+        !p.computedTakCompl ||
+        p.computedTakCompl !== computed.computedTakCompl ||
+        !p.computedTakStart ||
+        p.computedTakStart !== computed.computedTakStart ||
+        p.computedPlanProgress === undefined ||
+        p.computedActProgress === undefined;
+
+      if (needsUpdate) {
+        const pRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", p.id);
+        currentBatch.update(pRef, {
+          updatedAt: new Date().toISOString(),
+          taskCount: computed.taskCount ?? 0,
+          taskSummaries: computed.taskSummaries || [],
+          computedTakStart: computed.computedTakStart || "",
+          computedTakCompl: computed.computedTakCompl || "",
+          computedOpening: computed.computedOpening || "",
+          computedPlanProgress: computed.computedPlanProgress ?? 0,
+          computedActProgress: computed.computedActProgress ?? 0,
+        });
+        batchOpCount++;
+        updatedCount++;
+
+        if (batchOpCount >= batchSize) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          batchOpCount = 0;
+        }
+      }
+
+      if (onProgress && (i % 10 === 0 || i === total - 1)) {
+        onProgress(i + 1, total);
+      }
+    }
+
+    if (batchOpCount > 0) {
+      await currentBatch.commit();
+    }
+
+    console.info(`[projectDatesService] Successfully synchronized taskCount for ${updatedCount}/${total} projects.`);
+    return { updatedCount, totalProjects: total };
+  } catch (error) {
+    console.error("[projectDatesService] Error syncing all project taskCounts:", error);
+    throw error;
+  }
+}
+
 
