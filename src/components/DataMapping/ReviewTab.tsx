@@ -423,12 +423,32 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   }, [activeVersionId, activeVersion]);
 
   useEffect(() => {
+    const updateSize = () => {
+        if (containerRef.current) {
+          setCanvasSize({
+            width: containerRef.current.clientWidth,
+            height: containerRef.current.clientHeight
+          });
+        }
+    };
+    
+    updateSize();
+    
+    let observer: ResizeObserver | null = null;
     if (containerRef.current) {
-      setCanvasSize({
-        width: containerRef.current.clientWidth,
-        height: containerRef.current.clientHeight
-      });
+        observer = new ResizeObserver(() => {
+            updateSize();
+        });
+        observer.observe(containerRef.current);
     }
+    
+    window.addEventListener('resize', updateSize);
+    return () => {
+        window.removeEventListener('resize', updateSize);
+        if (observer) {
+            observer.disconnect();
+        }
+    };
   }, []);
 
   const handleWheel = (e: any) => {
