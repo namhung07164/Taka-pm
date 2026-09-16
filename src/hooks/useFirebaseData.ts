@@ -64,6 +64,7 @@ export function useFirebaseData() {
   const activeTab = useAppStore((state) => state.activeTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const expandedProjectIds = useAppStore((state) => state.expandedProjectIds);
+  const visibleActiveProjectIds = useAppStore((state) => state.visibleActiveProjectIds);
   const searchActiveProjectIds = useAppStore((state) => state.searchActiveProjectIds);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
   const setIsTasksLoading = useAppStore((state) => state.setIsTasksLoading);
@@ -651,7 +652,9 @@ export function useFirebaseData() {
   useEffect(() => {
     if (!querySignature) return;
 
-    const activeProjectIds = isTasksRequested ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])] : [];
+    const activeProjectIds = isTasksRequested
+      ? [...new Set([...expandedProjectIds, ...visibleActiveProjectIds, ...searchActiveProjectIds])]
+      : [];
     const currentSig = `${querySignature}_${activeProjectIds.join(',')}_${isTasksRequested}`;
 
     if (prevSigTasks.current !== currentSig) {
@@ -699,7 +702,7 @@ export function useFirebaseData() {
       // Find the project object to get its actual 'code' because taka_tasks stores 'projectCode', not 'projectId'.
       // If we don't have the exact code, we can fallback to projectId assuming it might be the code in some cases.
       const currentProjects = useAppStore.getState().projects || [];
-      const proj = currentProjects.find(p => p.id === projectId || p.no === Number(projectId));
+      const proj = currentProjects.find(p => String(p.id || '') === String(projectId) || String(p.no) === String(projectId));
       const codeToQuery = proj?.code || projectId;
 
       if (!tasksPool.current.has(projectId)) {
@@ -752,7 +755,7 @@ export function useFirebaseData() {
         tasksPool.current.set(projectId, unsub);
       }
     });
-  }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds]);
+  }, [querySignature, isTasksRequested, expandedProjectIds, visibleActiveProjectIds, searchActiveProjectIds]);
 
   // 2.4 Delta Sync for Costs (Native Firebase Cache with TTL)
   const costsPool = useRef<Map<string, () => void>>(new Map());

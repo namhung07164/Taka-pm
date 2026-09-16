@@ -17,6 +17,8 @@ export interface UISlice {
   expandedProjectIds: string[];
   toggleProjectExpansion: (projectId: string) => void;
   setExpandedProjectIds: (ids: string[]) => void;
+  visibleActiveProjectIds: string[];
+  setVisibleActiveProjectIds: (ids: string[]) => void;
   searchActiveProjectIds: string[];
   setSearchActiveProjectIds: (ids: string[]) => void;
   printFilterHeader: boolean;

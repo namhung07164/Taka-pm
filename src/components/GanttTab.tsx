@@ -235,7 +235,7 @@ export function GanttTab({
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
   const setExpandedProjects = useAppStore(state => state.setExpandedProjectIds);
-  const setSearchActiveProjectIds = useAppStore(state => state.setSearchActiveProjectIds);
+  const setVisibleActiveProjectIds = useAppStore(state => state.setVisibleActiveProjectIds);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -770,16 +770,21 @@ export function GanttTab({
     return sortedProjects.slice(0, visibleCount);
   }, [sortedProjects, visibleCount, printDateRangeOverride]);
 
+  const prevVisibleIdsRef = useRef<string>("");
   useEffect(() => {
-    if (searchTerm.trim() !== '') {
-      setSearchActiveProjectIds(paginatedProjects.map(p => String(p.id || p.no)));
-    } else {
-      setSearchActiveProjectIds([]);
+    const visibleIds = paginatedProjects.map(p => String(p.id || p.no));
+    const idsKey = visibleIds.join(',');
+    if (prevVisibleIdsRef.current !== idsKey) {
+      prevVisibleIdsRef.current = idsKey;
+      setVisibleActiveProjectIds(visibleIds);
     }
+  }, [paginatedProjects, setVisibleActiveProjectIds]);
+
+  useEffect(() => {
     return () => {
-      setSearchActiveProjectIds([]);
+      useAppStore.getState().setVisibleActiveProjectIds([]);
     };
-  }, [searchTerm, paginatedProjects, setSearchActiveProjectIds]);
+  }, []);
 
   const handleLoadMore = () => {
     setVisibleCount((prev) => prev + 20);

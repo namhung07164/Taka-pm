@@ -113,7 +113,15 @@ export function DetailTab({
   const expandedCodes = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
   const setExpandedCodes = useAppStore(state => state.setExpandedProjectIds);
-  const setSearchActiveProjectIds = useAppStore(state => state.setSearchActiveProjectIds);
+  const setVisibleActiveProjectIds = useAppStore(state => state.setVisibleActiveProjectIds);
+  const isTasksRequested = useAppStore(state => state.isTasksRequested);
+  const setIsTasksRequested = useAppStore(state => state.setIsTasksRequested);
+
+  useEffect(() => {
+    if (!isTasksRequested) {
+      setIsTasksRequested(true);
+    }
+  }, [isTasksRequested, setIsTasksRequested]);
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = React.useRef<string | null>(null);
@@ -2113,10 +2121,20 @@ export function DetailTab({
 
     projects.forEach(p => {
       const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-      const rawGroupTasks = tasksByProjectKey.get(key) || [];
+      let rawGroupTasks = tasksByProjectKey.get(key);
+      if (!rawGroupTasks || rawGroupTasks.length === 0) {
+        const pCode = String(p.code || "").trim().toLowerCase();
+        rawGroupTasks = tasks.filter(t => {
+          const tCode = String(t.projectCode || "").trim().toLowerCase();
+          if (tCode !== pCode) return false;
+          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+          return matchesStore && matchesYear;
+        });
+      }
       const sortedTasks = sortGroupTasks(rawGroupTasks);
 
-      let computedTakStart = p.start;
+      let computedTakStart = p.computedTakStart || p.start;
       if (sortedTasks.length > 0) {
         let minStart: string | undefined = undefined;
         for (const t of sortedTasks) {
@@ -2127,7 +2145,7 @@ export function DetailTab({
         if (minStart) computedTakStart = minStart;
       }
 
-      let computedTakCompl: string | undefined = undefined;
+      let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
       if (sortedTasks.length > 0) {
         let maxFinish: string | undefined = undefined;
         for (const t of sortedTasks) {
@@ -2138,7 +2156,7 @@ export function DetailTab({
         if (maxFinish) computedTakCompl = maxFinish;
       }
 
-      let computedOpening = p.opening;
+      let computedOpening = p.computedOpening || p.opening;
       for (const t of sortedTasks) {
         const name = String(t.name || '').toLowerCase();
         if (name.includes('opening') || name.includes('open')) {
@@ -2172,19 +2190,29 @@ export function DetailTab({
     if (cached) return cached;
 
     const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-    const rawGroupTasks = tasksByProjectKey.get(key) || [];
+    let rawGroupTasks = tasksByProjectKey.get(key);
+    if (!rawGroupTasks || rawGroupTasks.length === 0) {
+      const pCode = String(p.code || "").trim().toLowerCase();
+      rawGroupTasks = tasks.filter(t => {
+        const tCode = String(t.projectCode || "").trim().toLowerCase();
+        if (tCode !== pCode) return false;
+        const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+        const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+        return matchesStore && matchesYear;
+      });
+    }
     const sortedTasks = sortGroupTasks(rawGroupTasks);
-    let computedTakStart = p.start;
+    let computedTakStart = p.computedTakStart || p.start;
     if (sortedTasks.length > 0) {
       const validStarts = sortedTasks.map(t => t.start).filter(Boolean).sort();
       if (validStarts.length > 0) computedTakStart = validStarts[0];
     }
-    let computedTakCompl: string | undefined = undefined;
+    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
     if (sortedTasks.length > 0) {
       const validFinishes = sortedTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
       if (validFinishes.length > 0) computedTakCompl = validFinishes[0];
     }
-    let computedOpening = p.opening;
+    let computedOpening = p.computedOpening || p.opening;
     const openingTasks = sortedTasks.filter(t => {
       const name = String(t.name || '').toLowerCase();
       return name.includes('opening') || name.includes('open');
@@ -2275,22 +2303,37 @@ export function DetailTab({
 
   const toggleAll = () => {
     if (expandedCodes.length === 0) {
-      setExpandedCodes(projects.map(p=> String(p.id!)));
+      setExpandedCodes(filteredProjects.map(p => String(p.id!)));
     } else {
       setExpandedCodes([]);
     }
   };
 
+  const prevVisibleIdsRef = useRef<string>("");
   useEffect(() => {
-    if (searchTerm.trim() !== '') {
-      setSearchActiveProjectIds(filteredProjects.slice(0, visibleCount).map(p => String(p.id || p.no)));
-    } else {
-      setSearchActiveProjectIds([]);
+    const targetProjects = filteredProjects.length > 0
+      ? filteredProjects.slice(0, visibleCount)
+      : sortedProjects.filter(p => {
+          const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+          if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+          if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+          if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
+          return true;
+        }).slice(0, visibleCount);
+
+    const visibleIds = targetProjects.map(p => String(p.id || p.no));
+    const idsKey = visibleIds.join(',');
+    if (prevVisibleIdsRef.current !== idsKey) {
+      prevVisibleIdsRef.current = idsKey;
+      setVisibleActiveProjectIds(visibleIds);
     }
+  }, [filteredProjects, sortedProjects, visibleCount, globalYearFilter, effectiveStore, globalLocationFilter, setVisibleActiveProjectIds]);
+
+  useEffect(() => {
     return () => {
-      setSearchActiveProjectIds([]);
+      useAppStore.getState().setVisibleActiveProjectIds([]);
     };
-  }, [searchTerm, filteredProjects, visibleCount, setSearchActiveProjectIds]);
+  }, []);
 
   const allVisibleTaskIds = useMemo(() => {
     return filteredProjects.slice(0, visibleCount).flatMap(p => {
@@ -2572,7 +2615,7 @@ export function DetailTab({
                       />
                     )}
                     No.
-                    <button onClick={() => setExpandedCodes(expandedCodes.length === 0 ? sortedProjects.map(p => String(p.id!)) : [])} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8]">
+                    <button onClick={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8]">
                       {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                   </div>
@@ -3149,9 +3192,9 @@ export function DetailTab({
       </div>
 
       <div className="xl:hidden flex justify-between items-center px-2 pb-2">
-        <span className="text-sm font-bold text-slate-600 dark:text-[#a3a3a3]">Projects ({sortedProjects.length})</span>
+        <span className="text-sm font-bold text-slate-600 dark:text-[#a3a3a3]">Projects ({filteredProjects.length})</span>
         <button 
-          onClick={() => setExpandedCodes(expandedCodes.length === 0 ? projects.map(p=> String(p.id!)) : [])} 
+          onClick={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p=> String(p.id!)) : [])} 
           className="flex items-center gap-1 text-sm text-blue-600 dark:text-[#8ab4f8] font-medium hover:text-blue-800 dark:text-[#8ab4f8] transition-colors"
         >
           {expandedCodes.length === 0 ? (

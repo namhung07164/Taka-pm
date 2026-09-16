@@ -49,8 +49,31 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
     set({ expandedProjectIds: ids });
   },
 
+  visibleActiveProjectIds: [],
+  setVisibleActiveProjectIds: (ids) => {
+    set((state) => {
+      if (
+        state.visibleActiveProjectIds.length === ids.length &&
+        state.visibleActiveProjectIds.every((id, idx) => id === ids[idx])
+      ) {
+        return state;
+      }
+      return { visibleActiveProjectIds: ids };
+    });
+  },
+
   searchActiveProjectIds: [],
-  setSearchActiveProjectIds: (ids) => set({ searchActiveProjectIds: ids }),
+  setSearchActiveProjectIds: (ids) => {
+    set((state) => {
+      if (
+        state.searchActiveProjectIds.length === ids.length &&
+        state.searchActiveProjectIds.every((id, idx) => id === ids[idx])
+      ) {
+        return state;
+      }
+      return { searchActiveProjectIds: ids };
+    });
+  },
 
   printFilterHeader: safeGetItemLocal("taka_print_filter_header") !== "false",
   setPrintFilterHeader: (val) => {
