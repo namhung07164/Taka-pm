@@ -27,7 +27,8 @@ export default defineConfig({
             if (id.includes('firebase')) return 'vendor-firebase';
             if (id.includes('recharts')) return 'vendor-recharts';
             if (id.includes('lucide-react')) return 'vendor-lucide';
-            return 'vendor-core';
+            if (id.includes('@aws-sdk')) return 'vendor-aws';
+            if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
           }
         }
       }
