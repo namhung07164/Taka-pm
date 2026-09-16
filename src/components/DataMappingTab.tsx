@@ -10,7 +10,8 @@ import ReviewTab from './DataMapping/ReviewTab';
 import { UnitShape, Group, MapVersion } from './DataMapping/types';
 import { useAppStore } from '../store/useAppStore';
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db, APP_ID } from "../lib/firebase";
+import { ref, uploadString, getDownloadURL } from "firebase/storage";
+import { db, storage, APP_ID } from "../lib/firebase";
 
 export type SubTab = 'edit' | 'hierarchy' | 'dynamic-hierarchy' | 'review';
 
@@ -72,16 +73,34 @@ export default React.memo(function DataMappingTab() {
     if (!window.confirm("Sync current map configuration to the cloud? This will overwrite the cloud version for all users.")) return;
     setIsSyncing(true);
     try {
+      let updatedVersions = [...mapVersions];
+      let hasUploads = false;
+
+      // Scan and upload base64 backgrounds to Firebase Storage to prevent 1MB limit crash
+      for (let i = 0; i < updatedVersions.length; i++) {
+        const bgUrl = updatedVersions[i].backgroundUrl;
+        if (bgUrl && bgUrl.startsWith('data:image/')) {
+          const fileRef = ref(storage, `taka_map_backgrounds/version_${updatedVersions[i].id}_${Date.now()}.jpg`);
+          await uploadString(fileRef, bgUrl, 'data_url');
+          updatedVersions[i].backgroundUrl = await getDownloadURL(fileRef);
+          hasUploads = true;
+        }
+      }
+
+      if (hasUploads) {
+        setMapVersions(updatedVersions);
+      }
+
       const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_map_data");
       await setDoc(docRef, {
         mapUnits: JSON.stringify(mapUnits),
-        mapVersions: JSON.stringify(mapVersions),
+        mapVersions: JSON.stringify(updatedVersions),
         updatedAt: new Date().toISOString()
       }, { merge: true });
       alert("✅ Successfully synced map data to cloud!");
     } catch(e) {
       console.error(e);
-      alert("❌ Failed to sync to cloud.");
+      alert("❌ Failed to sync to cloud. Ensure file size is valid.");
     }
     setIsSyncing(false);
   };
