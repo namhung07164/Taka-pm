@@ -653,7 +653,7 @@ export function useFirebaseData() {
     if (!querySignature) return;
 
     const activeProjectIds = isTasksRequested
-      ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])]
+      ? [...new Set([...expandedProjectIds, ...visibleActiveProjectIds, ...searchActiveProjectIds])]
       : [];
     const currentSig = `${querySignature}_${activeProjectIds.join(',')}_${isTasksRequested}`;
 

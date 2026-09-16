@@ -2713,7 +2713,11 @@ export function DetailTab({
                 return 0;
               }) : sortedTasks;
 
-              const effectiveTaskCount = p.taskCount !== undefined ? p.taskCount : groupTasks.length;
+              const effectiveTaskCount = groupTasks.length > 0 
+                ? groupTasks.length 
+                : (p.taskCount !== undefined 
+                    ? p.taskCount 
+                    : (p.taskSummaries?.length ?? 0));
               const isExpanded = expandedCodes.includes(String(p.id!));
               const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
               const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
@@ -2770,23 +2774,21 @@ export function DetailTab({
                               className="cursor-pointer rounded border-slate-300 dark:border-slate-600"
                             />
                           )}
-                          {effectiveTaskCount > 0 ? (
-                            <button 
-                               onClick={() => toggleGroup(p.id!)} 
-                               className={cn(
-                                 "flex items-center gap-1 px-1.5 py-0.5 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                                 effectiveTaskCount >= 2
-                                    ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-                                    : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
-                               )}
-                               title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
-                            >
-                              {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                              <span className="text-[10px]">({effectiveTaskCount})</span>
-                            </button>
-                          ) : (
-                            <div className="w-6 h-6 shrink-0" />
-                          )}
+                          <button 
+                             onClick={() => toggleGroup(p.id!)} 
+                             className={cn(
+                               "flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
+                               effectiveTaskCount >= 2
+                                  ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
+                                  : effectiveTaskCount === 1
+                                  ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
+                                  : "bg-slate-200 hover:bg-slate-300 dark:bg-[#333336] dark:hover:bg-[#444446] text-slate-600 dark:text-slate-300"
+                             )}
+                             title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
+                          >
+                            {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            <span className="text-[10px]">({effectiveTaskCount})</span>
+                          </button>
                         </div>
                       </td>
                     )}
@@ -3251,7 +3253,11 @@ export function DetailTab({
           else if (status === 'On process') statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
           else if (status === 'Canceled') statusColorClass = 'bg-red-50 text-red-600 dark:text-red-400 border-red-200';
 
-          const effectiveTaskCount = p.taskCount !== undefined ? p.taskCount : groupTasks.length;
+          const effectiveTaskCount = groupTasks.length > 0 
+            ? groupTasks.length 
+            : (p.taskCount !== undefined 
+                ? p.taskCount 
+                : (p.taskSummaries?.length ?? 0));
           const isExpanded = expandedCodes.includes(String(p.id!));
           const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
           const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
@@ -3293,23 +3299,21 @@ export function DetailTab({
                 {status}
               </div>
               <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base leading-snug pr-20 flex items-start gap-2">
-                {effectiveTaskCount > 0 ? (
-                  <button 
-                    onClick={() => toggleGroup(p.id!)} 
-                    className={cn(
-                      "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                      effectiveTaskCount >= 2
-                        ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-                        : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
-                    )}
-                    title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
-                  >
-                    {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    <span className="text-[10px]">({effectiveTaskCount})</span>
-                  </button>
-                ) : (
-                  <div className="w-6 h-6 shrink-0 mt-0.5" />
-                )}
+                <button 
+                  onClick={() => toggleGroup(p.id!)} 
+                  className={cn(
+                    "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
+                    effectiveTaskCount >= 2
+                      ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
+                      : effectiveTaskCount === 1
+                      ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
+                      : "bg-slate-200 hover:bg-slate-300 dark:bg-[#333336] dark:hover:bg-[#444446] text-slate-600 dark:text-slate-300"
+                  )}
+                  title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
+                >
+                  {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  <span className="text-[10px]">({effectiveTaskCount})</span>
+                </button>
                 <span><span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store}</span> - {p.code} - {p.name}</span>
               </div>
 
