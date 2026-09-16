@@ -148,7 +148,7 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
             comments: comments.filter((c: any) => c.id !== commentId),
             updatedAt: nowIso
           };
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id), updatedTask as any);
+          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id), { comments: updatedTask.comments, updatedAt: nowIso });
           
           if (commentToDelete && linkedGroup) {
              let groupUpdated = false;
@@ -206,7 +206,7 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
         comments: comments.map((c: any) => c.id === commentId ? { ...c, text: editingText } : c),
         updatedAt: nowIso
       };
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id), updatedTask);
+      batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id), { comments: updatedTask.comments, updatedAt: nowIso });
       
       if (oldComment && linkedGroup) {
         let groupUpdated = false;
@@ -277,7 +277,7 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
 
     try {
       const batch = writeBatch(db);
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id), updatedTask);
+      batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id), { comments: updatedTask.comments, updatedAt: nowIso });
       
       const taggedTasks = projectTasks.filter(t => t.name && text.includes(`#${t.name}`) && t.id !== task.id);
       taggedTasks.forEach(t => {

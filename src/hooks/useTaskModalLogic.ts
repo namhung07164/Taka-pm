@@ -391,7 +391,11 @@ export function useTaskModalLogic({
       }
 
       const batch = writeBatch(db);
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
+      if (task) {
+        batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
+      } else {
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
+      }
 
       const depUpdates = updatesToDependents.filter(d => d.id !== id);
       const mappedDepUpdates = new Set<string>();
@@ -410,7 +414,11 @@ export function useTaskModalLogic({
             delete (data as any)[key];
           }
         });
-        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data);
+        if (tasks.find(t => t.id === depTask.id)) {
+           batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data);
+        } else {
+           batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data);
+        }
         mappedDepUpdates.add(depTask.id);
       });
 

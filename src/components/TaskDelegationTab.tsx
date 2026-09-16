@@ -753,9 +753,9 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
           const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
           delete (newT as any)._isAutoActualized;
           const batch = writeBatch(db);
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', newT.id), newT);
+          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', newT.id), newT);
           for (const u of updatesToDependents) {
-            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u);
+            batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u as any);
           }
           try {
         batch.commit().catch(e => console.error("Batch commit failed", e));

@@ -147,10 +147,9 @@ export const ProjectChat = React.memo(function ProjectChat({
 
       try {
         const batch = writeBatch(db);
-        batch.set(
+        batch.update(
           doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId),
-          updatedProject as any,
-          { merge: true }
+          { comments: updatedProject.comments, updatedAt: nowIso }
         );
         batch.commit().catch((e) => console.error('Batch commit failed', e));
       } catch (err) {
@@ -198,10 +197,9 @@ export const ProjectChat = React.memo(function ProjectChat({
 
     try {
       const batch = writeBatch(db);
-      batch.set(
+      batch.update(
         doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId),
-        updatedProject as any,
-        { merge: true }
+        { comments: updatedProject.comments, updatedAt: nowIso }
       );
       batch.commit().catch((e) => console.error('Batch commit failed', e));
     } catch (err) {
@@ -238,10 +236,9 @@ export const ProjectChat = React.memo(function ProjectChat({
 
     try {
       const batch = writeBatch(db);
-      batch.set(
+      batch.update(
         doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId),
-        updatedProject as any,
-        { merge: true }
+        { comments: updatedProject.comments, updatedAt: nowIso }
       );
       batch.commit().catch((e) => console.error('Batch commit failed', e));
     } catch (e) {
