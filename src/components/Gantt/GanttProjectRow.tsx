@@ -70,7 +70,11 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   }
 
   const pStatus = getStatus(pStart, pEnd, p.computedOpening || p.opening, p.code);
-  const pActPrg = computeActProgressPercent(projectTasks, delegationGroups);
+  const pActPrg = projectTasks.length > 0
+    ? computeActProgressPercent(projectTasks, delegationGroups)
+    : (p.computedActProgress ?? 0);
+  const effectiveTaskCount = p.taskCount !== undefined ? p.taskCount : (projectTasks ? projectTasks.length : 0);
+  const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
 
   const rowId = `project-${p.no}`;
 
@@ -152,25 +156,25 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (projectTasks.length > 0) {
+                if (canToggle) {
                   toggleProject(p.id!);
                 }
               }}
-              disabled={projectTasks.length === 0}
+              disabled={!canToggle}
               className={cn(
                 "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
-                projectTasks.length === 0
+                !canToggle
                   ? "opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600"
                   : isExpanded
                   ? "text-slate-600 dark:text-[#c3c3c3] bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] cursor-pointer"
                   : "text-slate-500 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] cursor-pointer"
               )}
               title={
-                projectTasks.length === 0
+                !canToggle
                   ? "Dự án chưa có công việc"
                   : isExpanded
                   ? "Thu gọn Dự án này"
-                  : "Mở rộng Dự án này"
+                  : `Mở rộng Dự án này (${effectiveTaskCount} công việc)`
               }
             >
               {isExpanded ? (

@@ -624,8 +624,15 @@ export function GanttTab({
       projectTasks = projectTasks || [];
 
       if (filterStartDate || filterEndDate) {
-        projectTasks = projectTasks.filter(t => filterTaskByDate(t, filterStartDate, filterEndDate));
-        if (projectTasks.length === 0) return false;
+        if (projectTasks.length > 0) {
+          projectTasks = projectTasks.filter(t => filterTaskByDate(t, filterStartDate, filterEndDate));
+          if (projectTasks.length === 0) return false;
+        } else {
+          const pStart = p.computedTakStart || p.start;
+          const pEnd = p.computedTakCompl || p.handover;
+          if (filterStartDate && pEnd && pEnd < filterStartDate) return false;
+          if (filterEndDate && pStart && pStart > filterEndDate) return false;
+        }
       }
       
       if (searchTerm) {
@@ -634,7 +641,17 @@ export function GanttTab({
           [p.code, p.name, p.store, p.location],
           [],
           (term, andTerms) => {
-            return projectTasks.some((t) => {
+            const taskSource = projectTasks.length > 0 ? projectTasks : (p.taskSummaries || []);
+            if (taskSource.length === 0) {
+              return andTerms.every((tTerm) =>
+                [p.code, p.name, p.store, p.location].some((v) =>
+                  String(v || "")
+                    .toLowerCase()
+                    .includes(tTerm)
+                )
+              );
+            }
+            return taskSource.some((t: any) => {
               return andTerms.every((tTerm) => {
                 const inProject = [p.code, p.name, p.store, p.location].some(
                   (v) =>
@@ -2691,9 +2708,9 @@ export function GanttTab({
                   p.computedOpening || p.opening,
                   p.code,
                 );
-                const pActPrg = computeActProgressPercent(
-                  projectTasks, delegationGroups
-                );
+                const pActPrg = projectTasks.length > 0
+                  ? computeActProgressPercent(projectTasks, delegationGroups)
+                  : (p.computedActProgress ?? 0);
 
                 
                 return (

@@ -46,6 +46,7 @@ export interface Project {
   computedStatus?: string;
   computedPlanProgress?: number;
   computedActProgress?: number;
+  taskCount?: number;
   taskSummaries?: { name: string; start: string; finish: string; }[];
   realtimeUpdate?: boolean;
   delegation?: boolean;

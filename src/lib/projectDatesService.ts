@@ -11,6 +11,7 @@ export interface ComputedProjectDates {
   computedOpening?: string;
   computedPlanProgress?: number;
   computedActProgress?: number;
+  taskCount?: number;
   taskSummaries?: { name: string; start: string; finish: string; }[];
 }
 
@@ -75,12 +76,15 @@ export function calculateProjectComputedDates(
       finish: t.finish!
     }));
 
+  const taskCount = projectTasks ? projectTasks.length : (project.taskCount ?? 0);
+
   return {
     computedTakStart: computedTakStart || "",
     computedTakCompl: computedTakCompl || "",
     computedOpening: computedOpening || "",
     computedPlanProgress: planProgressPercent,
     computedActProgress: actProgressPercent,
+    taskCount,
     taskSummaries,
   };
 }
@@ -124,6 +128,9 @@ export async function syncProjectDatesToFirestore(
     }
     if (dates.computedActProgress !== undefined) {
       updatePayload.computedActProgress = dates.computedActProgress;
+    }
+    if (dates.taskCount !== undefined) {
+      updatePayload.taskCount = dates.taskCount;
     }
     if (dates.taskSummaries !== undefined) {
       updatePayload.taskSummaries = dates.taskSummaries;
@@ -221,7 +228,9 @@ export async function backfillMissingProjectDates(
       p.computedTakStart !== computed.computedTakStart ||
       (!p.computedOpening && Boolean(computed.computedOpening)) ||
       p.computedPlanProgress === undefined ||
-      p.computedActProgress === undefined;
+      p.computedActProgress === undefined ||
+      p.taskCount === undefined ||
+      p.taskCount !== computed.taskCount;
 
     if (needsUpdate) {
       count++;

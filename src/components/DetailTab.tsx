@@ -2271,6 +2271,10 @@ export function DetailTab({
         const projectFields = [p.store, p.location, p.year, p.code, p.name];
         const projectMatches = projectFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
         
+        const summariesMatch = p.taskSummaries?.some(ts =>
+          String(ts.name || "").toLowerCase().includes(lowerSearchTerm)
+        ) || false;
+
         const taskMatches = groupTasks.some((t, idx) => {
           const taskFields = [
             t.taskCodePhu,
@@ -2291,7 +2295,7 @@ export function DetailTab({
           return fieldMatch || notesMatch;
         });
 
-        if (!projectMatches && !taskMatches) {
+        if (!projectMatches && !summariesMatch && !taskMatches) {
           return false;
         }
       }
@@ -2709,12 +2713,13 @@ export function DetailTab({
                 return 0;
               }) : sortedTasks;
 
+              const effectiveTaskCount = p.taskCount !== undefined ? p.taskCount : groupTasks.length;
               const isExpanded = expandedCodes.includes(String(p.id!));
               const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
               const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
 
-              const planProgressPercent = computePlanProgressPercent(groupTasks);
-              const actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
+              const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
+              const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
 
               const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
               const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
@@ -2765,19 +2770,19 @@ export function DetailTab({
                               className="cursor-pointer rounded border-slate-300 dark:border-slate-600"
                             />
                           )}
-                          {groupTasks.length > 0 ? (
+                          {effectiveTaskCount > 0 ? (
                             <button 
                                onClick={() => toggleGroup(p.id!)} 
                                className={cn(
                                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                                 groupTasks.length >= 2
+                                 effectiveTaskCount >= 2
                                     ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                                     : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
                                )}
-                               title={isExpanded ? "Collapse" : `Expand (${groupTasks.length})`}
+                               title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
                             >
                               {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                              <span className="text-[10px]">({groupTasks.length})</span>
+                              <span className="text-[10px]">({effectiveTaskCount})</span>
                             </button>
                           ) : (
                             <div className="w-6 h-6 shrink-0" />
@@ -2838,7 +2843,7 @@ export function DetailTab({
                     {visibleColumns.includes('taskName') && (
                       <td className="px-6 py-3 font-bold text-slate-500 dark:text-[#a3a3a3] text-xs italic">
                         <div className="flex flex-col gap-1.5">
-                          <div className="truncate">{groupTasks.length} Sub-</div>
+                          <div className="truncate">{effectiveTaskCount} Sub-</div>
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2">
                               <span className="text-[9px] font-bold text-slate-400 uppercase w-8">Plan:</span>
@@ -3246,12 +3251,13 @@ export function DetailTab({
           else if (status === 'On process') statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
           else if (status === 'Canceled') statusColorClass = 'bg-red-50 text-red-600 dark:text-red-400 border-red-200';
 
+          const effectiveTaskCount = p.taskCount !== undefined ? p.taskCount : groupTasks.length;
           const isExpanded = expandedCodes.includes(String(p.id!));
           const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
           const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
 
-          const planProgressPercent = computePlanProgressPercent(groupTasks);
-          const actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
+          const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
+          const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
 
           const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
           const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
@@ -3287,19 +3293,19 @@ export function DetailTab({
                 {status}
               </div>
               <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base leading-snug pr-20 flex items-start gap-2">
-                {groupTasks.length > 0 ? (
+                {effectiveTaskCount > 0 ? (
                   <button 
                     onClick={() => toggleGroup(p.id!)} 
                     className={cn(
                       "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                      groupTasks.length >= 2
+                      effectiveTaskCount >= 2
                         ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                         : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
                     )}
-                    title={isExpanded ? "Collapse" : `Expand (${groupTasks.length})`}
+                    title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
                   >
                     {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    <span className="text-[10px]">({groupTasks.length})</span>
+                    <span className="text-[10px]">({effectiveTaskCount})</span>
                   </button>
                 ) : (
                   <div className="w-6 h-6 shrink-0 mt-0.5" />
@@ -3327,7 +3333,7 @@ export function DetailTab({
               <div className="flex justify-between items-center px-1 border-t border-slate-50 dark:border-slate-800 pt-2">
                 <div className="flex items-center gap-3">
                   <div className="text-xs text-slate-500 dark:text-[#a3a3a3] italic font-bold">
-                    {groupTasks.length} Sub-
+                    {effectiveTaskCount} Sub-
                   </div>
                   <button
                     onClick={(e) => {
