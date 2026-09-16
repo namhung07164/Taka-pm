@@ -29,3 +29,9 @@
 
 ## 5. Cập Nhật Tài Liệu Định Kỳ
 - Khi hoàn thành tính năng mới, AI bắt buộc cập nhật các bước thao tác vào `USER_MANUAL.md`.
+
+## 6. Safe Integration (Tích hợp tính năng mới từ file ZIP)
+Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file ZIP), BẮT BUỘC tuân thủ nguyên tắc "Cô lập & Chỉ thêm vào" (Decoupled & Additive-Only):
+- **Strict Isolation**: Gom toàn bộ UI/Logic mới vào thư mục riêng biệt (vd: `src/components/NewFeature/`). Tuyệt đối không trộn lẫn vào các core components hiện tại.
+- **Zero-Modification**: TUYỆT ĐỐI KHÔNG sửa/xóa/ghi đè UI layout, CSS, custom hooks, hay các hàm đang chạy. Việc kết nối tính năng mới CHỈ ĐƯỢC cắm thêm qua 1 Nút/Tab Navigation (Plug-and-play).
+- **State & Schema Safety**: Mọi state mới phải là slice độc lập trong Zustand (không can thiệp vào `tasks`, `projects`, v.v.). Type mới viết nối ở cuối `src/types.ts` hoặc tạo file riêng. Cấm sửa đổi `BUSINESS_LOGIC.md`.
