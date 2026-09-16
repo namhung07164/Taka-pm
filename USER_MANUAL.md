@@ -51,6 +51,8 @@ Thanh Menu điều hướng được thiết kế tối giản, hiện đại v�
   - `Delegation`: Bàn giao và phân công công việc cho nhân sự/đối tác.
 * ❓ **NHÓM 5: HELP (Trợ giúp)**
   - `Manual`: Xem trực tiếp tài liệu hướng dẫn sử dụng này.
+  - `Picture Mapping`: Hệ thống số hóa bản đồ mặt bằng & phân khu tự động (Canvas Floorplan Mapping, Rule-based Dynamic Grouping, Review & Xuất bản đồ).
+  - `CSV Export`: Xuất và sao lưu dữ liệu hệ thống ra tệp CSV.
 * 💡 **Nút Báo Tab Con Đang Mở (On Tab con)**:
   - **Trên Desktop**: Hàng nút tab con được ẩn đi để tối ưu không gian; ngay phía sau nút tab **Help**, hệ thống hiển thị 1 nút/badge nổi bật được tô màu và in đậm rõ ràng với định dạng: `On [Tên tab con]` (ví dụ: `On Calendar`, `On Budget`, `On Task detail`,...). Nhấp vào nút này có thể kích hoạt/tập trung ngay vào tab con hiện hành.
   - **Trên iOS điện thoại & iPad**: Ô báo tên tab con này được đặt ngay **cùng dòng với nút Undo và canh lề phải**, với màu sắc rực rỡ, icon đồng bộ và chữ in đậm `On [Tên tab con]`, giúp người dùng thiết bị di động/máy tính bảng luôn biết mình đang xem phân hệ nào ngay trên thanh tác vụ trên cùng.
