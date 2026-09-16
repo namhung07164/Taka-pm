@@ -1,25 +1,29 @@
 import { useShallow } from 'zustand/react/shallow';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Split, Edit3, GitMerge, Eye, Maximize2, X } from 'lucide-react';
+import { Split, Edit3, GitMerge, Eye, Maximize2, X, CloudUpload, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import EditTab from './DataMapping/EditTab';
 import HierarchyTab from './DataMapping/HierarchyTab';
 import DynamicHierarchyTab from './DataMapping/DynamicHierarchyTab';
 import ReviewTab from './DataMapping/ReviewTab';
 import { UnitShape, Group, MapVersion } from './DataMapping/types';
-import { useAppStore as useDataStore } from '../store/useAppStore';
+import { useAppStore } from '../store/useAppStore';
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db, APP_ID } from "../lib/firebase";
 
 export type SubTab = 'edit' | 'hierarchy' | 'dynamic-hierarchy' | 'review';
 
 export default React.memo(function DataMappingTab() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('edit');
   const [isTabFullscreen, setIsTabFullscreen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   
   const [isHeaderVisible, setIsHeaderVisible] = useState(false);
   
   // Shared State
-  const {  mapUnits, setMapUnits, mapVersions, setMapVersions, activeMapVersionId, setActiveMapVersionId  } = useDataStore(useShallow(state => ({
+  const {  mapUnits, setMapUnits, mapVersions, setMapVersions, activeMapVersionId, setActiveMapVersionId  } = useAppStore(useShallow(state => ({
     mapUnits: state.mapUnits,
     setMapUnits: state.setMapUnits,
     mapVersions: state.mapVersions,
@@ -28,7 +32,7 @@ export default React.memo(function DataMappingTab() {
     setActiveMapVersionId: state.setActiveMapVersionId,
   })));
 
-  React.useEffect(() => {
+  useEffect(() => {
     try {
         const params = new URLSearchParams(window.location.search);
         const reviewVersion = params.get('review');
@@ -40,7 +44,60 @@ export default React.memo(function DataMappingTab() {
     } catch(e) {}
   }, []);
 
+  // Load from Cloud once on mount
+  useEffect(() => {
+    const loadMappingData = async () => {
+      try {
+        const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_map_data");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+           const data = docSnap.data();
+           if (data.mapUnits) {
+               try { setMapUnits(JSON.parse(data.mapUnits)); } catch(e) {}
+           }
+           if (data.mapVersions) {
+               try { setMapVersions(JSON.parse(data.mapVersions)); } catch(e) {}
+           }
+        }
+      } catch(e) {
+          console.error("Failed to load map data from cloud", e);
+      } finally {
+        setIsInitialLoading(false);
+      }
+    }
+    loadMappingData();
+  }, []);
+
+  const handleCloudSync = async () => {
+    if (!window.confirm("Sync current map configuration to the cloud? This will overwrite the cloud version for all users.")) return;
+    setIsSyncing(true);
+    try {
+      const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_map_data");
+      await setDoc(docRef, {
+        mapUnits: JSON.stringify(mapUnits),
+        mapVersions: JSON.stringify(mapVersions),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      alert("✅ Successfully synced map data to cloud!");
+    } catch(e) {
+      console.error(e);
+      alert("❌ Failed to sync to cloud.");
+    }
+    setIsSyncing(false);
+  };
+
   const renderTabContent = () => {
+    if (isInitialLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-[#1A1D24] rounded-xl border border-slate-800">
+                <div className="flex flex-col items-center gap-3 text-slate-500">
+                    <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
+                    <p className="text-xs uppercase tracking-widest font-bold">Loading Cloud Map Data...</p>
+                </div>
+            </div>
+        )
+    }
+
     switch (activeSubTab) {
       case 'edit':
         return (
@@ -156,6 +213,16 @@ export default React.memo(function DataMappingTab() {
               </button>
             </div>
             
+            <button
+              onClick={handleCloudSync}
+              disabled={isSyncing}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 text-[9px] font-bold uppercase tracking-widest hover:bg-indigo-600/30 transition-all shadow-lg"
+              title="Save current Map and Rules to Firebase"
+            >
+              {isSyncing ? <Loader2 size={11} className="animate-spin" /> : <CloudUpload size={11} />}
+              <span>Sync Cloud</span>
+            </button>
+
             <button 
               onClick={() => setIsTabFullscreen(true)}
               className="p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-all shadow-lg"
@@ -231,12 +298,23 @@ export default React.memo(function DataMappingTab() {
                 </button>
               </div>
 
-              <button 
-                onClick={() => setIsTabFullscreen(false)}
-                className="w-12 h-12 flex items-center justify-center bg-slate-800 hover:bg-red-600 text-white rounded-2xl transition-all shadow-xl"
-              >
-                <X size={24} />
-              </button>
+              <div className="flex gap-4">
+                <button
+                  onClick={handleCloudSync}
+                  disabled={isSyncing}
+                  className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold uppercase tracking-widest hover:bg-indigo-600/30 transition-all shadow-xl"
+                  title="Save current Map and Rules to Firebase"
+                >
+                  {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
+                  <span>Sync Cloud</span>
+                </button>
+                <button 
+                  onClick={() => setIsTabFullscreen(false)}
+                  className="w-12 h-12 flex items-center justify-center bg-slate-800 hover:bg-red-600 text-white rounded-2xl transition-all shadow-xl"
+                >
+                  <X size={24} />
+                </button>
+              </div>
             </div>
             
             <div className="flex-1 overflow-hidden relative glass border border-slate-800 rounded-3xl p-8">

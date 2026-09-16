@@ -1151,26 +1151,26 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         />}
                         {alignPts.bg1 && (
                             <Group x={alignPts.bg1.x} y={alignPts.bg1.y}>
-                                <Line points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} />
-                                <Line points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} />
-                                <Circle radius={3} fill="#f59e0b" />
-                                <Text text="Point 1" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
+                                <Line perfectDrawEnabled={false} points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} />
+                                <Line perfectDrawEnabled={false} points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} />
+                                <Circle perfectDrawEnabled={false} radius={3} fill="#f59e0b" />
+                                <Text perfectDrawEnabled={false} text="Point 1" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
                             </Group>
                         )}
                         {alignPts.bg2 && (
                             <Group x={alignPts.bg2.x} y={alignPts.bg2.y}>
-                                <Line points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} />
-                                <Line points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} />
-                                <Circle radius={3} fill="#f59e0b" />
-                                <Text text="Point 2" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
+                                <Line perfectDrawEnabled={false} points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} />
+                                <Line perfectDrawEnabled={false} points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} />
+                                <Circle perfectDrawEnabled={false} radius={3} fill="#f59e0b" />
+                                <Text perfectDrawEnabled={false} text="Point 2" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
                             </Group>
                         )}
                         {alignPts.target1 && (
                             <Group x={alignPts.target1.x} y={alignPts.target1.y}>
-                                <Line points={[-10, 0, 10, 0]} stroke="#10b981" strokeWidth={2} />
-                                <Line points={[0, -10, 0, 10]} stroke="#10b981" strokeWidth={2} />
-                                <Circle radius={3} fill="#10b981" />
-                                <Text text="Target 1a" x={8} y={8} fill="#10b981" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
+                                <Line perfectDrawEnabled={false} points={[-10, 0, 10, 0]} stroke="#10b981" strokeWidth={2} />
+                                <Line perfectDrawEnabled={false} points={[0, -10, 0, 10]} stroke="#10b981" strokeWidth={2} />
+                                <Circle perfectDrawEnabled={false} radius={3} fill="#10b981" />
+                                <Text perfectDrawEnabled={false} text="Target 1a" x={8} y={8} fill="#10b981" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
                             </Group>
                         )}
                         {magneticGrid && (

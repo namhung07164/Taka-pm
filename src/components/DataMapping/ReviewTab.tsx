@@ -1033,7 +1033,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
       style={{ backgroundColor: 'white' }}
     >
       <Layer x={-minX} y={-minY}>
-        <Rect x={minX} y={minY} width={logicalWidth} height={logicalHeight} fill="white" listening={false} />
+        <Rect perfectDrawEnabled={false} x={minX} y={minY} width={logicalWidth} height={logicalHeight} fill="white" listening={false} />
         {image && <KonvaImage 
           image={image} 
           listening={false} 
@@ -1063,7 +1063,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
             if (unit.type === 'rect') {
                 return (
                     <React.Fragment key={unit.id}>
-                        <Rect {...shapeProps} width={unit.width} height={unit.height} cornerRadius={4} />
+                        <Rect perfectDrawEnabled={false} {...shapeProps} width={unit.width} height={unit.height} cornerRadius={4} />
                         {unit.name && (
                             <Group x={unit.x} y={unit.y} width={unit.width} height={unit.height} rotation={unit.rotation || 0}>
                                 {(() => {
@@ -1103,7 +1103,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
                                       const y = currentY;
                                       currentY += block.blockHeight;
                                       return (
-                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
+                                        <Text perfectDrawEnabled={false} key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
                                       );
                                   });
                                 })()}
@@ -1114,7 +1114,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
             } else if (unit.type === 'circle') {
                  return (
                     <React.Fragment key={unit.id}>
-                        <Circle {...shapeProps} radius={unit.radius} />
+                        <Circle perfectDrawEnabled={false} {...shapeProps} radius={unit.radius} />
                         {unit.name && (
                             <Group x={unit.x - (unit.radius||0)} y={unit.y - (unit.radius||0)} width={(unit.radius||0)*2} height={(unit.radius||0)*2}>
                                 {(() => {
@@ -1154,7 +1154,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
                                       const y = currentY;
                                       currentY += block.blockHeight;
                                       return (
-                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
+                                        <Text perfectDrawEnabled={false} key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
                                       );
                                   });
                                 })()}
@@ -1165,7 +1165,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
             } else if (unit.type === 'polygon' && unit.points) {
                 return (
                     <React.Fragment key={unit.id}>
-                        <Line {...shapeProps} points={unit.points} closed={true} />
+                        <Line perfectDrawEnabled={false} {...shapeProps} points={unit.points} closed={true} />
                         {unit.name && (() => {
                                 const bx = unit.points ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 0)) : unit.x;
                                 const by = unit.points ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 1)) : unit.y;
@@ -1205,7 +1205,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
                                           const y = currentY;
                                           currentY += block.blockHeight;
                                           return (
-                                            <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
+                                            <Text perfectDrawEnabled={false} key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
                                           );
                                       });
                                     })()}
