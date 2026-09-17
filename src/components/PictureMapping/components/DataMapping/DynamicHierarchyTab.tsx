@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
+import { useAppStore } from "../../../../store/useAppStore";
+import { getStatus } from "../../../../lib/utils";
 import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 
@@ -34,6 +36,7 @@ function DynamicHierarchyTab({
   setActiveVersionId,
 }: DynamicHierarchyTabProps) {
   const summaryData = useSummaryData();
+  const projects = useAppStore(state => state.projects);
 
   const viewVersionId = activeVersionId || versions[0]?.id || null;
   const activeVersion = versions.find((v) => v.id === viewVersionId);
@@ -80,6 +83,10 @@ function DynamicHierarchyTab({
         brandName: "",
         classCode: "",
         floor: "",
+        appProjectStatus: "",
+        appProjectBudget: 0,
+        appProjectActual: 0,
+        appProjectCode: "",
       };
     });
 
@@ -112,8 +119,23 @@ function DynamicHierarchyTab({
       }
     });
 
+    // Merge real Project data
+    projects.forEach((p) => {
+      if (!p.code) return;
+      const pCodes = String(p.code).split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+      const status = getStatus(p.start, p.handover, p.opening, p.code);
+      pCodes.forEach(code => {
+         if (dataMap[code]) {
+            dataMap[code].appProjectStatus = status;
+            dataMap[code].appProjectBudget = p.budget || 0;
+            dataMap[code].appProjectActual = p.actual || 0;
+            dataMap[code].appProjectCode = String(p.code);
+         }
+      });
+    });
+
     return dataMap;
-  }, [unitNamesStr, summaryData]);
+  }, [unitNamesStr, summaryData, projects]);
 
   // Evaluates rules for a given group against a unit shape
   const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
@@ -719,6 +741,12 @@ function DynamicHierarchyTab({
                                   <option value="startDate">Start Date</option>
                                   <option value="endDate">End Date</option>
                                   <option value="status">Status</option>
+                                </optgroup>
+                                <optgroup label="App Data (Real-time)">
+                                  <option value="appProjectStatus">App: Status</option>
+                                  <option value="appProjectBudget">App: Budget</option>
+                                  <option value="appProjectActual">App: Actual</option>
+                                  <option value="appProjectCode">App: Project Code</option>
                                 </optgroup>
                               </select>
 

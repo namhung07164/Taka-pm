@@ -9,6 +9,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate } from '
 import { AppUser, PermissionMatrix, AppRole, Project } from '../types';
 import { getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
 import { usePerformanceStore } from '../store/usePerformanceStore';
+import { LiveLayoutViewer } from './LiveLayoutViewer';
 
 interface LayoutTabProps {
   initialStore?: string;
@@ -100,6 +101,7 @@ export function LayoutTab({
     });
   }, [userAllowedLocations, canWrite, layoutSettings, activeStore]);
   const [isEditing, setIsEditing] = useState(false);
+  const [isLiveMapMode, setIsLiveMapMode] = useState(false);
   const [editUrl, setEditUrl] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
@@ -585,6 +587,13 @@ export function LayoutTab({
         </div>
         {!isEditing && (
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsLiveMapMode(!isLiveMapMode)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border shadow-sm ${isLiveMapMode ? 'bg-purple-600 text-white border-purple-700' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200'}`}
+            >
+              <Map className="w-4 h-4" />
+              {isLiveMapMode ? 'Exit Live Map' : 'View Live Map'}
+            </button>
             <button 
               onClick={() => setCacheBuster(Date.now())}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors border border-slate-200 shadow-sm"
@@ -668,7 +677,9 @@ export function LayoutTab({
       )}
 
       <div className="flex-grow flex w-full min-h-[600px] h-[calc(100vh-270px)] bg-slate-50 rounded-xl shadow-inner border border-slate-200 overflow-hidden relative">
-        {!url ? (
+        {isLiveMapMode ? (
+          <LiveLayoutViewer storeFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : activeStore} />
+        ) : !url ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
             <Map className="w-12 h-12 mb-3 opacity-20" />
             <p className="text-sm font-medium">No floor plan layout available for this location</p>
