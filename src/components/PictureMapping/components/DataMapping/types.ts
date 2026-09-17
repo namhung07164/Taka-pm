@@ -20,6 +20,8 @@ export interface UnitShape {
   rotation?: number;
   visible: boolean;
   locked?: boolean;
+  store?: string;
+  location?: string;
 }
 
 export interface GroupRule {
@@ -48,4 +50,6 @@ export interface MapVersion {
   groups: Group[];
   groupMappings: Record<string, string[]>; // groupId -> array of unitIds
   isDynamicActive?: boolean;
+  store?: string;
+  location?: string;
 }

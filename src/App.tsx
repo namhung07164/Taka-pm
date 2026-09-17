@@ -2347,7 +2347,7 @@ const handlePrintToPDF = async () => {
         </div>
 
         {canSee && !isFocusMode && (
-          <div className="print:hidden">
+          <div className="print:hidden relative z-[150]">
             <Navigation
               activeTab={activeTab}
               onTabChange={(tab) => {

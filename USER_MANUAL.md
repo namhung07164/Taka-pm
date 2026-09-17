@@ -916,3 +916,23 @@ Hệ thống tuân thủ nghiêm ngặt các quy tắc kiến trúc chuẩn Ente
 * **Cơ chế Tiết Kiệm Ghi Firestore 2 Lớp (Dirty Check Write Optimization)**: Khi người dùng chỉnh sửa công việc (Task), hệ thống tự động kiểm tra xem các mốc thời gian (`start`, `finish`), trạng thái hoàn thành (`isCompleted`, `status`), số lượng công việc con (`taskCount`) hoặc tiến độ (`progress %`) có thực sự thay đổi hay không. Nếu người dùng chỉ cập nhật bình luận (comments), chỉnh sửa mô tả tên công việc, ghi chú hoặc phân công mà không làm thay đổi các mốc ngày/tiến độ tổng hợp, hệ thống sẽ tự động bỏ qua lệnh ghi vào document dự án tổng hợp (`taka_projects`) trên Firestore (đạt 0 write cho Project), trong khi vẫn duy trì cập nhật giao diện tức thời (Optimistic UI 0ms).
 * **Bộ Đệm Cấu Hình Tĩnh & Theo Dõi Phiên Bản (Static Config Cache + Versioning)**: Các danh mục cấu hình ít biến động (`taka_locations` - Danh sách chi nhánh/vị trí, `taka_parties` - Đối tác, `taka_settings/exchange_rates` - Tỷ giá JPY/USD, `taka_rules` - Quy tắc thông báo) được lưu sẵn trong bộ nhớ đệm cục bộ (`localStorage`), giúp ứng dụng khởi động tức thì với **0 Read và 0ms độ trễ**. Hệ thống chỉ duy trì 1 listener phiên bản cực nhẹ (`taka_config/versions`). Khi Quản trị viên (Admin) thay đổi cấu hình, cờ phiên bản tương ứng sẽ được nâng lên, kích hoạt các máy trạm khác tải lại đúng danh mục bị thay đổi trong tích tắc mà không cần lắng nghe liên tục 4 collection riêng biệt.
 
+---
+
+## 🗺️ 15. PHÂN HỆ VẼ VÀ ÁNH XẠ MẶT BẰNG (PICTURE MAPPING)
+
+Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng và gán dữ liệu chuyên đề (Thematic Mapping) trực tiếp lên ảnh mặt bằng kỹ thuật số.
+
+### 🏢 Phân Tách Dữ Liệu Theo Store & Location (Chi Nhánh & Tầng):
+1. **Bộ lọc Store & Location trực quan**:
+   - Trên thanh công cụ trên cùng của phân hệ (Data Mapping Bar), hệ thống tích hợp sẵn cụm bộ lọc:
+     - **Store**: Chọn chi nhánh **HCM** hoặc **HN**.
+     - **Location**: Chọn tầng cụ thể (**B2, B1, L1, L2, L3, L4, L5...**).
+     - **Bộ đếm Unit**: Hiển thị số lượng gian hàng thực tế đang có tại tầng/chi nhánh tương ứng.
+2. **Cơ chế phân vùng và cô lập dữ liệu độc lập (Zero Cross-Contamination)**:
+   - Toàn bộ dữ liệu gian hàng (`mapUnits`), hình vẽ (Polygon, Hình chữ nhật, Hình tròn), ảnh mặt bằng kỹ thuật (`backgroundUrl`), tỷ lệ scale/tọa độ và các phiên bản (`mapVersions`) được cô lập hoàn toàn theo từng cặp `(Store, Location)`.
+   - Khi chuyển từ `HCM - L1` sang `HCM - L2`, hệ thống tự động lưu giữ trạng thái vẽ của `L1` và mở ra không gian vẽ riêng biệt của `L2`. Khi quay lại `L1`, toàn bộ hình vẽ và ảnh nền trước đó được khôi phục nguyên vẹn 100%.
+3. **Đồng Bộ Đa Tầng / Đa Chi Nhánh Lên Cloudflare R2 (Cloud Sync)**:
+   - Khi nhấn **Lưu lên Cloud (Upload)**, hệ thống sẽ tự động đóng gói toàn bộ dữ liệu vẽ và phiên bản của tất cả các tầng và chi nhánh (`storeLocationData`), tải ảnh nền lên R2 và xuất bản file `mapping_config.json`.
+   - Khi người dùng ở bất kỳ máy trạm nào nhấn **Tải từ Cloud (Download)**, hệ thống sẽ tự động phân giải ảnh và nạp đầy đủ cơ sở dữ liệu mặt bằng cho mọi tầng, hiển thị ngay tầng người dùng đang chọn.
+
+

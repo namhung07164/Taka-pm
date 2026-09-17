@@ -14,7 +14,12 @@ export default function CloudSyncManager() {
   const [actionType, setActionType] = useState<'upload' | 'download' | null>(null);
 
   const { 
+    store,
+    location,
+    storeLocationData,
+    setStoreLocationData,
     mapUnits, mapVersions, setMapUnits, setMapVersions,
+    activeMapVersionId, setActiveMapVersionId,
     unitInfo, setUnitInfo,
     classInfo, setClassInfo,
     actualClassInfo, setActualClassInfo,
@@ -75,11 +80,37 @@ export default function CloudSyncManager() {
             if (!uploadRes.success) {
                throw new Error(`Lỗi tải lên ảnh nền ${v.name}: ${uploadRes.error}`);
             }
-            // Point the background url to the R2 public path or signed path
-            // Usually we can just store the filename and generate presigned on load, 
-            // but for simplicity, let's store the generic path. 
-            // We'll store it as 'r2://' + imgName so it can be resolved later.
             newVersions[i] = { ...v, backgroundUrl: `r2://${uploadRes.name}` };
+          }
+        }
+
+        // Build full store location partitions dictionary
+        const activeKey = `${store}_${location}`;
+        const updatedStoreLocationData = {
+          ...storeLocationData,
+          [activeKey]: {
+            mapUnits,
+            mapVersions: newVersions,
+            activeMapVersionId,
+          }
+        };
+
+        // Also check any backgroundUrls in other partitions
+        for (const pKey in updatedStoreLocationData) {
+          const p = updatedStoreLocationData[pKey];
+          if (p && p.mapVersions) {
+            for (let j = 0; j < p.mapVersions.length; j++) {
+              const pv = p.mapVersions[j];
+              if (pv.backgroundUrl && (pv.backgroundUrl.startsWith('blob:') || pv.backgroundUrl.startsWith('data:'))) {
+                const res = await fetch(pv.backgroundUrl);
+                const blob = await res.blob();
+                const imgName = `bg_${pv.id}_${Date.now()}.jpeg`;
+                const uploadRes = await uploadSingleR2File({ name: imgName, blob }, creds, s3);
+                if (uploadRes.success) {
+                  p.mapVersions[j] = { ...pv, backgroundUrl: `r2://${uploadRes.name}` };
+                }
+              }
+            }
           }
         }
 
@@ -87,6 +118,9 @@ export default function CloudSyncManager() {
         setProgress(70);
         setStatusText('Đang lưu cấu hình JSON...');
         const configData = {
+          storeLocationData: updatedStoreLocationData,
+          store,
+          location,
           mapUnits,
           versions: newVersions,
           unitInfo,
@@ -109,6 +143,9 @@ export default function CloudSyncManager() {
         if (!uploadRes.success) {
            throw new Error(`Lỗi tải lên cấu hình: ${uploadRes.error}`);
         }
+
+        setMapVersions(newVersions);
+        setStoreLocationData(updatedStoreLocationData);
         
         setProgress(100);
         setStatusText('Lưu lên Cloud thành công!');
@@ -145,9 +182,48 @@ export default function CloudSyncManager() {
               loadedVersions[i].backgroundUrl = imgUrl;
            }
         }
+
+        // Resolve links in storeLocationData if present
+        if (data.storeLocationData) {
+          const loadedStoreLocationData = data.storeLocationData;
+          for (const pKey in loadedStoreLocationData) {
+            const p = loadedStoreLocationData[pKey];
+            if (p && p.mapVersions) {
+              for (let j = 0; j < p.mapVersions.length; j++) {
+                const pv = p.mapVersions[j];
+                if (pv.backgroundUrl && pv.backgroundUrl.startsWith('r2://')) {
+                  const imgKey = pv.backgroundUrl.replace('r2://', '');
+                  const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+                  const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
+                  p.mapVersions[j].backgroundUrl = imgUrl;
+                }
+              }
+            }
+          }
+
+          setStoreLocationData(loadedStoreLocationData);
+
+          const activeKey = `${store}_${location}`;
+          const currentPartition = loadedStoreLocationData[activeKey] || (data.store && data.location && loadedStoreLocationData[`${data.store}_${data.location}`]) || Object.values(loadedStoreLocationData)[0];
+          if (currentPartition) {
+            setMapUnits(currentPartition.mapUnits || []);
+            setMapVersions(currentPartition.mapVersions || []);
+            setActiveMapVersionId(currentPartition.activeMapVersionId || currentPartition.mapVersions?.[0]?.id || null);
+          }
+        } else {
+          // Backward compatibility
+          const activeKey = `${data.store || store || 'HCM'}_${data.location || location || 'L1'}`;
+          const initialPartition = {
+            mapUnits: data.mapUnits || data.units || [],
+            mapVersions: loadedVersions,
+            activeMapVersionId: loadedVersions[0]?.id || null,
+          };
+          setStoreLocationData({ [activeKey]: initialPartition });
+          setMapUnits(initialPartition.mapUnits);
+          setMapVersions(initialPartition.mapVersions);
+          setActiveMapVersionId(initialPartition.activeMapVersionId);
+        }
         
-        setMapUnits(data.mapUnits || data.units || []); // handle backwards compat
-        setMapVersions(loadedVersions);
         setUnitInfo(data.unitInfo || []);
         setClassInfo(data.classInfo || []);
         setActualClassInfo(data.actualClassInfo || []);

@@ -1,18 +1,18 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Split, Edit3, GitMerge, Eye, Maximize2, X } from 'lucide-react';
+import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin } from 'lucide-react';
 import { cn } from '../lib/utils';
 import EditTab from './DataMapping/EditTab';
-import HierarchyTab from './DataMapping/HierarchyTab';
 import DynamicHierarchyTab from './DataMapping/DynamicHierarchyTab';
 import ReviewTab from './DataMapping/ReviewTab';
 import { UnitShape, Group, MapVersion } from './DataMapping/types';
 import { useDataStore } from '../DataContext';
+import { useAppStore } from '../../../store/useAppStore';
 
 import CloudSyncManager from './CloudSync/CloudSyncManager';
 
-export type SubTab = 'edit' | 'hierarchy' | 'dynamic-hierarchy' | 'review';
+export type SubTab = 'edit' | 'dynamic-hierarchy' | 'review';
 
 export default React.memo(function DataMappingTab() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('edit');
@@ -21,7 +21,22 @@ export default React.memo(function DataMappingTab() {
   const [isHeaderVisible, setIsHeaderVisible] = useState(false);
   
   // Shared State
-  const {  mapUnits, setMapUnits, mapVersions, setMapVersions, activeMapVersionId, setActiveMapVersionId  } = useDataStore(useShallow(state => ({
+  const {  
+    store,
+    setStore,
+    location,
+    setLocation,
+    mapUnits, 
+    setMapUnits, 
+    mapVersions, 
+    setMapVersions, 
+    activeMapVersionId, 
+    setActiveMapVersionId  
+  } = useDataStore(useShallow(state => ({
+    store: state.store,
+    setStore: state.setStore,
+    location: state.location,
+    setLocation: state.setLocation,
     mapUnits: state.mapUnits,
     setMapUnits: state.setMapUnits,
     mapVersions: state.mapVersions,
@@ -29,6 +44,15 @@ export default React.memo(function DataMappingTab() {
     activeMapVersionId: state.activeMapVersionId,
     setActiveMapVersionId: state.setActiveMapVersionId,
   })));
+
+  const appLocations = useAppStore(state => state.locations);
+  const availableLocations = React.useMemo(() => {
+    const defaults = ['B2', 'B1', 'L1', 'L2', 'L3', 'L4', 'L5'];
+    const merged = Array.from(new Set([...defaults, ...(appLocations || [])])).filter(Boolean);
+    return merged;
+  }, [appLocations]);
+
+  const storeList: ('HCM' | 'HN')[] = ['HCM', 'HN'];
 
   React.useEffect(() => {
     try {
@@ -47,17 +71,6 @@ export default React.memo(function DataMappingTab() {
       case 'edit':
         return (
           <EditTab 
-            units={mapUnits}
-            setUnits={setMapUnits}
-            versions={mapVersions}
-            setVersions={setMapVersions}
-            activeVersionId={activeMapVersionId}
-            setActiveVersionId={setActiveMapVersionId}
-          />
-        );
-      case 'hierarchy':
-        return (
-          <HierarchyTab 
             units={mapUnits}
             setUnits={setMapUnits}
             versions={mapVersions}
@@ -91,18 +104,59 @@ export default React.memo(function DataMappingTab() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden pb-4 pr-2 relative">
+    <div className="flex flex-col h-full w-full overflow-hidden pb-4 pr-2 relative min-h-0">
       <div className="z-50 p-2">
-        <div className="glass rounded-xl p-3 border border-slate-800 shadow-2xl flex items-center justify-between bg-slate-950/80 backdrop-blur-xl">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-brand-600/20 border border-brand-500/30 rounded-lg flex items-center justify-center text-brand-400">
-              <Split size={14} />
+        <div className="glass rounded-xl p-3 border border-slate-800 shadow-2xl flex items-center justify-between bg-slate-950/80 backdrop-blur-xl flex-wrap gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-brand-600/20 border border-brand-500/30 rounded-lg flex items-center justify-center text-brand-400">
+                <Split size={14} />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold italic serif tracking-wide text-white flex items-center gap-3">
+                  Data Mapping
+                  <span id="data-mapping-toolbar-portal" className="flex items-center gap-1"></span>
+                </h3>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xs font-bold italic serif tracking-wide text-white flex items-center gap-3">
-                Data Mapping
-                <span id="data-mapping-toolbar-portal" className="flex items-center gap-1"></span>
-              </h3>
+
+            {/* Store & Location Filter Dropdown */}
+            <div className="flex items-center gap-2 bg-slate-900/90 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-inner">
+              <div className="flex items-center gap-1.5" title="Chọn Chi nhánh (Store)">
+                <Building2 size={13} className="text-brand-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store:</span>
+                <select
+                  value={store}
+                  onChange={(e) => setStore(e.target.value as 'HCM' | 'HN')}
+                  className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                >
+                  {storeList.map(s => (
+                    <option key={s} value={s} className="bg-slate-950 text-slate-200 font-semibold">{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="w-px h-3.5 bg-slate-700/80"></div>
+
+              <div className="flex items-center gap-1.5" title="Chọn Tầng / Vị trí (Location)">
+                <MapPin size={13} className="text-purple-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Location:</span>
+                <select
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-purple-300 transition-colors"
+                >
+                  {availableLocations.map(loc => (
+                    <option key={loc} value={loc} className="bg-slate-950 text-slate-200 font-semibold">{loc}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="w-px h-3.5 bg-slate-700/80"></div>
+
+              <span className="text-[10px] font-medium text-slate-400">
+                {mapUnits.length} {mapUnits.length === 1 ? 'unit' : 'units'}
+              </span>
             </div>
           </div>
 
@@ -120,18 +174,6 @@ export default React.memo(function DataMappingTab() {
               >
                 <Edit3 size={11} />
                 Edit
-              </button>
-              <button
-                onClick={() => setActiveSubTab('hierarchy')}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all duration-300",
-                  activeSubTab === 'hierarchy' 
-                    ? "bg-purple-600/20 text-purple-400 border border-purple-500/30" 
-                    : "text-slate-500 hover:text-slate-300"
-                )}
-              >
-                <GitMerge size={11} />
-                Hierarchy
               </button>
               <button
                 onClick={() => setActiveSubTab('dynamic-hierarchy')}
@@ -204,15 +246,6 @@ export default React.memo(function DataMappingTab() {
                   )}
                 >
                   <Edit3 size={16} /> Edit
-                </button>
-                <button
-                  onClick={() => setActiveSubTab('hierarchy')}
-                  className={cn(
-                    "flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold uppercase transition-all",
-                    activeSubTab === 'hierarchy' ? "bg-purple-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-200"
-                  )}
-                >
-                  <GitMerge size={16} /> Hierarchy
                 </button>
                 <button
                   onClick={() => setActiveSubTab('dynamic-hierarchy')}
