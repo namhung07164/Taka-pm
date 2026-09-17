@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CloudUpload, Settings, Key, GripHorizontal } from 'lucide-react';
+import { 
+  X, CloudUpload, Settings, Key, GripHorizontal, 
+  CheckCircle2, AlertCircle, HelpCircle, Copy, Check, 
+  ChevronDown, ChevronUp, RefreshCw 
+} from 'lucide-react';
 import Draggable from 'react-draggable';
+import { testR2Connection } from '../lib/r2Upload';
 
 interface R2UploadModalProps {
   isOpen: boolean;
@@ -11,6 +16,16 @@ interface R2UploadModalProps {
   uploadProgress: number;
   statusMessage?: string;
 }
+
+const CORS_SAMPLE_JSON = `[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": [],
+    "MaxAgeSeconds": 3000
+  }
+]`;
 
 export default function R2UploadModal({ isOpen, onClose, onStartExport, uploading, uploadProgress, statusMessage }: R2UploadModalProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -22,18 +37,24 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
   const [cfZoneId, setCfZoneId] = useState('');
   const [cfApiToken, setCfApiToken] = useState('');
   const [showConfig, setShowConfig] = useState(true);
+  const [showGuide, setShowGuide] = useState(false);
+  const [copiedCors, setCopiedCors] = useState(false);
+  const [testStatus, setTestStatus] = useState<{ state: 'idle' | 'testing' | 'success' | 'error'; message: string }>({
+    state: 'idle',
+    message: '',
+  });
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    const storedAccountId = localStorage.getItem('r2_account_id') || '';
-    const storedAccessKey = localStorage.getItem('r2_access_key') || '';
-    const storedSecretKey = localStorage.getItem('r2_secret_key') || '';
-    const storedBucketName = localStorage.getItem('r2_bucket_name') || '';
-    const storedCfZoneId = localStorage.getItem('cf_zone_id') || '';
-    const storedCfApiToken = localStorage.getItem('cf_api_token') || '';
+    const storedAccountId = (localStorage.getItem('r2_account_id') || '').trim();
+    const storedAccessKey = (localStorage.getItem('r2_access_key') || '').trim();
+    const storedSecretKey = (localStorage.getItem('r2_secret_key') || '').trim();
+    const storedBucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
+    const storedCfZoneId = (localStorage.getItem('cf_zone_id') || '').trim();
+    const storedCfApiToken = (localStorage.getItem('cf_api_token') || '').trim();
 
     setAccountId(storedAccountId);
     setAccessKey(storedAccessKey);
@@ -41,6 +62,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     setBucketName(storedBucketName);
     setCfZoneId(storedCfZoneId);
     setCfApiToken(storedCfApiToken);
+    setTestStatus({ state: 'idle', message: '' });
 
     if (storedAccountId && storedAccessKey && storedSecretKey && storedBucketName) {
       setShowConfig(false);
@@ -49,13 +71,55 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     }
   }, [isOpen]);
 
+  const handleCopyCors = () => {
+    navigator.clipboard.writeText(CORS_SAMPLE_JSON);
+    setCopiedCors(true);
+    setTimeout(() => setCopiedCors(false), 2000);
+  };
+
+  const handleTestConnection = async () => {
+    const cleanAccountId = accountId.trim();
+    const cleanBucketName = bucketName.trim();
+    const cleanAccessKey = accessKey.trim();
+    const cleanSecretKey = secretKey.trim();
+
+    if (!cleanAccountId || !cleanBucketName || !cleanAccessKey || !cleanSecretKey) {
+      setTestStatus({
+        state: 'error',
+        message: 'Vui lòng điền đủ 4 trường: Account ID, Bucket Name, Access Key và Secret Key trước khi test.',
+      });
+      return;
+    }
+
+    setTestStatus({ state: 'testing', message: 'Đang gửi file kiểm tra kết nối & CORS lên Cloudflare R2...' });
+    const res = await testR2Connection({
+      accountId: cleanAccountId,
+      bucketName: cleanBucketName,
+      accessKeyId: cleanAccessKey,
+      secretAccessKey: cleanSecretKey,
+    });
+
+    if (res.ok) {
+      setTestStatus({ state: 'success', message: res.message });
+    } else {
+      setTestStatus({ state: 'error', message: res.message });
+    }
+  };
+
   const handleSaveAndUpload = () => {
-    localStorage.setItem('r2_account_id', accountId);
-    localStorage.setItem('r2_access_key', accessKey);
-    localStorage.setItem('r2_secret_key', secretKey);
-    localStorage.setItem('r2_bucket_name', bucketName);
-    localStorage.setItem('cf_zone_id', cfZoneId);
-    localStorage.setItem('cf_api_token', cfApiToken);
+    const cleanAccountId = accountId.trim();
+    const cleanAccessKey = accessKey.trim();
+    const cleanSecretKey = secretKey.trim();
+    const cleanBucketName = bucketName.trim();
+    const cleanCfZoneId = cfZoneId.trim();
+    const cleanCfApiToken = cfApiToken.trim();
+
+    localStorage.setItem('r2_account_id', cleanAccountId);
+    localStorage.setItem('r2_access_key', cleanAccessKey);
+    localStorage.setItem('r2_secret_key', cleanSecretKey);
+    localStorage.setItem('r2_bucket_name', cleanBucketName);
+    localStorage.setItem('cf_zone_id', cleanCfZoneId);
+    localStorage.setItem('cf_api_token', cleanCfApiToken);
 
     if (window.confirm("Đồng ý lưu bản mới lên Cloudflare R2?\nHệ thống sẽ tự động dọn dẹp các bản cũ trên R2 để chỉ lưu 1 version duy nhất, tránh rác lưu trữ.")) {
       onStartExport();
@@ -64,7 +128,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
 
   if (!isOpen || !mounted) return null;
 
-  const isConfigured = accountId && bucketName && accessKey && secretKey;
+  const isConfigured = accountId.trim() && bucketName.trim() && accessKey.trim() && secretKey.trim();
 
   const modalContent = (
     <div className="fixed inset-0 z-[999999] bg-black/80 flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150 overflow-hidden">
@@ -125,6 +189,49 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
                   </button>
                 </div>
               )}
+
+              {/* Collapsible Guide */}
+              <div className="border border-slate-800 rounded-xl bg-slate-950/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowGuide(!showGuide)}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-semibold text-amber-400 hover:text-amber-300 hover:bg-slate-900/60 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <HelpCircle size={14} /> Hướng dẫn điền & Khắc phục lỗi (CORS / Token)
+                  </span>
+                  {showGuide ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                {showGuide && (
+                  <div className="p-3.5 border-t border-slate-800/80 text-xs text-slate-300 space-y-3 bg-slate-900/30">
+                    <div className="space-y-1">
+                      <p className="font-bold text-amber-300">1. Khi tạo R2 API Token trong Cloudflare:</p>
+                      <p>• Quyền (Permissions): Chọn <strong className="text-white bg-slate-800 px-1 py-0.5 rounded">Object Read & Write</strong> (hoặc Admin Read & Write). <span className="text-rose-400">Không chọn Object Read Only</span>.</p>
+                      <p>• Account ID: Xem ở cột phải trang chính R2 trong Cloudflare.</p>
+                    </div>
+
+                    <div className="space-y-1.5 border-t border-slate-800 pt-2">
+                      <p className="font-bold text-amber-300">2. Cấu hình CORS (Nguyên nhân 99% lỗi khi Save):</p>
+                      <p>• Vào Cloudflare Dashboard &gt; <strong>R2</strong> &gt; Chọn <strong>Bucket của bạn</strong> &gt; Tab <strong>Settings</strong> &gt; Cuộn xuống mục <strong>CORS Policy</strong> &gt; Bấm <strong>Add CORS policy</strong>.</p>
+                      <div className="relative">
+                        <pre className="p-2 bg-slate-950 border border-slate-800 rounded text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-28">
+                          {CORS_SAMPLE_JSON}
+                        </pre>
+                        <button
+                          type="button"
+                          onClick={handleCopyCors}
+                          className="absolute top-1.5 right-1.5 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] rounded flex items-center gap-1 border border-slate-700 transition-colors"
+                        >
+                          {copiedCors ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                          {copiedCors ? 'Đã copy!' : 'Copy JSON'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Account ID</label>
                 <input
@@ -168,6 +275,42 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
                   placeholder="e.g. YOUR_SECRET_ACCESS_KEY"
                   disabled={uploading}
                 />
+              </div>
+
+              {/* Test Connection Button & Status */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={uploading || testStatus.state === 'testing' || !accountId || !bucketName || !accessKey || !secretKey}
+                  className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-lg text-xs font-semibold border border-slate-700 flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {testStatus.state === 'testing' ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin text-amber-400" />
+                      <span>Đang kiểm tra kết nối và CORS...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={13} className="text-emerald-400" />
+                      <span>Kiểm tra kết nối & CORS trước khi Lưu</span>
+                    </>
+                  )}
+                </button>
+
+                {testStatus.state === 'success' && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-emerald-950/50 border border-emerald-800/80 text-xs text-emerald-300 flex items-start gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                    <span>{testStatus.message}</span>
+                  </div>
+                )}
+
+                {testStatus.state === 'error' && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-rose-950/50 border border-rose-800/80 text-xs text-rose-300 flex items-start gap-2">
+                    <AlertCircle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                    <span>{testStatus.message}</span>
+                  </div>
+                )}
               </div>
               
               <div className="pt-2 mt-4 border-t border-slate-800">
@@ -238,7 +381,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
           </button>
           <button
             onClick={handleSaveAndUpload}
-            disabled={uploading || !accountId || !bucketName || !accessKey || !secretKey}
+            disabled={uploading || !accountId.trim() || !bucketName.trim() || !accessKey.trim() || !secretKey.trim()}
             className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors text-sm font-bold font-sans flex items-center justify-center min-w-[120px]"
           >
             {uploading ? (

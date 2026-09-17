@@ -39,15 +39,85 @@ export interface R2ProgressInfo {
  * Retrieve saved R2 credentials from localStorage with multi-key fallback
  */
 export function getStoredR2Credentials(): R2Credentials | null {
-  const accountId = localStorage.getItem('r2_account_id') || '';
-  const accessKeyId = localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '';
-  const secretAccessKey = localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '';
-  const bucketName = localStorage.getItem('r2_bucket_name') || '';
+  const accountId = (localStorage.getItem('r2_account_id') || '').trim();
+  const accessKeyId = (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+  const secretAccessKey = (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+  const bucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
     return null;
   }
   return { accountId, accessKeyId, secretAccessKey, bucketName };
+}
+
+/**
+ * Test R2 connection and CORS policy by attempting a temporary test upload
+ */
+export async function testR2Connection(creds: R2Credentials): Promise<{ ok: boolean; message: string }> {
+  try {
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: creds.accessKeyId.trim(),
+        secretAccessKey: creds.secretAccessKey.trim(),
+      },
+    });
+
+    const testKey = '.r2_cors_check.txt';
+    const testBlob = new Blob(['cors-ok'], { type: 'text/plain' });
+    const command = new PutObjectCommand({
+      Bucket: creds.bucketName.trim(),
+      Key: testKey,
+      ContentType: 'text/plain',
+    });
+
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+    const res = await fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: testBlob,
+    });
+
+    if (res.ok) {
+      // Clean up test file
+      try {
+        const delCmd = new DeleteObjectCommand({
+          Bucket: creds.bucketName.trim(),
+          Key: testKey,
+        });
+        const delUrl = await getSignedUrl(s3, delCmd, { expiresIn: 300 });
+        await fetch(delUrl, { method: 'DELETE' });
+      } catch (_) {}
+
+      return { ok: true, message: 'Kết nối và quyền ghi Cloudflare R2 thành công (CORS hoạt động chuẩn)!' };
+    }
+
+    const errText = await res.text().catch(() => '');
+    if (res.status === 403) {
+      return {
+        ok: false,
+        message: 'Lỗi 403: Sai Access Key / Secret Key hoặc API Token không có quyền ghi ("Object Read & Write").',
+      };
+    }
+    if (res.status === 404) {
+      return {
+        ok: false,
+        message: `Lỗi 404: Không tìm thấy Bucket "${creds.bucketName}". Vui lòng kiểm tra lại tên Bucket.`,
+      };
+    }
+    return { ok: false, message: `Lỗi R2 HTTP ${res.status}: ${errText.substring(0, 100)}` };
+  } catch (err: any) {
+    console.error('[R2 Test] Connection error:', err);
+    const msg = err?.message || String(err);
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
+      return {
+        ok: false,
+        message: 'Lỗi CORS: Bucket chưa được bật CORS trên Cloudflare R2 Dashboard. Trình duyệt đã chặn gửi file!',
+      };
+    }
+    return { ok: false, message: `Lỗi kết nối: ${msg}` };
+  }
 }
 
 /**
@@ -255,39 +325,21 @@ export async function uploadSingleR2File(
       }
 
       const errText = await res.text().catch(() => '');
-      throw new Error(`Direct PUT HTTP ${res.status}: ${errText.substring(0, 80)}`);
-    } catch (directErr: any) {
-      console.warn(`[R2 Upload] Direct upload error for ${safeName} (lần ${attempt}/${maxRetries}):`, directErr);
-      lastError = directErr?.message || 'Direct upload error';
-
-      // 2. Fallback to /api/r2-upload proxy on server to bypass CORS/Network barriers
-      try {
-        const proxyRes = await fetch('/api/r2-upload', {
-          method: 'POST',
-          headers: {
-            'Content-Type': contentType,
-            'x-r2-account-id': creds.accountId,
-            'x-r2-access-key-id': creds.accessKeyId,
-            'x-r2-secret-access-key': creds.secretAccessKey,
-            'x-r2-bucket-name': creds.bucketName,
-            'x-r2-file-name': encodeURIComponent(safeName),
-          },
-          body: file.blob,
-        });
-
-        if (proxyRes.ok) {
-          const json = await proxyRes.json().catch(() => ({ success: true }));
-          if (json.success) {
-            return { name: safeName, success: true };
-          }
-        }
-        const proxyErrText = await proxyRes.text().catch(() => '');
-        throw new Error(`Proxy upload HTTP ${proxyRes.status}: ${proxyErrText.substring(0, 80)}`);
-      } catch (proxyErr: any) {
-        console.warn(`[R2 Upload] Proxy fallback error for ${safeName} (lần ${attempt}/${maxRetries}):`, proxyErr);
-        lastError = proxyErr?.message || lastError;
+      if (res.status === 403) {
+        throw new Error('R2 từ chối quyền ghi (HTTP 403). Hãy đảm bảo API Token có quyền "Object Read & Write".');
       }
-
+      if (res.status === 404) {
+        throw new Error(`Không tìm thấy Bucket "${creds.bucketName}" (HTTP 404). Hãy kiểm tra lại tên Bucket.`);
+      }
+      throw new Error(`Cloudflare R2 từ chối lưu file (Mã lỗi: HTTP ${res.status}): ${errText.substring(0, 80)}`);
+    } catch (directErr: any) {
+      console.warn(`[R2 Upload] Lỗi tải lên trực tiếp (lần ${attempt}/${maxRetries}):`, directErr);
+      let errMsg = directErr?.message || 'Lỗi mạng khi tải lên R2.';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+        errMsg = 'Lỗi CORS / Mạng: Vui lòng vào Cloudflare R2 > Bucket > Settings > thêm CORS Policy cho phép PUT & GET.';
+      }
+      lastError = errMsg;
+      
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, 1000 * attempt));
       }
@@ -388,10 +440,14 @@ export async function uploadFilesToR2(
   const cfApiToken = localStorage.getItem('cf_api_token');
   if (cfZoneId && cfApiToken) {
     try {
-      await fetch('/api/purge-cache', {
+      // Direct API call to cloudflare since the proxy doesn't work on the public hosting (405)
+      await fetch(`https://api.cloudflare.com/client/v4/zones/${cfZoneId}/purge_cache`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zoneId: cfZoneId, apiToken: cfApiToken }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cfApiToken}`
+        },
+        body: JSON.stringify({ purge_everything: true }),
       });
     } catch (purgeErr) {
       console.warn('Purge cache error:', purgeErr);

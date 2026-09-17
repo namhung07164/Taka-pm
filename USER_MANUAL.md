@@ -944,5 +944,30 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Người dùng có thể nhấn giữ thanh tiêu đề và kéo pop-up đến bất kỳ vị trí nào trên màn hình để không che khuất bản vẽ mặt bằng đang quan sát phía dưới.
      - Phạm vi kéo di chuyển được giới hạn thông minh bên trong khung hình (`bounds="parent"`), ngăn cửa sổ bị trôi ra ngoài màn hình.
      - Trên màn hình thiết bị di động nhỏ (<640px), tính năng kéo tự động chuyển sang chế độ cố định giữa màn hình để người dùng thao tác chạm vuốt cuộn nội dung thuận tiện nhất.
+5. **Hướng Dẫn Cấu Hình Cloudflare R2 & Khắc Phục Lỗi Khi Lưu (CORS / Token)**:
+   - **Bước 1 - Tạo R2 API Token**:
+     + Đăng nhập Cloudflare Dashboard &gt; chọn **R2** &gt; chọn **Manage R2 API Tokens** &gt; bấm **Create API token**.
+     + Tại mục **Permissions**: Bắt buộc chọn **Object Read & Write** (hoặc *Admin Read & Write*). *Lưu ý: Không chọn "Object Read Only" vì hệ thống sẽ không thể ghi file.*
+     + Mục **Specify bucket**: Chọn Bucket của bạn hoặc "All buckets".
+     + Bấm **Create API Token**, copy các thông tin: `Access Key ID`, `Secret Access Key`.
+     + Lấy `Account ID`: Nằm ở cột bên phải trang chính của mục R2.
+   - **Bước 2 - Bật CORS trên Bucket (Khắc phục triệt để lỗi "Failed to fetch" khi Lưu Cloud)**:
+     + Trong Cloudflare Dashboard &gt; vào **R2** &gt; nhấp vào tên **Bucket** của bạn.
+     + Chọn tab **Settings** &gt; cuộn xuống phần **CORS Policy** &gt; bấm **Add CORS policy** (hoặc Edit).
+     + Dán đoạn JSON sau và bấm Save:
+       ```json
+       [
+         {
+           "AllowedOrigins": ["*"],
+           "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+           "AllowedHeaders": ["*"],
+           "ExposeHeaders": [],
+           "MaxAgeSeconds": 3000
+         }
+       ]
+       ```
+   - **Bước 3 - Kiểm tra kết nối 1 chạm**:
+     + Mở pop-up **Save Cloud** (hoặc **R2 Cloud** trong tab Review) &gt; điền thông tin và bấm nút **"Kiểm tra kết nối & CORS trước khi Lưu"**.
+     + Hệ thống sẽ tự động gửi gói tin kiểm tra và phản hồi tức thời: Nếu thành công, bạn có thể an tâm bấm "Save & Upload"; nếu còn thiếu CORS hoặc sai quyền token, hệ thống sẽ chỉ rõ nguyên nhân để bạn xử lý ngay.
 
 
