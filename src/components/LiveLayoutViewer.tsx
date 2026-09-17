@@ -8,12 +8,15 @@ import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { getStatus } from '../lib/utils';
 import { Project } from '../types';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, APP_ID } from '../lib/firebase';
 
 interface LiveLayoutViewerProps {
   storeFilter: string;
 }
 
 export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
+  const { r2Config, setR2Config } = useAppStore();
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,10 +30,10 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
 
   // Load initial form values from localStorage
   const initFormFromStorage = () => {
-    setCfgAccountId((localStorage.getItem('r2_account_id') || '').trim());
-    setCfgBucketName((localStorage.getItem('r2_bucket_name') || '').trim());
-    setCfgAccessKey((localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim());
-    setCfgSecretKey((localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim());
+    setCfgAccountId(r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim());
+    setCfgBucketName(r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim());
+    setCfgAccessKey(r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim());
+    setCfgSecretKey(r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim());
   };
 
   // Load config from R2
@@ -38,14 +41,14 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
     setLoading(true);
     setError(null);
     try {
-      const accountId = (localStorage.getItem('r2_account_id') || '').trim();
-      const accessKeyId = (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
-      const secretAccessKey = (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
-      const bucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
+      const accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
+      const accessKeyId = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+      const secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+      const bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
 
       if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
         initFormFromStorage();
-        throw new Error('Chưa cấu hình R2 Cloudflare trên trình duyệt này. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
+        throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
       }
 
       const s3 = new S3Client({
@@ -87,7 +90,7 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
     }
   };
 
-  const handleSaveR2Config = () => {
+  const handleSaveR2Config = async () => {
     const acc = cfgAccountId.trim();
     const bkt = cfgBucketName.trim();
     const key = cfgAccessKey.trim();
@@ -105,13 +108,32 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
     localStorage.setItem('r2_secret_key', sec);
     localStorage.setItem('r2_secret_access_key', sec);
 
+    // Save to global config
+    const configData = {
+      accountId: acc,
+      bucketName: bkt,
+      accessKeyId: key,
+      secretAccessKey: sec
+    };
+    setR2Config(configData);
+
+    try {
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"), configData);
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+        r2Version: Date.now(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.error("Lỗi khi lưu cấu hình R2 lên server:", e);
+    }
+
     setShowConfigModal(false);
     loadConfig();
   };
 
   useEffect(() => {
     loadConfig();
-  }, []);
+  }, [r2Config]);
 
   if (loading) {
     return (

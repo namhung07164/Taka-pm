@@ -76,4 +76,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
   setJpyRate: (jpyRate) => set({ jpyRate }),
   usdRate: initialStaticConfig.usdRate,
   setUsdRate: (usdRate) => set({ usdRate }),
+
+  r2Config: initialStaticConfig.r2Config || null,
+  setR2Config: (r2Config) => set({ r2Config }),
 });

@@ -179,6 +179,9 @@ export interface DataSlice {
   setJpyRate: (rate: number) => void;
   usdRate: number;
   setUsdRate: (rate: number) => void;
+
+  r2Config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null;
+  setR2Config: (config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null) => void;
 }
 
 export interface OptimisticSlice {

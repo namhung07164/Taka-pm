@@ -10,6 +10,7 @@ export interface ConfigVersions {
   partiesVersion?: number;
   ratesVersion?: number;
   rulesVersion?: number;
+  r2Version?: number;
   updatedAt?: string;
 }
 
@@ -21,6 +22,7 @@ const CACHE_KEYS = {
   USD_RATE: "taka_cache_exchange_usd_v1",
   RULES: "taka_cache_rules_v1",
   VERSIONS: "taka_cache_config_versions_v1",
+  R2_CONFIG: "taka_cache_r2_config_v1",
 };
 
 /**
@@ -53,6 +55,7 @@ export function loadCachedStaticConfig(): {
   jpyRate: number;
   usdRate: number;
   rules: NotificationRule[];
+  r2Config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null;
 } {
   let locations: string[] = [];
   let locationVisibility: Record<string, boolean> = {};
@@ -60,6 +63,7 @@ export function loadCachedStaticConfig(): {
   let jpyRate = 160;
   let usdRate = 25000;
   let rules: NotificationRule[] = [];
+  let r2Config = null;
 
   try {
     const rawLocs = safeGetItemLocal(CACHE_KEYS.LOCATIONS);
@@ -85,11 +89,27 @@ export function loadCachedStaticConfig(): {
 
     const rawRules = safeGetItemLocal(CACHE_KEYS.RULES);
     if (rawRules) rules = JSON.parse(rawRules);
+
+    const rawR2 = safeGetItemLocal(CACHE_KEYS.R2_CONFIG);
+    if (rawR2) r2Config = JSON.parse(rawR2);
   } catch (e) {
     console.warn("Failed to parse cached static config:", e);
   }
 
-  return { locations, locationVisibility, parties, jpyRate, usdRate, rules };
+  return { locations, locationVisibility, parties, jpyRate, usdRate, rules, r2Config };
+}
+
+/**
+ * Lưu R2 Config vào LocalStorage
+ */
+export function cacheR2Config(config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null): void {
+  try {
+    if (config) {
+      safeSetItemLocal(CACHE_KEYS.R2_CONFIG, JSON.stringify(config));
+    } else {
+      safeSetItemLocal(CACHE_KEYS.R2_CONFIG, "");
+    }
+  } catch (e) {}
 }
 
 /**
@@ -256,12 +276,32 @@ export function setupStaticConfigSync(): Unsubscribe {
         }
       }
 
+      // 5. R2 Config
+      const remoteR2Ver = remoteData.r2Version || 1;
+      if (localVersions.r2Version !== remoteR2Ver || store.r2Config === null || needsInit) {
+        try {
+          const r2Doc = await getDoc(
+            doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials")
+          );
+          if (r2Doc.exists()) {
+            const data = r2Doc.data() as { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string };
+            if (data.accountId && data.accessKeyId) {
+               store.setR2Config(data);
+               cacheR2Config(data);
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching r2 config:", err);
+        }
+      }
+
       // Cập nhật lại versions vào local cache
       setLocalConfigVersions({
         locationsVersion: remoteLocVer,
         partiesVersion: remotePartyVer,
         ratesVersion: remoteRateVer,
         rulesVersion: remoteRuleVer,
+        r2Version: remoteR2Ver,
         updatedAt: remoteData.updatedAt || new Date().toISOString(),
       });
     },

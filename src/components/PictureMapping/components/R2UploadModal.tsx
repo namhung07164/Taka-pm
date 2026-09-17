@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { testR2Connection } from '../lib/r2Upload';
+import { useAppStore } from '../../../store/useAppStore';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, APP_ID } from '../../../lib/firebase';
 
 interface R2UploadModalProps {
   isOpen: boolean;
@@ -44,15 +47,18 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     message: '',
   });
 
+  const { r2Config, setR2Config } = useAppStore();
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    const storedAccountId = (localStorage.getItem('r2_account_id') || '').trim();
-    const storedAccessKey = (localStorage.getItem('r2_access_key') || '').trim();
-    const storedSecretKey = (localStorage.getItem('r2_secret_key') || '').trim();
-    const storedBucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
+    // Ưu tiên lấy từ global store (đồng bộ từ Server), nếu không có mới lấy local storage
+    const storedAccountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
+    const storedAccessKey = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+    const storedSecretKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+    const storedBucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
     const storedCfZoneId = (localStorage.getItem('cf_zone_id') || '').trim();
     const storedCfApiToken = (localStorage.getItem('cf_api_token') || '').trim();
 
@@ -69,7 +75,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     } else {
       setShowConfig(true);
     }
-  }, [isOpen]);
+  }, [isOpen, r2Config]);
 
   const handleCopyCors = () => {
     navigator.clipboard.writeText(CORS_SAMPLE_JSON);
@@ -106,7 +112,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     }
   };
 
-  const handleSaveAndUpload = () => {
+  const handleSaveAndUpload = async () => {
     const cleanAccountId = accountId.trim();
     const cleanAccessKey = accessKey.trim();
     const cleanSecretKey = secretKey.trim();
@@ -123,7 +129,27 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     localStorage.setItem('cf_zone_id', cleanCfZoneId);
     localStorage.setItem('cf_api_token', cleanCfApiToken);
 
-    if (window.confirm("Đồng ý lưu bản mới lên Cloudflare R2?\nHệ thống sẽ tự động dọn dẹp các bản cũ trên R2 để chỉ lưu 1 version duy nhất, tránh rác lưu trữ.")) {
+    // Đồng bộ cấu hình lên Firestore để dùng chung toàn hệ thống
+    if (cleanAccountId && cleanBucketName && cleanAccessKey && cleanSecretKey) {
+      const configData = {
+        accountId: cleanAccountId,
+        bucketName: cleanBucketName,
+        accessKeyId: cleanAccessKey,
+        secretAccessKey: cleanSecretKey
+      };
+      setR2Config(configData);
+      try {
+        await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"), configData);
+        await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+          r2Version: Date.now(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.error("Lỗi khi lưu cấu hình R2 lên server:", e);
+      }
+    }
+
+    if (window.confirm("Đồng ý lưu bản mới lên Cloudflare R2?\nHệ thống sẽ tự động dọn dẹp các bản cũ trên R2 để chỉ lưu 1 version duy nhất, tránh rác lưu trữ.\nĐồng thời, khoá kết nối R2 sẽ được đồng bộ lên Server cho toàn hệ thống.")) {
       onStartExport();
     }
   };
