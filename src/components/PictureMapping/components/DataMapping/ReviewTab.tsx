@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
-import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal } from 'lucide-react';
+import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, MapPin } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
@@ -70,8 +70,13 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     const summaryMap = new Map();
     summaryData.forEach(s => summaryMap.set(s.unit, s));
 
+    const activeLoc = activeVersion.location;
+
     return units
-      .filter(unit => unitToGroupStyle.has(unit.id))
+      .filter(unit => {
+        if (activeLoc && unit.location && unit.location !== activeLoc) return false;
+        return unitToGroupStyle.has(unit.id);
+      })
       .map(unit => {
         const style = unitToGroupStyle.get(unit.id)!;
         const uInfo = summaryMap.get(unit.name);
@@ -347,6 +352,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
       v.groups.forEach((group) => {
         const matchingUnits = units.filter((u) => {
+          if (v.location && u.location && u.location !== v.location) return false;
           if (!group.rules || group.rules.length === 0) return false;
           const data = aggregatedData[u.name.toLowerCase()];
           if (!data) return false;
@@ -396,33 +402,31 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       setVersions(nextVersions);
     }
     
-    // Update unit styles for the current active version just like in DynamicHierarchyTab
-    if (activeVersion) {
-      const v = nextVersions.find(ver => ver.id === activeVersion.id);
-      if (v) {
-        let colorChanges = false;
-        const nextUnits = [...units];
-        nextUnits.forEach((u, idx) => {
-          let assignedColor = "#3b82f6";
-          v.groups.forEach((g) => {
-            if (v.groupMappings[g.id]?.includes(u.id)) {
-              assignedColor = g.color;
-            }
-          });
-          if (u.fill !== assignedColor) {
-            nextUnits[idx] = { ...u, fill: assignedColor };
-            colorChanges = true;
+    // Update unit styles across all versions and locations
+    let colorChanges = false;
+    const nextUnits = [...units];
+    nextUnits.forEach((u, idx) => {
+      const targetVer = nextVersions.find(ver => ver.location && u.location ? ver.location === u.location : ver.id === activeVersion?.id) || activeVersion;
+      if (targetVer) {
+        let assignedColor = u.fill || "#3b82f6";
+        targetVer.groups.forEach((g) => {
+          if (targetVer.groupMappings[g.id]?.includes(u.id)) {
+            assignedColor = g.color;
           }
         });
-
-        if (colorChanges) {
-          setUnits(nextUnits);
+        if (u.fill !== assignedColor) {
+          nextUnits[idx] = { ...u, fill: assignedColor };
+          colorChanges = true;
         }
       }
+    });
+
+    if (colorChanges) {
+      setUnits(nextUnits);
     }
 
-    if (hasChanges) {
-      alert('Đã áp dụng điều kiện cho tất cả các phiên bản.');
+    if (hasChanges || colorChanges) {
+      alert('Đã áp dụng điều kiện cho tất cả các phiên bản trên toàn bộ vị trí / tầng.');
     } else {
       alert('Không có thay đổi nào cần cập nhật.');
     }
@@ -622,9 +626,15 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
             >
               {versions.length === 0 && <option value="">No versions available</option>}
               {versions.map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
+                <option key={v.id} value={v.id}>{v.location ? `[${v.location}] ` : ''}{v.name}</option>
               ))}
             </select>
+            {activeVersion?.location && (
+              <span className="text-[10px] font-bold px-2 py-1 rounded bg-purple-950/80 text-purple-300 border border-purple-800/60 uppercase tracking-wider flex items-center gap-1" title="Vị trí tầng của bản vẽ này">
+                <MapPin size={11} className="text-purple-400" />
+                {activeVersion.location}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1040,7 +1050,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                                     className="w-4 h-4 text-amber-500 bg-slate-900 border-slate-600 focus:ring-amber-500"
                                 />
                                 <div className="flex-1 flex items-center justify-between">
-                                    <span className="font-bold text-sm">{v.name}</span>
+                                    <span className="font-bold text-sm">{v.location ? `[${v.location}] ` : ''}{v.name}</span>
                                     {v.id === activeVersionId && (
                                         <span className="text-[10px] px-2 py-0.5 rounded bg-brand-900/60 text-brand-300 border border-brand-700/50">
                                             Đang xem
@@ -1076,7 +1086,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                                     }}
                                     className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
                                 />
-                                <span className="text-slate-300">{v.name}</span>
+                                <span className="text-slate-300">{v.location ? `[${v.location}] ` : ''}{v.name}</span>
                             </label>
                         ))}
                     </div>
@@ -1106,8 +1116,13 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
     const summaryMap = new Map();
     summaryData.forEach((s: any) => summaryMap.set(s.unit, s));
 
+    const vLoc = version?.location;
+
     return units
-      .filter((unit: any) => unitToGroupStyle.has(unit.id))
+      .filter((unit: any) => {
+        if (vLoc && unit.location && unit.location !== vLoc) return false;
+        return unitToGroupStyle.has(unit.id);
+      })
       .map((unit: any) => {
         const style = unitToGroupStyle.get(unit.id)!;
         const uInfo = summaryMap.get(unit.name);

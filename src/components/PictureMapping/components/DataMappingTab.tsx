@@ -1,7 +1,7 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin } from 'lucide-react';
+import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin, Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
 import EditTab from './DataMapping/EditTab';
 import DynamicHierarchyTab from './DataMapping/DynamicHierarchyTab';
@@ -31,7 +31,12 @@ export default React.memo(function DataMappingTab() {
     mapVersions, 
     setMapVersions, 
     activeMapVersionId, 
-    setActiveMapVersionId  
+    setActiveMapVersionId,
+    getAllStoreUnits,
+    getAllStoreVersions,
+    updateStoreUnitsAcrossLocations,
+    updateStoreVersionsAcrossLocations,
+    storeLocationData,
   } = useDataStore(useShallow(state => ({
     store: state.store,
     setStore: state.setStore,
@@ -43,6 +48,11 @@ export default React.memo(function DataMappingTab() {
     setMapVersions: state.setMapVersions,
     activeMapVersionId: state.activeMapVersionId,
     setActiveMapVersionId: state.setActiveMapVersionId,
+    getAllStoreUnits: state.getAllStoreUnits,
+    getAllStoreVersions: state.getAllStoreVersions,
+    updateStoreUnitsAcrossLocations: state.updateStoreUnitsAcrossLocations,
+    updateStoreVersionsAcrossLocations: state.updateStoreVersionsAcrossLocations,
+    storeLocationData: state.storeLocationData,
   })));
 
   const appLocations = useAppStore(state => state.locations);
@@ -53,6 +63,14 @@ export default React.memo(function DataMappingTab() {
   }, [appLocations]);
 
   const storeList: ('HCM' | 'HN')[] = ['HCM', 'HN'];
+
+  const allStoreUnits = React.useMemo(() => {
+    return getAllStoreUnits(store);
+  }, [store, mapUnits, storeLocationData, getAllStoreUnits]);
+
+  const allStoreVersions = React.useMemo(() => {
+    return getAllStoreVersions(store);
+  }, [store, mapVersions, storeLocationData, getAllStoreVersions]);
 
   React.useEffect(() => {
     try {
@@ -82,10 +100,10 @@ export default React.memo(function DataMappingTab() {
       case 'dynamic-hierarchy':
         return (
           <DynamicHierarchyTab 
-            units={mapUnits}
-            setUnits={setMapUnits}
-            versions={mapVersions}
-            setVersions={setMapVersions}
+            units={allStoreUnits}
+            setUnits={(newUnits) => updateStoreUnitsAcrossLocations(newUnits, store)}
+            versions={allStoreVersions}
+            setVersions={(newVersions) => updateStoreVersionsAcrossLocations(newVersions, store)}
             activeVersionId={activeMapVersionId}
             setActiveVersionId={setActiveMapVersionId}
           />
@@ -93,10 +111,10 @@ export default React.memo(function DataMappingTab() {
       case 'review':
         return (
           <ReviewTab 
-            units={mapUnits}
-            setUnits={setMapUnits}
-            versions={mapVersions}
-            setVersions={setMapVersions}
+            units={allStoreUnits}
+            setUnits={(newUnits) => updateStoreUnitsAcrossLocations(newUnits, store)}
+            versions={allStoreVersions}
+            setVersions={(newVersions) => updateStoreVersionsAcrossLocations(newVersions, store)}
             activeVersionId={activeMapVersionId}
           />
         );
@@ -138,24 +156,34 @@ export default React.memo(function DataMappingTab() {
 
               <div className="w-px h-3.5 bg-slate-700/80"></div>
 
-              <div className="flex items-center gap-1.5" title="Chọn Tầng / Vị trí (Location)">
-                <MapPin size={13} className="text-purple-400" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Location:</span>
-                <select
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-purple-300 transition-colors"
-                >
-                  {availableLocations.map(loc => (
-                    <option key={loc} value={loc} className="bg-slate-950 text-slate-200 font-semibold">{loc}</option>
-                  ))}
-                </select>
-              </div>
+              {activeSubTab === 'edit' ? (
+                <div className="flex items-center gap-1.5" title="Chọn Tầng / Vị trí (Location)">
+                  <MapPin size={13} className="text-purple-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Location:</span>
+                  <select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-purple-300 transition-colors"
+                  >
+                    {availableLocations.map(loc => (
+                      <option key={loc} value={loc} className="bg-slate-950 text-slate-200 font-semibold">{loc}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/50" title="Tab này không lọc theo Location - Áp dụng chung cho toàn bộ vị trí / tầng">
+                  <Layers size={13} className="text-purple-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">Toàn bộ Location</span>
+                </div>
+              )}
 
               <div className="w-px h-3.5 bg-slate-700/80"></div>
 
               <span className="text-[10px] font-medium text-slate-400">
-                {mapUnits.length} {mapUnits.length === 1 ? 'unit' : 'units'}
+                {activeSubTab === 'edit'
+                  ? `${mapUnits.length} ${mapUnits.length === 1 ? 'unit' : 'units'}`
+                  : `${allStoreUnits.length} units (Tất cả vị trí)`
+                }
               </span>
             </div>
           </div>

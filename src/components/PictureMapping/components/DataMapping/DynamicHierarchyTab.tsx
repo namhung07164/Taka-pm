@@ -10,6 +10,7 @@ import {
   Edit2,
   X,
   Copy,
+  Layers,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
@@ -231,13 +232,24 @@ function DynamicHierarchyTab({
       }
     });
 
-    if (hasChanges) {
-      setVersions(
-        versions.map((v) =>
-          v.id === activeVersion.id ? { ...v, groupMappings: newMappings } : v,
-        ),
-      );
-    }
+    // Synchronize groups and evaluated mappings across all versions in all locations
+    const updatedVersions = versions.map((v) => {
+      // Find matching units for v's location (or all if no location)
+      const vMappings: Record<string, string[]> = {};
+      activeVersion.groups.forEach((group) => {
+        const matchingIds = units
+          .filter((u) => (!v.location || !u.location || u.location === v.location) && matchRules(u, group.rules))
+          .map((u) => u.id);
+        vMappings[group.id] = matchingIds;
+      });
+      return {
+        ...v,
+        groups: activeVersion.groups,
+        groupMappings: v.id === activeVersion.id ? newMappings : vMappings,
+      };
+    });
+
+    setVersions(updatedVersions);
 
     // Also update unit styles based on evaluation
     let colorChanges = false;
@@ -259,9 +271,7 @@ function DynamicHierarchyTab({
       setUnits(nextUnits);
     }
     
-    if (hasChanges || colorChanges) {
-        alert("Đã áp dụng điều kiện cho phiên bản hiện tại.");
-    }
+    alert("Đã áp dụng điều kiện logic cho toàn bộ vị trí / tầng.");
   };
 
   const addVersion = () => {
@@ -525,10 +535,14 @@ function DynamicHierarchyTab({
               {!viewVersionId && <option value="">-- No Version --</option>}
               {versions.map((v) => (
                 <option key={v.id} value={v.id}>
-                  {v.name}
+                  {v.location ? `[${v.location}] ` : ""}{v.name}
                 </option>
               ))}
             </select>
+            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-950/70 text-purple-300 border border-purple-800/40 text-xs font-semibold" title="Tab này áp dụng mapping chung cho toàn bộ vị trí">
+              <Layers size={13} className="text-purple-400" />
+              <span>Chung toàn bộ vị trí ({units.length} units)</span>
+            </div>
             {activeVersion && (
               <>
                 <button
@@ -808,9 +822,14 @@ function DynamicHierarchyTab({
                                   return u ? (
                                     <div
                                       key={uid}
-                                      className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-300"
+                                      className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-300 flex items-center gap-1.5"
                                     >
-                                      {u.name}
+                                      {u.location && (
+                                        <span className="text-[9px] px-1 py-0.2 rounded bg-purple-950/80 text-purple-300 font-bold border border-purple-800/40">
+                                          {u.location}
+                                        </span>
+                                      )}
+                                      <span>{u.name}</span>
                                     </div>
                                   ) : null;
                                 })}

@@ -27,6 +27,11 @@ interface DataStoreState {
   setReviewSelectedLabels: (labels: string[]) => void;
   reviewLabelColors: Record<string, string>;
   setReviewLabelColors: (colors: Record<string, string>) => void;
+  getAllStoreUnits: (store?: 'HCM' | 'HN') => UnitShape[];
+  getAllStoreVersions: (store?: 'HCM' | 'HN') => MapVersion[];
+  updateStoreUnitsAcrossLocations: (units: UnitShape[], store?: 'HCM' | 'HN') => void;
+  updateStoreVersionsAcrossLocations: (versions: MapVersion[], store?: 'HCM' | 'HN') => void;
+  syncGroupsToAllStoreLocations: (groups: MapVersion['groups'], store?: 'HCM' | 'HN') => void;
   isLoading: boolean;
   setIsLoading: (isLoading: boolean) => void;
   unitInfo: any[];
@@ -177,6 +182,179 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   setReviewSelectedLabels: (reviewSelectedLabels) => set({ reviewSelectedLabels }),
   reviewLabelColors: {},
   setReviewLabelColors: (reviewLabelColors) => set({ reviewLabelColors }),
+
+  getAllStoreUnits: (targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const mergedData = {
+      ...state.storeLocationData,
+      [currentKey]: {
+        ...(state.storeLocationData[currentKey] || {}),
+        mapUnits: state.mapUnits,
+        mapVersions: state.mapVersions,
+        activeMapVersionId: state.activeMapVersionId,
+      },
+    };
+
+    const allUnits: UnitShape[] = [];
+    const seenIds = new Set<string>();
+
+    for (const key in mergedData) {
+      if (key.startsWith(`${currentStore}_`)) {
+        const partition = mergedData[key];
+        const loc = key.split('_')[1] || state.location;
+        if (partition?.mapUnits) {
+          for (const u of partition.mapUnits) {
+            if (!seenIds.has(u.id)) {
+              seenIds.add(u.id);
+              allUnits.push({
+                ...u,
+                store: u.store || currentStore,
+                location: u.location || loc,
+              });
+            }
+          }
+        }
+      }
+    }
+    return allUnits;
+  },
+
+  getAllStoreVersions: (targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const mergedData = {
+      ...state.storeLocationData,
+      [currentKey]: {
+        ...(state.storeLocationData[currentKey] || {}),
+        mapUnits: state.mapUnits,
+        mapVersions: state.mapVersions,
+        activeMapVersionId: state.activeMapVersionId,
+      },
+    };
+
+    const allVersions: MapVersion[] = [];
+    const seenIds = new Set<string>();
+
+    for (const key in mergedData) {
+      if (key.startsWith(`${currentStore}_`)) {
+        const partition = mergedData[key];
+        const loc = key.split('_')[1] || state.location;
+        if (partition?.mapVersions) {
+          for (const v of partition.mapVersions) {
+            if (!seenIds.has(v.id)) {
+              seenIds.add(v.id);
+              allVersions.push({
+                ...v,
+                store: v.store || currentStore,
+                location: v.location || loc,
+              });
+            }
+          }
+        }
+      }
+    }
+    return allVersions;
+  },
+
+  updateStoreUnitsAcrossLocations: (updatedUnits, targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const unitsByPartition: Record<string, UnitShape[]> = {};
+    for (const u of updatedUnits) {
+      const uStore = u.store || currentStore;
+      const uLoc = u.location || state.location;
+      const pKey = getPartitionKey(uStore, uLoc);
+      if (!unitsByPartition[pKey]) unitsByPartition[pKey] = [];
+      unitsByPartition[pKey].push(u);
+    }
+
+    const updatedStoreLocationData = { ...state.storeLocationData };
+    for (const pKey in unitsByPartition) {
+      if (pKey.startsWith(`${currentStore}_`)) {
+        updatedStoreLocationData[pKey] = {
+          ...(updatedStoreLocationData[pKey] || { mapVersions: [], activeMapVersionId: null }),
+          mapUnits: unitsByPartition[pKey],
+        };
+      }
+    }
+
+    const activeUnits = updatedStoreLocationData[currentKey]?.mapUnits || state.mapUnits;
+
+    set({
+      storeLocationData: updatedStoreLocationData,
+      mapUnits: activeUnits,
+    });
+  },
+
+  updateStoreVersionsAcrossLocations: (updatedVersions, targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const versionsByPartition: Record<string, MapVersion[]> = {};
+    for (const v of updatedVersions) {
+      const vStore = v.store || currentStore;
+      const vLoc = v.location || state.location;
+      const pKey = getPartitionKey(vStore, vLoc);
+      if (!versionsByPartition[pKey]) versionsByPartition[pKey] = [];
+      versionsByPartition[pKey].push(v);
+    }
+
+    const updatedStoreLocationData = { ...state.storeLocationData };
+    for (const pKey in versionsByPartition) {
+      if (pKey.startsWith(`${currentStore}_`)) {
+        updatedStoreLocationData[pKey] = {
+          ...(updatedStoreLocationData[pKey] || { mapUnits: [], activeMapVersionId: null }),
+          mapVersions: versionsByPartition[pKey],
+        };
+      }
+    }
+
+    const activeVersions = updatedStoreLocationData[currentKey]?.mapVersions || state.mapVersions;
+
+    set({
+      storeLocationData: updatedStoreLocationData,
+      mapVersions: activeVersions,
+    });
+  },
+
+  syncGroupsToAllStoreLocations: (groups, targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const updatedStoreLocationData = { ...state.storeLocationData };
+
+    for (const pKey in updatedStoreLocationData) {
+      if (pKey.startsWith(`${currentStore}_`)) {
+        const partition = updatedStoreLocationData[pKey];
+        if (partition?.mapVersions) {
+          const newVersions = partition.mapVersions.map((v) => ({
+            ...v,
+            groups,
+          }));
+          updatedStoreLocationData[pKey] = {
+            ...partition,
+            mapVersions: newVersions,
+          };
+        }
+      }
+    }
+
+    const currentKey = getPartitionKey(state.store, state.location);
+    const activeVersions = updatedStoreLocationData[currentKey]?.mapVersions || state.mapVersions;
+
+    set({
+      storeLocationData: updatedStoreLocationData,
+      mapVersions: activeVersions,
+    });
+  },
+
   isLoading: false,
   setIsLoading: (isLoading) => set({ isLoading }),
   unitInfo: [],
