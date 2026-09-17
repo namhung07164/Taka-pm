@@ -116,7 +116,9 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
 
     localStorage.setItem('r2_account_id', cleanAccountId);
     localStorage.setItem('r2_access_key', cleanAccessKey);
+    localStorage.setItem('r2_access_key_id', cleanAccessKey);
     localStorage.setItem('r2_secret_key', cleanSecretKey);
+    localStorage.setItem('r2_secret_access_key', cleanSecretKey);
     localStorage.setItem('r2_bucket_name', cleanBucketName);
     localStorage.setItem('cf_zone_id', cleanCfZoneId);
     localStorage.setItem('cf_api_token', cleanCfApiToken);

@@ -3,7 +3,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { getStatus } from '../lib/utils';
@@ -17,19 +17,35 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Form states for in-place R2 configuration
+  const [cfgAccountId, setCfgAccountId] = useState('');
+  const [cfgBucketName, setCfgBucketName] = useState('');
+  const [cfgAccessKey, setCfgAccessKey] = useState('');
+  const [cfgSecretKey, setCfgSecretKey] = useState('');
+
+  // Load initial form values from localStorage
+  const initFormFromStorage = () => {
+    setCfgAccountId((localStorage.getItem('r2_account_id') || '').trim());
+    setCfgBucketName((localStorage.getItem('r2_bucket_name') || '').trim());
+    setCfgAccessKey((localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim());
+    setCfgSecretKey((localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim());
+  };
 
   // Load config from R2
   const loadConfig = async () => {
     setLoading(true);
     setError(null);
     try {
-      const accountId = localStorage.getItem('r2_account_id');
-      const accessKeyId = localStorage.getItem('r2_access_key_id');
-      const secretAccessKey = localStorage.getItem('r2_secret_access_key');
-      const bucketName = localStorage.getItem('r2_bucket_name');
+      const accountId = (localStorage.getItem('r2_account_id') || '').trim();
+      const accessKeyId = (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+      const secretAccessKey = (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+      const bucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
 
       if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
-        throw new Error('Chưa cấu hình R2 Cloudflare. Vui lòng vào Tab Picture Mapping để kết nối Cloud Sync trước.');
+        initFormFromStorage();
+        throw new Error('Chưa cấu hình R2 Cloudflare trên trình duyệt này. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
       }
 
       const s3 = new S3Client({
@@ -45,7 +61,7 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
       const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
       
       const res = await fetch(signedUrl);
-      if (!res.ok) throw new Error('Không tìm thấy file cấu hình trên Cloud (mapping_config.json).');
+      if (!res.ok) throw new Error('Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
       
       const data = await res.json();
       
@@ -71,6 +87,28 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
     }
   };
 
+  const handleSaveR2Config = () => {
+    const acc = cfgAccountId.trim();
+    const bkt = cfgBucketName.trim();
+    const key = cfgAccessKey.trim();
+    const sec = cfgSecretKey.trim();
+
+    if (!acc || !bkt || !key || !sec) {
+      alert('Vui lòng điền đủ 4 trường: Account ID, Bucket Name, Access Key và Secret Key.');
+      return;
+    }
+
+    localStorage.setItem('r2_account_id', acc);
+    localStorage.setItem('r2_bucket_name', bkt);
+    localStorage.setItem('r2_access_key', key);
+    localStorage.setItem('r2_access_key_id', key);
+    localStorage.setItem('r2_secret_key', sec);
+    localStorage.setItem('r2_secret_access_key', sec);
+
+    setShowConfigModal(false);
+    loadConfig();
+  };
+
   useEffect(() => {
     loadConfig();
   }, []);
@@ -86,12 +124,109 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
 
   if (error || !config) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-amber-600">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-amber-600 p-4">
         <Layers className="w-10 h-10 mb-2 opacity-50" />
-        <p className="text-sm font-medium px-4 text-center">{error}</p>
-        <button onClick={loadConfig} className="mt-4 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium">
-          Thử lại
-        </button>
+        <p className="text-sm font-medium px-4 text-center max-w-md">{error}</p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <button 
+            onClick={() => {
+              initFormFromStorage();
+              setShowConfigModal(true);
+            }} 
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+            Cấu hình R2 Cloudflare
+          </button>
+          <button 
+            onClick={loadConfig} 
+            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Thử lại
+          </button>
+        </div>
+
+        {/* Modal cấu hình nhanh R2 ngay tại Live Map */}
+        {showConfigModal && (
+          <div className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-5 text-slate-200 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-base">
+                  <Cloud className="w-5 h-5" />
+                  Cấu hình Cloudflare R2
+                </div>
+                <button 
+                  onClick={() => setShowConfigModal(false)}
+                  className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-slate-400 uppercase tracking-wider font-semibold mb-1">Account ID</label>
+                  <input
+                    type="text"
+                    value={cfgAccountId}
+                    onChange={(e) => setCfgAccountId(e.target.value)}
+                    placeholder="VD: a1b2c3d4e5f6..."
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 uppercase tracking-wider font-semibold mb-1">Bucket Name</label>
+                  <input
+                    type="text"
+                    value={cfgBucketName}
+                    onChange={(e) => setCfgBucketName(e.target.value)}
+                    placeholder="VD: takashimaya-mapping"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 uppercase tracking-wider font-semibold mb-1">Access Key ID</label>
+                  <input
+                    type="text"
+                    value={cfgAccessKey}
+                    onChange={(e) => setCfgAccessKey(e.target.value)}
+                    placeholder="R2 API Token Access Key"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 uppercase tracking-wider font-semibold mb-1">Secret Access Key</label>
+                  <input
+                    type="password"
+                    value={cfgSecretKey}
+                    onChange={(e) => setCfgSecretKey(e.target.value)}
+                    placeholder="R2 API Token Secret Key"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800">
+                <button
+                  onClick={() => setShowConfigModal(false)}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleSaveR2Config}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold"
+                >
+                  Lưu & Tải Live Map
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
