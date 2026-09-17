@@ -308,16 +308,34 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
-        setCanvasSize({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight
-        });
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        if (w > 0 && h > 0) {
+          setCanvasSize({ width: w, height: h });
+        }
       }
     };
     
     updateSize();
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+
+    let observer: ResizeObserver | null = null;
+    if (containerRef.current && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) {
+            setCanvasSize({ width: Math.round(width), height: Math.round(height) });
+          }
+        }
+      });
+      observer.observe(containerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateSize);
+      if (observer) observer.disconnect();
+    };
   }, []);
 
   const convertPdfToImage = async (file: File): Promise<string> => {
@@ -857,9 +875,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   };
 
   return (
-    <div className="flex h-full gap-6">
+    <div className="flex h-full gap-4 p-4 lg:gap-6 lg:p-8">
       {/* Tools Left */}
-      <div className="w-16 flex flex-col gap-3 py-4 items-center bg-slate-900/50 rounded-2xl border border-slate-800/50 glass z-10">
+      <div className="w-16 flex flex-col gap-3 py-4 items-center bg-slate-900/50 rounded-2xl border border-slate-800/50 glass z-10 shrink-0">
         <ToolButton icon={MousePointer2} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" />
         <ToolButton icon={Move} active={activeTool === 'edit-bg'} onClick={() => setActiveTool('edit-bg')} title="Edit Background Image" />
         <div className="w-8 h-px bg-slate-800 my-2" />
@@ -907,7 +925,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       )}
 
       {/* Main Canvas Area */}
-      <div className="flex-1 rounded-2xl border border-slate-800/50 glass overflow-hidden relative flex flex-col" ref={containerRef}>
+      <div className="flex-1 min-h-[440px] rounded-2xl border border-slate-800/50 glass overflow-hidden relative flex flex-col" ref={containerRef}>
         
         {/* Top Floating Controls */}
         <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none">

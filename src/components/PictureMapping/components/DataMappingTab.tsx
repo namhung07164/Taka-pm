@@ -105,7 +105,7 @@ export default React.memo(function DataMappingTab() {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden pb-4 pr-2 relative min-h-0">
-      <div className="z-50 p-2">
+      <div className="relative z-10 p-2 shrink-0">
         <div className="glass rounded-xl p-3 border border-slate-800 shadow-2xl flex items-center justify-between bg-slate-950/80 backdrop-blur-xl flex-wrap gap-2">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
@@ -212,7 +212,7 @@ export default React.memo(function DataMappingTab() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 glass rounded-3xl border border-slate-800/50 shadow-2xl relative overflow-hidden flex flex-col z-10">
+      <div className="flex-1 min-h-[480px] glass rounded-3xl border border-slate-800/50 shadow-2xl relative overflow-hidden flex flex-col z-0">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSubTab}
@@ -220,7 +220,7 @@ export default React.memo(function DataMappingTab() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 p-8 overflow-hidden"
+            className="absolute inset-0 overflow-hidden flex flex-col"
           >
             {renderTabContent()}
           </motion.div>
@@ -234,7 +234,7 @@ export default React.memo(function DataMappingTab() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-[100] bg-bg-dark p-6 lg:p-12 overflow-hidden flex flex-col"
+            className="fixed inset-0 z-[99999] bg-bg-dark p-6 lg:p-12 overflow-hidden flex flex-col"
           >
             <div className="flex items-center justify-between mb-8">
               <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">

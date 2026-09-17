@@ -2316,7 +2316,7 @@ const handlePrintToPDF = async () => {
           )}
 
           <div className={`w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] p-4 lg:p-6 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336] transition-colors pb-20 lg:pb-6 print:border-none print:shadow-none print:rounded-none print-content-wrapper ${isPrintPreview ? 'print-preview-content-active' : ''}`}>
-          <div className="print:hidden">
+          <div className="print:hidden relative z-[200]">
             <Header
             
             cloudStatus={cloudStatus}
@@ -2396,7 +2396,7 @@ const handlePrintToPDF = async () => {
             </button>
           </div>
         ) : (
-          <div className="flex-grow flex flex-col min-h-0">
+          <div className="flex-grow flex flex-col min-h-0 relative z-[10]">
             <TabErrorBoundary tabKey={activeTab}>
               <Suspense fallback={<div className="flex-1 w-full h-full p-4 md:p-6 lg:p-8 animate-pulse bg-slate-50 dark:bg-[#0e0e11]">  <div className="max-w-7xl mx-auto w-full space-y-6">    <div className="flex items-center justify-between">      <div className="h-8 w-48 bg-slate-200 dark:bg-[#18181a] rounded-lg"></div>      <div className="h-8 w-24 bg-slate-200 dark:bg-[#18181a] rounded-lg"></div>    </div>    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">      {[1,2,3,4].map(i => <div key={i} className="h-24 bg-slate-200 dark:bg-[#18181a] rounded-xl"></div>)}    </div>    <div className="h-[400px] w-full bg-slate-200 dark:bg-[#18181a] rounded-xl"></div>  </div></div>}>
               <AnimatePresence mode="wait">

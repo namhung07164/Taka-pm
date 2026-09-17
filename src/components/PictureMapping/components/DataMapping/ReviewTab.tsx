@@ -423,12 +423,36 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   }, [activeVersionId, activeVersion]);
 
   useEffect(() => {
-    if (containerRef.current) {
-      setCanvasSize({
-        width: containerRef.current.clientWidth,
-        height: containerRef.current.clientHeight
+    const updateSize = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        if (w > 0 && h > 0) {
+          setCanvasSize({ width: w, height: h });
+        }
+      }
+    };
+    
+    updateSize();
+    window.addEventListener('resize', updateSize);
+
+    let observer: ResizeObserver | null = null;
+    if (containerRef.current && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) {
+            setCanvasSize({ width: Math.round(width), height: Math.round(height) });
+          }
+        }
       });
+      observer.observe(containerRef.current);
     }
+
+    return () => {
+      window.removeEventListener('resize', updateSize);
+      if (observer) observer.disconnect();
+    };
   }, []);
 
   const handleWheel = (e: any) => {
@@ -549,7 +573,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
       <div className="flex-1 flex gap-6 overflow-hidden">
         {/* Main Preview Area */}
-        <div className="flex-1 rounded-2xl border border-slate-800/50 glass overflow-hidden relative bg-[#1e1e1e]" ref={containerRef}>
+        <div className="flex-1 min-h-[440px] rounded-2xl border border-slate-800/50 glass overflow-hidden relative bg-[#1e1e1e]" ref={containerRef}>
           <Stage 
             ref={stageRef}
             width={canvasSize.width} 

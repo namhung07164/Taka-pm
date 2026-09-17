@@ -224,13 +224,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = React.memo(({
             <option value="Completed">{t("Completed")}</option>
             <option value="all">All Status</option>
           </select>
-
-          {isTasksLoading && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800 shadow-sm animate-pulse shrink-0">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-              <span>{t("Loading tasks...") || "Loading tasks..."}</span>
-            </div>
-          )}
         </div>
 
         {/* Controls */}
@@ -641,6 +634,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = React.memo(({
           className="w-full pl-9 pr-4 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
         />
       </div>
+
+      {/* Loading Indicator - Fixed position to avoid layout shifts */}
+      {isTasksLoading && (
+        <div className="fixed bottom-6 left-6 z-[100] flex items-center gap-2 px-3 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/90 rounded-xl border border-blue-200 dark:border-blue-800 shadow-xl animate-pulse backdrop-blur-md">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+          <span>{t("Loading tasks...") || "Loading tasks..."}</span>
+        </div>
+      )}
     </div>
   );
 });

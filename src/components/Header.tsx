@@ -125,8 +125,17 @@ export function Header({
         setIsMenuOpen(false);
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
   const formatTime = (date: Date) => {
@@ -161,7 +170,12 @@ export function Header({
           </button>
 
           {isMenuOpen && (
-            <div className="absolute top-12 left-0 w-56 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl z-[60] overflow-hidden">
+            <>
+              <div
+                className="fixed inset-0 z-[9998] bg-black/20 backdrop-blur-[0.5px]"
+                onClick={() => setIsMenuOpen(false)}
+              />
+              <div className="absolute top-12 left-0 w-60 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
               <div className="py-2">
                 <button onClick={() => {
                     if (currentUser.role === "guest") onLoginClick();
@@ -340,6 +354,7 @@ export function Header({
                 )}
               </div>
             </div>
+            </>
           )}
         </div>
 
