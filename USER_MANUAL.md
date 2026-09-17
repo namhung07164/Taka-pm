@@ -931,8 +931,11 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 2. **Cơ chế phân vùng và cô lập dữ liệu độc lập (Zero Cross-Contamination)**:
    - Toàn bộ dữ liệu gian hàng (`mapUnits`), hình vẽ (Polygon, Hình chữ nhật, Hình tròn), ảnh mặt bằng kỹ thuật (`backgroundUrl`), tỷ lệ scale/tọa độ và các phiên bản (`mapVersions`) được cô lập hoàn toàn theo từng cặp `(Store, Location)`.
    - Khi chuyển từ `HCM - L1` sang `HCM - L2`, hệ thống tự động lưu giữ trạng thái vẽ của `L1` và mở ra không gian vẽ riêng biệt của `L2`. Khi quay lại `L1`, toàn bộ hình vẽ và ảnh nền trước đó được khôi phục nguyên vẹn 100%.
-3. **Đồng Bộ Đa Tầng / Đa Chi Nhánh Lên Cloudflare R2 (Cloud Sync)**:
-   - Khi nhấn **Lưu lên Cloud (Upload)**, hệ thống sẽ tự động đóng gói toàn bộ dữ liệu vẽ và phiên bản của tất cả các tầng và chi nhánh (`storeLocationData`), tải ảnh nền lên R2 và xuất bản file `mapping_config.json`.
-   - Khi người dùng ở bất kỳ máy trạm nào nhấn **Tải từ Cloud (Download)**, hệ thống sẽ tự động phân giải ảnh và nạp đầy đủ cơ sở dữ liệu mặt bằng cho mọi tầng, hiển thị ngay tầng người dùng đang chọn.
+3. **Đồng Bộ & Lưu Trữ Độc Quyền 1 Version Duy Nhất Lên Cloudflare R2 (Chống Rác Lưu Trữ)**:
+   - **Cơ chế Lưu 1 Version Duy Nhất (Single Version Policy)**: Để ngăn chặn tích tụ file rác và tiết kiệm tối đa dung lượng bộ nhớ trên bucket Cloudflare R2, hệ thống chỉ lưu giữ đúng 1 phiên bản duy nhất (phiên bản đang hoạt động / phiên bản được chọn).
+   - **Tự động quét và dọn dẹp bản cũ (Auto-Purge Strategy)**:
+     - Khi lưu cấu hình lên Cloud (`CloudSyncManager`): Hệ thống lưu 1 phiên bản chính thức, tải ảnh nền chuẩn (`bg_active_version.jpeg`) và tự động kích hoạt tiến trình quét và xóa sạch toàn bộ các ảnh nền cũ (`bg_*.jpeg`) phát sinh từ các lần cập nhật trước.
+     - Khi xuất ảnh từ tab Xem lại (`ReviewTab` > R2 Cloud): Người dùng chọn đúng 1 phiên bản cần xuất (mặc định là bản đang xem). Hệ thống sẽ tự động quét bucket và xóa toàn bộ các bản xuất JPEG/PNG/PDF cũ trước đó trước khi tải file mới lên, đảm bảo trong bucket chỉ tồn tại duy nhất bản mới nhất.
+   - **Tải từ Cloud (Download)**: Khi người dùng nhấn **Tải từ Cloud (Download)**, hệ thống sẽ nạp cấu hình 1 phiên bản mới nhất, tự động tạo presigned URL có thời hạn cho ảnh nền và đồng bộ vào không gian vẽ của máy trạm.
 
 

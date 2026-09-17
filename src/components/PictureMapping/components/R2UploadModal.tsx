@@ -49,7 +49,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     localStorage.setItem('cf_zone_id', cfZoneId);
     localStorage.setItem('cf_api_token', cfApiToken);
 
-    if (window.confirm("Đồng ý tạo (hoặc ghi đè) file Data_Mapping_Export.jpeg trên Cloudflare R2 của bạn?")) {
+    if (window.confirm("Đồng ý lưu bản mới lên Cloudflare R2?\nHệ thống sẽ tự động dọn dẹp các bản cũ trên R2 để chỉ lưu 1 version duy nhất, tránh rác lưu trữ.")) {
       onStartExport();
     }
   };
@@ -59,11 +59,11 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
   const isConfigured = accountId && bucketName && accessKey && secretKey;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2 font-sans">
-            <CloudUpload className="text-amber-400" />
+    <div className="fixed inset-0 z-[99999] bg-black/75 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-800 shrink-0 bg-slate-900/90">
+          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 font-sans">
+            <CloudUpload className="text-amber-400" size={20} />
             Upload to Cloudflare R2
           </h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors">
@@ -71,7 +71,7 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
           </button>
         </div>
 
-        <div className="p-6 space-y-4 font-sans">
+        <div className="p-5 space-y-4 font-sans overflow-y-auto flex-1 custom-scrollbar">
           {!showConfig && isConfigured ? (
             <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-xl space-y-3">
               <div className="flex items-center justify-between">
@@ -197,9 +197,13 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
             </div>
           )}
 
-          <div className="pt-2 text-xs text-slate-400 bg-slate-800/40 p-3 rounded-lg border border-slate-800">
-            <p>Các hình sẽ được tạo/ghi đè với tên tương ứng của từng phiên bản (VD: <strong className="text-white">Ten_Phien_Ban.jpeg</strong>). Sẽ không làm tốn dung lượng Firebase.</p>
-            <p className="mt-2 text-amber-500/80"><strong className="text-amber-500">Lưu ý quan trọng:</strong> Vui lòng đảm bảo bạn đã cấu hình CORS trên Cloudflare R2 Bucket (Settings {'>'} CORS Rules) để cho phép <code className="text-slate-300 bg-slate-900 border border-slate-700 px-1 rounded">PUT</code> method từ domain này.</p>
+          <div className="pt-2 text-xs text-slate-400 bg-slate-800/40 p-3.5 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center gap-2 text-amber-300 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              Chế độ Lưu 1 Version Duy Nhất (Chống Rác R2)
+            </div>
+            <p>Hệ thống tự động lưu phiên bản mới và <strong className="text-white">quét xóa toàn bộ các bản xuất cũ</strong> trên bucket R2 để tránh rác và không tốn chi phí lưu trữ.</p>
+            <p className="text-amber-500/80"><strong className="text-amber-500">Lưu ý cấu hình:</strong> Đảm bảo cấu hình CORS trên Cloudflare R2 Bucket cho phép các method <code className="text-slate-300 bg-slate-900 border border-slate-700 px-1 rounded">GET, PUT, DELETE</code>.</p>
           </div>
         </div>
 

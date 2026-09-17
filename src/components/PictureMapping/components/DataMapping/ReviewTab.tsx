@@ -2,7 +2,7 @@ import { useShallow } from 'zustand/react/shallow';
 import React, { useState, useRef, useEffect } from 'react';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
-import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags } from 'lucide-react';
+import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
@@ -156,7 +156,10 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
             });
 
             if (uploadResult.failedCount === 0) {
-                alert(`Upload thành công toàn bộ ${uploadResult.successCount} file lên Cloudflare R2!`);
+                const cleanNote = (uploadResult.deletedOldCount && uploadResult.deletedOldCount > 0)
+                    ? `\n\nĐã tự động quét và dọn sạch ${uploadResult.deletedOldCount} bản cũ trên Cloudflare R2 để tránh rác lưu trữ.`
+                    : '';
+                alert(`Upload thành công 1 phiên bản lên Cloudflare R2!${cleanNote}`);
             } else if (uploadResult.successCount > 0) {
                 const failedNames = uploadResult.results.filter(r => !r.success).map(r => `${r.name}: ${r.error}`).join('\n- ');
                 alert(`Upload hoàn tất: ${uploadResult.successCount}/${uploadResult.total} file thành công.\nCó ${uploadResult.failedCount} file thất bại:\n- ${failedNames}`);
@@ -232,6 +235,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
               if (res) token = res.accessToken;
           }
           if (!token) return; // User closed modal or failed
+      }
+      if (format === 'r2_jpeg') {
+          const targetId = activeVersionId || versions[0]?.id;
+          if (targetId) {
+              setSelectedVersionsToExport({ [targetId]: true });
+          }
       }
       setExportFormat(format);
       setExportModalVisible(true);
@@ -415,12 +424,54 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     }
   };
 
+  const [isReviewSidebarCollapsed, setIsReviewSidebarCollapsed] = useState(false);
+
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(10, prev * 1.2));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(0.05, prev / 1.2));
+  };
+
+  const handleZoomReset = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  const handleFitToScreen = () => {
+    if (!image || !containerRef.current) return;
+    const containerW = containerRef.current.clientWidth;
+    const containerH = containerRef.current.clientHeight;
+    if (containerW <= 0 || containerH <= 0) return;
+
+    const imgW = (image.width || 1000) * (activeVersion?.imageScale || 1);
+    const imgH = (image.height || 800) * (activeVersion?.imageScale || 1);
+
+    const scaleX = (containerW - 40) / imgW;
+    const scaleY = (containerH - 40) / imgH;
+    const fitScale = Math.min(scaleX, scaleY, 1.5);
+    const clampedScale = Math.max(0.05, Math.min(fitScale, 5));
+
+    setScale(clampedScale);
+    setPosition({
+      x: (containerW - imgW * clampedScale) / 2,
+      y: (containerH - imgH * clampedScale) / 2,
+    });
+  };
+
   useEffect(() => {
     if (activeVersion) {
         setScale(activeVersion.backgroundScale || 1);
         setPosition(activeVersion.backgroundPos || { x: 0, y: 0 });
     }
-  }, [activeVersionId, activeVersion]);
+  }, [activeVersionId]);
+
+  useEffect(() => {
+    if (image && containerRef.current && (!activeVersion?.backgroundScale || activeVersion.backgroundScale === 1)) {
+      handleFitToScreen();
+    }
+  }, [image]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -467,7 +518,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       y: (pointer.y - stage.y()) / oldScale,
     };
 
-    const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
+    const rawScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
+    const newScale = Math.max(0.05, Math.min(10, rawScale));
     setScale(newScale);
     setPosition({
       x: pointer.x - mousePointTo.x * newScale,
@@ -485,46 +537,46 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   }
 
   return (
-    <div className="flex flex-col h-full gap-6">
+    <div className="flex flex-col h-full gap-2 p-1.5 sm:p-2.5 overflow-hidden">
       {/* Selection Header */}
-      <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-2xl border border-slate-800/50 glass relative z-50">
+      <div className="flex items-center justify-between p-2.5 sm:p-3 bg-slate-900/90 rounded-xl border border-slate-800 glass relative z-50 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-brand-600/20 text-brand-400 rounded-lg flex items-center justify-center">
             <Eye size={18} />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-white uppercase tracking-wider">Mapping Review</h4>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">XEM TRƯỚC PHIÊN BẢN THEO NHÓM</p>
+            <h4 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Mapping Review</h4>
+            <p className="text-[9px] sm:text-[10px] text-slate-500 uppercase font-bold tracking-tight">XEM TRƯỚC PHIÊN BẢN THEO NHÓM</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           <button
             onClick={applyAllDynamicRules}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-lg shadow-brand-900/20 box-border border-2 border-brand-400 mr-2"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-lg shadow-brand-900/20 box-border border border-brand-400"
           >
-            <Calculator size={14} /> Apply Rules To All
+            <Calculator size={13} /> Apply Rules
           </button>
           
-          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-1 mr-4">
-             <button onClick={handleExportJPEG} title="Save to JPEG" className="px-3 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors">
-               <Camera size={14} className="mr-2" /> JPEG
+          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+             <button onClick={handleExportJPEG} title="Save to JPEG" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors text-xs">
+               <Camera size={13} className="mr-1.5" /> JPEG
              </button>
-             <button onClick={handleExportPDF} title="Save to PDF" className="px-3 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors">
-               <FileDown size={14} className="mr-2" /> PDF
+             <button onClick={handleExportPDF} title="Save to PDF" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors text-xs">
+               <FileDown size={13} className="mr-1.5" /> PDF
              </button>
-             <button onClick={handleExportDrive} title="Upload to Google Drive" className="px-3 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded flex items-center justify-center transition-colors">
-               <CloudUpload size={14} className="mr-2" /> Drive
+             <button onClick={handleExportDrive} title="Upload to Google Drive" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded flex items-center justify-center transition-colors text-xs">
+               <CloudUpload size={13} className="mr-1.5" /> Drive
              </button>
-             <button onClick={handleExportR2} title="Upload to Cloudflare R2" className="px-3 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded flex items-center justify-center transition-colors">
-               <CloudUpload size={14} className="mr-2" /> R2 Cloud
+             <button onClick={handleExportR2} title="Upload to Cloudflare R2" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded flex items-center justify-center transition-colors text-xs">
+               <CloudUpload size={13} className="mr-1.5" /> R2 Cloud
              </button>
              <div className="relative">
                 <button 
                   onClick={() => setShowLabelSettings(!showLabelSettings)} 
-                  className={cn("px-3 py-1.5 rounded flex items-center justify-center transition-colors", showLabelSettings ? "bg-brand-600 text-white" : "hover:bg-slate-800 text-slate-400 hover:text-brand-400")}
+                  className={cn("px-2.5 py-1.5 rounded flex items-center justify-center transition-colors text-xs", showLabelSettings ? "bg-brand-600 text-white" : "hover:bg-slate-800 text-slate-400 hover:text-brand-400")}
                 >
-                  <Tags size={14} className="mr-2" /> Labels
+                  <Tags size={13} className="mr-1.5" /> Labels
                 </button>
                 {showLabelSettings && (
                   <div className="absolute top-full right-0 mt-2 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-3 w-56 z-[9999] flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
@@ -557,23 +609,60 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
              </div>
           </div>
 
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Version:</span>
-          <select 
-            value={activeVersionId || ''} 
-            onChange={(e) => setActiveVersionId(e.target.value)}
-            className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-lg px-4 py-2 outline-none focus:border-brand-500 transition-all min-w-[160px] uppercase tracking-wider"
-          >
-            {versions.length === 0 && <option value="">No versions available</option>}
-            {versions.map(v => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">Version:</span>
+            <select 
+              value={activeVersionId || ''} 
+              onChange={(e) => setActiveVersionId(e.target.value)}
+              className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:border-brand-500 transition-all min-w-[140px] uppercase tracking-wider"
+            >
+              {versions.length === 0 && <option value="">No versions available</option>}
+              {versions.map(v => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-6 overflow-hidden">
+      <div className="flex-1 flex gap-2 overflow-hidden">
         {/* Main Preview Area */}
-        <div className="flex-1 min-h-[440px] rounded-2xl border border-slate-800/50 glass overflow-hidden relative bg-[#1e1e1e]" ref={containerRef}>
+        <div className="flex-1 min-h-[400px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative bg-[#141416]" ref={containerRef}>
+          
+          {/* Bottom Floating Zoom & View Controls */}
+          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1 p-1 bg-slate-900/90 border border-slate-700/80 rounded-xl backdrop-blur-md shadow-2xl pointer-events-auto">
+            <button 
+              onClick={handleZoomOut}
+              className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
+              title="Thu nhỏ (Zoom Out)"
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button 
+              onClick={handleZoomReset}
+              className="px-2 py-1 hover:bg-slate-800 text-slate-200 hover:text-white rounded-lg transition-colors text-[11px] font-mono font-bold min-w-[48px] text-center"
+              title="Đặt lại 100%"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button 
+              onClick={handleZoomIn}
+              className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
+              title="Phóng to (Zoom In)"
+            >
+              <ZoomIn size={15} />
+            </button>
+            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+            <button 
+              onClick={handleFitToScreen}
+              className="px-2.5 py-1 bg-brand-600/25 hover:bg-brand-600/40 text-brand-300 hover:text-brand-200 border border-brand-500/40 rounded-lg transition-colors text-[11px] font-bold flex items-center gap-1.5 shadow-sm"
+              title="Tự động căn vừa màn hình (Fit to Screen) - Khắc phục bị crop ảnh"
+            >
+              <Maximize2 size={13} />
+              <span>Vừa Màn Hình</span>
+            </button>
+          </div>
+
           <Stage 
             ref={stageRef}
             width={canvasSize.width} 
@@ -694,38 +783,66 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         </div>
 
         {/* Info Legend Right */}
-        <div className="w-80 flex flex-col gap-4 bg-slate-900/50 rounded-2xl border border-slate-800/50 p-4 glass overflow-y-auto">
-          <div className="flex border-b border-slate-800 pb-2 mb-2">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex-1">Legend / Groups</h4>
-          </div>
-          
-          <div className="space-y-3">
-             {activeVersion?.groups.map(group => {
-               // Only show groups that have units assigned in this version
-               const assignedUnitIds = activeVersion?.groupMappings[group.id] || [];
-               if (assignedUnitIds.length === 0) return null;
-               
-               return (
-                 <div key={group.id} className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-2">
-                   <div className="flex items-center gap-2">
-                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
-                     <span className="text-xs font-bold text-slate-300 uppercase tracking-tight">{group.name}</span>
-                     <span className="ml-auto text-[10px] text-slate-500">{assignedUnitIds.length} units</span>
-                   </div>
-                   <div className="flex flex-wrap gap-1">
-                     {assignedUnitIds.map(uid => {
-                       const u = units.find(x => x.id === uid);
-                       return u ? (
-                         <span key={u.id} className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 border border-slate-700/50 rounded">
-                           {u.name}
-                         </span>
-                       ) : null;
-                     })}
-                   </div>
-                 </div>
-               );
-             })}
-          </div>
+        <div className={cn(
+          "flex flex-col bg-slate-900/90 rounded-xl border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
+          isReviewSidebarCollapsed ? "w-10 p-2 items-center" : "w-72 sm:w-80 p-3 sm:p-4 gap-3 glass"
+        )}>
+          {/* Toggle Collapse Button */}
+          <button 
+            onClick={() => setIsReviewSidebarCollapsed(!isReviewSidebarCollapsed)}
+            className={cn(
+              "p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
+              isReviewSidebarCollapsed ? "w-7 h-7 flex items-center justify-center my-1" : "absolute -left-3.5 top-3 z-30 border border-slate-700 bg-slate-900"
+            )}
+            title={isReviewSidebarCollapsed ? "Mở rộng Legend & Groups" : "Thu gọn để mở rộng Canvas"}
+          >
+            {isReviewSidebarCollapsed ? <ChevronLeft size={14} className="rotate-180" /> : <ChevronRight size={14} />}
+          </button>
+
+          {isReviewSidebarCollapsed ? (
+            <div className="flex flex-col items-center gap-4 mt-6 text-slate-400">
+              <span className="text-[10px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+                LEGEND & GROUPS
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col h-full overflow-hidden w-full gap-3">
+              <div className="flex border-b border-slate-800 pb-2 mb-1 items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Legend / Groups</h4>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {activeVersion?.groups.filter(g => (activeVersion?.groupMappings[g.id] || []).length > 0).length || 0} groups
+                </span>
+              </div>
+              
+              <div className="space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1">
+                 {activeVersion?.groups.map(group => {
+                   // Only show groups that have units assigned in this version
+                   const assignedUnitIds = activeVersion?.groupMappings[group.id] || [];
+                   if (assignedUnitIds.length === 0) return null;
+                   
+                   return (
+                     <div key={group.id} className="p-2.5 bg-slate-950/50 border border-slate-800 rounded-xl space-y-1.5">
+                       <div className="flex items-center gap-2">
+                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                         <span className="text-xs font-bold text-slate-300 uppercase tracking-tight truncate">{group.name}</span>
+                         <span className="ml-auto text-[10px] text-slate-500 font-mono flex-shrink-0">{assignedUnitIds.length} units</span>
+                       </div>
+                       <div className="flex flex-wrap gap-1">
+                         {assignedUnitIds.map(uid => {
+                           const u = units.find(x => x.id === uid);
+                           return u ? (
+                             <span key={u.id} className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 border border-slate-700/50 rounded">
+                               {u.name}
+                             </span>
+                           ) : null;
+                         })}
+                       </div>
+                     </div>
+                   );
+                 })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -857,35 +974,79 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                     </div>
                 </div>
                 
-                <div className="p-6 flex-1 overflow-y-auto min-h-0 flex flex-col gap-3">
-                    <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/50 cursor-pointer hover:bg-slate-800 transition-colors">
-                        <input 
-                            type="checkbox" 
-                            checked={versions.length > 0 && versions.every(v => selectedVersionsToExport[v.id])} 
-                            onChange={(e) => {
-                                const newSel: Record<string, boolean> = {};
-                                versions.forEach(v => newSel[v.id] = e.target.checked);
-                                setSelectedVersionsToExport(newSel);
-                            }}
-                            className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
-                        />
-                        <span className="text-white font-bold">Select All</span>
-                    </label>
-                    <div className="h-px bg-slate-800 my-1"></div>
-                    {versions.map(v => (
-                        <label key={v.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-800 bg-slate-950 cursor-pointer hover:bg-slate-900 transition-colors">
+                {exportFormat === 'r2_jpeg' ? (
+                    <div className="p-6 flex-1 overflow-y-auto min-h-0 flex flex-col gap-3">
+                        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-1.5">
+                            <div className="font-bold flex items-center gap-1.5 text-amber-400">
+                                <span>⚡</span> Chế độ Lưu 1 Version Duy Nhất (Chống Rác R2)
+                            </div>
+                            <p className="text-slate-300">
+                                Chọn 1 phiên bản để xuất lên Cloudflare R2. Hệ thống sẽ tự động quét và <strong className="text-white">xóa sạch các bản cũ</strong> trước đó trên bucket để tránh rác lưu trữ.
+                            </p>
+                        </div>
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">
+                            Chọn 1 phiên bản cần xuất:
+                        </div>
+                        {versions.map(v => (
+                            <label 
+                                key={v.id} 
+                                className={`flex items-center gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${
+                                    selectedVersionsToExport[v.id] 
+                                        ? 'border-amber-500 bg-amber-950/20 text-white shadow-sm ring-1 ring-amber-500/30' 
+                                        : 'border-slate-800 bg-slate-950 hover:bg-slate-900 text-slate-300'
+                                }`}
+                            >
+                                <input 
+                                    type="radio" 
+                                    name="r2_version_single"
+                                    checked={!!selectedVersionsToExport[v.id]} 
+                                    onChange={() => {
+                                        setSelectedVersionsToExport({ [v.id]: true });
+                                    }}
+                                    className="w-4 h-4 text-amber-500 bg-slate-900 border-slate-600 focus:ring-amber-500"
+                                />
+                                <div className="flex-1 flex items-center justify-between">
+                                    <span className="font-bold text-sm">{v.name}</span>
+                                    {v.id === activeVersionId && (
+                                        <span className="text-[10px] px-2 py-0.5 rounded bg-brand-900/60 text-brand-300 border border-brand-700/50">
+                                            Đang xem
+                                        </span>
+                                    )}
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="p-6 flex-1 overflow-y-auto min-h-0 flex flex-col gap-3">
+                        <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/50 cursor-pointer hover:bg-slate-800 transition-colors">
                             <input 
                                 type="checkbox" 
-                                checked={!!selectedVersionsToExport[v.id]} 
+                                checked={versions.length > 0 && versions.every(v => selectedVersionsToExport[v.id])} 
                                 onChange={(e) => {
-                                    setSelectedVersionsToExport(prev => ({ ...prev, [v.id]: e.target.checked }));
+                                    const newSel: Record<string, boolean> = {};
+                                    versions.forEach(v => newSel[v.id] = e.target.checked);
+                                    setSelectedVersionsToExport(newSel);
                                 }}
                                 className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
                             />
-                            <span className="text-slate-300">{v.name}</span>
+                            <span className="text-white font-bold">Select All</span>
                         </label>
-                    ))}
-                </div>
+                        <div className="h-px bg-slate-800 my-1"></div>
+                        {versions.map(v => (
+                            <label key={v.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-800 bg-slate-950 cursor-pointer hover:bg-slate-900 transition-colors">
+                                <input 
+                                    type="checkbox" 
+                                    checked={!!selectedVersionsToExport[v.id]} 
+                                    onChange={(e) => {
+                                        setSelectedVersionsToExport(prev => ({ ...prev, [v.id]: e.target.checked }));
+                                    }}
+                                    className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
+                                />
+                                <span className="text-slate-300">{v.name}</span>
+                            </label>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
       )}

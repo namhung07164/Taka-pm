@@ -104,24 +104,24 @@ export default React.memo(function DataMappingTab() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden pb-4 pr-2 relative min-h-0">
-      <div className="relative z-10 p-2 shrink-0">
-        <div className="glass rounded-xl p-3 border border-slate-800 shadow-2xl flex items-center justify-between bg-slate-950/80 backdrop-blur-xl flex-wrap gap-2">
+    <div className="flex flex-col h-full w-full overflow-hidden pb-1 relative min-h-0">
+      <div className="relative z-10 p-1 shrink-0">
+        <div className="glass rounded-xl p-2 px-3 border border-slate-800/80 shadow-lg flex items-center justify-between bg-slate-950/90 backdrop-blur-xl flex-wrap gap-2">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-brand-600/20 border border-brand-500/30 rounded-lg flex items-center justify-center text-brand-400">
+              <div className="w-7 h-7 bg-brand-600/20 border border-brand-500/30 rounded-lg flex items-center justify-center text-brand-400 shrink-0">
                 <Split size={14} />
               </div>
               <div>
-                <h3 className="text-xs font-bold italic serif tracking-wide text-white flex items-center gap-3">
-                  Data Mapping
+                <h3 className="text-xs font-bold italic serif tracking-wide text-white flex items-center gap-2">
+                  Picture Mapping
                   <span id="data-mapping-toolbar-portal" className="flex items-center gap-1"></span>
                 </h3>
               </div>
             </div>
 
             {/* Store & Location Filter Dropdown */}
-            <div className="flex items-center gap-2 bg-slate-900/90 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-inner">
+            <div className="flex items-center gap-2 bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700/80 shadow-inner">
               <div className="flex items-center gap-1.5" title="Chọn Chi nhánh (Store)">
                 <Building2 size={13} className="text-brand-400" />
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store:</span>
@@ -162,14 +162,14 @@ export default React.memo(function DataMappingTab() {
 
           <div className="flex items-center gap-2">
             <CloudSyncManager />
-            <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-800/50">
+            <div className="flex bg-slate-900/70 p-0.5 rounded-lg border border-slate-800/80">
               <button
                 onClick={() => setActiveSubTab('edit')}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all duration-300",
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
                   activeSubTab === 'edit' 
-                    ? "bg-brand-600/20 text-brand-400 border border-brand-500/30" 
-                    : "text-slate-500 hover:text-slate-300"
+                    ? "bg-brand-600/30 text-brand-300 border border-brand-500/40 shadow-sm" 
+                    : "text-slate-400 hover:text-slate-200"
                 )}
               >
                 <Edit3 size={11} />
@@ -178,10 +178,10 @@ export default React.memo(function DataMappingTab() {
               <button
                 onClick={() => setActiveSubTab('dynamic-hierarchy')}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all duration-300",
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
                   activeSubTab === 'dynamic-hierarchy' 
-                    ? "bg-brand-600/20 text-brand-400 border border-brand-500/30" 
-                    : "text-slate-500 hover:text-slate-300"
+                    ? "bg-brand-600/30 text-brand-300 border border-brand-500/40 shadow-sm" 
+                    : "text-slate-400 hover:text-slate-200"
                 )}
               >
                 <GitMerge size={11} />
@@ -190,10 +190,10 @@ export default React.memo(function DataMappingTab() {
               <button
                 onClick={() => setActiveSubTab('review')}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest transition-all duration-300",
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
                   activeSubTab === 'review' 
-                    ? "bg-brand-600/20 text-brand-400 border border-brand-500/30" 
-                    : "text-slate-500 hover:text-slate-300"
+                    ? "bg-brand-600/30 text-brand-300 border border-brand-500/40 shadow-sm" 
+                    : "text-slate-400 hover:text-slate-200"
                 )}
               >
                 <Eye size={11} />
@@ -203,16 +203,18 @@ export default React.memo(function DataMappingTab() {
             
             <button 
               onClick={() => setIsTabFullscreen(true)}
-              className="p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-all shadow-lg"
+              className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition-all shadow-sm flex items-center gap-1 text-[10px] font-semibold"
+              title="Toàn màn hình Workspace"
             >
               <Maximize2 size={12} />
+              <span className="hidden sm:inline">Toàn Màn Hình</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 min-h-[480px] glass rounded-3xl border border-slate-800/50 shadow-2xl relative overflow-hidden flex flex-col z-0">
+      <div className="flex-1 w-full h-full rounded-xl border border-slate-800 shadow-xl relative overflow-hidden flex flex-col z-0 bg-[#141416]">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSubTab}

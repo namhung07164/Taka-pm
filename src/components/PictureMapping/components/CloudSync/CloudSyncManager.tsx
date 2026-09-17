@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CloudUpload, CloudDownload, RefreshCw } from 'lucide-react';
-import { uploadSingleR2File } from '../../lib/r2Upload';
+import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials } from '../../lib/r2Upload';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { useDataStore } from '../../DataContext';
@@ -45,84 +45,86 @@ export default function CloudSyncManager() {
     setStatusText(actionType === 'upload' ? 'Chuẩn bị dữ liệu...' : 'Đang kết nối Cloudflare R2...');
 
     try {
-      const accountId = localStorage.getItem('r2_account_id') || '';
-      const accessKeyId = localStorage.getItem('r2_access_key') || '';
-      const secretAccessKey = localStorage.getItem('r2_secret_key') || '';
-      const bucketName = localStorage.getItem('r2_bucket_name') || '';
-
-      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
-        throw new Error('Thiếu thông tin cấu hình R2!');
+      const creds = getStoredR2Credentials();
+      if (!creds) {
+        throw new Error('Thiếu thông tin cấu hình Cloudflare R2 trong cài đặt!');
       }
 
       const s3 = new S3Client({
         region: 'auto',
-        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-        credentials: { accessKeyId, secretAccessKey },
+        endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
       });
 
-      const creds = { accountId, accessKeyId, secretAccessKey, bucketName };
-
       if (actionType === 'upload') {
-        // 1. We must extract all blob/data urls from backgroundUrl, convert to blobs, and upload them
-        const newVersions = [...mapVersions];
-        for (let i = 0; i < newVersions.length; i++) {
-          const v = newVersions[i];
-          if (v.backgroundUrl && (v.backgroundUrl.startsWith('blob:') || v.backgroundUrl.startsWith('data:'))) {
-            setProgress(20 + Math.round((i / newVersions.length) * 40));
-            setStatusText(`Đang tải lên ảnh nền phiên bản: ${v.name}...`);
-            
-            const res = await fetch(v.backgroundUrl);
-            const blob = await res.blob();
-            // Generate safe filename for image
-            const imgName = `bg_${v.id}_${Date.now()}.jpeg`;
-            
-            const uploadRes = await uploadSingleR2File({ name: imgName, blob }, creds, s3);
-            if (!uploadRes.success) {
-               throw new Error(`Lỗi tải lên ảnh nền ${v.name}: ${uploadRes.error}`);
-            }
-            newVersions[i] = { ...v, backgroundUrl: `r2://${uploadRes.name}` };
+        // Enforce Single Version on Cloud: save the currently active version and clean up old files
+        const baseActive = mapVersions.find(v => v.id === activeMapVersionId) || mapVersions[0];
+        const activeVersion = baseActive || {
+          id: 'v1',
+          name: 'Phiên bản chính',
+          groups: [],
+          groupMappings: {},
+          backgroundUrl: null,
+          backgroundScale: 1,
+          backgroundPos: { x: 0, y: 0 },
+        };
+
+        const activeBgName = `bg_active_version.jpeg`;
+        let finalBgUrl = activeVersion.backgroundUrl;
+
+        // 1. Upload background image if needed
+        if (activeVersion.backgroundUrl && (activeVersion.backgroundUrl.startsWith('blob:') || activeVersion.backgroundUrl.startsWith('data:'))) {
+          setProgress(25);
+          setStatusText(`Đang tải lên ảnh nền phiên bản: ${activeVersion.name}...`);
+          const res = await fetch(activeVersion.backgroundUrl);
+          const blob = await res.blob();
+          
+          const uploadRes = await uploadSingleR2File({ name: activeBgName, blob }, creds, s3);
+          if (!uploadRes.success) {
+             throw new Error(`Lỗi tải lên ảnh nền ${activeVersion.name}: ${uploadRes.error}`);
           }
+          finalBgUrl = `r2://${uploadRes.name}`;
         }
 
-        // Build full store location partitions dictionary
+        // 2. Clean up old background files on R2 to prevent storage clutter/junk
+        setProgress(50);
+        setStatusText('Đang dọn dẹp các ảnh nền cũ trên Cloudflare R2...');
+        const keepBgName = (finalBgUrl && finalBgUrl.startsWith('r2://')) ? finalBgUrl.replace('r2://', '') : activeBgName;
+        try {
+          const purgeBgResult = await purgeOldR2BackgroundImages(keepBgName, creds, s3, (status) => setStatusText(status));
+          if (purgeBgResult.deletedCount > 0) {
+            console.log(`[CloudSync] Đã xóa ${purgeBgResult.deletedCount} ảnh nền cũ trên R2`);
+          }
+        } catch (cleanErr) {
+          console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
+        }
+
+        // 3. Build single active version configuration for Cloud
+        const cloudVersion = {
+          ...activeVersion,
+          isDynamicActive: true,
+          backgroundUrl: finalBgUrl,
+        };
+
         const activeKey = `${store}_${location}`;
         const updatedStoreLocationData = {
           ...storeLocationData,
           [activeKey]: {
             mapUnits,
-            mapVersions: newVersions,
-            activeMapVersionId,
+            mapVersions: [cloudVersion],
+            activeMapVersionId: cloudVersion.id,
           }
         };
 
-        // Also check any backgroundUrls in other partitions
-        for (const pKey in updatedStoreLocationData) {
-          const p = updatedStoreLocationData[pKey];
-          if (p && p.mapVersions) {
-            for (let j = 0; j < p.mapVersions.length; j++) {
-              const pv = p.mapVersions[j];
-              if (pv.backgroundUrl && (pv.backgroundUrl.startsWith('blob:') || pv.backgroundUrl.startsWith('data:'))) {
-                const res = await fetch(pv.backgroundUrl);
-                const blob = await res.blob();
-                const imgName = `bg_${pv.id}_${Date.now()}.jpeg`;
-                const uploadRes = await uploadSingleR2File({ name: imgName, blob }, creds, s3);
-                if (uploadRes.success) {
-                  p.mapVersions[j] = { ...pv, backgroundUrl: `r2://${uploadRes.name}` };
-                }
-              }
-            }
-          }
-        }
-
-        // 2. Upload JSON config
-        setProgress(70);
-        setStatusText('Đang lưu cấu hình JSON...');
+        // 4. Upload JSON config (contains only 1 version)
+        setProgress(75);
+        setStatusText('Đang lưu cấu hình JSON 1 version lên Cloudflare R2...');
         const configData = {
           storeLocationData: updatedStoreLocationData,
           store,
           location,
           mapUnits,
-          versions: newVersions,
+          versions: [cloudVersion],
           unitInfo,
           classInfo,
           actualClassInfo,
@@ -144,18 +146,20 @@ export default function CloudSyncManager() {
            throw new Error(`Lỗi tải lên cấu hình: ${uploadRes.error}`);
         }
 
-        setMapVersions(newVersions);
+        // Update local state: keep other versions but update active version backgroundUrl
+        const updatedLocalVersions = mapVersions.map(v => v.id === cloudVersion.id ? cloudVersion : v);
+        setMapVersions(updatedLocalVersions);
         setStoreLocationData(updatedStoreLocationData);
         
         setProgress(100);
-        setStatusText('Lưu lên Cloud thành công!');
+        setStatusText('Hoàn tất! Đã lưu 1 version duy nhất và dọn sạch các bản cũ trên R2.');
         
       } else if (actionType === 'download') {
         setProgress(30);
         setStatusText('Đang tải cấu hình từ R2...');
         
         const command = new GetObjectCommand({
-          Bucket: bucketName,
+          Bucket: creds.bucketName,
           Key: 'mapping_config.json'
         });
         
@@ -175,7 +179,7 @@ export default function CloudSyncManager() {
            if (v.backgroundUrl && v.backgroundUrl.startsWith('r2://')) {
               const imgKey = v.backgroundUrl.replace('r2://', '');
               const imgCommand = new GetObjectCommand({
-                Bucket: bucketName,
+                Bucket: creds.bucketName,
                 Key: imgKey
               });
               const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }); // 7 days
@@ -193,7 +197,7 @@ export default function CloudSyncManager() {
                 const pv = p.mapVersions[j];
                 if (pv.backgroundUrl && pv.backgroundUrl.startsWith('r2://')) {
                   const imgKey = pv.backgroundUrl.replace('r2://', '');
-                  const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+                  const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
                   const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
                   p.mapVersions[j].backgroundUrl = imgUrl;
                 }

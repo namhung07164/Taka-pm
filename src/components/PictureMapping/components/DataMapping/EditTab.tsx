@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import { v4 as uuidv4 } from 'uuid';
-import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move } from 'lucide-react';
+import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { UnitShape, ShapeType, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { useDropzone } from 'react-dropzone';
@@ -338,6 +338,50 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     };
   }, []);
 
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false);
+
+  const handleFitToScreen = useCallback(() => {
+    if (!image || !containerRef.current) return;
+    const canvasW = canvasSize.width;
+    const canvasH = canvasSize.height;
+    const imgW = image.width;
+    const imgH = image.height;
+    if (canvasW <= 0 || canvasH <= 0 || !imgW || !imgH) return;
+
+    const pad = 24;
+    const availW = Math.max(100, canvasW - pad * 2);
+    const availH = Math.max(100, canvasH - pad * 2);
+    const scaleFactor = Math.min(availW / imgW, availH / imgH, 1.5);
+
+    const posX = Math.round((canvasW - imgW * scaleFactor) / 2);
+    const posY = Math.round((canvasH - imgH * scaleFactor) / 2);
+
+    setScale(scaleFactor);
+    setPosition({ x: posX, y: posY });
+  }, [image, canvasSize]);
+
+  const handleZoomIn = () => {
+    setScale(s => Math.min(s * 1.25, 10));
+  };
+
+  const handleZoomOut = () => {
+    setScale(s => Math.max(s / 1.25, 0.05));
+  };
+
+  const handleZoomReset = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  // Auto-fit on initial load or image change if no custom scale exists
+  useEffect(() => {
+    if (image && image.width && image.height && canvasSize.width > 0 && canvasSize.height > 0) {
+      if (!activeVersion?.backgroundScale || activeVersion.backgroundScale === 1) {
+        handleFitToScreen();
+      }
+    }
+  }, [image, canvasSize.width, canvasSize.height, activeVersionId, activeVersion?.backgroundScale, handleFitToScreen]);
+
   const convertPdfToImage = async (file: File): Promise<string> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
@@ -647,20 +691,20 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   };
 
   const handleWheel = (e: any) => {
-    if (isLocked) return;
-    
     e.evt.preventDefault();
     const scaleBy = 1.1;
     const stage = e.target.getStage();
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
 
+    if (!pointer) return;
+
     const mousePointTo = {
       x: (pointer.x - stage.x()) / oldScale,
       y: (pointer.y - stage.y()) / oldScale,
     };
 
-    const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
+    const newScale = e.evt.deltaY < 0 ? Math.min(oldScale * scaleBy, 10) : Math.max(oldScale / scaleBy, 0.05);
     setScale(newScale);
     setPosition({
       x: pointer.x - mousePointTo.x * newScale,
@@ -875,9 +919,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   };
 
   return (
-    <div className="flex h-full gap-4 p-4 lg:gap-6 lg:p-8">
+    <div className="flex h-full gap-2 p-1.5 sm:p-2.5 overflow-hidden">
       {/* Tools Left */}
-      <div className="w-16 flex flex-col gap-3 py-4 items-center bg-slate-900/50 rounded-2xl border border-slate-800/50 glass z-10 shrink-0">
+      <div className="w-12 sm:w-14 flex flex-col gap-1.5 py-2.5 items-center bg-slate-900/80 rounded-xl border border-slate-800/80 glass z-10 shrink-0 overflow-y-auto custom-scrollbar">
         <ToolButton icon={MousePointer2} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" />
         <ToolButton icon={Move} active={activeTool === 'edit-bg'} onClick={() => setActiveTool('edit-bg')} title="Edit Background Image" />
         <div className="w-8 h-px bg-slate-800 my-2" />
@@ -925,11 +969,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       )}
 
       {/* Main Canvas Area */}
-      <div className="flex-1 min-h-[440px] rounded-2xl border border-slate-800/50 glass overflow-hidden relative flex flex-col" ref={containerRef}>
+      <div className="flex-1 min-h-[400px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative flex flex-col bg-[#141416]" ref={containerRef}>
         
         {/* Top Floating Controls */}
-        <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none">
-            <div className="flex gap-2 pointer-events-auto items-center">
+        <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex justify-between items-center pointer-events-none gap-2 flex-wrap">
+            <div className="flex gap-2 pointer-events-auto items-center flex-wrap">
                 <select 
                     className="bg-slate-900/90 text-white text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-lg border border-slate-700 outline-none backdrop-blur-md"
                     value={activeVersionId || ''}
@@ -1111,6 +1155,42 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
             </div>
         </div>
 
+        {/* Bottom Floating Zoom & View Controls */}
+        {localImageUrl && (
+          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1 p-1 bg-slate-900/90 border border-slate-700/80 rounded-xl backdrop-blur-md shadow-2xl pointer-events-auto">
+            <button 
+              onClick={handleZoomOut}
+              className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
+              title="Thu nhỏ (Zoom Out)"
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button 
+              onClick={handleZoomReset}
+              className="px-2 py-1 hover:bg-slate-800 text-slate-200 hover:text-white rounded-lg transition-colors text-[11px] font-mono font-bold min-w-[48px] text-center"
+              title="Đặt lại 100%"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button 
+              onClick={handleZoomIn}
+              className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
+              title="Phóng to (Zoom In)"
+            >
+              <ZoomIn size={15} />
+            </button>
+            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+            <button 
+              onClick={handleFitToScreen}
+              className="px-2.5 py-1 bg-brand-600/25 hover:bg-brand-600/40 text-brand-300 hover:text-brand-200 border border-brand-500/40 rounded-lg transition-colors text-[11px] font-bold flex items-center gap-1.5 shadow-sm"
+              title="Tự động căn vừa màn hình (Fit to Screen) - Khắc phục bị crop ảnh"
+            >
+              <Maximize2 size={13} />
+              <span>Vừa Màn Hình</span>
+            </button>
+          </div>
+        )}
+
         {isLoading && (
             <div className="absolute inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-auto">
                 <div className="w-12 h-12 border-4 border-brand-500/30 border-t-brand-500 rounded-full animate-spin mb-4" />
@@ -1132,7 +1212,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         )}
         
         {localImageUrl && (
-            <div className="w-full h-full bg-[#1e1e1e]">
+            <div className="w-full h-full bg-[#141416]">
                 <Stage 
                     width={canvasSize.width} 
                     height={canvasSize.height}
@@ -1146,8 +1226,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     x={position.x}
                     y={position.y}
                     ref={stageRef}
-                    draggable={!isLocked && activeTool === 'select' && !selectedId}
-                    style={{ cursor: alignStep !== 'none' ? 'crosshair' : activeTool === 'edit-bg' ? 'move' : isLocked && activeTool === 'select' ? 'default' : activeTool === 'select' ? 'grab' : 'crosshair' }}
+                    draggable={activeTool === 'select' && !selectedId && alignStep === 'none'}
+                    style={{ cursor: alignStep !== 'none' ? 'crosshair' : activeTool === 'edit-bg' ? 'move' : activeTool === 'select' ? (selectedId ? 'default' : 'grab') : 'crosshair' }}
                     onDragEnd={(e) => {
                         if (e.target === stageRef.current) {
                             setPosition({ x: e.target.x(), y: e.target.y() });
@@ -1429,20 +1509,46 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       </div>
 
       {/* Settings / Inspector */}
-      <div className="w-80 flex flex-col gap-4 bg-slate-900/50 rounded-2xl border border-slate-800/50 p-4 glass">
-        <div className="space-y-4 border-b border-slate-800 pb-4">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Inspector</h4>
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                <input 
-                  type="text"
-                  placeholder="Search units..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 outline-none focus:border-brand-500 transition-all"
-                  value={librarySearchTerm}
-                  onChange={(e) => setLibrarySearchTerm(e.target.value)}
-                />
+      <div className={cn(
+        "flex flex-col bg-slate-900/90 rounded-xl border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
+        isInspectorCollapsed ? "w-10 p-2 items-center" : "w-72 sm:w-80 p-3 sm:p-4 gap-3 glass"
+      )}>
+        {/* Toggle Collapse Button */}
+        <button 
+          onClick={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+          className={cn(
+            "p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
+            isInspectorCollapsed ? "w-7 h-7 flex items-center justify-center my-1" : "absolute -left-3.5 top-3 z-30 border border-slate-700 bg-slate-900"
+          )}
+          title={isInspectorCollapsed ? "Mở rộng Inspector" : "Thu gọn Inspector để mở rộng Canvas"}
+        >
+          {isInspectorCollapsed ? <ChevronLeft size={14} className="rotate-180" /> : <ChevronRight size={14} />}
+        </button>
+
+        {isInspectorCollapsed ? (
+          <div className="flex flex-col items-center gap-4 mt-6 text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+              INSPECTOR ({units.length})
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col h-full overflow-hidden w-full gap-3">
+            <div className="space-y-3 border-b border-slate-800 pb-3">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between">
+                  <span>Inspector</span>
+                  <span className="text-[10px] font-normal text-slate-500 font-mono">{units.length} units</span>
+                </h4>
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                    <input 
+                      type="text"
+                      placeholder="Search units..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 outline-none focus:border-brand-500 transition-all"
+                      value={librarySearchTerm}
+                      onChange={(e) => setLibrarySearchTerm(e.target.value)}
+                    />
+                </div>
             </div>
-        </div>
         
         {selectedId ? (
             <div className="space-y-4">
@@ -1575,6 +1681,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 )}
             </div>
         </div>
+          </div>
+        )}
       </div>
 
       {/* Unit Naming Modal Overlay */}
@@ -1651,12 +1759,12 @@ function ToolButton({ icon: Icon, active, onClick, title, disabled }: { icon: an
             onClick={onClick}
             disabled={disabled}
             className={cn(
-                "p-3 rounded-xl transition-all",
+                "p-2 sm:p-2.5 rounded-lg transition-all flex items-center justify-center",
                 disabled ? "opacity-30 cursor-not-allowed" : "hover:bg-slate-800",
-                active ? "bg-brand-600/20 text-brand-400 shadow-inner" : "text-slate-400"
+                active ? "bg-brand-600/30 text-brand-300 shadow-inner" : "text-slate-400"
             )}
         >
-            <Icon size={18} />
+            <Icon size={17} />
         </button>
     )
 }

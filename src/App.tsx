@@ -2315,7 +2315,7 @@ const handlePrintToPDF = async () => {
             </div>
           )}
 
-          <div className={`w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] p-4 lg:p-6 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336] transition-colors pb-20 lg:pb-6 print:border-none print:shadow-none print:rounded-none print-content-wrapper ${isPrintPreview ? 'print-preview-content-active' : ''}`}>
+          <div className={`w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] ${activeTab === 'picture_mapping' ? 'p-1.5 sm:p-2.5 pb-2 sm:pb-2.5' : 'p-4 lg:p-6 pb-20 lg:pb-6'} rounded-xl shadow-sm border border-slate-200 dark:border-[#333336] transition-colors print:border-none print:shadow-none print:rounded-none print-content-wrapper ${isPrintPreview ? 'print-preview-content-active' : ''}`}>
           <div className="print:hidden relative z-[200]">
             <Header
             
