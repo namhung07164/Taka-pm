@@ -1,5 +1,6 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal } from 'lucide-react';
@@ -849,8 +850,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         </div>
       </div>
 
-      {showShareModal && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+      {showShareModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">
           <Draggable
             disabled={typeof window !== 'undefined' && window.innerWidth < 640}
             handle=".modal-handle"
@@ -899,7 +900,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                 </div>
             </div>
           </Draggable>
-        </div>
+        </div>,
+        document.body
       )}
       
       {exportAllFormat && (
@@ -929,8 +931,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
           statusMessage={r2StatusMessage}
       />
 
-      {exportModalVisible && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+      {exportModalVisible && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">
           <Draggable
             disabled={typeof window !== 'undefined' && window.innerWidth < 640}
             handle=".modal-handle"
@@ -1081,7 +1083,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                 )}
             </div>
           </Draggable>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

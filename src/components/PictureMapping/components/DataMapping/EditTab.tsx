@@ -1688,8 +1688,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       </div>
 
       {/* Unit Naming Modal Overlay */}
-      {isNamingModalOpen && (
-        <div className="absolute inset-0 z-[9999] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+      {isNamingModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden">
           <Draggable
             disabled={typeof window !== 'undefined' && window.innerWidth < 640}
             handle=".modal-handle"
@@ -1762,7 +1762,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
               </div>
             </div>
           </Draggable>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CloudUpload, Settings, Key, GripHorizontal } from 'lucide-react';
 import Draggable from 'react-draggable';
 
@@ -13,6 +14,7 @@ interface R2UploadModalProps {
 
 export default function R2UploadModal({ isOpen, onClose, onStartExport, uploading, uploadProgress, statusMessage }: R2UploadModalProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
   const [accountId, setAccountId] = useState('');
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -20,6 +22,10 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
   const [cfZoneId, setCfZoneId] = useState('');
   const [cfApiToken, setCfApiToken] = useState('');
   const [showConfig, setShowConfig] = useState(true);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const storedAccountId = localStorage.getItem('r2_account_id') || '';
@@ -56,12 +62,12 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const isConfigured = accountId && bucketName && accessKey && secretKey;
 
-  return (
-    <div className="fixed inset-0 z-[99999] bg-black/75 flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150 overflow-hidden">
+  const modalContent = (
+    <div className="fixed inset-0 z-[999999] bg-black/80 flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150 overflow-hidden">
       <Draggable
         disabled={typeof window !== 'undefined' && window.innerWidth < 640}
         handle=".modal-handle"
@@ -247,4 +253,6 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
       </Draggable>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;
 }
