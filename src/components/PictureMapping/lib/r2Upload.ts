@@ -227,7 +227,11 @@ export async function uploadSingleR2File(
   s3: S3Client,
   maxRetries = 3
 ): Promise<R2UploadFileResult> {
-  const safeName = (file.name || 'Export').replace(/[\/\\]/g, '_').replace(/\s+/g, '_') + '.jpeg';
+  const originalName = file.name || 'Export.jpeg';
+  const isJson = originalName.toLowerCase().endsWith('.json');
+  const safeName = originalName.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
+  const contentType = file.blob.type || (isJson ? 'application/json' : 'image/jpeg');
+
   let lastError = '';
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -236,13 +240,13 @@ export async function uploadSingleR2File(
       const command = new PutObjectCommand({
         Bucket: creds.bucketName,
         Key: safeName,
-        ContentType: 'image/jpeg',
+        ContentType: contentType,
       });
 
       const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
       const res = await fetch(signedUrl, {
         method: 'PUT',
-        headers: { 'Content-Type': 'image/jpeg' },
+        headers: { 'Content-Type': contentType },
         body: file.blob,
       });
 
@@ -261,7 +265,7 @@ export async function uploadSingleR2File(
         const proxyRes = await fetch('/api/r2-upload', {
           method: 'POST',
           headers: {
-            'Content-Type': 'image/jpeg',
+            'Content-Type': contentType,
             'x-r2-account-id': creds.accountId,
             'x-r2-access-key-id': creds.accessKeyId,
             'x-r2-secret-access-key': creds.secretAccessKey,
