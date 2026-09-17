@@ -2,7 +2,8 @@ import { useShallow } from 'zustand/react/shallow';
 import React, { useState, useRef, useEffect } from 'react';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
-import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal } from 'lucide-react';
+import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
@@ -120,6 +121,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
   const [exportAllFormat, setExportAllFormat] = useState<'pdf' | 'jpeg' | 'r2_jpeg' | 'drive' | null>(null);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const shareModalRef = useRef<HTMLDivElement>(null);
+  const exportModalRef = useRef<HTMLDivElement>(null);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'jpeg' | 'r2_jpeg' | 'drive'>('pdf');
   const [exportPaperSize, setExportPaperSize] = useState<'a4' | 'a3' | 'a2' | 'original'>(() => {
       return (localStorage.getItem('export_paper_size') as any) || 'a4';
@@ -847,41 +850,55 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       </div>
 
       {showShareModal && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
-                <button onClick={() => setShowShareModal(false)} className="absolute top-4 right-4 p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg z-10 transition-colors">
-                    <X size={20} />
-                </button>
-                <div className="p-6 border-b border-slate-800 flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-brand-600/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
-                        <LinkIcon size={20} />
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+          <Draggable
+            disabled={typeof window !== 'undefined' && window.innerWidth < 640}
+            handle=".modal-handle"
+            bounds="parent"
+            nodeRef={shareModalRef}
+            cancel="button, input, select, textarea, .no-drag"
+          >
+            <div 
+              ref={shareModalRef}
+              className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-w-[calc(100vw-1rem)] sm:max-w-3xl max-h-[88vh] flex flex-col shadow-2xl relative overflow-hidden my-auto pointer-events-auto"
+            >
+                <div className="modal-handle cursor-grab active:cursor-grabbing p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between shrink-0 bg-slate-900/95 select-none">
+                    <div className="flex items-center gap-3">
+                        <GripHorizontal className="text-slate-500 shrink-0" size={18} />
+                        <div className="w-10 h-10 rounded-xl bg-brand-600/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
+                            <LinkIcon size={20} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg sm:text-xl font-bold text-white">Share Review Viewer</h3>
+                          <p className="text-xs sm:text-sm text-slate-400">Copy this link to share the current view.</p>
+                        </div>
                     </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-white">Share Review Viewer</h3>
-                      <p className="text-sm text-slate-400">Copy this link to share the current view.</p>
-                    </div>
+                    <button onClick={() => setShowShareModal(false)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg z-10 transition-colors no-drag">
+                        <X size={20} />
+                    </button>
                 </div>
                 
-                <div className="flex-1 overflow-auto p-6 bg-bg-dark flex justify-center items-center">
+                <div className="flex-1 overflow-auto p-4 sm:p-6 bg-bg-dark flex justify-center items-center custom-scrollbar min-h-0">
                     {shareImage && <img src={shareImage} alt="Share preview" className="max-w-full max-h-full object-contain rounded-xl border border-slate-800 shadow-xl" />}
                 </div>
 
-                <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex gap-3">
+                <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row gap-3 shrink-0">
                     <input 
                         type="text" 
                         readOnly 
                         value={actualShareLink} 
-                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-slate-300 font-mono text-sm outline-none" 
+                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-300 font-mono text-xs sm:text-sm outline-none" 
                     />
                     <button 
                       onClick={copyToClipboard}
-                      className="px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg flex items-center gap-2 transition-colors"
+                      className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-colors text-sm shrink-0"
                     >
                       {copiedLink ? <Check size={18} /> : <Copy size={18} />} 
                       {copiedLink ? 'Copied' : 'Copy Link'}
                     </button>
                 </div>
             </div>
+          </Draggable>
         </div>
       )}
       
@@ -913,26 +930,41 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       />
 
       {exportModalVisible && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg flex flex-col shadow-2xl relative overflow-hidden max-h-[90vh]">
-                <button onClick={() => setExportModalVisible(false)} className="absolute top-4 right-4 p-2 bg-slate-800 text-slate-400 hover:text-white rounded-lg z-10 transition-colors">
-                    <X size={20} />
-                </button>
-                <div className="p-6 border-b border-slate-800 shrink-0">
-                    <h3 className="text-xl font-bold text-white uppercase tracking-wider">
-                        {exportFormat === 'drive' ? 'Upload to Drive' : exportFormat === 'r2_jpeg' ? 'Upload to Cloud R2' : `Export ${exportFormat.toUpperCase()}`}
-                    </h3>
-                    <p className="text-sm text-slate-400">Select which versions to include in the export.</p>
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">
+          <Draggable
+            disabled={typeof window !== 'undefined' && window.innerWidth < 640}
+            handle=".modal-handle"
+            bounds="parent"
+            nodeRef={exportModalRef}
+            cancel="button, input, select, textarea, label, .no-drag"
+          >
+            <div 
+              ref={exportModalRef}
+              className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl max-w-[calc(100vw-1rem)] sm:max-w-xl flex flex-col shadow-2xl relative overflow-hidden max-h-[88vh] my-auto pointer-events-auto"
+            >
+                <div className="modal-handle cursor-grab active:cursor-grabbing p-4 sm:p-6 border-b border-slate-800 shrink-0 select-none bg-slate-900/95">
+                    <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2.5">
+                            <GripHorizontal className="text-slate-500 shrink-0" size={18} />
+                            <h3 className="text-lg sm:text-xl font-bold text-white uppercase tracking-wider">
+                                {exportFormat === 'drive' ? 'Upload to Drive' : exportFormat === 'r2_jpeg' ? 'Upload to Cloud R2' : `Export ${exportFormat.toUpperCase()}`}
+                            </h3>
+                        </div>
+                        <button onClick={() => setExportModalVisible(false)} className="p-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors no-drag">
+                            <X size={18} />
+                        </button>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-1 ml-7">Select which versions to include in the export.</p>
                     
                     <div className="mt-4 flex flex-col gap-3 relative">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                             {(exportFormat === 'pdf' || exportFormat === 'drive' || exportFormat === 'r2_jpeg') ? (
-                                <div className="flex items-center gap-3">
-                                    <label className="text-sm font-medium text-slate-300">Paper Size:</label>
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                    <label className="text-xs sm:text-sm font-medium text-slate-300">Paper Size:</label>
                                     <select 
                                         value={exportPaperSize}
                                         onChange={(e) => setExportPaperSize(e.target.value as any)}
-                                        className="bg-slate-950 text-white text-sm px-3 py-1.5 rounded-lg border border-slate-700 outline-none"
+                                        className="bg-slate-950 text-white text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-700 outline-none"
                                     >
                                         <option value="a4">A4</option>
                                         <option value="a3">A3</option>
@@ -942,7 +974,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                                 </div>
                             ) : <div></div>}
                             
-                            <div className="flex justify-end gap-2 shrink-0 pr-6">
+                            <div className="flex justify-end gap-2 shrink-0">
                                 <button 
                                   onClick={() => setExportModalVisible(false)}
                                   className="px-3 py-1.5 text-xs hover:bg-slate-800 text-slate-300 font-bold rounded-lg transition-colors"
@@ -952,19 +984,19 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                                 <button 
                                   onClick={handleConfirmExport}
                                   disabled={!Object.values(selectedVersionsToExport).some(v => v)}
-                                  className="px-4 py-1.5 text-xs bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg flex items-center transition-colors"
+                                  className="px-3.5 sm:px-4 py-1.5 text-xs bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-lg flex items-center transition-colors shadow-sm"
                                 >
                                   {exportFormat === 'drive' ? 'Upload Selected' : exportFormat === 'r2_jpeg' ? 'Xác nhận & Tiếp tục' : 'Export Selected'}
                                 </button>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <label className="text-sm font-medium text-slate-300">Quality / File Size:</label>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            <label className="text-xs sm:text-sm font-medium text-slate-300 shrink-0">Quality / File Size:</label>
                             <select 
                                 value={exportQuality}
                                 onChange={(e) => setExportQuality(e.target.value as any)}
-                                className="bg-slate-950 text-white text-sm px-3 py-1.5 rounded-lg border border-slate-700 outline-none w-64"
+                                className="bg-slate-950 text-white text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-700 outline-none w-full sm:w-64"
                             >
                                 <option value="high">High (4x resolution, large size)</option>
                                 <option value="medium">Medium (2x resolution, medium size)</option>
@@ -1048,6 +1080,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                     </div>
                 )}
             </div>
+          </Draggable>
         </div>
       )}
     </div>

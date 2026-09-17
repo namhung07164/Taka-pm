@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, CloudUpload, Settings, Key } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, CloudUpload, Settings, Key, GripHorizontal } from 'lucide-react';
+import Draggable from 'react-draggable';
 
 interface R2UploadModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface R2UploadModalProps {
 }
 
 export default function R2UploadModal({ isOpen, onClose, onStartExport, uploading, uploadProgress, statusMessage }: R2UploadModalProps) {
+  const nodeRef = useRef<HTMLDivElement>(null);
   const [accountId, setAccountId] = useState('');
   const [accessKey, setAccessKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -59,17 +61,30 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
   const isConfigured = accountId && bucketName && accessKey && secretKey;
 
   return (
-    <div className="fixed inset-0 z-[99999] bg-black/75 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 shrink-0 bg-slate-900/90">
-          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 font-sans">
-            <CloudUpload className="text-amber-400" size={20} />
-            Upload to Cloudflare R2
-          </h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors">
-            <X size={20} />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-[99999] bg-black/75 flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150 overflow-hidden">
+      <Draggable
+        disabled={typeof window !== 'undefined' && window.innerWidth < 640}
+        handle=".modal-handle"
+        bounds="parent"
+        nodeRef={nodeRef}
+        cancel="button, input, select, textarea, .no-drag"
+      >
+        <div 
+          ref={nodeRef} 
+          className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg max-w-[calc(100vw-1rem)] sm:max-w-lg max-h-[88vh] flex flex-col overflow-hidden my-auto pointer-events-auto"
+        >
+          <div className="modal-handle cursor-grab active:cursor-grabbing flex items-center justify-between p-4 border-b border-slate-800 shrink-0 bg-slate-900/95 select-none">
+            <div className="flex items-center gap-2.5">
+              <GripHorizontal className="text-slate-500 shrink-0" size={18} />
+              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 font-sans">
+                <CloudUpload className="text-amber-400" size={20} />
+                Upload to Cloudflare R2
+              </h2>
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors no-drag">
+              <X size={20} />
+            </button>
+          </div>
 
         <div className="p-5 space-y-4 font-sans overflow-y-auto flex-1 custom-scrollbar">
           {!showConfig && isConfigured ? (
@@ -228,7 +243,8 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
             ) : (!showConfig && isConfigured ? "Upload Now" : "Save & Upload")}
           </button>
         </div>
-      </div>
+        </div>
+      </Draggable>
     </div>
   );
 }

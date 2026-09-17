@@ -937,5 +937,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Khi lưu cấu hình lên Cloud (`CloudSyncManager`): Hệ thống lưu 1 phiên bản chính thức, tải ảnh nền chuẩn (`bg_active_version.jpeg`) và tự động kích hoạt tiến trình quét và xóa sạch toàn bộ các ảnh nền cũ (`bg_*.jpeg`) phát sinh từ các lần cập nhật trước.
      - Khi xuất ảnh từ tab Xem lại (`ReviewTab` > R2 Cloud): Người dùng chọn đúng 1 phiên bản cần xuất (mặc định là bản đang xem). Hệ thống sẽ tự động quét bucket và xóa toàn bộ các bản xuất JPEG/PNG/PDF cũ trước đó trước khi tải file mới lên, đảm bảo trong bucket chỉ tồn tại duy nhất bản mới nhất.
    - **Tải từ Cloud (Download)**: Khi người dùng nhấn **Tải từ Cloud (Download)**, hệ thống sẽ nạp cấu hình 1 phiên bản mới nhất, tự động tạo presigned URL có thời hạn cho ảnh nền và đồng bộ vào không gian vẽ của máy trạm.
+4. **Cơ Chế Bảng Pop-up Linh Hoạt (Draggable & Responsive Viewport)**:
+   - **Tự động điều chỉnh kích thước theo khung hình**: Tất cả các bảng pop-up trong phân hệ Picture Mapping (bảng gán tên gian hàng *Assign Unit Name*, bảng chia sẻ *Share Review Viewer*, bảng xuất bản vẽ *Export Map / Upload to R2 / Drive*, và bảng cấu hình *Cloudflare R2*) được tối ưu chiều cao (`max-h-[85vh]` - `max-h-[88vh]`) và chiều rộng linh hoạt (`max-w-[calc(100vw-1rem)]`), thân bảng có thanh cuộn mượt mà giúp người dùng luôn xem trọn vẹn nội dung trên mọi kích cỡ màn hình mà không bị tràn khung.
+   - **Kéo di chuyển tự do (Draggable)**:
+     - Trên thanh tiêu đề của mỗi pop-up đều có icon tay cầm kéo di chuyển (`GripHorizontal`) và trạng thái con trỏ trực quan (`cursor-grab` / `cursor-grabbing`).
+     - Người dùng có thể nhấn giữ thanh tiêu đề và kéo pop-up đến bất kỳ vị trí nào trên màn hình để không che khuất bản vẽ mặt bằng đang quan sát phía dưới.
+     - Phạm vi kéo di chuyển được giới hạn thông minh bên trong khung hình (`bounds="parent"`), ngăn cửa sổ bị trôi ra ngoài màn hình.
+     - Trên màn hình thiết bị di động nhỏ (<640px), tính năng kéo tự động chuyển sang chế độ cố định giữa màn hình để người dùng thao tác chạm vuốt cuộn nội dung thuận tiện nhất.
 
 

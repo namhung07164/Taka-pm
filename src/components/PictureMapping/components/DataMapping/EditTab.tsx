@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import { v4 as uuidv4 } from 'uuid';
-import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal } from 'lucide-react';
+import Draggable from 'react-draggable';
 import { UnitShape, ShapeType, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { useDropzone } from 'react-dropzone';
@@ -168,6 +169,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   const [gridSize, setGridSize] = useState(10);
   const [librarySearchTerm, setLibrarySearchTerm] = useState('');
   const [portalNode, setPortalNode] = useState<HTMLElement | null>(null);
+  const namingModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPortalNode(document.getElementById('data-mapping-toolbar-portal'));
@@ -1687,65 +1689,79 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
       {/* Unit Naming Modal Overlay */}
       {isNamingModalOpen && (
-        <div className="absolute inset-0 z-[9999] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-200">
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-white uppercase tracking-wider">Assign Unit Name</h3>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-tight">Select from master units list</p>
-              </div>
-              <button 
-                onClick={() => { setIsNamingModalOpen(false); namingCallback?.reject(); }}
-                className="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition-colors"
-                title="Cancel Naming"
-              >
-                <CloseIcon size={20} />
-              </button>
-            </div>
-            
-            <div className="p-4">
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                <input 
-                  autoFocus
-                  type="text"
-                  placeholder="Search units..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm text-white outline-none focus:border-brand-500 transition-all font-medium"
-                  value={searchUnit}
-                  onChange={(e) => setSearchUnit(e.target.value)}
-                />
+        <div className="absolute inset-0 z-[9999] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+          <Draggable
+            disabled={typeof window !== 'undefined' && window.innerWidth < 640}
+            handle=".modal-handle"
+            bounds="parent"
+            nodeRef={namingModalRef}
+            cancel="button, input, select, textarea, .no-drag"
+          >
+            <div 
+              ref={namingModalRef}
+              className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md max-w-[calc(100vw-1rem)] sm:max-w-md max-h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in duration-200 my-auto pointer-events-auto"
+            >
+              <div className="modal-handle cursor-grab active:cursor-grabbing p-4 sm:p-6 border-b border-slate-800 flex items-center justify-between shrink-0 select-none bg-slate-900/95">
+                <div className="flex items-center gap-3">
+                  <GripHorizontal className="text-slate-500 shrink-0" size={18} />
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-white uppercase tracking-wider">Assign Unit Name</h3>
+                    <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-tight">Select from master units list</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setIsNamingModalOpen(false); namingCallback?.reject(); }}
+                  className="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition-colors no-drag"
+                  title="Cancel Naming"
+                >
+                  <CloseIcon size={18} />
+                </button>
               </div>
               
-              <div className="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                {masterUnits
-                  .filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase()))
-                  .map(u => (
-                    <button 
-                      key={u.unit}
-                      onClick={() => handleSelectUnit(u.unit)}
-                      className="w-full text-left p-3 rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-between group"
-                    >
-                      <div>
-                        <div className="text-slate-200 font-bold text-sm tracking-wide">{u.unit}</div>
-                        <div className="text-[10px] text-slate-500 font-bold uppercase flex gap-2">
-                           <span>Floor {u.floor}</span>
-                           <span>•</span>
-                           <span>{u.size} SQM</span>
+              <div className="p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="relative mb-3 shrink-0">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                  <input 
+                    autoFocus
+                    type="text"
+                    placeholder="Search units..."
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm text-white outline-none focus:border-brand-500 transition-all font-medium"
+                    value={searchUnit}
+                    onChange={(e) => setSearchUnit(e.target.value)}
+                  />
+                </div>
+                
+                <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 max-h-[45vh]">
+                  {masterUnits
+                    .filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase()))
+                    .map(u => (
+                      <button 
+                        key={u.unit}
+                        onClick={() => handleSelectUnit(u.unit)}
+                        className="w-full text-left p-3 rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-between group"
+                      >
+                        <div>
+                          <div className="text-slate-200 font-bold text-sm tracking-wide">{u.unit}</div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase flex gap-2">
+                             <span>Floor {u.floor}</span>
+                             <span>•</span>
+                             <span>{u.size} SQM</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                         <div className="px-2 py-1 bg-brand-600/20 text-brand-400 text-[10px] font-bold rounded uppercase">Select</div>
-                      </div>
-                    </button>
-                  ))}
-                {masterUnits.filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase())).length === 0 && (
-                  <div className="text-center py-8 text-slate-500 text-sm italic">
-                    No matching units found in master list.
-                  </div>
-                )}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                           <div className="px-2 py-1 bg-brand-600/20 text-brand-400 text-[10px] font-bold rounded uppercase">Select</div>
+                        </div>
+                      </button>
+                    ))}
+                  {masterUnits.filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase())).length === 0 && (
+                    <div className="text-center py-8 text-slate-500 text-sm italic">
+                      No matching units found in master list.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </Draggable>
         </div>
       )}
     </div>
