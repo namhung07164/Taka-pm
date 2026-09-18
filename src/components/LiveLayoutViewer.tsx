@@ -455,6 +455,14 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
 
 
   useEffect(() => {
+    if (stageRef.current && version) {
+       stageRef.current.position(version.backgroundPos || { x: 0, y: 0 });
+       stageRef.current.scale({ x: version.backgroundScale || 1, y: version.backgroundScale || 1 });
+       stageRef.current.batchDraw();
+    }
+  }, [version.id]);
+
+  useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
         setDimensions({
@@ -633,6 +641,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                 y={version.imagePos?.y || 0}
                 scaleX={version.imageScale || 1}
                 scaleY={version.imageScale || 1}
+                rotation={version.backgroundRotation || 0}
               />
             )}
           </Layer>
@@ -668,7 +677,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                             visible: true,
                             x: e.evt.clientX,
                             y: e.evt.clientY,
-                            data: aggregatedData[unit.name.toLowerCase()] || {},
+                            data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
                             unitName: unit.name
                          });
                       },
