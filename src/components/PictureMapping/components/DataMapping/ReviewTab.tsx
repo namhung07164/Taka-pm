@@ -38,6 +38,15 @@ const AVAILABLE_LABELS = [
 
 function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: initialActiveVersionId }: ReviewTabProps) {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || versions[0]?.id || null);
+
+  useEffect(() => {
+    if (initialActiveVersionId && versions.some(v => v.id === initialActiveVersionId)) {
+      setActiveVersionId(initialActiveVersionId);
+    } else if (versions.length > 0 && (!activeVersionId || !versions.some(v => v.id === activeVersionId))) {
+      setActiveVersionId(versions[0].id);
+    }
+  }, [initialActiveVersionId, versions]);
+
   const activeVersion = versions.find(v => v.id === activeVersionId);
   const summaryData = useSummaryData();
 

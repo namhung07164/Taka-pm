@@ -977,4 +977,11 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Mở pop-up **Save Cloud** (hoặc **R2 Cloud** trong tab Review) &gt; điền thông tin và bấm nút **"Kiểm tra kết nối & CORS trước khi Lưu"**.
      + Hệ thống sẽ tự động gửi gói tin kiểm tra và phản hồi tức thời: Nếu thành công, bạn có thể an tâm bấm "Save & Upload"; nếu còn thiếu CORS hoặc sai quyền token, hệ thống sẽ chỉ rõ nguyên nhân để bạn xử lý ngay.
 
+6. **Chế Độ Xem Mặt Bằng Trực Tiếp (Live Layout Viewer - Tab Layout)**:
+   - **Đồng bộ tự động theo tầng & chi nhánh**: Tại Tab Layout, khi chuyển sang chế độ xem Live View, hệ thống tự động tải bản vẽ mặt bằng tương ứng với Chi nhánh và Tầng đang chọn.
+   - **Tối ưu hiển thị theo Tab Dynamic**: Chỉ hiển thị các gian hàng/vị trí đã được phân nhóm hoặc gán quy tắc động ở Tab Dynamic, ẩn các unit trống giúp bản vẽ trực quan và tập trung.
+   - **Xem nhanh thông tin (Tooltip)**: Rê chuột hoặc chạm vào unit để xem tên gian hàng, Brand/Dự án, trạng thái thi công, diện tích và các mốc thời gian quan trọng (đã loại bỏ các trường thừa như budget, cost).
+   - **Tối ưu thao tác thu phóng (Zoom & Pan)**: Hỗ trợ cuộn chuột phóng to/thu nhỏ mượt mà, kéo rê màn hình không bị giật lag nhờ thuật toán tăng tốc hiển thị Canvas Konva.
+
+
 

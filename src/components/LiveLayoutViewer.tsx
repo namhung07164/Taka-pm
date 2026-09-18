@@ -288,13 +288,11 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   const { r2Version, r2Units } = useMemo(() => {
      if (config.storeLocationData) {
          // Determine which location key to use
-         // If locationFilter is "all", we might need to pick the first available location for this store, 
-         // since a single canvas can only show one map at a time easily.
          const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
          const pKey = `${storeFilter}_${targetLoc}`;
          const partition = config.storeLocationData[pKey];
          if (partition) {
-             const v = partition.mapVersions.find((v: any) => v.isDynamicActive) || partition.mapVersions[0] || {};
+             const v = partition.mapVersions?.find((v: any) => v.isDynamicActive) || partition.mapVersions?.[0] || {};
              return { r2Version: v, r2Units: partition.mapUnits || [] };
          }
          return { r2Version: {}, r2Units: [] };
@@ -309,14 +307,22 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; x: number; y: number; data: any; unitName: string } | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; data: any; unitName: string } | null>(null);
   const [stageScale, setStageScale] = useState(version.backgroundScale || 1);
   const [stagePos, setStagePos] = useState(version.backgroundPos || { x: 0, y: 0 });
 
   useEffect(() => {
-    setStageScale(version.backgroundScale || 1);
-    setStagePos(version.backgroundPos || { x: 0, y: 0 });
+    const initScale = version.backgroundScale || 1;
+    const initPos = version.backgroundPos || { x: 0, y: 0 };
+    setStageScale(initScale);
+    setStagePos(initPos);
+    if (stageRef.current) {
+      stageRef.current.scale({ x: initScale, y: initScale });
+      stageRef.current.position(initPos);
+      stageRef.current.batchDraw();
+    }
   }, [version]);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -386,7 +392,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
     });
 
     return dataMap;
-  }, [units, summaryData, projects, storeFilter]);
+  }, [units, summaryData, projects, storeFilter, locationFilter]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
   const { unitColorMap, activeGroups } = useMemo(() => {
@@ -412,41 +418,39 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             const isDynamicActive = version.isDynamicActive !== false;
             
             if (group.rules && group.rules.length > 0) {
-                // Determine whether to evaluate dynamic rule. 
-                // Only evaluate if it's dynamic active OR if there are no manual mappings
                 const hasManualMapping = version.groupMappings && Object.values(version.groupMappings).some(m => Array.isArray(m) && m.length > 0);
                 if (isDynamicActive || !hasManualMapping) {
                     const data = aggregatedData[u.name?.toLowerCase() || ''];
                     if (data) {
                         const passedRules = group.rules.every((rule: any) => {
                             let val = data[rule.field];
-                if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
-                const numVal = Number(rule.value);
-                const isNum = !isNaN(numVal) && rule.value.trim() !== "";
-                
-                let compareValStr = String(val || "").toLowerCase().trim();
-                let compareRuleStr = String(rule.value || "").toLowerCase().trim();
-                if (compareRuleStr === "in progress") compareRuleStr = "on process";
-                if (compareValStr === "in progress") compareValStr = "on process";
+                            if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
+                            const numVal = Number(rule.value);
+                            const isNum = !isNaN(numVal) && rule.value.trim() !== "";
+                            
+                            let compareValStr = String(val || "").toLowerCase().trim();
+                            let compareRuleStr = String(rule.value || "").toLowerCase().trim();
+                            if (compareRuleStr === "in progress") compareRuleStr = "on process";
+                            if (compareValStr === "in progress") compareValStr = "on process";
 
-                switch (rule.operator) {
-                  case ">": return isNum ? Number(val) > numVal : false;
-                  case "<": return isNum ? Number(val) < numVal : false;
-                  case ">=": return isNum ? Number(val) >= numVal : false;
-                  case "<=": return isNum ? Number(val) <= numVal : false;
-                  case "=": return compareValStr === compareRuleStr;
-                  case "contains": {
-                    const searchTerms = compareRuleStr.split(/\s+/);
-                    return searchTerms.every(term => compareValStr.includes(term));
-                  }
-                  case "exclude": {
-                    const searchTerms = compareRuleStr.split(/\s+/);
-                    return !searchTerms.some(term => compareValStr.includes(term));
-                  }
-                  default: return false;
-                }
+                            switch (rule.operator) {
+                              case ">": return isNum ? Number(val) > numVal : false;
+                              case "<": return isNum ? Number(val) < numVal : false;
+                              case ">=": return isNum ? Number(val) >= numVal : false;
+                              case "<=": return isNum ? Number(val) <= numVal : false;
+                              case "=": return compareValStr === compareRuleStr;
+                              case "contains": {
+                                const searchTerms = compareRuleStr.split(/\s+/);
+                                return searchTerms.every(term => compareValStr.includes(term));
+                              }
+                              case "exclude": {
+                                const searchTerms = compareRuleStr.split(/\s+/);
+                                return !searchTerms.some(term => compareValStr.includes(term));
+                              }
+                              default: return false;
+                            }
                         });
-                        if (passedRules) isMatch = true; // Set to true if it passed dynamic rules
+                        if (passedRules) isMatch = true;
                     }
                 }
             }
@@ -462,10 +466,88 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
     });
 
     return { unitColorMap: colorMap, activeGroups: groupsInUse };
-  }, [version.groups, units, aggregatedData]);
+  }, [version.groups, version.groupMappings, version.isDynamicActive, units, aggregatedData]);
 
+  // 4. Filter only units that appear in dynamic tab and precalculate bounds
+  const displayedUnits = useMemo(() => {
+    return units
+      .filter((unit: any) => {
+        if (unit.visible === false) return false;
+        
+        // 1. Chỉ hiện những unit xuất hiện ở tab dynamic (thuộc group dynamic / có màu)
+        const targetColor = unitColorMap[unit.id];
+        if (!targetColor) return false;
 
+        // Lọc theo thanh tìm kiếm nếu có
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const uData = aggregatedData[unit.name?.toLowerCase() || ''] || {};
+          const matchName = (unit.name || '').toLowerCase().includes(q);
+          const matchBrand = (uData.brandName || '').toLowerCase().includes(q);
+          const matchProject = (uData.projectName || '').toLowerCase().includes(q);
+          const matchCode = (uData.appProjectCode || '').toLowerCase().includes(q);
+          if (!matchName && !matchBrand && !matchProject && !matchCode) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map((unit: any) => {
+        const targetColor = unitColorMap[unit.id];
+        
+        // Pre-compute text bounding box to avoid heavy array calculations on each render
+        let textX = unit.x;
+        let textY = unit.y;
+        let textWidth = 100;
+        let textHeight = 30;
 
+        if (unit.type === 'rect') {
+          textX = unit.x;
+          textY = unit.y;
+          textWidth = unit.width || 100;
+          textHeight = unit.height || 30;
+        } else if (unit.type === 'circle') {
+          const r = unit.radius || 20;
+          textX = unit.x - r;
+          textY = unit.y - r;
+          textWidth = r * 2;
+          textHeight = r * 2;
+        } else if (unit.type === 'polygon' && unit.points && unit.points.length >= 2) {
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          for (let i = 0; i < unit.points.length; i += 2) {
+            const px = unit.points[i];
+            const py = unit.points[i + 1];
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
+          textX = minX;
+          textY = minY;
+          textWidth = Math.max(20, maxX - minX);
+          textHeight = Math.max(20, maxY - minY);
+        }
+
+        return {
+          ...unit,
+          targetColor,
+          textX,
+          textY,
+          textWidth,
+          textHeight,
+        };
+      });
+  }, [units, unitColorMap, searchQuery, aggregatedData]);
+
+  // Handle position tooltip directly via DOM without 60fps React state re-renders
+  const updateTooltipPos = (clientX: number, clientY: number) => {
+    if (tooltipRef.current) {
+      const isRight = clientX > window.innerWidth - 300;
+      tooltipRef.current.style.left = `${clientX + 15}px`;
+      tooltipRef.current.style.top = `${clientY + 15}px`;
+      tooltipRef.current.style.transform = isRight ? 'translateX(-100%)' : 'none';
+    }
+  };
 
   useEffect(() => {
     const updateSize = () => {
@@ -493,7 +575,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative">
+    <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none">
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 pointer-events-none">
          {activeGroups.length > 0 && (
            <div className="bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-slate-200 flex flex-col gap-2 pointer-events-auto max-w-[200px]">
@@ -531,18 +613,18 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
 
       {hoverInfo && hoverInfo.visible && (
         <div 
+          ref={tooltipRef}
           className="fixed z-50 pointer-events-none bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200/60 p-4 w-72 text-sm text-slate-700 transition-opacity duration-150"
           style={{ 
-            left: hoverInfo.x + 15, 
-            top: hoverInfo.y + 15,
-            transform: hoverInfo.x > window.innerWidth - 300 ? 'translateX(-100%)' : 'none',
+            left: -9999, 
+            top: -9999,
             transformOrigin: 'top left'
           }}
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <div className="font-bold text-lg text-slate-800">{hoverInfo.unitName}</div>
-              {hoverInfo.data.appProjectStatus && (
+              {hoverInfo.data?.appProjectStatus && (
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                   hoverInfo.data.appProjectStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
                   hoverInfo.data.appProjectStatus === 'On Process' ? 'bg-blue-100 text-blue-700' :
@@ -554,7 +636,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
               )}
             </div>
             
-            {(hoverInfo.data.projectName || hoverInfo.data.brandName) && (
+            {(hoverInfo.data?.projectName || hoverInfo.data?.brandName) && (
               <div>
                 <div className="text-xs text-slate-400 font-medium uppercase mb-0.5">Brand / Project</div>
                 <div className="font-semibold text-slate-700">{hoverInfo.data.projectName || hoverInfo.data.brandName}</div>
@@ -562,13 +644,13 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              {hoverInfo.data.size > 0 && (
+              {hoverInfo.data?.size > 0 && (
                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
                   <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Size (m²)</div>
                   <div className="font-semibold text-slate-700">{Number(hoverInfo.data.size).toLocaleString('en-US')}</div>
                 </div>
               )}
-              {hoverInfo.data.floor && (
+              {hoverInfo.data?.floor && (
                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
                   <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Location</div>
                   <div className="font-semibold text-slate-700">{hoverInfo.data.floor}</div>
@@ -576,20 +658,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
               )}
             </div>
 
-            {(hoverInfo.data.appProjectBudget > 0 || hoverInfo.data.appProjectActual > 0) && (
-              <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
-                <div>
-                  <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Budget</div>
-                  <div className="font-medium text-slate-700">{Number(hoverInfo.data.appProjectBudget).toLocaleString('en-US')} <span className="text-[10px] text-slate-400">VND</span></div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Actual</div>
-                  <div className="font-medium text-slate-700">{Number(hoverInfo.data.appProjectActual).toLocaleString('en-US')} <span className="text-[10px] text-slate-400">VND</span></div>
-                </div>
-              </div>
-            )}
-
-            {(hoverInfo.data.startDate || hoverInfo.data.handoverDate || hoverInfo.data.openingDate) && (
+            {(hoverInfo.data?.startDate || hoverInfo.data?.handoverDate || hoverInfo.data?.openingDate) && (
               <div className="border-t border-slate-100 pt-2 flex flex-col gap-1.5">
                 {hoverInfo.data.startDate && (
                   <div className="flex items-center justify-between text-xs">
@@ -622,9 +691,10 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             onClick={() => {
               const stage = stageRef.current;
               if (!stage) return;
-              const newScale = stageScale * 1.2;
+              const newScale = stageScale * 1.25;
               setStageScale(newScale);
               stage.scale({ x: newScale, y: newScale });
+              stage.batchDraw();
             }}
             className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
             title="Zoom In"
@@ -636,9 +706,10 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             onClick={() => {
               const stage = stageRef.current;
               if (!stage) return;
-              const newScale = Math.max(0.1, stageScale / 1.2);
+              const newScale = Math.max(0.1, stageScale / 1.25);
               setStageScale(newScale);
               stage.scale({ x: newScale, y: newScale });
+              stage.batchDraw();
             }}
             className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
             title="Zoom Out"
@@ -656,6 +727,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
               if (stage) {
                 stage.scale({ x: initScale, y: initScale });
                 stage.position(initPos);
+                stage.batchDraw();
               }
             }}
             className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
@@ -681,7 +753,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                e.evt.preventDefault();
                const stage = stageRef.current;
                if (!stage) return;
-               const scaleBy = 1.1;
+               const scaleBy = 1.15;
                const oldScale = stage.scaleX();
                const pointer = stage.getPointerPosition();
                if (!pointer) return;
@@ -691,14 +763,15 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                };
                const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
                const clampedScale = Math.max(0.05, Math.min(newScale, 20));
-               setStageScale(clampedScale);
                const newPos = {
                  x: -(mousePointTo.x - pointer.x / clampedScale) * clampedScale,
                  y: -(mousePointTo.y - pointer.y / clampedScale) * clampedScale,
                };
-               setStagePos(newPos);
                stage.scale({ x: clampedScale, y: clampedScale });
                stage.position(newPos);
+               stage.batchDraw();
+               setStageScale(clampedScale);
+               setStagePos(newPos);
             }}
         >
           <Layer>
@@ -714,21 +787,16 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
               />
             )}
 
-            {units.map((unit: any) => {
-               if (unit.visible === false) return null;
-               
-               const targetColor = unitColorMap[unit.id];
-               const isTargeted = !!targetColor;
-               const fillColor = targetColor || "rgba(148, 163, 184, 0.1)";
+            {displayedUnits.map((unit: any) => {
+               const fillColor = unit.targetColor || "#3b82f6";
                
                const commonProps = {
                   id: unit.id,
                   fill: fillColor,
-                  opacity: isTargeted ? 0.75 : 0.3,
-                  stroke: isTargeted ? '#1e293b' : '#ffffff',
-                  strokeWidth: (isTargeted ? 2 : 1.5) / stageScale,
-                  shadowBlur: 4,
-                  shadowColor: "rgba(0,0,0,0.4)",
+                  opacity: 0.85,
+                  stroke: '#1e293b',
+                  strokeWidth: 2,
+                  strokeScaleEnabled: false,
                   x: unit.x,
                   y: unit.y,
                   rotation: unit.rotation || 0,
@@ -737,14 +805,13 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                      container.style.cursor = 'pointer';
                      setHoverInfo({
                         visible: true,
-                        x: e.evt.clientX,
-                        y: e.evt.clientY,
                         data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
                         unitName: unit.name
                      });
+                     setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
                   },
                   onMouseMove: (e: any) => {
-                     setHoverInfo(prev => prev ? { ...prev, x: e.evt.clientX, y: e.evt.clientY } : null);
+                     updateTooltipPos(e.evt.clientX, e.evt.clientY);
                   },
                   onMouseLeave: (e: any) => {
                      const container = e.target.getStage().container();
@@ -754,22 +821,20 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                   onClick: (e: any) => {
                      setHoverInfo({
                         visible: true,
-                        x: e.evt.clientX,
-                        y: e.evt.clientY,
                         data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
                         unitName: unit.name
                      });
+                     setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
                   },
                   onTap: (e: any) => {
                      const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
                      const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
                      setHoverInfo({
                         visible: true,
-                        x: clientX,
-                        y: clientY,
                         data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
                         unitName: unit.name
                      });
+                     setTimeout(() => updateTooltipPos(clientX, clientY), 0);
                   }
                };
 
@@ -787,19 +852,16 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                     {unit.name && (
                        <Text 
                           text={unit.name}
-                          x={unit.type === 'rect' ? unit.x : (unit.type === 'circle' ? unit.x - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 0)) : unit.x))}
-                          y={unit.type === 'rect' ? unit.y : (unit.type === 'circle' ? unit.y - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 1)) : unit.y))}
-                          width={unit.type === 'rect' ? unit.width : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_:any, i:number) => i % 2 === 0)) - Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 0)) : 100))}
-                          height={unit.type === 'rect' ? unit.height : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_:any, i:number) => i % 2 === 1)) - Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 1)) : 30))}
+                          x={unit.textX}
+                          y={unit.textY}
+                          width={unit.textWidth}
+                          height={unit.textHeight}
                           rotation={unit.rotation || 0}
                           align="center"
                           verticalAlign="middle"
-                          fontSize={(isTargeted ? 15 : 12) / stageScale}
-                          fontStyle={isTargeted ? 'bold' : 'normal'}
-                          fill={isTargeted ? '#0f172a' : '#334155'}
-                          shadowColor="white"
-                          shadowBlur={4}
-                          shadowOpacity={0.9}
+                          fontSize={13}
+                          fontStyle="bold"
+                          fill="#0f172a"
                           listening={false}
                        />
                     )}

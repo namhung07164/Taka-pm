@@ -198,18 +198,25 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       setNamingCallback(null);
   };
 
-  // Ref to track current view properties for auto-saving on unmount or before switching versions
+  // Ref to track current view properties and versions for auto-saving on unmount or before switching versions
   const viewPropsRef = React.useRef({ scale, position, bgRotation, imagePos, imageScale, activeVersionId });
+  const versionsRef = React.useRef(versions);
+
   useEffect(() => {
     viewPropsRef.current = { scale, position, bgRotation, imagePos, imageScale, activeVersionId };
   }, [scale, position, bgRotation, imagePos, imageScale, activeVersionId]);
 
-  // Auto-save view properties when unmounting EditTab
+  useEffect(() => {
+    versionsRef.current = versions;
+  }, [versions]);
+
+  // Auto-save view properties when unmounting EditTab using latest versionsRef
   useEffect(() => {
     return () => {
       const cur = viewPropsRef.current;
-      if (cur.activeVersionId) {
-        setVersions(versions.map(v => v.id === cur.activeVersionId ? {
+      const curVersions = versionsRef.current;
+      if (cur.activeVersionId && curVersions.length > 0) {
+        setVersions(curVersions.map(v => v.id === cur.activeVersionId ? {
           ...v,
           backgroundScale: cur.scale,
           backgroundPos: cur.position,
