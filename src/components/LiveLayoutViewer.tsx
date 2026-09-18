@@ -3,7 +3,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
@@ -614,34 +614,98 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
           </div>
         </div>
       )}
-      <div ref={containerRef} className="flex-grow w-full cursor-grab active:cursor-grabbing">
+      <div ref={containerRef} className="flex-grow w-full relative cursor-grab active:cursor-grabbing">
+        {/* Floating Zoom Controls */}
+        <div className="absolute top-4 right-4 z-10 flex items-center bg-white/90 backdrop-blur border border-slate-200 shadow-sm rounded-lg p-1 space-x-1">
+          <button 
+            type="button" 
+            onClick={() => {
+              const stage = stageRef.current;
+              if (!stage) return;
+              const newScale = stageScale * 1.2;
+              setStageScale(newScale);
+              stage.scale({ x: newScale, y: newScale });
+            }}
+            className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button 
+            type="button" 
+            onClick={() => {
+              const stage = stageRef.current;
+              if (!stage) return;
+              const newScale = Math.max(0.1, stageScale / 1.2);
+              setStageScale(newScale);
+              stage.scale({ x: newScale, y: newScale });
+            }}
+            className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <button 
+            type="button" 
+            onClick={() => {
+              const stage = stageRef.current;
+              const initScale = version.backgroundScale || 1;
+              const initPos = version.backgroundPos || { x: 0, y: 0 };
+              setStageScale(initScale);
+              setStagePos(initPos);
+              if (stage) {
+                stage.scale({ x: initScale, y: initScale });
+                stage.position(initPos);
+              }
+            }}
+            className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
+            title="Reset View"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
+
         <Stage 
             ref={stageRef} 
             width={dimensions.width} 
             height={dimensions.height}
+            scaleX={stageScale}
+            scaleY={stageScale}
+            x={stagePos.x}
+            y={stagePos.y}
             draggable
+            onDragEnd={(e) => {
+              setStagePos({ x: e.target.x(), y: e.target.y() });
+            }}
             onWheel={(e) => {
                e.evt.preventDefault();
                const stage = stageRef.current;
                if (!stage) return;
                const scaleBy = 1.1;
                const oldScale = stage.scaleX();
+               const pointer = stage.getPointerPosition();
+               if (!pointer) return;
                const mousePointTo = {
-                 x: stage.getPointerPosition().x / oldScale - stage.x() / oldScale,
-                 y: stage.getPointerPosition().y / oldScale - stage.y() / oldScale,
+                 x: pointer.x / oldScale - stage.x() / oldScale,
+                 y: pointer.y / oldScale - stage.y() / oldScale,
                };
                const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
-               stage.scale({ x: newScale, y: newScale });
-               stage.position({
-                 x: -(mousePointTo.x - stage.getPointerPosition().x / newScale) * newScale,
-                 y: -(mousePointTo.y - stage.getPointerPosition().y / newScale) * newScale,
-               });
+               const clampedScale = Math.max(0.05, Math.min(newScale, 20));
+               setStageScale(clampedScale);
+               const newPos = {
+                 x: -(mousePointTo.x - pointer.x / clampedScale) * clampedScale,
+                 y: -(mousePointTo.y - pointer.y / clampedScale) * clampedScale,
+               };
+               setStagePos(newPos);
+               stage.scale({ x: clampedScale, y: clampedScale });
+               stage.position(newPos);
             }}
         >
-          <Layer listening={false}>
+          <Layer>
             {bgImage && (
               <KonvaImage
                 image={bgImage}
+                listening={false}
                 x={version.imagePos?.x || 0}
                 y={version.imagePos?.y || 0}
                 scaleX={version.imageScale || 1}
@@ -649,106 +713,99 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                 rotation={version.backgroundRotation || 0}
               />
             )}
-          </Layer>
 
-          <Layer>
-             <Group 
-                x={version.backgroundPos?.x || 0}
-                y={version.backgroundPos?.y || 0}
-                scaleX={version.backgroundScale || 1}
-                scaleY={version.backgroundScale || 1}
-                rotation={version.backgroundRotation || 0}
-             >
-                {units.map((unit: any) => {
-                   if (unit.visible === false) return null;
-                   
-                   const targetColor = unitColorMap[unit.id];
-                   const isTargeted = !!targetColor;
-                   const fillColor = targetColor || "rgba(148, 163, 184, 0.1)";
-                   
-                                      const commonProps = {
-                      id: unit.id,
-                      fill: fillColor,
-                      opacity: isTargeted ? 0.75 : 0.3,
-                      stroke: isTargeted ? '#333' : '#999',
-                      strokeWidth: isTargeted ? 2 : 1,
-                      x: unit.x,
-                      y: unit.y,
-                      rotation: unit.rotation || 0,
-                      onMouseEnter: (e: any) => {
-                         const container = e.target.getStage().container();
-                         container.style.cursor = 'pointer';
-                         setHoverInfo({
-                            visible: true,
-                            x: e.evt.clientX,
-                            y: e.evt.clientY,
-                            data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
-                            unitName: unit.name
-                         });
-                      },
-                      onMouseMove: (e: any) => {
-                         setHoverInfo(prev => prev ? { ...prev, x: e.evt.clientX, y: e.evt.clientY } : null);
-                      },
-                      onMouseLeave: (e: any) => {
-                         const container = e.target.getStage().container();
-                         container.style.cursor = 'grab';
-                         setHoverInfo(null);
-                      },
-                      onClick: (e: any) => {
-                         setHoverInfo({
-                            visible: true,
-                            x: e.evt.clientX,
-                            y: e.evt.clientY,
-                            data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
-                            unitName: unit.name
-                         });
-                      },
-                      onTap: (e: any) => {
-                         const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
-                         const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
-                         setHoverInfo({
-                            visible: true,
-                            x: clientX,
-                            y: clientY,
-                            data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
-                            unitName: unit.name
-                         });
-                      }
-                   };
+            {units.map((unit: any) => {
+               if (unit.visible === false) return null;
+               
+               const targetColor = unitColorMap[unit.id];
+               const isTargeted = !!targetColor;
+               const fillColor = targetColor || "rgba(148, 163, 184, 0.1)";
+               
+               const commonProps = {
+                  id: unit.id,
+                  fill: fillColor,
+                  opacity: isTargeted ? 0.75 : 0.3,
+                  stroke: isTargeted ? '#1e293b' : '#ffffff',
+                  strokeWidth: (isTargeted ? 2 : 1.5) / stageScale,
+                  shadowBlur: 4,
+                  shadowColor: "rgba(0,0,0,0.4)",
+                  x: unit.x,
+                  y: unit.y,
+                  rotation: unit.rotation || 0,
+                  onMouseEnter: (e: any) => {
+                     const container = e.target.getStage().container();
+                     container.style.cursor = 'pointer';
+                     setHoverInfo({
+                        visible: true,
+                        x: e.evt.clientX,
+                        y: e.evt.clientY,
+                        data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
+                        unitName: unit.name
+                     });
+                  },
+                  onMouseMove: (e: any) => {
+                     setHoverInfo(prev => prev ? { ...prev, x: e.evt.clientX, y: e.evt.clientY } : null);
+                  },
+                  onMouseLeave: (e: any) => {
+                     const container = e.target.getStage().container();
+                     container.style.cursor = 'grab';
+                     setHoverInfo(null);
+                  },
+                  onClick: (e: any) => {
+                     setHoverInfo({
+                        visible: true,
+                        x: e.evt.clientX,
+                        y: e.evt.clientY,
+                        data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
+                        unitName: unit.name
+                     });
+                  },
+                  onTap: (e: any) => {
+                     const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
+                     const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
+                     setHoverInfo({
+                        visible: true,
+                        x: clientX,
+                        y: clientY,
+                        data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
+                        unitName: unit.name
+                     });
+                  }
+               };
 
-                   return (
-                     <Group key={unit.id}>
-                        {unit.type === 'rect' && (
-                           <Rect {...commonProps} width={unit.width} height={unit.height} cornerRadius={4} />
-                        )}
-                        {unit.type === 'circle' && (
-                           <Circle {...commonProps} radius={unit.radius} />
-                        )}
-                        {unit.type === 'polygon' && unit.points && (
-                           <Line {...commonProps} points={unit.points} closed={true} />
-                        )}
-                        {unit.name && (
-                           <Text 
-                              text={unit.name}
-                              x={unit.type === 'rect' ? unit.x : (unit.type === 'circle' ? unit.x - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 0)) : unit.x))}
-                              y={unit.type === 'rect' ? unit.y : (unit.type === 'circle' ? unit.y - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 1)) : unit.y))}
-                              width={unit.type === 'rect' ? unit.width : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_:any, i:number) => i % 2 === 0)) - Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 0)) : 100))}
-                              height={unit.type === 'rect' ? unit.height : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_:any, i:number) => i % 2 === 1)) - Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 1)) : 30))}
-                              rotation={unit.rotation || 0}
-                              align="center"
-                              verticalAlign="middle"
-                              fontSize={isTargeted ? 16 : 12}
-                              fontStyle={isTargeted ? 'bold' : 'normal'}
-                              fill={isTargeted ? '#1e293b' : '#64748b'}
-                              shadowColor="white"
-                              shadowBlur={isTargeted ? 4 : 2}
-                              shadowOpacity={1}
-                           />
-                        )}
-                     </Group>
-                   );
-                })}
-             </Group>
+               return (
+                 <Group key={unit.id}>
+                    {unit.type === 'rect' && (
+                       <Rect {...commonProps} width={unit.width} height={unit.height} cornerRadius={4} />
+                    )}
+                    {unit.type === 'circle' && (
+                       <Circle {...commonProps} radius={unit.radius} />
+                    )}
+                    {unit.type === 'polygon' && unit.points && (
+                       <Line {...commonProps} points={unit.points} closed={true} />
+                    )}
+                    {unit.name && (
+                       <Text 
+                          text={unit.name}
+                          x={unit.type === 'rect' ? unit.x : (unit.type === 'circle' ? unit.x - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 0)) : unit.x))}
+                          y={unit.type === 'rect' ? unit.y : (unit.type === 'circle' ? unit.y - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 1)) : unit.y))}
+                          width={unit.type === 'rect' ? unit.width : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_:any, i:number) => i % 2 === 0)) - Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 0)) : 100))}
+                          height={unit.type === 'rect' ? unit.height : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_:any, i:number) => i % 2 === 1)) - Math.min(...unit.points.filter((_:any, i:number) => i % 2 === 1)) : 30))}
+                          rotation={unit.rotation || 0}
+                          align="center"
+                          verticalAlign="middle"
+                          fontSize={(isTargeted ? 15 : 12) / stageScale}
+                          fontStyle={isTargeted ? 'bold' : 'normal'}
+                          fill={isTargeted ? '#0f172a' : '#334155'}
+                          shadowColor="white"
+                          shadowBlur={4}
+                          shadowOpacity={0.9}
+                          listening={false}
+                       />
+                    )}
+                 </Group>
+               );
+            })}
           </Layer>
         </Stage>
       </div>
