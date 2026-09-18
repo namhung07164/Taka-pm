@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -308,8 +308,8 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; data: any; unitName: string } | null>(null);
-  const [stageScale, setStageScale] = useState(version.backgroundScale || 1);
-  const [stagePos, setStagePos] = useState(version.backgroundPos || { x: 0, y: 0 });
+  const [stageScale, setStageScale] = useState(1);
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -325,17 +325,76 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
 
   const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const initScale = version.backgroundScale || 1;
-    const initPos = version.backgroundPos || { x: 0, y: 0 };
-    setStageScale(initScale);
-    setStagePos(initPos);
+  // Auto-fit floor plan background & units to perfectly fit and center in the viewport
+  const fitToScreen = useCallback(() => {
+    const containerW = containerRef.current?.offsetWidth || dimensions.width;
+    const containerH = containerRef.current?.offsetHeight || dimensions.height;
+    if (containerW <= 0 || containerH <= 0) return;
+
+    let contentW = 1000;
+    let contentH = 800;
+    let contentX = 0;
+    let contentY = 0;
+
+    if (bgImage) {
+      const imgNaturalW = bgImage.naturalWidth || bgImage.width || 1000;
+      const imgNaturalH = bgImage.naturalHeight || bgImage.height || 800;
+      const imgScale = version.imageScale || 1;
+      contentW = imgNaturalW * imgScale;
+      contentH = imgNaturalH * imgScale;
+      contentX = version.imagePos?.x || 0;
+      contentY = version.imagePos?.y || 0;
+    } else if (units && units.length > 0) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      units.forEach((u: any) => {
+        const ux = u.x || 0;
+        const uy = u.y || 0;
+        const uw = u.width || 100;
+        const uh = u.height || 100;
+        minX = Math.min(minX, ux);
+        minY = Math.min(minY, uy);
+        maxX = Math.max(maxX, ux + uw);
+        maxY = Math.max(maxY, uy + uh);
+      });
+      if (minX !== Infinity && maxX > minX) {
+        contentX = minX;
+        contentY = minY;
+        contentW = Math.max(100, maxX - minX);
+        contentH = Math.max(100, maxY - minY);
+      }
+    }
+
+    // Dynamic padding so the background image borders never get clipped on mobile or desktop
+    const pad = containerW < 640 ? 12 : 24;
+    const availW = Math.max(10, containerW - pad * 2);
+    const availH = Math.max(10, containerH - pad * 2);
+
+    const scaleX = availW / contentW;
+    const scaleY = availH / contentH;
+    const fitScale = Math.min(scaleX, scaleY);
+    const clampedScale = Math.max(0.01, Math.min(fitScale, 10));
+
+    // Center content in viewport
+    const contentCenterX = contentX + contentW / 2;
+    const contentCenterY = contentY + contentH / 2;
+    const posX = containerW / 2 - contentCenterX * clampedScale;
+    const posY = containerH / 2 - contentCenterY * clampedScale;
+
+    const newPos = { x: posX, y: posY };
+    setStageScale(clampedScale);
+    setStagePos(newPos);
+
     if (stageRef.current) {
-      stageRef.current.scale({ x: initScale, y: initScale });
-      stageRef.current.position(initPos);
+      stageRef.current.scale({ x: clampedScale, y: clampedScale });
+      stageRef.current.position(newPos);
       stageRef.current.batchDraw();
     }
-  }, [version]);
+  }, [bgImage, version, units, dimensions]);
+
+  // Trigger fitToScreen when background image or partition version changes
+  useEffect(() => {
+    fitToScreen();
+  }, [fitToScreen]);
 
   // 1. Get real-time projects and Excel summary data
   const projects = useAppStore(state => state.projects);
@@ -688,19 +747,10 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
         <button 
           type="button" 
           onClick={() => {
-            const stage = stageRef.current;
-            const initScale = version.backgroundScale || 1;
-            const initPos = version.backgroundPos || { x: 0, y: 0 };
-            setStageScale(initScale);
-            setStagePos(initPos);
-            if (stage) {
-              stage.scale({ x: initScale, y: initScale });
-              stage.position(initPos);
-              stage.batchDraw();
-            }
+            fitToScreen();
           }}
           className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
-          title="Reset View"
+          title="Reset / Fit to Screen"
         >
           <Maximize2 className="w-4 h-4" />
         </button>
@@ -962,17 +1012,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
               } else if (e.evt.touches.length === 1) {
                 const now = Date.now();
                 if (now - touchStateRef.current.lastTap < 300) {
-                  const stage = stageRef.current;
-                  if (stage) {
-                    const initScale = version.backgroundScale || 1;
-                    const initPos = version.backgroundPos || { x: 0, y: 0 };
-                    const newScale = stageScale > 1.5 ? initScale : initScale * 2;
-                    setStageScale(newScale);
-                    setStagePos(initPos);
-                    stage.scale({ x: newScale, y: newScale });
-                    stage.position(initPos);
-                    stage.batchDraw();
-                  }
+                  fitToScreen();
                   touchStateRef.current.lastTap = 0;
                 } else {
                   touchStateRef.current.lastTap = now;
