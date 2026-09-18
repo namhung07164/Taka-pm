@@ -3,7 +3,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { getStatus, enrichProjects } from '../lib/utils';
@@ -308,6 +308,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; x: number; y: number; data: any; unitName: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Get real-time projects and Excel summary data
   const projects = useAppStore(state => state.projects);
@@ -488,8 +489,23 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
          )}
       </div>
       
-      <div className="absolute top-4 right-4 z-10">
-         <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-lg text-sm font-medium transition-colors">
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-3">
+         <div className="relative group">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-blue-500 transition-colors" />
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm Unit / Brand / Project..."
+              className="pl-9 pr-4 py-2 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg shadow-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all w-64"
+            />
+            {searchQuery && (
+               <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+               </button>
+            )}
+         </div>
+         <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-lg text-sm font-medium transition-colors flex-shrink-0">
             <Download className="w-4 h-4" /> Xuất ảnh HD
          </button>
       </div>
