@@ -386,12 +386,21 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
     // Process groups in order (later groups overwrite earlier if unit matches both)
     version.groups.forEach((group: any) => {
         let groupHasMatches = false;
+        const mappedUnitIds = new Set(version.groupMappings?.[group.id] || []);
+        
         units.forEach((u: any) => {
-            if (!group.rules || group.rules.length === 0) return;
-            const data = aggregatedData[u.name.toLowerCase()];
-            if (!data) return;
+            let isMatch = false;
             
-            const isMatch = group.rules.every((rule: any) => {
+            // Check manual mapping first
+            if (mappedUnitIds.has(u.id)) {
+                isMatch = true;
+            }
+            
+            // Override with real-time dynamic rules if they exist
+            if (group.rules && group.rules.length > 0) {
+                const data = aggregatedData[u.name.toLowerCase()];
+                if (data) {
+                    isMatch = group.rules.every((rule: any) => {
                 let val = data[rule.field];
                 if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
                 const numVal = Number(rule.value);
@@ -418,8 +427,11 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                   }
                   default: return false;
                 }
-            });
-
+                    });
+                } else {
+                    isMatch = false;
+                }
+            }
             if (isMatch) {
                 colorMap[u.id] = group.color;
                 groupHasMatches = true;
@@ -612,7 +624,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                 rotation={version.backgroundRotation || 0}
              >
                 {units.map((unit: any) => {
-                   if (!unit.visible) return null;
+                   if (unit.visible === false) return null;
                    
                    const targetColor = unitColorMap[unit.id];
                    const isTargeted = !!targetColor;
