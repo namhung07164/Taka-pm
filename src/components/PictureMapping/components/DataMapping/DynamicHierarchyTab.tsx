@@ -155,6 +155,11 @@ function DynamicHierarchyTab({
       const isNum = !isNaN(numVal) && rule.value.trim() !== "";
       
       let res = false;
+      
+      let compareValStr = String(val || "").toLowerCase().trim();
+      let compareRuleStr = String(rule.value || "").toLowerCase().trim();
+      if (compareRuleStr === "in progress") compareRuleStr = "on process";
+      if (compareValStr === "in progress") compareValStr = "on process";
 
       switch (rule.operator) {
         case ">":
@@ -166,17 +171,15 @@ function DynamicHierarchyTab({
         case "<=":
           res = isNum ? Number(val) <= numVal : false; break;
         case "=":
-          res = String(val || "").toLowerCase().trim() === String(rule.value || "").toLowerCase().trim(); break;
+          res = compareValStr === compareRuleStr; break;
         case "contains": {
-          const searchTerms = String(rule.value || "").toLowerCase().trim().split(/\s+/);
-          const targetStr = String(val || "").toLowerCase();
-          res = searchTerms.every(term => targetStr.includes(term));
+          const searchTerms = compareRuleStr.split(/\s+/);
+          res = searchTerms.every(term => compareValStr.includes(term));
           break;
         }
         case "exclude": {
-          const searchTerms = String(rule.value || "").toLowerCase().trim().split(/\s+/);
-          const targetStr = String(val || "").toLowerCase();
-          res = !searchTerms.some(term => targetStr.includes(term));
+          const searchTerms = compareRuleStr.split(/\s+/);
+          res = !searchTerms.some(term => compareValStr.includes(term));
           break;
         }
         default:

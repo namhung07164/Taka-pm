@@ -678,7 +678,7 @@ export function LayoutTab({
 
       <div className="flex-grow flex w-full min-h-[600px] h-[calc(100vh-270px)] bg-slate-50 rounded-xl shadow-inner border border-slate-200 overflow-hidden relative">
         {isLiveMapMode ? (
-          <LiveLayoutViewer storeFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : activeStore} />
+          <LiveLayoutViewer storeFilter={activeStore} locationFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'} />
         ) : !url ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
             <Map className="w-12 h-12 mb-3 opacity-20" />

@@ -13,9 +13,10 @@ import { db, APP_ID } from '../lib/firebase';
 
 interface LiveLayoutViewerProps {
   storeFilter: string;
+  locationFilter: string;
 }
 
-export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
+export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutViewerProps) {
   const { r2Config, setR2Config } = useAppStore();
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -68,7 +69,30 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
       
       const data = await res.json();
       
-      if (data.versions && data.versions.length > 0) {
+      // Resolve R2 URLs in storeLocationData if it exists (New Format)
+      if (data.storeLocationData) {
+          const resolvePromises: Promise<void>[] = [];
+          
+          for (const pKey in data.storeLocationData) {
+              const partition = data.storeLocationData[pKey];
+              if (!partition.mapVersions) continue;
+              
+              for (const v of partition.mapVersions) {
+                  if (v.backgroundUrl && v.backgroundUrl.startsWith('r2://')) {
+                      const imgKey = v.backgroundUrl.replace('r2://', '');
+                      const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+                      resolvePromises.push(
+                          getSignedUrl(s3, imgCommand, { expiresIn: 3600 }).then(url => {
+                              v.backgroundUrl = url;
+                          })
+                      );
+                  }
+              }
+          }
+          await Promise.all(resolvePromises);
+          setConfig(data);
+      } else if (data.versions && data.versions.length > 0) {
+          // Legacy format fallback
          const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
          if (activeVersion && activeVersion.backgroundUrl && activeVersion.backgroundUrl.startsWith('r2://')) {
             const imgKey = activeVersion.backgroundUrl.replace('r2://', '');
@@ -77,6 +101,7 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
          }
          
          setConfig({
+             ...data,
              version: activeVersion,
              units: data.mapUnits || data.units || []
          });
@@ -253,12 +278,30 @@ export function LiveLayoutViewer({ storeFilter }: LiveLayoutViewerProps) {
     );
   }
 
-  return <LiveCanvas config={config} storeFilter={storeFilter} />;
+  return <LiveCanvas config={config} storeFilter={storeFilter} locationFilter={locationFilter} />;
 }
 
-function LiveCanvas({ config, storeFilter }: { config: any, storeFilter: string }) {
-  const version = config.version || {};
-  const units = config.units || [];
+function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, storeFilter: string, locationFilter: string }) {
+  const { r2Version, r2Units } = useMemo(() => {
+     if (config.storeLocationData) {
+         // Determine which location key to use
+         // If locationFilter is "all", we might need to pick the first available location for this store, 
+         // since a single canvas can only show one map at a time easily.
+         const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
+         const pKey = `${storeFilter}_${targetLoc}`;
+         const partition = config.storeLocationData[pKey];
+         if (partition) {
+             const v = partition.mapVersions.find((v: any) => v.isDynamicActive) || partition.mapVersions[0] || {};
+             return { r2Version: v, r2Units: partition.mapUnits || [] };
+         }
+         return { r2Version: {}, r2Units: [] };
+     }
+     // Legacy fallback
+     return { r2Version: config.version || {}, r2Units: config.units || [] };
+  }, [config, storeFilter, locationFilter]);
+
+  const version = r2Version;
+  const units = r2Units;
   const [bgImage] = useImage(version.backgroundUrl || '', 'anonymous');
   
   const stageRef = useRef<any>(null);

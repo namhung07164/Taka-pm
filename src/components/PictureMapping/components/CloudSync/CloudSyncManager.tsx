@@ -72,26 +72,54 @@ export default function CloudSyncManager() {
         const activeBgName = `bg_active_version.jpeg`;
         let finalBgUrl = activeVersion.backgroundUrl;
 
-        // 1. Upload background image if needed
-        if (activeVersion.backgroundUrl && (activeVersion.backgroundUrl.startsWith('blob:') || activeVersion.backgroundUrl.startsWith('data:'))) {
-          setProgress(25);
-          setStatusText(`Đang tải lên ảnh nền phiên bản: ${activeVersion.name}...`);
-          const res = await fetch(activeVersion.backgroundUrl);
-          const blob = await res.blob();
-          
-          const uploadRes = await uploadSingleR2File({ name: activeBgName, blob }, creds, s3);
-          if (!uploadRes.success) {
-             throw new Error(`Lỗi tải lên ảnh nền ${activeVersion.name}: ${uploadRes.error}`);
-          }
-          finalBgUrl = `r2://${uploadRes.name}`;
+        // 1 & 2: Process ALL versions across ALL locations and upload their backgrounds if needed
+        setProgress(25);
+        setStatusText('Đang kiểm tra và tải lên ảnh nền của tất cả vị trí...');
+        
+        const updatedStoreLocationData = { ...storeLocationData };
+        // Ensure current active store/location is synced to storeLocationData
+        const currentActiveKey = `${store}_${location}`;
+        updatedStoreLocationData[currentActiveKey] = {
+            mapUnits,
+            mapVersions,
+            activeMapVersionId
+        };
+
+        const allValidBgNames: string[] = [];
+
+        for (const pKey in updatedStoreLocationData) {
+            const partition = updatedStoreLocationData[pKey];
+            if (!partition?.mapVersions) continue;
+            
+            for (let i = 0; i < partition.mapVersions.length; i++) {
+                const v = partition.mapVersions[i];
+                let finalBgUrl = v.backgroundUrl;
+                
+                if (finalBgUrl && (finalBgUrl.startsWith('blob:') || finalBgUrl.startsWith('data:'))) {
+                    setStatusText(`Đang tải lên ảnh nền phiên bản: [${pKey}] ${v.name}...`);
+                    const res = await fetch(finalBgUrl);
+                    const blob = await res.blob();
+                    const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
+                    
+                    const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3);
+                    if (!uploadRes.success) {
+                        throw new Error(`Lỗi tải lên ảnh nền ${v.name}: ${uploadRes.error}`);
+                    }
+                    finalBgUrl = `r2://${uploadRes.name}`;
+                }
+                
+                partition.mapVersions[i] = { ...v, backgroundUrl: finalBgUrl };
+                if (finalBgUrl && finalBgUrl.startsWith('r2://')) {
+                    allValidBgNames.push(finalBgUrl.replace('r2://', ''));
+                }
+            }
         }
 
-        // 2. Clean up old background files on R2 to prevent storage clutter/junk
         setProgress(50);
         setStatusText('Đang dọn dẹp các ảnh nền cũ trên Cloudflare R2...');
-        const keepBgName = (finalBgUrl && finalBgUrl.startsWith('r2://')) ? finalBgUrl.replace('r2://', '') : activeBgName;
         try {
-          const purgeBgResult = await purgeOldR2BackgroundImages(keepBgName, creds, s3, (status) => setStatusText(status));
+          // This would need to be updated to support an array of keepBgNames
+          const purgeBgResult = await purgeOldR2BackgroundImages(allValidBgNames, creds, s3, (status) => setStatusText(status));
           if (purgeBgResult.deletedCount > 0) {
             console.log(`[CloudSync] Đã xóa ${purgeBgResult.deletedCount} ảnh nền cũ trên R2`);
           }
@@ -99,32 +127,15 @@ export default function CloudSyncManager() {
           console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
         }
 
-        // 3. Build single active version configuration for Cloud
-        const cloudVersion = {
-          ...activeVersion,
-          isDynamicActive: true,
-          backgroundUrl: finalBgUrl,
-        };
-
-        const activeKey = `${store}_${location}`;
-        const updatedStoreLocationData = {
-          ...storeLocationData,
-          [activeKey]: {
-            mapUnits,
-            mapVersions: [cloudVersion],
-            activeMapVersionId: cloudVersion.id,
-          }
-        };
-
-        // 4. Upload JSON config (contains only 1 version)
+        // 3. Build the config data
         setProgress(75);
-        setStatusText('Đang lưu cấu hình JSON 1 version lên Cloudflare R2...');
+        setStatusText('Đang lưu cấu hình JSON toàn bộ vị trí lên Cloudflare R2...');
         const configData = {
           storeLocationData: updatedStoreLocationData,
           store,
           location,
           mapUnits,
-          versions: [cloudVersion],
+          versions: updatedStoreLocationData[currentActiveKey].mapVersions, // legacy support
           unitInfo,
           classInfo,
           actualClassInfo,
@@ -146,13 +157,12 @@ export default function CloudSyncManager() {
            throw new Error(`Lỗi tải lên cấu hình: ${uploadRes.error}`);
         }
 
-        // Update local state: keep other versions but update active version backgroundUrl
-        const updatedLocalVersions = mapVersions.map(v => v.id === cloudVersion.id ? cloudVersion : v);
-        setMapVersions(updatedLocalVersions);
+        // Update local state
+        setMapVersions(updatedStoreLocationData[currentActiveKey].mapVersions);
         setStoreLocationData(updatedStoreLocationData);
         
         setProgress(100);
-        setStatusText('Hoàn tất! Đã lưu 1 version duy nhất và dọn sạch các bản cũ trên R2.');
+        setStatusText('Hoàn tất! Đã lưu toàn bộ bản vẽ và dọn sạch các bản cũ trên R2.');
         
       } else if (actionType === 'download') {
         setProgress(30);

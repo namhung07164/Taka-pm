@@ -245,7 +245,7 @@ export async function purgeOldR2ExportVersions(
  * Purge old background images in R2 bucket (any file starting with bg_ that is not keepImageName)
  */
 export async function purgeOldR2BackgroundImages(
-  keepImageName: string,
+  keepImageNames: string | string[],
   creds: R2Credentials,
   s3: S3Client,
   onStatus?: (text: string) => void
@@ -253,11 +253,12 @@ export async function purgeOldR2BackgroundImages(
   try {
     onStatus?.('Đang quét ảnh nền cũ trên R2...');
     const allKeys = await listR2Objects(creds, s3, 'bg_');
-    const keepLower = keepImageName.toLowerCase();
+    const keepNames = Array.isArray(keepImageNames) ? keepImageNames : [keepImageNames];
+    const keepSet = new Set(keepNames.map(n => n.toLowerCase()));
 
     const oldBgToDelete = allKeys.filter((key) => {
       const lower = key.toLowerCase();
-      return lower.startsWith('bg_') && lower !== keepLower;
+      return lower.startsWith('bg_') && !keepSet.has(lower);
     });
 
     if (oldBgToDelete.length === 0) {
