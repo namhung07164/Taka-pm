@@ -378,11 +378,28 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
     });
 
     const enrichedProjects = enrichProjects(projects, tasks);
+    const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code) return;
       if (storeFilter !== 'all' && p.store !== storeFilter) return;
       const pCodes = String(p.code).split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+      
+      let activeTaskNames: string[] = [];
+      if (p.taskSummaries) {
+        const activeTasks = p.taskSummaries.filter(t => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        activeTaskNames = activeTasks.map(t => t.name);
+      }
+      let taskLines: string[] = [];
+      activeTaskNames.forEach(name => {
+        taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
+      });
+
       pCodes.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].appProjectStatus = status;
@@ -394,6 +411,8 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
             dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";
             dataMap[code].openingDate = p.opening || p.computedOpening || "";
             dataMap[code].detail = p.detail || "";
+            dataMap[code].taskLines = taskLines;
+            dataMap[code].mdStatus = p.mdStatus || dataMap[code].mdStatus || "";
             dataMap[code].party = p.party || (p as any).contractor || "";
          }
       });
@@ -746,6 +765,13 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
               )}
             </div>
 
+            {hoverInfo.data?.mdStatus && (
+              <div className="bg-purple-50/70 dark:bg-purple-950/30 px-2.5 py-1.5 rounded-lg border border-purple-100 dark:border-purple-900/50 flex items-center justify-between text-xs">
+                <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider">MD Status:</span>
+                <span className="font-semibold text-purple-700 dark:text-purple-300">{hoverInfo.data.mdStatus}</span>
+              </div>
+            )}
+
             {(hoverInfo.data?.startDate || hoverInfo.data?.handoverDate || hoverInfo.data?.openingDate) && (
               <div className="border-t border-slate-100 dark:border-slate-800 pt-2 flex flex-col gap-1.5">
                 {hoverInfo.data.startDate && (
@@ -774,6 +800,21 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                       <span>{formatDisplayDateTime(hoverInfo.data.openingDate)}</span>
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {((hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0) || hoverInfo.data?.detail) && (
+              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-700 text-xs shadow-sm flex flex-col gap-1">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">DETAIL</div>
+                {hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0 ? (
+                  hoverInfo.data.taskLines.map((line: string, idx: number) => (
+                    <div key={idx} className={`font-semibold ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
+                      {line}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-slate-700 dark:text-slate-300 font-medium">{hoverInfo.data.detail}</div>
                 )}
               </div>
             )}

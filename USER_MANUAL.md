@@ -980,7 +980,7 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 6. **Chế Độ Xem Mặt Bằng Trực Tiếp (Live Layout Viewer - Tab Layout)**:
    - **Đồng bộ tự động theo tầng & chi nhánh**: Tại Tab Layout, khi chuyển sang chế độ xem Live View, hệ thống tự động tải bản vẽ mặt bằng tương ứng với Chi nhánh và Tầng đang chọn.
    - **Tối ưu hiển thị theo Tab Dynamic**: Chỉ hiển thị các gian hàng/vị trí đã được phân nhóm hoặc gán quy tắc động ở Tab Dynamic, ẩn các unit trống giúp bản vẽ trực quan và tập trung.
-   - **Xem nhanh thông tin (Tooltip)**: Rê chuột hoặc chạm vào unit để xem thông tin chi tiết: Tên gian hàng, Phân loại/Brand, Trạng thái thi công, Diện tích và Thời gian thi công (định dạng ngày giờ chuẩn `formatDisplayDateTime` đồng bộ 100% với Task Detail; loại bỏ trường ngân sách/chi phí để tối ưu không gian hiển thị).
+   - **Xem nhanh thông tin (Tooltip)**: Rê chuột hoặc chạm vào unit để xem thông tin chi tiết: Tên gian hàng, Phân loại/Brand, Trạng thái thi công, **MD Status**, Diện tích, Thời gian thi công (định dạng ngày giờ chuẩn `formatDisplayDateTime` đồng bộ 100% với Task Detail) và **Khung DETAIL** (tự động trích xuất các hạng mục công việc đang thi công hôm nay hoặc ghi chú chi tiết từ bảng Project General có sẵn trong bộ nhớ, **0 tốn Firestore Read**).
    - **Tối ưu trải nghiệm chạm & hiệu năng trên iOS/Mobile**:
      - *Thao tác cảm ứng mượt mà (Touch Gestures)*: Hỗ trợ cử chỉ chạm đa điểm phóng to/thu nhỏ bằng 2 ngón tay (**Pinch-to-zoom**) và chạm đúp (**Double-tap**) để reset góc nhìn về vị trí trung tâm tức thì.
      - *Tăng tốc phần cứng (GPU Optimization)*: Tự động giới hạn `pixelRatio` tối đa 1.5 trên màn hình Retina/iOS, loại bỏ hoàn toàn hiện tượng trễ khung hình khi kéo rê hay thu phóng mặt bằng phức tạp.
