@@ -387,21 +387,25 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                 if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
                 const numVal = Number(rule.value);
                 const isNum = !isNaN(numVal) && rule.value.trim() !== "";
+                
+                let compareValStr = String(val || "").toLowerCase().trim();
+                let compareRuleStr = String(rule.value || "").toLowerCase().trim();
+                if (compareRuleStr === "in progress") compareRuleStr = "on process";
+                if (compareValStr === "in progress") compareValStr = "on process";
+
                 switch (rule.operator) {
                   case ">": return isNum ? Number(val) > numVal : false;
                   case "<": return isNum ? Number(val) < numVal : false;
                   case ">=": return isNum ? Number(val) >= numVal : false;
                   case "<=": return isNum ? Number(val) <= numVal : false;
-                  case "=": return String(val || "").toLowerCase().trim() === String(rule.value || "").toLowerCase().trim();
+                  case "=": return compareValStr === compareRuleStr;
                   case "contains": {
-                    const searchTerms = String(rule.value || "").toLowerCase().trim().split(/\s+/);
-                    const targetStr = String(val || "").toLowerCase();
-                    return searchTerms.every(term => targetStr.includes(term));
+                    const searchTerms = compareRuleStr.split(/\s+/);
+                    return searchTerms.every(term => compareValStr.includes(term));
                   }
                   case "exclude": {
-                    const searchTerms = String(rule.value || "").toLowerCase().trim().split(/\s+/);
-                    const targetStr = String(val || "").toLowerCase();
-                    return !searchTerms.some(term => targetStr.includes(term));
+                    const searchTerms = compareRuleStr.split(/\s+/);
+                    return !searchTerms.some(term => compareValStr.includes(term));
                   }
                   default: return false;
                 }
