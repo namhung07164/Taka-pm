@@ -323,6 +323,8 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
     lastTap: 0,
   });
 
+  const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     const initScale = version.backgroundScale || 1;
     const initPos = version.backgroundPos || { x: 0, y: 0 };
@@ -602,8 +604,62 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
     <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
       
       {/* Floating Top-Right Controls */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-        <div className="px-2.5 py-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-sm rounded-lg text-xs font-mono font-bold text-slate-700 dark:text-slate-200">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+        <button
+          type="button"
+          onClick={() => {
+            const stage = stageRef.current;
+            if (!stage) return;
+            const oldScale = stage.scaleX();
+            const newScale = Math.min(oldScale * 1.25, 20);
+            const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
+            const mousePointTo = {
+              x: (center.x - stage.x()) / oldScale,
+              y: (center.y - stage.y()) / oldScale,
+            };
+            const newPos = {
+              x: center.x - mousePointTo.x * newScale,
+              y: center.y - mousePointTo.y * newScale,
+            };
+            stage.scale({ x: newScale, y: newScale });
+            stage.position(newPos);
+            stage.batchDraw();
+            setStageScale(newScale);
+            setStagePos(newPos);
+          }}
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
+          title="Zoom In"
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const stage = stageRef.current;
+            if (!stage) return;
+            const oldScale = stage.scaleX();
+            const newScale = Math.max(oldScale / 1.25, 0.05);
+            const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
+            const mousePointTo = {
+              x: (center.x - stage.x()) / oldScale,
+              y: (center.y - stage.y()) / oldScale,
+            };
+            const newPos = {
+              x: center.x - mousePointTo.x * newScale,
+              y: center.y - mousePointTo.y * newScale,
+            };
+            stage.scale({ x: newScale, y: newScale });
+            stage.position(newPos);
+            stage.batchDraw();
+            setStageScale(newScale);
+            setStagePos(newPos);
+          }}
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <div className="px-2 py-0.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border-l border-r border-slate-200 dark:border-slate-700">
           {Math.round(stageScale * 100)}%
         </div>
         <button 
@@ -620,7 +676,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
               stage.batchDraw();
             }
           }}
-          className="p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 shadow-sm transition-colors"
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
           title="Reset View"
         >
           <Maximize2 className="w-4 h-4" />
@@ -908,9 +964,6 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                   stage.position(newPos);
                   stage.batchDraw();
 
-                  setStageScale(newScale);
-                  setStagePos(newPos);
-
                   touchStateRef.current.lastDist = dist;
                   touchStateRef.current.lastCenter = center;
                 }
@@ -920,7 +973,11 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
               touchStateRef.current.lastDist = 0;
               touchStateRef.current.lastCenter = null;
               const stage = stageRef.current;
-              if (stage) stage.draggable(true);
+              if (stage) {
+                stage.draggable(true);
+                setStageScale(stage.scaleX());
+                setStagePos({ x: stage.x(), y: stage.y() });
+              }
             }}
             onWheel={(e) => {
                 e.evt.preventDefault();
@@ -943,15 +1000,22 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                 stage.scale({ x: clampedScale, y: clampedScale });
                 stage.position(newPos);
                 stage.batchDraw();
-                setStageScale(clampedScale);
-                setStagePos(newPos);
+
+                // Debounce React state updates to prevent re-rendering during wheel gestures
+                if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+                wheelTimeoutRef.current = setTimeout(() => {
+                  setStageScale(clampedScale);
+                  setStagePos(newPos);
+                }, 100);
             }}
         >
-          <Layer>
+          {/* Layer 1: Dedicated Background Layer (Zero interaction overhead) */}
+          <Layer listening={false}>
             {bgImage && (
               <KonvaImage
                 image={bgImage}
                 listening={false}
+                perfectDrawEnabled={false}
                 x={version.imagePos?.x || 0}
                 y={version.imagePos?.y || 0}
                 scaleX={version.imageScale || 1}
@@ -959,7 +1023,10 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                 rotation={version.backgroundRotation || 0}
               />
             )}
+          </Layer>
 
+          {/* Layer 2: Units Layer (Optimized for 60fps GPU rendering) */}
+          <Layer>
             {displayedUnits.map((unit: any) => {
                const fillColor = unit.targetColor || "#3b82f6";
                
@@ -970,6 +1037,9 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                   stroke: '#1e293b',
                   strokeWidth: 2,
                   strokeScaleEnabled: false,
+                  perfectDrawEnabled: false,
+                  shadowForStrokeEnabled: false,
+                  strokeHitEnabled: false,
                   x: unit.x,
                   y: unit.y,
                   rotation: unit.rotation || 0,
@@ -1012,7 +1082,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                };
 
                return (
-                 <Group key={unit.id}>
+                 <Group key={unit.id} listening={true}>
                     {unit.type === 'rect' && (
                        <Rect {...commonProps} width={unit.width} height={unit.height} cornerRadius={4} />
                     )}
@@ -1036,6 +1106,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
                           fontStyle="bold"
                           fill="#0f172a"
                           listening={false}
+                          perfectDrawEnabled={false}
                        />
                     )}
                  </Group>
