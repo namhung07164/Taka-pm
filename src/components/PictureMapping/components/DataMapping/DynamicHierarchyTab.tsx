@@ -301,7 +301,7 @@ function DynamicHierarchyTab({
   };
 
   const duplicateVersion = () => {
-    if (!activeVersionId || !activeVersion) return;
+    if (!activeVersion) return;
     const name = prompt("Tên version mới (bản sao):", `${activeVersion.name} (Copy)`);
     if (name) {
       const newVersion: MapVersion = {

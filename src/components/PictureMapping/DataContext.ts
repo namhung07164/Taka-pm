@@ -298,13 +298,22 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   activeMapVersionId: null,
   setActiveMapVersionId: (activeMapVersionId) => {
     const state = get();
-    const key = getPartitionKey(state.store, state.location);
+    // Identify which partition this version belongs to
+    let targetKey = getPartitionKey(state.store, state.location);
+    if (activeMapVersionId) {
+      for (const pKey in state.storeLocationData) {
+        if (state.storeLocationData[pKey]?.mapVersions?.some(v => v.id === activeMapVersionId)) {
+          targetKey = pKey;
+          break;
+        }
+      }
+    }
     set({
       activeMapVersionId,
       storeLocationData: {
         ...state.storeLocationData,
-        [key]: {
-          ...(state.storeLocationData[key] || { mapUnits: state.mapUnits, mapVersions: state.mapVersions }),
+        [targetKey]: {
+          ...(state.storeLocationData[targetKey] || { mapUnits: [], mapVersions: [] }),
           activeMapVersionId,
         },
       },
@@ -476,7 +485,12 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
 
     const activePartition = updatedStoreLocationData[currentKey];
     const activeVersions = activePartition?.mapVersions || [];
-    const activeVersionId = activePartition?.activeMapVersionId || (activeVersions[0]?.id ?? null);
+    
+    // Preserve current state.activeMapVersionId if it still exists in updatedVersions
+    const isCurrentActiveValid = state.activeMapVersionId && updatedVersions.some(v => v.id === state.activeMapVersionId);
+    const activeVersionId = isCurrentActiveValid
+      ? state.activeMapVersionId
+      : (activePartition?.activeMapVersionId || (activeVersions[0]?.id ?? null));
 
     set({
       storeLocationData: updatedStoreLocationData,
