@@ -308,6 +308,14 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; x: number; y: number; data: any; unitName: string } | null>(null);
+  const [stageScale, setStageScale] = useState(version.backgroundScale || 1);
+  const [stagePos, setStagePos] = useState(version.backgroundPos || { x: 0, y: 0 });
+
+  useEffect(() => {
+    setStageScale(version.backgroundScale || 1);
+    setStagePos(version.backgroundPos || { x: 0, y: 0 });
+  }, [version]);
+
   const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Get real-time projects and Excel summary data
@@ -454,13 +462,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   }, [version.groups, units, aggregatedData]);
 
 
-  useEffect(() => {
-    if (stageRef.current && version) {
-       stageRef.current.position(version.backgroundPos || { x: 0, y: 0 });
-       stageRef.current.scale({ x: version.backgroundScale || 1, y: version.backgroundScale || 1 });
-       stageRef.current.batchDraw();
-    }
-  }, [version.id]);
+
 
   useEffect(() => {
     const updateSize = () => {
@@ -503,7 +505,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
          )}
       </div>
       
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-3">
+      <div className="absolute top-4 right-4 z-10 flex flex-col sm:flex-row items-end sm:items-center gap-3">
          <div className="relative group">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-blue-500 transition-colors" />
             <input 
@@ -688,6 +690,26 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                          const container = e.target.getStage().container();
                          container.style.cursor = 'grab';
                          setHoverInfo(null);
+                      },
+                      onClick: (e: any) => {
+                         setHoverInfo({
+                            visible: true,
+                            x: e.evt.clientX,
+                            y: e.evt.clientY,
+                            data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
+                            unitName: unit.name
+                         });
+                      },
+                      onTap: (e: any) => {
+                         const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
+                         const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
+                         setHoverInfo({
+                            visible: true,
+                            x: clientX,
+                            y: clientY,
+                            data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
+                            unitName: unit.name
+                         });
                       }
                    };
 
