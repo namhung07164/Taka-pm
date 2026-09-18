@@ -200,8 +200,8 @@ function DynamicHierarchyTab({
     const nextUnits = [...units];
     nextUnits.forEach((u, idx) => {
       let assignedColor = "#3b82f6";
-      activeVersion.groups.forEach((g) => {
-        if (activeVersion.groupMappings[g.id]?.includes(u.id)) {
+      (activeVersion.groups || []).forEach((g) => {
+        if (activeVersion.groupMappings?.[g.id]?.includes(u.id)) {
           assignedColor = g.color;
         }
       });
@@ -214,7 +214,7 @@ function DynamicHierarchyTab({
     if (colorChanges) {
       setUnits(nextUnits);
     }
-  }, [activeVersion?.groupMappings, activeVersion?.id, isVersionActive]);
+  }, [activeVersion?.groupMappings, activeVersion?.groups, activeVersion?.id, isVersionActive]);
 
   const applyRules = () => {
     if (!activeVersion || !isVersionActive) return;
@@ -222,7 +222,7 @@ function DynamicHierarchyTab({
     let hasChanges = false;
     const newMappings = { ...activeVersion.groupMappings };
 
-    activeVersion.groups.forEach((group) => {
+    (activeVersion.groups || []).forEach((group) => {
       const matchingUnits = units
         .filter((u) => matchRules(u, group.rules))
         .map((u) => u.id);
@@ -238,11 +238,10 @@ function DynamicHierarchyTab({
       }
     });
 
-    // Synchronize groups and evaluated mappings across all versions in all locations
+    // Evaluate mappings for each version using each version's OWN groups and rules
     const updatedVersions = versions.map((v) => {
-      // Find matching units for v's location (or all if no location)
       const vMappings: Record<string, string[]> = {};
-      activeVersion.groups.forEach((group) => {
+      (v.groups || []).forEach((group) => {
         const matchingIds = units
           .filter((u) => (!v.location || !u.location || u.location === v.location) && matchRules(u, group.rules))
           .map((u) => u.id);
@@ -250,19 +249,18 @@ function DynamicHierarchyTab({
       });
       return {
         ...v,
-        groups: activeVersion.groups,
         groupMappings: v.id === activeVersion.id ? newMappings : vMappings,
       };
     });
 
     setVersions(updatedVersions);
 
-    // Also update unit styles based on evaluation
+    // Also update unit styles based on active version's groups and evaluated mappings
     let colorChanges = false;
     const nextUnits = [...units];
     nextUnits.forEach((u, idx) => {
       let assignedColor = "#3b82f6";
-      activeVersion.groups.forEach((g) => {
+      (activeVersion.groups || []).forEach((g) => {
         if (newMappings[g.id]?.includes(u.id)) {
           assignedColor = g.color;
         }
@@ -277,7 +275,7 @@ function DynamicHierarchyTab({
       setUnits(nextUnits);
     }
     
-    alert("Đã áp dụng điều kiện logic cho toàn bộ vị trí / tầng.");
+    alert("Đã áp dụng điều kiện logic cho từng phiên bản / tầng.");
   };
 
   const addVersion = () => {
@@ -304,12 +302,28 @@ function DynamicHierarchyTab({
     if (!activeVersion) return;
     const name = prompt("Tên version mới (bản sao):", `${activeVersion.name} (Copy)`);
     if (name) {
+      const newVersionId = uuidv4();
+      const newGroups = (activeVersion.groups || []).map(g => ({
+        ...g,
+        id: uuidv4(),
+        rules: g.rules ? g.rules.map(r => ({ ...r })) : [],
+      }));
+      const newGroupMappings: Record<string, string[]> = {};
+      (activeVersion.groups || []).forEach((g, idx) => {
+        const newGId = newGroups[idx]?.id;
+        if (newGId) {
+          newGroupMappings[newGId] = [...(activeVersion.groupMappings?.[g.id] || [])];
+        }
+      });
+
       const newVersion: MapVersion = {
         ...activeVersion,
-        id: uuidv4(),
+        id: newVersionId,
         name,
         store: activeVersion.store || 'HCM',
         location: activeVersion.location || 'L1',
+        groups: newGroups,
+        groupMappings: newGroupMappings,
       };
       setVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
@@ -628,7 +642,7 @@ function DynamicHierarchyTab({
                     >
                         <option value="">[ Copy Groups From ]</option>
                         {versions.filter(v => v.id !== activeVersion.id).map(v => (
-                            <option key={v.id} value={v.id}>{v.name}</option>
+                            <option key={v.id} value={v.id}>{v.location ? `[${v.location}] ` : ""}{v.name}</option>
                         ))}
                     </select>
                   )}

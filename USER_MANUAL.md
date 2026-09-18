@@ -438,13 +438,20 @@ Quản lý các công việc giao cho cá nhân, phòng ban hoặc đối tác b
 ### 4.8. 🗺️ PHÂN HỆ MẶT BẰNG 2D (STORE FLOOR LAYOUT TAB)
 Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đồ mặt bằng TTTM Takashimaya.
 
-#### 🔹 Hướng dẫn Sử dụng Bản đồ:
+#### 🔹 Hướng dẫn Sử dụng Bản đồ & Live View:
 1. **Bộ lọc Cửa hàng & Khu vực (Store & Location Filter)**:
    - Chọn Cửa hàng (`HCM`, `HN` hoặc `All Stores`).
    - **Bộ lọc Khu vực (Location)**: Tự động chỉ hiển thị các khu vực/tầng có đường dẫn URL mặt bằng hợp lệ được gắn vào (loại bỏ các giá trị trống, null, `0`, hoặc `_`).
 2. **Kéo & Thu phóng (Zoom/Pan)**: Sử dụng con lăn chuột hoặc nút (+ / -) để phóng to/thu nhỏ sơ đồ; kéo chuột để di chuyển góc nhìn.
 3. **Ghim vị trí dự án (Add Pin)**: Nhấp nút "Add Pin", sau đó nhấp vào vị trí gian hàng trên bản đồ và liên kết với Dự án tương ứng.
 4. **Xem nhanh thông tin**: Nhấp vào bất kỳ điểm ghim nào trên bản đồ để xem ngay tên gian hàng, thời gian thi công và hình ảnh hiện trường.
+5. **Quy trình Xuất tự động 2 bước (Trigger Export - Live View & Layout)**:
+   - Khi bấm nút **"Trigger Export"** (ở thanh công cụ Layout hoặc trong Menu chế độ Live View), hệ thống sẽ tự động thực hiện 2 bước tuần tự:
+     - **Bước 1**: Áp dụng tất cả các quy tắc lọc (Dynamic Rules) của toàn bộ các tầng/version thuộc chi nhánh đang xem, tự động tô màu và mapping các gian hàng theo dữ liệu mới nhất.
+     - **Bước 2**: Tự động đóng gói cấu hình và lưu bản vẽ (Save Cloud) lên Cloudflare R2 cho toàn bộ chi nhánh đang xem, đồng thời kích hoạt trigger để cập nhật hiển thị đồng bộ tức thời.
+6. **Quản lý Dynamic Hierarchy & Nhóm theo từng Version (Per-Version Groups)**:
+   - Các nhóm quy tắc (Rule-Based Groups) và điều kiện lọc (Conditions API) được lưu trữ độc lập theo từng phiên bản (version). Khi chuyển đổi giữa các version, hệ thống sẽ tự động hiển thị chính xác các nhóm và điều kiện thuộc riêng version đó.
+   - Khi cần sao chép nhanh bộ quy tắc từ version khác, sử dụng tính năng **`[ COPY GROUPS FROM ]`** để nhân bản danh sách nhóm sang version đang chọn.
 
 ---
 

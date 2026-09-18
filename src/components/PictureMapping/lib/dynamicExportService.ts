@@ -1,0 +1,332 @@
+import { S3Client } from '@aws-sdk/client-s3';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, APP_ID } from '../../../lib/firebase';
+import { useAppStore } from '../../../store/useAppStore';
+import { useDataStore } from '../DataContext';
+import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
+import { calculateSummaryData } from './summaryData';
+import { getStoredR2Credentials, uploadSingleR2File, extractR2Key } from './r2Upload';
+import { enrichProjects, getStatus } from '../../../lib/utils';
+
+const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
+
+// Evaluates a set of rules on a unit shape using the data map
+export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | undefined, dataMap: Record<string, any>): boolean {
+  if (!rules || rules.length === 0) return false;
+  const data = dataMap[unit.name.toLowerCase()];
+  if (!data) return false;
+
+  return rules.every((rule) => {
+    let val = data[rule.field];
+    if (rule.field === 'margin' || rule.field === 'marginByCp') {
+      val = val * 100;
+    }
+
+    const numVal = Number(rule.value);
+    const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== '';
+
+    let res = false;
+    let compareValStr = String(val || '').toLowerCase().trim();
+    let compareRuleStr = String(rule.value || '').toLowerCase().trim();
+    if (compareRuleStr === 'in progress') compareRuleStr = 'on process';
+    if (compareValStr === 'in progress') compareValStr = 'on process';
+
+    switch (rule.operator) {
+      case '>':
+        res = isNum ? Number(val) > numVal : false;
+        break;
+      case '<':
+        res = isNum ? Number(val) < numVal : false;
+        break;
+      case '>=':
+        res = isNum ? Number(val) >= numVal : false;
+        break;
+      case '<=':
+        res = isNum ? Number(val) <= numVal : false;
+        break;
+      case '=':
+        res = compareValStr === compareRuleStr;
+        break;
+      case 'contains': {
+        const searchTerms = compareRuleStr.split(/\s+/);
+        res = searchTerms.every((term) => compareValStr.includes(term));
+        break;
+      }
+      case 'exclude': {
+        const searchTerms = compareRuleStr.split(/\s+/);
+        res = !searchTerms.some((term) => compareValStr.includes(term));
+        break;
+      }
+      default:
+        res = false;
+        break;
+    }
+
+    return res;
+  });
+}
+
+/**
+ * Bước 1: Áp dụng toàn bộ rules của toàn bộ tab dynamic cho store đang xem
+ */
+export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
+  updatedStoreLocationData: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>;
+  totalEvaluatedUnits: number;
+} {
+  const dataState = useDataStore.getState();
+  const appState = useAppStore.getState();
+
+  const projects = appState.projects || [];
+  const tasks = appState.tasks || [];
+
+  // 1. Enrich projects with dates and statuses
+  const enrichedProjects = enrichProjects(projects, tasks);
+
+  // 2. Compute Summary Data
+  const summaryData = calculateSummaryData({
+    unitInfo: dataState.unitInfo,
+    classInfo: dataState.classInfo,
+    actualClassInfo: dataState.actualClassInfo,
+    sales: dataState.sales,
+    profits: dataState.profits,
+    subFees: dataState.subFees,
+    mdStatus: dataState.mdStatus,
+    projectStatus: dataState.projectStatus,
+    projectLink: dataState.projectLink,
+    basePlan: dataState.basePlan,
+    units: dataState.units,
+  });
+
+  // 3. Build aggregated data map for all unit names
+  const allUnits = dataState.getAllStoreUnits(targetStore);
+  const dataMap: Record<string, any> = {};
+
+  allUnits.forEach((u) => {
+    const uName = u.name.toLowerCase();
+    const item = summaryData.find((s) => s.unit?.toLowerCase() === uName);
+    dataMap[uName] = { ...(item || {}), unitName: u.name };
+  });
+
+  enrichedProjects.forEach((p) => {
+    const pCodes = String(p.code || '').split(/[+,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const status = getStatus(
+      p.computedTakStart || p.start,
+      p.computedTakCompl || p.handover,
+      p.computedOpening || p.opening,
+      p.code
+    );
+    pCodes.forEach((code) => {
+      if (dataMap[code]) {
+        dataMap[code].appProjectStatus = status;
+        dataMap[code].appProjectBudget = p.budget || 0;
+        dataMap[code].appProjectActual = p.actual || 0;
+        dataMap[code].appProjectCode = String(p.code);
+      }
+    });
+  });
+
+  // 4. Update all partitions for this store
+  const updatedStoreLocationData = { ...dataState.storeLocationData };
+  let totalEvaluatedUnits = 0;
+
+  for (const pKey in updatedStoreLocationData) {
+    if (pKey.startsWith(`${targetStore}_`)) {
+      const partition = updatedStoreLocationData[pKey];
+      if (!partition) continue;
+
+      const pUnits = partition.mapUnits ? [...partition.mapUnits] : [];
+      const pVersions = partition.mapVersions ? [...partition.mapVersions] : [];
+      const pLoc = pKey.split('_')[1] || dataState.location;
+
+      // Evaluate rules for every version in partition
+      const updatedVersions = pVersions.map((v) => {
+        if (!v.groups || v.groups.length === 0) return v;
+
+        const newMappings: Record<string, string[]> = {};
+        v.groups.forEach((group) => {
+          if (group.rules && group.rules.length > 0) {
+            const matchingIds = pUnits
+              .filter((u) => (!v.location || !u.location || u.location === v.location || u.location === pLoc) && matchRulesAgainstUnit(u, group.rules, dataMap))
+              .map((u) => u.id);
+            newMappings[group.id] = matchingIds;
+          } else {
+            newMappings[group.id] = v.groupMappings?.[group.id] || [];
+          }
+        });
+
+        return {
+          ...v,
+          groupMappings: newMappings,
+        };
+      });
+
+      // Find the active version to colorize unit fills
+      const activeVer = updatedVersions.find((v) => v.id === partition.activeMapVersionId) ||
+        updatedVersions.find((v) => v.isDynamicActive !== false) ||
+        updatedVersions[0];
+
+      if (activeVer && activeVer.groups) {
+        pUnits.forEach((u, idx) => {
+          let assignedColor = '#3b82f6';
+          activeVer.groups.forEach((g) => {
+            if (activeVer.groupMappings?.[g.id]?.includes(u.id)) {
+              assignedColor = g.color;
+            }
+          });
+          pUnits[idx] = { ...u, fill: assignedColor };
+        });
+      }
+
+      totalEvaluatedUnits += pUnits.length;
+      updatedStoreLocationData[pKey] = {
+        ...partition,
+        mapUnits: pUnits,
+        mapVersions: updatedVersions,
+      };
+    }
+  }
+
+  // Update Zustand store
+  const currentKey = getPartitionKey(dataState.store, dataState.location);
+  const activePartition = updatedStoreLocationData[currentKey];
+
+  useDataStore.setState({
+    storeLocationData: updatedStoreLocationData,
+    mapUnits: activePartition?.mapUnits || dataState.mapUnits,
+    mapVersions: activePartition?.mapVersions || dataState.mapVersions,
+  });
+
+  return { updatedStoreLocationData, totalEvaluatedUnits };
+}
+
+/**
+ * Bước 2: Lưu cloud của store đang xem lên R2 Cloudflare
+ */
+export async function saveStoreToCloudR2(
+  targetStore: 'HCM' | 'HN',
+  customStoreLocationData?: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>
+): Promise<{ success: boolean; message: string }> {
+  const creds = getStoredR2Credentials();
+  if (!creds) {
+    throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" để kết nối.');
+  }
+
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: creds.accessKeyId.trim(),
+      secretAccessKey: creds.secretAccessKey.trim(),
+    },
+  });
+
+  const dataState = useDataStore.getState();
+  const baseStoreLocationData = customStoreLocationData || dataState.storeLocationData;
+
+  // Format cloudStoreLocationData with r2:// references
+  const cloudStoreLocationData: Record<string, any> = {};
+  for (const pKey in baseStoreLocationData) {
+    const partition = baseStoreLocationData[pKey];
+    if (!partition) continue;
+
+    const pStore = pKey.split('_')[0] || targetStore;
+    const pLoc = pKey.split('_')[1] || 'L1';
+    const pUnits = partition.mapUnits || [];
+    const pVersions = partition.mapVersions || [];
+
+    const pVersionsCloud: any[] = [];
+    for (const v of pVersions) {
+      const displayUrl = (v.backgroundUrl || '').trim();
+      const r2Key = extractR2Key(displayUrl) || (v as any).r2Key;
+
+      pVersionsCloud.push({
+        ...v,
+        store: v.store || pStore,
+        location: v.location || pLoc,
+        backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
+        groups: v.groups || [],
+        groupMappings: v.groupMappings || {},
+        isDynamicActive: v.isDynamicActive !== false,
+      });
+    }
+
+    cloudStoreLocationData[pKey] = {
+      mapUnits: pUnits,
+      mapVersions: pVersionsCloud,
+      activeMapVersionId: partition.activeMapVersionId || (pVersionsCloud[0]?.id ?? null),
+    };
+  }
+
+  const currentKey = getPartitionKey(targetStore, dataState.location);
+  const activeCloudPartition = cloudStoreLocationData[currentKey] ||
+    Object.values(cloudStoreLocationData)[0] ||
+    { mapUnits: [], mapVersions: [], activeMapVersionId: null };
+
+  const configData = {
+    storeLocationData: cloudStoreLocationData,
+    store: targetStore,
+    location: dataState.location,
+    activeMapVersionId: dataState.activeMapVersionId,
+    reviewSelectedLabels: dataState.reviewSelectedLabels || [],
+    reviewLabelColors: dataState.reviewLabelColors || {},
+    mapUnits: activeCloudPartition.mapUnits,
+    versions: activeCloudPartition.mapVersions,
+    unitInfo: dataState.unitInfo,
+    classInfo: dataState.classInfo,
+    actualClassInfo: dataState.actualClassInfo,
+    sales: dataState.sales,
+    profits: dataState.profits,
+    subFees: dataState.subFees,
+    mdStatus: dataState.mdStatus,
+    projectStatus: dataState.projectStatus,
+    projectLink: dataState.projectLink,
+    basePlan: dataState.basePlan,
+    units: dataState.units,
+    timestamp: Date.now(),
+  };
+
+  const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
+  const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3);
+  if (!uploadRes.success) {
+    throw new Error(`Lỗi tải lên R2 Cloudflare: ${uploadRes.error}`);
+  }
+
+  return { success: true, message: 'Đã lưu cấu hình lên Cloudflare R2 thành công.' };
+}
+
+/**
+ * Trigger toàn bộ quy trình: Bước 1 (Apply All Rules) -> Bước 2 (Save Cloud R2) -> Trigger Webhook/Firestore
+ */
+export async function executeTriggerExportProcess(
+  targetStore: 'HCM' | 'HN',
+  onProgress?: (step: string) => void
+): Promise<{ success: boolean; message: string }> {
+  // BƯỚC 1: Apply all rules của toàn bộ tab dynamic cho store đang xem
+  onProgress?.('Đang áp dụng toàn bộ logic Dynamic Rules cho các tầng...');
+  const { updatedStoreLocationData } = applyAllDynamicRulesForStore(targetStore);
+
+  // BƯỚC 2: Lưu cloud của store đang xem lên R2 Cloudflare
+  onProgress?.('Đang đồng bộ và lưu bản vẽ lên Cloudflare R2...');
+  await saveStoreToCloudR2(targetStore, updatedStoreLocationData);
+
+  // Ghi trigger Firestore để cập nhật cho các worker/listeners
+  try {
+    const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout_trigger');
+    await setDoc(
+      docRef,
+      {
+        is_ready_to_export: true,
+        requested_at: Date.now(),
+        store: targetStore,
+      },
+      { merge: true }
+    );
+  } catch (firestoreErr) {
+    console.warn('[TriggerExport] Lỗi cập nhật layout_trigger Firestore:', firestoreErr);
+  }
+
+  return {
+    success: true,
+    message: `Đã hoàn thành: Áp dụng toàn bộ Dynamic Rules và Lưu Cloud R2 cho ${targetStore}!`,
+  };
+}

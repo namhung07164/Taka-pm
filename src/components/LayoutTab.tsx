@@ -10,6 +10,7 @@ import { AppUser, PermissionMatrix, AppRole, Project } from '../types';
 import { getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { LiveLayoutViewer } from './LiveLayoutViewer';
+import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
 
 interface LayoutTabProps {
   initialStore?: string;
@@ -257,13 +258,16 @@ export function LayoutTab({
     }
   }, [docKey, layoutSettings, activeStore]);
 
+  const [exportStatusMessage, setExportStatusMessage] = useState<string>('');
+
   // Handle timeout for exporting state
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     if (isExporting) {
       timeoutId = setTimeout(() => {
         setIsExporting(false);
-      }, 15000); // 15 seconds timeout
+        setExportStatusMessage('');
+      }, 30000); // 30 seconds timeout
     }
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
@@ -283,16 +287,25 @@ export function LayoutTab({
   };
 
   const handleTriggerReExport = async () => {
+    if (isExporting) return;
     try {
       setIsExporting(true);
-      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout_trigger');
-      setDoc(docRef, { 
-        is_ready_to_export: true, 
-        requested_at: Date.now() 
-      }, { merge: true });
-    } catch (error) {
+      setExportStatusMessage('Bước 1: Áp dụng Dynamic Rules...');
+      const targetStore = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+      
+      const res = await executeTriggerExportProcess(targetStore, (status) => {
+        setExportStatusMessage(status);
+      });
+
+      setCacheBuster(Date.now());
+      setIsExporting(false);
+      setExportStatusMessage('');
+      alert(`✅ ${res.message}`);
+    } catch (error: any) {
       console.error("Error triggering layout export", error);
       setIsExporting(false);
+      setExportStatusMessage('');
+      alert(`⚠️ Lỗi khi Trigger Export:\n${error?.message || error}`);
     }
   };
 
@@ -613,10 +626,11 @@ export function LayoutTab({
               <button 
                 onClick={handleTriggerReExport}
                 disabled={isExporting}
+                title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 shadow-sm"
               >
                 <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
-                {isExporting ? 'Exporting...' : 'Trigger Export'}
+                {isExporting ? (exportStatusMessage || 'Đang xử lý xuất...') : 'Trigger Export'}
               </button>
             )}
             {canWrite && (

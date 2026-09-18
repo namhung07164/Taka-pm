@@ -11,6 +11,7 @@ import { getStatus, enrichProjects, formatDisplayDateTime } from '../lib/utils';
 import { Project } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
+import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
 
 interface LiveLayoutViewerProps {
   storeFilter: string;
@@ -281,10 +282,10 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
     );
   }
 
-  return <LiveCanvas config={config} storeFilter={storeFilter} locationFilter={locationFilter} onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} />;
+  return <LiveCanvas config={config} storeFilter={storeFilter} locationFilter={locationFilter} onRefreshConfig={loadConfig} onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} />;
 }
 
-function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { config: any, storeFilter: string, locationFilter: string, onOpenR2Config: () => void }) {
+function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOpenR2Config }: { config: any, storeFilter: string, locationFilter: string, onRefreshConfig?: () => Promise<void> | void, onOpenR2Config: () => void }) {
   const { r2Version, r2Units } = useMemo(() => {
      if (config.storeLocationData) {
          const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
@@ -312,6 +313,31 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
+
+  const handleTriggerExport = async () => {
+    if (isExporting) return;
+    try {
+      setIsExporting(true);
+      setExportStatus('Bước 1: Áp dụng Dynamic Rules...');
+      const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+      const res = await executeTriggerExportProcess(targetStore, (status) => {
+        setExportStatus(status);
+      });
+      setIsExporting(false);
+      setExportStatus('');
+      alert(`✅ ${res.message}`);
+      if (onRefreshConfig) {
+        await onRefreshConfig();
+      }
+    } catch (err: any) {
+      console.error("Lỗi khi Trigger Export:", err);
+      setIsExporting(false);
+      setExportStatus('');
+      alert(`⚠️ Lỗi khi Trigger Export:\n${err?.message || err}`);
+    }
+  };
 
   const touchStateRef = useRef<{
     lastDist: number;
@@ -825,22 +851,34 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
             </div>
 
             {/* Action Buttons */}
-            <div className="pt-2 grid grid-cols-2 gap-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="pt-2 flex flex-col gap-2 border-t border-slate-100 dark:border-slate-800">
               <button 
-                onClick={handleExport}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+                onClick={handleTriggerExport}
+                disabled={isExporting}
+                title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
               >
-                <Download className="w-4 h-4" /> Xuất ảnh HD
+                <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
+                {isExporting ? (exportStatus || 'Đang xử lý...') : 'Trigger Export (Apply Rules & Cloud)'}
               </button>
-              <button 
-                onClick={() => {
-                  setShowMenu(false);
-                  onOpenR2Config();
-                }}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700"
-              >
-                <Settings className="w-4 h-4" /> Cấu hình R2
-              </button>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={handleExport}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+                >
+                  <Download className="w-4 h-4" /> Xuất ảnh HD
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowMenu(false);
+                    onOpenR2Config();
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700"
+                >
+                  <Settings className="w-4 h-4" /> Cấu hình R2
+                </button>
+              </div>
             </div>
           </div>
         </div>
