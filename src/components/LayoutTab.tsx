@@ -537,25 +537,28 @@ export function LayoutTab({
         )}
       </AnimatePresence>
       <div className="flex-grow flex flex-col p-4 md:p-6 bg-slate-50 relative h-full">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-col gap-3 mb-3">
+        <div className="flex items-center justify-between gap-2">
           <h2 className="text-xl font-bold text-slate-800 dark:text-[#e3e3e3]">Layout</h2>
           
           {onBackToGantt && (
             <button
               onClick={onBackToGantt}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-[#1e1e20] text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-200 dark:hover:bg-[#28282a] rounded-lg text-sm font-medium transition-colors border border-slate-200 dark:border-[#444446]"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Gantt
             </button>
           )}
-          <div className="flex items-center gap-2 bg-white dark:bg-[#1e1e20] p-1 rounded-lg border border-slate-200 dark:border-[#444446] shadow-sm">
-            <Filter className="w-4 h-4 text-slate-400 dark:text-[#838383] ml-2" />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 bg-white dark:bg-[#1e1e20] p-1.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm">
+            <Filter className="w-4 h-4 text-slate-400 dark:text-[#838383] ml-1" />
             <select
               value={activeStore}
               onChange={(e) => setGlobalStoreFilter(e.target.value)}
-              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-medium min-w-[80px] outline-none cursor-pointer"
+              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[70px] outline-none cursor-pointer"
             >
               {allowedStores.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -566,7 +569,7 @@ export function LayoutTab({
                 const val = e.target.value;
                 setGlobalLocationFilter(val === 'all' ? [] : [val]);
               }}
-              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-medium min-w-[100px] outline-none cursor-pointer pr-2"
+              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[80px] outline-none cursor-pointer pr-1"
             >
               <option value="all">All Locations</option>
               {availableLocations.map(loc => (
@@ -576,27 +579,32 @@ export function LayoutTab({
           </div>
 
           {(!triggerState || !isExporting) ? (
-            <div className="text-xs text-slate-500 font-mono bg-slate-200 px-2 py-1 rounded">
+            <div className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-slate-200 dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700">
               Status: false (Done)
             </div>
           ) : (
-            <div className="text-xs text-amber-600 font-mono bg-amber-100 px-2 py-1 rounded border border-amber-200">
+            <div className="text-xs text-amber-700 font-mono bg-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-200">
               Status: true (Waiting for App 1)
             </div>
           )}
         </div>
+
         {!isEditing && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
             <button
               onClick={() => setIsLiveMapMode(!isLiveMapMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border shadow-sm ${isLiveMapMode ? 'bg-purple-600 text-white border-purple-700' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200'}`}
+              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-sm ${
+                isLiveMapMode 
+                  ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400' 
+                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200'
+              }`}
             >
               <Map className="w-4 h-4" />
               {isLiveMapMode ? 'Exit Live Map' : 'View Live Map'}
             </button>
             <button 
               onClick={() => setCacheBuster(Date.now())}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors border border-slate-200 shadow-sm"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 shadow-sm"
             >
               <RefreshCw className="w-4 h-4" />
               Refresh
@@ -605,7 +613,7 @@ export function LayoutTab({
               <button 
                 onClick={handleTriggerReExport}
                 disabled={isExporting}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors border border-green-200 shadow-sm"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 shadow-sm"
               >
                 <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
                 {isExporting ? 'Exporting...' : 'Trigger Export'}
@@ -614,7 +622,7 @@ export function LayoutTab({
             {canWrite && (
               <button 
                 onClick={() => { setEditUrl(url); setIsEditing(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors border border-blue-100"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 shadow-sm"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit URL

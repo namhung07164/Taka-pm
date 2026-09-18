@@ -3,11 +3,11 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
-import { getStatus, enrichProjects } from '../lib/utils';
+import { getStatus, enrichProjects, formatDisplayDateTime } from '../lib/utils';
 import { Project } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
@@ -281,13 +281,12 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
     );
   }
 
-  return <LiveCanvas config={config} storeFilter={storeFilter} locationFilter={locationFilter} />;
+  return <LiveCanvas config={config} storeFilter={storeFilter} locationFilter={locationFilter} onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} />;
 }
 
-function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, storeFilter: string, locationFilter: string }) {
+function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { config: any, storeFilter: string, locationFilter: string, onOpenR2Config: () => void }) {
   const { r2Version, r2Units } = useMemo(() => {
      if (config.storeLocationData) {
-         // Determine which location key to use
          const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
          const pKey = `${storeFilter}_${targetLoc}`;
          const partition = config.storeLocationData[pKey];
@@ -297,7 +296,6 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
          }
          return { r2Version: {}, r2Units: [] };
      }
-     // Legacy fallback
      return { r2Version: config.version || {}, r2Units: config.units || [] };
   }, [config, storeFilter, locationFilter]);
 
@@ -312,6 +310,18 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
   const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; data: any; unitName: string } | null>(null);
   const [stageScale, setStageScale] = useState(version.backgroundScale || 1);
   const [stagePos, setStagePos] = useState(version.backgroundPos || { x: 0, y: 0 });
+  const [showMenu, setShowMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const touchStateRef = useRef<{
+    lastDist: number;
+    lastCenter: { x: number; y: number } | null;
+    lastTap: number;
+  }>({
+    lastDist: 0,
+    lastCenter: null,
+    lastTap: 0,
+  });
 
   useEffect(() => {
     const initScale = version.backgroundScale || 1;
@@ -324,8 +334,6 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
       stageRef.current.batchDraw();
     }
   }, [version]);
-
-  const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Get real-time projects and Excel summary data
   const projects = useAppStore(state => state.projects);
@@ -401,20 +409,17 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
     
     if (!version.groups) return { unitColorMap: colorMap, activeGroups: groupsInUse };
 
-    // Process groups in order (later groups overwrite earlier if unit matches both)
     version.groups.forEach((group: any) => {
-        let groupHasMatches = false;
+        let matchCount = 0;
         const mappedUnitIds = new Set(version.groupMappings?.[group.id] || []);
         
         units.forEach((u: any) => {
             let isMatch = false;
             
-            // Check manual mapping first
             if (mappedUnitIds.has(u.id)) {
                 isMatch = true;
             }
             
-            // Only override with real-time dynamic rules if it's dynamic active
             const isDynamicActive = version.isDynamicActive !== false;
             
             if (group.rules && group.rules.length > 0) {
@@ -456,12 +461,12 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             }
             if (isMatch) {
                 colorMap[u.id] = group.color;
-                groupHasMatches = true;
+                matchCount++;
             }
         });
         
-        if (groupHasMatches) {
-            groupsInUse.push(group);
+        if (matchCount > 0) {
+            groupsInUse.push({ ...group, matchCount });
         }
     });
 
@@ -474,11 +479,9 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
       .filter((unit: any) => {
         if (unit.visible === false) return false;
         
-        // 1. Chỉ hiện những unit xuất hiện ở tab dynamic (thuộc group dynamic / có màu)
         const targetColor = unitColorMap[unit.id];
         if (!targetColor) return false;
 
-        // Lọc theo thanh tìm kiếm nếu có
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           const uData = aggregatedData[unit.name?.toLowerCase() || ''] || {};
@@ -495,7 +498,6 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
       .map((unit: any) => {
         const targetColor = unitColorMap[unit.id];
         
-        // Pre-compute text bounding box to avoid heavy array calculations on each render
         let textX = unit.x;
         let textY = unit.y;
         let textWidth = 100;
@@ -574,47 +576,133 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
      document.body.removeChild(link);
   };
 
+  // Capped pixel ratio for silky smooth iOS GPU execution
+  const pixelRatio = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+
   return (
-    <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none">
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 pointer-events-none">
-         {activeGroups.length > 0 && (
-           <div className="bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-slate-200 flex flex-col gap-2 pointer-events-auto max-w-[200px]">
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Chú giải (Legend)</h3>
-              {activeGroups.map((g: any) => (
-                <div key={g.id} className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                  <div className="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm border border-black/10" style={{backgroundColor: g.color}}/>
-                  <span className="truncate" title={g.name}>{g.name}</span>
-                </div>
-              ))}
-           </div>
-         )}
-      </div>
+    <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
       
-      <div className="absolute top-4 right-4 z-10 flex flex-col sm:flex-row items-end sm:items-center gap-3">
-         <div className="relative group">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-blue-500 transition-colors" />
-            <input 
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm Unit / Brand / Project..."
-              className="pl-9 pr-4 py-2 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg shadow-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all w-64"
-            />
-            {searchQuery && (
-               <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                  <X className="w-4 h-4" />
-               </button>
-            )}
-         </div>
-         <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-lg text-sm font-medium transition-colors flex-shrink-0">
-            <Download className="w-4 h-4" /> Xuất ảnh HD
-         </button>
+      {/* Floating Top-Right Controls */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <div className="px-2.5 py-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-sm rounded-lg text-xs font-mono font-bold text-slate-700 dark:text-slate-200">
+          {Math.round(stageScale * 100)}%
+        </div>
+        <button 
+          type="button" 
+          onClick={() => {
+            const stage = stageRef.current;
+            const initScale = version.backgroundScale || 1;
+            const initPos = version.backgroundPos || { x: 0, y: 0 };
+            setStageScale(initScale);
+            setStagePos(initPos);
+            if (stage) {
+              stage.scale({ x: initScale, y: initScale });
+              stage.position(initPos);
+              stage.batchDraw();
+            }
+          }}
+          className="p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 shadow-sm transition-colors"
+          title="Reset View"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
       </div>
 
+      {/* Floating Bottom Menu Pill Button */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
+        <button 
+          onClick={() => setShowMenu(true)} 
+          className="flex items-center gap-2 px-4 py-2 bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 backdrop-blur-md border border-slate-700 dark:border-slate-300 shadow-xl rounded-full text-xs font-bold hover:bg-slate-800 active:scale-95 transition-all"
+        >
+          <Menu className="w-4 h-4" /> Menu
+        </button>
+      </div>
+
+      {/* Floating Menu Drawer / Modal */}
+      {showMenu && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 text-slate-800 dark:text-slate-200 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
+                <Layers className="w-5 h-5 text-purple-600" />
+                Menu & Chú thích Bản đồ
+              </div>
+              <button 
+                onClick={() => setShowMenu(false)}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input 
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm Unit / Brand / Project..."
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Active Groups Legend */}
+            <div>
+              <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider mb-2">
+                Nhóm Phân Loại Đang Hiển Thị ({activeGroups.length})
+              </div>
+              {activeGroups.length === 0 ? (
+                <div className="text-xs text-slate-400 italic py-2">Không có nhóm phân loại nào khớp dữ liệu.</div>
+              ) : (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {activeGroups.map((g: any) => (
+                    <div key={g.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full shadow-sm border border-black/10" style={{ backgroundColor: g.color }} />
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{g.name}</span>
+                      </div>
+                      <span className="text-[11px] font-mono font-bold bg-white dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
+                        {g.matchCount} units
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-2 grid grid-cols-2 gap-2 border-t border-slate-100 dark:border-slate-800">
+              <button 
+                onClick={handleExport}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+              >
+                <Download className="w-4 h-4" /> Xuất ảnh HD
+              </button>
+              <button 
+                onClick={() => {
+                  setShowMenu(false);
+                  onOpenR2Config();
+                }}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700"
+              >
+                <Settings className="w-4 h-4" /> Cấu hình R2
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tooltip */}
       {hoverInfo && hoverInfo.visible && (
         <div 
           ref={tooltipRef}
-          className="fixed z-50 pointer-events-none bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200/60 p-4 w-72 text-sm text-slate-700 transition-opacity duration-150"
+          className="fixed z-50 pointer-events-none bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200/60 dark:border-slate-700 p-4 w-72 text-sm text-slate-700 dark:text-slate-200 transition-opacity duration-150"
           style={{ 
             left: -9999, 
             top: -9999,
@@ -622,14 +710,14 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
           }}
         >
           <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div className="font-bold text-lg text-slate-800">{hoverInfo.unitName}</div>
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+              <div className="font-bold text-lg text-slate-800 dark:text-slate-100">{hoverInfo.unitName}</div>
               {hoverInfo.data?.appProjectStatus && (
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                  hoverInfo.data.appProjectStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                  hoverInfo.data.appProjectStatus === 'On Process' ? 'bg-blue-100 text-blue-700' :
-                  hoverInfo.data.appProjectStatus === 'Delay' ? 'bg-rose-100 text-rose-700' :
-                  'bg-amber-100 text-amber-700'
+                  hoverInfo.data.appProjectStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
+                  hoverInfo.data.appProjectStatus === 'On Process' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' :
+                  hoverInfo.data.appProjectStatus === 'Delay' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' :
+                  'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
                 }`}>
                   {hoverInfo.data.appProjectStatus}
                 </span>
@@ -639,43 +727,52 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             {(hoverInfo.data?.projectName || hoverInfo.data?.brandName) && (
               <div>
                 <div className="text-xs text-slate-400 font-medium uppercase mb-0.5">Brand / Project</div>
-                <div className="font-semibold text-slate-700">{hoverInfo.data.projectName || hoverInfo.data.brandName}</div>
+                <div className="font-semibold text-slate-800 dark:text-slate-200">{hoverInfo.data.projectName || hoverInfo.data.brandName}</div>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-2">
               {hoverInfo.data?.size > 0 && (
-                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Size (m²)</div>
-                  <div className="font-semibold text-slate-700">{Number(hoverInfo.data.size).toLocaleString('en-US')}</div>
+                  <div className="font-semibold text-slate-700 dark:text-slate-200">{Number(hoverInfo.data.size).toLocaleString('en-US')}</div>
                 </div>
               )}
               {hoverInfo.data?.floor && (
-                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                <div className="bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Location</div>
-                  <div className="font-semibold text-slate-700">{hoverInfo.data.floor}</div>
+                  <div className="font-semibold text-slate-700 dark:text-slate-200">{hoverInfo.data.floor}</div>
                 </div>
               )}
             </div>
 
             {(hoverInfo.data?.startDate || hoverInfo.data?.handoverDate || hoverInfo.data?.openingDate) && (
-              <div className="border-t border-slate-100 pt-2 flex flex-col gap-1.5">
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-2 flex flex-col gap-1.5">
                 {hoverInfo.data.startDate && (
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Start:</span>
-                    <span className="font-medium text-slate-700">{hoverInfo.data.startDate}</span>
+                    <span className="text-slate-500 font-medium">Start:</span>
+                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      <FolderOutput className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span>{formatDisplayDateTime(hoverInfo.data.startDate)}</span>
+                    </div>
                   </div>
                 )}
                 {hoverInfo.data.handoverDate && (
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Handover:</span>
-                    <span className="font-medium text-slate-700">{hoverInfo.data.handoverDate}</span>
+                    <span className="text-slate-500 font-medium">Handover:</span>
+                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      <FolderOutput className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span>{formatDisplayDateTime(hoverInfo.data.handoverDate)}</span>
+                    </div>
                   </div>
                 )}
                 {hoverInfo.data.openingDate && (
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Opening:</span>
-                    <span className="font-medium text-slate-700">{hoverInfo.data.openingDate}</span>
+                    <span className="text-slate-500 font-medium">Opening:</span>
+                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      <FolderOutput className="w-3.5 h-3.5 text-pink-500 shrink-0" />
+                      <span>{formatDisplayDateTime(hoverInfo.data.openingDate)}</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -683,60 +780,13 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
           </div>
         </div>
       )}
-      <div ref={containerRef} className="flex-grow w-full relative cursor-grab active:cursor-grabbing">
-        {/* Floating Zoom Controls */}
-        <div className="absolute top-4 right-4 z-10 flex items-center bg-white/90 backdrop-blur border border-slate-200 shadow-sm rounded-lg p-1 space-x-1">
-          <button 
-            type="button" 
-            onClick={() => {
-              const stage = stageRef.current;
-              if (!stage) return;
-              const newScale = stageScale * 1.25;
-              setStageScale(newScale);
-              stage.scale({ x: newScale, y: newScale });
-              stage.batchDraw();
-            }}
-            className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button 
-            type="button" 
-            onClick={() => {
-              const stage = stageRef.current;
-              if (!stage) return;
-              const newScale = Math.max(0.1, stageScale / 1.25);
-              setStageScale(newScale);
-              stage.scale({ x: newScale, y: newScale });
-              stage.batchDraw();
-            }}
-            className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button 
-            type="button" 
-            onClick={() => {
-              const stage = stageRef.current;
-              const initScale = version.backgroundScale || 1;
-              const initPos = version.backgroundPos || { x: 0, y: 0 };
-              setStageScale(initScale);
-              setStagePos(initPos);
-              if (stage) {
-                stage.scale({ x: initScale, y: initScale });
-                stage.position(initPos);
-                stage.batchDraw();
-              }
-            }}
-            className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors"
-            title="Reset View"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-        </div>
 
+      {/* Canvas Viewport */}
+      <div 
+        ref={containerRef} 
+        className="flex-grow w-full h-full relative cursor-grab active:cursor-grabbing"
+        style={{ touchAction: 'none' }}
+      >
         <Stage 
             ref={stageRef} 
             width={dimensions.width} 
@@ -745,33 +795,115 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             scaleY={stageScale}
             x={stagePos.x}
             y={stagePos.y}
+            pixelRatio={pixelRatio}
             draggable
             onDragEnd={(e) => {
               setStagePos({ x: e.target.x(), y: e.target.y() });
             }}
+            onTouchStart={(e) => {
+              if (e.evt.touches.length === 2) {
+                const touch1 = e.evt.touches[0];
+                const touch2 = e.evt.touches[1];
+                const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+                const center = {
+                  x: (touch1.clientX + touch2.clientX) / 2,
+                  y: (touch1.clientY + touch2.clientY) / 2,
+                };
+                touchStateRef.current = { lastDist: dist, lastCenter: center, lastTap: 0 };
+                const stage = stageRef.current;
+                if (stage) stage.draggable(false);
+              } else if (e.evt.touches.length === 1) {
+                const now = Date.now();
+                if (now - touchStateRef.current.lastTap < 300) {
+                  const stage = stageRef.current;
+                  if (stage) {
+                    const initScale = version.backgroundScale || 1;
+                    const initPos = version.backgroundPos || { x: 0, y: 0 };
+                    const newScale = stageScale > 1.5 ? initScale : initScale * 2;
+                    setStageScale(newScale);
+                    setStagePos(initPos);
+                    stage.scale({ x: newScale, y: newScale });
+                    stage.position(initPos);
+                    stage.batchDraw();
+                  }
+                  touchStateRef.current.lastTap = 0;
+                } else {
+                  touchStateRef.current.lastTap = now;
+                }
+              }
+            }}
+            onTouchMove={(e) => {
+              if (e.evt.touches.length === 2) {
+                e.evt.preventDefault();
+                const touch1 = e.evt.touches[0];
+                const touch2 = e.evt.touches[1];
+                const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+                const center = {
+                  x: (touch1.clientX + touch2.clientX) / 2,
+                  y: (touch1.clientY + touch2.clientY) / 2,
+                };
+                const { lastDist, lastCenter } = touchStateRef.current;
+                const stage = stageRef.current;
+                if (stage && lastDist > 0 && lastCenter) {
+                  const oldScale = stage.scaleX();
+                  const scaleDelta = dist / lastDist;
+                  const newScale = Math.max(0.05, Math.min(oldScale * scaleDelta, 20));
+                  
+                  const stageBox = stage.container().getBoundingClientRect();
+                  const pointerX = center.x - stageBox.left;
+                  const pointerY = center.y - stageBox.top;
+
+                  const mousePointTo = {
+                    x: (pointerX - stage.x()) / oldScale,
+                    y: (pointerY - stage.y()) / oldScale,
+                  };
+
+                  const newPos = {
+                    x: pointerX - mousePointTo.x * newScale,
+                    y: pointerY - mousePointTo.y * newScale,
+                  };
+
+                  stage.scale({ x: newScale, y: newScale });
+                  stage.position(newPos);
+                  stage.batchDraw();
+
+                  setStageScale(newScale);
+                  setStagePos(newPos);
+
+                  touchStateRef.current.lastDist = dist;
+                  touchStateRef.current.lastCenter = center;
+                }
+              }
+            }}
+            onTouchEnd={() => {
+              touchStateRef.current.lastDist = 0;
+              touchStateRef.current.lastCenter = null;
+              const stage = stageRef.current;
+              if (stage) stage.draggable(true);
+            }}
             onWheel={(e) => {
-               e.evt.preventDefault();
-               const stage = stageRef.current;
-               if (!stage) return;
-               const scaleBy = 1.15;
-               const oldScale = stage.scaleX();
-               const pointer = stage.getPointerPosition();
-               if (!pointer) return;
-               const mousePointTo = {
-                 x: pointer.x / oldScale - stage.x() / oldScale,
-                 y: pointer.y / oldScale - stage.y() / oldScale,
-               };
-               const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
-               const clampedScale = Math.max(0.05, Math.min(newScale, 20));
-               const newPos = {
-                 x: -(mousePointTo.x - pointer.x / clampedScale) * clampedScale,
-                 y: -(mousePointTo.y - pointer.y / clampedScale) * clampedScale,
-               };
-               stage.scale({ x: clampedScale, y: clampedScale });
-               stage.position(newPos);
-               stage.batchDraw();
-               setStageScale(clampedScale);
-               setStagePos(newPos);
+                e.evt.preventDefault();
+                const stage = stageRef.current;
+                if (!stage) return;
+                const scaleBy = 1.15;
+                const oldScale = stage.scaleX();
+                const pointer = stage.getPointerPosition();
+                if (!pointer) return;
+                const mousePointTo = {
+                  x: pointer.x / oldScale - stage.x() / oldScale,
+                  y: pointer.y / oldScale - stage.y() / oldScale,
+                };
+                const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+                const clampedScale = Math.max(0.05, Math.min(newScale, 20));
+                const newPos = {
+                  x: -(mousePointTo.x - pointer.x / clampedScale) * clampedScale,
+                  y: -(mousePointTo.y - pointer.y / clampedScale) * clampedScale,
+                };
+                stage.scale({ x: clampedScale, y: clampedScale });
+                stage.position(newPos);
+                stage.batchDraw();
+                setStageScale(clampedScale);
+                setStagePos(newPos);
             }}
         >
           <Layer>
