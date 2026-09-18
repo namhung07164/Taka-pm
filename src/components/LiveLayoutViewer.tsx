@@ -562,14 +562,37 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
       });
   }, [units, unitColorMap, searchQuery, aggregatedData]);
 
-  // Handle position tooltip directly via DOM without 60fps React state re-renders
+  // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
   const updateTooltipPos = (clientX: number, clientY: number) => {
-    if (tooltipRef.current) {
-      const isRight = clientX > window.innerWidth - 300;
-      tooltipRef.current.style.left = `${clientX + 15}px`;
-      tooltipRef.current.style.top = `${clientY + 15}px`;
-      tooltipRef.current.style.transform = isRight ? 'translateX(-100%)' : 'none';
-    }
+    requestAnimationFrame(() => {
+      if (!tooltipRef.current) return;
+      const el = tooltipRef.current;
+      const rect = el.getBoundingClientRect();
+      const tooltipWidth = rect.width > 0 ? rect.width : 300;
+      const tooltipHeight = rect.height > 0 ? rect.height : 260;
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const pad = 12;
+
+      // 1. Calculate X position (try right first, then flip left, then clamp)
+      let left = clientX + 16;
+      if (left + tooltipWidth > viewportWidth - pad) {
+        left = clientX - tooltipWidth - 16;
+      }
+      left = Math.max(pad, Math.min(left, viewportWidth - tooltipWidth - pad));
+
+      // 2. Calculate Y position (try bottom first, then flip top, then clamp)
+      let top = clientY + 16;
+      if (top + tooltipHeight > viewportHeight - pad) {
+        top = clientY - tooltipHeight - 16;
+      }
+      top = Math.max(pad, Math.min(top, viewportHeight - tooltipHeight - pad));
+
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.transform = 'none';
+    });
   };
 
   useEffect(() => {
@@ -777,32 +800,46 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
       {hoverInfo && hoverInfo.visible && (
         <div 
           ref={tooltipRef}
-          className="fixed z-50 pointer-events-none bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200/60 dark:border-slate-700 p-4 w-72 text-sm text-slate-700 dark:text-slate-200 transition-opacity duration-150"
+          className="fixed z-50 pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/80 dark:border-slate-700 p-3.5 sm:p-4 w-72 sm:w-80 max-w-[calc(100vw-24px)] max-h-[calc(100vh-28px)] overflow-y-auto text-sm text-slate-700 dark:text-slate-200 transition-opacity duration-150 custom-scrollbar"
           style={{ 
             left: -9999, 
             top: -9999,
             transformOrigin: 'top left'
           }}
         >
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-              <div className="font-bold text-lg text-slate-800 dark:text-slate-100">{hoverInfo.unitName}</div>
-              {hoverInfo.data?.appProjectStatus && (
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                  hoverInfo.data.appProjectStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
-                  hoverInfo.data.appProjectStatus === 'On Process' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' :
-                  hoverInfo.data.appProjectStatus === 'Delay' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' :
-                  'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                }`}>
-                  {hoverInfo.data.appProjectStatus}
-                </span>
-              )}
+              <div className="font-bold text-base sm:text-lg text-slate-800 dark:text-slate-100 truncate max-w-[140px] sm:max-w-[170px]" title={hoverInfo.unitName}>
+                {hoverInfo.unitName}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {hoverInfo.data?.appProjectStatus && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                    hoverInfo.data.appProjectStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
+                    hoverInfo.data.appProjectStatus === 'On Process' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' :
+                    hoverInfo.data.appProjectStatus === 'Delay' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' :
+                    'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    {hoverInfo.data.appProjectStatus}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setHoverInfo(null)}
+                  className="p-1 -mr-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title="Close tooltip"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             
             {(hoverInfo.data?.projectName || hoverInfo.data?.brandName) && (
               <div>
-                <div className="text-xs text-slate-400 font-medium uppercase mb-0.5">Brand / Project</div>
-                <div className="font-semibold text-slate-800 dark:text-slate-200">{hoverInfo.data.projectName || hoverInfo.data.brandName}</div>
+                <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">BRAND / PROJECT</div>
+                <div className="font-semibold text-sm sm:text-base text-slate-800 dark:text-slate-200 leading-snug">
+                  {hoverInfo.data.projectName || hoverInfo.data.brandName}
+                </div>
               </div>
             )}
 
@@ -810,13 +847,13 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
               {hoverInfo.data?.size > 0 && (
                 <div className="bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Size (m²)</div>
-                  <div className="font-semibold text-slate-700 dark:text-slate-200">{Number(hoverInfo.data.size).toLocaleString('en-US')}</div>
+                  <div className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-200">{Number(hoverInfo.data.size).toLocaleString('en-US')}</div>
                 </div>
               )}
               {hoverInfo.data?.floor && (
                 <div className="bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                   <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Location</div>
-                  <div className="font-semibold text-slate-700 dark:text-slate-200">{hoverInfo.data.floor}</div>
+                  <div className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-200">{hoverInfo.data.floor}</div>
                 </div>
               )}
             </div>
@@ -894,6 +931,19 @@ function LiveCanvas({ config, storeFilter, locationFilter, onOpenR2Config }: { c
             y={stagePos.y}
             pixelRatio={pixelRatio}
             draggable
+            onDragStart={() => {
+              setHoverInfo(null);
+            }}
+            onClick={(e) => {
+              if (e.target === stageRef.current) {
+                setHoverInfo(null);
+              }
+            }}
+            onTap={(e) => {
+              if (e.target === stageRef.current) {
+                setHoverInfo(null);
+              }
+            }}
             onDragEnd={(e) => {
               setStagePos({ x: e.target.x(), y: e.target.y() });
             }}
