@@ -327,7 +327,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
         margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
         mdStatus: "", task: "", projectStatus: "", actStatus: "",
         startDate: "", endDate: "", status: "", vendorCode: "",
-        brandCode: "", brandName: "", classCode: "", floor: "",
+        brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
         appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: ""
       };
     });
@@ -345,11 +345,12 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             projectStatus: sumData.projectStatus || "",
             status: sumData.status || "",
             brandName: sumData.brandName || "",
-            floor: (sumData as any).floor || "",
+            floor: dataMap[key].floor || (sumData as any).floor || "",
         });
       }
     });
 
+    const enrichedProjects = enrichProjects(projects, tasks);
     enrichedProjects.forEach((p) => {
       if (!p.code) return;
       if (storeFilter !== 'all' && p.store !== storeFilter) return;

@@ -49,7 +49,7 @@ function DynamicHierarchyTab({
     setVersions(versions.map(v => v.id === activeVersion.id ? { ...v, isDynamicActive: !isVersionActive } : v));
   };
 
-  const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name }))), [units]);
+  const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name, location: u.location }))), [units]);
 
   // Pre-compute aggregated data for unit evaluation
   const enrichedProjects = useMemo(() => enrichProjects(projects, tasks), [projects, tasks]);
@@ -86,7 +86,7 @@ function DynamicHierarchyTab({
         brandCode: "",
         brandName: "",
         classCode: "",
-        floor: "",
+        floor: u.location || "",
         appProjectStatus: "",
         appProjectBudget: 0,
         appProjectActual: 0,
@@ -119,7 +119,7 @@ function DynamicHierarchyTab({
         dataMap[key].brandCode = sumData.brandCode || "";
         dataMap[key].brandName = sumData.brandName || "";
         dataMap[key].classCode = sumData.classCode || "";
-        dataMap[key].floor = (sumData as any).floor || "";
+        dataMap[key].floor = dataMap[key].floor || (sumData as any).floor || "";
       }
     });
 
