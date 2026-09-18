@@ -291,6 +291,9 @@ function DynamicHierarchyTab({
         backgroundPos: { x: 0, y: 0 },
         groups: [],
         groupMappings: {},
+        store: activeVersion?.store || 'HCM',
+        location: activeVersion?.location || 'L1',
+        isDynamicActive: true,
       };
       setVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
@@ -305,6 +308,8 @@ function DynamicHierarchyTab({
         ...activeVersion,
         id: uuidv4(),
         name,
+        store: activeVersion.store || 'HCM',
+        location: activeVersion.location || 'L1',
       };
       setVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);

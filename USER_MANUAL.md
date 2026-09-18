@@ -931,12 +931,19 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 2. **Cơ chế phân vùng và cô lập dữ liệu độc lập (Zero Cross-Contamination)**:
    - Toàn bộ dữ liệu gian hàng (`mapUnits`), hình vẽ (Polygon, Hình chữ nhật, Hình tròn), ảnh mặt bằng kỹ thuật (`backgroundUrl`), tỷ lệ scale/tọa độ và các phiên bản (`mapVersions`) được cô lập hoàn toàn theo từng cặp `(Store, Location)`.
    - Khi chuyển từ `HCM - L1` sang `HCM - L2`, hệ thống tự động lưu giữ trạng thái vẽ của `L1` và mở ra không gian vẽ riêng biệt của `L2`. Khi quay lại `L1`, toàn bộ hình vẽ và ảnh nền trước đó được khôi phục nguyên vẹn 100%.
-3. **Đồng Bộ & Lưu Trữ Độc Quyền 1 Version Duy Nhất Lên Cloudflare R2 (Chống Rác Lưu Trữ)**:
-   - **Cơ chế Lưu 1 Version Duy Nhất (Single Version Policy)**: Để ngăn chặn tích tụ file rác và tiết kiệm tối đa dung lượng bộ nhớ trên bucket Cloudflare R2, hệ thống chỉ lưu giữ đúng 1 phiên bản duy nhất (phiên bản đang hoạt động / phiên bản được chọn).
-   - **Tự động quét và dọn dẹp bản cũ (Auto-Purge Strategy)**:
-     - Khi lưu cấu hình lên Cloud (`CloudSyncManager`): Hệ thống lưu 1 phiên bản chính thức, tải ảnh nền chuẩn (`bg_active_version.jpeg`) và tự động kích hoạt tiến trình quét và xóa sạch toàn bộ các ảnh nền cũ (`bg_*.jpeg`) phát sinh từ các lần cập nhật trước.
-     - Khi xuất ảnh từ tab Xem lại (`ReviewTab` > R2 Cloud): Người dùng chọn đúng 1 phiên bản cần xuất (mặc định là bản đang xem). Hệ thống sẽ tự động quét bucket và xóa toàn bộ các bản xuất JPEG/PNG/PDF cũ trước đó trước khi tải file mới lên, đảm bảo trong bucket chỉ tồn tại duy nhất bản mới nhất.
-   - **Tải từ Cloud (Download)**: Khi người dùng nhấn **Tải từ Cloud (Download)**, hệ thống sẽ nạp cấu hình 1 phiên bản mới nhất, tự động tạo presigned URL có thời hạn cho ảnh nền và đồng bộ vào không gian vẽ của máy trạm.
+3. **Đồng Bộ Đầy Đủ Tất Cả Các Tab & Phân Vùng Lên Cloudflare R2 (Full Cloud Sync)**:
+   - **Đồng bộ toàn diện (Complete Multi-Tab Synchronization)**:
+     - Khi nhấn **Save Cloud**, hệ thống sẽ đóng gói và sao lưu toàn bộ trạng thái của phân hệ Picture Mapping lên file `mapping_config.json`:
+       + **Toàn bộ chi nhánh & tầng**: Lưu giữ cấu trúc phân vùng `storeLocationData` đầy đủ cho cả HCM và HN trên mọi tầng (B2, B1, L1, L2, L3, L4, L5,...), không bị ghi đè hay mất dữ liệu giữa các tầng.
+       + **Tab Vẽ & Chỉnh Sửa (Edit Tab)**: Lưu đầy đủ các hình khối gian hàng (`mapUnits`), các phiên bản bản vẽ (`mapVersions`), ảnh nền mặt bằng, góc xoay (`bgRotation`), tọa độ di chuyển (`position`), tỷ lệ phóng to (`scale`), trạng thái khóa (`locked`) và hiển thị (`visible`).
+       + **Ảnh nền mặt bằng (R2 Backgrounds)**: Toàn bộ ảnh nền dưới dạng blob hoặc URL được tự động tải lên Cloudflare R2, lưu dưới dạng key chuẩn (`r2://bg_...`) và phân giải presigned URL tự động khi tải về.
+       + **Tab Điều Kiện Động (Dynamic Hierarchy Tab)**: Lưu toàn bộ danh mục nhóm phân cấp (`groups`), bộ quy tắc điều kiện gán màu/phân nhóm (`rules`) và liên kết ánh xạ gian hàng (`groupMappings`).
+       + **Tab Đánh Giá & Xem Lại (Review Tab)**: Lưu toàn bộ danh sách nhãn đã chọn (`reviewSelectedLabels`), bảng màu tùy chỉnh (`reviewLabelColors`) và các cài đặt hiển thị liên quan.
+       + **Dữ liệu kinh doanh đính kèm**: Lưu trữ đồng bộ các bảng thông tin chuyên đề (`unitInfo`, `classInfo`, `actualClassInfo`, `sales`, `profits`, `subFees`, `mdStatus`, `projectStatus`, `basePlan`, `units`).
+   - **Tự động quét và dọn dẹp ảnh nền mồ côi (Smart Purge Strategy)**:
+     - Hệ thống chỉ giữ lại các file ảnh nền đang được liên kết trong các phiên bản bản vẽ hợp lệ, tự động quét và xóa sạch các file ảnh nền cũ không còn sử dụng trên R2 để tối ưu hóa dung lượng lưu trữ.
+   - **Tải từ Cloud (Load Cloud)**:
+     - Khi nhấn **Load Cloud**, hệ thống tự động tải `mapping_config.json`, tạo signed URL 7 ngày cho toàn bộ ảnh nền trên mọi tầng và nạp đồng thời (atomic load) vào Zustand store mà không gây xung đột hoặc mất dữ liệu.
 4. **Cơ Chế Bảng Pop-up Linh Hoạt (Draggable & Responsive Viewport)**:
    - **Tự động điều chỉnh kích thước theo khung hình**: Tất cả các bảng pop-up trong phân hệ Picture Mapping (bảng gán tên gian hàng *Assign Unit Name*, bảng chia sẻ *Share Review Viewer*, bảng xuất bản vẽ *Export Map / Upload to R2 / Drive*, và bảng cấu hình *Cloudflare R2*) được tối ưu chiều cao (`max-h-[85vh]` - `max-h-[88vh]`) và chiều rộng linh hoạt (`max-w-[calc(100vw-1rem)]`), thân bảng có thanh cuộn mượt mà giúp người dùng luôn xem trọn vẹn nội dung trên mọi kích cỡ màn hình mà không bị tràn khung.
    - **Kéo di chuyển tự do (Draggable)**:

@@ -7,6 +7,28 @@ export interface StoreLocationRecord {
   activeMapVersionId: string | null;
 }
 
+export interface LoadedCloudDataPayload {
+  storeLocationData: Record<string, StoreLocationRecord>;
+  store?: 'HCM' | 'HN';
+  location?: string;
+  mapUnits?: UnitShape[];
+  mapVersions?: MapVersion[];
+  activeMapVersionId?: string | null;
+  reviewSelectedLabels?: string[];
+  reviewLabelColors?: Record<string, string>;
+  unitInfo?: any[];
+  classInfo?: any[];
+  actualClassInfo?: any[];
+  sales?: any[];
+  profits?: any[];
+  subFees?: any[];
+  mdStatus?: any[];
+  projectStatus?: any[];
+  projectLink?: any[];
+  basePlan?: any[];
+  units?: any[];
+}
+
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
 
 interface DataStoreState {
@@ -17,6 +39,28 @@ interface DataStoreState {
   setStoreAndLocation: (store: 'HCM' | 'HN', location: string) => void;
   storeLocationData: Record<string, StoreLocationRecord>;
   setStoreLocationData: (data: Record<string, StoreLocationRecord>) => void;
+  setLoadedCloudData: (payload: LoadedCloudDataPayload) => void;
+  getConsolidatedSaveData: () => {
+    storeLocationData: Record<string, StoreLocationRecord>;
+    store: 'HCM' | 'HN';
+    location: string;
+    mapUnits: UnitShape[];
+    mapVersions: MapVersion[];
+    activeMapVersionId: string | null;
+    reviewSelectedLabels: string[];
+    reviewLabelColors: Record<string, string>;
+    unitInfo: any[];
+    classInfo: any[];
+    actualClassInfo: any[];
+    sales: any[];
+    profits: any[];
+    subFees: any[];
+    mdStatus: any[];
+    projectStatus: any[];
+    projectLink: any[];
+    basePlan: any[];
+    units: any[];
+  };
   mapUnits: UnitShape[];
   setMapUnits: (units: UnitShape[]) => void;
   mapVersions: MapVersion[];
@@ -56,6 +100,25 @@ interface DataStoreState {
   setBasePlan: (plan: any[]) => void;
   units: any[];
   setUnits: (units: any[]) => void;
+  loadFullCloudData: (payload: {
+    storeLocationData: Record<string, StoreLocationRecord>;
+    store?: 'HCM' | 'HN';
+    location?: string;
+    activeMapVersionId?: string | null;
+    reviewSelectedLabels?: string[];
+    reviewLabelColors?: Record<string, string>;
+    unitInfo?: any[];
+    classInfo?: any[];
+    actualClassInfo?: any[];
+    sales?: any[];
+    profits?: any[];
+    subFees?: any[];
+    mdStatus?: any[];
+    projectStatus?: any[];
+    projectLink?: any[];
+    basePlan?: any[];
+    units?: any[];
+  }) => void;
 }
 
 export const useDataStore = create<DataStoreState>((set, get) => ({
@@ -118,6 +181,76 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
         activeMapVersionId: target.activeMapVersionId || (target.mapVersions?.[0]?.id ?? null),
       } : {}),
     });
+  },
+
+  setLoadedCloudData: (payload: LoadedCloudDataPayload) => {
+    const state = get();
+    const targetStore = payload.store || state.store;
+    const targetLocation = payload.location || state.location;
+    const pKey = getPartitionKey(targetStore, targetLocation);
+    
+    const storeLocationData = payload.storeLocationData || state.storeLocationData;
+    const target = storeLocationData[pKey];
+    
+    const mapUnits = payload.mapUnits ?? (target?.mapUnits || []);
+    const mapVersions = payload.mapVersions ?? (target?.mapVersions || []);
+    const activeMapVersionId = payload.activeMapVersionId ?? (target?.activeMapVersionId || (mapVersions[0]?.id ?? null));
+
+    set({
+      store: targetStore,
+      location: targetLocation,
+      storeLocationData,
+      mapUnits,
+      mapVersions,
+      activeMapVersionId,
+      ...(payload.reviewSelectedLabels ? { reviewSelectedLabels: payload.reviewSelectedLabels } : {}),
+      ...(payload.reviewLabelColors ? { reviewLabelColors: payload.reviewLabelColors } : {}),
+      ...(payload.unitInfo ? { unitInfo: payload.unitInfo } : {}),
+      ...(payload.classInfo ? { classInfo: payload.classInfo } : {}),
+      ...(payload.actualClassInfo ? { actualClassInfo: payload.actualClassInfo } : {}),
+      ...(payload.sales ? { sales: payload.sales } : {}),
+      ...(payload.profits ? { profits: payload.profits } : {}),
+      ...(payload.subFees ? { subFees: payload.subFees } : {}),
+      ...(payload.mdStatus ? { mdStatus: payload.mdStatus } : {}),
+      ...(payload.projectStatus ? { projectStatus: payload.projectStatus } : {}),
+      ...(payload.projectLink ? { projectLink: payload.projectLink } : {}),
+      ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
+      ...(payload.units ? { units: payload.units } : {}),
+    });
+  },
+
+  getConsolidatedSaveData: () => {
+    const state = get();
+    const currentKey = getPartitionKey(state.store, state.location);
+    const updatedStoreLocationData = {
+      ...state.storeLocationData,
+      [currentKey]: {
+        mapUnits: state.mapUnits,
+        mapVersions: state.mapVersions,
+        activeMapVersionId: state.activeMapVersionId,
+      },
+    };
+    return {
+      storeLocationData: updatedStoreLocationData,
+      store: state.store,
+      location: state.location,
+      mapUnits: state.mapUnits,
+      mapVersions: state.mapVersions,
+      activeMapVersionId: state.activeMapVersionId,
+      reviewSelectedLabels: state.reviewSelectedLabels,
+      reviewLabelColors: state.reviewLabelColors,
+      unitInfo: state.unitInfo,
+      classInfo: state.classInfo,
+      actualClassInfo: state.actualClassInfo,
+      sales: state.sales,
+      profits: state.profits,
+      subFees: state.subFees,
+      mdStatus: state.mdStatus,
+      projectStatus: state.projectStatus,
+      projectLink: state.projectLink,
+      basePlan: state.basePlan,
+      units: state.units,
+    };
   },
 
   mapUnits: [],
@@ -272,20 +405,29 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       const uLoc = u.location || state.location;
       const pKey = getPartitionKey(uStore, uLoc);
       if (!unitsByPartition[pKey]) unitsByPartition[pKey] = [];
-      unitsByPartition[pKey].push(u);
+      unitsByPartition[pKey].push({ ...u, store: uStore, location: uLoc });
     }
 
     const updatedStoreLocationData = { ...state.storeLocationData };
-    for (const pKey in unitsByPartition) {
+    for (const pKey in updatedStoreLocationData) {
       if (pKey.startsWith(`${currentStore}_`)) {
         updatedStoreLocationData[pKey] = {
           ...(updatedStoreLocationData[pKey] || { mapVersions: [], activeMapVersionId: null }),
+          mapUnits: unitsByPartition[pKey] || [],
+        };
+      }
+    }
+    for (const pKey in unitsByPartition) {
+      if (!updatedStoreLocationData[pKey]) {
+        updatedStoreLocationData[pKey] = {
+          mapVersions: [],
+          activeMapVersionId: null,
           mapUnits: unitsByPartition[pKey],
         };
       }
     }
 
-    const activeUnits = updatedStoreLocationData[currentKey]?.mapUnits || state.mapUnits;
+    const activeUnits = updatedStoreLocationData[currentKey]?.mapUnits || [];
 
     set({
       storeLocationData: updatedStoreLocationData,
@@ -304,24 +446,42 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       const vLoc = v.location || state.location;
       const pKey = getPartitionKey(vStore, vLoc);
       if (!versionsByPartition[pKey]) versionsByPartition[pKey] = [];
-      versionsByPartition[pKey].push(v);
+      versionsByPartition[pKey].push({ ...v, store: vStore, location: vLoc });
     }
 
     const updatedStoreLocationData = { ...state.storeLocationData };
-    for (const pKey in versionsByPartition) {
+    for (const pKey in updatedStoreLocationData) {
       if (pKey.startsWith(`${currentStore}_`)) {
+        const existing = updatedStoreLocationData[pKey];
+        const newVers = versionsByPartition[pKey] || [];
         updatedStoreLocationData[pKey] = {
-          ...(updatedStoreLocationData[pKey] || { mapUnits: [], activeMapVersionId: null }),
-          mapVersions: versionsByPartition[pKey],
+          ...(existing || { mapUnits: [] }),
+          mapVersions: newVers,
+          activeMapVersionId: existing?.activeMapVersionId && newVers.some(v => v.id === existing.activeMapVersionId)
+            ? existing.activeMapVersionId
+            : (newVers[0]?.id || null),
+        };
+      }
+    }
+    for (const pKey in versionsByPartition) {
+      if (!updatedStoreLocationData[pKey]) {
+        const newVers = versionsByPartition[pKey];
+        updatedStoreLocationData[pKey] = {
+          mapUnits: [],
+          activeMapVersionId: newVers[0]?.id || null,
+          mapVersions: newVers,
         };
       }
     }
 
-    const activeVersions = updatedStoreLocationData[currentKey]?.mapVersions || state.mapVersions;
+    const activePartition = updatedStoreLocationData[currentKey];
+    const activeVersions = activePartition?.mapVersions || [];
+    const activeVersionId = activePartition?.activeMapVersionId || (activeVersions[0]?.id ?? null);
 
     set({
       storeLocationData: updatedStoreLocationData,
       mapVersions: activeVersions,
+      activeMapVersionId: activeVersionId,
     });
   },
 
@@ -379,5 +539,57 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   setBasePlan: (basePlan) => set({ basePlan }),
   units: [],
   setUnits: (units) => set({ units }),
+
+  loadFullCloudData: (payload) => {
+    const state = get();
+    const storeLocationData = payload.storeLocationData || {};
+
+    let activeStore = (payload.store || state.store) as 'HCM' | 'HN';
+    let activeLoc = payload.location || state.location;
+    let activeKey = getPartitionKey(activeStore, activeLoc);
+
+    if (!storeLocationData[activeKey]) {
+      const keys = Object.keys(storeLocationData);
+      if (keys.length > 0) {
+        const firstKey = keys[0];
+        const parts = firstKey.split('_');
+        activeStore = (parts[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+        activeLoc = parts[1] || 'L1';
+        activeKey = firstKey;
+      }
+    }
+
+    const targetPartition = storeLocationData[activeKey] || {
+      mapUnits: [],
+      mapVersions: [],
+      activeMapVersionId: null,
+    };
+
+    const targetUnits = targetPartition.mapUnits || [];
+    const targetVersions = targetPartition.mapVersions || [];
+    const targetActiveVerId = payload.activeMapVersionId || targetPartition.activeMapVersionId || (targetVersions[0]?.id ?? null);
+
+    set({
+      store: activeStore,
+      location: activeLoc,
+      storeLocationData,
+      mapUnits: targetUnits,
+      mapVersions: targetVersions,
+      activeMapVersionId: targetActiveVerId,
+      ...(payload.reviewSelectedLabels ? { reviewSelectedLabels: payload.reviewSelectedLabels } : {}),
+      ...(payload.reviewLabelColors ? { reviewLabelColors: payload.reviewLabelColors } : {}),
+      ...(payload.unitInfo ? { unitInfo: payload.unitInfo } : {}),
+      ...(payload.classInfo ? { classInfo: payload.classInfo } : {}),
+      ...(payload.actualClassInfo ? { actualClassInfo: payload.actualClassInfo } : {}),
+      ...(payload.sales ? { sales: payload.sales } : {}),
+      ...(payload.profits ? { profits: payload.profits } : {}),
+      ...(payload.subFees ? { subFees: payload.subFees } : {}),
+      ...(payload.mdStatus ? { mdStatus: payload.mdStatus } : {}),
+      ...(payload.projectStatus ? { projectStatus: payload.projectStatus } : {}),
+      ...(payload.projectLink ? { projectLink: payload.projectLink } : {}),
+      ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
+      ...(payload.units ? { units: payload.units } : {}),
+    });
+  },
 }));
 

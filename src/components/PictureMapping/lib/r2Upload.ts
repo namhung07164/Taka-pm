@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { useAppStore } from '../../../store/useAppStore';
 
 export interface R2Credentials {
   accountId: string;
@@ -36,13 +37,47 @@ export interface R2ProgressInfo {
 }
 
 /**
- * Retrieve saved R2 credentials from localStorage with multi-key fallback
+ * Extracts R2 object key from an r2:// link or signed/public R2 URL
+ */
+export function extractR2Key(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('r2://')) {
+    return trimmed.replace('r2://', '');
+  }
+  // Match bg_* pattern from full URL
+  const match = trimmed.match(/(bg_[a-zA-Z0-9_.-]+\.(jpeg|jpg|png|webp|gif))/i);
+  if (match) {
+    return match[1];
+  }
+  return null;
+}
+
+/**
+ * Retrieve saved R2 credentials from useAppStore or localStorage with multi-key fallback
  */
 export function getStoredR2Credentials(): R2Credentials | null {
-  const accountId = (localStorage.getItem('r2_account_id') || '').trim();
-  const accessKeyId = (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
-  const secretAccessKey = (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
-  const bucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
+  let accountId = '';
+  let accessKeyId = '';
+  let secretAccessKey = '';
+  let bucketName = '';
+
+  try {
+    const r2Config = useAppStore.getState().r2Config;
+    if (r2Config) {
+      accountId = (r2Config.accountId || '').trim();
+      accessKeyId = (r2Config.accessKeyId || '').trim();
+      secretAccessKey = (r2Config.secretAccessKey || '').trim();
+      bucketName = (r2Config.bucketName || '').trim();
+    }
+  } catch {
+    // fallback to localStorage if store not yet ready
+  }
+
+  if (!accountId) accountId = (localStorage.getItem('r2_account_id') || '').trim();
+  if (!accessKeyId) accessKeyId = (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+  if (!secretAccessKey) secretAccessKey = (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+  if (!bucketName) bucketName = (localStorage.getItem('r2_bucket_name') || '').trim();
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
     return null;

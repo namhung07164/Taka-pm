@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { CloudUpload, CloudDownload, RefreshCw } from 'lucide-react';
-import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials } from '../../lib/r2Upload';
+import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, extractR2Key } from '../../lib/r2Upload';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { useDataStore } from '../../DataContext';
+import { useDataStore, StoreLocationRecord } from '../../DataContext';
+import { MapVersion } from '../DataMapping/types';
 import R2UploadModal from '../R2UploadModal';
 
 export default function CloudSyncManager() {
@@ -22,6 +23,8 @@ export default function CloudSyncManager() {
     setStoreLocationData,
     mapUnits, mapVersions, setMapUnits, setMapVersions,
     activeMapVersionId, setActiveMapVersionId,
+    reviewSelectedLabels, setReviewSelectedLabels,
+    reviewLabelColors, setReviewLabelColors,
     unitInfo, setUnitInfo,
     classInfo, setClassInfo,
     actualClassInfo, setActualClassInfo,
@@ -32,7 +35,8 @@ export default function CloudSyncManager() {
     projectStatus, setProjectStatus,
     projectLink, setProjectLink,
     basePlan, setBasePlan,
-    units, setUnits
+    units, setUnits,
+    loadFullCloudData
   } = useDataStore();
 
   React.useEffect(() => {
@@ -71,85 +75,146 @@ export default function CloudSyncManager() {
       });
 
       if (currentAction === 'upload') {
-        // Enforce Single Version on Cloud: save the currently active version and clean up old files
-        const baseActive = mapVersions.find(v => v.id === activeMapVersionId) || mapVersions[0];
-        const activeVersion = baseActive || {
-          id: 'v1',
-          name: 'Phiên bản chính',
-          groups: [],
-          groupMappings: {},
-          backgroundUrl: null,
-          backgroundScale: 1,
-          backgroundPos: { x: 0, y: 0 },
-        };
+        setProgress(20);
+        setStatusText('Chuẩn bị cấu hình toàn bộ vị trí & tầng...');
 
-        const activeBgName = `bg_active_version.jpeg`;
-        let finalBgUrl = activeVersion.backgroundUrl;
-
-        // 1 & 2: Process ALL versions across ALL locations and upload their backgrounds if needed
-        setProgress(25);
-        setStatusText('Đang kiểm tra và tải lên ảnh nền của tất cả vị trí...');
-        
+        // 1. Ensure current active partition in memory is fully up to date
         const updatedStoreLocationData = { ...storeLocationData };
-        // Ensure current active store/location is synced to storeLocationData
         const currentActiveKey = `${store}_${location}`;
         updatedStoreLocationData[currentActiveKey] = {
-            mapUnits,
-            mapVersions,
-            activeMapVersionId
+          mapUnits,
+          mapVersions,
+          activeMapVersionId,
         };
 
+        // 2. Process all versions across all partitions: upload blobs, resolve R2 keys, prepare signed URLs for memory
+        setProgress(35);
+        setStatusText('Đang kiểm tra và tải ảnh nền lên Cloudflare R2...');
+
         const allValidBgNames: string[] = [];
+        const cloudStoreLocationData: Record<string, StoreLocationRecord> = {};
+        const localStoreLocationData: Record<string, StoreLocationRecord> = {};
 
         for (const pKey in updatedStoreLocationData) {
-            const partition = updatedStoreLocationData[pKey];
-            if (!partition?.mapVersions) continue;
-            
-            for (let i = 0; i < partition.mapVersions.length; i++) {
-                const v = partition.mapVersions[i];
-                let finalBgUrl = v.backgroundUrl;
-                
-                if (finalBgUrl && (finalBgUrl.startsWith('blob:') || finalBgUrl.startsWith('data:'))) {
-                    setStatusText(`Đang tải lên ảnh nền phiên bản: [${pKey}] ${v.name}...`);
-                    const res = await fetch(finalBgUrl);
-                    const blob = await res.blob();
-                    const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
-                    
-                    const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3);
-                    if (!uploadRes.success) {
-                        throw new Error(`Lỗi tải lên ảnh nền ${v.name}: ${uploadRes.error}`);
-                    }
-                    finalBgUrl = `r2://${uploadRes.name}`;
+          const partition = updatedStoreLocationData[pKey];
+          if (!partition) continue;
+
+          const pStore = (pKey.split('_')[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+          const pLoc = pKey.split('_')[1] || 'L1';
+
+          const pUnits = (partition.mapUnits || []).map(u => ({
+            ...u,
+            store: u.store || pStore,
+            location: u.location || pLoc,
+            visible: u.visible !== false,
+            locked: !!u.locked,
+          }));
+
+          const pVersionsCloud: MapVersion[] = [];
+          const pVersionsLocal: MapVersion[] = [];
+
+          for (let i = 0; i < (partition.mapVersions || []).length; i++) {
+            const v = partition.mapVersions[i];
+            const currentBg = v.backgroundUrl;
+            let r2Key = extractR2Key(currentBg) || (v as any).r2Key || null;
+            let displayUrl = currentBg;
+
+            if (currentBg && (currentBg.startsWith('blob:') || currentBg.startsWith('data:'))) {
+              setStatusText(`Đang tải ảnh nền: [${pKey}] ${v.name}...`);
+              const res = await fetch(currentBg);
+              const blob = await res.blob();
+              const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
+
+              const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3);
+              if (!uploadRes.success) {
+                throw new Error(`Lỗi tải lên ảnh nền ${v.name}: ${uploadRes.error}`);
+              }
+              r2Key = uploadRes.name;
+
+              // Generate working signed URL for local display so Konva canvas doesn't break
+              const signedUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }), { expiresIn: 3600 * 24 * 7 });
+              displayUrl = signedUrl;
+            } else if (r2Key) {
+              // Existing R2 file: ensure we have a valid displayUrl
+              if (!displayUrl || displayUrl.startsWith('r2://')) {
+                try {
+                  displayUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }), { expiresIn: 3600 * 24 * 7 });
+                } catch (e) {
+                  console.warn('Could not generate signed url for key', r2Key, e);
                 }
-                
-                partition.mapVersions[i] = { ...v, backgroundUrl: finalBgUrl };
-                if (finalBgUrl && finalBgUrl.startsWith('r2://')) {
-                    allValidBgNames.push(finalBgUrl.replace('r2://', ''));
-                }
+              }
             }
-        }
 
-        setProgress(50);
-        setStatusText('Đang dọn dẹp các ảnh nền cũ trên Cloudflare R2...');
-        try {
-          // This would need to be updated to support an array of keepBgNames
-          const purgeBgResult = await purgeOldR2BackgroundImages(allValidBgNames, creds, s3, (status) => setStatusText(status));
-          if (purgeBgResult.deletedCount > 0) {
-            console.log(`[CloudSync] Đã xóa ${purgeBgResult.deletedCount} ảnh nền cũ trên R2`);
+            if (r2Key) {
+              allValidBgNames.push(r2Key);
+            }
+
+            // Cloud version: canonical r2:// for R2 keys, or direct external URL
+            pVersionsCloud.push({
+              ...v,
+              store: v.store || pStore,
+              location: v.location || pLoc,
+              backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
+              groups: v.groups || [],
+              groupMappings: v.groupMappings || {},
+              isDynamicActive: v.isDynamicActive !== false,
+            });
+
+            // Local version: working HTTP signed URL so browser can render image
+            pVersionsLocal.push({
+              ...v,
+              store: v.store || pStore,
+              location: v.location || pLoc,
+              backgroundUrl: displayUrl,
+              groups: v.groups || [],
+              groupMappings: v.groupMappings || {},
+              isDynamicActive: v.isDynamicActive !== false,
+            });
           }
-        } catch (cleanErr) {
-          console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
+
+          cloudStoreLocationData[pKey] = {
+            mapUnits: pUnits,
+            mapVersions: pVersionsCloud,
+            activeMapVersionId: partition.activeMapVersionId || (pVersionsCloud[0]?.id ?? null),
+          };
+
+          localStoreLocationData[pKey] = {
+            mapUnits: pUnits,
+            mapVersions: pVersionsLocal,
+            activeMapVersionId: partition.activeMapVersionId || (pVersionsLocal[0]?.id ?? null),
+          };
         }
 
-        // 3. Build the config data
-        setProgress(75);
-        setStatusText('Đang lưu cấu hình JSON toàn bộ vị trí lên Cloudflare R2...');
+        // 3. Purge old unreferenced background images safely (only if we have valid ones to keep)
+        if (allValidBgNames.length > 0) {
+          setProgress(60);
+          setStatusText('Đang dọn dẹp các ảnh nền cũ không còn sử dụng trên R2...');
+          try {
+            const purgeBgResult = await purgeOldR2BackgroundImages(allValidBgNames, creds, s3, (status) => setStatusText(status));
+            if (purgeBgResult.deletedCount > 0) {
+              console.log(`[CloudSync] Đã xóa ${purgeBgResult.deletedCount} ảnh nền cũ trên R2`);
+            }
+          } catch (cleanErr) {
+            console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
+          }
+        }
+
+        // 4. Build comprehensive configData including ALL tabs and states
+        setProgress(80);
+        setStatusText('Đang lưu mapping_config.json lên Cloudflare R2...');
+
+        const activeCloudPartition = cloudStoreLocationData[currentActiveKey] || Object.values(cloudStoreLocationData)[0] || { mapUnits: [], mapVersions: [], activeMapVersionId: null };
+
         const configData = {
-          storeLocationData: updatedStoreLocationData,
+          storeLocationData: cloudStoreLocationData,
           store,
           location,
-          mapUnits,
-          versions: updatedStoreLocationData[currentActiveKey].mapVersions, // legacy support
+          activeMapVersionId,
+          reviewSelectedLabels: reviewSelectedLabels || [],
+          reviewLabelColors: reviewLabelColors || {},
+          // Legacy fallbacks for compatibility with older viewers
+          mapUnits: activeCloudPartition.mapUnits,
+          versions: activeCloudPartition.mapVersions,
           unitInfo,
           classInfo,
           actualClassInfo,
@@ -161,111 +226,133 @@ export default function CloudSyncManager() {
           projectLink,
           basePlan,
           units,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         };
-        const configBlob = new Blob([JSON.stringify(configData)], { type: 'application/json' });
-        
+
+        const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
         const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3);
-        
         if (!uploadRes.success) {
-           throw new Error(`Lỗi tải lên cấu hình: ${uploadRes.error}`);
+          throw new Error(`Lỗi tải lên cấu hình: ${uploadRes.error}`);
         }
 
-        // Update local state
-        setMapVersions(updatedStoreLocationData[currentActiveKey].mapVersions);
-        setStoreLocationData(updatedStoreLocationData);
-        
+        // 5. Update local React store atomically with working display URLs
+        loadFullCloudData({
+          storeLocationData: localStoreLocationData,
+          store,
+          location,
+          activeMapVersionId,
+          reviewSelectedLabels: reviewSelectedLabels || [],
+          reviewLabelColors: reviewLabelColors || {},
+        });
+
         setProgress(100);
-        setStatusText('Hoàn tất! Đã lưu toàn bộ bản vẽ và dọn sạch các bản cũ trên R2.');
-        
+        setStatusText('Hoàn tất! Đã lưu toàn bộ bản vẽ, điều kiện dynamic và review lên Cloud.');
+
       } else if (currentAction === 'download') {
-        setProgress(30);
-        setStatusText('Đang tải cấu hình từ R2...');
-        
+        setProgress(20);
+        setStatusText('Đang tải mapping_config.json từ R2...');
+
         const command = new GetObjectCommand({
           Bucket: creds.bucketName,
-          Key: 'mapping_config.json'
+          Key: 'mapping_config.json',
         });
-        
+
         const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
         const res = await fetch(signedUrl);
         if (!res.ok) throw new Error('Không tìm thấy file cấu hình trên Cloudflare R2.');
-        
+
         const data = await res.json();
-        
-        setProgress(70);
-        setStatusText('Đang phân giải link ảnh...');
-        
-        // Resolve r2:// links
-        const loadedVersions = data.versions || [];
-        for (let i = 0; i < loadedVersions.length; i++) {
-           const v = loadedVersions[i];
-           if (v.backgroundUrl && v.backgroundUrl.startsWith('r2://')) {
-              const imgKey = v.backgroundUrl.replace('r2://', '');
-              const imgCommand = new GetObjectCommand({
-                Bucket: creds.bucketName,
-                Key: imgKey
-              });
-              const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }); // 7 days
-              loadedVersions[i].backgroundUrl = imgUrl;
-           }
+
+        setProgress(50);
+        setStatusText('Đang phân giải liên kết ảnh và cấu hình các tầng...');
+
+        // Convert data into normalized storeLocationData
+        let normalizedStoreLocationData: Record<string, StoreLocationRecord> = {};
+
+        if (data.storeLocationData && typeof data.storeLocationData === 'object') {
+          normalizedStoreLocationData = data.storeLocationData;
+        } else if (Array.isArray(data.versions) || Array.isArray(data.mapUnits) || Array.isArray(data.units)) {
+          // Legacy format fallback
+          const legacyKey = `${data.store || store || 'HCM'}_${data.location || location || 'L1'}`;
+          normalizedStoreLocationData = {
+            [legacyKey]: {
+              mapUnits: data.mapUnits || data.units || [],
+              mapVersions: data.versions || [],
+              activeMapVersionId: data.activeMapVersionId || data.versions?.[0]?.id || null,
+            },
+          };
         }
 
-        // Resolve links in storeLocationData if present
-        if (data.storeLocationData) {
-          const loadedStoreLocationData = data.storeLocationData;
-          for (const pKey in loadedStoreLocationData) {
-            const p = loadedStoreLocationData[pKey];
-            if (p && p.mapVersions) {
-              for (let j = 0; j < p.mapVersions.length; j++) {
-                const pv = p.mapVersions[j];
-                if (pv.backgroundUrl && pv.backgroundUrl.startsWith('r2://')) {
-                  const imgKey = pv.backgroundUrl.replace('r2://', '');
-                  const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
+        // Resolve all R2 background images across all partitions
+        for (const pKey in normalizedStoreLocationData) {
+          const partition = normalizedStoreLocationData[pKey];
+          if (!partition) continue;
+
+          const pStore = (pKey.split('_')[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+          const pLoc = pKey.split('_')[1] || 'L1';
+
+          // Ensure mapUnits have default flags
+          partition.mapUnits = (partition.mapUnits || []).map(u => ({
+            ...u,
+            store: u.store || pStore,
+            location: u.location || pLoc,
+            visible: u.visible !== false,
+            locked: !!u.locked,
+          }));
+
+          // Process mapVersions
+          if (Array.isArray(partition.mapVersions)) {
+            for (let j = 0; j < partition.mapVersions.length; j++) {
+              const v = partition.mapVersions[j];
+              const r2Key = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
+
+              if (r2Key) {
+                try {
+                  const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key });
                   const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
-                  p.mapVersions[j].backgroundUrl = imgUrl;
+                  v.backgroundUrl = imgUrl;
+                  (v as any).r2Key = r2Key;
+                } catch (imgErr) {
+                  console.warn(`Lỗi tạo signed URL cho ảnh ${r2Key}:`, imgErr);
                 }
               }
+
+              // Ensure groups, mappings and flags are preserved
+              v.store = v.store || pStore;
+              v.location = v.location || pLoc;
+              v.groups = v.groups || [];
+              v.groupMappings = v.groupMappings || {};
+              v.isDynamicActive = v.isDynamicActive !== false;
             }
           }
-
-          setStoreLocationData(loadedStoreLocationData);
-
-          const activeKey = `${store}_${location}`;
-          const currentPartition = loadedStoreLocationData[activeKey] || (data.store && data.location && loadedStoreLocationData[`${data.store}_${data.location}`]) || Object.values(loadedStoreLocationData)[0];
-          if (currentPartition) {
-            setMapUnits(currentPartition.mapUnits || []);
-            setMapVersions(currentPartition.mapVersions || []);
-            setActiveMapVersionId(currentPartition.activeMapVersionId || currentPartition.mapVersions?.[0]?.id || null);
-          }
-        } else {
-          // Backward compatibility
-          const activeKey = `${data.store || store || 'HCM'}_${data.location || location || 'L1'}`;
-          const initialPartition = {
-            mapUnits: data.mapUnits || data.units || [],
-            mapVersions: loadedVersions,
-            activeMapVersionId: loadedVersions[0]?.id || null,
-          };
-          setStoreLocationData({ [activeKey]: initialPartition });
-          setMapUnits(initialPartition.mapUnits);
-          setMapVersions(initialPartition.mapVersions);
-          setActiveMapVersionId(initialPartition.activeMapVersionId);
         }
-        
-        setUnitInfo(data.unitInfo || []);
-        setClassInfo(data.classInfo || []);
-        setActualClassInfo(data.actualClassInfo || []);
-        setSales(data.sales || []);
-        setProfits(data.profits || []);
-        setSubFees(data.subFees || []);
-        setMdStatus(data.mdStatus || []);
-        setProjectStatus(data.projectStatus || []);
-        setProjectLink(data.projectLink || []);
-        setBasePlan(data.basePlan || []);
-        setUnits(data.units || []);
-        
+
+        setProgress(85);
+        setStatusText('Đang nạp dữ liệu vào ứng dụng...');
+
+        // Atomically load all cloud data into Zustand store
+        loadFullCloudData({
+          storeLocationData: normalizedStoreLocationData,
+          store: data.store || store,
+          location: data.location || location,
+          activeMapVersionId: data.activeMapVersionId,
+          reviewSelectedLabels: data.reviewSelectedLabels || [],
+          reviewLabelColors: data.reviewLabelColors || {},
+          unitInfo: data.unitInfo || [],
+          classInfo: data.classInfo || [],
+          actualClassInfo: data.actualClassInfo || [],
+          sales: data.sales || [],
+          profits: data.profits || [],
+          subFees: data.subFees || [],
+          mdStatus: data.mdStatus || [],
+          projectStatus: data.projectStatus || [],
+          projectLink: data.projectLink || [],
+          basePlan: data.basePlan || [],
+          units: data.units || [],
+        });
+
         setProgress(100);
-        setStatusText('Tải cấu hình thành công!');
+        setStatusText('Tải cấu hình thành công đầy đủ!');
       }
 
       setTimeout(() => setSyncing(false), 2000);

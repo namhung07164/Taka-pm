@@ -198,6 +198,30 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       setNamingCallback(null);
   };
 
+  // Ref to track current view properties for auto-saving on unmount or before switching versions
+  const viewPropsRef = React.useRef({ scale, position, bgRotation, imagePos, imageScale, activeVersionId });
+  useEffect(() => {
+    viewPropsRef.current = { scale, position, bgRotation, imagePos, imageScale, activeVersionId };
+  }, [scale, position, bgRotation, imagePos, imageScale, activeVersionId]);
+
+  // Auto-save view properties when unmounting EditTab
+  useEffect(() => {
+    return () => {
+      const cur = viewPropsRef.current;
+      if (cur.activeVersionId) {
+        setVersions(versions.map(v => v.id === cur.activeVersionId ? {
+          ...v,
+          backgroundScale: cur.scale,
+          backgroundPos: cur.position,
+          backgroundRotation: cur.bgRotation,
+          imagePos: cur.imagePos,
+          imageScale: cur.imageScale,
+        } : v));
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (activeVersion) {
       setLocalImageUrl(activeVersion.backgroundUrl);
@@ -206,7 +230,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       setBgRotation(activeVersion.backgroundRotation || 0);
       setImagePos(activeVersion.imagePos || { x: 0, y: 0 });
       setImageScale(activeVersion.imageScale || 1);
-      setIsLocked(true); // Assuming viewing an existing version defaults to locked
+      setIsLocked(true); // Viewing an existing version defaults to locked
     } else {
       setLocalImageUrl(null);
       setScale(1);
@@ -216,16 +240,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       setImageScale(1);
       setIsLocked(false);
     }
-  }, [activeVersionId, activeVersion]);
-
-  useEffect(() => {
-    return () => {
-      // Cleanup previous Object URLs to prevent memory leaks
-      if (localImageUrl && localImageUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(localImageUrl);
-      }
-    };
-  }, [localImageUrl]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVersionId, activeVersion?.backgroundUrl]);
 
   const [image] = useImage(localImageUrl || '', 'anonymous');
   const [activeTool, setActiveTool] = useState<ShapeType | 'select' | 'edit-bg'>('select');
@@ -898,7 +914,10 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         imagePos,
         imageScale,
         groups: [],
-        groupMappings: {}
+        groupMappings: {},
+        isDynamicActive: true,
+        store: activeVersion?.store,
+        location: activeVersion?.location,
     };
     
     setVersions([...versions, newVersion]);

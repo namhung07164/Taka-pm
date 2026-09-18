@@ -6,6 +6,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
+import { extractR2Key } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects } from '../lib/utils';
 import { Project } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
@@ -78,12 +79,14 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
               if (!partition.mapVersions) continue;
               
               for (const v of partition.mapVersions) {
-                  if (v.backgroundUrl && v.backgroundUrl.startsWith('r2://')) {
-                      const imgKey = v.backgroundUrl.replace('r2://', '');
+                  const imgKey = extractR2Key(v.backgroundUrl);
+                  if (imgKey) {
                       const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
                       resolvePromises.push(
-                          getSignedUrl(s3, imgCommand, { expiresIn: 3600 }).then(url => {
+                          getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
                               v.backgroundUrl = url;
+                          }).catch(err => {
+                              console.warn('Could not resolve signed URL for', imgKey, err);
                           })
                       );
                   }
@@ -94,10 +97,10 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
       } else if (data.versions && data.versions.length > 0) {
           // Legacy format fallback
          const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
-         if (activeVersion && activeVersion.backgroundUrl && activeVersion.backgroundUrl.startsWith('r2://')) {
-            const imgKey = activeVersion.backgroundUrl.replace('r2://', '');
+         const imgKey = extractR2Key(activeVersion?.backgroundUrl);
+         if (activeVersion && imgKey) {
             const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
-            activeVersion.backgroundUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 });
+            activeVersion.backgroundUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
          }
          
          setConfig({
@@ -336,7 +339,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
         profit: 0, profitByCp: 0, profitByHcmcate: 0,
         margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
         mdStatus: "", task: "", projectStatus: "", actStatus: "",
-        startDate: "", endDate: "", status: "", vendorCode: "",
+        endDate: "", status: "", vendorCode: "",
         brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
         appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: ""
       };
@@ -377,7 +380,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
             dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";
             dataMap[code].openingDate = p.opening || p.computedOpening || "";
             dataMap[code].detail = p.detail || "";
-            dataMap[code].party = p.party || p.contractor || "";
+            dataMap[code].party = p.party || (p as any).contractor || "";
          }
       });
     });
