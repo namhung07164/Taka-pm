@@ -12,6 +12,8 @@ export default function CloudSyncManager() {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
   const [actionType, setActionType] = useState<'upload' | 'download' | null>(null);
+  const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
+
 
   const { 
     store,
@@ -33,16 +35,28 @@ export default function CloudSyncManager() {
     units, setUnits
   } = useDataStore();
 
+  React.useEffect(() => {
+    const creds = getStoredR2Credentials();
+    if (!hasAutoLoaded && creds && creds.accountId && creds.accessKeyId) {
+      if (Object.keys(storeLocationData).length === 0 && mapVersions.length === 0) {
+        setHasAutoLoaded(true);
+        executeSync('download');
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAutoLoaded, storeLocationData, mapVersions.length]);
+
   const handleOpenSync = (type: 'upload' | 'download') => {
     setActionType(type);
     setIsModalOpen(true);
   };
 
-  const executeSync = async () => {
+  const executeSync = async (forceAction?: 'upload' | 'download') => {
+    const currentAction = forceAction || actionType;
     setIsModalOpen(false);
     setSyncing(true);
     setProgress(10);
-    setStatusText(actionType === 'upload' ? 'Chuẩn bị dữ liệu...' : 'Đang kết nối Cloudflare R2...');
+    setStatusText(currentAction === 'upload' ? 'Chuẩn bị dữ liệu...' : 'Đang kết nối Cloudflare R2...');
 
     try {
       const creds = getStoredR2Credentials();
@@ -56,7 +70,7 @@ export default function CloudSyncManager() {
         credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
       });
 
-      if (actionType === 'upload') {
+      if (currentAction === 'upload') {
         // Enforce Single Version on Cloud: save the currently active version and clean up old files
         const baseActive = mapVersions.find(v => v.id === activeMapVersionId) || mapVersions[0];
         const activeVersion = baseActive || {
@@ -164,7 +178,7 @@ export default function CloudSyncManager() {
         setProgress(100);
         setStatusText('Hoàn tất! Đã lưu toàn bộ bản vẽ và dọn sạch các bản cũ trên R2.');
         
-      } else if (actionType === 'download') {
+      } else if (currentAction === 'download') {
         setProgress(30);
         setStatusText('Đang tải cấu hình từ R2...');
         

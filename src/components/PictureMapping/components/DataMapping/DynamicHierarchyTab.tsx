@@ -15,7 +15,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
 import { useAppStore } from "../../../../store/useAppStore";
-import { getStatus } from "../../../../lib/utils";
+import { getStatus, enrichProjects } from "../../../../lib/utils";
 import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 
@@ -38,6 +38,7 @@ function DynamicHierarchyTab({
 }: DynamicHierarchyTabProps) {
   const summaryData = useSummaryData();
   const projects = useAppStore(state => state.projects);
+  const tasks = useAppStore(state => state.tasks);
 
   const viewVersionId = activeVersionId || versions[0]?.id || null;
   const activeVersion = versions.find((v) => v.id === viewVersionId);
@@ -51,6 +52,8 @@ function DynamicHierarchyTab({
   const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name }))), [units]);
 
   // Pre-compute aggregated data for unit evaluation
+  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks), [projects, tasks]);
+
   const aggregatedData = useMemo(() => {
     const dataMap: Record<string, any> = {};
 
@@ -121,10 +124,10 @@ function DynamicHierarchyTab({
     });
 
     // Merge real Project data
-    projects.forEach((p) => {
+    enrichedProjects.forEach((p) => {
       if (!p.code) return;
       const pCodes = String(p.code).split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
-      const status = getStatus(p.start, p.handover, p.opening, p.code);
+      const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       pCodes.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].appProjectStatus = status;
@@ -136,7 +139,7 @@ function DynamicHierarchyTab({
     });
 
     return dataMap;
-  }, [unitNamesStr, summaryData, projects]);
+  }, [unitNamesStr, summaryData, enrichedProjects]);
 
   // Evaluates rules for a given group against a unit shape
   const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {

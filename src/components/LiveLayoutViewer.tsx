@@ -6,7 +6,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
-import { getStatus } from '../lib/utils';
+import { getStatus, enrichProjects } from '../lib/utils';
 import { Project } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
@@ -310,6 +310,7 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
 
   // 1. Get real-time projects and Excel summary data
   const projects = useAppStore(state => state.projects);
+  const tasks = useAppStore(state => state.tasks);
   const summaryData = useSummaryData();
 
   // 2. Build aggregatedData
@@ -349,11 +350,11 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
       }
     });
 
-    projects.forEach((p) => {
+    enrichedProjects.forEach((p) => {
       if (!p.code) return;
       if (storeFilter !== 'all' && p.store !== storeFilter) return;
       const pCodes = String(p.code).split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
-      const status = getStatus(p.start, p.handover, p.opening, p.code);
+      const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       pCodes.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].appProjectStatus = status;
