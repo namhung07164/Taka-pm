@@ -397,12 +397,18 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                 isMatch = true;
             }
             
-            // Override with real-time dynamic rules if they exist
+            // Only override with real-time dynamic rules if it's dynamic active
+            const isDynamicActive = version.isDynamicActive !== false;
+            
             if (group.rules && group.rules.length > 0) {
-                const data = aggregatedData[u.name.toLowerCase()];
-                if (data) {
-                    isMatch = group.rules.every((rule: any) => {
-                let val = data[rule.field];
+                // Determine whether to evaluate dynamic rule. 
+                // Only evaluate if it's dynamic active OR if there are no manual mappings
+                const hasManualMapping = version.groupMappings && Object.values(version.groupMappings).some(m => Array.isArray(m) && m.length > 0);
+                if (isDynamicActive || !hasManualMapping) {
+                    const data = aggregatedData[u.name?.toLowerCase() || ''];
+                    if (data) {
+                        const passedRules = group.rules.every((rule: any) => {
+                            let val = data[rule.field];
                 if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
                 const numVal = Number(rule.value);
                 const isNum = !isNaN(numVal) && rule.value.trim() !== "";
@@ -428,9 +434,9 @@ function LiveCanvas({ config, storeFilter, locationFilter }: { config: any, stor
                   }
                   default: return false;
                 }
-                    });
-                } else {
-                    isMatch = false;
+                        });
+                        if (passedRules) isMatch = true; // Set to true if it passed dynamic rules
+                    }
                 }
             }
             if (isMatch) {
