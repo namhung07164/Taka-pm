@@ -64,7 +64,19 @@ export function Navigation({
   const parties = useAppStore(state => state.parties);
 
   const isAdmin = currentUser.role === "admin";
-  const role = currentUser.role as AppRole;
+  const role = (
+    currentUser.role === "admin"
+      ? "admin"
+      : (currentUser.role as string)?.toUpperCase() === "CP"
+      ? "CP"
+      : (currentUser.role as string)?.toLowerCase() === "manager"
+      ? "Manager"
+      : (currentUser.role as string)?.toLowerCase() === "staff"
+      ? "Staff"
+      : (currentUser.role as string)?.toLowerCase() === "external"
+      ? "External"
+      : currentUser.role
+  ) as AppRole;
   const perms = permissionMatrix[role]?.See;
   const writePerms = permissionMatrix[role]?.Write;
   const { t } = useLanguage();

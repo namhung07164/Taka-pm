@@ -8,7 +8,7 @@ import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects, formatDisplayDateTime } from '../lib/utils';
-import { Project } from '../types';
+import { Project, AppRole } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
@@ -19,7 +19,24 @@ interface LiveLayoutViewerProps {
 }
 
 export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutViewerProps) {
-  const { r2Config, setR2Config } = useAppStore();
+  const { r2Config, setR2Config, currentUser, permissionMatrix, globalYearFilter } = useAppStore();
+  const isAdmin = currentUser ? currentUser.role === 'admin' : false;
+  const role = (
+    currentUser?.role === 'admin'
+      ? 'admin'
+      : (currentUser?.role as string)?.toUpperCase() === 'CP'
+      ? 'CP'
+      : (currentUser?.role as string)?.toLowerCase() === 'manager'
+      ? 'Manager'
+      : (currentUser?.role as string)?.toLowerCase() === 'staff'
+      ? 'Staff'
+      : (currentUser?.role as string)?.toLowerCase() === 'external'
+      ? 'External'
+      : currentUser?.role || 'viewer'
+  ) as AppRole;
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout || !!permissionMatrix[role]?.Write?.pictureMapping) && !isArchiveYear;
+
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +303,24 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
 }
 
 function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOpenR2Config }: { config: any, storeFilter: string, locationFilter: string, onRefreshConfig?: () => Promise<void> | void, onOpenR2Config: () => void }) {
+  const { currentUser, permissionMatrix, globalYearFilter } = useAppStore();
+  const isAdmin = currentUser ? currentUser.role === 'admin' : false;
+  const role = (
+    currentUser?.role === 'admin'
+      ? 'admin'
+      : (currentUser?.role as string)?.toUpperCase() === 'CP'
+      ? 'CP'
+      : (currentUser?.role as string)?.toLowerCase() === 'manager'
+      ? 'Manager'
+      : (currentUser?.role as string)?.toLowerCase() === 'staff'
+      ? 'Staff'
+      : (currentUser?.role as string)?.toLowerCase() === 'external'
+      ? 'External'
+      : currentUser?.role || 'viewer'
+  ) as AppRole;
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout || !!permissionMatrix[role]?.Write?.pictureMapping) && !isArchiveYear;
+
   const { r2Version, r2Units } = useMemo(() => {
      if (config.storeLocationData) {
          const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
@@ -317,6 +352,10 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   const [exportStatus, setExportStatus] = useState('');
 
   const handleTriggerExport = async () => {
+    if (!canWrite) {
+      alert('⚠️ Bạn không có quyền ghi (Write) để thực hiện Trigger Export.');
+      return;
+    }
     if (isExporting) return;
     try {
       setIsExporting(true);
@@ -852,32 +891,36 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
 
             {/* Action Buttons */}
             <div className="pt-2 flex flex-col gap-2 border-t border-slate-100 dark:border-slate-800">
-              <button 
-                onClick={handleTriggerExport}
-                disabled={isExporting}
-                title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
-              >
-                <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
-                {isExporting ? (exportStatus || 'Đang xử lý...') : 'Trigger Export (Apply Rules & Cloud)'}
-              </button>
+              {canWrite && (
+                <button 
+                  onClick={handleTriggerExport}
+                  disabled={isExporting}
+                  title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
+                  {isExporting ? (exportStatus || 'Đang xử lý...') : 'Trigger Export (Apply Rules & Cloud)'}
+                </button>
+              )}
               
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`grid ${canWrite ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
                 <button 
                   onClick={handleExport}
                   className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
                 >
                   <Download className="w-4 h-4" /> Xuất ảnh HD
                 </button>
-                <button 
-                  onClick={() => {
-                    setShowMenu(false);
-                    onOpenR2Config();
-                  }}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700"
-                >
-                  <Settings className="w-4 h-4" /> Cấu hình R2
-                </button>
+                {canWrite && (
+                  <button 
+                    onClick={() => {
+                      setShowMenu(false);
+                      onOpenR2Config();
+                    }}
+                    className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700"
+                  >
+                    <Settings className="w-4 h-4" /> Cấu hình R2
+                  </button>
+                )}
               </div>
             </div>
           </div>

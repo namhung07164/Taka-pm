@@ -780,8 +780,21 @@ export default function App() {
 
   const visibleTabs = useMemo(() => {
     const isAdmin = currentUser.role === "admin";
-    const perms = permissionMatrix[currentUser.role as AppRole]?.See;
-    const writePerms = permissionMatrix[currentUser.role as AppRole]?.Write;
+    const uRole = (
+      currentUser.role === "admin"
+        ? "admin"
+        : (currentUser.role as string)?.toUpperCase() === "CP"
+        ? "CP"
+        : (currentUser.role as string)?.toLowerCase() === "manager"
+        ? "Manager"
+        : (currentUser.role as string)?.toLowerCase() === "staff"
+        ? "Staff"
+        : (currentUser.role as string)?.toLowerCase() === "external"
+        ? "External"
+        : currentUser.role
+    ) as AppRole;
+    const perms = permissionMatrix[uRole]?.See;
+    const writePerms = permissionMatrix[uRole]?.Write;
     if (!isAdmin && !currentUser.canSee) return [];
 
     const canSeeModule = (module: PermissionModule) => {
@@ -809,6 +822,8 @@ export default function App() {
       { id: "layout", hidden: !canSeeModule("layout") },
       { id: "budget", hidden: !canSeeModule("budget") },
       { id: "cost", hidden: !canSeeModule("costDetail") },
+      { id: "picture_mapping", hidden: !canSeeModule("pictureMapping") },
+      { id: "csv_export", hidden: !canSeeModule("importCsv") },
       { id: "accControl", hidden: false },
       {
         id: "notification",
@@ -1264,6 +1279,19 @@ export default function App() {
   };
 
   const canSee = currentUser.role === "admin" || currentUser.canSee;
+  const userRole = (
+    currentUser?.role === "admin"
+      ? "admin"
+      : (currentUser?.role as string)?.toUpperCase() === "CP"
+      ? "CP"
+      : (currentUser?.role as string)?.toLowerCase() === "manager"
+      ? "Manager"
+      : (currentUser?.role as string)?.toLowerCase() === "staff"
+      ? "Staff"
+      : (currentUser?.role as string)?.toLowerCase() === "external"
+      ? "External"
+      : currentUser?.role
+  ) as AppRole;
 
   const visibleLocations = locations.filter(
     (loc) => locationVisibility[loc] !== false,
@@ -2410,7 +2438,7 @@ const handlePrintToPDF = async () => {
                 >
             {activeTab === "layout" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.layout) && (
+                permissionMatrix[userRole]?.See?.layout) && (
                 <LayoutTab
                   
                   
@@ -2432,8 +2460,8 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "summary" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.summary ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.report) && (
+                permissionMatrix[userRole]?.See?.summary ||
+                permissionMatrix[userRole]?.See?.report) && (
                 <SummaryTab
                   
                   
@@ -2445,7 +2473,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "general" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See
+                permissionMatrix[userRole]?.See
                   ?.general) && (
                 <GeneralTab
                   
@@ -2484,7 +2512,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "detail" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.detail) && (
+                permissionMatrix[userRole]?.See?.detail) && (
                 <Profiler id="DetailTab" onRender={onRenderCallback}>
                   <DetailTab
                     
@@ -2553,8 +2581,8 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "calendar" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.calendar ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.report) && (
+                permissionMatrix[userRole]?.See?.calendar ||
+                permissionMatrix[userRole]?.See?.report) && (
                 <CalendarTab
                   
                   
@@ -2577,7 +2605,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "gantt" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.report) && (
+                permissionMatrix[userRole]?.See?.report) && (
                 <Profiler id="GanttTab" onRender={onRenderCallback}>
                   <div className="flex flex-col flex-grow min-h-0">
                     <GanttTab
@@ -2597,7 +2625,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "budget" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See?.budget) && (
+                permissionMatrix[userRole]?.See?.budget) && (
                 <BudgetTab
                   
                   
@@ -2612,7 +2640,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "taskDelegation" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See
+                permissionMatrix[userRole]?.See
                   ?.taskDelegation) && (
                 <TaskDelegationTab
                   
@@ -2634,7 +2662,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "taskDelegationCalendar" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See
+                permissionMatrix[userRole]?.See
                   ?.taskDelegation) && (
                 <DelegationCalendarTab
                   groups={visibleDelegationGroups}
@@ -2647,7 +2675,7 @@ const handlePrintToPDF = async () => {
               )}
             {activeTab === "cost" &&
               (currentUser.role === "admin" ||
-                permissionMatrix[currentUser.role as AppRole]?.See
+                permissionMatrix[userRole]?.See
                   ?.costDetail) && (
                 <CostTab
                   initialSearchTerm={costTabSearchTerm}
@@ -2720,13 +2748,13 @@ const handlePrintToPDF = async () => {
             {activeTab === "manual" && (
               <ManualTab />
             )}
-            {activeTab === "audit" && (currentUser.role === "admin" || (permissionMatrix[currentUser.role as AppRole]?.See as any)?.audit) && (
+            {activeTab === "audit" && (currentUser.role === "admin" || (permissionMatrix[userRole]?.See as any)?.audit) && (
               <AuditLogTab />
             )}
-            {activeTab === "csv_export" && currentUser.role === "admin" && (
+            {activeTab === "csv_export" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.importCsv || !!permissionMatrix[userRole]?.Write?.importCsv) && (
               <CsvExportTab />
             )}
-            {activeTab === "picture_mapping" && currentUser.role === "admin" && (
+            {activeTab === "picture_mapping" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.pictureMapping || !!permissionMatrix[userRole]?.Write?.pictureMapping) && (
               <PictureMappingTab />
             )}
             </motion.div>
