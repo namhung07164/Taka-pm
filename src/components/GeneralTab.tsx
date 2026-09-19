@@ -1235,16 +1235,22 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                 </div>
                 
                 {(taskLines.length > 0 || p.detail) && (
-                  <div className="mt-2 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-lg p-3 border border-slate-200 dark:border-[#444446] text-sm shadow-sm flex flex-col gap-1">
-                    <div className="text-xs font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider mb-1">{t('Detail')}</div>
-                    {taskLines.length > 0 ? (
-                      taskLines.map((line, idx) => (
-                        <div key={idx} className={`font-medium ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600'}`}>
-                          {line}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-slate-600 dark:text-[#a3a3a3]">{p.detail}</div>
+                  <div className="mt-2 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-lg p-3 border border-slate-200 dark:border-[#444446] text-sm shadow-sm flex flex-col gap-2">
+                    {taskLines.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">{t('Detail')}</div>
+                        {taskLines.map((line, idx) => (
+                          <div key={idx} className={`font-medium ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600'}`}>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {p.detail && (
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">{t('Description')}</div>
+                        <div className="text-slate-600 dark:text-[#a3a3a3] whitespace-pre-wrap">{p.detail}</div>
+                      </div>
                     )}
                   </div>
                 )}

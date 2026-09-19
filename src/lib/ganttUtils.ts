@@ -891,33 +891,54 @@ export function normalizeAndHealTaskPredecessors(
     return { changed: false, newPredecessor: task?.predecessor || '' };
   }
 
-  const taskNoMap = buildTaskNoMap(projects, allTasks);
+  // Ensure allTasks has updated taskCodePhu derived from computeTaskCode if needed
+  const updatedAllTasks = (allTasks || []).map(t => {
+    const c = computeTaskCode(projects, allTasks, t);
+    return c && c !== t.taskCodePhu ? { ...t, taskCodePhu: c } : t;
+  });
+
+  const taskNoMap = buildTaskNoMap(projects, updatedAllTasks);
   const knownCodes = new Set<string>();
   for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
-  allTasks.forEach(t => {
+  updatedAllTasks.forEach(t => {
     if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
+    if (t.projectCode && projects) {
+      const c = computeTaskCode(projects, updatedAllTasks, t);
+      if (c) knownCodes.add(c.toLowerCase());
+    }
   });
 
   const tokens = splitPredecessors(task.predecessor, knownCodes);
   let changed = false;
 
+  const sortedTaskNoMapEntries = Array.from(taskNoMap.entries()).sort((a, b) => b[0].length - a[0].length);
+
   const resolvedTokens = tokens.map(token => {
     const rawToken = token.trim();
     if (!rawToken) return token;
 
-    // Check if token already matches an exact known task code
     const lowerToken = rawToken.toLowerCase();
-    for (const code of taskNoMap.keys()) {
+
+    // 1. Check if token matches a known task code in taskNoMap
+    for (const [code, matchingTasks] of sortedTaskNoMapEntries) {
       if (lowerToken.startsWith(code)) {
         const remainder = lowerToken.substring(code.length);
         if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainder)) {
+          const targetTask = matchingTasks && matchingTasks[0];
+          if (targetTask) {
+            const currentTargetCode = computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu;
+            if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
+              changed = true;
+              return `${currentTargetCode.trim()}${remainder}`;
+            }
+          }
           // Already valid and exact match
           return token;
         }
       }
     }
 
-    // Attempt to extract <prefix>-<subIndex><lag> or <number><lag>
+    // 2. Attempt to extract <prefix>-<subIndex><lag> or <number><lag>
     let codePrefix = "";
     let subIndexNum: number | null = null;
     let lagSuffix = "";
@@ -947,7 +968,7 @@ export function normalizeAndHealTaskPredecessors(
 
       if (isMatchingCurrentProject) {
         const sameProjectTasks = sortGroupTasks(
-          allTasks.filter(t => 
+          updatedAllTasks.filter(t => 
             t &&
             String(t.projectCode || '').trim().toLowerCase() === currentPCodeLower &&
             (task.projectYear ? String(t.projectYear || '') === String(task.projectYear) : true) &&
@@ -957,7 +978,7 @@ export function normalizeAndHealTaskPredecessors(
 
         if (subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length) {
           const targetTask = sameProjectTasks[subIndexNum - 1];
-          const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, allTasks, targetTask) || `${currentPCode}-${subIndexNum}`).trim();
+          const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}-${subIndexNum}`).trim();
           if (newCode) {
             changed = true;
             return `${newCode}${lagSuffix.trim()}`;
@@ -977,7 +998,7 @@ export function normalizeAndHealTaskPredecessors(
 
         if (matchedProj) {
           const targetTasks = sortGroupTasks(
-            allTasks.filter(t => 
+            updatedAllTasks.filter(t => 
               t &&
               String(t.projectCode || '').trim().toLowerCase() === String(matchedProj.code).trim().toLowerCase() &&
               (matchedProj.year ? String(t.projectYear || '') === String(matchedProj.year) : true) &&
@@ -986,7 +1007,7 @@ export function normalizeAndHealTaskPredecessors(
           );
           if (subIndexNum >= 1 && subIndexNum <= targetTasks.length) {
             const targetTask = targetTasks[subIndexNum - 1];
-            const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, allTasks, targetTask) || `${matchedProj.code}-${subIndexNum}`).trim();
+            const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}-${subIndexNum}`).trim();
             if (newCode) {
               changed = true;
               return `${newCode}${lagSuffix.trim()}`;
@@ -999,9 +1020,10 @@ export function normalizeAndHealTaskPredecessors(
     return token;
   });
 
+  const newPredecessor = resolvedTokens.join(', ');
   return {
-    changed,
-    newPredecessor: resolvedTokens.join(', ')
+    changed: changed || newPredecessor !== task.predecessor,
+    newPredecessor
   };
 }
 
@@ -1019,23 +1041,28 @@ export function healAllTasksPredecessors(
   const updatesToSave: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }[] = [];
   let changedCount = 0;
 
-  const updatedTasks = allTasks.map(t => {
+  // 1. First build version of allTasks where every task has updated taskCodePhu
+  const allTasksWithUpdatedCodes = (allTasks || []).map(t => {
+    const computedCode = computeTaskCode(projects, allTasks, t);
+    return computedCode ? { ...t, taskCodePhu: computedCode } : t;
+  });
+
+  const updatedTasks = (allTasks || []).map(t => {
     let taskChanged = false;
     let newPred = t.predecessor || '';
-    let newPhu = t.taskCodePhu || '';
+    const originalTask = t;
 
-    // 1. Check if taskCodePhu needs healing according to computeTaskCode
     const computedCode = computeTaskCode(projects, allTasks, t);
-    if (computedCode && computedCode !== t.taskCodePhu) {
-      newPhu = computedCode;
+    const newPhu = computedCode || t.taskCodePhu || '';
+
+    if (newPhu !== (t.taskCodePhu || '')) {
       taskChanged = true;
     }
 
-    // 2. Check if predecessors need healing
     if (t.predecessor) {
       const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
         { ...t, taskCodePhu: newPhu }, 
-        allTasks.map(item => item.id === t.id ? { ...item, taskCodePhu: newPhu } : item), 
+        allTasksWithUpdatedCodes, 
         projects
       );
       if (changed && newPredecessor !== t.predecessor) {
@@ -1047,12 +1074,15 @@ export function healAllTasksPredecessors(
     if (taskChanged) {
       changedCount++;
       const updatedAt = new Date().toISOString();
+      const origPhu = originalTask.taskCodePhu || '';
+      const origPred = originalTask.predecessor || '';
+
       const updatePayload: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string } = {
         id: t.id,
         updatedAt
       };
-      if (newPred !== (t.predecessor || '')) updatePayload.predecessor = newPred;
-      if (newPhu !== (t.taskCodePhu || '')) updatePayload.taskCodePhu = newPhu;
+      if (newPred !== origPred) updatePayload.predecessor = newPred;
+      if (newPhu !== origPhu) updatePayload.taskCodePhu = newPhu;
 
       updatesToSave.push(updatePayload);
       return {

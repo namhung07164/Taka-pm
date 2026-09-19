@@ -797,16 +797,47 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
       const pCodes = String(p.code || '').split(/[+,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       
+      // Match tasks directly from Zustand tasks store for real-time subtasks without Firestore reads
+      const matchedTasks = tasks.filter(t => {
+        if (!t || !t.name) return false;
+        const tCode = String(t.projectCode || '').trim().toLowerCase();
+        if (pCodes.includes(tCode)) return true;
+        if (p.code && tCode === String(p.code).trim().toLowerCase()) return true;
+        return false;
+      });
+
       let activeTaskNames: string[] = [];
-      if (p.taskSummaries) {
+      if (matchedTasks.length > 0) {
+        const activeTasks = matchedTasks.filter(t => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        if (activeTasks.length > 0) {
+          activeTaskNames = activeTasks.map(t => t.name);
+        } else {
+          const inProgress = matchedTasks.filter(t => {
+            const st = String(t.actualStatus || t.status || '').toLowerCase();
+            return st === 'in progress' || st === 'on process';
+          });
+          if (inProgress.length > 0) {
+            activeTaskNames = inProgress.map(t => t.name);
+          } else {
+            activeTaskNames = matchedTasks.slice(0, 3).map(t => t.name);
+          }
+        }
+      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
         const activeTasks = p.taskSummaries.filter(t => {
           if (!t.start || !t.finish) return false;
           const start = new Date(t.start);
           const finish = new Date(t.finish);
           return now >= start && now <= finish;
         });
-        activeTaskNames = activeTasks.map(t => t.name);
+        const selected = activeTasks.length > 0 ? activeTasks : p.taskSummaries.slice(0, 3);
+        activeTaskNames = selected.map(t => t.name);
       }
+
       let taskLines: string[] = [];
       activeTaskNames.forEach(name => {
         taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
@@ -831,7 +862,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
     });
 
     return dataMap;
-  }, [units, summaryData, projects, storeFilter, locationFilter]);
+  }, [units, summaryData, projects, tasks, storeFilter, locationFilter]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
@@ -1637,18 +1668,29 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
               </div>
             )}
 
-            {((hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0) || hoverInfo.data?.detail) && (
+            {/* Subtasks from General Tab */}
+            {hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0 && (
               <div className="bg-slate-50 dark:bg-slate-800/80 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-700 text-xs shadow-sm flex flex-col gap-1">
-                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">DETAIL</div>
-                {hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0 ? (
-                  hoverInfo.data.taskLines.map((line: string, idx: number) => (
-                    <div key={idx} className={`font-semibold ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
-                      {line}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-slate-700 dark:text-slate-300 font-medium">{hoverInfo.data.detail}</div>
-                )}
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">
+                  TASKS / DETAILS
+                </div>
+                {hoverInfo.data.taskLines.map((line: string, idx: number) => (
+                  <div key={idx} className={`font-semibold ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
+                    {line}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Project Modular Description */}
+            {hoverInfo.data?.detail && (
+              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-700 text-xs shadow-sm flex flex-col gap-1">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">
+                  DESCRIPTION
+                </div>
+                <div className="text-slate-700 dark:text-slate-300 font-medium whitespace-pre-wrap">
+                  {hoverInfo.data.detail}
+                </div>
               </div>
             )}
           </div>
