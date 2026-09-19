@@ -246,7 +246,7 @@ export function DetailTab({
     onClearFocus?.();
   }, [initialFocusTaskId, initialFilterCode, tasks, projects, onClearFocus, setDetailTabFilterCode]);
 
-  // Auto-heal legacy, out-of-sync or mismatched predecessors across tasks in background
+  // Auto-heal legacy, out-of-sync or mismatched predecessors & taskCodePhu across tasks in background
   const hasAutoHealedRef = useRef(false);
   useEffect(() => {
     if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
@@ -260,10 +260,10 @@ export function DetailTab({
       const batch = writeBatch(db);
       healed.updatesToSave.forEach(u => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
-        batch.update(tRef, {
-          predecessor: u.predecessor,
-          updatedAt: u.updatedAt
-        });
+        const updatePayload: any = { updatedAt: u.updatedAt };
+        if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
+        if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
+        batch.update(tRef, updatePayload);
       });
       batch.commit().catch(e => console.error("Auto-heal predecessors background commit failed", e));
     }
@@ -3143,7 +3143,7 @@ export function DetailTab({
                       {visibleColumns.includes('year') && <td className="px-6 py-3 text-slate-400 dark:text-[#838383] font-medium" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{p.year || '-'}</td>}
                       {visibleColumns.includes('store') && <td className="px-6 py-3 text-slate-400 dark:text-[#838383] font-medium" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{p.store || '-'}</td>}
                       {visibleColumns.includes('location') && <td className="px-6 py-3 text-slate-400 dark:text-[#838383] font-medium" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{p.location || '-'}</td>}
-                      {visibleColumns.includes('code') && <td className="px-6 py-3 font-mono text-blue-700 dark:text-[#8ab4f8] font-bold text-xs" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{t.taskCodePhu || `${p.code}-${i + 1}`}</td>}
+                      {visibleColumns.includes('code') && <td className="px-6 py-3 font-mono text-blue-700 dark:text-[#8ab4f8] font-bold text-xs" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`}</td>}
                       {visibleColumns.includes('projectName') && (
                         <td className="px-6 py-3" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>
                           <div className="flex flex-col gap-1.5 items-start">
@@ -3587,7 +3587,7 @@ export function DetailTab({
                         </div>
                         <div className="flex-grow flex flex-col gap-1">
                           <div className="font-bold text-slate-800 dark:text-[#e3e3e3]">
-                            <span className="text-blue-600 dark:text-[#8ab4f8] mr-1">{p.code}-{i + 1}</span>
+                            <span className="text-blue-600 dark:text-[#8ab4f8] mr-1">{computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`}</span>
                             {t.name}
                           </div>
                           <div className="flex items-center justify-between mt-1">
