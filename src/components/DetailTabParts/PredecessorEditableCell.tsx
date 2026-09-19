@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PredecessorMultiInput } from '../PredecessorMultiInput';
 import { Task, Project } from '../../types';
+import { normalizeAndHealTaskPredecessors } from '../../lib/ganttUtils';
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
   value,
@@ -18,12 +19,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   projects: Project[]
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
+  const healedInitial = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
+  const [val, setVal] = useState(healedInitial || (value !== undefined && value !== null ? value : ''));
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setVal(value !== undefined && value !== null ? value : '');
-  }, [value]);
+    const healed = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
+    setVal(healed || (value !== undefined && value !== null ? value : ''));
+  }, [value, task, tasks, projects]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -38,8 +41,10 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isEditing, val, value, onSave]);
 
+  const displayVal = task ? (normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor || val) : val;
+
   if (!canWrite) {
-    return <span>{value !== undefined && value !== null && value !== '' ? value : '-'}</span>;
+    return <span>{displayVal !== undefined && displayVal !== null && displayVal !== '' ? displayVal : '-'}</span>;
   }
 
   if (isEditing) {
@@ -50,7 +55,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
           if (val !== value) onSave(val);
         } else if (e.key === 'Escape') {
           setIsEditing(false);
-          setVal(value !== undefined && value !== null ? value : '');
+          setVal(displayVal !== undefined && displayVal !== null ? displayVal : '');
         }
       }}>
         <PredecessorMultiInput
@@ -71,8 +76,8 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
       className="cursor-pointer min-h-[24px] w-full flex items-center hover:bg-slate-50 dark:hover:bg-[#202023] rounded transition-colors group"
       onClick={() => setIsEditing(true)}
     >
-      <span className={val ? '' : 'text-slate-300 dark:text-slate-600'}>
-        {val || '...'}
+      <span className={displayVal ? '' : 'text-slate-300 dark:text-slate-600'}>
+        {displayVal || '...'}
       </span>
     </div>
   );

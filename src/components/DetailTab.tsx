@@ -18,7 +18,7 @@ import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
-import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates } from '../lib/ganttUtils';
+import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors } from '../lib/ganttUtils';
 import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/projectDatesService';
 import { QRCodeButton } from './QRCodeButton';
 import { safeGetItemSession, safeSetItemSession } from '../lib/storage';
@@ -246,6 +246,29 @@ export function DetailTab({
     onClearFocus?.();
   }, [initialFocusTaskId, initialFilterCode, tasks, projects, onClearFocus, setDetailTabFilterCode]);
 
+  // Auto-heal legacy, out-of-sync or mismatched predecessors across tasks in background
+  const hasAutoHealedRef = useRef(false);
+  useEffect(() => {
+    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
+    if (hasAutoHealedRef.current) return;
+
+    const healed = healAllTasksPredecessors(tasks, projects);
+    if (healed.changedCount > 0) {
+      hasAutoHealedRef.current = true;
+      useAppStore.getState().setTasks(healed.updatedTasks);
+      
+      const batch = writeBatch(db);
+      healed.updatesToSave.forEach(u => {
+        const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
+        batch.update(tRef, {
+          predecessor: u.predecessor,
+          updatedAt: u.updatedAt
+        });
+      });
+      batch.commit().catch(e => console.error("Auto-heal predecessors background commit failed", e));
+    }
+  }, [tasks, projects]);
+
   // Escape key triggers Clear Focus when not in modals
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -408,11 +431,23 @@ export function DetailTab({
       });
 
       const oldCodeToNewCode = new Map<string, string>();
+      const pCodeParts = String(p.code || '').toLowerCase().split(/[,/]+/).map(x => x.trim()).filter(Boolean);
+
       groupTasks.forEach((t, i) => {
-        const oldCode = (t.taskCodePhu || `${p.code}-${i + 1}`).toLowerCase();
+        const oldIndex = i;
         const newIndex = sorted.findIndex(st => st.id === t.id);
         const newCode = `${p.code}-${newIndex + 1}`;
-        oldCodeToNewCode.set(oldCode, newCode);
+        
+        if (t.taskCodePhu) {
+          oldCodeToNewCode.set(t.taskCodePhu.trim().toLowerCase(), newCode);
+        }
+        oldCodeToNewCode.set(`${p.code}-${oldIndex + 1}`.toLowerCase(), newCode);
+
+        // Map any sub-parts of project code (e.g. "l1-115-13" -> "L1-115, L1-113-13")
+        pCodeParts.forEach(part => {
+          oldCodeToNewCode.set(`${part}-${oldIndex + 1}`.toLowerCase(), newCode);
+          oldCodeToNewCode.set(`${part}-${newIndex + 1}`.toLowerCase(), newCode);
+        });
       });
 
       const batch = writeBatch(db);
@@ -429,11 +464,30 @@ export function DetailTab({
         }
       });
 
-      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects);
+      let allUpdatedTasks = tasks.map(t => {
+        const up = updatesPerTask.get(t.id);
+        return up ? { ...t, ...up } : t;
+      });
+
+      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
       predUpdates.forEach(pu => {
         const existingUpdates = updatesPerTask.get(pu.id) || {};
         updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        allUpdatedTasks = allUpdatedTasks.map(t => t.id === pu.id ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t);
       });
+
+      // Heal all remaining legacy or out-of-sync predecessors
+      const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
+      if (healed.changedCount > 0) {
+        allUpdatedTasks = healed.updatedTasks;
+        healed.updatesToSave.forEach(u => {
+          const existingUpdates = updatesPerTask.get(u.id) || {};
+          updatesPerTask.set(u.id, { ...existingUpdates, predecessor: u.predecessor, updatedAt: u.updatedAt });
+        });
+      }
+
+      // Optimistic UI update in Zustand immediately (0ms)
+      useAppStore.getState().setTasks(allUpdatedTasks);
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
@@ -447,6 +501,12 @@ export function DetailTab({
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
         return;
       }
+
+      useAppStore.getState().setToast({
+        title: "Sắp xếp thành công",
+        message: "Đã đánh lại số thứ tự và tự động điền lại Predecessor theo Task code mới.",
+        type: "success"
+      });
     } catch (error) {
       console.error(error);
     }
@@ -462,11 +522,22 @@ export function DetailTab({
       sorted.splice(targetIndex, 0, movedTask);
 
       const oldCodeToNewCode = new Map<string, string>();
+      const pCodeParts = String(p.code || '').toLowerCase().split(/[,/]+/).map(x => x.trim()).filter(Boolean);
+
       groupTasks.forEach((t, i) => {
-        const oldCode = (t.taskCodePhu || `${p.code}-${i + 1}`).toLowerCase();
+        const oldIndex = i;
         const newIndex = sorted.findIndex(st => st.id === t.id);
         const newCode = `${p.code}-${newIndex + 1}`;
-        oldCodeToNewCode.set(oldCode, newCode);
+        
+        if (t.taskCodePhu) {
+          oldCodeToNewCode.set(t.taskCodePhu.trim().toLowerCase(), newCode);
+        }
+        oldCodeToNewCode.set(`${p.code}-${oldIndex + 1}`.toLowerCase(), newCode);
+
+        pCodeParts.forEach(part => {
+          oldCodeToNewCode.set(`${part}-${oldIndex + 1}`.toLowerCase(), newCode);
+          oldCodeToNewCode.set(`${part}-${newIndex + 1}`.toLowerCase(), newCode);
+        });
       });
 
       const batch = writeBatch(db);
@@ -483,11 +554,30 @@ export function DetailTab({
         }
       });
 
-      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects);
+      let allUpdatedTasks = tasks.map(t => {
+        const up = updatesPerTask.get(t.id);
+        return up ? { ...t, ...up } : t;
+      });
+
+      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
       predUpdates.forEach(pu => {
         const existingUpdates = updatesPerTask.get(pu.id) || {};
         updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        allUpdatedTasks = allUpdatedTasks.map(t => t.id === pu.id ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t);
       });
+
+      // Heal any remaining legacy or out-of-sync predecessors
+      const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
+      if (healed.changedCount > 0) {
+        allUpdatedTasks = healed.updatedTasks;
+        healed.updatesToSave.forEach(u => {
+          const existingUpdates = updatesPerTask.get(u.id) || {};
+          updatesPerTask.set(u.id, { ...existingUpdates, predecessor: u.predecessor, updatedAt: u.updatedAt });
+        });
+      }
+
+      // Optimistic UI update in Zustand immediately (0ms)
+      useAppStore.getState().setTasks(allUpdatedTasks);
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
@@ -3505,7 +3595,7 @@ export function DetailTab({
                               <span className="text-xs text-slate-600 dark:text-[#a3a3a3] font-medium">{t.party || ''}</span>
                               {t.predecessor && (
                                 <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-800">
-                                  Pred: {t.predecessor}
+                                  Pred: {normalizeAndHealTaskPredecessors(t, tasks, projects).newPredecessor || t.predecessor}
                                 </span>
                               )}
                             </div>

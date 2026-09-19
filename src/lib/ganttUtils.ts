@@ -407,6 +407,27 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
       }
     }
 
+    // Smart fallback 3: legacy project code prefix or partial project code (e.g. "l1-115-13" when project is "L1-115, L1-113")
+    if (!longestMatch && contextTask && contextTask.projectCode) {
+      const matchPrefixAndIndex = lowerMatches.match(/^(.+?)[-_\s]+(\d+)(.*)$/);
+      if (matchPrefixAndIndex) {
+        const candidatePrefix = matchPrefixAndIndex[1].trim();
+        const subIndex = matchPrefixAndIndex[2];
+        const currentPCode = String(contextTask.projectCode).trim().toLowerCase();
+        
+        // Split current project code by comma/slash in case of combined project codes like "l1-115, l1-113"
+        const pCodeParts = currentPCode.split(/[,/]+/).map(p => p.trim()).filter(Boolean);
+        const matchesPart = pCodeParts.some(part => part === candidatePrefix || part.startsWith(candidatePrefix) || candidatePrefix.startsWith(part));
+        
+        if (matchesPart) {
+          const candidateCode = `${currentPCode}-${subIndex}`;
+          if (taskNoMap.has(candidateCode)) {
+            longestMatch = candidateCode;
+          }
+        }
+      }
+    }
+
     if (longestMatch) {
       // Find remainder from either pMatches or matched code
       let remainder = "";
@@ -818,3 +839,173 @@ export function reorderAndCalculateTasks(
     predecessorUpdates,
   };
 }
+
+/**
+ * Normalizes and heals a task's predecessor string by resolving legacy, shortened,
+ * or out-of-sync task codes (e.g. "L1-115-13" when the project code is "L1-115, L1-113"
+ * and task #13 has the modern code "L1-115, L1-113-13").
+ */
+export function normalizeAndHealTaskPredecessors(
+  task: Task,
+  allTasks: Task[],
+  projects: Project[]
+): { changed: boolean; newPredecessor: string } {
+  if (!task || !task.predecessor || typeof task.predecessor !== 'string' || !task.predecessor.trim()) {
+    return { changed: false, newPredecessor: task?.predecessor || '' };
+  }
+
+  const taskNoMap = buildTaskNoMap(projects, allTasks);
+  const knownCodes = new Set<string>();
+  for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
+  allTasks.forEach(t => {
+    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
+  });
+
+  const tokens = splitPredecessors(task.predecessor, knownCodes);
+  let changed = false;
+
+  const resolvedTokens = tokens.map(token => {
+    const rawToken = token.trim();
+    if (!rawToken) return token;
+
+    // Check if token already matches an exact known task code
+    const lowerToken = rawToken.toLowerCase();
+    for (const code of taskNoMap.keys()) {
+      if (lowerToken.startsWith(code)) {
+        const remainder = lowerToken.substring(code.length);
+        if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainder)) {
+          // Already valid and exact match
+          return token;
+        }
+      }
+    }
+
+    // Attempt to extract <prefix>-<subIndex><lag> or <number><lag>
+    let codePrefix = "";
+    let subIndexNum: number | null = null;
+    let lagSuffix = "";
+
+    const matchPrefixAndIndex = rawToken.match(/^(.+?)[-_\s]+(\d+)(.*)$/);
+    if (matchPrefixAndIndex) {
+      codePrefix = matchPrefixAndIndex[1].trim();
+      subIndexNum = parseInt(matchPrefixAndIndex[2], 10);
+      lagSuffix = matchPrefixAndIndex[3] || "";
+    } else {
+      const matchNumberOnly = rawToken.match(/^[-#\s]*(\d+)(.*)$/);
+      if (matchNumberOnly) {
+        subIndexNum = parseInt(matchNumberOnly[1], 10);
+        lagSuffix = matchNumberOnly[2] || "";
+      }
+    }
+
+    if (subIndexNum !== null && !isNaN(subIndexNum)) {
+      // 1. Try finding within current task's project
+      const currentPCode = String(task.projectCode || '').trim();
+      const currentPCodeLower = currentPCode.toLowerCase();
+      const pCodeParts = currentPCodeLower.split(/[,/]+/).map(p => p.trim()).filter(Boolean);
+
+      const isMatchingCurrentProject = !codePrefix || 
+        codePrefix.toLowerCase() === currentPCodeLower ||
+        pCodeParts.some(part => part === codePrefix.toLowerCase() || part.startsWith(codePrefix.toLowerCase()) || codePrefix.toLowerCase().startsWith(part));
+
+      if (isMatchingCurrentProject) {
+        const sameProjectTasks = sortGroupTasks(
+          allTasks.filter(t => 
+            t &&
+            String(t.projectCode || '').trim().toLowerCase() === currentPCodeLower &&
+            (task.projectYear ? String(t.projectYear || '') === String(task.projectYear) : true) &&
+            (task.projectStore ? String(t.projectStore || '') === String(task.projectStore) : true)
+          )
+        );
+
+        if (subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length) {
+          const targetTask = sameProjectTasks[subIndexNum - 1];
+          const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, allTasks, targetTask) || `${currentPCode}-${subIndexNum}`).trim();
+          if (newCode) {
+            changed = true;
+            return `${newCode}${lagSuffix.trim()}`;
+          }
+        }
+      }
+
+      // 2. Try finding across other projects if codePrefix was specified
+      if (codePrefix) {
+        const lowerPrefix = codePrefix.toLowerCase();
+        const matchedProj = projects.find(p => {
+          if (!p || !p.code) return false;
+          const pLower = p.code.toLowerCase();
+          const parts = pLower.split(/[,/]+/).map(item => item.trim()).filter(Boolean);
+          return pLower === lowerPrefix || parts.some(part => part === lowerPrefix || part.startsWith(lowerPrefix) || lowerPrefix.startsWith(part));
+        });
+
+        if (matchedProj) {
+          const targetTasks = sortGroupTasks(
+            allTasks.filter(t => 
+              t &&
+              String(t.projectCode || '').trim().toLowerCase() === String(matchedProj.code).trim().toLowerCase() &&
+              (matchedProj.year ? String(t.projectYear || '') === String(matchedProj.year) : true) &&
+              (matchedProj.store ? String(t.projectStore || '') === String(matchedProj.store) : true)
+            )
+          );
+          if (subIndexNum >= 1 && subIndexNum <= targetTasks.length) {
+            const targetTask = targetTasks[subIndexNum - 1];
+            const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, allTasks, targetTask) || `${matchedProj.code}-${subIndexNum}`).trim();
+            if (newCode) {
+              changed = true;
+              return `${newCode}${lagSuffix.trim()}`;
+            }
+          }
+        }
+      }
+    }
+
+    return token;
+  });
+
+  return {
+    changed,
+    newPredecessor: resolvedTokens.join(', ')
+  };
+}
+
+/**
+ * Sweeps through all tasks and heals any out-of-sync or legacy predecessor codes.
+ */
+export function healAllTasksPredecessors(
+  allTasks: Task[],
+  projects: Project[]
+): {
+  updatedTasks: Task[];
+  changedCount: number;
+  updatesToSave: { id: string; predecessor: string; updatedAt: string }[];
+} {
+  const updatesToSave: { id: string; predecessor: string; updatedAt: string }[] = [];
+  let changedCount = 0;
+
+  const updatedTasks = allTasks.map(t => {
+    if (!t.predecessor) return t;
+    const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(t, allTasks, projects);
+    if (changed && newPredecessor !== t.predecessor) {
+      changedCount++;
+      const updatedAt = new Date().toISOString();
+      updatesToSave.push({
+        id: t.id,
+        predecessor: newPredecessor,
+        updatedAt
+      });
+      return {
+        ...t,
+        predecessor: newPredecessor,
+        updatedAt
+      };
+    }
+    return t;
+  });
+
+  return {
+    updatedTasks,
+    changedCount,
+    updatesToSave
+  };
+}
+

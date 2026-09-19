@@ -199,11 +199,12 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
 4. **Tự Động Cập Nhật Predecessor Của Task Con Khi Đổi Task Code Mẹ (Hỗ Trợ Task Code Chứa Dấu Phẩy ",")**:
    - Khi chỉnh sửa mã công việc mẹ (`Task Code` / `taskCodePhu`), hệ thống tự động quét và cập nhật lại mã tương ứng trong chuỗi `Predecessor` của tất cả các Task con phụ thuộc mà không làm gián đoạn chuỗi liên kết tiến độ.
    - **Xử lý đặc biệt cho Task Code có chứa dấu phẩy `","`** (ví dụ mã công việc dạng `L1,L2-01`): Thuật toán nhận diện thông minh bảo vệ toàn vẹn chuỗi ký tự của Task Code, phân biệt chính xác dấu phẩy nằm bên trong mã với dấu phẩy dùng để ngăn cách giữa các Predecessor khác nhau, tuyệt đối không bị tách nhầm thành nhiều tiền nhiệm rời rạc hay làm mất dữ liệu.
-5. **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án (Project Code Cascade)**:
-   - Khi chỉnh sửa mã dự án (`Project Code` - ví dụ từ `PRJ-01` sang `PRJ-02`) trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
-     + Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01-1` ➜ `PRJ-02-1`).
+5. **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án & Cơ Chế Chữa Lành (Project Code Cascade & Auto-Healing)**:
+   - Khi chỉnh sửa mã dự án (`Project Code` - ví dụ từ `PRJ-01` sang `PRJ-02`, hoặc mã ghép nhiều gian hàng như `L1-115` sang `L1-115, L1-113`) trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
+     + Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01-1` ➜ `PRJ-02-1`, hoặc `L1-115-13` ➜ `L1-115, L1-113-13`).
      + Đồng thời, hệ thống tự động quét và viết lại toàn bộ các chuỗi tiền nhiệm (`Predecessor`) tham chiếu đến các công việc của dự án này trên toàn bộ hệ thống (bao gồm cả các công việc trong cùng dự án và các công việc thuộc các dự án khác có phụ thuộc chéo).
      + Toàn bộ hậu tố kiểu ràng buộc tiến độ (như `FS+2`, `SS`, `FF`, `SF-1`) được bảo toàn chính xác 100%.
+     + **Cơ Chế Tự Động Chữa Lành Tiền Nhiệm (Smart Predecessor Auto-Healing Engine)**: Ngay khi nạp giao diện, sắp xếp (Sort), di chuyển task, hoặc mở hộp thoại Task Modal, hệ thống tự động nhận diện các tiền nhiệm còn lưu mã cũ/mã ghép phân đoạn và tự động chuẩn hóa, điền lại ngay lập tức theo Task Code mới nhất (`0ms Optimistic UI`) và lưu đồng bộ ngầm vào cơ sở dữ liệu.
      + Hỗ trợ cơ chế Optimistic UI (cập nhật tức thì 0ms trên giao diện) và hỗ trợ hoàn tác (`Undo`) trọn vẹn.
 
 #### 🔹 Hướng dẫn Quy trình Phê Duyệt Tiến Độ (Approval Workflow):

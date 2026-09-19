@@ -8,7 +8,7 @@ import { doc } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from "../lib/firebase";
 import { addPendingUpdate } from '../lib/syncQueue';
 import { undoManager } from '../lib/undoManager';
-import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors } from '../lib/ganttUtils';
+import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors, normalizeAndHealTaskPredecessors } from '../lib/ganttUtils';
 import { generateId } from '../lib/utils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 
@@ -119,7 +119,11 @@ export function useTaskModalLogic({
   useEffect(() => {
     if (!isOpen) return;
     if (task) {
-      setFormData(task);
+      const healedPred = normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor;
+      setFormData({
+        ...task,
+        predecessor: healedPred !== undefined ? healedPred : (task.predecessor || '')
+      });
     } else {
       setFormData({
         projectCode: prefillProjectCode || (projects && projects.length > 0 ? projects[0]?.code : ''),
