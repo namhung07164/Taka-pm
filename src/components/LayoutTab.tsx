@@ -3,7 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
-import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Eye, Move, HelpCircle, Clipboard, Map } from 'lucide-react';
+import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Maximize2, Eye, Move, HelpCircle, Clipboard, Map } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
 import { AppUser, PermissionMatrix, AppRole, Project } from '../types';
@@ -108,8 +108,13 @@ export function LayoutTab({
   const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
   const [triggerState, setTriggerState] = useState<any>(null);
   const [isFullscreenView, setIsFullscreenView] = useState(false);
-  const [scrollZoom, setScrollZoom] = useState(1);
-  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const fsScaleTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (fsScaleTimeoutRef.current) clearTimeout(fsScaleTimeoutRef.current);
+    };
+  }, []);
 
   const lastTapRef = React.useRef(0);
 
@@ -130,75 +135,6 @@ export function LayoutTab({
       lastTapRef.current = now;
     }
   };
-
-  const scrollZoomRef = React.useRef(scrollZoom);
-  useEffect(() => {
-    scrollZoomRef.current = scrollZoom;
-  }, [scrollZoom]);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    
-    let initialDistance = 0;
-    let initialZoom = 1;
-
-    const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        // Prevent default browser zoom
-        e.preventDefault();
-        // Determine zoom direction
-        const zoomDelta = e.deltaY > 0 ? -0.15 : 0.15;
-        setScrollZoom(prev => {
-          let newZoom = prev + zoomDelta;
-          // Let's constraint zoom range
-          if (newZoom < 0.2) newZoom = 0.2;
-          if (newZoom > 5) newZoom = 5;
-          return newZoom;
-        });
-      }
-    };
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        initialDistance = Math.hypot(
-          e.touches[0].pageX - e.touches[1].pageX,
-          e.touches[0].pageY - e.touches[1].pageY
-        );
-        initialZoom = scrollZoomRef.current;
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        // Prevent default browser zoom/scroll
-        e.preventDefault();
-        const currentDistance = Math.hypot(
-          e.touches[0].pageX - e.touches[1].pageX,
-          e.touches[0].pageY - e.touches[1].pageY
-        );
-        if (initialDistance > 0) {
-          const scale = currentDistance / initialDistance;
-          setScrollZoom(() => {
-            let newZoom = initialZoom * scale;
-            if (newZoom < 0.2) newZoom = 0.2;
-            if (newZoom > 5) newZoom = 5;
-            return newZoom;
-          });
-        }
-      }
-    };
-
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    return () => {
-      container.removeEventListener('wheel', handleWheel);
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-    };
-  }, [url]);
-
 
   useEffect(() => {
     usePerformanceStore.getState().registerListener('taka_settings/layout');
@@ -509,7 +445,9 @@ export function LayoutTab({
                 minScale={0.5}
                 maxScale={8}
                 centerOnInit={true}
-                panning={{ disabled: fsScale <= 1 }}
+                wheel={{ step: 0.1 }}
+                pinch={{ step: 5 }}
+                panning={{ disabled: false, velocityDisabled: false }}
                 doubleClick={{
                   mode: "toggle",
                   step: 2.5
@@ -525,7 +463,10 @@ export function LayoutTab({
                 }}
                 onPinchStop={() => setIsPinching(false)}
                 onTransform={(ref) => {
-                  setFsScale(ref.state.scale);
+                  if (fsScaleTimeoutRef.current) clearTimeout(fsScaleTimeoutRef.current);
+                  fsScaleTimeoutRef.current = setTimeout(() => {
+                    setFsScale(ref.state.scale);
+                  }, 120);
                 }}
               >
                 {({ zoomIn, zoomOut, resetTransform, centerView }) => (
@@ -717,41 +658,74 @@ export function LayoutTab({
           ></iframe>
         ) : (
           <div className="w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-100">
-            <div className="absolute top-4 right-4 z-[50] flex items-center gap-2">
-              <span className="text-xs font-semibold bg-white/90 backdrop-blur px-2 py-1.5 rounded shadow-lg text-slate-600 border border-slate-200">
-                {Math.round(scrollZoom * 100)}%
-              </span>
-              <button 
-                onClick={() => setScrollZoom(1)}
-                className="p-1.5 bg-white/90 backdrop-blur text-slate-600 hover:bg-slate-50 border border-slate-200 rounded shadow-lg transition-all"
-              >
-                <Maximize className="w-4 h-4" />
-              </button>
-            </div>
-            <div 
-              ref={scrollContainerRef}
-              className="w-full h-full overflow-y-auto overflow-x-auto p-4 md:p-8 bg-slate-100 text-center whitespace-nowrap [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]"
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.5}
+              maxScale={6}
+              centerOnInit={true}
+              wheel={{ step: 0.1 }}
+              pinch={{ step: 5 }}
+              panning={{ disabled: false }}
+              doubleClick={{
+                mode: "toggle",
+                step: 2.2
+              }}
             >
-              <div 
-                className="inline-block text-left"
-                  style={{ 
-                    width: scrollZoom === 1 ? '100%' : `${100 * scrollZoom}%`,
-                    maxWidth: scrollZoom === 1 ? '1200px' : `${1200 * scrollZoom}px`,
-                    verticalAlign: 'top'
-                  }}
-                >
-                  <img 
-                    src={getCleanUrl(url)} 
-                    alt="Layout Scroll Preview" 
-                    className="w-full h-auto shadow-lg rounded-lg border border-slate-200 bg-white"
-                    onClick={handleDoubleTap}
-                    style={{ cursor: 'zoom-in', transition: 'width 0.1s ease, max-width 0.1s ease', touchAction: 'manipulation' }}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = fallbackSvg;
-                    }}
-                  />
-                </div>
-              </div>
+              {({ zoomIn, zoomOut, resetTransform, state }) => (
+                <>
+                  <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => zoomIn(0.3)}
+                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => zoomOut(0.3)}
+                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border-l border-r border-slate-200 dark:border-slate-700">
+                      {Math.round((state.scale || 1) * 100)}%
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={() => resetTransform()}
+                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                      title="Reset"
+                    >
+                      <Maximize className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsFullscreenView(true)}
+                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                      title="Fullscreen"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <TransformComponent
+                    wrapperStyle={{ width: "100%", height: "100%" }}
+                    contentStyle={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center", padding: "1rem" }}
+                  >
+                    <img 
+                      src={getCleanUrl(url)} 
+                      alt="Layout Scroll Preview" 
+                      className="max-w-full max-h-full object-contain shadow-lg rounded-lg border border-slate-200 bg-white cursor-grab active:cursor-grabbing"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = fallbackSvg;
+                      }}
+                    />
+                  </TransformComponent>
+                </>
+              )}
+            </TransformWrapper>
           </div>
         )}
       </div>

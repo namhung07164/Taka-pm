@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import Konva from 'konva';
 import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -113,6 +114,11 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
           }
           await Promise.all(resolvePromises);
           setConfig(data);
+          try {
+            useDataStore.getState().setLoadedCloudData(data);
+          } catch (e) {
+            console.warn('Could not sync loaded cloud data to store', e);
+          }
       } else if (data.versions && data.versions.length > 0) {
           // Legacy format fallback
          const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
@@ -127,8 +133,18 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
              version: activeVersion,
              units: data.mapUnits || data.units || []
          });
+         try {
+           useDataStore.getState().setLoadedCloudData(data);
+         } catch (e) {
+           console.warn('Could not sync loaded cloud data to store', e);
+         }
       } else {
          setConfig(data);
+         try {
+           useDataStore.getState().setLoadedCloudData(data);
+         } catch (e) {
+           console.warn('Could not sync loaded cloud data to store', e);
+         }
       }
     } catch (err: any) {
       setError(err.message || 'Lỗi tải dữ liệu');
@@ -328,44 +344,249 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   const localMapUnits = useDataStore((state) => state.mapUnits);
   const localMapVersions = useDataStore((state) => state.mapVersions);
   const localActiveMapVersionId = useDataStore((state) => state.activeMapVersionId);
+  const getAllStoreUnits = useDataStore((state) => state.getAllStoreUnits);
+  const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
 
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
+
+  // 1. Gather all store versions across all sources (Zustand helper, local partitions, cloud partitions, and root config)
+  const availableStoreVersions = useMemo(() => {
+    const versionsMap = new Map<string, any>();
+
+    // From Zustand store helper
+    try {
+      const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM');
+      const storeVers = getAllStoreVersions(targetStoreParam);
+      if (Array.isArray(storeVers)) {
+        storeVers.forEach(v => {
+          if (v?.id) versionsMap.set(v.id, v);
+        });
+      }
+    } catch (e) {}
+
+    // From local in-memory partitions
+    if (localStoreLocationData) {
+      Object.entries(localStoreLocationData).forEach(([key, part]: [string, any]) => {
+        if (key.startsWith(`${storeFilter}_`) && Array.isArray(part?.mapVersions)) {
+          part.mapVersions.forEach((v: any) => {
+            if (v?.id) versionsMap.set(v.id, { ...v, location: v.location || key.split('_')[1] });
+          });
+        }
+      });
+    }
+
+    // From cloud config partitions
+    if (config?.storeLocationData) {
+      Object.entries(config.storeLocationData).forEach(([key, part]: [string, any]) => {
+        if (key.startsWith(`${storeFilter}_`) && Array.isArray(part?.mapVersions)) {
+          part.mapVersions.forEach((v: any) => {
+            if (v?.id) {
+              const existing = versionsMap.get(v.id) || {};
+              versionsMap.set(v.id, { ...existing, ...v, location: v.location || existing.location || key.split('_')[1] });
+            }
+          });
+        }
+      });
+    }
+
+    // From cloud config root versions
+    if (Array.isArray(config?.versions)) {
+      config.versions.forEach((v: any) => {
+        if (v?.id) {
+          const existing = versionsMap.get(v.id) || {};
+          versionsMap.set(v.id, { ...existing, ...v });
+        }
+      });
+    }
+
+    return Array.from(versionsMap.values());
+  }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
+
+  // 2. Filter versions specific to targetLoc (e.g. L2)
+  const locationVersions = useMemo(() => {
+    if (availableStoreVersions.length === 0) return [];
+    
+    const tLoc = targetLoc.toUpperCase().trim();
+    const matched = availableStoreVersions.filter(v => {
+      const vLoc = (v.location || '').toUpperCase().trim();
+      const vName = (v.name || '').toUpperCase().trim();
+      return vLoc === tLoc || vName.includes(tLoc) || vName.startsWith(`PM-${tLoc}`) || vName.startsWith(tLoc);
+    });
+
+    return matched.length > 0 ? matched : availableStoreVersions;
+  }, [availableStoreVersions, targetLoc]);
+
+  // 3. Resolve active version & units
   const { r2Version, r2Units } = useMemo(() => {
-     const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
-     const pKey = `${storeFilter}_${targetLoc}`;
-     
-     // 1. Check local in-memory partition (active session in Picture Mapping)
-     const localPart = localStoreLocationData?.[pKey] || (
-       localStore === storeFilter && localLocation === targetLoc
-         ? { mapUnits: localMapUnits, mapVersions: localMapVersions, activeMapVersionId: localActiveMapVersionId }
-         : null
-     );
+    const pKey = `${storeFilter}_${targetLoc}`;
+    
+    const localPart = localStoreLocationData?.[pKey] || (
+      localStore === storeFilter && localLocation === targetLoc
+        ? { mapUnits: localMapUnits, mapVersions: localMapVersions, activeMapVersionId: localActiveMapVersionId }
+        : null
+    );
+    const cloudPart = config?.storeLocationData?.[pKey];
+    const partition = (localPart && Array.isArray(localPart.mapVersions) && localPart.mapVersions.length > 0)
+      ? localPart
+      : cloudPart;
 
-     // 2. Check cloud partition from config
-     const cloudPart = config?.storeLocationData?.[pKey];
+    // Pick version: check selectedVersionId first, then partition.activeMapVersionId, then matching location versions
+    let v: any = null;
+    if (selectedVersionId && locationVersions.some(lv => lv.id === selectedVersionId)) {
+      v = locationVersions.find(lv => lv.id === selectedVersionId);
+    } else if (partition?.activeMapVersionId) {
+      v = locationVersions.find(lv => lv.id === partition.activeMapVersionId) ||
+          availableStoreVersions.find(av => av.id === partition.activeMapVersionId);
+    }
 
-     // Use local partition if it has versions and groups, otherwise use cloud partition
-     const partition = (localPart && Array.isArray(localPart.mapVersions) && localPart.mapVersions.length > 0)
-       ? localPart
-       : cloudPart;
+    if (!v) {
+      // Prioritize version for this floor with dynamic rules or groups
+      v = locationVersions.find(lv => lv.isDynamicActive !== false && Array.isArray(lv.groups) && lv.groups.length > 0) ||
+          locationVersions.find(lv => Array.isArray(lv.groups) && lv.groups.length > 0) ||
+          locationVersions[0] ||
+          partition?.mapVersions?.[0] ||
+          config?.version || {};
+    }
 
-     if (partition) {
-         const activeId = partition.activeMapVersionId;
-         let v = (activeId ? partition.mapVersions?.find((v: any) => v.id === activeId) : null) ||
-                 partition.mapVersions?.find((v: any) => v.isDynamicActive) || 
-                 partition.mapVersions?.[0] || {};
+    // Resolve backgroundUrl if empty or r2://
+    let bgUrl = v.backgroundUrl || '';
+    if (!bgUrl || bgUrl.startsWith('r2://')) {
+      // Scan all cloud partitions and versions for resolved signed URL
+      if (cloudPart?.mapVersions) {
+        const matchingCloudV = cloudPart.mapVersions.find((cv: any) => cv.id === v.id || cv.name === v.name);
+        if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
+          bgUrl = matchingCloudV.backgroundUrl;
+        }
+      }
+      if ((!bgUrl || bgUrl.startsWith('r2://')) && config?.storeLocationData) {
+        for (const part of Object.values(config.storeLocationData) as any[]) {
+          const matchingCloudV = part?.mapVersions?.find((cv: any) => cv.id === v.id || cv.name === v.name);
+          if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
+            bgUrl = matchingCloudV.backgroundUrl;
+            break;
+          }
+        }
+      }
+      if ((!bgUrl || bgUrl.startsWith('r2://')) && config?.version?.backgroundUrl && !config.version.backgroundUrl.startsWith('r2://')) {
+        if (config.version.id === v.id || config.version.name === v.name) {
+          bgUrl = config.version.backgroundUrl;
+        }
+      }
+    }
+    const finalVersion = { ...v, backgroundUrl: bgUrl };
 
-         // If local version has no backgroundUrl or has r2:// reference, borrow resolved url from cloud
-         if ((!v.backgroundUrl || v.backgroundUrl.startsWith('r2://')) && cloudPart?.mapVersions) {
-           const matchingCloudV = cloudPart.mapVersions.find((cv: any) => cv.id === v.id || cv.name === v.name);
-           if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
-             v = { ...v, backgroundUrl: matchingCloudV.backgroundUrl };
-           }
-         }
+    // Resolve units: collect all drawn shapes across all sources so any floor's shapes are readily available
+    const unitsMap = new Map<string, any>();
 
-         return { r2Version: v, r2Units: partition.mapUnits || [] };
-     }
-     return { r2Version: config?.version || {}, r2Units: config?.units || [] };
-  }, [config, storeFilter, locationFilter, localStoreLocationData, localStore, localLocation, localMapUnits, localMapVersions, localActiveMapVersionId]);
+    // 1. From config.storeLocationData across ALL partitions
+    if (config?.storeLocationData) {
+      Object.entries(config.storeLocationData).forEach(([key, part]: [string, any]) => {
+        if (storeFilter === 'all' || key.startsWith(`${storeFilter}_`)) {
+          const loc = key.split('_')[1] || '';
+          if (Array.isArray(part?.mapUnits)) {
+            part.mapUnits.forEach((u: any) => {
+              if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
+                const existing = unitsMap.get(u.id) || {};
+                unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || loc });
+              }
+            });
+          }
+        }
+      });
+    }
+
+    // 2. From config.mapUnits (root-level drawn shapes)
+    if (Array.isArray(config?.mapUnits)) {
+      config.mapUnits.forEach((u: any) => {
+        if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
+          const existing = unitsMap.get(u.id) || {};
+          unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || targetLoc });
+        }
+      });
+    }
+
+    // 3. From local in-memory storeLocationData across all partitions
+    if (localStoreLocationData) {
+      Object.entries(localStoreLocationData).forEach(([key, part]: [string, any]) => {
+        if (storeFilter === 'all' || key.startsWith(`${storeFilter}_`)) {
+          const loc = key.split('_')[1] || '';
+          if (Array.isArray(part?.mapUnits)) {
+            part.mapUnits.forEach((u: any) => {
+              if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
+                const existing = unitsMap.get(u.id) || {};
+                unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || loc });
+              }
+            });
+          }
+        }
+      });
+    }
+
+    // 4. From current active in-memory partition
+    if (Array.isArray(localMapUnits)) {
+      localMapUnits.forEach((u: any) => {
+        if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
+          const existing = unitsMap.get(u.id) || {};
+          unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || targetLoc });
+        }
+      });
+    }
+
+    // 5. From global store helper
+    try {
+      const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM');
+      const storeUnits = getAllStoreUnits(targetStoreParam);
+      if (Array.isArray(storeUnits)) {
+        storeUnits.forEach((u: any) => {
+          if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
+            const existing = unitsMap.get(u.id) || {};
+            unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || targetLoc });
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 6. Gather all unit IDs mapped in finalVersion.groupMappings
+    const mappedUnitIds = new Set<string>();
+    if (finalVersion?.groupMappings) {
+      Object.values(finalVersion.groupMappings).forEach((m: any) => {
+        if (Array.isArray(m)) m.forEach(id => mappedUnitIds.add(String(id)));
+      });
+    }
+
+    const vLoc = (finalVersion.location || targetLoc || '').toUpperCase().trim();
+    const tLoc = targetLoc.toUpperCase().trim();
+
+    // 7. Filter units for finalVersion: include mapped units or units matching this floor
+    const finalUnitsList = Array.from(unitsMap.values()).filter((u: any) => {
+      // If mapped in this version's groups, ALWAYS include
+      if (mappedUnitIds.has(String(u.id))) return true;
+
+      // If unit has location matching this floor or version
+      const uLoc = (u.location || '').toUpperCase().trim();
+      if (uLoc && (uLoc === vLoc || uLoc === tLoc || vLoc.includes(uLoc) || uLoc.includes(vLoc))) return true;
+
+      // Fallback: if no location info, include
+      if (!uLoc && !vLoc) return true;
+
+      return false;
+    });
+
+    // 8. Fallback to config.units if no drawn shapes found at all
+    if (finalUnitsList.length === 0 && Array.isArray(config?.units)) {
+      config.units.forEach((u: any) => {
+        if (u?.id) unitsMap.set(u.id, { ...u, location: u.location || targetLoc });
+      });
+      return { r2Version: finalVersion, r2Units: Array.from(unitsMap.values()) };
+    }
+
+    return { r2Version: finalVersion, r2Units: finalUnitsList };
+  }, [
+    config, storeFilter, targetLoc, localStoreLocationData, localStore, localLocation,
+    localMapUnits, localMapVersions, localActiveMapVersionId, selectedVersionId,
+    locationVersions, availableStoreVersions, getAllStoreUnits
+  ]);
 
   const version = r2Version;
   const units = r2Units;
@@ -423,10 +644,21 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
     lastTap: 0,
   });
 
+  const isInteractingRef = useRef(false);
   const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingWheelDeltaRef = useRef<number>(0);
+  const rafWheelIdRef = useRef<number | null>(null);
+  const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+      if (rafWheelIdRef.current !== null) cancelAnimationFrame(rafWheelIdRef.current);
+    };
+  }, []);
 
   // Auto-fit floor plan background & units to perfectly fit and center in the viewport
-  const fitToScreen = useCallback(() => {
+  const fitToScreen = useCallback((animated: boolean = false) => {
     const containerW = containerRef.current?.offsetWidth || dimensions.width;
     const containerH = containerRef.current?.offsetHeight || dimensions.height;
     if (containerW <= 0 || containerH <= 0) return;
@@ -481,13 +713,32 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
     const posY = containerH / 2 - contentCenterY * clampedScale;
 
     const newPos = { x: posX, y: posY };
-    setStageScale(clampedScale);
-    setStagePos(newPos);
 
-    if (stageRef.current) {
-      stageRef.current.scale({ x: clampedScale, y: clampedScale });
-      stageRef.current.position(newPos);
-      stageRef.current.batchDraw();
+    const stage = stageRef.current;
+    if (stage) {
+      if (animated) {
+        stage.to({
+          scaleX: clampedScale,
+          scaleY: clampedScale,
+          x: posX,
+          y: posY,
+          duration: 0.22,
+          easing: Konva.Easings.EaseOut,
+          onFinish: () => {
+            setStageScale(clampedScale);
+            setStagePos(newPos);
+          }
+        });
+      } else {
+        stage.scale({ x: clampedScale, y: clampedScale });
+        stage.position(newPos);
+        stage.batchDraw();
+        setStageScale(clampedScale);
+        setStagePos(newPos);
+      }
+    } else {
+      setStageScale(clampedScale);
+      setStagePos(newPos);
     }
   }, [bgImage, version, units, dimensions]);
 
@@ -542,8 +793,8 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
     const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code) return;
-      if (storeFilter !== 'all' && p.store !== storeFilter) return;
-      const pCodes = String(p.code).split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+      if (storeFilter !== 'all' && p.store && String(p.store).trim().toUpperCase() !== String(storeFilter).trim().toUpperCase()) return;
+      const pCodes = String(p.code || '').split(/[+,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       
       let activeTaskNames: string[] = [];
@@ -583,22 +834,24 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   }, [units, summaryData, projects, storeFilter, locationFilter]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
-  const { unitColorMap, unitGroupMap, activeGroups } = useMemo(() => {
+  const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
     const groupMap: Record<string, string> = {};
+    const opacityMap: Record<string, number> = {};
     const groupsInUse: any[] = [];
     
-    if (!version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, activeGroups: groupsInUse };
+    if (!version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
 
     version.groups.forEach((group: any) => {
         let matchCount = 0;
         const matchedUnits: any[] = [];
-        const mappedUnitIds = new Set(version.groupMappings?.[group.id] || []);
+        const mappedUnitIds = new Set((version.groupMappings?.[group.id] || []).map((id: any) => String(id)));
+        const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
         
         units.forEach((u: any) => {
             let isMatch = false;
             
-            if (mappedUnitIds.has(u.id)) {
+            if (mappedUnitIds.has(String(u.id))) {
                 isMatch = true;
             }
             
@@ -641,9 +894,15 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                     }
                 }
             }
+
+            if (!isMatch && u.fill && u.fill !== '#ffffff' && u.fill !== '#3b82f6' && group.color && (String(u.fill).toLowerCase() === String(group.color).toLowerCase())) {
+                isMatch = true;
+            }
+
             if (isMatch) {
                 colorMap[u.id] = group.color;
                 groupMap[u.id] = group.id;
+                opacityMap[u.id] = groupOpacity;
                 matchCount++;
                 matchedUnits.push({ id: u.id, name: u.name });
             }
@@ -654,7 +913,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         }
     });
 
-    return { unitColorMap: colorMap, unitGroupMap: groupMap, activeGroups: groupsInUse };
+    return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
   }, [version.groups, version.groupMappings, version.isDynamicActive, units, aggregatedData]);
 
   // 4. Filter only units that appear in dynamic tab and precalculate bounds
@@ -663,7 +922,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
       .filter((unit: any) => {
         if (unit.visible === false) return false;
         
-        const targetColor = unitColorMap[unit.id];
+        const targetColor = unitColorMap[unit.id] || (unit.fill && unit.fill !== '#ffffff' && unit.fill !== '#3b82f6' ? unit.fill : null);
         if (!targetColor) return false;
 
         if (searchQuery.trim()) {
@@ -680,22 +939,23 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         return true;
       })
       .map((unit: any) => {
-        const targetColor = unitColorMap[unit.id];
+        const targetColor = unitColorMap[unit.id] || (unit.fill && unit.fill !== '#ffffff' && unit.fill !== '#3b82f6' ? unit.fill : '#3b82f6');
+        const targetOpacity = unitOpacityMap[unit.id] ?? 0.65;
         
-        let textX = unit.x;
-        let textY = unit.y;
+        let textX = unit.x || 0;
+        let textY = unit.y || 0;
         let textWidth = 100;
         let textHeight = 30;
 
         if (unit.type === 'rect') {
-          textX = unit.x;
-          textY = unit.y;
+          textX = unit.x || 0;
+          textY = unit.y || 0;
           textWidth = unit.width || 100;
           textHeight = unit.height || 30;
         } else if (unit.type === 'circle') {
           const r = unit.radius || 20;
-          textX = unit.x - r;
-          textY = unit.y - r;
+          textX = (unit.x || 0) - r;
+          textY = (unit.y || 0) - r;
           textWidth = r * 2;
           textHeight = r * 2;
         } else if (unit.type === 'polygon' && unit.points && unit.points.length >= 2) {
@@ -717,6 +977,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         return {
           ...unit,
           targetColor,
+          targetOpacity,
           targetGroupId: unitGroupMap[unit.id],
           textX,
           textY,
@@ -724,7 +985,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, searchQuery, aggregatedData]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, searchQuery, aggregatedData]);
 
   // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
   const updateTooltipPos = (clientX: number, clientY: number) => {
@@ -790,6 +1051,41 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   return (
     <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
       
+      {/* Floating Top-Left Controls: Location & Layout Version Switcher */}
+      <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+        <div className="flex items-center gap-1.5">
+          <Layers className="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0" />
+          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider whitespace-nowrap">
+            {storeFilter} • {targetLoc}
+          </span>
+        </div>
+        {locationVersions.length > 1 && (
+          <>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 shrink-0" />
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase hidden sm:inline">Version:</span>
+              <select
+                value={version?.id || ''}
+                onChange={(e) => setSelectedVersionId(e.target.value)}
+                className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer max-w-[180px] truncate"
+                title="Select Layout Version"
+              >
+                {locationVersions.map((v: any) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name || v.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+        {locationVersions.length <= 1 && version?.name && (
+          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-2 max-w-[180px] truncate">
+            {version.name}
+          </span>
+        )}
+      </div>
+
       {/* Floating Top-Right Controls */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
         <button
@@ -798,7 +1094,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
             const stage = stageRef.current;
             if (!stage) return;
             const oldScale = stage.scaleX();
-            const newScale = Math.min(oldScale * 1.25, 20);
+            const newScale = Math.min(oldScale * 1.3, 20);
             const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
             const mousePointTo = {
               x: (center.x - stage.x()) / oldScale,
@@ -808,13 +1104,20 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
               x: center.x - mousePointTo.x * newScale,
               y: center.y - mousePointTo.y * newScale,
             };
-            stage.scale({ x: newScale, y: newScale });
-            stage.position(newPos);
-            stage.batchDraw();
-            setStageScale(newScale);
-            setStagePos(newPos);
+            stage.to({
+              scaleX: newScale,
+              scaleY: newScale,
+              x: newPos.x,
+              y: newPos.y,
+              duration: 0.18,
+              easing: Konva.Easings.EaseOut,
+              onFinish: () => {
+                setStageScale(newScale);
+                setStagePos(newPos);
+              }
+            });
           }}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
           title="Zoom In"
         >
           <ZoomIn className="w-4 h-4" />
@@ -825,7 +1128,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
             const stage = stageRef.current;
             if (!stage) return;
             const oldScale = stage.scaleX();
-            const newScale = Math.max(oldScale / 1.25, 0.05);
+            const newScale = Math.max(oldScale / 1.3, 0.04);
             const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
             const mousePointTo = {
               x: (center.x - stage.x()) / oldScale,
@@ -835,13 +1138,20 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
               x: center.x - mousePointTo.x * newScale,
               y: center.y - mousePointTo.y * newScale,
             };
-            stage.scale({ x: newScale, y: newScale });
-            stage.position(newPos);
-            stage.batchDraw();
-            setStageScale(newScale);
-            setStagePos(newPos);
+            stage.to({
+              scaleX: newScale,
+              scaleY: newScale,
+              x: newPos.x,
+              y: newPos.y,
+              duration: 0.18,
+              easing: Konva.Easings.EaseOut,
+              onFinish: () => {
+                setStageScale(newScale);
+                setStagePos(newPos);
+              }
+            });
           }}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
           title="Zoom Out"
         >
           <ZoomOut className="w-4 h-4" />
@@ -852,9 +1162,9 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         <button 
           type="button" 
           onClick={() => {
-            fitToScreen();
+            fitToScreen(true);
           }}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
           title="Reset / Fit to Screen"
         >
           <Maximize2 className="w-4 h-4" />
@@ -1361,8 +1671,14 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
             y={stagePos.y}
             pixelRatio={pixelRatio}
             draggable
+            style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
             onDragStart={() => {
+              isInteractingRef.current = true;
               setHoverInfo(null);
+            }}
+            onDragEnd={(e) => {
+              isInteractingRef.current = false;
+              setStagePos({ x: e.target.x(), y: e.target.y() });
             }}
             onClick={(e) => {
               if (e.target === stageRef.current) {
@@ -1374,8 +1690,33 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                 setHoverInfo(null);
               }
             }}
-            onDragEnd={(e) => {
-              setStagePos({ x: e.target.x(), y: e.target.y() });
+            onDblClick={() => {
+              const stage = stageRef.current;
+              if (!stage) return;
+              const pointer = stage.getPointerPosition();
+              if (!pointer) return;
+              const oldScale = stage.scaleX();
+              const newScale = oldScale > 2.5 ? Math.max(0.1, oldScale / 2.2) : Math.min(20, oldScale * 2.2);
+              const mousePointTo = {
+                x: (pointer.x - stage.x()) / oldScale,
+                y: (pointer.y - stage.y()) / oldScale,
+              };
+              const newPos = {
+                x: pointer.x - mousePointTo.x * newScale,
+                y: pointer.y - mousePointTo.y * newScale,
+              };
+              stage.to({
+                scaleX: newScale,
+                scaleY: newScale,
+                x: newPos.x,
+                y: newPos.y,
+                duration: 0.22,
+                easing: Konva.Easings.EaseOut,
+                onFinish: () => {
+                  setStageScale(newScale);
+                  setStagePos(newPos);
+                }
+              });
             }}
             onTouchStart={(e) => {
               if (e.evt.touches.length === 2) {
@@ -1389,10 +1730,12 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                 touchStateRef.current = { lastDist: dist, lastCenter: center, lastTap: 0 };
                 const stage = stageRef.current;
                 if (stage) stage.draggable(false);
+                isInteractingRef.current = true;
+                setHoverInfo(null);
               } else if (e.evt.touches.length === 1) {
                 const now = Date.now();
                 if (now - touchStateRef.current.lastTap < 300) {
-                  fitToScreen();
+                  fitToScreen(true);
                   touchStateRef.current.lastTap = 0;
                 } else {
                   touchStateRef.current.lastTap = now;
@@ -1414,20 +1757,20 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                 if (stage && lastDist > 0 && lastCenter) {
                   const oldScale = stage.scaleX();
                   const scaleDelta = dist / lastDist;
-                  const newScale = Math.max(0.05, Math.min(oldScale * scaleDelta, 20));
+                  const newScale = Math.max(0.04, Math.min(oldScale * scaleDelta, 20));
                   
                   const stageBox = stage.container().getBoundingClientRect();
-                  const pointerX = center.x - stageBox.left;
-                  const pointerY = center.y - stageBox.top;
+                  const lastPointerX = lastCenter.x - stageBox.left;
+                  const lastPointerY = lastCenter.y - stageBox.top;
+                  const currentPointerX = center.x - stageBox.left;
+                  const currentPointerY = center.y - stageBox.top;
 
-                  const mousePointTo = {
-                    x: (pointerX - stage.x()) / oldScale,
-                    y: (pointerY - stage.y()) / oldScale,
-                  };
+                  const worldPointX = (lastPointerX - stage.x()) / oldScale;
+                  const worldPointY = (lastPointerY - stage.y()) / oldScale;
 
                   const newPos = {
-                    x: pointerX - mousePointTo.x * newScale,
-                    y: pointerY - mousePointTo.y * newScale,
+                    x: currentPointerX - worldPointX * newScale,
+                    y: currentPointerY - worldPointY * newScale,
                   };
 
                   stage.scale({ x: newScale, y: newScale });
@@ -1448,39 +1791,64 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                 setStageScale(stage.scaleX());
                 setStagePos({ x: stage.x(), y: stage.y() });
               }
+              isInteractingRef.current = false;
             }}
             onWheel={(e) => {
-                e.evt.preventDefault();
-                const stage = stageRef.current;
-                if (!stage) return;
-                const scaleBy = 1.15;
-                const oldScale = stage.scaleX();
-                const pointer = stage.getPointerPosition();
-                if (!pointer) return;
-                const mousePointTo = {
-                  x: pointer.x / oldScale - stage.x() / oldScale,
-                  y: pointer.y / oldScale - stage.y() / oldScale,
-                };
-                const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
-                const clampedScale = Math.max(0.05, Math.min(newScale, 20));
-                const newPos = {
-                  x: -(mousePointTo.x - pointer.x / clampedScale) * clampedScale,
-                  y: -(mousePointTo.y - pointer.y / clampedScale) * clampedScale,
-                };
-                stage.scale({ x: clampedScale, y: clampedScale });
-                stage.position(newPos);
-                stage.batchDraw();
+              e.evt.preventDefault();
+              const stage = stageRef.current;
+              if (!stage) return;
+              
+              isInteractingRef.current = true;
+              setHoverInfo(null);
 
-                // Debounce React state updates to prevent re-rendering during wheel gestures
-                if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
-                wheelTimeoutRef.current = setTimeout(() => {
-                  setStageScale(clampedScale);
-                  setStagePos(newPos);
-                }, 100);
+              const pointer = stage.getPointerPosition();
+              if (!pointer) return;
+
+              lastWheelPointerRef.current = pointer;
+              pendingWheelDeltaRef.current += e.evt.deltaY;
+
+              if (rafWheelIdRef.current === null) {
+                rafWheelIdRef.current = requestAnimationFrame(() => {
+                  rafWheelIdRef.current = null;
+                  const currentStage = stageRef.current;
+                  const ptr = lastWheelPointerRef.current;
+                  if (!currentStage || !ptr) return;
+
+                  const deltaY = pendingWheelDeltaRef.current;
+                  pendingWheelDeltaRef.current = 0;
+
+                  const oldScale = currentStage.scaleX();
+                  // Smooth exponential zoom curve
+                  const zoomFactor = Math.exp(-deltaY * 0.002);
+                  const newScale = Math.max(0.04, Math.min(oldScale * zoomFactor, 20));
+
+                  const mousePointTo = {
+                    x: (ptr.x - currentStage.x()) / oldScale,
+                    y: (ptr.y - currentStage.y()) / oldScale,
+                  };
+
+                  const newPos = {
+                    x: ptr.x - mousePointTo.x * newScale,
+                    y: ptr.y - mousePointTo.y * newScale,
+                  };
+
+                  currentStage.scale({ x: newScale, y: newScale });
+                  currentStage.position(newPos);
+                  currentStage.batchDraw();
+
+                  // Debounce React state updates to prevent re-rendering during wheel gestures
+                  if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+                  wheelTimeoutRef.current = setTimeout(() => {
+                    setStageScale(currentStage.scaleX());
+                    setStagePos({ x: currentStage.x(), y: currentStage.y() });
+                    isInteractingRef.current = false;
+                  }, 120);
+                });
+              }
             }}
         >
-          {/* Layer 1: Dedicated Background Layer (Zero interaction overhead) */}
-          <Layer listening={false}>
+          {/* Single Unified Layer matching ReviewTab for consistent z-ordering and crisp rendering */}
+          <Layer>
             {bgImage && (
               <KonvaImage
                 image={bgImage}
@@ -1493,28 +1861,27 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                 rotation={version.backgroundRotation || 0}
               />
             )}
-          </Layer>
 
-          {/* Layer 2: Units Layer (Optimized for 60fps GPU rendering) */}
-          <Layer>
             {displayedUnits.map((unit: any) => {
                const fillColor = unit.targetColor || "#3b82f6";
                const isDimmed = selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
+               const displayOpacity = isDimmed ? 0.2 : (unit.targetOpacity ?? 0.65);
                
                const commonProps = {
                   id: unit.id,
                   fill: fillColor,
-                  opacity: isDimmed ? 0.2 : 0.85,
-                  stroke: isDimmed ? '#94a3b8' : '#1e293b',
-                  strokeWidth: isDimmed ? 1 : 2,
+                  opacity: displayOpacity,
+                  stroke: isDimmed ? '#94a3b8' : '#ffffff',
+                  strokeWidth: 1.5,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
-                  shadowForStrokeEnabled: false,
-                  strokeHitEnabled: false,
-                  x: unit.x,
-                  y: unit.y,
+                  shadowBlur: 0,
+                  shadowOpacity: 0,
+                  x: unit.x || 0,
+                  y: unit.y || 0,
                   rotation: unit.rotation || 0,
                   onMouseEnter: (e: any) => {
+                     if (isInteractingRef.current) return;
                      const container = e.target.getStage().container();
                      container.style.cursor = 'pointer';
                      setHoverInfo({
@@ -1525,6 +1892,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                      setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
                   },
                   onMouseMove: (e: any) => {
+                     if (isInteractingRef.current) return;
                      updateTooltipPos(e.evt.clientX, e.evt.clientY);
                   },
                   onMouseLeave: (e: any) => {
@@ -1533,6 +1901,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                      setHoverInfo(null);
                   },
                   onClick: (e: any) => {
+                     if (isInteractingRef.current) return;
                      setHoverInfo({
                         visible: true,
                         data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
@@ -1541,6 +1910,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                      setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
                   },
                   onTap: (e: any) => {
+                     if (isInteractingRef.current) return;
                      const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
                      const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
                      setHoverInfo({
@@ -1553,7 +1923,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                };
 
                return (
-                 <Group key={unit.id} listening={true}>
+                 <React.Fragment key={unit.id}>
                     {unit.type === 'rect' && (
                        <Rect {...commonProps} width={unit.width} height={unit.height} cornerRadius={4} />
                     )}
@@ -1563,7 +1933,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                     {unit.type === 'polygon' && unit.points && (
                        <Line {...commonProps} points={unit.points} closed={true} />
                     )}
-                    {unit.name && (
+                    {unit.name && (stageScale || 1) > 0.15 && (
                        <Text 
                           text={unit.name}
                           x={unit.textX}
@@ -1573,14 +1943,19 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                           rotation={unit.rotation || 0}
                           align="center"
                           verticalAlign="middle"
-                          fontSize={13}
+                          fontSize={Math.max(10, 11 / (stageScale || 1))}
                           fontStyle="bold"
-                          fill="#0f172a"
-                          listening={false}
+                          fill="#ffffff"
+                          stroke="#000000"
+                          strokeWidth={0.6}
+                          strokeScaleEnabled={false}
                           perfectDrawEnabled={false}
+                          shadowBlur={0}
+                          shadowOpacity={0}
+                          listening={false}
                        />
                     )}
-                 </Group>
+                 </React.Fragment>
                );
             })}
           </Layer>

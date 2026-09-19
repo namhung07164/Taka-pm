@@ -196,6 +196,15 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
    - **Khi có điền tiền nhiệm**: Hệ thống mặc định tự động kích hoạt tính năng **Flexible** — khi công việc tiền nhiệm thay đổi ngày, tiến độ các công việc phụ thuộc sẽ tự động tịnh tiến theo dây chuyền (cascading schedule).
    - **Khi không điền tiền nhiệm**: Công việc giữ nguyên mốc ngày độc lập, không bị dời theo các công việc khác.
    - **Nút "Sync dates"**: Trong Task Modal có nút **"Sync dates"** giúp tính toán và làm mới ngày và thời lượng theo tiền nhiệm bất cứ lúc nào. Khi chỉnh sửa trực tiếp ngày Kết thúc (`Finish`), hệ thống sẽ tự động tính lại Thời lượng (`Duration = Finish - Start`) mà không bị ghi đè ngày kết thúc.
+4. **Tự Động Cập Nhật Predecessor Của Task Con Khi Đổi Task Code Mẹ (Hỗ Trợ Task Code Chứa Dấu Phẩy ",")**:
+   - Khi chỉnh sửa mã công việc mẹ (`Task Code` / `taskCodePhu`), hệ thống tự động quét và cập nhật lại mã tương ứng trong chuỗi `Predecessor` của tất cả các Task con phụ thuộc mà không làm gián đoạn chuỗi liên kết tiến độ.
+   - **Xử lý đặc biệt cho Task Code có chứa dấu phẩy `","`** (ví dụ mã công việc dạng `L1,L2-01`): Thuật toán nhận diện thông minh bảo vệ toàn vẹn chuỗi ký tự của Task Code, phân biệt chính xác dấu phẩy nằm bên trong mã với dấu phẩy dùng để ngăn cách giữa các Predecessor khác nhau, tuyệt đối không bị tách nhầm thành nhiều tiền nhiệm rời rạc hay làm mất dữ liệu.
+5. **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án (Project Code Cascade)**:
+   - Khi chỉnh sửa mã dự án (`Project Code` - ví dụ từ `PRJ-01` sang `PRJ-02`) trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
+     + Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01-1` ➜ `PRJ-02-1`).
+     + Đồng thời, hệ thống tự động quét và viết lại toàn bộ các chuỗi tiền nhiệm (`Predecessor`) tham chiếu đến các công việc của dự án này trên toàn bộ hệ thống (bao gồm cả các công việc trong cùng dự án và các công việc thuộc các dự án khác có phụ thuộc chéo).
+     + Toàn bộ hậu tố kiểu ràng buộc tiến độ (như `FS+2`, `SS`, `FF`, `SF-1`) được bảo toàn chính xác 100%.
+     + Hỗ trợ cơ chế Optimistic UI (cập nhật tức thì 0ms trên giao diện) và hỗ trợ hoàn tác (`Undo`) trọn vẹn.
 
 #### 🔹 Hướng dẫn Quy trình Phê Duyệt Tiến Độ (Approval Workflow):
 1. Mỗi dòng công việc có cột trạng thái phê duyệt: **Pending (Chờ duyệt)**, **Approved (Đã duyệt)**, **Rejected (Từ chối)**.
@@ -442,7 +451,12 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 1. **Bộ lọc Cửa hàng & Khu vực (Store & Location Filter)**:
    - Chọn Cửa hàng (`HCM`, `HN` hoặc `All Stores`).
    - **Bộ lọc Khu vực (Location)**: Tự động chỉ hiển thị các khu vực/tầng có đường dẫn URL mặt bằng hợp lệ được gắn vào (loại bỏ các giá trị trống, null, `0`, hoặc `_`).
-2. **Kéo & Thu phóng (Zoom/Pan)**: Sử dụng con lăn chuột hoặc nút (+ / -) để phóng to/thu nhỏ sơ đồ; kéo chuột để di chuyển góc nhìn.
+2. **Kéo & Thu phóng Siêu Mượt 60fps (Hardware-Accelerated Zoom/Pan)**:
+   - **Con lăn chuột**: Phóng to/thu nhỏ mượt mà theo đường cong mượt mà, định vị chính xác vị trí con trỏ chuột mà không giật lag.
+   - **Kéo thả chuột / Chạm ngón tay (Pan)**: Giữ và kéo để lướt toàn bộ mặt bằng; tối ưu hóa GPU giảm thiểu render lại không cần thiết.
+   - **Cử chỉ 2 ngón tay (Pinch-to-zoom trên Mobile/iPad)**: Phóng to, thu nhỏ và xoay chuyển mượt mà tự nhiên theo thời gian thực.
+   - **Nhấp đúp chuột / Chạm 2 lần (Double-click / Double-tap)**: Tự động zoom nhanh hoặc vừa vặn toàn bộ mặt bằng vào khung nhìn (Fit to Screen) với hiệu ứng chuyển cảnh mượt.
+   - **Bộ điều khiển góc trên bên phải**: Nút `[+]`, `[-]`, tỉ lệ `%`, và nút `[⛶]` (Reset / Fit to Screen) phản hồi 1 chạm tức thì (`active:scale-95`).
 3. **Ghim vị trí dự án (Add Pin)**: Nhấp nút "Add Pin", sau đó nhấp vào vị trí gian hàng trên bản đồ và liên kết với Dự án tương ứng.
 4. **Xem nhanh thông tin**: Nhấp vào bất kỳ điểm ghim nào trên bản đồ để xem ngay tên gian hàng, thời gian thi công và hình ảnh hiện trường.
 5. **Chế độ Bản đồ Trực quan (Live View) & Bảng Chú Thích Màu (Color Legend trên iOS/Mobile/Desktop)**:
@@ -939,14 +953,18 @@ Hệ thống tuân thủ nghiêm ngặt các quy tắc kiến trúc chuẩn Ente
 Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng và gán dữ liệu chuyên đề (Thematic Mapping) trực tiếp lên ảnh mặt bằng kỹ thuật số.
 
 ### 🏢 Phân Tách Dữ Liệu Theo Store & Location (Chi Nhánh & Tầng):
-1. **Bộ lọc Store & Location trực quan**:
+1. **Bộ lọc Store & Location áp dụng phân quyền tài khoản (RBAC Account Control)**:
    - Trên thanh công cụ trên cùng của phân hệ (Data Mapping Bar), hệ thống tích hợp sẵn cụm bộ lọc:
-     - **Store**: Chọn chi nhánh **HCM** hoặc **HN**.
-     - **Location**: Chọn tầng cụ thể (**B2, B1, L1, L2, L3, L4, L5...**).
+     - **Store**: Chọn chi nhánh **HCM** hoặc **HN**. Menu tự động lọc theo `storePermissions` của người dùng; nếu tài khoản chỉ có quyền HCM hoặc HN, hệ thống sẽ tự động khóa và chỉ cho phép thao tác trên chi nhánh được phân quyền.
+     - **Location**: Chọn tầng cụ thể (**B2, B1, L1, L2, L3, L4, L5...**). Danh sách tầng được kiểm soát nghiêm ngặt theo quyền `locationPermissions` trong Account Control. Nếu người dùng không có quyền truy cập tầng nào đó, tầng đó sẽ tự động bị ẩn khỏi danh sách lựa chọn.
      - **Bộ đếm Unit**: Hiển thị số lượng gian hàng thực tế đang có tại tầng/chi nhánh tương ứng.
 2. **Cơ chế phân vùng và cô lập dữ liệu độc lập (Zero Cross-Contamination)**:
    - Toàn bộ dữ liệu gian hàng (`mapUnits`), hình vẽ (Polygon, Hình chữ nhật, Hình tròn), ảnh mặt bằng kỹ thuật (`backgroundUrl`), tỷ lệ scale/tọa độ và các phiên bản (`mapVersions`) được cô lập hoàn toàn theo từng cặp `(Store, Location)`.
    - Khi chuyển từ `HCM - L1` sang `HCM - L2`, hệ thống tự động lưu giữ trạng thái vẽ của `L1` và mở ra không gian vẽ riêng biệt của `L2`. Khi quay lại `L1`, toàn bộ hình vẽ và ảnh nền trước đó được khôi phục nguyên vẹn 100%.
+   - **Đồng bộ thời gian thực với Tab Layout (Live View)**:
+     + Dữ liệu phiên bản kích hoạt (`activeMapVersionId`), các nhóm ngành hàng (`groups`), và tô màu quy tắc động (`unitColorMap`) được đồng bộ trực tiếp giữa Picture Mapping và Tab Layout Live View cho mọi tầng (L1, L2, L3,...).
+     + **Tự động nhận diện và hiển thị màu sắc theo từng tầng (Floor-Aware Thematic Mapping)**: Khi chuyển sang tầng L2 (hoặc bất kỳ tầng nào), hệ thống tự động tìm nạp đúng phiên bản bản vẽ của tầng đó (ví dụ `pm-l2-hcm`), tập hợp toàn bộ gian hàng và áp dụng đầy đủ quy tắc tô màu theo phân nhóm hoặc ánh xạ thủ công tương đương như ở Tab Review của Picture Mapping.
+     + **Bộ chuyển đổi phiên bản trực tiếp (Layout Version Switcher)**: Tại góc trên bên trái của Live Layout Viewer, hệ thống tích hợp sẵn huy hiệu định vị Chi nhánh • Tầng (`HCM • L2`) cùng danh sách chọn phiên bản (`Version Selector`) nếu tầng đó có nhiều phiên bản mặt bằng khác nhau, cho phép người dùng chuyển đổi xem các kịch bản bố trí ngay lập tức.
 3. **Đồng Bộ Đầy Đủ Tất Cả Các Tab & Phân Vùng Lên Cloudflare R2 (Full Cloud Sync)**:
    - **Đồng bộ toàn diện (Complete Multi-Tab Synchronization)**:
      - Khi nhấn **Save Cloud**, hệ thống sẽ đóng gói và sao lưu toàn bộ trạng thái của phân hệ Picture Mapping lên file `mapping_config.json`:
@@ -994,7 +1012,11 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Hệ thống sẽ tự động gửi gói tin kiểm tra và phản hồi tức thời: Nếu thành công, bạn có thể an tâm bấm "Save & Upload"; nếu còn thiếu CORS hoặc sai quyền token, hệ thống sẽ chỉ rõ nguyên nhân để bạn xử lý ngay.
 
 6. **Chế Độ Xem Mặt Bằng Trực Tiếp (Live Layout Viewer - Tab Layout)**:
-   - **Đồng bộ tự động theo tầng & chi nhánh**: Tại Tab Layout, khi chuyển sang chế độ xem Live View, hệ thống tự động tải bản vẽ mặt bằng tương ứng với Chi nhánh và Tầng đang chọn.
+   - **Đồng bộ tự động theo tầng & chi nhánh (Multi-Floor & Cloud R2 Partition Sync)**: Tại Tab Layout, khi chuyển sang chế độ xem Live View, hệ thống tự động quét toàn bộ các phân vùng (partitions) lưu trên Cloudflare R2 (`storeLocationData`) và bộ nhớ in-memory. Bản vẽ mặt bằng cùng toàn bộ hình khối vẽ (polygons, rects, circles) của mọi tầng (B2, B1, L1, L2, L3, L4, L5) được tự động tải và lập chỉ mục đầy đủ, sẵn sàng hiển thị ngay khi người dùng chuyển tầng.
+   - **Tô màu chuẩn xác 100% như Tab Review**:
+     - *Đồng nhất phong cách đồ họa*: Tích hợp cơ chế hiển thị chuẩn của ReviewTab với viền trắng tương phản cao (`stroke="#ffffff"`), độ dày viền thích ứng linh hoạt theo tỉ lệ thu phóng (`strokeWidth={2 / scale}`), và bóng đổ nổi khối (`shadowBlur={4}`, `shadowColor="rgba(0,0,0,0.5)"`).
+     - *Độ mờ chuẩn phân nhóm*: Áp dụng chính xác độ mờ (`opacity`) cấu hình riêng cho từng nhóm trạng thái hoặc quy tắc động.
+     - *Chữ hiển thị sắc nét*: Tên gian hàng/unit được phủ màu trắng viền đen tương phản, tự động co giãn theo cấp độ zoom, đảm bảo đọc rõ ràng ở mọi mức độ phóng to hay thu nhỏ.
    - **Tối ưu hiển thị theo Tab Dynamic**: Chỉ hiển thị các gian hàng/vị trí đã được phân nhóm hoặc gán quy tắc động ở Tab Dynamic, ẩn các unit trống giúp bản vẽ trực quan và tập trung.
    - **Xem nhanh thông tin (Tooltip)**: Rê chuột hoặc chạm vào unit để xem thông tin chi tiết: Tên gian hàng, Phân loại/Brand, Trạng thái thi công, **MD Status**, Diện tích, Thời gian thi công (định dạng ngày giờ chuẩn `formatDisplayDateTime` đồng bộ 100% với Task Detail) và **Khung DETAIL** (tự động trích xuất các hạng mục công việc đang thi công hôm nay hoặc ghi chú chi tiết từ bảng Project General có sẵn trong bộ nhớ, **0 tốn Firestore Read**).
    - **Tối ưu trải nghiệm chạm & hiệu năng trên iOS/Mobile**:

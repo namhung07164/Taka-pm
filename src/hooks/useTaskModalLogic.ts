@@ -8,7 +8,7 @@ import { doc } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from "../lib/firebase";
 import { addPendingUpdate } from '../lib/syncQueue';
 import { undoManager } from '../lib/undoManager';
-import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays } from '../lib/ganttUtils';
+import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors } from '../lib/ganttUtils';
 import { generateId } from '../lib/utils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 
@@ -314,7 +314,8 @@ export function useTaskModalLogic({
 
     if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
       if (formData.predecessor) {
-        let parts = formData.predecessor.split(",").map(s => s.trim()).filter(Boolean);
+        const taskNoMap = buildTaskNoMap(projects, tasks);
+        let parts = splitPredecessors(formData.predecessor, taskNoMap);
         if (parts.length >= 2) {
           if (!/FF|SF/i.test(parts[1])) {
             if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
@@ -379,7 +380,17 @@ export function useTaskModalLogic({
          : [...tasks, dataToSave as Task];
       const newTaskNoMap = buildTaskNoMap(projects, newTasksForMap);
       const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, newTasksForMap);
-      const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks);
+
+      // Explicitly check if task code changed (especially for Task Mẹ with custom code or code containing commas)
+      if (task) {
+        const oldCode = (task.taskCodePhu || computeTaskCode(projects, tasks, task)).trim();
+        const newCode = (dataToSave.taskCodePhu || computeTaskCode(projects, newTasksForMap, dataToSave as Task)).trim();
+        if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+          oldCodeToNewCode.set(oldCode.toLowerCase(), newCode);
+        }
+      }
+
+      const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects);
       const predecessorUpdates = predecessorUpdatesOrig.filter(pu => pu.id !== id);
       const predecessorUpdatesMap = new Map(predecessorUpdates.map(pu => [pu.id, pu]));
 
@@ -427,6 +438,23 @@ export function useTaskModalLogic({
            batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
         }
       });
+
+      // Zero-Delay Optimistic UI: Immediately reflect all updates into Zustand global store
+      const optimisticList: any[] = [dataToSave];
+      depUpdates.forEach(depTask => {
+        const pu = predecessorUpdatesMap.get(depTask.id);
+        if (pu) {
+          optimisticList.push({ ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        } else {
+          optimisticList.push(depTask);
+        }
+      });
+      predecessorUpdates.forEach(pu => {
+        if (!mappedDepUpdates.has(pu.id)) {
+          optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        }
+      });
+      useAppStore.getState().optimisticUpdateTasks(optimisticList);
 
       try {
         batch.commit().catch(e => console.error("Batch commit failed", e));

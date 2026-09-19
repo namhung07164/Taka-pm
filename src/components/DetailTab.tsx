@@ -18,7 +18,7 @@ import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
-import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors } from '../lib/ganttUtils';
+import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates } from '../lib/ganttUtils';
 import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/projectDatesService';
 import { QRCodeButton } from './QRCodeButton';
 import { safeGetItemSession, safeSetItemSession } from '../lib/storage';
@@ -429,37 +429,10 @@ export function DetailTab({
         }
       });
 
-      tasks.forEach(t=> {
-        if (t.predecessor) {
-          const preds = String(t.predecessor).split(',').map(s => s.trim()).filter(Boolean);
-          let changed = false;
-          const newPreds = preds.map(pMatches => {
-            const lowerMatches = pMatches.toLowerCase();
-            let longestMatch = "";
-            for (const oldCode of oldCodeToNewCode.keys()) {
-              if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
-                const remainder = lowerMatches.substring(oldCode.length);
-                if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
-                  longestMatch = oldCode;
-                }
-              }
-            }
-            
-            if (longestMatch) {
-              const newCodeForThisCode = oldCodeToNewCode.get(longestMatch)!;
-              if (newCodeForThisCode.toLowerCase() !== longestMatch) {
-                changed = true;
-                return newCodeForThisCode + pMatches.substring(longestMatch.length);
-              }
-            }
-            return pMatches;
-          });
-
-          if (changed) {
-            const existingUpdates = updatesPerTask.get(t.id) || {};
-            updatesPerTask.set(t.id, { ...existingUpdates, predecessor: newPreds.join(', '), updatedAt: new Date().toISOString() });
-          }
-        }
+      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects);
+      predUpdates.forEach(pu => {
+        const existingUpdates = updatesPerTask.get(pu.id) || {};
+        updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
       });
 
       updatesPerTask.forEach((updates, taskId) => {
@@ -510,37 +483,10 @@ export function DetailTab({
         }
       });
 
-      tasks.forEach(t=> {
-        if (t.predecessor) {
-          const preds = String(t.predecessor).split(',').map(s => s.trim()).filter(Boolean);
-          let changed = false;
-          const newPreds = preds.map(pMatches => {
-            const lowerMatches = pMatches.toLowerCase();
-            let longestMatch = "";
-            for (const oldCode of oldCodeToNewCode.keys()) {
-              if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
-                const remainder = lowerMatches.substring(oldCode.length);
-                if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
-                  longestMatch = oldCode;
-                }
-              }
-            }
-            
-            if (longestMatch) {
-              const newCodeForThisCode = oldCodeToNewCode.get(longestMatch)!;
-              if (newCodeForThisCode.toLowerCase() !== longestMatch) {
-                changed = true;
-                return newCodeForThisCode + pMatches.substring(longestMatch.length);
-              }
-            }
-            return pMatches;
-          });
-
-          if (changed) {
-            const existingUpdates = updatesPerTask.get(t.id) || {};
-            updatesPerTask.set(t.id, { ...existingUpdates, predecessor: newPreds.join(', '), updatedAt: new Date().toISOString() });
-          }
-        }
+      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects);
+      predUpdates.forEach(pu => {
+        const existingUpdates = updatesPerTask.get(pu.id) || {};
+        updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
       });
 
       updatesPerTask.forEach((updates, taskId) => {
@@ -947,19 +893,52 @@ export function DetailTab({
         const projectYearUpdate = field === 'year' ? value : p.year;
         const projectStoreUpdate = field === 'store' ? value : p.store;
 
-        // Update all  with this project identity
+        // Compute cascaded code & predecessor updates across all tasks
+        const { taskUpdates, predecessorUpdates } = getProjectCodeChangePredecessorUpdates(
+          p,
+          projectCodeUpdate,
+          projectYearUpdate,
+          projectStoreUpdate,
+          tasks,
+          projects
+        );
+
+        // Update all tasks with this project identity
         const relatedTasks = tasks.filter(t=> 
           t.projectCode === p.code && 
           (t.projectYear == p.year || (!t.projectYear && !p.year)) &&
           (t.projectStore == p.store || (!t.projectStore && !p.store))
         );
+
+        const relatedTaskIds = new Set(relatedTasks.map(t => t.id));
+
         relatedTasks.forEach(t => {
           const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-          batch.update(tRef, { 
+          const tUpdate = taskUpdates.get(t.id) || {
             projectCode: projectCodeUpdate,
             projectYear: projectYearUpdate,
             projectStore: projectStoreUpdate
-          });
+          };
+          const pu = predecessorUpdates.find(item => item.id === t.id);
+          const payload: any = {
+            ...tUpdate,
+            updatedAt: new Date().toISOString()
+          };
+          if (pu) {
+            payload.predecessor = pu.predecessor;
+          }
+          batch.update(tRef, payload);
+        });
+
+        // Update predecessor for tasks in other projects that reference this project
+        predecessorUpdates.forEach(pu => {
+          if (!relatedTaskIds.has(pu.id)) {
+            const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
+            batch.update(tRef, {
+              predecessor: pu.predecessor,
+              updatedAt: pu.updatedAt
+            });
+          }
         });
         
         // Update all costs with this project identity from memory store (Zero-read optimization)
@@ -980,13 +959,29 @@ export function DetailTab({
           });
         });
 
-        try {
-        batch.commit().catch(e => console.error("Batch commit failed", e));
-      } catch (error: any) {
-        console.error("Batch commit failed", error);
-        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        return;
-      }
+        // Optimistic update in Zustand store (0ms UI latency)
+        const predMap = new Map(predecessorUpdates.map(pu => [pu.id, pu.predecessor]));
+        const updatedTasks = tasks.map(t => {
+          const tUpdate = taskUpdates.get(t.id);
+          const newPred = predMap.get(t.id);
+          if (tUpdate || newPred !== undefined) {
+            return {
+              ...t,
+              ...(tUpdate || {}),
+              ...(newPred !== undefined ? { predecessor: newPred, updatedAt: new Date().toISOString() } : {})
+            };
+          }
+          return t;
+        });
+        useAppStore.getState().setTasks(updatedTasks);
+
+        const updatedProjects = projects.map(proj => proj.id === p.id ? { ...proj, ...dataToSave, id: p.id, updatedAt: new Date().toISOString() } : proj);
+        useAppStore.getState().setProjects(updatedProjects);
+
+        batch.commit().catch(e => {
+          console.error("Batch commit failed", e);
+          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+        });
         
         undoManager.push({
           description: `Update Project Identity: ${p.code}(${p.year || ''}) -> ${projectCodeUpdate}(${projectYearUpdate || ''})`,
@@ -995,11 +990,25 @@ export function DetailTab({
             revertBatch.set(pRef, p);
             relatedTasks.forEach(t => {
               const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-              revertBatch.update(tRef, { projectCode: p.code, projectYear: p.year });
+              revertBatch.update(tRef, { 
+                projectCode: p.code, 
+                projectYear: p.year,
+                projectStore: p.store,
+                ...(t.taskCodePhu !== undefined ? { taskCodePhu: t.taskCodePhu } : {}),
+                ...(t.predecessor !== undefined ? { predecessor: t.predecessor } : {})
+              });
+            });
+            predecessorUpdates.forEach(pu => {
+              if (!relatedTaskIds.has(pu.id)) {
+                const originalTask = tasks.find(st => st.id === pu.id);
+                revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+                  predecessor: originalTask?.predecessor || ''
+                });
+              }
             });
             relatedCosts.forEach(c => {
               const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
-              revertBatch.update(cRef, { projectCode: p.code, projectYear: p.year });
+              revertBatch.update(cRef, { projectCode: p.code, projectYear: p.year, projectStore: p.store });
             });
             revertBatch.commit().catch(console.error);
           }
@@ -1104,27 +1113,32 @@ export function DetailTab({
 
       if (updates.predecessor !== undefined && updates.predecessor !== t.predecessor) {
         let val = updates.predecessor;
-        let parts = val.split(',').map(s => s.trim()).filter(Boolean);
+        const taskNoMap = buildTaskNoMap(projects, tasks);
+        let parts = splitPredecessors(val, taskNoMap);
         if (parts.length > 2) parts = parts.slice(0, 2);
         
         if (parts.length >= 2) {
           updates.durationManual = false;
+          if (!/FF|SF/i.test(parts[1])) {
+            if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
+            else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
+          }
           updates.predecessor = parts.join(', ');
         }
 
-        if (updates.predecessor) {
-          let parts = updates.predecessor.split(",").map(s => s.trim()).filter(Boolean);
-          if (parts.length >= 2) {
-            if (!/FF|SF/i.test(parts[1])) {
-              if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
-              else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
-            }
-            updates.predecessor = parts.join(", ");
-          }
-        }
-        const taskNoMap = buildTaskNoMap(projects, tasks);
         // Allow external predecessor links across projects without blocking window.confirm in iframe/mobile
         parsePredecessors(updates.predecessor, taskNoMap, t);
+      }
+
+      let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];
+      if (updates.taskCodePhu !== undefined && updates.taskCodePhu !== t.taskCodePhu) {
+        const oldCode = (t.taskCodePhu || computeTaskCode(projects, tasks, t)).trim();
+        const newCode = (updates.taskCodePhu || computeTaskCode(projects, tasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
+        if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+          const map = new Map<string, string>();
+          map.set(oldCode.toLowerCase(), newCode);
+          predecessorUpdates = updatePredecessorsStrings(map, tasks, projects);
+        }
       }
 
       const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
@@ -1132,12 +1146,12 @@ export function DetailTab({
       let newT = { ...t, ...updates, updatedAt: new Date().toISOString() };
 
       if (updates.predecessor !== undefined) {
-        const parts = updates.predecessor.split(',').map(s => s.trim()).filter(Boolean);
+        const taskNoMap = buildTaskNoMap(projects, tasks);
+        const parts = splitPredecessors(updates.predecessor, taskNoMap);
         if (parts.length >= 2) {
           newT.durationManual = false;
         }
         newT.realtimeUpdate = Boolean(updates.predecessor.trim());
-        const taskNoMap = buildTaskNoMap(projects, tasks);
         const parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
         const calcResult = calculateTaskDatesFromPredecessors(newT, parsed);
         if (calcResult) {
@@ -1268,9 +1282,20 @@ export function DetailTab({
         const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
         batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() });
       });
+
+      predecessorUpdates.forEach(pu => {
+        if (pu.id !== t.id && !updatesToDependents.some(d => d.id === pu.id)) {
+          const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
+          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        }
+      });
       
       // Optimistically update the UI to prevent input lag
-      useAppStore.getState().optimisticUpdateTasks([newT, ...depUpdates]);
+      useAppStore.getState().optimisticUpdateTasks([
+        newT,
+        ...depUpdates,
+        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
+      ]);
 
       try {
         batch.commit().catch(e => console.error("Batch commit failed", e));

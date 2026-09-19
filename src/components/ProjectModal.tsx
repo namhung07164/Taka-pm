@@ -23,6 +23,7 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { addPendingUpdate } from '../lib/syncQueue';
 import { bumpConfigVersion } from '../lib/configCacheService';
+import { getProjectCodeChangePredecessorUpdates } from '../lib/ganttUtils';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -276,8 +277,18 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           updatedAt: new Date().toISOString()
         });
 
-        // Update tasks associated with the old (code, year) from memory store (Zero-read optimization)
+        // Compute cascaded code & predecessor updates across all tasks
         const storeTasks = useAppStore.getState().tasks || [];
+        const { taskUpdates, predecessorUpdates } = getProjectCodeChangePredecessorUpdates(
+          project,
+          formData.code,
+          formData.year,
+          formData.store,
+          storeTasks,
+          projects
+        );
+
+        // Update tasks associated with the old (code, year, store)
         const relatedTasks = storeTasks.filter(t => {
           const matchesCode = t.projectCode === project.code;
           const matchesYear = !t.projectYear || String(t.projectYear) === String(project.year);
@@ -285,12 +296,33 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           return matchesCode && matchesYear && matchesStore;
         });
 
+        const relatedTaskIds = new Set(relatedTasks.map(t => t.id));
+
         relatedTasks.forEach(t => {
-          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), { 
+          const tUpdate = taskUpdates.get(t.id) || { 
             projectCode: formData.code,
             projectYear: formData.year,
             projectStore: formData.store
-          });
+          };
+          const pu = predecessorUpdates.find(p => p.id === t.id);
+          const payload: any = {
+            ...tUpdate,
+            updatedAt: new Date().toISOString()
+          };
+          if (pu) {
+            payload.predecessor = pu.predecessor;
+          }
+          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), payload);
+        });
+
+        // Update tasks in other projects that reference this project's tasks in predecessor
+        predecessorUpdates.forEach(pu => {
+          if (!relatedTaskIds.has(pu.id)) {
+            batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+              predecessor: pu.predecessor,
+              updatedAt: pu.updatedAt
+            });
+          }
         });
 
         // Update costs from memory store (Zero-read optimization)
@@ -310,13 +342,29 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           });
         });
 
-        try {
-        batch.commit().catch(e => console.error("Batch commit failed", e));
-      } catch (error: any) {
-        console.error("Batch commit failed", error);
-        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        setIsSubmitting(false); return;
-      }
+        // Optimistic update in Zustand store (0ms UI latency)
+        const predMap = new Map(predecessorUpdates.map(pu => [pu.id, pu.predecessor]));
+        const updatedTasks = storeTasks.map(t => {
+          const tUpdate = taskUpdates.get(t.id);
+          const newPred = predMap.get(t.id);
+          if (tUpdate || newPred !== undefined) {
+            return {
+              ...t,
+              ...(tUpdate || {}),
+              ...(newPred !== undefined ? { predecessor: newPred, updatedAt: new Date().toISOString() } : {})
+            };
+          }
+          return t;
+        });
+        useAppStore.getState().setTasks(updatedTasks);
+
+        const updatedProjects = projects.map(p => p.id === project.id ? { ...p, ...dataToSave, id: project.id, updatedAt: new Date().toISOString() } : p);
+        useAppStore.getState().setProjects(updatedProjects);
+
+        batch.commit().catch(e => {
+          console.error("Batch commit failed", e);
+          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+        });
         
         undoManager.push({
           description: `Update Identity: ${project.code}(${project.year}) -> ${formData.code}(${formData.year})`,
@@ -327,14 +375,26 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
               const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
               revertBatch.update(tRef, { 
                 projectCode: project.code,
-                projectYear: project.year 
+                projectYear: project.year,
+                projectStore: project.store,
+                ...(t.taskCodePhu !== undefined ? { taskCodePhu: t.taskCodePhu } : {}),
+                ...(t.predecessor !== undefined ? { predecessor: t.predecessor } : {})
               });
+            });
+            predecessorUpdates.forEach(pu => {
+              if (!relatedTaskIds.has(pu.id)) {
+                const originalTask = storeTasks.find(st => st.id === pu.id);
+                revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+                  predecessor: originalTask?.predecessor || ''
+                });
+              }
             });
             relatedCosts.forEach(c => {
               const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
               revertBatch.update(cRef, { 
                 projectCode: project.code,
-                projectYear: project.year 
+                projectYear: project.year,
+                projectStore: project.store
               });
             });
             revertBatch.commit().catch(console.error);

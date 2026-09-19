@@ -18,27 +18,150 @@ export function getPredecessorCodeUpdates(oldTaskNoMap: Map<string, Task[]>, new
   return oldCodeToNewCode;
 }
 
-export function updatePredecessorsStrings(oldCodeToNewCode: Map<string, string>, allTasks: Task[]): {id: string, predecessor: string, updatedAt: string}[] {
+/**
+ * Splits a predecessor string into individual predecessor tokens (up to 2 in standard Gantt),
+ * correctly preserving task codes that contain commas (e.g. "L1,L2-01", "HCM,HN-01", or "101,102-1").
+ */
+export function splitPredecessors(
+  predecessorString: string | undefined | null,
+  knownCodes?: Iterable<string> | Map<string, any> | Set<string>
+): string[] {
+  if (!predecessorString || typeof predecessorString !== 'string') return [];
+  const raw = predecessorString.trim();
+  if (!raw) return [];
+
+  // If there are no commas at all, it's definitely a single token
+  if (!raw.includes(',')) return [raw];
+
+  // Extract known codes
+  let codeList: string[] = [];
+  if (knownCodes) {
+    if (knownCodes instanceof Map) {
+      codeList = Array.from(knownCodes.keys());
+    } else {
+      codeList = Array.from(knownCodes);
+    }
+  }
+  // Normalize & sort descending by length so longer codes (e.g. "l1,l2-01") match before sub-parts
+  codeList = codeList
+    .map(c => String(c).trim().toLowerCase())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  const lowerRaw = raw.toLowerCase();
+
+  // 1. If we have known codes, try to match the first predecessor from the start of raw
+  if (codeList.length > 0) {
+    for (const code of codeList) {
+      if (lowerRaw.startsWith(code)) {
+        const afterCode = lowerRaw.substring(code.length);
+        // Valid successor after code: optional relation (FS|SS|FF|SF), optional lag ([+-]number), optional whitespace
+        const matchRelLag = afterCode.match(/^(\s*(?:fs|ss|ff|sf))?(\s*[+-]\s*\d+(?:\.\d+)?)?/i);
+        const relLagLen = matchRelLag ? matchRelLag[0].length : 0;
+        const afterRel = afterCode.substring(relLagLen).trimStart();
+
+        // If it's the entire string, it's a single predecessor
+        if (afterRel.length === 0) {
+          return [raw];
+        }
+
+        // If followed by a comma, that comma is the delimiter between predecessors!
+        if (afterRel.startsWith(',')) {
+          const firstToken = raw.substring(0, code.length + relLagLen).trim();
+          const remainderAfterComma = raw.substring(code.length + relLagLen).replace(/^\s*,\s*/, '').trim();
+          if (remainderAfterComma) {
+            const secondTokens = splitPredecessors(remainderAfterComma, codeList);
+            return [firstToken, ...secondTokens];
+          }
+          return [firstToken];
+        }
+      }
+    }
+  }
+
+  // 2. Identify indices of commas that belong to any known code containing commas
+  const protectedCommaIndices = new Set<number>();
+  for (const code of codeList) {
+    if (code.includes(',')) {
+      let searchIdx = 0;
+      while ((searchIdx = lowerRaw.indexOf(code, searchIdx)) !== -1) {
+        let commaPos = 0;
+        while ((commaPos = code.indexOf(',', commaPos)) !== -1) {
+          protectedCommaIndices.add(searchIdx + commaPos);
+          commaPos++;
+        }
+        searchIdx += code.length;
+      }
+    }
+  }
+
+  // 3. Fallback: Split at unprotected commas
+  const tokens: string[] = [];
+  let currentStart = 0;
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === ',' && !protectedCommaIndices.has(i)) {
+      const segment = raw.substring(currentStart, i).trim();
+      if (segment) {
+        tokens.push(segment);
+      }
+      currentStart = i + 1;
+    }
+  }
+  const lastSegment = raw.substring(currentStart).trim();
+  if (lastSegment) {
+    tokens.push(lastSegment);
+  }
+
+  return tokens.length > 0 ? tokens : [raw];
+}
+
+export function updatePredecessorsStrings(
+  oldCodeToNewCode: Map<string, string>, 
+  allTasks: Task[],
+  projects?: Project[]
+): {id: string, predecessor: string, updatedAt: string}[] {
   const updates: {id: string, predecessor: string, updatedAt: string}[] = [];
-  if (oldCodeToNewCode.size === 0) return updates;
+  if (!oldCodeToNewCode || oldCodeToNewCode.size === 0) return updates;
   
+  // Normalize oldCodeToNewCode keys to lowercase for safe matching
+  const normalizedMap = new Map<string, string>();
+  for (const [k, v] of oldCodeToNewCode.entries()) {
+    if (k && v) {
+      normalizedMap.set(k.trim().toLowerCase(), v.trim());
+    }
+  }
+
+  if (normalizedMap.size === 0) return updates;
+
+  // Build comprehensive set of known codes so commas inside them are protected
+  const knownCodes = new Set<string>();
+  for (const k of normalizedMap.keys()) knownCodes.add(k);
+  for (const v of normalizedMap.values()) knownCodes.add(v.toLowerCase());
+  allTasks.forEach(t => {
+    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
+    if (t.projectCode && projects) {
+      const c = computeTaskCode(projects, allTasks, t);
+      if (c) knownCodes.add(c.toLowerCase());
+    }
+  });
+
   allTasks.forEach(t => {
       if (!t.predecessor) return;
-      const preds = t.predecessor.split(',').map(s => s.trim()).filter(Boolean);
+      const preds = splitPredecessors(t.predecessor, knownCodes);
       let changed = false;
       const newPreds = preds.map(pMatches => {
           const lowerMatches = pMatches.toLowerCase();
           let longestMatch = "";
-          for (const oldCode of oldCodeToNewCode.keys()) {
+          for (const oldCode of normalizedMap.keys()) {
             if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
               const remainder = lowerMatches.substring(oldCode.length);
-              if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainder)) {
+              if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
                 longestMatch = oldCode;
               }
             }
           }
           if (longestMatch) {
-            const newCode = oldCodeToNewCode.get(longestMatch)!;
+            const newCode = normalizedMap.get(longestMatch)!;
             if (newCode.toLowerCase() !== longestMatch) {
               changed = true;
               let replacementCode = newCode;
@@ -62,6 +185,111 @@ export function updatePredecessorsStrings(oldCodeToNewCode: Map<string, string>,
   });
 
   return updates;
+}
+
+/**
+ * Calculates task updates and predecessor cascades when a Project's code (or year/store) is changed.
+ * This guarantees that both:
+ * 1. The project's tasks' codes (e.g. A-1 -> B-1) are synchronized.
+ * 2. All predecessor references across the entire database (both internal and external projects)
+ *    are automatically cascaded and rewritten to point to the new code.
+ */
+export function getProjectCodeChangePredecessorUpdates(
+  oldProject: Project,
+  newCode: string,
+  newYear: number | string | undefined,
+  newStore: string | undefined,
+  allTasks: Task[],
+  projects: Project[]
+): {
+  oldCodeToNewCode: Map<string, string>;
+  taskUpdates: Map<string, { taskCodePhu?: string; projectCode: string; projectYear?: number; projectStore?: string }>;
+  predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[];
+} {
+  const oldCodeToNewCode = new Map<string, string>();
+  const taskUpdates = new Map<string, { taskCodePhu?: string; projectCode: string; projectYear?: number; projectStore?: string }>();
+
+  const oldPCode = String(oldProject.code || '').trim();
+  const newPCode = String(newCode || '').trim();
+  const oldYear = oldProject.year;
+  const oldStore = oldProject.store;
+
+  const yearNum = (newYear !== undefined && newYear !== null && !isNaN(Number(newYear))) 
+    ? Number(newYear) 
+    : (oldYear !== undefined && !isNaN(Number(oldYear)) ? Number(oldYear) : undefined);
+
+  // Identify all tasks belonging to the old project
+  const relatedTasks = allTasks.filter(t => {
+    const matchesCode = String(t.projectCode || '').trim().toLowerCase() === oldPCode.toLowerCase();
+    const matchesYear = !t.projectYear || !oldYear || String(t.projectYear) === String(oldYear);
+    const matchesStore = !t.projectStore || !oldStore || String(t.projectStore) === String(oldStore);
+    return matchesCode && matchesYear && matchesStore;
+  });
+
+  const sortedTasks = sortGroupTasks(relatedTasks);
+
+  sortedTasks.forEach((t, i) => {
+    const order = (t.orderIndex !== undefined ? t.orderIndex : i) + 1;
+    const defaultOldCode = `${oldPCode}-${order}`;
+    const defaultNewCode = `${newPCode}-${order}`;
+
+    // Standard numbered code mapping (e.g., A-1 -> B-1)
+    oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
+
+    let newTaskCodePhu: string | undefined = undefined;
+
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      const trimmedPhu = t.taskCodePhu.trim();
+      const lowerPhu = trimmedPhu.toLowerCase();
+      const lowerOldPCode = oldPCode.toLowerCase();
+
+      if (lowerPhu.startsWith(lowerOldPCode + '-')) {
+        // e.g. "L3-101-1" -> "L3-202-1"
+        const suffix = trimmedPhu.substring(oldPCode.length);
+        newTaskCodePhu = `${newPCode}${suffix}`;
+        oldCodeToNewCode.set(lowerPhu, newTaskCodePhu);
+      } else if (lowerPhu === lowerOldPCode) {
+        newTaskCodePhu = newPCode;
+        oldCodeToNewCode.set(lowerPhu, newTaskCodePhu);
+      } else {
+        // Custom taskCodePhu without old project prefix
+        oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
+      }
+    } else {
+      // taskCodePhu is not set explicitly; it computes to defaultNewCode
+      oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
+    }
+
+    // Check computed task code
+    const computedOld = computeTaskCode(projects, allTasks, t);
+    if (computedOld && computedOld.trim()) {
+      const trimmedComputed = computedOld.trim();
+      const lowerComputed = trimmedComputed.toLowerCase();
+      if (!oldCodeToNewCode.has(lowerComputed)) {
+        if (lowerComputed.startsWith(oldPCode.toLowerCase() + '-')) {
+          const suffix = trimmedComputed.substring(oldPCode.length);
+          oldCodeToNewCode.set(lowerComputed, `${newPCode}${suffix}`);
+        } else {
+          oldCodeToNewCode.set(lowerComputed, defaultNewCode);
+        }
+      }
+    }
+
+    taskUpdates.set(t.id, {
+      projectCode: newPCode,
+      ...(yearNum !== undefined ? { projectYear: yearNum } : {}),
+      ...(newStore ? { projectStore: newStore } : {}),
+      ...(newTaskCodePhu ? { taskCodePhu: newTaskCodePhu } : {})
+    });
+  });
+
+  const predecessorUpdates = updatePredecessorsStrings(oldCodeToNewCode, allTasks, projects);
+
+  return {
+    oldCodeToNewCode,
+    taskUpdates,
+    predecessorUpdates
+  };
 }
 
 export function sortGroupTasks(tasks: Task[]): Task[] {
@@ -141,7 +369,7 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
 
 export function parsePredecessors(predecessorString: string, taskNoMap: Map<string, Task[]>, contextTask?: Task) {
   if (!predecessorString) return [];
-  const preds = predecessorString.split(',').map(s => s.trim()).filter(Boolean);
+  const preds = splitPredecessors(predecessorString, taskNoMap);
   return preds.map(pMatches => {
     const lowerMatches = pMatches.toLowerCase();
     let longestMatch = "";
@@ -568,7 +796,7 @@ export function reorderAndCalculateTasks(
   const oldTaskNoMap = buildTaskNoMap(projects, allTasks);
   const newTaskNoMap = buildTaskNoMap(projects, updatedAllTasks);
   const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, updatedAllTasks);
-  const predecessorUpdates = updatePredecessorsStrings(oldCodeToNewCode, updatedAllTasks);
+  const predecessorUpdates = updatePredecessorsStrings(oldCodeToNewCode, updatedAllTasks, projects);
 
   // Merge any predecessor updates for tasks that are already in taskUpdates
   predecessorUpdates.forEach(pu => {
