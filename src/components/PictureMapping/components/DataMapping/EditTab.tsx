@@ -36,24 +36,23 @@ function SearchableSelect({
     const [isOpen, setIsOpen] = React.useState(false);
     const wrapperRef = React.useRef<HTMLDivElement>(null);
 
+    // Keep searchTerm in sync when the selected unit changes
     React.useEffect(() => {
-        const found = options.find(o => o.value === value);
-        if (found) {
-            setSearchTerm(found.label);
-        } else {
-            setSearchTerm(value || '');
-        }
-    }, [value, options]);
+        setSearchTerm(value || '');
+    }, [value]);
 
     React.useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
+                if (searchTerm.trim() !== value) {
+                    onChange(searchTerm.trim());
+                }
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    }, [searchTerm, value, onChange]);
 
     const filteredOptions = options.filter(opt => 
         opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || opt.value.toLowerCase().includes(searchTerm.toLowerCase())
@@ -62,12 +61,9 @@ function SearchableSelect({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            if (filteredOptions.length > 0 && filteredOptions.some(o => o.label.toLowerCase() === searchTerm.toLowerCase() || o.value.toLowerCase() === searchTerm.toLowerCase())) {
-                const match = filteredOptions.find(o => o.label.toLowerCase() === searchTerm.toLowerCase() || o.value.toLowerCase() === searchTerm.toLowerCase()) || filteredOptions[0];
-                onChange(match.value);
-                setSearchTerm(match.label);
-            } else if (searchTerm.trim()) {
-                onChange(searchTerm.trim());
+            const trimmed = searchTerm.trim();
+            if (trimmed) {
+                onChange(trimmed);
             }
             setIsOpen(false);
         }
@@ -78,13 +74,17 @@ function SearchableSelect({
             <div className="relative">
                 <input 
                     type="text"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-3 pr-8 py-2 text-sm text-slate-200 outline-none focus:border-brand-500 transition-colors"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-3 pr-8 py-2 text-sm text-slate-200 outline-none focus:border-brand-500 transition-colors font-medium"
                     value={searchTerm}
                     onChange={(e) => {
                         const val = e.target.value;
                         setSearchTerm(val);
-                        onChange(val);
                         setIsOpen(true);
+                    }}
+                    onBlur={() => {
+                        if (searchTerm.trim() !== value) {
+                            onChange(searchTerm.trim());
+                        }
                     }}
                     onFocus={() => {
                         setIsOpen(true);
@@ -109,7 +109,8 @@ function SearchableSelect({
                     {searchTerm.trim() && !options.some(o => o.value.toLowerCase() === searchTerm.trim().toLowerCase()) && (
                         <div 
                             className="px-3 py-2 text-sm cursor-pointer transition-colors bg-brand-600/10 text-brand-300 hover:bg-brand-600/20 border-b border-slate-800 flex items-center gap-2 font-medium"
-                            onClick={() => {
+                            onMouseDown={(e) => {
+                                e.preventDefault();
                                 onChange(searchTerm.trim());
                                 setIsOpen(false);
                             }}
@@ -124,14 +125,16 @@ function SearchableSelect({
                         filteredOptions.map(opt => (
                             <div 
                                 key={opt.value}
-                                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${value === opt.value ? 'bg-brand-600/30 text-brand-300 font-medium' : 'text-slate-300 hover:bg-slate-800'}`}
-                                onClick={() => {
+                                className={`px-3 py-2 text-sm cursor-pointer transition-colors flex items-center justify-between ${value === opt.value ? 'bg-brand-600/30 text-brand-300 font-medium' : 'text-slate-300 hover:bg-slate-800'}`}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setSearchTerm(opt.value);
                                     onChange(opt.value);
-                                    setSearchTerm(opt.label);
                                     setIsOpen(false);
                                 }}
                             >
-                                {opt.label}
+                                <span>{opt.label}</span>
+                                {opt.value === value && <span className="text-xs uppercase bg-white/20 px-1.5 py-0.5 rounded text-white">Selected</span>}
                             </div>
                         ))
                     )}
@@ -1461,21 +1464,51 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 {unit.visible && unit.name && scale > 0.4 && (() => {
                                     const uInfo = summaryMap.get(unit.name);
                                     const sizeLabel = uInfo?.size ? `${unit.name}\n${uInfo.size} SQM` : unit.name;
+                                    
+                                    const xCoords = unit.points && unit.points.length >= 2 ? unit.points.filter((_, i) => i % 2 === 0) : [];
+                                    const yCoords = unit.points && unit.points.length >= 2 ? unit.points.filter((_, i) => i % 2 === 1) : [];
+                                    
+                                    const textX = unit.type === 'rect' 
+                                        ? (unit.x || 0) 
+                                        : (unit.type === 'circle' 
+                                            ? (unit.x || 0) - (unit.radius || 0) 
+                                            : (xCoords.length > 0 ? (unit.x || 0) + Math.min(...xCoords) : (unit.x || 0)));
+                                            
+                                    const textY = unit.type === 'rect' 
+                                        ? (unit.y || 0) 
+                                        : (unit.type === 'circle' 
+                                            ? (unit.y || 0) - (unit.radius || 0) 
+                                            : (yCoords.length > 0 ? (unit.y || 0) + Math.min(...yCoords) : (unit.y || 0)));
+                                            
+                                    const textWidth = unit.type === 'rect' 
+                                        ? Math.max(10, Math.abs(unit.width || 50)) 
+                                        : (unit.type === 'circle' 
+                                            ? Math.max(10, (unit.radius || 20) * 2) 
+                                            : (xCoords.length > 0 ? Math.max(20, Math.max(...xCoords) - Math.min(...xCoords)) : 100));
+                                            
+                                    const textHeight = unit.type === 'rect' 
+                                        ? Math.max(10, Math.abs(unit.height || 30)) 
+                                        : (unit.type === 'circle' 
+                                            ? Math.max(10, (unit.radius || 20) * 2) 
+                                            : (yCoords.length > 0 ? Math.max(20, Math.max(...yCoords) - Math.min(...yCoords)) : 30));
+                                            
+                                    const calcFontSize = unit.type === 'rect' 
+                                        ? Math.max(9, Math.min(Math.abs(unit.width || 50), Math.abs(unit.height || 50)) * 0.2) 
+                                        : (unit.type === 'circle' 
+                                            ? Math.max(9, (unit.radius || 20) * 0.4) 
+                                            : Math.max(9, 12 / (scale || 1)));
+
                                     return (
                                         <Text
                                             text={sizeLabel}
-                                            x={unit.type === 'rect' ? unit.x : (unit.type === 'circle' ? unit.x - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_, i) => i % 2 === 0)) : unit.x))}
-                                            y={unit.type === 'rect' ? unit.y : (unit.type === 'circle' ? unit.y - unit.radius! : (unit.points ? Math.min(...unit.points.filter((_, i) => i % 2 === 1)) : unit.y))}
-                                            width={unit.type === 'rect' ? unit.width : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_, i) => i % 2 === 0)) - Math.min(...unit.points.filter((_, i) => i % 2 === 0)) : 100))}
-                                            height={unit.type === 'rect' ? unit.height : (unit.type === 'circle' ? unit.radius! * 2 : (unit.points ? Math.max(...unit.points.filter((_, i) => i % 2 === 1)) - Math.min(...unit.points.filter((_, i) => i % 2 === 1)) : 30))}
+                                            x={textX}
+                                            y={textY}
+                                            width={textWidth}
+                                            height={textHeight}
                                             rotation={unit.rotation || 0}
                                             align="center"
                                             verticalAlign="middle"
-                                            fontSize={
-                                              unit.type === 'rect' 
-                                                ? Math.min(unit.width!, unit.height!) * 0.2 
-                                                : (unit.type === 'circle' ? unit.radius! * 0.4 : 12 / scale)
-                                            }
+                                            fontSize={calcFontSize}
                                             fill="#ffffff"
                                             fontStyle="bold"
                                             shadowColor="black"
