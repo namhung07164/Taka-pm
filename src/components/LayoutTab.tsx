@@ -102,7 +102,7 @@ export function LayoutTab({
     });
   }, [userAllowedLocations, canWrite, layoutSettings, activeStore]);
   const [isEditing, setIsEditing] = useState(false);
-  const [isLiveMapMode, setIsLiveMapMode] = useState(false);
+  const [isLiveMapMode, setIsLiveMapMode] = useState(true);
   const [editUrl, setEditUrl] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [cacheBuster, setCacheBuster] = useState<number>(Date.now());

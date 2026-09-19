@@ -3,7 +3,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
@@ -347,6 +347,9 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
+  const [showLegendModal, setShowLegendModal] = useState(false);
+  const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(false);
+  const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
@@ -548,14 +551,16 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   }, [units, summaryData, projects, storeFilter, locationFilter]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
-  const { unitColorMap, activeGroups } = useMemo(() => {
+  const { unitColorMap, unitGroupMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
+    const groupMap: Record<string, string> = {};
     const groupsInUse: any[] = [];
     
-    if (!version.groups) return { unitColorMap: colorMap, activeGroups: groupsInUse };
+    if (!version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, activeGroups: groupsInUse };
 
     version.groups.forEach((group: any) => {
         let matchCount = 0;
+        const matchedUnits: any[] = [];
         const mappedUnitIds = new Set(version.groupMappings?.[group.id] || []);
         
         units.forEach((u: any) => {
@@ -606,16 +611,18 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
             }
             if (isMatch) {
                 colorMap[u.id] = group.color;
+                groupMap[u.id] = group.id;
                 matchCount++;
+                matchedUnits.push({ id: u.id, name: u.name });
             }
         });
         
         if (matchCount > 0) {
-            groupsInUse.push({ ...group, matchCount });
+            groupsInUse.push({ ...group, matchCount, matchedUnits });
         }
     });
 
-    return { unitColorMap: colorMap, activeGroups: groupsInUse };
+    return { unitColorMap: colorMap, unitGroupMap: groupMap, activeGroups: groupsInUse };
   }, [version.groups, version.groupMappings, version.isDynamicActive, units, aggregatedData]);
 
   // 4. Filter only units that appear in dynamic tab and precalculate bounds
@@ -678,13 +685,14 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         return {
           ...unit,
           targetColor,
+          targetGroupId: unitGroupMap[unit.id],
           textX,
           textY,
           textWidth,
           textHeight,
         };
       });
-  }, [units, unitColorMap, searchQuery, aggregatedData]);
+  }, [units, unitColorMap, unitGroupMap, searchQuery, aggregatedData]);
 
   // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
   const updateTooltipPos = (clientX: number, clientY: number) => {
@@ -821,15 +829,274 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         </button>
       </div>
 
-      {/* Floating Bottom Menu Pill Button */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
+      {/* iOS Floating Color Legend Bar */}
+      <div className="absolute bottom-16 left-3 right-3 sm:left-4 sm:right-auto sm:max-w-xl z-20 pointer-events-auto">
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl p-2.5 transition-all">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-1.5">
+              <span className="p-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
+                <Palette className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                Chú thích màu
+              </span>
+              {activeGroups.length > 0 && (
+                <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded-full bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                  {activeGroups.length} nhóm
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {selectedLegendGroupId && (
+                <button
+                  onClick={() => setSelectedLegendGroupId(null)}
+                  className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline px-1.5 py-0.5"
+                >
+                  Bỏ lọc
+                </button>
+              )}
+              <button
+                onClick={() => setShowLegendModal(true)}
+                className="text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Bảng đầy đủ
+              </button>
+              <button
+                onClick={() => setIsLegendStripCollapsed(!isLegendStripCollapsed)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title={isLegendStripCollapsed ? "Mở rộng" : "Thu gọn"}
+              >
+                {isLegendStripCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Swatches List */}
+          {!isLegendStripCollapsed && (
+            <div className="pt-2">
+              {activeGroups.length === 0 ? (
+                <div className="flex items-center gap-2 overflow-x-auto py-0.5 text-xs" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="text-[11px] font-medium whitespace-nowrap">Completed</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+                    <span className="text-[11px] font-medium whitespace-nowrap">On Process</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                    <span className="text-[11px] font-medium whitespace-nowrap">Upcoming</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                    <span className="text-[11px] font-medium whitespace-nowrap">Delay</span>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  className="flex items-center gap-1.5 overflow-x-auto pb-0.5 touch-pan-x"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                  {activeGroups.map((g: any) => {
+                    const isSelected = selectedLegendGroupId === g.id;
+                    return (
+                      <button
+                        key={g.id}
+                        onClick={() => setSelectedLegendGroupId(isSelected ? null : g.id)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 transition-all border ${
+                          isSelected
+                            ? 'bg-purple-100 dark:bg-purple-950 border-purple-400 text-purple-900 dark:text-purple-100 shadow-sm scale-105'
+                            : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                        }`}
+                        title={`Bấm để ${isSelected ? 'bỏ lọc' : 'lọc & highlight'} nhóm ${g.name}`}
+                      >
+                        <span 
+                          className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs border border-black/15" 
+                          style={{ backgroundColor: g.color }}
+                        />
+                        <span className="whitespace-nowrap font-medium text-[11px] sm:text-xs">
+                          {g.name}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          {g.matchCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Floating Bottom Action Buttons */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+        <button 
+          onClick={() => setShowLegendModal(true)} 
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white backdrop-blur-md border border-purple-500 shadow-xl rounded-full text-xs font-bold active:scale-95 transition-all"
+        >
+          <Palette className="w-4 h-4" /> 
+          <span>Chú thích màu</span>
+          {activeGroups.length > 0 && (
+            <span className="bg-white/25 px-1.5 py-0.2 rounded-full text-[10px] font-mono">
+              {activeGroups.length}
+            </span>
+          )}
+        </button>
+
         <button 
           onClick={() => setShowMenu(true)} 
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 backdrop-blur-md border border-slate-700 dark:border-slate-300 shadow-xl rounded-full text-xs font-bold hover:bg-slate-800 active:scale-95 transition-all"
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 backdrop-blur-md border border-slate-700 dark:border-slate-300 shadow-xl rounded-full text-xs font-bold hover:bg-slate-800 active:scale-95 transition-all"
         >
           <Menu className="w-4 h-4" /> Menu
         </button>
       </div>
+
+      {/* Full Color Legend Modal / Drawer (iOS friendly) */}
+      {showLegendModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 text-slate-800 dark:text-slate-200 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
+                <Palette className="w-5 h-5 text-purple-600" />
+                Bảng Chú Thích Màu (Color Legend)
+              </div>
+              <button 
+                onClick={() => setShowLegendModal(false)}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Active Groups Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+                  Nhóm Phân Loại Đang Áp Dụng ({activeGroups.length})
+                </div>
+                {selectedLegendGroupId && (
+                  <button
+                    onClick={() => setSelectedLegendGroupId(null)}
+                    className="text-xs text-purple-600 dark:text-purple-400 hover:underline font-medium"
+                  >
+                    Bỏ lọc nhóm
+                  </button>
+                )}
+              </div>
+
+              {activeGroups.length === 0 ? (
+                <div className="text-xs text-slate-400 italic py-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
+                  Bản đồ hiện đang hiển thị màu theo trạng thái tiến độ dự án hoặc chưa có nhóm phân loại.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {activeGroups.map((g: any) => {
+                    const isSelected = selectedLegendGroupId === g.id;
+                    return (
+                      <div 
+                        key={g.id}
+                        onClick={() => setSelectedLegendGroupId(isSelected ? null : g.id)}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-400 shadow-sm'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2.5">
+                            <div 
+                              className="w-4 h-4 rounded-full shadow-sm border border-black/15 shrink-0" 
+                              style={{ backgroundColor: g.color }} 
+                            />
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                              {g.name}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-mono font-bold bg-white dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
+                            {g.matchCount} gian hàng
+                          </span>
+                        </div>
+
+                        {g.matchedUnits && g.matchedUnits.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {g.matchedUnits.slice(0, 15).map((u: any) => (
+                              <span 
+                                key={u.id}
+                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                              >
+                                {u.name}
+                              </span>
+                            ))}
+                            {g.matchedUnits.length > 15 && (
+                              <span className="text-[10px] text-slate-400 self-center">
+                                +{g.matchedUnits.length - 15} nữa...
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Project Status Legend Section */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+                Quy Chuẩn Màu Trạng Thái Dự Án (Project Status)
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
+                  <div className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Completed</div>
+                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400">Đã hoàn thành</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50">
+                  <div className="w-3 h-3 rounded-full bg-blue-500 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300">On Process</div>
+                    <div className="text-[10px] text-blue-600 dark:text-blue-400">Đang thi công</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50">
+                  <div className="w-3 h-3 rounded-full bg-amber-500 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-amber-800 dark:text-amber-300">Upcoming</div>
+                    <div className="text-[10px] text-amber-600 dark:text-amber-400">Sắp diễn ra</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50">
+                  <div className="w-3 h-3 rounded-full bg-rose-500 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-rose-800 dark:text-rose-300">Delay</div>
+                    <div className="text-[10px] text-rose-600 dark:text-rose-400">Chậm tiến độ</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setShowLegendModal(false)}
+                className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Menu Drawer / Modal */}
       {showMenu && (
@@ -1200,13 +1467,14 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
           <Layer>
             {displayedUnits.map((unit: any) => {
                const fillColor = unit.targetColor || "#3b82f6";
+               const isDimmed = selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
                
                const commonProps = {
                   id: unit.id,
                   fill: fillColor,
-                  opacity: 0.85,
-                  stroke: '#1e293b',
-                  strokeWidth: 2,
+                  opacity: isDimmed ? 0.2 : 0.85,
+                  stroke: isDimmed ? '#94a3b8' : '#1e293b',
+                  strokeWidth: isDimmed ? 1 : 2,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
                   shadowForStrokeEnabled: false,

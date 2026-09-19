@@ -445,7 +445,15 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 2. **Kéo & Thu phóng (Zoom/Pan)**: Sử dụng con lăn chuột hoặc nút (+ / -) để phóng to/thu nhỏ sơ đồ; kéo chuột để di chuyển góc nhìn.
 3. **Ghim vị trí dự án (Add Pin)**: Nhấp nút "Add Pin", sau đó nhấp vào vị trí gian hàng trên bản đồ và liên kết với Dự án tương ứng.
 4. **Xem nhanh thông tin**: Nhấp vào bất kỳ điểm ghim nào trên bản đồ để xem ngay tên gian hàng, thời gian thi công và hình ảnh hiện trường.
-5. **Quy trình Xuất tự động 3 bước (Trigger Export - Live View & Layout)**:
+5. **Chế độ Bản đồ Trực quan (Live View) & Bảng Chú Thích Màu (Color Legend trên iOS/Mobile/Desktop)**:
+   - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
+   - **Thanh Chú Thích Màu Nổi (Floating Color Legend Bar)**: Ở góc dưới màn hình (đặc biệt tối ưu trải nghiệm 1 chạm cho iOS/iPhone/iPad), hệ thống hiển thị dải các chấm màu và tên nhóm phân loại tương ứng theo định dạng thẻ cuộn ngang mượt mà.
+     - **Chạm 1 chạm để Lọc & Highlight**: Khi chạm vào một thẻ nhóm màu trên thanh Legend, hệ thống sẽ tự động highlight các gian hàng thuộc nhóm đó và làm mờ các gian hàng còn lại để nhận diện nhanh trên mặt bằng; chạm lại lần nữa để trở về bình thường.
+     - **Nút Thu gọn/Mở rộng**: Có thể bấm nút Chevron để thu gọn thanh Swatches thành một dải badge nhỏ gọn nhằm tối đa hóa diện tích quan sát bản đồ.
+   - **Bảng Tra Cứu Chú Thích Màu Toàn Diện (Color Legend Modal)**: Nằm ngay cạnh nút Menu dưới đáy màn hình với nút bấm chuyên biệt `[ 🎨 Chú thích màu ]`:
+     - Hiển thị danh sách đầy đủ tất cả các nhóm ngành hàng/phân loại, mã màu, số lượng gian hàng và các mã gian hàng liên quan.
+     - Cung cấp bảng quy chuẩn màu sắc trạng thái tiến độ dự án (`Completed` - Xanh lá, `On Process` - Xanh dương, `Upcoming` - Vàng cam, `Delay` - Đỏ) giúp người dùng tra cứu nhanh chóng mọi lúc mọi nơi.
+6. **Quy trình Xuất tự động 3 bước (Trigger Export - Live View & Layout)**:
    - Khi bấm nút **"Trigger Export"** (ở thanh công cụ Layout hoặc trong Menu chế độ Live View), hệ thống sẽ tự động thực hiện 3 bước tuần tự:
      - **Bước 1 — Tải Cloud R2 (Load Cloud)**: Kiểm tra thông minh dữ liệu trong ứng dụng; nếu dữ liệu bản vẽ Picture Mapping đã được tải từ Cloud trước đó thì tự động bỏ qua để tối ưu tốc độ và tránh ghi đè, nếu chưa có sẽ tự động tải cấu hình và ảnh nền mới nhất từ Cloudflare R2 về ứng dụng.
      - **Bước 2 — Áp dụng toàn bộ Dynamic Rules (Apply Rules)**: Tự động đánh giá toàn bộ các bộ quy tắc (Dynamic Rules) của tất cả các tầng/version thuộc chi nhánh đang xem, tự động cập nhật tiến độ, tính toán dữ liệu và tô màu chuẩn cho các gian hàng.
