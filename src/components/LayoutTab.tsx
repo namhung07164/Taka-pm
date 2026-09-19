@@ -290,7 +290,7 @@ export function LayoutTab({
     if (isExporting) return;
     try {
       setIsExporting(true);
-      setExportStatusMessage('Bước 1: Áp dụng Dynamic Rules...');
+      setExportStatusMessage('Bước 1/3: Đang tải dữ liệu từ Cloudflare R2...');
       const targetStore = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
       
       const res = await executeTriggerExportProcess(targetStore, (status) => {

@@ -1,4 +1,5 @@
-import { S3Client } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
 import { useAppStore } from '../../../store/useAppStore';
@@ -200,7 +201,119 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
 }
 
 /**
- * Bước 2: Lưu cloud của store đang xem lên R2 Cloudflare
+ * Bước 1: Tải toàn bộ cấu hình và dữ liệu từ Cloudflare R2 về ứng dụng
+ */
+export async function loadStoreFromCloudR2(): Promise<{ success: boolean; message: string }> {
+  const creds = getStoredR2Credentials();
+  if (!creds) {
+    throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng cấu hình R2 trước.');
+  }
+
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: creds.accessKeyId.trim(),
+      secretAccessKey: creds.secretAccessKey.trim(),
+    },
+  });
+
+  const command = new GetObjectCommand({
+    Bucket: creds.bucketName,
+    Key: 'mapping_config.json',
+  });
+
+  const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+  const res = await fetch(signedUrl);
+  if (!res.ok) {
+    throw new Error('Không tìm thấy file mapping_config.json trên Cloudflare R2.');
+  }
+
+  const data = await res.json();
+  const dataState = useDataStore.getState();
+
+  // Convert data into normalized storeLocationData
+  let normalizedStoreLocationData: Record<string, any> = {};
+
+  if (data.storeLocationData && typeof data.storeLocationData === 'object') {
+    normalizedStoreLocationData = data.storeLocationData;
+  } else if (Array.isArray(data.versions) || Array.isArray(data.mapUnits) || Array.isArray(data.units)) {
+    const legacyKey = `${data.store || dataState.store || 'HCM'}_${data.location || dataState.location || 'L1'}`;
+    normalizedStoreLocationData = {
+      [legacyKey]: {
+        mapUnits: data.mapUnits || data.units || [],
+        mapVersions: data.versions || [],
+        activeMapVersionId: data.activeMapVersionId || data.versions?.[0]?.id || null,
+      },
+    };
+  }
+
+  // Resolve all R2 background images across all partitions
+  for (const pKey in normalizedStoreLocationData) {
+    const partition = normalizedStoreLocationData[pKey];
+    if (!partition) continue;
+
+    const pStore = (pKey.split('_')[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const pLoc = pKey.split('_')[1] || 'L1';
+
+    partition.mapUnits = (partition.mapUnits || []).map((u: any) => ({
+      ...u,
+      store: u.store || pStore,
+      location: u.location || pLoc,
+      visible: u.visible !== false,
+      locked: !!u.locked,
+    }));
+
+    if (Array.isArray(partition.mapVersions)) {
+      for (let j = 0; j < partition.mapVersions.length; j++) {
+        const v = partition.mapVersions[j];
+        const r2Key = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
+
+        if (r2Key) {
+          try {
+            const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key });
+            const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
+            v.backgroundUrl = imgUrl;
+            (v as any).r2Key = r2Key;
+          } catch (imgErr) {
+            console.warn(`Lỗi tạo signed URL cho ảnh ${r2Key}:`, imgErr);
+          }
+        }
+
+        v.store = v.store || pStore;
+        v.location = v.location || pLoc;
+        v.groups = v.groups || [];
+        v.groupMappings = v.groupMappings || {};
+        v.isDynamicActive = v.isDynamicActive !== false;
+      }
+    }
+  }
+
+  useDataStore.getState().loadFullCloudData({
+    storeLocationData: normalizedStoreLocationData,
+    store: data.store || dataState.store,
+    location: data.location || dataState.location,
+    activeMapVersionId: data.activeMapVersionId,
+    reviewSelectedLabels: data.reviewSelectedLabels || [],
+    reviewLabelColors: data.reviewLabelColors || {},
+    unitInfo: data.unitInfo || [],
+    classInfo: data.classInfo || [],
+    actualClassInfo: data.actualClassInfo || [],
+    sales: data.sales || [],
+    profits: data.profits || [],
+    subFees: data.subFees || [],
+    mdStatus: data.mdStatus || [],
+    projectStatus: data.projectStatus || [],
+    projectLink: data.projectLink || [],
+    basePlan: data.basePlan || [],
+    units: data.units || [],
+  });
+
+  return { success: true, message: 'Đã tải thành công cấu hình và dữ liệu từ Cloudflare R2.' };
+}
+
+/**
+ * Bước 3: Lưu cloud của store đang xem lên R2 Cloudflare
  */
 export async function saveStoreToCloudR2(
   targetStore: 'HCM' | 'HN',
@@ -295,18 +408,29 @@ export async function saveStoreToCloudR2(
 }
 
 /**
- * Trigger toàn bộ quy trình: Bước 1 (Apply All Rules) -> Bước 2 (Save Cloud R2) -> Trigger Webhook/Firestore
+ * Trigger toàn bộ quy trình 3 bước:
+ * - Bước 1: Load Cloud R2 về app
+ * - Bước 2: Apply All Dynamic Rules
+ * - Bước 3: Lưu Cloud R2 & Ghi trigger Firestore
  */
 export async function executeTriggerExportProcess(
   targetStore: 'HCM' | 'HN',
   onProgress?: (step: string) => void
 ): Promise<{ success: boolean; message: string }> {
-  // BƯỚC 1: Apply all rules của toàn bộ tab dynamic cho store đang xem
-  onProgress?.('Đang áp dụng toàn bộ logic Dynamic Rules cho các tầng...');
+  // BƯỚC 1: Load Cloud R2 về app
+  onProgress?.('Bước 1/3: Đang tải dữ liệu từ Cloudflare R2 về ứng dụng (Load Cloud)...');
+  try {
+    await loadStoreFromCloudR2();
+  } catch (loadErr: any) {
+    console.warn('[TriggerExport] Cảnh báo khi tải từ R2 (có thể tiếp tục với dữ liệu local hiện tại):', loadErr);
+  }
+
+  // BƯỚC 2: Apply all rules của toàn bộ tab dynamic cho store đang xem
+  onProgress?.('Bước 2/3: Đang áp dụng toàn bộ logic Dynamic Rules cho các tầng...');
   const { updatedStoreLocationData } = applyAllDynamicRulesForStore(targetStore);
 
-  // BƯỚC 2: Lưu cloud của store đang xem lên R2 Cloudflare
-  onProgress?.('Đang đồng bộ và lưu bản vẽ lên Cloudflare R2...');
+  // BƯỚC 3: Lưu cloud của store đang xem lên R2 Cloudflare
+  onProgress?.('Bước 3/3: Đang đồng bộ và lưu bản vẽ lên Cloudflare R2 (Save Cloud)...');
   await saveStoreToCloudR2(targetStore, updatedStoreLocationData);
 
   // Ghi trigger Firestore để cập nhật cho các worker/listeners
@@ -327,6 +451,6 @@ export async function executeTriggerExportProcess(
 
   return {
     success: true,
-    message: `Đã hoàn thành: Áp dụng toàn bộ Dynamic Rules và Lưu Cloud R2 cho ${targetStore}!`,
+    message: `Đã hoàn thành 3 bước: Tải Cloud R2 -> Áp dụng Dynamic Rules -> Lưu Cloud R2 cho ${targetStore}!`,
   };
 }
