@@ -818,7 +818,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
           activeTaskNames = activeTasks.map(t => t.name);
         } else {
           const inProgress = matchedTasks.filter(t => {
-            const st = String(t.actualStatus || t.status || '').toLowerCase();
+            const st = String((t as any).actualStatus || (t as any).status || '').toLowerCase();
             return st === 'in progress' || st === 'on process';
           });
           if (inProgress.length > 0) {

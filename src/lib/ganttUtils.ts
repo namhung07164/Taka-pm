@@ -938,21 +938,30 @@ export function normalizeAndHealTaskPredecessors(
       }
     }
 
-    // 2. Attempt to extract <prefix>-<subIndex><lag> or <number><lag>
+    // 2. Extract trailing link/lag suffix: e.g. "SS", "FS+0.5", "+0.5", "-1", "FF", etc.
+    const suffixMatch = rawToken.match(/\s*((?:FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)?|[+-]\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)\s*$/i);
+    let lagSuffix = "";
+    let baseToken = rawToken;
+
+    if (suffixMatch && suffixMatch.index !== undefined && suffixMatch[0].trim()) {
+      lagSuffix = suffixMatch[1].trim();
+      baseToken = rawToken.substring(0, suffixMatch.index).trim();
+    }
+
     let codePrefix = "";
     let subIndexNum: number | null = null;
-    let lagSuffix = "";
 
-    const matchPrefixAndIndex = rawToken.match(/^(.+?)[-_\s]+(\d+)(.*)$/);
-    if (matchPrefixAndIndex) {
-      codePrefix = matchPrefixAndIndex[1].trim();
-      subIndexNum = parseInt(matchPrefixAndIndex[2], 10);
-      lagSuffix = matchPrefixAndIndex[3] || "";
+    if (/^\d+$/.test(baseToken)) {
+      subIndexNum = parseInt(baseToken, 10);
+      codePrefix = "";
     } else {
-      const matchNumberOnly = rawToken.match(/^[-#\s]*(\d+)(.*)$/);
-      if (matchNumberOnly) {
-        subIndexNum = parseInt(matchNumberOnly[1], 10);
-        lagSuffix = matchNumberOnly[2] || "";
+      // Use greedy match to grab everything up to the LAST dash/space/underscore delimiter
+      const matchPrefix = baseToken.match(/^(.+)[-_\s]+(\d+)$/);
+      if (matchPrefix) {
+        codePrefix = matchPrefix[1].trim();
+        subIndexNum = parseInt(matchPrefix[2], 10);
+      } else {
+        codePrefix = baseToken;
       }
     }
 
@@ -968,20 +977,34 @@ export function normalizeAndHealTaskPredecessors(
 
       if (isMatchingCurrentProject) {
         const sameProjectTasks = sortGroupTasks(
-          updatedAllTasks.filter(t => 
-            t &&
-            String(t.projectCode || '').trim().toLowerCase() === currentPCodeLower &&
-            (task.projectYear ? String(t.projectYear || '') === String(task.projectYear) : true) &&
-            (task.projectStore ? String(t.projectStore || '') === String(task.projectStore) : true)
-          )
+          updatedAllTasks.filter(t => {
+            if (!t) return false;
+            const tPCode = String(t.projectCode || '').trim().toLowerCase();
+            const sameProj = tPCode === currentPCodeLower ||
+              pCodeParts.some(p => p && (tPCode === p || tPCode.includes(p)));
+            if (!sameProj) return false;
+            if (task.projectYear && t.projectYear && String(t.projectYear) !== String(task.projectYear)) return false;
+            if (task.projectStore && t.projectStore && String(t.projectStore) !== String(task.projectStore)) return false;
+            return true;
+          })
         );
 
-        if (subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length) {
-          const targetTask = sameProjectTasks[subIndexNum - 1];
+        let targetTask = (subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length)
+          ? sameProjectTasks[subIndexNum - 1]
+          : undefined;
+
+        if (!targetTask) {
+          targetTask = sameProjectTasks.find(t => {
+            const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
+            return code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
+          });
+        }
+
+        if (targetTask) {
           const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}-${subIndexNum}`).trim();
           if (newCode) {
             changed = true;
-            return `${newCode}${lagSuffix.trim()}`;
+            return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
           }
         }
       }
@@ -1005,12 +1028,23 @@ export function normalizeAndHealTaskPredecessors(
               (matchedProj.store ? String(t.projectStore || '') === String(matchedProj.store) : true)
             )
           );
-          if (subIndexNum >= 1 && subIndexNum <= targetTasks.length) {
-            const targetTask = targetTasks[subIndexNum - 1];
+
+          let targetTask = (subIndexNum >= 1 && subIndexNum <= targetTasks.length)
+            ? targetTasks[subIndexNum - 1]
+            : undefined;
+
+          if (!targetTask) {
+            targetTask = targetTasks.find(t => {
+              const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
+              return code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
+            });
+          }
+
+          if (targetTask) {
             const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}-${subIndexNum}`).trim();
             if (newCode) {
               changed = true;
-              return `${newCode}${lagSuffix.trim()}`;
+              return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
             }
           }
         }

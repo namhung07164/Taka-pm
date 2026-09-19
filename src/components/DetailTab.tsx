@@ -3,7 +3,7 @@ import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import { Search, Plus, Trash2, ChevronRight, ChevronDown, ChevronUp, FolderOutput, Pin, Play, Download, Upload, FileText, Edit3, MessageSquare, ArrowDownUp, Printer, EyeOff, X, GripVertical, ArrowLeft, Maximize2 } from 'lucide-react';
+import { Search, Plus, Trash2, ChevronRight, ChevronDown, ChevronUp, FolderOutput, Pin, Play, Download, Upload, FileText, Edit3, MessageSquare, ArrowDownUp, Printer, EyeOff, X, GripVertical, ArrowLeft, Maximize2, Wand2 } from 'lucide-react';
 import { Project, Task, AppUser, TaskNote, PermissionMatrix, AppRole, DelegationGroup } from '../types';
 import { cn, formatDisplayDateMain, formatDisplayDateTime, calculateDays, parseDateTime, formatToDatetimeLocal, getStatus, getTaskStatus, getDefaultDatetimeLocal, resolveActualStatus, getDefaultStoreFilter, computeActProgressPercent, computePlanProgressPercent, generateId, getUserAllowedStores, getEffectiveStoreFilter, scrollToElement } from '../lib/utils';
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -246,28 +246,77 @@ export function DetailTab({
     onClearFocus?.();
   }, [initialFocusTaskId, initialFilterCode, tasks, projects, onClearFocus, setDetailTabFilterCode]);
 
-  // Auto-heal legacy, out-of-sync or mismatched predecessors & taskCodePhu across tasks in background
-  const hasAutoHealedRef = useRef(false);
-  useEffect(() => {
-    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
-    if (hasAutoHealedRef.current) return;
+  // Synchronize and heal all predecessor contents according to latest subtask codes
+  const isSyncingPredecessorsRef = useRef(false);
+  const [isSyncingPredecessors, setIsSyncingPredecessors] = useState(false);
 
-    const healed = healAllTasksPredecessors(tasks, projects);
-    if (healed.changedCount > 0) {
-      hasAutoHealedRef.current = true;
-      useAppStore.getState().setTasks(healed.updatedTasks);
-      
-      const batch = writeBatch(db);
-      healed.updatesToSave.forEach(u => {
-        const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
-        const updatePayload: any = { updatedAt: u.updatedAt };
-        if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
-        if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
-        batch.update(tRef, updatePayload);
-      });
-      batch.commit().catch(e => console.error("Auto-heal predecessors background commit failed", e));
+  const handleSyncAllPredecessors = React.useCallback(async (showToast = false) => {
+    if (isSyncingPredecessorsRef.current) return;
+    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) {
+      if (showToast) {
+        useAppStore.getState().setToast({
+          title: "Thông báo",
+          message: "Chưa có dữ liệu công việc để đồng bộ.",
+          type: "info"
+        });
+      }
+      return;
+    }
+
+    try {
+      isSyncingPredecessorsRef.current = true;
+      setIsSyncingPredecessors(true);
+
+      const healed = healAllTasksPredecessors(tasks, projects);
+      if (healed.changedCount > 0) {
+        // Zero-delay optimistic UI update (0ms)
+        useAppStore.getState().setTasks(healed.updatedTasks);
+
+        // Batch update to Firestore in background
+        const batch = writeBatch(db);
+        healed.updatesToSave.forEach(u => {
+          const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
+          const updatePayload: any = { updatedAt: u.updatedAt };
+          if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
+          if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
+          batch.update(tRef, updatePayload);
+        });
+        await batch.commit();
+
+        if (showToast) {
+          useAppStore.getState().setToast({
+            title: "Đồng bộ thành công",
+            message: `Đã chuẩn hóa và cập nhật ${healed.changedCount} mã tiền nhiệm (Predecessor) theo mã Subtask mới!`,
+            type: "success"
+          });
+        }
+      } else if (showToast) {
+        useAppStore.getState().setToast({
+          title: "Đồng bộ hoàn tất",
+          message: "Tất cả các ô Predecessor đã khớp chính xác với mã Subtask hiện tại.",
+          type: "info"
+        });
+      }
+    } catch (e: any) {
+      console.error("Sync predecessors error:", e);
+      if (showToast) {
+        useAppStore.getState().setToast({
+          title: "Lỗi đồng bộ",
+          message: e?.message || "Có lỗi xảy ra khi đồng bộ tiền nhiệm.",
+          type: "error"
+        });
+      }
+    } finally {
+      isSyncingPredecessorsRef.current = false;
+      setIsSyncingPredecessors(false);
     }
   }, [tasks, projects]);
+
+  // Auto-heal on data change if needed in background
+  useEffect(() => {
+    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
+    handleSyncAllPredecessors(false);
+  }, [tasks, projects, handleSyncAllPredecessors]);
 
   // Escape key triggers Clear Focus when not in modals
   React.useEffect(() => {
@@ -2614,12 +2663,24 @@ export function DetailTab({
                         const targetProj = activeProjectInView || (filteredProjects && filteredProjects.length > 0 ? filteredProjects[0] : (projects && projects.length > 0 ? projects[0] : null));
                         onAddTask(targetProj);
                       }}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs"
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95"
                       title={activeProjectInView?.code ? `Add Task for ${activeProjectInView.code}` : "Add New Task"}
                     >
                       <Plus className="w-4 h-4 pointer-events-none" />
                       <span className="hidden sm:inline pointer-events-none">
                         {activeProjectInView?.code ? `+ Task (${activeProjectInView.code})` : 'Add New Task'}
+                      </span>
+                    </button>
+
+                    <button 
+                      onClick={() => handleSyncAllPredecessors(true)}
+                      disabled={isSyncingPredecessors}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50"
+                      title="Sửa và đồng bộ tất cả nội dung Predecessor theo mã Subtask code"
+                    >
+                      <Wand2 className={`w-4 h-4 pointer-events-none ${isSyncingPredecessors ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline pointer-events-none">
+                        {isSyncingPredecessors ? 'Đang sửa...' : 'Sync Predecessor'}
                       </span>
                     </button>
                   </>

@@ -151,6 +151,10 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
    - Khi hoán đổi vị trí, hệ thống sẽ tự động cập nhật lại mã Task phụ tương ứng theo vị trí dòng mới.
 3. **Tự động đồng bộ liên kết Predecessor**:
    - Khi bạn đổi vị trí công việc (hoặc bấm nút Sort), toàn bộ các Task khác đang có liên kết tiền nhiệm (`Predecessor`) trỏ tới mã cũ sẽ **tự động được cập nhật sang mã mới**, giúp sơ đồ Gantt và chuỗi liên kết tiến độ luôn chuẩn xác 100% không bị gãy hoặc lệch.
+4. **Nút "Sync Predecessor" - 1 Lệnh Sửa Toàn Bộ Nội Dung Predecessor**:
+   - Tại thanh công cụ của Task Detail Tab, bấm nút **"Sync Predecessor"** (biểu tượng cây đũa phép ✨).
+   - Hệ thống sẽ chạy 1 lệnh quét và chuẩn hóa toàn diện: tự động nhận diện mã dự án mới, phân tách chỉ mục số thứ tự task (`subIndexNum`) và phần mở rộng liên kết / độ trễ (`lagSuffix` như `+0.5`, `SS`, `FS`, `FF`), từ đó đồng bộ toàn bộ nội dung trong các ô Predecessor (ví dụ chuyển `L1-115-2+0.5` thành `L1-115, L1-113-2+0.5`, `L1-115-3SS` thành `L1-115, L1-113-3SS`...).
+   - Thao tác áp dụng ngay lập tức vào màn hình (Optimistic 0ms) và lưu đồng bộ lên Firestore theo khối Batch.
 
 #### 🔹 Hướng dẫn Nhập (Import) & Xuất (Export) Dữ Liệu Task (Excel / CSV):
 1. **Export Dữ Liệu (Xuất file kèm Sheet "method" hướng dẫn)**:
