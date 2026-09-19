@@ -37,19 +37,51 @@ export interface R2ProgressInfo {
 }
 
 /**
- * Extracts R2 object key from an r2:// link or signed/public R2 URL
+ * Extracts R2 object key from an r2:// link, signed/public R2 URL, or direct object key
  */
 export function extractR2Key(url: string | null | undefined): string | null {
   if (!url) return null;
   const trimmed = url.trim();
+  if (!trimmed) return null;
+
   if (trimmed.startsWith('r2://')) {
     return trimmed.replace('r2://', '');
   }
-  // Match bg_* pattern from full URL
-  const match = trimmed.match(/(bg_[a-zA-Z0-9_.-]+\.(jpeg|jpg|png|webp|gif))/i);
-  if (match) {
-    return match[1];
+
+  // If it's a full URL (signed R2 URL, dev/custom domain URL, or S3 endpoint URL)
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const parsed = new URL(trimmed);
+      const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+      // If pathname starts with bucket name (e.g. hcmlayout/key)
+      const pathParts = pathname.split('/');
+      const filename = pathParts[pathParts.length - 1];
+
+      // Check if filename matches bg_* pattern
+      const bgMatch = filename.match(/(bg_[a-zA-Z0-9_.-]+)/i);
+      if (bgMatch) {
+        return bgMatch[1];
+      }
+
+      if (filename) {
+        return filename;
+      }
+    } catch {
+      // Ignore URL parse error
+    }
+
+    // Match bg_* pattern anywhere in string
+    const match = trimmed.match(/(bg_[a-zA-Z0-9_.-]+\.(jpeg|jpg|png|webp|gif))/i);
+    if (match) {
+      return match[1];
+    }
+  } else {
+    // If not a full URL or data URI, check if it's a plain filename/key
+    if (!trimmed.startsWith('data:') && !trimmed.startsWith('blob:')) {
+      return trimmed;
+    }
   }
+
   return null;
 }
 
@@ -228,50 +260,29 @@ export async function deleteR2Object(
 }
 
 /**
- * Purge all old export versions in R2 bucket except the newly uploaded files.
- * Deletes previous .jpeg, .jpg, .png, .pdf export files to guarantee ONLY 1 version exists on Cloud.
+ * Purge or check exact export file in R2 bucket before upload.
+ * ONLY targets the EXACT matching file name(s) to be updated, strictly protecting all other files in bucket.
  */
-export async function purgeOldR2ExportVersions(
-  keepFileNames: string[],
+export async function purgeExactR2ExportFiles(
+  fileNamesToReplace: string[],
   creds: R2Credentials,
   s3: S3Client,
   onStatus?: (text: string) => void
 ): Promise<{ deletedCount: number; deletedFiles: string[] }> {
   try {
-    onStatus?.('Đang quét các bản xuất cũ trên R2...');
-    const allKeys = await listR2Objects(creds, s3);
-    const keepSet = new Set(keepFileNames.map((n) => n.toLowerCase()));
-
-    // Old export images: any .jpeg, .jpg, .png, .pdf file that is not a background (bg_*)
-    // and not mapping_config.json, and not in keepSet
-    const oldFilesToDelete = allKeys.filter((key) => {
-      const lower = key.toLowerCase();
-      if (keepSet.has(lower)) return false;
-      if (lower.startsWith('bg_')) return false;
-      if (lower === 'mapping_config.json') return false;
-      return lower.endsWith('.jpeg') || lower.endsWith('.jpg') || lower.endsWith('.png') || lower.endsWith('.pdf');
-    });
-
-    if (oldFilesToDelete.length === 0) {
-      return { deletedCount: 0, deletedFiles: [] };
-    }
-
-    onStatus?.(`Đang dọn dẹp ${oldFilesToDelete.length} bản cũ trên R2 để chống rác...`);
     const deletedFiles: string[] = [];
-
-    for (let i = 0; i < oldFilesToDelete.length; i++) {
-      const key = oldFilesToDelete[i];
-      onStatus?.(`Đang xóa bản cũ (${i + 1}/${oldFilesToDelete.length}): ${key}...`);
+    for (let i = 0; i < fileNamesToReplace.length; i++) {
+      const key = fileNamesToReplace[i];
+      onStatus?.(`Đang kiểm tra và cập nhật file: ${key}...`);
+      // Delete existing exact key if present to guarantee clean replacement
       const ok = await deleteR2Object(key, creds, s3);
       if (ok) {
         deletedFiles.push(key);
       }
-      await new Promise((r) => setTimeout(r, 40));
     }
-
     return { deletedCount: deletedFiles.length, deletedFiles };
   } catch (err) {
-    console.warn('[R2 Purge] Error purging old export versions:', err);
+    console.warn('[R2 Safe Replace] Error replacing exact file:', err);
     return { deletedCount: 0, deletedFiles: [] };
   }
 }
@@ -387,12 +398,12 @@ export async function uploadSingleR2File(
 
 /**
  * Sequentially uploads files to Cloudflare R2 with progress tracking,
- * automatic old versions purge (keeps only the latest uploaded files), and cache purge
+ * strictly replacing only the exact matching file names, and purging Cloudflare CDN cache
  */
 export async function uploadFilesToR2(
   files: R2FileItem[],
   onProgress?: (info: R2ProgressInfo) => void,
-  options: { purgeOldVersions?: boolean } = { purgeOldVersions: true }
+  options: { replaceExactFilesOnly?: boolean } = { replaceExactFilesOnly: true }
 ): Promise<R2BatchUploadResult> {
   const creds = getStoredR2Credentials();
 
@@ -407,22 +418,22 @@ export async function uploadFilesToR2(
   });
 
   const results: R2UploadFileResult[] = [];
-  let deletedOldCount = 0;
+  let updatedExactCount = 0;
 
-  // 1. Automatically purge old export versions to enforce single-version policy
-  if (options?.purgeOldVersions !== false && files.length > 0) {
-    const keepNames = files.map(f => (f.name || 'Export').replace(/[\/\\]/g, '_').replace(/\s+/g, '_') + '.jpeg');
+  // 1. Check / clean only the exact target file names to be replaced (preserving all other bucket data)
+  if (options?.replaceExactFilesOnly !== false && files.length > 0) {
+    const targetFileNames = files.map(f => (f.name || 'Export').replace(/[\/\\]/g, '_').replace(/\s+/g, '_') + '.jpeg');
 
     onProgress?.({
       current: 0,
       total: files.length,
       fileName: '',
       percent: 5,
-      statusText: 'Đang dọn dẹp các bản cũ trên Cloudflare R2...',
+      statusText: 'Đang kiểm tra và chuẩn bị ghi đè đúng tên file tương ứng trên Cloudflare R2...',
     });
 
     try {
-      const purgeResult = await purgeOldR2ExportVersions(keepNames, creds, s3, (statusText) => {
+      const purgeResult = await purgeExactR2ExportFiles(targetFileNames, creds, s3, (statusText) => {
         onProgress?.({
           current: 0,
           total: files.length,
@@ -431,12 +442,9 @@ export async function uploadFilesToR2(
           statusText,
         });
       });
-      deletedOldCount = purgeResult.deletedCount;
-      if (deletedOldCount > 0) {
-        console.log(`[R2 Auto-Cleanup] Đã xóa ${deletedOldCount} bản cũ trên R2:`, purgeResult.deletedFiles);
-      }
+      updatedExactCount = purgeResult.deletedCount;
     } catch (purgeErr) {
-      console.warn('[R2 Auto-Cleanup] Lỗi dọn dẹp file cũ:', purgeErr);
+      console.warn('[R2 Safe Replace] Cảnh báo kiểm tra file trước upload:', purgeErr);
     }
   }
 
@@ -451,7 +459,7 @@ export async function uploadFilesToR2(
       total: files.length,
       fileName: safeName,
       percent,
-      statusText: `Đang tải lên bản mới: ${safeName} (${i + 1}/${files.length})...`,
+      statusText: `Đang tải lên bản vẽ: ${safeName} (${i + 1}/${files.length})...`,
     });
 
     const res = await uploadSingleR2File(file, creds, s3, 3);
@@ -466,9 +474,7 @@ export async function uploadFilesToR2(
     total: files.length,
     fileName: '',
     percent: 98,
-    statusText: deletedOldCount > 0 
-      ? `Đã xóa ${deletedOldCount} bản cũ. Đang xóa cache Cloudflare...` 
-      : 'Đang hoàn tất và xóa cache Cloudflare...',
+    statusText: 'Đang hoàn tất và xóa cache Cloudflare CDN...',
   });
 
   // Attempt cache purge if configured
@@ -495,9 +501,7 @@ export async function uploadFilesToR2(
     total: files.length,
     fileName: '',
     percent: 100,
-    statusText: deletedOldCount > 0 
-      ? `Hoàn tất! Đã lưu 1 bản mới và xóa sạch ${deletedOldCount} bản cũ trên R2.` 
-      : 'Hoàn tất cập nhật bản mới lên Cloudflare R2!',
+    statusText: `Hoàn tất cập nhật thành công ${files.length} bản vẽ lên Cloudflare R2!`,
   });
 
   const successCount = results.filter((r) => r.success).length;
@@ -508,6 +512,6 @@ export async function uploadFilesToR2(
     successCount,
     failedCount,
     results,
-    deletedOldCount,
+    deletedOldCount: updatedExactCount,
   };
 }

@@ -76,6 +76,8 @@ interface DataStoreState {
   updateStoreUnitsAcrossLocations: (units: UnitShape[], store?: 'HCM' | 'HN') => void;
   updateStoreVersionsAcrossLocations: (versions: MapVersion[], store?: 'HCM' | 'HN') => void;
   syncGroupsToAllStoreLocations: (groups: MapVersion['groups'], store?: 'HCM' | 'HN') => void;
+  isCloudLoaded: boolean;
+  setIsCloudLoaded: (isCloudLoaded: boolean) => void;
   isLoading: boolean;
   setIsLoading: (isLoading: boolean) => void;
   unitInfo: any[];
@@ -529,6 +531,8 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     });
   },
 
+  isCloudLoaded: false,
+  setIsCloudLoaded: (isCloudLoaded) => set({ isCloudLoaded }),
   isLoading: false,
   setIsLoading: (isLoading) => set({ isLoading }),
   unitInfo: [],
@@ -584,6 +588,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const targetActiveVerId = payload.activeMapVersionId || targetPartition.activeMapVersionId || (targetVersions[0]?.id ?? null);
 
     set({
+      isCloudLoaded: true,
       store: activeStore,
       location: activeLoc,
       storeLocationData,

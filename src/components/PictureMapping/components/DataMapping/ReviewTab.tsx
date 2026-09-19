@@ -174,10 +174,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
             });
 
             if (uploadResult.failedCount === 0) {
-                const cleanNote = (uploadResult.deletedOldCount && uploadResult.deletedOldCount > 0)
-                    ? `\n\nĐã tự động quét và dọn sạch ${uploadResult.deletedOldCount} bản cũ trên Cloudflare R2 để tránh rác lưu trữ.`
-                    : '';
-                alert(`Upload thành công 1 phiên bản lên Cloudflare R2!${cleanNote}`);
+                alert(`Upload thành công ${uploadResult.successCount} bản vẽ lên Cloudflare R2!\n(Đã cập nhật đúng tên file của phiên bản tương ứng, bảo toàn toàn bộ dữ liệu khác trong bucket).`);
             } else if (uploadResult.successCount > 0) {
                 const failedNames = uploadResult.results.filter(r => !r.success).map(r => `${r.name}: ${r.error}`).join('\n- ');
                 alert(`Upload hoàn tất: ${uploadResult.successCount}/${uploadResult.total} file thành công.\nCó ${uploadResult.failedCount} file thất bại:\n- ${failedNames}`);
@@ -1027,79 +1024,55 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                     </div>
                 </div>
                 
-                {exportFormat === 'r2_jpeg' ? (
-                    <div className="p-6 flex-1 overflow-y-auto min-h-0 flex flex-col gap-3">
+                {exportFormat === 'r2_jpeg' && (
+                    <div className="px-6 pt-4">
                         <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-1.5">
                             <div className="font-bold flex items-center gap-1.5 text-amber-400">
-                                <span>⚡</span> Chế độ Lưu 1 Version Duy Nhất (Chống Rác R2)
+                                <span>⚡</span> Xuất Cloud R2 An Toàn & Chuẩn Xác (Targeted File Overwrite)
                             </div>
                             <p className="text-slate-300">
-                                Chọn 1 phiên bản để xuất lên Cloudflare R2. Hệ thống sẽ tự động quét và <strong className="text-white">xóa sạch các bản cũ</strong> trước đó trên bucket để tránh rác lưu trữ.
+                                Hệ thống chỉ quét và cập nhật/ghi đè <strong className="text-white">đúng tên file của phiên bản tương ứng</strong> trên Cloudflare R2, bảo toàn nguyên vẹn tất cả dữ liệu, sơ đồ và các tầng khác trong bucket.
                             </p>
                         </div>
-                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">
-                            Chọn 1 phiên bản cần xuất:
-                        </div>
-                        {versions.map(v => (
-                            <label 
-                                key={v.id} 
-                                className={`flex items-center gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${
-                                    selectedVersionsToExport[v.id] 
-                                        ? 'border-amber-500 bg-amber-950/20 text-white shadow-sm ring-1 ring-amber-500/30' 
-                                        : 'border-slate-800 bg-slate-950 hover:bg-slate-900 text-slate-300'
-                                }`}
-                            >
-                                <input 
-                                    type="radio" 
-                                    name="r2_version_single"
-                                    checked={!!selectedVersionsToExport[v.id]} 
-                                    onChange={() => {
-                                        setSelectedVersionsToExport({ [v.id]: true });
-                                    }}
-                                    className="w-4 h-4 text-amber-500 bg-slate-900 border-slate-600 focus:ring-amber-500"
-                                />
-                                <div className="flex-1 flex items-center justify-between">
-                                    <span className="font-bold text-sm">{v.location ? `[${v.location}] ` : ''}{v.name}</span>
-                                    {v.id === activeVersionId && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded bg-brand-900/60 text-brand-300 border border-brand-700/50">
-                                            Đang xem
-                                        </span>
-                                    )}
-                                </div>
-                            </label>
-                        ))}
                     </div>
-                ) : (
-                    <div className="p-6 flex-1 overflow-y-auto min-h-0 flex flex-col gap-3">
-                        <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/50 cursor-pointer hover:bg-slate-800 transition-colors">
+                )}
+
+                <div className="p-6 flex-1 overflow-y-auto min-h-0 flex flex-col gap-3">
+                    <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/50 cursor-pointer hover:bg-slate-800 transition-colors">
+                        <input 
+                            type="checkbox" 
+                            checked={versions.length > 0 && versions.every(v => selectedVersionsToExport[v.id])} 
+                            onChange={(e) => {
+                                const newSel: Record<string, boolean> = {};
+                                versions.forEach(v => newSel[v.id] = e.target.checked);
+                                setSelectedVersionsToExport(newSel);
+                            }}
+                            className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
+                        />
+                        <span className="text-white font-bold">Select All</span>
+                    </label>
+                    <div className="h-px bg-slate-800 my-1"></div>
+                    {versions.map(v => (
+                        <label key={v.id} className="flex items-center gap-3 p-3.5 rounded-lg border border-slate-800 bg-slate-950 cursor-pointer hover:bg-slate-900 transition-colors">
                             <input 
                                 type="checkbox" 
-                                checked={versions.length > 0 && versions.every(v => selectedVersionsToExport[v.id])} 
+                                checked={!!selectedVersionsToExport[v.id]} 
                                 onChange={(e) => {
-                                    const newSel: Record<string, boolean> = {};
-                                    versions.forEach(v => newSel[v.id] = e.target.checked);
-                                    setSelectedVersionsToExport(newSel);
+                                    setSelectedVersionsToExport(prev => ({ ...prev, [v.id]: e.target.checked }));
                                 }}
                                 className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
                             />
-                            <span className="text-white font-bold">Select All</span>
+                            <div className="flex-1 flex items-center justify-between">
+                                <span className="font-bold text-sm text-slate-200">{v.location ? `[${v.location}] ` : ''}{v.name}</span>
+                                {v.id === activeVersionId && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded bg-brand-900/60 text-brand-300 border border-brand-700/50">
+                                        Đang xem
+                                    </span>
+                                )}
+                            </div>
                         </label>
-                        <div className="h-px bg-slate-800 my-1"></div>
-                        {versions.map(v => (
-                            <label key={v.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-800 bg-slate-950 cursor-pointer hover:bg-slate-900 transition-colors">
-                                <input 
-                                    type="checkbox" 
-                                    checked={!!selectedVersionsToExport[v.id]} 
-                                    onChange={(e) => {
-                                        setSelectedVersionsToExport(prev => ({ ...prev, [v.id]: e.target.checked }));
-                                    }}
-                                    className="w-5 h-5 rounded bg-slate-900 border-slate-600 focus:ring-brand-500"
-                                />
-                                <span className="text-slate-300">{v.location ? `[${v.location}] ` : ''}{v.name}</span>
-                            </label>
-                        ))}
-                    </div>
-                )}
+                    ))}
+                </div>
             </div>
           </Draggable>
         </div>,

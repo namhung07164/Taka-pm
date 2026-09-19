@@ -447,7 +447,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 4. **Xem nhanh thông tin**: Nhấp vào bất kỳ điểm ghim nào trên bản đồ để xem ngay tên gian hàng, thời gian thi công và hình ảnh hiện trường.
 5. **Quy trình Xuất tự động 3 bước (Trigger Export - Live View & Layout)**:
    - Khi bấm nút **"Trigger Export"** (ở thanh công cụ Layout hoặc trong Menu chế độ Live View), hệ thống sẽ tự động thực hiện 3 bước tuần tự:
-     - **Bước 1 — Tải Cloud R2 (Load Cloud)**: Tải phiên bản cấu hình và ảnh nền mới nhất từ Cloudflare R2 về ứng dụng.
+     - **Bước 1 — Tải Cloud R2 (Load Cloud)**: Kiểm tra thông minh dữ liệu trong ứng dụng; nếu dữ liệu bản vẽ Picture Mapping đã được tải từ Cloud trước đó thì tự động bỏ qua để tối ưu tốc độ và tránh ghi đè, nếu chưa có sẽ tự động tải cấu hình và ảnh nền mới nhất từ Cloudflare R2 về ứng dụng.
      - **Bước 2 — Áp dụng toàn bộ Dynamic Rules (Apply Rules)**: Tự động đánh giá toàn bộ các bộ quy tắc (Dynamic Rules) của tất cả các tầng/version thuộc chi nhánh đang xem, tự động cập nhật tiến độ, tính toán dữ liệu và tô màu chuẩn cho các gian hàng.
      - **Bước 3 — Lưu Cloud R2 (Save Cloud & Trigger)**: Tự động đóng gói cấu hình bản vẽ và lưu lên Cloudflare R2 cho toàn bộ chi nhánh đang xem, đồng thời kích hoạt trigger để cập nhật hiển thị đồng bộ tức thời.
 6. **Quản lý Dynamic Hierarchy & Nhóm theo từng Version (Per-Version Groups)**:

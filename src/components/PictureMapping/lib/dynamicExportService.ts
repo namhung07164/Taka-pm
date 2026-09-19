@@ -334,7 +334,15 @@ export async function saveStoreToCloudR2(
   });
 
   const dataState = useDataStore.getState();
-  const baseStoreLocationData = customStoreLocationData || dataState.storeLocationData;
+  const currentActiveKey = getPartitionKey(dataState.store || targetStore, dataState.location || 'L1');
+  const baseStoreLocationData = customStoreLocationData || {
+    ...dataState.storeLocationData,
+    [currentActiveKey]: {
+      mapUnits: dataState.mapUnits || [],
+      mapVersions: dataState.mapVersions || [],
+      activeMapVersionId: dataState.activeMapVersionId,
+    },
+  };
 
   // Format cloudStoreLocationData with r2:// references
   const cloudStoreLocationData: Record<string, any> = {};
@@ -350,7 +358,21 @@ export async function saveStoreToCloudR2(
     const pVersionsCloud: any[] = [];
     for (const v of pVersions) {
       const displayUrl = (v.backgroundUrl || '').trim();
-      const r2Key = extractR2Key(displayUrl) || (v as any).r2Key;
+      let r2Key = extractR2Key(displayUrl) || (v as any).r2Key;
+
+      if (displayUrl && (displayUrl.startsWith('blob:') || displayUrl.startsWith('data:'))) {
+        try {
+          const res = await fetch(displayUrl);
+          const blob = await res.blob();
+          const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
+          const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3);
+          if (uploadRes.success) {
+            r2Key = uploadRes.name;
+          }
+        } catch (e) {
+          console.warn('[SaveStoreToCloudR2] Error uploading bg blob:', e);
+        }
+      }
 
       pVersionsCloud.push({
         ...v,
@@ -408,8 +430,40 @@ export async function saveStoreToCloudR2(
 }
 
 /**
+ * Kiểm tra xem dữ liệu tab Picture Mapping đã được load Cloud trước đó chưa
+ */
+export function isPictureMappingDataLoaded(targetStore?: 'HCM' | 'HN'): boolean {
+  const dataState = useDataStore.getState();
+  if (dataState.isCloudLoaded) return true;
+
+  // Kiểm tra nếu các phân vùng storeLocationData đã có mapUnits hoặc mapVersions
+  const partitions = Object.entries(dataState.storeLocationData || {});
+  const hasStorePartitionData = partitions.some(([k, v]) => {
+    if (targetStore && !k.startsWith(targetStore)) return false;
+    return (v?.mapUnits && v.mapUnits.length > 0) || (v?.mapVersions && v.mapVersions.length > 0);
+  });
+  if (hasStorePartitionData) return true;
+
+  // Kiểm tra mapUnits hoặc mapVersions hiện hành
+  if ((dataState.mapUnits && dataState.mapUnits.length > 0) || (dataState.mapVersions && dataState.mapVersions.length > 0)) {
+    if (!targetStore || dataState.store === targetStore) {
+      return true;
+    }
+  }
+
+  // Kiểm tra helpers getAllStoreUnits / getAllStoreVersions
+  const allUnits = dataState.getAllStoreUnits(targetStore);
+  const allVersions = dataState.getAllStoreVersions(targetStore);
+  if (allUnits.length > 0 || allVersions.length > 0) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Trigger toàn bộ quy trình 3 bước:
- * - Bước 1: Load Cloud R2 về app
+ * - Bước 1: Load Cloud R2 về app (kiểm tra nếu đã load trước đó thì bỏ qua)
  * - Bước 2: Apply All Dynamic Rules
  * - Bước 3: Lưu Cloud R2 & Ghi trigger Firestore
  */
@@ -417,12 +471,17 @@ export async function executeTriggerExportProcess(
   targetStore: 'HCM' | 'HN',
   onProgress?: (step: string) => void
 ): Promise<{ success: boolean; message: string }> {
-  // BƯỚC 1: Load Cloud R2 về app
-  onProgress?.('Bước 1/3: Đang tải dữ liệu từ Cloudflare R2 về ứng dụng (Load Cloud)...');
-  try {
-    await loadStoreFromCloudR2();
-  } catch (loadErr: any) {
-    console.warn('[TriggerExport] Cảnh báo khi tải từ R2 (có thể tiếp tục với dữ liệu local hiện tại):', loadErr);
+  // BƯỚC 1: Load Cloud R2 về app (kiểm tra nếu đã load trước đó thì bỏ qua để tối ưu tốc độ và không ghi đè)
+  const isAlreadyLoaded = isPictureMappingDataLoaded(targetStore);
+  if (!isAlreadyLoaded) {
+    onProgress?.('Bước 1/3: Đang tải dữ liệu từ Cloudflare R2 về ứng dụng (Load Cloud)...');
+    try {
+      await loadStoreFromCloudR2();
+    } catch (loadErr: any) {
+      console.warn('[TriggerExport] Cảnh báo khi tải từ R2 (có thể tiếp tục với dữ liệu hiện tại):', loadErr);
+    }
+  } else {
+    onProgress?.('Bước 1/3: Dữ liệu Picture Mapping đã sẵn sàng trong ứng dụng (bỏ qua tải lại từ Cloud)...');
   }
 
   // BƯỚC 2: Apply all rules của toàn bộ tab dynamic cho store đang xem
