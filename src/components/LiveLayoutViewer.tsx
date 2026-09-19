@@ -806,6 +806,9 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
         return false;
       });
 
+      // Match active tasks following STRICTLY the same logic as General Tab (Project General Table):
+      // Only tasks that are currently active right now (now >= start && now <= finish).
+      // If no tasks are currently active, activeTaskNames is empty [].
       let activeTaskNames: string[] = [];
       if (matchedTasks.length > 0) {
         const activeTasks = matchedTasks.filter(t => {
@@ -814,19 +817,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
           const finish = new Date(t.finish);
           return now >= start && now <= finish;
         });
-        if (activeTasks.length > 0) {
-          activeTaskNames = activeTasks.map(t => t.name);
-        } else {
-          const inProgress = matchedTasks.filter(t => {
-            const st = String((t as any).actualStatus || (t as any).status || '').toLowerCase();
-            return st === 'in progress' || st === 'on process';
-          });
-          if (inProgress.length > 0) {
-            activeTaskNames = inProgress.map(t => t.name);
-          } else {
-            activeTaskNames = matchedTasks.slice(0, 3).map(t => t.name);
-          }
-        }
+        activeTaskNames = activeTasks.map(t => t.name);
       } else if (p.taskSummaries && p.taskSummaries.length > 0) {
         const activeTasks = p.taskSummaries.filter(t => {
           if (!t.start || !t.finish) return false;
@@ -834,8 +825,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
           const finish = new Date(t.finish);
           return now >= start && now <= finish;
         });
-        const selected = activeTasks.length > 0 ? activeTasks : p.taskSummaries.slice(0, 3);
-        activeTaskNames = selected.map(t => t.name);
+        activeTaskNames = activeTasks.map(t => t.name);
       }
 
       let taskLines: string[] = [];
@@ -1672,7 +1662,7 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
             {hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0 && (
               <div className="bg-slate-50 dark:bg-slate-800/80 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-700 text-xs shadow-sm flex flex-col gap-1">
                 <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">
-                  TASKS / DETAILS
+                  DETAILS
                 </div>
                 {hoverInfo.data.taskLines.map((line: string, idx: number) => (
                   <div key={idx} className={`font-semibold ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
