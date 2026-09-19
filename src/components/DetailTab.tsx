@@ -480,7 +480,7 @@ export function DetailTab({
       });
 
       const oldCodeToNewCode = new Map<string, string>();
-      const pCodeParts = String(p.code || '').toLowerCase().split(/[,/]+/).map(x => x.trim()).filter(Boolean);
+      const pCodeParts = String(p.code || '').toLowerCase().split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
 
       groupTasks.forEach((t, i) => {
         const oldIndex = i;
@@ -571,7 +571,7 @@ export function DetailTab({
       sorted.splice(targetIndex, 0, movedTask);
 
       const oldCodeToNewCode = new Map<string, string>();
-      const pCodeParts = String(p.code || '').toLowerCase().split(/[,/]+/).map(x => x.trim()).filter(Boolean);
+      const pCodeParts = String(p.code || '').toLowerCase().split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
 
       groupTasks.forEach((t, i) => {
         const oldIndex = i;

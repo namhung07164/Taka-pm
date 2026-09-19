@@ -204,8 +204,8 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
    - Khi chỉnh sửa mã công việc mẹ (`Task Code` / `taskCodePhu`), hệ thống tự động quét và cập nhật lại mã tương ứng trong chuỗi `Predecessor` của tất cả các Task con phụ thuộc mà không làm gián đoạn chuỗi liên kết tiến độ.
    - **Xử lý đặc biệt cho Task Code có chứa dấu phẩy `","`** (ví dụ mã công việc dạng `L1,L2-01`): Thuật toán nhận diện thông minh bảo vệ toàn vẹn chuỗi ký tự của Task Code, phân biệt chính xác dấu phẩy nằm bên trong mã với dấu phẩy dùng để ngăn cách giữa các Predecessor khác nhau, tuyệt đối không bị tách nhầm thành nhiều tiền nhiệm rời rạc hay làm mất dữ liệu.
 5. **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án & Cơ Chế Chữa Lành (Project Code Cascade & Auto-Healing)**:
-   - Khi chỉnh sửa mã dự án (`Project Code` - ví dụ từ `PRJ-01` sang `PRJ-02`, hoặc mã ghép nhiều gian hàng như `L1-115` sang `L1-115, L1-113`) trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
-     + Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01-1` ➜ `PRJ-02-1`, hoặc `L1-115-13` ➜ `L1-115, L1-113-13`).
+   - Khi chỉnh sửa mã dự án (`Project Code` - ví dụ từ `PRJ-01` sang `PRJ-02`, hoặc mã ghép nhiều gian hàng dùng dấu chấm phẩy `;` như `L1-115` sang `L1-115; L1-113`) trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
+     + Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01-1` ➜ `PRJ-02-1`, hoặc `L1-115-13` ➜ `L1-115; L1-113-13`).
      + Đồng thời, hệ thống tự động quét và viết lại toàn bộ các chuỗi tiền nhiệm (`Predecessor`) tham chiếu đến các công việc của dự án này trên toàn bộ hệ thống (bao gồm cả các công việc trong cùng dự án và các công việc thuộc các dự án khác có phụ thuộc chéo).
      + Toàn bộ hậu tố kiểu ràng buộc tiến độ (như `FS+2`, `SS`, `FF`, `SF-1`) được bảo toàn chính xác 100%.
      + **Cơ Chế Tự Động Chữa Lành Tiền Nhiệm (Smart Predecessor Auto-Healing Engine)**: Ngay khi nạp giao diện, sắp xếp (Sort), di chuyển task, hoặc mở hộp thoại Task Modal, hệ thống tự động nhận diện các tiền nhiệm còn lưu mã cũ/mã ghép phân đoạn và tự động chuẩn hóa, điền lại ngay lập tức theo Task Code mới nhất (`0ms Optimistic UI`) và lưu đồng bộ ngầm vào cơ sở dữ liệu.
@@ -956,6 +956,15 @@ Hệ thống tuân thủ nghiêm ngặt các quy tắc kiến trúc chuẩn Ente
 ## 🗺️ 15. PHÂN HỆ VẼ VÀ ÁNH XẠ MẶT BẰNG (PICTURE MAPPING)
 
 Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng và gán dữ liệu chuyên đề (Thematic Mapping) trực tiếp lên ảnh mặt bằng kỹ thuật số.
+
+### ✏️ Tạo Mới & Đặt Tên Gian Hàng Tự Do (Unit Creation & Free-Form Naming):
+- **Tự do tạo tên Unit mới**: Tại **Edit Tab**, người dùng có thể tùy ý nhập và tạo tên gian hàng/unit mới mà không bị giới hạn bắt buộc phải chọn từ danh sách Master Units có sẵn.
+- **Cửa sổ gán tên sau khi vẽ hình (Pop-up Assign / Create Unit Name)**:
+  + Khi vẽ xong một hình khối (Polygon, Hình chữ nhật, Hình tròn), cửa sổ đặt tên hiển thị cho phép nhập tên unit bất kỳ.
+  + Nhấn phím **Enter** hoặc bấm nút **"Create"** để tạo và gán ngay lập tức tên unit vừa gõ.
+  + Danh sách gợi ý vẫn hiển thị các unit tương đồng từ hệ thống để hỗ trợ chọn nhanh nếu muốn.
+- **Bảng thuộc tính bên phải (Properties Panel - Unit Name)**:
+  + Ô **Unit Name** hỗ trợ nhập trực tiếp ký tự và lưu tức thì. Nếu tên gõ mới chưa có trong danh mục, nút gợi ý *"Create unit: [Tên]"* sẽ hiển thị để xác nhận nhanh.
 
 ### 🏢 Phân Tách Dữ Liệu Theo Store & Location (Chi Nhánh & Tầng):
 1. **Bộ lọc Store & Location áp dụng phân quyền tài khoản (RBAC Account Control)**:

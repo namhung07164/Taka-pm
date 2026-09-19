@@ -109,7 +109,7 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
   });
 
   enrichedProjects.forEach((p) => {
-    const pCodes = String(p.code || '').split(/[+,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const pCodes = String(p.code || '').split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
     const status = getStatus(
       p.computedTakStart || p.start,
       p.computedTakCompl || p.handover,

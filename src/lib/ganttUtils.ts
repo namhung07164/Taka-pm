@@ -389,7 +389,7 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   }
 
   if (lowerPCode) {
-    const pCodeParts = lowerPCode.split(/[,/]+/).map(x => x.trim()).filter(Boolean);
+    const pCodeParts = lowerPCode.split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
     const matchedPart = pCodeParts.find(part => lowerPhu.startsWith(part + '-'));
     if (matchedPart) {
       const suffix = trimmedPhu.substring(matchedPart.length);
@@ -452,8 +452,8 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
         const subIndex = matchPrefixAndIndex[2];
         const currentPCode = String(contextTask.projectCode).trim().toLowerCase();
         
-        // Split current project code by comma/slash in case of combined project codes like "l1-115, l1-113"
-        const pCodeParts = currentPCode.split(/[,/]+/).map(p => p.trim()).filter(Boolean);
+        // Split current project code by semicolon/comma/slash in case of combined project codes like "l1-115; l1-113"
+        const pCodeParts = currentPCode.split(/[,;/]+/).map(p => p.trim()).filter(Boolean);
         const matchesPart = pCodeParts.some(part => part === candidatePrefix || part.startsWith(candidatePrefix) || candidatePrefix.startsWith(part));
         
         if (matchesPart) {
@@ -969,7 +969,7 @@ export function normalizeAndHealTaskPredecessors(
       // 1. Try finding within current task's project
       const currentPCode = String(task.projectCode || '').trim();
       const currentPCodeLower = currentPCode.toLowerCase();
-      const pCodeParts = currentPCodeLower.split(/[,/]+/).map(p => p.trim()).filter(Boolean);
+      const pCodeParts = currentPCodeLower.split(/[,;/]+/).map(p => p.trim()).filter(Boolean);
 
       const isMatchingCurrentProject = !codePrefix || 
         codePrefix.toLowerCase() === currentPCodeLower ||
@@ -1015,7 +1015,7 @@ export function normalizeAndHealTaskPredecessors(
         const matchedProj = projects.find(p => {
           if (!p || !p.code) return false;
           const pLower = p.code.toLowerCase();
-          const parts = pLower.split(/[,/]+/).map(item => item.trim()).filter(Boolean);
+          const parts = pLower.split(/[,;/]+/).map(item => item.trim()).filter(Boolean);
           return pLower === lowerPrefix || parts.some(part => part === lowerPrefix || part.startsWith(lowerPrefix) || lowerPrefix.startsWith(part));
         });
 

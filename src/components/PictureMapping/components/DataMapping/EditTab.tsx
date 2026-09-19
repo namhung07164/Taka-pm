@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import { v4 as uuidv4 } from 'uuid';
-import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal } from 'lucide-react';
+import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, Plus } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, ShapeType, MapVersion } from './types';
 import { cn } from '../../lib/utils';
@@ -32,7 +32,7 @@ function SearchableSelect({
     value: string, 
     onChange: (val: string) => void 
 }) {
-    const [searchTerm, setSearchTerm] = React.useState('');
+    const [searchTerm, setSearchTerm] = React.useState(value || '');
     const [isOpen, setIsOpen] = React.useState(false);
     const wrapperRef = React.useRef<HTMLDivElement>(null);
 
@@ -49,20 +49,11 @@ function SearchableSelect({
         function handleClickOutside(event: MouseEvent) {
             if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
-                // Reset search term to the actual selected value's label if clicked outside
-                const found = options.find(o => o.value === value);
-                if (found) {
-                    setSearchTerm(found.label);
-                } else if (value) {
-                    setSearchTerm(value);
-                } else {
-                    setSearchTerm('');
-                }
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [value, options]);
+    }, []);
 
     const filteredOptions = options.filter(opt => 
         opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || opt.value.toLowerCase().includes(searchTerm.toLowerCase())
@@ -71,11 +62,14 @@ function SearchableSelect({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            if (filteredOptions.length > 0) {
-                onChange(filteredOptions[0].value);
-                setSearchTerm(filteredOptions[0].label);
-                setIsOpen(false);
+            if (filteredOptions.length > 0 && filteredOptions.some(o => o.label.toLowerCase() === searchTerm.toLowerCase() || o.value.toLowerCase() === searchTerm.toLowerCase())) {
+                const match = filteredOptions.find(o => o.label.toLowerCase() === searchTerm.toLowerCase() || o.value.toLowerCase() === searchTerm.toLowerCase()) || filteredOptions[0];
+                onChange(match.value);
+                setSearchTerm(match.label);
+            } else if (searchTerm.trim()) {
+                onChange(searchTerm.trim());
             }
+            setIsOpen(false);
         }
     };
 
@@ -87,22 +81,23 @@ function SearchableSelect({
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-3 pr-8 py-2 text-sm text-slate-200 outline-none focus:border-brand-500 transition-colors"
                     value={searchTerm}
                     onChange={(e) => {
-                        setSearchTerm(e.target.value);
+                        const val = e.target.value;
+                        setSearchTerm(val);
+                        onChange(val);
                         setIsOpen(true);
                     }}
-                    onFocus={(e) => {
+                    onFocus={() => {
                         setIsOpen(true);
                     }}
                     onKeyDown={handleKeyDown}
-                    placeholder="Search unit..."
+                    placeholder="Enter or search unit name..."
                 />
                 <button
                     type="button"
                     onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (isOpen) setIsOpen(false);
-                        else setIsOpen(true);
+                        setIsOpen(prev => !prev);
                     }}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
                 >
@@ -111,8 +106,20 @@ function SearchableSelect({
             </div>
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                    {filteredOptions.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-slate-500 text-center italic">No results found</div>
+                    {searchTerm.trim() && !options.some(o => o.value.toLowerCase() === searchTerm.trim().toLowerCase()) && (
+                        <div 
+                            className="px-3 py-2 text-sm cursor-pointer transition-colors bg-brand-600/10 text-brand-300 hover:bg-brand-600/20 border-b border-slate-800 flex items-center gap-2 font-medium"
+                            onClick={() => {
+                                onChange(searchTerm.trim());
+                                setIsOpen(false);
+                            }}
+                        >
+                            <Plus size={14} className="text-brand-400 shrink-0" />
+                            <span>Create unit: <span className="text-white font-bold">"{searchTerm.trim()}"</span></span>
+                        </div>
+                    )}
+                    {filteredOptions.length === 0 && !searchTerm.trim() ? (
+                        <div className="px-3 py-2 text-sm text-slate-500 text-center italic">No matching suggestions</div>
                     ) : (
                         filteredOptions.map(opt => (
                             <div 
@@ -1731,8 +1738,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 <div className="flex items-center gap-3">
                   <GripHorizontal className="text-slate-500 shrink-0" size={18} />
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-white uppercase tracking-wider">Assign Unit Name</h3>
-                    <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-tight">Select from master units list</p>
+                    <h3 className="text-base sm:text-lg font-bold text-white uppercase tracking-wider">Assign / Create Unit Name</h3>
+                    <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-tight">Enter new unit name or choose from suggestions</p>
                   </div>
                 </div>
                 <button 
@@ -1745,19 +1752,54 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
               </div>
               
               <div className="p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
-                <div className="relative mb-3 shrink-0">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                  <input 
-                    autoFocus
-                    type="text"
-                    placeholder="Search units..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm text-white outline-none focus:border-brand-500 transition-all font-medium"
-                    value={searchUnit}
-                    onChange={(e) => setSearchUnit(e.target.value)}
-                  />
-                </div>
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (searchUnit.trim()) {
+                      handleSelectUnit(searchUnit.trim());
+                    }
+                  }}
+                  className="flex gap-2 mb-3 shrink-0"
+                >
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                    <input 
+                      autoFocus
+                      type="text"
+                      placeholder="Type unit name & press Enter to create..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm text-white outline-none focus:border-brand-500 transition-all font-medium"
+                      value={searchUnit}
+                      onChange={(e) => setSearchUnit(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!searchUnit.trim()}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:hover:bg-brand-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors shrink-0 shadow-lg shadow-brand-600/20 active:scale-95"
+                  >
+                    <Plus size={15} />
+                    <span>Create</span>
+                  </button>
+                </form>
                 
                 <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0 max-h-[45vh]">
+                  {searchUnit.trim() && !masterUnits.some(u => u.unit.toLowerCase() === searchUnit.trim().toLowerCase()) && (
+                    <button 
+                      onClick={() => handleSelectUnit(searchUnit.trim())}
+                      className="w-full text-left p-3 rounded-xl bg-brand-600/15 border border-brand-500/30 hover:bg-brand-600/25 transition-colors flex items-center justify-between group mb-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold">
+                          <Plus size={16} />
+                        </div>
+                        <div>
+                          <div className="text-white font-bold text-sm tracking-wide">Create "{searchUnit.trim()}"</div>
+                          <div className="text-[10px] text-brand-400 font-bold uppercase">New Custom Unit</div>
+                        </div>
+                      </div>
+                      <div className="px-2.5 py-1 bg-brand-600 text-white text-[10px] font-bold rounded uppercase shadow">Use</div>
+                    </button>
+                  )}
                   {masterUnits
                     .filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase()))
                     .map(u => (
@@ -1779,9 +1821,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         </div>
                       </button>
                     ))}
-                  {masterUnits.filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase())).length === 0 && (
+                  {masterUnits.filter(u => u.unit.toLowerCase().includes(searchUnit.toLowerCase())).length === 0 && !searchUnit.trim() && (
                     <div className="text-center py-8 text-slate-500 text-sm italic">
-                      No matching units found in master list.
+                      Type above to create a unit or search suggestions.
                     </div>
                   )}
                 </div>
