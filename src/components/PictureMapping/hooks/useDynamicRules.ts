@@ -13,10 +13,12 @@ export function useDynamicRules(
 
     const parsedUnits = JSON.parse(unitNamesStr);
     parsedUnits.forEach((u: any) => {
-      dataMap[u.name.toLowerCase()] = {
-        name: u.name,
+      const uName = (u.name || '').toLowerCase();
+      if (!uName) return;
+      dataMap[uName] = {
+        name: u.name || '',
         id: u.id,
-        unit: u.name,
+        unit: u.name || '',
         size: 0,
         sales: 0,
         salesByCp: 0,
@@ -87,7 +89,8 @@ export function useDynamicRules(
       v.groups.forEach((group) => {
         const matchingUnits = units.filter((u) => {
           if (!group.rules || group.rules.length === 0) return false;
-          const data = aggregatedData[u.name.toLowerCase()];
+          const uName = (u.name || '').toLowerCase();
+          const data = uName ? aggregatedData[uName] : null;
           if (!data) return false;
 
           return group.rules.every((rule) => {

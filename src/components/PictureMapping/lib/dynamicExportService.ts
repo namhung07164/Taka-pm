@@ -14,7 +14,8 @@ const getPartitionKey = (store: string, location: string) => `${store}_${locatio
 // Evaluates a set of rules on a unit shape using the data map
 export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | undefined, dataMap: Record<string, any>): boolean {
   if (!rules || rules.length === 0) return false;
-  const data = dataMap[unit.name.toLowerCase()];
+  const uName = (unit.name || '').toLowerCase();
+  const data = uName ? dataMap[uName] : null;
   if (!data) return false;
 
   return rules.every((rule) => {
@@ -103,7 +104,8 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
   const dataMap: Record<string, any> = {};
 
   allUnits.forEach((u) => {
-    const uName = u.name.toLowerCase();
+    const uName = (u.name || '').toLowerCase();
+    if (!uName) return;
     const item = summaryData.find((s) => s.unit?.toLowerCase() === uName);
     dataMap[uName] = { ...(item || {}), unitName: u.name };
   });

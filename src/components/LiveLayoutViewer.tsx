@@ -757,10 +757,12 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
     const dataMap: Record<string, any> = {};
     
     units.forEach((u: any) => {
-      dataMap[u.name.toLowerCase()] = {
-        name: u.name,
+      const uName = (u?.name || '').toLowerCase();
+      if (!uName) return;
+      dataMap[uName] = {
+        name: u.name || '',
         id: u.id,
-        unit: u.name,
+        unit: u.name || '',
         size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
         profit: 0, profitByCp: 0, profitByHcmcate: 0,
         margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
@@ -1914,43 +1916,66 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                   rotation: unit.rotation || 0,
                   onMouseEnter: (e: any) => {
                      if (isInteractingRef.current) return;
-                     const container = e.target.getStage().container();
-                     container.style.cursor = 'pointer';
-                     setHoverInfo({
-                        visible: true,
-                        data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
-                        unitName: unit.name
-                     });
-                     setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
+                     try {
+                        const container = e.target.getStage()?.container();
+                        if (container) container.style.cursor = 'pointer';
+                        const uName = (unit.name || '').toLowerCase();
+                        setHoverInfo({
+                           visible: true,
+                           data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
+                           unitName: unit.name || 'Unknown'
+                        });
+                        setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
+                     } catch (err) {
+                        console.error("Defensive Check: Error onMouseEnter unit in LiveLayoutViewer:", err, unit);
+                     }
                   },
                   onMouseMove: (e: any) => {
                      if (isInteractingRef.current) return;
-                     updateTooltipPos(e.evt.clientX, e.evt.clientY);
+                     try {
+                        updateTooltipPos(e.evt.clientX, e.evt.clientY);
+                     } catch (err) {
+                        console.error("Defensive Check: Error onMouseMove unit in LiveLayoutViewer:", err, unit);
+                     }
                   },
                   onMouseLeave: (e: any) => {
-                     const container = e.target.getStage().container();
-                     container.style.cursor = 'grab';
-                     setHoverInfo(null);
+                     try {
+                        const container = e.target.getStage()?.container();
+                        if (container) container.style.cursor = 'grab';
+                        setHoverInfo(null);
+                     } catch (err) {
+                        console.error("Defensive Check: Error onMouseLeave unit in LiveLayoutViewer:", err, unit);
+                     }
                   },
                   onClick: (e: any) => {
                      if (isInteractingRef.current) return;
-                     setHoverInfo({
-                        visible: true,
-                        data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
-                        unitName: unit.name
-                     });
-                     setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
+                     try {
+                        const uName = (unit.name || '').toLowerCase();
+                        setHoverInfo({
+                           visible: true,
+                           data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
+                           unitName: unit.name || 'Unknown'
+                        });
+                        setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
+                     } catch (err) {
+                        console.error("Defensive Check: Error onClick unit in LiveLayoutViewer:", err, unit);
+                     }
                   },
                   onTap: (e: any) => {
                      if (isInteractingRef.current) return;
-                     const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
-                     const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
-                     setHoverInfo({
-                        visible: true,
-                        data: aggregatedData[unit.name?.toLowerCase() || ''] || {},
-                        unitName: unit.name
-                     });
-                     setTimeout(() => updateTooltipPos(clientX, clientY), 0);
+                     try {
+                        const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
+                        const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
+                        const uName = (unit.name || '').toLowerCase();
+                        setHoverInfo({
+                           visible: true,
+                           data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
+                           unitName: unit.name || 'Unknown'
+                        });
+                        setTimeout(() => updateTooltipPos(clientX, clientY), 0);
+                     } catch (err) {
+                        console.error("Defensive Check: Error onTap unit in LiveLayoutViewer:", err, unit);
+                     }
                   }
                };
 

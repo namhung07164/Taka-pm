@@ -60,10 +60,12 @@ function DynamicHierarchyTab({
     // Initialize with mapped shapes
     const parsedUnits = JSON.parse(unitNamesStr);
     parsedUnits.forEach((u: any) => {
-      dataMap[u.name.toLowerCase()] = {
-        name: u.name,
+      const uName = (u.name || '').toLowerCase();
+      if (!uName) return;
+      dataMap[uName] = {
+        name: u.name || '',
         id: u.id,
-        unit: u.name,
+        unit: u.name || '',
         size: 0,
         sales: 0,
         salesByCp: 0,
@@ -144,7 +146,8 @@ function DynamicHierarchyTab({
   // Evaluates rules for a given group against a unit shape
   const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
     if (!rules || rules.length === 0) return false;
-    const data = aggregatedData[unit.name.toLowerCase()];
+    const uName = (unit.name || '').toLowerCase();
+    const data = uName ? aggregatedData[uName] : null;
     if (!data) return false;
 
     // Must pass all rules (AND condition)

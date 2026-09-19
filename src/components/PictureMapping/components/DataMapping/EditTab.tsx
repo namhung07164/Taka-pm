@@ -45,27 +45,28 @@ function SearchableSelect({
         function handleClickOutside(event: MouseEvent) {
             if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
-                if (searchTerm.trim() !== value) {
-                    onChange(searchTerm.trim());
-                }
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [searchTerm, value, onChange]);
+    }, []);
 
     const filteredOptions = options.filter(opt => 
-        opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || opt.value.toLowerCase().includes(searchTerm.toLowerCase())
+        (opt.label || '').toLowerCase().includes(searchTerm.toLowerCase()) || (opt.value || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const handleCommit = (valToCommit?: string) => {
+        const finalVal = (valToCommit !== undefined ? valToCommit : searchTerm).trim();
+        if (finalVal !== value) {
+            onChange(finalVal);
+        }
+        setIsOpen(false);
+    };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            const trimmed = searchTerm.trim();
-            if (trimmed) {
-                onChange(trimmed);
-            }
-            setIsOpen(false);
+            handleCommit();
         }
     };
 
@@ -82,9 +83,7 @@ function SearchableSelect({
                         setIsOpen(true);
                     }}
                     onBlur={() => {
-                        if (searchTerm.trim() !== value) {
-                            onChange(searchTerm.trim());
-                        }
+                        handleCommit();
                     }}
                     onFocus={() => {
                         setIsOpen(true);
@@ -106,13 +105,12 @@ function SearchableSelect({
             </div>
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                    {searchTerm.trim() && !options.some(o => o.value.toLowerCase() === searchTerm.trim().toLowerCase()) && (
+                    {searchTerm.trim() && !options.some(o => (o.value || '').toLowerCase() === searchTerm.trim().toLowerCase()) && (
                         <div 
                             className="px-3 py-2 text-sm cursor-pointer transition-colors bg-brand-600/10 text-brand-300 hover:bg-brand-600/20 border-b border-slate-800 flex items-center gap-2 font-medium"
                             onMouseDown={(e) => {
                                 e.preventDefault();
-                                onChange(searchTerm.trim());
-                                setIsOpen(false);
+                                handleCommit(searchTerm.trim());
                             }}
                         >
                             <Plus size={14} className="text-brand-400 shrink-0" />
@@ -129,8 +127,7 @@ function SearchableSelect({
                                 onMouseDown={(e) => {
                                     e.preventDefault();
                                     setSearchTerm(opt.value);
-                                    onChange(opt.value);
-                                    setIsOpen(false);
+                                    handleCommit(opt.value);
                                 }}
                             >
                                 <span>{opt.label}</span>
@@ -265,7 +262,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selectedUnit = React.useMemo(() => {
-    return selectedId ? units.find(u => u.id === selectedId) : null;
+    if (!selectedId) return null;
+    try {
+      return units.find(u => u && u.id === selectedId) || null;
+    } catch (err) {
+      console.error("Defensive Check: Error looking up selected unit:", err, { selectedId, units });
+      return null;
+    }
   }, [units, selectedId]);
 
   const [isDrawing, setIsDrawing] = useState(false);
@@ -748,14 +751,28 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   };
 
   useEffect(() => {
-    if (activeTool === 'select' && selectedId && trRef.current) {
-      const node = stageRef.current.findOne(`#${selectedId}`);
-      if (node) {
-        trRef.current.nodes([node]);
-        trRef.current.getLayer().batchDraw();
+    if (activeTool === 'select' && selectedId && trRef.current && stageRef.current) {
+      try {
+        const node = stageRef.current.findOne((n: any) => n.id && n.id() === selectedId);
+        if (node) {
+          trRef.current.nodes([node]);
+          trRef.current.getLayer()?.batchDraw();
+        } else {
+          trRef.current.nodes([]);
+          trRef.current.getLayer()?.batchDraw();
+        }
+      } catch (err) {
+        console.warn("Konva Transformer node binding error:", err);
+        trRef.current.nodes([]);
+        trRef.current.getLayer()?.batchDraw();
       }
     } else if (trRef.current) {
+      try {
         trRef.current.nodes([]);
+        trRef.current.getLayer()?.batchDraw();
+      } catch (err) {
+        // ignore
+      }
     }
   }, [selectedId, activeTool, units]);
 
@@ -872,7 +889,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     const tokens = librarySearchTerm.toLowerCase().split(/[,\s]+/).filter(t => t.length > 0);
     
     return units.filter(u => {
-      const unitName = u.name.toLowerCase();
+      const unitName = (u.name || '').toLowerCase();
       // Match if the unit name contains ANY of the search tokens
       return tokens.some(token => unitName.includes(token));
     });
@@ -1340,7 +1357,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         shadowBlur={selectedId === unit.id ? 10 : 0}
                                         shadowColor="#3b82f6"
                                         draggable={activeTool === 'select' && !unit.locked}
-                                        onClick={() => activeTool === 'select' && setSelectedId(unit.id)}
+                                        onClick={() => {
+                                            try {
+                                                if (activeTool === 'select') setSelectedId(unit.id);
+                                            } catch (err) {
+                                                console.error("Defensive Check: Error selecting unit shape (rect):", err, unit);
+                                            }
+                                        }}
                                         onDragEnd={(e) => {
                                             const newUnits = units.map(u => 
                                                 u.id === unit.id ? { ...u, x: snapToGrid(e.target.x()), y: snapToGrid(e.target.y()) } : u
@@ -1384,7 +1407,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         shadowBlur={selectedId === unit.id ? 10 : 0}
                                         shadowColor="#3b82f6"
                                         draggable={activeTool === 'select' && !unit.locked}
-                                        onClick={() => activeTool === 'select' && setSelectedId(unit.id)}
+                                        onClick={() => {
+                                            try {
+                                                if (activeTool === 'select') setSelectedId(unit.id);
+                                            } catch (err) {
+                                                console.error("Defensive Check: Error selecting unit shape (circle):", err, unit);
+                                            }
+                                        }}
                                         onDragEnd={(e) => {
                                             const newUnits = units.map(u => 
                                                 u.id === unit.id ? { ...u, x: snapToGrid(e.target.x()), y: snapToGrid(e.target.y()) } : u
@@ -1427,7 +1456,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         shadowColor="#3b82f6"
                                         closed
                                         draggable={activeTool === 'select' && !unit.locked}
-                                        onClick={() => activeTool === 'select' && setSelectedId(unit.id)}
+                                        onClick={() => {
+                                            try {
+                                                if (activeTool === 'select') setSelectedId(unit.id);
+                                            } catch (err) {
+                                                console.error("Defensive Check: Error selecting unit shape (polygon):", err, unit);
+                                            }
+                                        }}
                                         onDragEnd={(e) => {
                                             const newUnits = units.map(u => 
                                                 u.id === unit.id ? { ...u, x: snapToGrid(e.target.x()), y: snapToGrid(e.target.y()) } : u
@@ -1704,8 +1739,12 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                             selectedId === unit.id ? "bg-brand-900/20 border-brand-500/50 text-brand-300" : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
                         )}
                         onClick={() => {
-                            setActiveTool('select');
-                            setSelectedId(unit.id);
+                            try {
+                                setActiveTool('select');
+                                setSelectedId(unit.id);
+                            } catch (err) {
+                                console.error("Defensive Check: Error selecting unit from library:", err, unit);
+                            }
                         }}
                     >
                         <span className="truncate max-w-[120px]">{unit.name}</span>
