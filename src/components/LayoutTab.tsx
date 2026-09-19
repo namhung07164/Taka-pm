@@ -90,17 +90,17 @@ export function LayoutTab({
   }, [locations, projects, currentUser, isAdmin]);
 
   // Lọc danh sách location:
-  // Nếu có quyền chỉnh sửa (canWrite / Admin) -> hiển thị TOÀN BỘ locations để admin/manager có thể chọn và add/edit link URL
-  // Nếu chỉ có quyền xem (Read-only) -> chỉ hiển thị các locations đã có URL hợp lệ
+  // Nếu là Admin -> hiển thị TOÀN BỘ locations để admin có thể chọn và add/edit link URL
+  // Nếu không phải Admin -> chỉ hiển thị các locations đã có URL hợp lệ
   const availableLocations = React.useMemo(() => {
-    if (canWrite) {
+    if (isAdmin) {
       return userAllowedLocations;
     }
     return userAllowedLocations.filter(loc => {
       const specificKey = `url_${activeStore}_${loc}`;
       return isValidUrl(layoutSettings[specificKey]);
     });
-  }, [userAllowedLocations, canWrite, layoutSettings, activeStore]);
+  }, [userAllowedLocations, isAdmin, layoutSettings, activeStore]);
   const [isEditing, setIsEditing] = useState(false);
   const [isLiveMapMode, setIsLiveMapMode] = useState(true);
   const [editUrl, setEditUrl] = useState("");
@@ -633,7 +633,7 @@ export function LayoutTab({
                 {isExporting ? (exportStatusMessage || 'Đang xử lý xuất...') : 'Trigger Export'}
               </button>
             )}
-            {canWrite && (
+            {isAdmin && (
               <button 
                 onClick={() => { setEditUrl(url); setIsEditing(true); }}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 shadow-sm"
@@ -644,7 +644,7 @@ export function LayoutTab({
             )}
           </div>
         )}
-        {canWrite && isEditing && (
+        {isAdmin && isEditing && (
           <div className="flex items-center gap-2 w-full max-w-xl">
             <div className="flex items-center gap-1 flex-grow">
               <input 
@@ -705,7 +705,7 @@ export function LayoutTab({
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
             <Map className="w-12 h-12 mb-3 opacity-20" />
             <p className="text-sm font-medium">No floor plan layout available for this location</p>
-            {canWrite && <p className="text-xs mt-1">Click "Edit URL" to configure layout link</p>}
+            {isAdmin && <p className="text-xs mt-1">Click "Edit URL" to configure layout link</p>}
           </div>
         ) : url.includes('drive.google.com') ? (
           <iframe 
