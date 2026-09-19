@@ -248,6 +248,37 @@ export async function loadStoreFromCloudR2(): Promise<{ success: boolean; messag
     };
   }
 
+  // Merge current local partition and storeLocationData from in-memory state
+  const currentKey = `${dataState.store}_${dataState.location}`;
+  const allLocalPartitions: Record<string, any> = {
+    ...dataState.storeLocationData,
+  };
+  if (dataState.mapVersions && dataState.mapVersions.length > 0) {
+    allLocalPartitions[currentKey] = {
+      mapUnits: dataState.mapUnits,
+      mapVersions: dataState.mapVersions,
+      activeMapVersionId: dataState.activeMapVersionId,
+    };
+  }
+
+  for (const pKey in allLocalPartitions) {
+    const localPart = allLocalPartitions[pKey];
+    if (localPart && Array.isArray(localPart.mapVersions) && localPart.mapVersions.length > 0) {
+      const existingR2Part = normalizedStoreLocationData[pKey];
+      normalizedStoreLocationData[pKey] = {
+        mapUnits: (localPart.mapUnits && localPart.mapUnits.length > 0) ? localPart.mapUnits : (existingR2Part?.mapUnits || []),
+        mapVersions: localPart.mapVersions.map((lv: any) => {
+          const cloudV = existingR2Part?.mapVersions?.find((cv: any) => cv.id === lv.id || cv.name === lv.name);
+          return {
+            ...lv,
+            backgroundUrl: lv.backgroundUrl || cloudV?.backgroundUrl || '',
+          };
+        }),
+        activeMapVersionId: localPart.activeMapVersionId || existingR2Part?.activeMapVersionId || localPart.mapVersions[0]?.id || null,
+      };
+    }
+  }
+
   // Resolve all R2 background images across all partitions
   for (const pKey in normalizedStoreLocationData) {
     const partition = normalizedStoreLocationData[pKey];

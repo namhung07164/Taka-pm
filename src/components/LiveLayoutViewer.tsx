@@ -12,6 +12,7 @@ import { Project, AppRole } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
+import { useDataStore } from './PictureMapping/DataContext';
 
 interface LiveLayoutViewerProps {
   storeFilter: string;
@@ -321,19 +322,50 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout || !!permissionMatrix[role]?.Write?.pictureMapping) && !isArchiveYear;
 
+  const localStoreLocationData = useDataStore((state) => state.storeLocationData);
+  const localStore = useDataStore((state) => state.store);
+  const localLocation = useDataStore((state) => state.location);
+  const localMapUnits = useDataStore((state) => state.mapUnits);
+  const localMapVersions = useDataStore((state) => state.mapVersions);
+  const localActiveMapVersionId = useDataStore((state) => state.activeMapVersionId);
+
   const { r2Version, r2Units } = useMemo(() => {
-     if (config.storeLocationData) {
-         const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
-         const pKey = `${storeFilter}_${targetLoc}`;
-         const partition = config.storeLocationData[pKey];
-         if (partition) {
-             const v = partition.mapVersions?.find((v: any) => v.isDynamicActive) || partition.mapVersions?.[0] || {};
-             return { r2Version: v, r2Units: partition.mapUnits || [] };
+     const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
+     const pKey = `${storeFilter}_${targetLoc}`;
+     
+     // 1. Check local in-memory partition (active session in Picture Mapping)
+     const localPart = localStoreLocationData?.[pKey] || (
+       localStore === storeFilter && localLocation === targetLoc
+         ? { mapUnits: localMapUnits, mapVersions: localMapVersions, activeMapVersionId: localActiveMapVersionId }
+         : null
+     );
+
+     // 2. Check cloud partition from config
+     const cloudPart = config?.storeLocationData?.[pKey];
+
+     // Use local partition if it has versions and groups, otherwise use cloud partition
+     const partition = (localPart && Array.isArray(localPart.mapVersions) && localPart.mapVersions.length > 0)
+       ? localPart
+       : cloudPart;
+
+     if (partition) {
+         const activeId = partition.activeMapVersionId;
+         let v = (activeId ? partition.mapVersions?.find((v: any) => v.id === activeId) : null) ||
+                 partition.mapVersions?.find((v: any) => v.isDynamicActive) || 
+                 partition.mapVersions?.[0] || {};
+
+         // If local version has no backgroundUrl or has r2:// reference, borrow resolved url from cloud
+         if ((!v.backgroundUrl || v.backgroundUrl.startsWith('r2://')) && cloudPart?.mapVersions) {
+           const matchingCloudV = cloudPart.mapVersions.find((cv: any) => cv.id === v.id || cv.name === v.name);
+           if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
+             v = { ...v, backgroundUrl: matchingCloudV.backgroundUrl };
+           }
          }
-         return { r2Version: {}, r2Units: [] };
+
+         return { r2Version: v, r2Units: partition.mapUnits || [] };
      }
-     return { r2Version: config.version || {}, r2Units: config.units || [] };
-  }, [config, storeFilter, locationFilter]);
+     return { r2Version: config?.version || {}, r2Units: config?.units || [] };
+  }, [config, storeFilter, locationFilter, localStoreLocationData, localStore, localLocation, localMapUnits, localMapVersions, localActiveMapVersionId]);
 
   const version = r2Version;
   const units = r2Units;

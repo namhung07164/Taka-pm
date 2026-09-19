@@ -9,6 +9,7 @@ import ReviewTab from './DataMapping/ReviewTab';
 import { UnitShape, Group, MapVersion } from './DataMapping/types';
 import { useDataStore } from '../DataContext';
 import { useAppStore } from '../../../store/useAppStore';
+import { getUserAllowedStores } from '../../../lib/utils';
 
 import CloudSyncManager from './CloudSync/CloudSyncManager';
 
@@ -19,6 +20,28 @@ export default React.memo(function DataMappingTab() {
   const [isTabFullscreen, setIsTabFullscreen] = useState(false);
   
   const [isHeaderVisible, setIsHeaderVisible] = useState(false);
+
+  const currentUser = useAppStore(state => state.currentUser);
+  const isAdmin = currentUser.role === 'admin';
+  const appLocations = useAppStore(state => state.locations);
+  const appProjects = useAppStore(state => state.projects);
+
+  const allowedStores = React.useMemo(() => {
+    const list = getUserAllowedStores(currentUser);
+    const filtered = list.filter((s): s is 'HCM' | 'HN' => s === 'HCM' || s === 'HN');
+    return filtered.length > 0 ? filtered : (['HCM'] as ('HCM' | 'HN')[]);
+  }, [currentUser]);
+
+  const userAllowedLocations = React.useMemo(() => {
+    const defaults = ['B2', 'B1', 'L1', 'L2', 'L3', 'L4', 'L5'];
+    const baseList = Array.from(new Set([...defaults, ...(appLocations || []), ...((appProjects || []).map(p => p.location).filter(Boolean))]))
+      .filter(l => l && String(l).trim() !== '' && String(l).toLowerCase() !== 'all');
+    if (isAdmin || currentUser.locationPermissions?.['all']) {
+      return baseList;
+    }
+    const filtered = baseList.filter(loc => currentUser.locationPermissions?.[loc.toLowerCase()]);
+    return filtered.length > 0 ? filtered : defaults.slice(0, 1);
+  }, [appLocations, appProjects, currentUser, isAdmin]);
   
   // Shared State
   const {  
@@ -55,14 +78,19 @@ export default React.memo(function DataMappingTab() {
     storeLocationData: state.storeLocationData,
   })));
 
-  const appLocations = useAppStore(state => state.locations);
-  const availableLocations = React.useMemo(() => {
-    const defaults = ['B2', 'B1', 'L1', 'L2', 'L3', 'L4', 'L5'];
-    const merged = Array.from(new Set([...defaults, ...(appLocations || [])])).filter(Boolean);
-    return merged;
-  }, [appLocations]);
+  // Tự động bảo vệ & đồng bộ theo phân quyền Store
+  React.useEffect(() => {
+    if (allowedStores.length > 0 && !allowedStores.includes(store)) {
+      setStore(allowedStores[0]);
+    }
+  }, [store, allowedStores, setStore]);
 
-  const storeList: ('HCM' | 'HN')[] = ['HCM', 'HN'];
+  // Tự động bảo vệ & đồng bộ theo phân quyền Location
+  React.useEffect(() => {
+    if (userAllowedLocations.length > 0 && !userAllowedLocations.includes(location)) {
+      setLocation(userAllowedLocations[0]);
+    }
+  }, [location, userAllowedLocations, setLocation]);
 
   const allStoreUnits = React.useMemo(() => {
     return getAllStoreUnits(store);
@@ -148,7 +176,7 @@ export default React.memo(function DataMappingTab() {
                   onChange={(e) => setStore(e.target.value as 'HCM' | 'HN')}
                   className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-brand-300 transition-colors"
                 >
-                  {storeList.map(s => (
+                  {allowedStores.map(s => (
                     <option key={s} value={s} className="bg-slate-950 text-slate-200 font-semibold">{s}</option>
                   ))}
                 </select>
@@ -165,7 +193,7 @@ export default React.memo(function DataMappingTab() {
                     onChange={(e) => setLocation(e.target.value)}
                     className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-purple-300 transition-colors"
                   >
-                    {availableLocations.map(loc => (
+                    {userAllowedLocations.map(loc => (
                       <option key={loc} value={loc} className="bg-slate-950 text-slate-200 font-semibold">{loc}</option>
                     ))}
                   </select>
