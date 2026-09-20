@@ -22,12 +22,11 @@ interface LiveLayoutViewerProps {
   onUnitSelected?: (unit: any) => void;
 }
 
+// Calculate high-contrast text color based on background perceived luminance (No drop shadow, razor-sharp vector text)
 function getContrastStyle(hexColor: string) {
   if (!hexColor || typeof hexColor !== 'string') {
     return {
       text: '#ffffff',
-      textStroke: '#000000',
-      textStrokeWidth: 1.6,
       shapeStroke: '#ffffff',
     };
   }
@@ -36,8 +35,6 @@ function getContrastStyle(hexColor: string) {
   if (c.length !== 6) {
     return {
       text: '#ffffff',
-      textStroke: '#000000',
-      textStrokeWidth: 1.6,
       shapeStroke: '#ffffff',
     };
   }
@@ -47,20 +44,16 @@ function getContrastStyle(hexColor: string) {
   // Perceived luminance (YIQ standard)
   const yiq = (r * 299 + g * 587 + b * 114) / 1000;
   
-  if (yiq >= 150) {
-    // Light / bright color background -> dark text with white halo for ultra crisp readability
+  if (yiq >= 145) {
+    // Light / bright color background -> Crisp deep dark slate text (#0f172a)
     return {
       text: '#0f172a',
-      textStroke: '#ffffff',
-      textStrokeWidth: 1.8,
       shapeStroke: '#1e293b',
     };
   } else {
-    // Dark / saturated color background -> white text with dark halo
+    // Dark / saturated color background -> Crisp pure white text (#ffffff)
     return {
       text: '#ffffff',
-      textStroke: '#000000',
-      textStrokeWidth: 1.8,
       shapeStroke: '#ffffff',
     };
   }
@@ -1124,6 +1117,11 @@ function LiveCanvas({
     });
   };
 
+  // Reset selected version when locationFilter or storeFilter changes so active floor version is selected
+  useEffect(() => {
+    setSelectedVersionId(null);
+  }, [locationFilter, storeFilter]);
+
   // Zoom & Pan smoothly to target unit and highlight it
   const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
     if (!targetUnitOrName) return false;
@@ -1133,12 +1131,24 @@ function LiveCanvas({
       targetUnit = targetUnitOrName;
     } else {
       const q = String(targetUnitOrName).toLowerCase().trim();
+      // 1. Direct unit name or id match
       targetUnit = units.find((u: any) => 
         (u.name || '').toLowerCase().trim() === q || 
         String(u.id).toLowerCase() === q
       );
+      // 2. Project name, brand, or code match via aggregatedData
       if (!targetUnit) {
-        // Fallback: partial match
+        targetUnit = units.find((u: any) => {
+          const uName = (u.name || '').toLowerCase();
+          const d = aggregatedData[uName];
+          if (!d) return false;
+          return (d.projectName && d.projectName.toLowerCase().includes(q)) ||
+                 (d.brandName && d.brandName.toLowerCase().includes(q)) ||
+                 (d.appProjectCode && d.appProjectCode.toLowerCase().includes(q));
+        });
+      }
+      // 3. Fallback: partial match
+      if (!targetUnit) {
         targetUnit = units.find((u: any) => 
           (u.name || '').toLowerCase().includes(q) ||
           String(u.id).toLowerCase().includes(q)
@@ -1224,7 +1234,7 @@ function LiveCanvas({
     if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
     focusedTimerRef.current = setTimeout(() => {
       setFocusedUnitId(null);
-    }, 7000);
+    }, 10000);
 
     // Open detailed info tooltip for unit
     const uName = (targetUnit.name || '').toLowerCase();
@@ -1248,7 +1258,7 @@ function LiveCanvas({
       const q = String(targetUnitSearch).trim();
       const success = zoomAndPanToUnit(q);
       if (!success) {
-        // Check other floors if available in availableStoreVersions
+        // Check other floor versions in availableStoreVersions
         const foundInOther = availableStoreVersions.find((v: any) => {
           if (!v?.groupMappings) return false;
           return Object.values(v.groupMappings).some((m: any) => 
@@ -1259,11 +1269,27 @@ function LiveCanvas({
           setSelectedVersionId(foundInOther.id);
           setTimeout(() => {
             zoomAndPanToUnit(q);
-          }, 350);
+          }, 400);
         }
       }
+    } else if (targetUnitSearch === null || targetUnitSearch === '') {
+      // Exit focus mode and reset zoom when user clears search or clicks cancel
+      setFocusedUnitId(null);
+      setHoverInfo(null);
+      if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+      fitToScreen(true);
     }
-  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId]);
+  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, fitToScreen]);
+
+  // If units reload after floor switch and targetUnitSearch is active, trigger zoom
+  useEffect(() => {
+    if (targetUnitSearch && String(targetUnitSearch).trim() && units.length > 0) {
+      const t = setTimeout(() => {
+        zoomAndPanToUnit(targetUnitSearch);
+      }, 250);
+      return () => clearTimeout(t);
+    }
+  }, [units, targetUnitSearch, zoomAndPanToUnit]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -1296,6 +1322,30 @@ function LiveCanvas({
   return (
     <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
       
+      {/* Floating Focus Unit Banner with Cancel / Exit Button */}
+      {focusedUnitId && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-slate-900/95 dark:bg-slate-800/95 text-white px-3.5 py-1.5 rounded-full shadow-2xl border border-amber-400/60 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+          <span className="text-xs font-bold text-amber-300">
+            {units.find((u: any) => u.id === focusedUnitId)?.name || 'Gian hàng'}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setFocusedUnitId(null);
+              setHoverInfo(null);
+              if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+              fitToScreen(true);
+            }}
+            className="flex items-center gap-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-full transition-all ml-1 active:scale-95 touch-manipulation"
+            title="Thoát chế độ phóng to"
+          >
+            <X className="w-3 h-3" />
+            <span>Thoát zoom</span>
+          </button>
+        </div>
+      )}
+
       {/* Floating Top-Left Controls: Location & Layout Version Switcher */}
       <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
         <div className="flex items-center gap-1.5">
@@ -2258,13 +2308,8 @@ function LiveCanvas({
                           fontStyle="bold"
                           fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
                           fill={contrast.text}
-                          stroke={contrast.textStroke}
-                          strokeWidth={contrast.textStrokeWidth}
                           strokeScaleEnabled={false}
                           perfectDrawEnabled={false}
-                          shadowColor={contrast.text === '#ffffff' ? '#000000' : '#ffffff'}
-                          shadowBlur={2}
-                          shadowOpacity={0.6}
                           wrap="none"
                           ellipsis={true}
                           listening={false}

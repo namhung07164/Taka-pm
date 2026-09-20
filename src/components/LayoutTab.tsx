@@ -119,50 +119,85 @@ export function LayoutTab({
 
   const getAllStoreUnits = useDataStore((state) => state.getAllStoreUnits);
 
-  // Aggregate all known units in active store for rapid autocomplete suggestions
+  // Aggregate all known units in active store for rapid autocomplete suggestions (Unit code, Project Name, Brand Name)
   const unitSuggestions = React.useMemo(() => {
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
-    const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string }>();
+    const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string; code?: string }>();
 
+    // 1. Index storeUnits
     storeUnits.forEach((u: any) => {
       if (u?.name) {
+        let loc = u.location || '';
+        if (!loc) {
+          const m = String(u.name).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+          if (m) loc = m[1].toUpperCase();
+        }
         map.set(u.name.toLowerCase().trim(), {
           unit: u.name.trim(),
-          location: u.location,
+          location: loc,
           brand: '',
-          project: ''
+          project: '',
+          code: u.name.trim()
         });
       }
     });
 
+    // 2. Index projects (including project name, brand, code, unit, and location)
     projects.forEach((p: any) => {
-      if (p.unit && (!p.store || p.store === activeStore)) {
-        const key = p.unit.toLowerCase().trim();
-        const existing = map.get(key) || { unit: p.unit.trim(), location: '', brand: '', project: '' };
-        map.set(key, {
-          unit: p.unit.trim(),
-          location: existing.location || p.location,
-          brand: p.brandName || existing.brand,
-          project: p.name || existing.project
-        });
+      if (!p.store || p.store === activeStore || activeStore === 'all') {
+        const primaryCode = p.unit || p.code || p.name;
+        if (primaryCode) {
+          const key = String(primaryCode).toLowerCase().trim();
+          const existing = map.get(key) || { unit: String(primaryCode).trim(), location: '', brand: '', project: '', code: '' };
+          let loc = p.location || existing.location || '';
+          if (!loc) {
+            const m = String(primaryCode).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+            if (m) loc = m[1].toUpperCase();
+          }
+          map.set(key, {
+            unit: String(primaryCode).trim(),
+            location: loc,
+            brand: p.brandName || existing.brand || '',
+            project: p.name || existing.project || '',
+            code: p.code || existing.code || ''
+          });
+        }
+        // If project has both code and distinct project name, index project name as well
+        if (p.name && p.code && p.name.trim().toLowerCase() !== p.code.trim().toLowerCase()) {
+          const nameKey = `proj_${p.name.toLowerCase().trim()}`;
+          let loc = p.location || '';
+          if (!loc) {
+            const m = String(p.code || p.unit).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+            if (m) loc = m[1].toUpperCase();
+          }
+          map.set(nameKey, {
+            unit: String(p.unit || p.code).trim(),
+            location: loc,
+            brand: p.brandName || '',
+            project: p.name.trim(),
+            code: p.code
+          });
+        }
       }
     });
 
-    return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string }>;
+    return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string; code?: string }>;
   }, [getAllStoreUnits, activeStore, projects]);
 
   const filteredUnitSuggestions = React.useMemo(() => {
     if (!unitSearchInput.trim()) return [];
     const q = unitSearchInput.toLowerCase().trim();
-    return unitSuggestions.filter((item: { unit: string; brand?: string; project?: string }) => {
+    return unitSuggestions.filter((item: { unit: string; location?: string; brand?: string; project?: string; code?: string }) => {
       const matchUnit = item.unit.toLowerCase().includes(q);
       const matchBrand = (item.brand || '').toLowerCase().includes(q);
       const matchProject = (item.project || '').toLowerCase().includes(q);
-      return matchUnit || matchBrand || matchProject;
+      const matchCode = (item.code || '').toLowerCase().includes(q);
+      const matchLoc = (item.location || '').toLowerCase().includes(q);
+      return matchUnit || matchBrand || matchProject || matchCode || matchLoc;
     });
   }, [unitSuggestions, unitSearchInput]);
 
-  const handleSelectSearchUnit = (unitItem: { unit: string; location?: string }) => {
+  const handleSelectSearchUnit = (unitItem: { unit: string; location?: string; brand?: string; project?: string; code?: string }) => {
     setUnitSearchInput(unitItem.unit);
     setShowSuggestions(false);
 
@@ -171,16 +206,35 @@ export function LayoutTab({
       setIsLiveMapMode(true);
     }
 
-    // 2. If the unit is on a specific floor and we are on a different floor filter, switch floor
-    if (unitItem.location && unitItem.location !== 'all') {
-      const currentLoc = globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all';
-      if (currentLoc !== 'all' && currentLoc.toLowerCase() !== unitItem.location.toLowerCase()) {
-        setGlobalLocationFilter([unitItem.location]);
+    // 2. Resolve floor / location reliably
+    let targetFloor = unitItem.location;
+    if (!targetFloor || targetFloor.toLowerCase() === 'all') {
+      const matchedP = projects.find(p => 
+        (p.unit && p.unit.toLowerCase() === unitItem.unit.toLowerCase()) ||
+        (p.code && p.code.toLowerCase() === unitItem.unit.toLowerCase()) ||
+        (p.name && p.name.toLowerCase() === (unitItem.project || '').toLowerCase())
+      );
+      if (matchedP?.location) {
+        targetFloor = matchedP.location;
+      } else {
+        const m = unitItem.unit.match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+        if (m) targetFloor = m[1].toUpperCase();
       }
     }
 
-    // 3. Zoom & Pan to target unit
+    // 3. Switch floor automatically
+    if (targetFloor && targetFloor.toLowerCase() !== 'all') {
+      setGlobalLocationFilter([targetFloor]);
+    }
+
+    // 4. Zoom & Pan to target unit
     setTargetUnitSearch(unitItem.unit);
+  };
+
+  const handleClearSearchAndFocus = () => {
+    setUnitSearchInput('');
+    setTargetUnitSearch(null);
+    setShowSuggestions(false);
   };
 
   // Close suggestions on outside click
@@ -659,10 +713,10 @@ export function LayoutTab({
               </button>
             )}
 
-            {/* Search Unit Box directly next to Trigger Export */}
-            <div ref={searchContainerRef} className="relative flex-grow sm:flex-grow-0 min-w-[200px] max-w-[280px]">
+            {/* Search Unit & Project Box directly next to Trigger Export */}
+            <div ref={searchContainerRef} className="relative flex-grow sm:flex-grow-0 min-w-[220px] max-w-[320px]">
               <div className="relative flex items-center">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input 
                   type="text"
                   value={unitSearchInput}
@@ -683,52 +737,55 @@ export function LayoutTab({
                       setShowSuggestions(false);
                     }
                   }}
-                  placeholder="Tìm ô unit (vd: L2-210)..."
-                  className="w-full pl-8 pr-7 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 shadow-sm transition-all"
+                  placeholder="Tìm ô unit hoặc dự án..."
+                  className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-600 dark:focus:border-purple-400 shadow-sm transition-all"
                 />
                 {unitSearchInput && (
                   <button 
                     type="button"
-                    onClick={() => {
-                      setUnitSearchInput('');
-                      setTargetUnitSearch(null);
-                      setShowSuggestions(false);
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                    title="Xóa tìm kiếm"
+                    onClick={handleClearSearchAndFocus}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 transition-colors shadow-xs active:scale-95 touch-manipulation"
+                    title="Xóa tìm kiếm & Thoát phóng to"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
               {/* Suggestions Dropdown */}
               {showSuggestions && unitSearchInput.trim() && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1 animate-in fade-in duration-100">
+                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto p-1.5 animate-in fade-in duration-100">
                   {filteredUnitSuggestions.length === 0 ? (
-                    <div className="p-2 text-xs text-slate-400 text-center italic">
+                    <div className="p-3 text-xs text-slate-500 dark:text-slate-400 text-center italic">
                       Nhấn Enter để tìm "{unitSearchInput}"
                     </div>
                   ) : (
-                    filteredUnitSuggestions.slice(0, 15).map((item: { unit: string; location?: string; brand?: string; project?: string }) => (
+                    filteredUnitSuggestions.slice(0, 20).map((item: { unit: string; location?: string; brand?: string; project?: string; code?: string }) => (
                       <button
-                        key={item.unit}
+                        key={`${item.unit}_${item.project || ''}_${item.location || ''}`}
                         type="button"
                         onClick={() => handleSelectSearchUnit(item)}
-                        className="w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-200 transition-colors group cursor-pointer"
+                        className="w-full text-left flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/50 text-slate-800 dark:text-slate-100 transition-colors group cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-b-0"
                       >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-bold text-xs font-mono text-purple-700 dark:text-purple-400 shrink-0">
-                            {item.unit}
-                          </span>
-                          {(item.brand || item.project) && (
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                              - {item.brand || item.project}
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs sm:text-sm font-mono text-purple-700 dark:text-purple-400 shrink-0">
+                              {item.unit}
                             </span>
+                            {item.brand && (
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                                {item.brand}
+                              </span>
+                            )}
+                          </div>
+                          {item.project && item.project !== item.unit && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                              📁 {item.project}
+                            </div>
                           )}
                         </div>
                         {item.location && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0 ml-1">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-300 shrink-0 ml-1">
                             {item.location}
                           </span>
                         )}
