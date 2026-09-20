@@ -693,32 +693,82 @@ export function LayoutTab({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Active Export Status Banner - Only displayed when exporting or waiting */}
-            {isExporting && (
-              <div className="flex items-center gap-1.5 text-xs text-amber-700 font-medium bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800 animate-pulse">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span className="hidden sm:inline">{exportStatusMessage || 'Đang xử lý xuất...'}</span>
-              </div>
-            )}
-
+          {/* Action Buttons & Gantt Navigation Cluster */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
             {onBackToGantt && (
               <button
                 onClick={onBackToGantt}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-xs active:scale-95 touch-manipulation"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-xs active:scale-95 touch-manipulation shrink-0"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Back to Gantt</span>
-                <span className="xs:hidden">Gantt</span>
+                <span className="hidden sm:inline">Back to Gantt</span>
+                <span className="sm:hidden">Gantt</span>
               </button>
+            )}
+
+            {/* Live Map / Exit Live */}
+            <button
+              onClick={() => setIsLiveMapMode(!isLiveMapMode)}
+              className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 ${
+                isLiveMapMode 
+                  ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400' 
+                  : 'bg-white dark:bg-[#1e1e20] text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-slate-200 dark:border-[#444446]'
+              }`}
+            >
+              <Map className="w-3.5 h-3.5 shrink-0" />
+              <span>{isLiveMapMode ? 'Exit Live' : 'Live Map'}</span>
+            </button>
+
+            {/* Refresh */}
+            <button 
+              onClick={() => setCacheBuster(Date.now())}
+              className="flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 dark:border-[#444446] shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0"
+              title="Làm mới dữ liệu mặt bằng"
+            >
+              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            {/* Export */}
+            {canWrite && (
+              <button 
+                onClick={handleTriggerReExport}
+                disabled={isExporting}
+                title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
+                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isExporting ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isExporting ? (exportStatusMessage || 'Đang xuất...') : 'Trigger Export'}</span>
+                <span className="sm:hidden">{isExporting ? 'Xuất...' : 'Export'}</span>
+              </button>
+            )}
+
+            {/* Edit URL for Admin */}
+            {isAdmin && (
+              <button 
+                onClick={() => { setEditUrl(url); setIsEditing(true); }}
+                className="flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 dark:border-blue-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0"
+                title="Chỉnh sửa liên kết URL bản đồ"
+              >
+                <Edit2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden md:inline">Edit URL</span>
+              </button>
+            )}
+
+            {/* Active Export Status Banner - Only displayed when exporting or waiting */}
+            {isExporting && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-700 font-medium bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800 animate-pulse shrink-0">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span className="hidden sm:inline">{exportStatusMessage || 'Đang xử lý xuất...'}</span>
+              </div>
             )}
           </div>
         </div>
 
         {!isEditing && (
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            {/* Search Unit & Project Box - Full width on mobile, flexible on desktop */}
-            <div ref={searchContainerRef} className="relative flex-1 min-w-[200px] w-full sm:w-auto">
+          <div className="w-full">
+            {/* Search Unit & Project Box - Full width */}
+            <div ref={searchContainerRef} className="relative w-full">
               <div className="relative flex items-center">
                 <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input 
@@ -802,54 +852,6 @@ export function LayoutTab({
                     ))
                   )}
                 </div>
-              )}
-            </div>
-
-            {/* Action Buttons Cluster */}
-            <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-0.5">
-              <button
-                onClick={() => setIsLiveMapMode(!isLiveMapMode)}
-                className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-xs whitespace-nowrap active:scale-95 touch-manipulation ${
-                  isLiveMapMode 
-                    ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400' 
-                    : 'bg-white dark:bg-[#1e1e20] text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-slate-200 dark:border-[#444446]'
-                }`}
-              >
-                <Map className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <span>{isLiveMapMode ? 'Exit Live' : 'Live Map'}</span>
-              </button>
-
-              <button 
-                onClick={() => setCacheBuster(Date.now())}
-                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 dark:border-[#444446] shadow-xs whitespace-nowrap active:scale-95 touch-manipulation"
-                title="Làm mới dữ liệu mặt bằng"
-              >
-                <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <span className="hidden xs:inline">Refresh</span>
-              </button>
-
-              {canWrite && (
-                <button 
-                  onClick={handleTriggerReExport}
-                  disabled={isExporting}
-                  title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
-                  className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${isExporting ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">{isExporting ? (exportStatusMessage || 'Đang xuất...') : 'Trigger Export'}</span>
-                  <span className="sm:hidden">Export</span>
-                </button>
-              )}
-
-              {isAdmin && (
-                <button 
-                  onClick={() => { setEditUrl(url); setIsEditing(true); }}
-                  className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 dark:border-blue-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation"
-                  title="Chỉnh sửa liên kết URL bản đồ"
-                >
-                  <Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                  <span className="hidden md:inline">Edit URL</span>
-                </button>
               )}
             </div>
           </div>

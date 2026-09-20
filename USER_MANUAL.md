@@ -505,13 +505,12 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - Các nhóm quy tắc (Rule-Based Groups) và điều kiện lọc (Conditions API) được lưu trữ độc lập theo từng phiên bản (version). Khi chuyển đổi giữa các version, hệ thống sẽ tự động hiển thị chính xác các nhóm và điều kiện thuộc riêng version đó.
    - Khi cần sao chép nhanh bộ quy tắc từ version khác, sử dụng tính năng **`[ COPY GROUPS FROM ]`** để nhân bản danh sách nhóm sang version đang chọn.
 7. **Giao Diện Thanh Công Cụ Tinh Gọn, Chống Che Khuất & Tối Ưu Màn Hình Nhỏ (Optimized & Collision-Free Responsive Toolbar)**:
-   - **Hàng 1 — Tiêu Đề & Cụm Bộ Lọc Hợp Nhất (Unified Filter Pill)**:
-     * Tích hợp Store, Location và Year vào một thanh kính mờ bo tròn nhỏ gọn, giảm thiểu chiều cao thanh công cụ.
-     * Trạng thái xuất file (`Export Status`) chỉ hiển thị khi đang trong tiến trình xuất (kèm biểu tượng xoay linh hoạt), loại bỏ hoàn toàn các thông báo trạng thái dư thừa (`Status: false Done`) gây chật chội màn hình.
-     * Nút `Back to Gantt` được thu gọn với cơ chế phản hồi chạm tức thì (`active:scale-95 touch-manipulation`).
-   - **Hàng 2 — Hộp Tìm Kiếm Rộng Rãi & Cụm Nút Hành Động Responsive**:
-     * Ô tìm kiếm `Tìm ô unit, brand hoặc tên dự án...` được thiết kế co giãn linh hoạt (`flex-1` trên máy tính và toàn chiều rộng trên điện thoại), đảm bảo văn bản gợi ý không bao giờ bị cắt ngắn hay tràn viền trên màn hình di động.
-     * Cụm nút hành động (`Live Map`, `Refresh`, `Trigger Export`, `Edit URL`) được xếp thành một hàng ngang gọn gàng, hỗ trợ cuộn nhẹ trên màn hình rất hẹp, không bị rớt dòng làm đẩy bản đồ xuống sâu.
+   - **Cụm Hàng Trên — Tiêu Đề, Bộ Lọc Hợp Nhất & Cụm Nút Hành Động Liền Kề Nút Gantt**:
+     * Tích hợp Store, Location và Year vào một thanh kính mờ bo tròn nhỏ gọn (`Unified Filter Pill`), giảm thiểu chiều cao thanh công cụ.
+     * **Tích hợp Cụm Nút Hành Động lên cùng hàng Nút Gantt**: Các nút `[ ← Gantt ]`, `[ Live Map / Exit Live ]`, `[ Refresh ]`, `[ Export ]` (và `[ Edit URL ]` cho Quản trị viên) được gom lên cùng một cụm điều khiển liền kề nhau. Trên điện thoại di động, các nút nằm trọn vẹn trong một hàng ngang nhỏ gọn, loại bỏ hoàn toàn 1 dòng công cụ thừa, giúp giảm đáng kể kích thước chiếm dụng dọc và mở rộng tối đa vùng hiển thị cho mặt bằng.
+     * Trạng thái xuất file (`Export Status`) chỉ hiển thị khi đang trong tiến trình xuất (kèm biểu tượng xoay linh hoạt), loại bỏ hoàn toàn các thông báo trạng thái dư thừa gây chật chội màn hình.
+   - **Hàng Tìm Kiếm Toàn Chiều Rộng (Full-Width Search Box)**:
+     * Ô tìm kiếm `Tìm ô unit, brand hoặc dự án...` chiếm trọn vẹn toàn bộ chiều rộng, mang lại không gian rộng rãi, thoáng đãng, văn bản gợi ý không bị chèn ép hay cắt ngắn.
    - **Chống Va Chạm & Chồng Lấn Trên Bản Đồ (Anti-Collision Floating Controls)**:
      * Cụm góc trên bên trái (`Store • Location • Version`) và cụm góc trên bên phải (`Zoom In/Out/Percentage/Fit`) được điều chỉnh kích thước và khoảng cách an toàn (`top-2.5`, font chữ và padding tối ưu theo màn hình), đảm bảo khoảng cách thông thoáng > 100px ở giữa, tuyệt đối không bị đè hay chạm vào nhau trên bất kỳ kích cỡ điện thoại nào.
      * Chiều cao bản đồ sử dụng đơn vị `100dvh` (Dynamic Viewport Height) chuẩn xác cho Safari/Chrome Mobile, loại bỏ tình trạng thanh công cụ đẩy bản đồ xuống quá dài gây hiện tượng cuộn trang không mong muốn.
