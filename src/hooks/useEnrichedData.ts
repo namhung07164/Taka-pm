@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { enrichProjects } from '../lib/utils';
-import { matchProjectCode } from '../lib/projectDatesService';
+import { enrichProjects, getTasksForProject, matchProjectCode } from '../lib/utils';
 import { Task, Project, DelegationGroup, AppUser } from '../types';
 
 export function useEnrichedData() {
@@ -11,14 +10,7 @@ export function useEnrichedData() {
   const currentUser = useAppStore(state => state.currentUser)!;
 
   const result = useMemo(() => {
-    const tasksByProject = new Map<string, Task[]>();
-    tasks.forEach(t => {
-      const key = `${String(t.projectCode || "").trim().toLowerCase()}-${String(t.projectYear || "").trim()}-${String(t.projectStore || "").trim().toLowerCase()}`;
-      if (!tasksByProject.has(key)) tasksByProject.set(key, []);
-      tasksByProject.get(key)!.push(t);
-    });
-    
-    const enriched = enrichProjects(projects, tasks);
+    const enriched = enrichProjects(projects, tasks, delegationGroups);
     
     let enrichedProjects = enriched;
     if (currentUser.role !== "admin") {
@@ -62,19 +54,7 @@ export function useEnrichedData() {
           pPartyList.includes(username) ||
           pPartyList.includes(userId);
 
-        const pYear = String(p.year || "").trim();
-        const pStore = String(p.store || "").trim().toLowerCase();
-        const pCodeParts = String(p.code || "").toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-
-        let groupTasks: Task[] = [];
-        if (pCodeParts.length > 1) {
-          pCodeParts.forEach(part => {
-            const sub = tasksByProject.get(`${part}-${pYear}-${pStore}`);
-            if (sub) groupTasks.push(...sub);
-          });
-        } else {
-          groupTasks = tasksByProject.get(`${String(p.code || "").trim().toLowerCase()}-${pYear}-${pStore}`) || [];
-        }
+        const groupTasks = getTasksForProject(p, tasks);
 
         const tMatch = groupTasks.some((t) => {
           const tPartyList = String(t.party || "")

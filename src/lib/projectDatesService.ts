@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent } from "./utils";
 
 export interface ComputedProjectDates {
   computedTakStart?: string;
@@ -102,7 +102,7 @@ export function calculateProjectComputedDates(
   }
 
   const planProgressPercent = projectTasks && projectTasks.length > 0 
-    ? Math.round((projectTasks.filter(t => t.start && t.finish && getTaskStatus(t.start, t.finish) === "Completed").length / projectTasks.length) * 100) 
+    ? computePlanProgressPercent(projectTasks) 
     : (project.computedPlanProgress ?? 0);
   
   const actProgressPercent = projectTasks && projectTasks.length > 0

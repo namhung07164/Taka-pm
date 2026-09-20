@@ -373,30 +373,88 @@ export function formatDisplayDateTime(dateStr: string | undefined): string {
   });
 }
 
-export function enrichProjects(projects: Project[], tasks: Task[]): Project[] {
-  const tasksByProject = new Map<string, Task[]>();
+export function matchProjectCode(codeA?: string, codeB?: string): boolean {
+  if (!codeA || !codeB) return false;
+  const a = String(codeA).trim().toLowerCase();
+  const b = String(codeB).trim().toLowerCase();
+  if (a === b) return true;
+  const partsA = a.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const partsB = b.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  return partsA.some(pa => partsB.includes(pa));
+}
+
+export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
+  if (!project.code || !allTasks || allTasks.length === 0) return [];
+  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
+  const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+  const pCodeParts = String(project.code).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+  return allTasks.filter(t => {
+    if (!t.projectCode) return false;
+    const tCode = String(t.projectCode).trim().toLowerCase();
+    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code);
+    if (!matchesCode) return false;
+
+    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+    if (pStore && tStore && pStore !== tStore) return false;
+
+    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+    if (pYear && tYear && pYear !== tYear) return false;
+
+    return true;
+  });
+}
+
+export function enrichProjects(
+  projects: Project[], 
+  tasks: Task[], 
+  delegationGroups: DelegationGroup[] = []
+): Project[] {
+  const tasksByProjectKey = new Map<string, Task[]>();
   tasks.forEach(t => {
-    const key = `${String(t.projectCode || "").trim().toLowerCase()}-${String(t.projectYear || "").trim()}-${String(t.projectStore || "").trim().toLowerCase()}`;
-    if (!tasksByProject.has(key)) tasksByProject.set(key, []);
-    tasksByProject.get(key)!.push(t);
+    if (!t.projectCode) return;
+    const tCode = String(t.projectCode).trim().toLowerCase();
+    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
+    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : "";
+
+    const fullKey = `${tCode}-${tYear}-${tStore}`;
+    if (!tasksByProjectKey.has(fullKey)) tasksByProjectKey.set(fullKey, []);
+    tasksByProjectKey.get(fullKey)!.push(t);
+
+    const tCodeParts = tCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+    if (tCodeParts.length > 1) {
+      tCodeParts.forEach(part => {
+        const partKey = `${part}-${tYear}-${tStore}`;
+        if (!tasksByProjectKey.has(partKey)) tasksByProjectKey.set(partKey, []);
+        tasksByProjectKey.get(partKey)!.push(t);
+      });
+    }
   });
 
   const enrichedProjects = projects.map((p) => {
-    const pYear = String(p.year || "").trim();
-    const pStore = String(p.store || "").trim().toLowerCase();
+    const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
+    const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
     const pCodeParts = pCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
-    let projectTasks: Task[] = [];
-    if (pCodeParts.length > 1) {
-      pCodeParts.forEach(part => {
-        const key = `${part}-${pYear}-${pStore}`;
-        const subTasks = tasksByProject.get(key);
-        if (subTasks) projectTasks.push(...subTasks);
-      });
-    } else {
-      const pKey = `${pCode}-${pYear}-${pStore}`;
-      projectTasks = tasksByProject.get(pKey) || [];
+    const matchedTaskMap = new Map<string, Task>();
+    const directKey = `${pCode}-${pYear}-${pStore}`;
+    const directTasks = tasksByProjectKey.get(directKey);
+    if (directTasks) {
+      directTasks.forEach(t => matchedTaskMap.set(t.id, t));
+    }
+
+    pCodeParts.forEach(part => {
+      const partKey = `${part}-${pYear}-${pStore}`;
+      const subTasks = tasksByProjectKey.get(partKey);
+      if (subTasks) {
+        subTasks.forEach(t => matchedTaskMap.set(t.id, t));
+      }
+    });
+
+    let projectTasks = Array.from(matchedTaskMap.values());
+    if (projectTasks.length === 0 && tasks.length > 0) {
+      projectTasks = getTasksForProject(p, tasks);
     }
 
     let computedTakStart = p.computedTakStart || p.start;
@@ -436,8 +494,24 @@ export function enrichProjects(projects: Project[], tasks: Task[]): Project[] {
     }
 
     const planProgressPercent = projectTasks.length > 0 
-      ? Math.round((projectTasks.filter(t => t.start && t.finish && getTaskStatus(t.start, t.finish) === "Completed").length / projectTasks.length) * 100)
+      ? computePlanProgressPercent(projectTasks)
       : (p.computedPlanProgress ?? 0);
+
+    const actProgressPercent = projectTasks.length > 0
+      ? computeActProgressPercent(projectTasks, delegationGroups)
+      : (p.computedActProgress ?? 0);
+
+    const taskSummaries = projectTasks.length > 0
+      ? projectTasks.filter(t => t.start && t.finish && t.name).map(t => ({
+          name: t.name!,
+          start: t.start!,
+          finish: t.finish!
+        }))
+      : (p.taskSummaries || []);
+
+    const taskCount = projectTasks.length > 0
+      ? projectTasks.length
+      : (p.taskCount ?? (p.taskSummaries?.length || 0));
 
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
 
@@ -447,7 +521,10 @@ export function enrichProjects(projects: Project[], tasks: Task[]): Project[] {
       computedTakCompl,
       computedOpening,
       computedPlanProgress: planProgressPercent,
+      computedActProgress: actProgressPercent,
       computedStatus: status,
+      taskSummaries,
+      taskCount,
     };
   });
 
