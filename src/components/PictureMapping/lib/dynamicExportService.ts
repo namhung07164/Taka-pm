@@ -69,22 +69,16 @@ export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | unde
 }
 
 /**
- * Bước 1: Áp dụng toàn bộ rules của toàn bộ tab dynamic cho store đang xem
+ * Helper: Tạo dataMap tương ứng với từng năm cụ thể để đánh giá rule không bị chéo năm
  */
-export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
-  updatedStoreLocationData: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>;
-  totalEvaluatedUnits: number;
-} {
-  const dataState = useDataStore.getState();
+export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN'): Record<string, any> {
   const appState = useAppStore.getState();
+  const dataState = useDataStore.getState();
 
   const projects = appState.projects || [];
   const tasks = appState.tasks || [];
-
-  // 1. Enrich projects with dates and statuses
   const enrichedProjects = enrichProjects(projects, tasks);
 
-  // 2. Compute Summary Data
   const summaryData = calculateSummaryData({
     unitInfo: dataState.unitInfo,
     classInfo: dataState.classInfo,
@@ -99,7 +93,6 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
     units: dataState.units,
   });
 
-  // 3. Build aggregated data map for all unit names
   const allUnits = dataState.getAllStoreUnits(targetStore);
   const dataMap: Record<string, any> = {};
 
@@ -107,14 +100,98 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
     const uName = (u.name || '').toLowerCase();
     if (!uName) return;
     const item = summaryData.find((s) => s.unit?.toLowerCase() === uName);
-    dataMap[uName] = { ...(item || {}), unitName: u.name };
+    dataMap[uName] = {
+      name: u.name || '',
+      id: u.id,
+      unit: u.name || '',
+      year: targetYear,
+      size: item?.size || 0,
+      sales: item?.salesAmount || 0,
+      salesAmount: item?.salesAmount || 0,
+      salesByCp: item?.salesByCp || 0,
+      salesByHcmcate: item?.salesByHcmcate || 0,
+      profit: item?.profitAmount || 0,
+      profitAmount: item?.profitAmount || 0,
+      profitByCp: item?.profitByCp || 0,
+      profitByHcmcate: item?.profitByHcmcate || 0,
+      margin: item?.margin || 0,
+      marginByCp: item?.marginByCp || 0,
+      hcmSalesEffi: item?.hcmSalesEffi || 0,
+      hcmMargin: item?.hcmMargin || 0,
+      mdStatus: item?.mdStatus || '',
+      mdNotes: item?.mdNotes || '',
+      task: item?.task || '',
+      projectStatus: item?.projectStatus || '',
+      actStatus: item?.actStatus || '',
+      startDate: item?.startDate || '',
+      endDate: item?.endDate || '',
+      status: item?.status || '',
+      vendorCode: item?.vendorCode || '',
+      brandCode: item?.brandCode || '',
+      brandName: item?.brandName || '',
+      classCode: item?.classCode || '',
+      floor: u.location || (item as any)?.floor || '',
+      appProjectStatus: '',
+      appProjectBudget: 0,
+      appProjectActual: 0,
+      appProjectCode: '',
+      appProjectYear: '',
+      ...(item || {}),
+      unitName: u.name,
+    };
   });
 
-  const globalYearFilter = appState.globalYearFilter;
+  summaryData.forEach((item) => {
+    const key = (item.unit || '').toLowerCase();
+    if (key && !dataMap[key]) {
+      dataMap[key] = {
+        name: item.unit || '',
+        unit: item.unit || '',
+        year: targetYear,
+        size: item.size || 0,
+        sales: item.salesAmount || 0,
+        salesAmount: item.salesAmount || 0,
+        salesByCp: item.salesByCp || 0,
+        salesByHcmcate: item.salesByHcmcate || 0,
+        profit: item.profitAmount || 0,
+        profitAmount: item.profitAmount || 0,
+        profitByCp: item.profitByCp || 0,
+        profitByHcmcate: item.profitByHcmcate || 0,
+        margin: item.margin || 0,
+        marginByCp: item.marginByCp || 0,
+        hcmSalesEffi: item.hcmSalesEffi || 0,
+        hcmMargin: item.hcmMargin || 0,
+        mdStatus: item.mdStatus || '',
+        mdNotes: item.mdNotes || '',
+        task: item.task || '',
+        projectStatus: item.projectStatus || '',
+        actStatus: item.actStatus || '',
+        startDate: item.startDate || '',
+        endDate: item.endDate || '',
+        status: item.status || '',
+        vendorCode: item.vendorCode || '',
+        brandCode: item.brandCode || '',
+        brandName: item.brandName || '',
+        classCode: item.classCode || '',
+        floor: (item as any)?.floor || '',
+        appProjectStatus: '',
+        appProjectBudget: 0,
+        appProjectActual: 0,
+        appProjectCode: '',
+        appProjectYear: '',
+        ...item,
+        unitName: item.unit,
+      };
+    }
+  });
+
+  const normalizedTargetYear = String(targetYear || '').trim();
 
   enrichedProjects.forEach((p) => {
     const pYear = String(p.year || (p as any).projectYear || '').trim();
-    if (globalYearFilter && globalYearFilter !== 'all' && pYear && pYear !== String(globalYearFilter)) return;
+    if (normalizedTargetYear && normalizedTargetYear !== 'all' && pYear && pYear !== normalizedTargetYear) {
+      return;
+    }
 
     const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
     const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
@@ -132,9 +209,35 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
         dataMap[code].appProjectCode = String(p.code);
         dataMap[code].appProjectYear = pYear;
         if (!dataMap[code].year) dataMap[code].year = pYear;
+        if (!dataMap[code].projectStatus) dataMap[code].projectStatus = status;
+        if (!dataMap[code].task) dataMap[code].task = (p as any).title || (p as any).name || '';
+        if (!dataMap[code].startDate && (p.computedTakStart || p.start)) dataMap[code].startDate = p.computedTakStart || p.start;
+        if (!dataMap[code].endDate && (p.computedOpening || p.opening)) dataMap[code].endDate = p.computedOpening || p.opening;
       }
     });
   });
+
+  return dataMap;
+}
+
+/**
+ * Bước 1: Áp dụng toàn bộ rules của toàn bộ tab dynamic cho store đang xem
+ */
+export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
+  updatedStoreLocationData: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>;
+  totalEvaluatedUnits: number;
+} {
+  const dataState = useDataStore.getState();
+  const effectiveYear = String(useAppStore.getState().globalYearFilter || '2026').trim();
+
+  const dataMapCache: Record<string, Record<string, any>> = {};
+  const getDataMap = (year: string) => {
+    const yrKey = String(year || effectiveYear || '2026').trim();
+    if (!dataMapCache[yrKey]) {
+      dataMapCache[yrKey] = buildDataMapForYear(yrKey, targetStore);
+    }
+    return dataMapCache[yrKey];
+  };
 
   // 4. Update all partitions for this store
   const updatedStoreLocationData = { ...dataState.storeLocationData };
@@ -149,15 +252,18 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
       const pVersions = partition.mapVersions ? [...partition.mapVersions] : [];
       const pLoc = pKey.split('_')[1] || dataState.location;
 
-      // Evaluate rules for every version in partition
+      // Evaluate rules for every version in partition using THAT VERSION'S YEAR
       const updatedVersions = pVersions.map((v) => {
         if (!v.groups || v.groups.length === 0) return v;
+
+        const vYear = String(v.year || effectiveYear).trim();
+        const yearDataMap = getDataMap(vYear);
 
         const newMappings: Record<string, string[]> = {};
         v.groups.forEach((group) => {
           if (group.rules && group.rules.length > 0) {
             const matchingIds = pUnits
-              .filter((u) => (!v.location || !u.location || u.location === v.location || u.location === pLoc) && matchRulesAgainstUnit(u, group.rules, dataMap))
+              .filter((u) => (!v.location || !u.location || u.location === v.location || u.location === pLoc) && matchRulesAgainstUnit(u, group.rules, yearDataMap))
               .map((u) => u.id);
             newMappings[group.id] = matchingIds;
           } else {
@@ -171,9 +277,12 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
         };
       });
 
-      // Find the active version to colorize unit fills
-      const activeVer = updatedVersions.find((v) => v.id === partition.activeMapVersionId) ||
-        updatedVersions.find((v) => v.isDynamicActive !== false) ||
+      // Find the active version corresponding to current effectiveYear to colorize unit fills
+      const activeVer =
+        updatedVersions.find((v) => v.id === partition.activeMapVersionId && String(v.year || '').trim() === effectiveYear) ||
+        updatedVersions.find((v) => String(v.year || '').trim() === effectiveYear && v.isDynamicActive !== false) ||
+        updatedVersions.find((v) => String(v.year || '').trim() === effectiveYear) ||
+        updatedVersions.find((v) => v.id === partition.activeMapVersionId) ||
         updatedVersions[0];
 
       if (activeVer && activeVer.groups) {

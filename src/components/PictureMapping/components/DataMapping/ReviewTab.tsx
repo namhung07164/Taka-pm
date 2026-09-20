@@ -7,11 +7,13 @@ import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, 
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
+import { enrichProjects, getStatus } from '../../../../lib/utils';
 import { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
 import { useAppStore } from '../../../../store/useAppStore';
 import { Calculator, CloudUpload } from 'lucide-react';
+import { applyAllDynamicRulesForStore } from '../../lib/dynamicExportService';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { uploadFileToDrive } from '../../lib/drive';
@@ -318,6 +320,9 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
   const unitNamesStr = React.useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name }))), [units]);
 
+  const appProjects = useAppStore(state => state.projects);
+  const appTasks = useAppStore(state => state.tasks);
+
   const aggregatedData = React.useMemo(() => {
     const dataMap: Record<string, any> = {};
 
@@ -331,9 +336,11 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         unit: u.name || '',
         size: 0,
         sales: 0,
+        salesAmount: 0,
         salesByCp: 0,
         salesByHcmcate: 0,
         profit: 0,
+        profitAmount: 0,
         profitByCp: 0,
         profitByHcmcate: 0,
         margin: 0,
@@ -353,6 +360,11 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         brandName: "",
         classCode: "",
         floor: "",
+        appProjectStatus: "",
+        appProjectBudget: 0,
+        appProjectActual: 0,
+        appProjectCode: "",
+        appProjectYear: "",
       };
     });
 
@@ -361,9 +373,11 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       if (key && dataMap[key]) {
         dataMap[key].size = sumData.size || 0;
         dataMap[key].sales = sumData.salesAmount || 0;
+        dataMap[key].salesAmount = sumData.salesAmount || 0;
         dataMap[key].salesByCp = sumData.salesByCp || 0;
         dataMap[key].salesByHcmcate = sumData.salesByHcmcate || 0;
         dataMap[key].profit = sumData.profitAmount || 0;
+        dataMap[key].profitAmount = sumData.profitAmount || 0;
         dataMap[key].profitByCp = sumData.profitByCp || 0;
         dataMap[key].profitByHcmcate = sumData.profitByHcmcate || 0;
         dataMap[key].margin = sumData.margin || 0;
@@ -386,73 +400,50 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       }
     });
 
-    return dataMap;
-  }, [unitNamesStr, summaryData]);
+    const enrichedProjects = enrichProjects(appProjects || [], appTasks || []);
+    enrichedProjects.forEach((p) => {
+      const pYear = String(p.year || (p as any).projectYear || '').trim();
+      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
 
-  const applyAllDynamicRules = () => {
-    let hasChanges = false;
-    const nextVersions = versions.map(v => {
-      // Treat undefined as true for backwards compatibility
-      const isActive = v.isDynamicActive !== false;
-      if (!isActive) return v;
-
-      let versionChanged = false;
-      const newMappings = { ...v.groupMappings };
-
-      v.groups.forEach((group) => {
-        const matchingUnits = units.filter((u) => {
-          if (v.location && u.location && u.location !== v.location) return false;
-          if (!group.rules || group.rules.length === 0) return false;
-          const uName = (u.name || '').toLowerCase();
-          const data = uName ? aggregatedData[uName] : null;
-          if (!data) return false;
-
-          return group.rules.every((rule) => {
-            let val = data[rule.field];
-            if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
-            const numVal = Number(rule.value);
-            const isNum = !isNaN(numVal) && rule.value.trim() !== "";
-
-            switch (rule.operator) {
-              case ">": return isNum ? Number(val) > numVal : false;
-              case "<": return isNum ? Number(val) < numVal : false;
-              case ">=": return isNum ? Number(val) >= numVal : false;
-              case "<=": return isNum ? Number(val) <= numVal : false;
-              case "=": return String(val || "").toLowerCase().trim() === String(rule.value || "").toLowerCase().trim();
-              case "contains": {
-                const searchTerms = String(rule.value || "").toLowerCase().trim().split(/\s+/);
-                const targetStr = String(val || "").toLowerCase();
-                return searchTerms.every(term => targetStr.includes(term));
-              }
-              case "exclude": {
-                const searchTerms = String(rule.value || "").toLowerCase().trim().split(/\s+/);
-                const targetStr = String(val || "").toLowerCase();
-                return !searchTerms.some(term => targetStr.includes(term));
-              }
-              default: return false;
-            }
-          });
-        }).map(u => u.id);
-
-        const currentMappings = newMappings[group.id] || [];
-        if (matchingUnits.length !== currentMappings.length || !matchingUnits.every((id) => currentMappings.includes(id))) {
-          newMappings[group.id] = matchingUnits;
-          versionChanged = true;
-          hasChanges = true;
+      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
+      const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+      const status = getStatus(
+        p.computedTakStart || p.start,
+        p.computedTakCompl || p.handover,
+        p.computedOpening || p.opening,
+        p.code
+      );
+      pCodes.forEach((code) => {
+        if (dataMap[code]) {
+          dataMap[code].appProjectStatus = status;
+          dataMap[code].appProjectBudget = p.budget || 0;
+          dataMap[code].appProjectActual = p.actual || 0;
+          dataMap[code].appProjectCode = String(p.code);
+          dataMap[code].appProjectYear = pYear;
+          if (!dataMap[code].projectStatus) dataMap[code].projectStatus = status;
+          if (!dataMap[code].task) dataMap[code].task = (p as any).title || (p as any).name || '';
+          if (!dataMap[code].startDate && (p.computedTakStart || p.start)) dataMap[code].startDate = p.computedTakStart || p.start;
+          if (!dataMap[code].endDate && (p.computedOpening || p.opening)) dataMap[code].endDate = p.computedOpening || p.opening;
         }
       });
-
-      if (versionChanged) {
-        return { ...v, groupMappings: newMappings };
-      }
-      return v;
     });
 
-    if (hasChanges) {
-      setVersions(nextVersions);
-      alert('Đã áp dụng điều kiện cho tất cả các phiên bản trên toàn bộ vị trí / tầng.');
-    } else {
-      alert('Không có thay đổi nào cần cập nhật.');
+    return dataMap;
+  }, [unitNamesStr, summaryData, appProjects, appTasks, effectiveYear]);
+
+  const applyAllDynamicRules = () => {
+    try {
+      const { totalEvaluatedUnits } = applyAllDynamicRulesForStore(store);
+      const allUpdatedVersions = useDataStore.getState().getAllStoreVersions(store);
+      const allUpdatedUnits = useDataStore.getState().getAllStoreUnits(store);
+
+      setVersions(allUpdatedVersions);
+      setUnits(allUpdatedUnits);
+
+      alert(`Đã áp dụng điều kiện logic cho toàn bộ các version trên tất cả các tầng tại ${store}. Màu sắc phân loại đã được đồng bộ chuẩn xác!`);
+    } catch (err: any) {
+      console.error("Lỗi khi áp dụng rules:", err);
+      alert(`Có lỗi xảy ra khi áp dụng rules: ${err?.message || err}`);
     }
   };
 

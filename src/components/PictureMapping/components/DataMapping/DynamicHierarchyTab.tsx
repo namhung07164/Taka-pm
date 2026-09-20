@@ -21,6 +21,7 @@ import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 import { useDataStore } from "../../DataContext";
 import { useShallow } from "zustand/react/shallow";
+import { applyAllDynamicRulesForStore } from "../../lib/dynamicExportService";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -269,45 +270,19 @@ function DynamicHierarchyTab({
   };
 
   const applyRules = () => {
-    if (!activeVersion || !isVersionActive) return;
+    try {
+      const { totalEvaluatedUnits } = applyAllDynamicRulesForStore(store);
+      const allUpdatedVersions = useDataStore.getState().getAllStoreVersions(store);
+      const allUpdatedUnits = useDataStore.getState().getAllStoreUnits(store);
 
-    let hasChanges = false;
-    const newMappings = { ...activeVersion.groupMappings };
+      setVersions(allUpdatedVersions);
+      setUnits(allUpdatedUnits);
 
-    (activeVersion.groups || []).forEach((group) => {
-      const matchingUnits = units
-        .filter((u) => matchRules(u, group.rules))
-        .map((u) => u.id);
-      const currentMappings = newMappings[group.id] || [];
-
-      // Simple equality check
-      if (
-        matchingUnits.length !== currentMappings.length ||
-        !matchingUnits.every((id) => currentMappings.includes(id))
-      ) {
-        newMappings[group.id] = matchingUnits;
-        hasChanges = true;
-      }
-    });
-
-    // Evaluate mappings for each version using each version's OWN groups and rules
-    const updatedVersions = versions.map((v) => {
-      const vMappings: Record<string, string[]> = {};
-      (v.groups || []).forEach((group) => {
-        const matchingIds = units
-          .filter((u) => (!v.location || !u.location || u.location === v.location) && matchRules(u, group.rules))
-          .map((u) => u.id);
-        vMappings[group.id] = matchingIds;
-      });
-      return {
-        ...v,
-        groupMappings: v.id === activeVersion.id ? newMappings : vMappings,
-      };
-    });
-
-    setVersions(updatedVersions);
-    
-    alert("Đã áp dụng điều kiện logic cho từng phiên bản / tầng. Màu sắc phân loại sẽ hiển thị chuẩn xác tại tab REVIEW.");
+      alert(`Đã áp dụng điều kiện logic cho toàn bộ các version trên tất cả các tầng tại ${store}. Màu sắc phân loại sẽ hiển thị chuẩn xác tại tab REVIEW.`);
+    } catch (err: any) {
+      console.error("Lỗi khi áp dụng rules:", err);
+      alert(`Có lỗi xảy ra khi áp dụng rules: ${err?.message || err}`);
+    }
   };
 
   const currentLocationUnits = useMemo(() => {
