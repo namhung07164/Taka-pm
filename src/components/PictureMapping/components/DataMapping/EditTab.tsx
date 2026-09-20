@@ -1034,35 +1034,54 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex justify-between items-center pointer-events-none gap-2 flex-wrap">
             <div className="flex gap-2 pointer-events-auto items-center flex-wrap">
                 <select 
-                    className="bg-slate-900/90 text-white text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-lg border border-slate-700 outline-none backdrop-blur-md"
+                    className="bg-slate-900/90 text-white text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-lg border border-slate-700 outline-none backdrop-blur-md cursor-pointer"
                     value={activeVersionId || ''}
                     onChange={(e) => setActiveVersionId(e.target.value === '' ? null : e.target.value)}
                 >
                     <option value="">-- Active Draft --</option>
                     {versions.map(v => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
+                        <option key={v.id} value={v.id}>
+                            {v.name}{v.year ? ` • ${v.year}` : ''}
+                        </option>
                     ))}
                 </select>
 
                 {activeVersionId && (
-                    <button 
-                        onClick={() => {
-                            const v = versions.find(v => v.id === activeVersionId);
-                            if (!v) return;
-                            const newName = prompt('Enter new version name:', v.name);
-                            if (newName && newName.trim() && newName.trim() !== v.name) {
-                                setVersions(versions.map(version => 
-                                    version.id === activeVersionId 
-                                    ? { ...version, name: newName.trim() } 
-                                    : version
-                                ));
-                            }
-                        }}
-                        className="p-2 bg-slate-900/90 text-slate-400 hover:text-white rounded-lg border border-slate-700 backdrop-blur-md transition-colors"
-                        title="Rename Version"
-                    >
-                        <Pencil size={14} />
-                    </button>
+                    <>
+                      <button 
+                          onClick={() => {
+                              const v = versions.find(v => v.id === activeVersionId);
+                              if (!v) return;
+                              const newName = prompt('Enter new version name:', v.name);
+                              if (newName && newName.trim() && newName.trim() !== v.name) {
+                                  setVersions(versions.map(version => 
+                                      version.id === activeVersionId 
+                                      ? { ...version, name: newName.trim() } 
+                                      : version
+                                  ));
+                              }
+                          }}
+                          className="p-2 bg-slate-900/90 text-slate-400 hover:text-white rounded-lg border border-slate-700 backdrop-blur-md transition-colors"
+                          title="Rename Version"
+                      >
+                          <Pencil size={14} />
+                      </button>
+
+                      <button 
+                          onClick={() => {
+                              const v = versions.find(v => v.id === activeVersionId);
+                              if (!v) return;
+                              if (!confirm(`Bạn có chắc muốn xoá version "${v.name}${v.year ? ` • ${v.year}` : ''}"?`)) return;
+                              const newVersions = versions.filter(item => item.id !== activeVersionId);
+                              setVersions(newVersions);
+                              setActiveVersionId(newVersions.length > 0 ? newVersions[0].id : null);
+                          }}
+                          className="p-2 bg-slate-900/90 text-rose-400 hover:text-rose-200 hover:bg-rose-900/50 rounded-lg border border-slate-700 backdrop-blur-md transition-colors"
+                          title="Delete Version"
+                      >
+                          <Trash2 size={14} />
+                      </button>
+                    </>
                 )}
 
                 {magneticGrid && (
