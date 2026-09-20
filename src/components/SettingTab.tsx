@@ -253,9 +253,14 @@ export function SettingTab({ rules}: SettingTabProps) {
 
           const cd = d.code !== undefined && d.code !== null && String(d.code).trim() !== '' 
             ? String(d.code).trim() 
-            : (d.projectCode !== undefined && d.projectCode !== null && String(d.projectCode).trim() !== '' ? String(d.projectCode).trim() : '');
+            : (d.projectCode !== undefined && d.projectCode !== null && String(d.projectCode).trim() !== '' 
+              ? String(d.projectCode).trim() 
+              : (d.parentTaskId !== undefined && d.parentTaskId !== null && String(d.parentTaskId).trim() !== '' 
+                ? String(d.parentTaskId).trim() 
+                : ''));
 
-          if (!yr && !st && !cd) {
+          // Record is considered an orphan if it lacks ANY of Year, Store, or Project Code (code/projectCode/parentTaskId)
+          if (!yr || !st || !cd) {
             orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref });
           }
         });
@@ -266,13 +271,13 @@ export function SettingTab({ rules}: SettingTabProps) {
 
       const summaryLines = collectionsToCheck.map(c => {
         const s = stats[c.name];
-        return `• ${c.label} (${c.name}): Tổng ${s.total} bản ghi → ${s.orphans.length} bản ghi mồ côi (thiếu cả Year, Store, Code)`;
+        return `• ${c.label} (${c.name}): Tổng ${s.total} bản ghi → ${s.orphans.length} bản ghi mồ côi (thiếu Year, Store hoặc Project Code)`;
       }).join('\n');
 
       if (totalOrphans === 0) {
         useAppStore.getState().setToast({
           title: "Kiểm tra hoàn tất (Không có mồ côi)",
-          message: `Firestore hoàn toàn sạch sẽ! Không có bản ghi mồ côi nào thiếu cả 3 thông tin (Year, Store, Code).\n\nChi tiết:\n${summaryLines}`,
+          message: `Firestore hoàn toàn sạch sẽ! Không có bản ghi mồ côi nào (thiếu 1 trong 3 yếu tố: Year, Store, Project Code).\n\nChi tiết:\n${summaryLines}`,
           type: "success"
         });
       } else {
@@ -939,7 +944,7 @@ export function SettingTab({ rules}: SettingTabProps) {
           <button 
             onClick={handleScanOrphanData}
             disabled={isScanningOrphans}
-            title="Quét và xóa dữ liệu mồ côi (bản ghi bị thiếu cả 3 thông tin: Year, Store, Project Code)"
+            title="Quét và xóa dữ liệu mồ côi (bản ghi thiếu 1 trong 3 yếu tố: Year, Store, Project Code)"
             className="px-5 py-2.5 rounded-lg border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-[#1e1e20] hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors flex items-center gap-3 font-medium text-rose-700 dark:text-rose-400 shadow-sm text-sm disabled:opacity-50"
           >
             <Trash2 className="w-4 h-4 text-rose-500" />

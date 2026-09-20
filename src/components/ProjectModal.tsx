@@ -70,6 +70,43 @@ const FastTextarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAtt
   />
 });
 
+function getLinkCodesValidationError(
+  inputLinkCodes: string,
+  currentCode: string,
+  currentProjectId: string | undefined,
+  allProjects: Project[]
+) {
+  if (!inputLinkCodes || !inputLinkCodes.trim()) return null;
+
+  const enteredCodes = inputLinkCodes
+    .split(/[,;/]+/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  const selfCodeLower = (currentCode || '').trim().toLowerCase();
+
+  for (const code of enteredCodes) {
+    const codeLower = code.toLowerCase();
+    if (codeLower === selfCodeLower) continue;
+
+    const duplicate = allProjects.find((p) => {
+      if (currentProjectId && p.id === currentProjectId) return false;
+      const otherCodeLower = String(p.code || '').trim().toLowerCase();
+      return otherCodeLower === codeLower && otherCodeLower !== '';
+    });
+
+    if (duplicate) {
+      return {
+        invalidCode: code,
+        duplicateProjectCode: duplicate.code,
+        duplicateProjectName: duplicate.name,
+      };
+    }
+  }
+
+  return null;
+}
+
 import { ProjectChat } from './ProjectModal/ProjectChat';
 export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, initialTab = 'details', onOpenTask}: ProjectModalProps) {
 
@@ -97,6 +134,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
   }, [isOpen, initialTab]);
   const [isAddingLocation, setIsAddingLocation] = useState(false);
   const [newLocation, setNewLocation] = useState("");
+
   const [formData, setFormData] = useState<Partial<Project>>({
     store: 'HCM',
     location: '',
@@ -109,6 +147,11 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
     handoverMode: 'auto',
     openingMode: 'auto'
   });
+
+  const linkCodesError = React.useMemo(() => {
+    const rawLink = formData.linkCodes !== undefined ? String(formData.linkCodes) : String(formData.code || '');
+    return getLinkCodesValidationError(rawLink, String(formData.code || ''), project?.id, projects);
+  }, [formData.linkCodes, formData.code, project?.id, projects]);
   const yearRef = useRef<HTMLInputElement>(null);
 
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void}>({
@@ -228,6 +271,16 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
 
       if (!formData.code || String(formData.code).trim() === '') {
         useAppStore.getState().setToast({ title: 'Validation Error', message: 'Project Code is strictly required.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (linkCodesError) {
+        useAppStore.getState().setToast({
+          title: 'Mã dự án trùng lặp',
+          message: `Mã "${linkCodesError.invalidCode}" đã thuộc về dự án "${linkCodesError.duplicateProjectCode}" (${linkCodesError.duplicateProjectName}). Không thể dùng mã dự án khác làm Project Code Link.`,
+          type: 'error'
+        });
         setIsSubmitting(false);
         return;
       }
@@ -752,8 +805,19 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                   onChange={(val) => setFormData({ ...formData, linkCodes: val })}
                   placeholder="e.g. L3-303-1, L3-303-2"
                   readOnly={!canWrite}
-                  className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs bg-slate-50 dark:bg-[#1a1a1c]"
+                  className={cn(
+                    "w-full p-2 border rounded-lg focus:ring-2 outline-none text-xs bg-slate-50 dark:bg-[#1a1a1c]",
+                    linkCodesError 
+                      ? "border-rose-500 text-rose-600 dark:text-rose-400 focus:ring-rose-500" 
+                      : "border-slate-200 dark:border-[#444446] focus:ring-blue-500"
+                  )}
                 />
+                {linkCodesError && (
+                  <p className="mt-1.5 text-[11px] text-rose-500 dark:text-rose-400 font-medium flex items-start gap-1 leading-tight">
+                    <span className="shrink-0">⚠️</span>
+                    <span>Mã "<strong>{linkCodesError.invalidCode}</strong>" đã thuộc về dự án khác (<strong>{linkCodesError.duplicateProjectCode}</strong> - {linkCodesError.duplicateProjectName}). Không thể nhập.</span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
