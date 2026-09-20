@@ -894,7 +894,18 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
               </div>
               
               <div className="space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1">
-                 {activeVersion?.groups.map(group => {
+                 {(!activeVersion?.groups || activeVersion.groups.length === 0) && (
+                   <div className="text-center py-6 px-3 bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-400 text-xs space-y-1.5">
+                     <p className="font-semibold text-slate-300">Chưa có nhóm quy tắc</p>
+                     <p className="text-[11px] text-slate-500 leading-relaxed">
+                       Phiên bản này ({activeVersion?.name} • {activeVersion?.year || effectiveYear}) chưa có nhóm quy tắc nào.
+                     </p>
+                     <p className="text-[11px] text-brand-400/80">
+                       Vui lòng chuyển sang tab <strong>DYNAMIC</strong> để tạo hoặc sao chép nhóm quy tắc từ năm khác.
+                     </p>
+                   </div>
+                 )}
+                 {activeVersion?.groups?.map(group => {
                    // Only show groups that have units assigned in this version
                    const assignedUnitIds = activeVersion?.groupMappings[group.id] || [];
                    if (assignedUnitIds.length === 0) return null;

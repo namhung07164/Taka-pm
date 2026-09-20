@@ -362,14 +362,22 @@ function DynamicHierarchyTab({
   const addVersion = () => {
     const name = prompt(`Tên version mới cho [${store} - ${location} - ${effectiveYear}]:`);
     if (name) {
+      const existingVer = versions.find(v => (v.location === location || !v.location) && (v.groups || []).length > 0);
       const existingBg = versions.find(v => (v.location === location || !v.location) && v.backgroundUrl)?.backgroundUrl || null;
+      
+      const inheritedGroups = existingVer ? existingVer.groups.map(g => ({
+        ...g,
+        id: uuidv4(),
+        rules: g.rules ? g.rules.map(r => ({ ...r })) : [],
+      })) : [];
+
       const newVersion: MapVersion = {
         id: uuidv4(),
         name,
         backgroundUrl: existingBg,
         backgroundScale: 1,
         backgroundPos: { x: 0, y: 0 },
-        groups: [],
+        groups: inheritedGroups,
         groupMappings: {},
         store,
         location,
@@ -769,14 +777,33 @@ function DynamicHierarchyTab({
               </div>
 
               {activeGroups.length === 0 && (
-                <div className="text-center py-12 border-2 border-dashed border-slate-800 rounded-2xl text-slate-500">
-                  <p className="mb-2">This version has no groups.</p>
-                  <button
-                    onClick={addGroup}
-                    className="text-brand-400 hover:underline"
-                  >
-                    Create the first group
-                  </button>
+                <div className="text-center py-10 px-6 border-2 border-dashed border-slate-800 rounded-2xl bg-slate-950/40 text-slate-400 flex flex-col items-center justify-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+                    <Calculator size={24} />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-300">
+                    Phiên bản này ({activeVersion.name} • {activeVersion.year || effectiveYear}) chưa có nhóm phân loại & quy tắc.
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-md">
+                    Mỗi phiên bản (theo từng năm) có nhóm quy tắc riêng. Bạn có thể sao chép nhanh từ phiên bản năm khác hoặc tự tạo nhóm mới.
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                    <button
+                      onClick={addGroup}
+                      className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-md flex items-center gap-1.5"
+                    >
+                      <Plus size={14} /> Tạo nhóm mới
+                    </button>
+                    {versions.filter(v => v.id !== activeVersion.id && (v.groups || []).length > 0).map(v => (
+                      <button
+                        key={v.id}
+                        onClick={() => copyGroups(v.id)}
+                        className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                      >
+                        <Copy size={13} /> Copy từ {v.name} ({v.year || 'N/A'})
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

@@ -941,6 +941,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     const name = prompt('Nhập tên phiên bản (Version Name) cho bản đồ này:');
     if (!name) return;
     
+    const existingVer = versions.find(v => (v.location === activeVersion?.location || !v.location) && (v.groups || []).length > 0);
+    const inheritedGroups = existingVer ? existingVer.groups.map(g => ({
+      ...g,
+      id: uuidv4(),
+      rules: g.rules ? g.rules.map(r => ({ ...r })) : [],
+    })) : [];
+
     const newVersion: MapVersion = {
         id: uuidv4(),
         name,
@@ -950,7 +957,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         backgroundRotation: bgRotation,
         imagePos,
         imageScale,
-        groups: [],
+        groups: inheritedGroups,
         groupMappings: {},
         isDynamicActive: true,
         store: activeVersion?.store,
