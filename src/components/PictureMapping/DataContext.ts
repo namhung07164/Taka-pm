@@ -283,6 +283,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       ...v,
       store: v.store || state.store,
       location: v.location || state.location,
+      year: v.year ? String(v.year) : '2026',
     }));
     const key = getPartitionKey(state.store, state.location);
     set({
@@ -396,6 +397,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
                 ...v,
                 store: v.store || currentStore,
                 location: v.location || loc,
+                year: v.year ? String(v.year) : '2026',
               });
             }
           }
@@ -457,7 +459,12 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       const vLoc = v.location || state.location;
       const pKey = getPartitionKey(vStore, vLoc);
       if (!versionsByPartition[pKey]) versionsByPartition[pKey] = [];
-      versionsByPartition[pKey].push({ ...v, store: vStore, location: vLoc });
+      versionsByPartition[pKey].push({
+        ...v,
+        store: vStore,
+        location: vLoc,
+        year: v.year ? String(v.year) : '2026',
+      });
     }
 
     const updatedStoreLocationData = { ...state.storeLocationData };

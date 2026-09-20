@@ -76,19 +76,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
   // Filter versions strictly by store, location, and effective year
   const filteredVersions = React.useMemo(() => {
-    const matched = versions.filter(v => {
+    return versions.filter(v => {
       const matchStore = !v.store || v.store === store;
       const matchLoc = !v.location || v.location === location;
-      const matchYear = !v.year || String(v.year).trim() === String(effectiveYear);
+      const matchYear = String(v.year || '').trim() === String(effectiveYear).trim();
       return matchStore && matchLoc && matchYear;
     });
-    if (matched.length > 0) return matched;
-    const fallback = versions.filter(v => {
-      const matchStore = !v.store || v.store === store;
-      const matchLoc = !v.location || v.location === location;
-      return matchStore && matchLoc && (!v.year || String(v.year).trim() === String(effectiveYear));
-    });
-    return fallback;
   }, [versions, store, location, effectiveYear]);
 
   const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || filteredVersions[0]?.id || null);

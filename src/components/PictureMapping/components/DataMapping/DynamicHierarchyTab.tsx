@@ -74,23 +74,108 @@ function DynamicHierarchyTab({
     ? globalYearFilter
     : (availableYears[0] || new Date().getFullYear().toString());
 
-  // Filter versions strictly by store, location, and effective year
+  // Filter versions STRICTLY by store, location, and effective year (no cross-year mixing)
   const filteredVersions = useMemo(() => {
-    const matched = versions.filter(v => {
+    return versions.filter(v => {
       const matchStore = !v.store || v.store === store;
       const matchLoc = !v.location || v.location === location;
-      const matchYear = !v.year || String(v.year).trim() === String(effectiveYear);
+      const matchYear = String(v.year || '').trim() === String(effectiveYear).trim();
       return matchStore && matchLoc && matchYear;
     });
-    if (matched.length > 0) return matched;
-    // Fallback: search for version matching store + location without strict year tag if needed
-    const fallback = versions.filter(v => {
+  }, [versions, store, location, effectiveYear]);
+
+  // Ensure strict year tagging and auto-initialize independent version for current (store, location, effectiveYear)
+  useEffect(() => {
+    // 1. Tag legacy/untagged versions with effectiveYear to avoid unassigned versions
+    let hasUntagged = false;
+    const normalizedVersions = versions.map(v => {
+      if (!v.year || !String(v.year).trim()) {
+        hasUntagged = true;
+        return { ...v, year: String(effectiveYear || '2026') };
+      }
+      return v;
+    });
+
+    // 2. Check if current (store, location, effectiveYear) already has at least one version
+    const hasCurrentPartitionVersion = normalizedVersions.some(v => {
       const matchStore = !v.store || v.store === store;
       const matchLoc = !v.location || v.location === location;
-      return matchStore && matchLoc && (!v.year || String(v.year).trim() === String(effectiveYear));
+      const matchYear = String(v.year || '').trim() === String(effectiveYear).trim();
+      return matchStore && matchLoc && matchYear;
     });
-    return fallback;
-  }, [versions, store, location, effectiveYear]);
+
+    if (!hasCurrentPartitionVersion) {
+      // Find template version (e.g. from previous year or same location) to clone initial background and rules structure
+      const templateVersion = normalizedVersions.find(v => (v.location === location || !v.location) && v.groups && v.groups.length > 0)
+        || normalizedVersions.find(v => v.groups && v.groups.length > 0)
+        || null;
+      
+      const existingBg = normalizedVersions.find(v => (v.location === location || !v.location) && v.backgroundUrl)?.backgroundUrl || null;
+
+      // Deep clone groups with FRESH UUIDs and updated year rules so each year has its own isolated groups
+      const baseGroups: Group[] = templateVersion?.groups?.length
+        ? templateVersion.groups.map(g => ({
+            ...g,
+            id: uuidv4(),
+            rules: (g.rules || []).map(r => ({
+              ...r,
+              value: r.field === 'App: Year' ? String(effectiveYear) : r.value,
+            })),
+          }))
+        : [
+            {
+              id: uuidv4(),
+              name: 'Upcoming',
+              color: '#3b82f6',
+              rules: [
+                { field: 'Floor', operator: '=', value: location },
+                { field: 'App: Status', operator: '=', value: 'Upcoming' },
+                { field: 'App: Year', operator: '=', value: String(effectiveYear) },
+              ],
+            },
+            {
+              id: uuidv4(),
+              name: 'In Progress',
+              color: '#f97316',
+              rules: [
+                { field: 'Floor', operator: '=', value: location },
+                { field: 'App: Status', operator: '=', value: 'On process' },
+                { field: 'App: Year', operator: '=', value: String(effectiveYear) },
+              ],
+            },
+            {
+              id: uuidv4(),
+              name: 'Completed',
+              color: '#10b981',
+              rules: [
+                { field: 'Floor', operator: '=', value: location },
+                { field: 'App: Status', operator: '=', value: 'Completed' },
+                { field: 'App: Year', operator: '=', value: String(effectiveYear) },
+              ],
+            },
+          ];
+
+      const newDedicatedVersion: MapVersion = {
+        id: uuidv4(),
+        name: `PM-${location}-${store}`,
+        backgroundUrl: existingBg,
+        backgroundScale: 1,
+        backgroundPos: { x: 0, y: 0 },
+        groups: baseGroups,
+        groupMappings: {},
+        store,
+        location,
+        isDynamicActive: true,
+        year: String(effectiveYear),
+      };
+
+      const nextVersions = [...normalizedVersions, newDedicatedVersion];
+      setVersions(nextVersions);
+      setActiveVersionId(newDedicatedVersion.id);
+    } else if (hasUntagged) {
+      setVersions(normalizedVersions);
+    }
+  }, [store, location, effectiveYear, versions, setVersions, setActiveVersionId]);
 
   const viewVersionId = (activeVersionId && filteredVersions.some(v => v.id === activeVersionId))
     ? activeVersionId
