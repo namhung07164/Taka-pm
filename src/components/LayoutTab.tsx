@@ -88,11 +88,6 @@ export function LayoutTab({
     }
   }, [globalStoreFilter, allowedStores, setGlobalStoreFilter]);
 
-  const locFilterStr = globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all';
-  const docKey = locFilterStr !== 'all' 
-    ? `url_${activeStore}_${locFilterStr}` 
-    : `url_${activeStore}`;
-
   // Helper check xem một url có hợp lệ (không phải null, undefined, '', '0', '_')
   const isValidUrl = (val: any): boolean => {
     if (val === null || val === undefined) return false;
@@ -123,6 +118,32 @@ export function LayoutTab({
       return isValidUrl(layoutSettings[specificKey]);
     });
   }, [userAllowedLocations, isAdmin, layoutSettings, activeStore]);
+
+  // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor)
+  useEffect(() => {
+    if (availableLocations.length > 0) {
+      if (globalLocationFilter.length === 0 || globalLocationFilter[0] === 'all' || !availableLocations.includes(globalLocationFilter[0])) {
+        setGlobalLocationFilter([availableLocations[0]]);
+      }
+    }
+  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter]);
+
+  const locFilterStr = globalLocationFilter.length > 0 && globalLocationFilter[0] !== 'all' && availableLocations.includes(globalLocationFilter[0])
+    ? globalLocationFilter[0] 
+    : (availableLocations[0] || 'L1');
+  const docKey = `url_${activeStore}_${locFilterStr}`;
+
+  // Automatically sync activeStore and floor partition to useDataStore (PictureMapping / useSummaryData)
+  // so switching HCM <-> HN instantly recalculates summary data without needing to visit General tab
+  useEffect(() => {
+    const targetStore = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const currStore = useDataStore.getState().store;
+    const currLocation = useDataStore.getState().location;
+
+    if (currStore !== targetStore || currLocation !== locFilterStr) {
+      useDataStore.getState().setStoreAndLocation(targetStore, locFilterStr);
+    }
+  }, [activeStore, locFilterStr]);
   const [isEditing, setIsEditing] = useState(false);
   const [isLiveMapMode, setIsLiveMapMode] = useState(true);
   const [editUrl, setEditUrl] = useState("");
@@ -668,14 +689,13 @@ export function LayoutTab({
               </select>
               <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
               <select
-                value={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'}
+                value={locFilterStr}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setGlobalLocationFilter(val === 'all' ? [] : [val]);
+                  setGlobalLocationFilter([val]);
                 }}
-                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[70px] sm:min-w-[80px] outline-none cursor-pointer"
+                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer"
               >
-                <option value="all">All Locations</option>
                 {availableLocations.map(loc => (
                   <option key={loc} value={loc}>{loc}</option>
                 ))}
@@ -914,7 +934,7 @@ export function LayoutTab({
         {isLiveMapMode ? (
           <LiveLayoutViewer 
             storeFilter={activeStore} 
-            locationFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'} 
+            locationFilter={locFilterStr} 
             targetUnitSearch={targetUnitSearch}
             onUnitSelected={(unit) => {
               if (unit?.name) {

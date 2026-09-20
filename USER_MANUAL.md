@@ -459,8 +459,8 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 
 #### 🔹 Hướng dẫn Sử dụng Bản đồ & Live View:
 1. **Bộ lọc Cửa hàng & Khu vực (Store & Location Filter)**:
-   - Chọn Cửa hàng (`HCM`, `HN` hoặc `All Stores`).
-   - **Bộ lọc Khu vực (Location)**: Tự động chỉ hiển thị các khu vực/tầng có đường dẫn URL mặt bằng hợp lệ được gắn vào (loại bỏ các giá trị trống, null, `0`, hoặc `_`).
+   - **Chọn Cửa hàng (`HCM`, `HN`)**: Chuyển đổi linh hoạt giữa 2 chi nhánh; hệ thống **tự động đồng bộ và tính toán lại bảng dữ liệu tổng hợp (`useSummaryData`)** của chi nhánh tương ứng ngay tức thì (0ms) từ bộ nhớ đệm mà không cần người dùng phải bấm quay lại Tab General.
+   - **Bộ lọc Khu vực (Location)**: Tối ưu trực quan hóa bản vẽ 2D theo từng Tầng cụ thể (`L1`, `L2`, `L3`, `L4`, `B1`...), loại bỏ tùy chọn `All Locations` không cần thiết và tự động chọn tầng hợp lệ đầu tiên để hiển thị bản vẽ chính xác nhất. Tự động lọc các khu vực/tầng có bản vẽ hoặc URL hợp lệ được cấu hình.
 2. **Kéo & Thu phóng Siêu Mượt 60fps (Hardware-Accelerated Zoom/Pan)**:
    - **Con lăn chuột**: Phóng to/thu nhỏ mượt mà theo đường cong mượt mà, định vị chính xác vị trí con trỏ chuột mà không giật lag.
    - **Kéo thả chuột / Chạm ngón tay (Pan)**: Giữ và kéo để lướt toàn bộ mặt bằng; tối ưu hóa GPU giảm thiểu render lại không cần thiết.

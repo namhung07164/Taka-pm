@@ -1189,9 +1189,16 @@ function LiveCanvas({
     });
   };
 
-  // Reset selected version when locationFilter or storeFilter changes so active floor version is selected
+  // Reset selected version and ensure useDataStore partition syncs when locationFilter or storeFilter changes
   useEffect(() => {
     setSelectedVersionId(null);
+    const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const targetFloor = locationFilter && locationFilter !== 'all' ? locationFilter : 'L1';
+    const currStore = useDataStore.getState().store;
+    const currLocation = useDataStore.getState().location;
+    if (currStore !== targetStore || currLocation !== targetFloor) {
+      useDataStore.getState().setStoreAndLocation(targetStore, targetFloor);
+    }
   }, [locationFilter, storeFilter]);
 
   // Zoom & Pan smoothly to target unit and highlight it
