@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { cn, parseDateTime } from '../../lib/utils';
 import { Project } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 
 interface LayoutUnitTooltipProps {
   hoverInfo: {
@@ -31,8 +32,10 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   canWrite = false,
   storeFilter = 'HCM'
 }) => {
+  const projects = useAppStore(state => state.projects);
   const data = hoverInfo?.data || {};
-  const p: Project | undefined = data.matchedProject;
+  const initialP: Project | undefined = data.matchedProject;
+  const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
 
   // Auto Anti-Collision & Obstruction-Proof Positioning Engine
   const positionTooltip = useCallback(() => {
@@ -327,14 +330,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       </div>
 
-      {/* 3. Unified Information Row: Vị trí / Tầng, Diện tích, MD Status, Comment Symbol & Dates */}
+      {/* 3. Unified Information Row: Floor, Diện tích, MD Status, Comment Symbol & Dates */}
       <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
-        {/* Left Side: Vị trí / Tầng, Diện tích, MD Status & Comment Symbol */}
+        {/* Left Side: Floor, Diện tích, MD Status & Comment Symbol */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Vị trí / Tầng Badge */}
+          {/* Floor Badge */}
           {floorValue && (
             <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
-              <span className="text-[9px] text-slate-400 font-medium uppercase">Vị trí / Tầng:</span>
+              <span className="text-[9px] text-slate-400 font-medium uppercase">Floor:</span>
               <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{floorValue}</span>
             </div>
           )}

@@ -854,6 +854,7 @@ function LiveCanvas({
   const tasks = useAppStore(state => state.tasks);
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
   const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
   const summaryData = useSummaryData();
 
@@ -1393,6 +1394,28 @@ function LiveCanvas({
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
   }, []);
+
+  // Keep hoverInfo.data in sync with latest aggregatedData if projects update
+  useEffect(() => {
+    if (hoverInfo?.visible && hoverInfo.unitName) {
+      const uName = hoverInfo.unitName.toLowerCase();
+      const latestData = aggregatedData[uName];
+      if (latestData && latestData !== hoverInfo.data) {
+        setHoverInfo(prev => prev ? { ...prev, data: latestData } : null);
+      }
+    }
+  }, [aggregatedData, hoverInfo?.visible, hoverInfo?.unitName]);
+
+  // Re-anchor tooltip position when ProjectModal closes if it was kept open from comment button
+  const prevIsProjectModalOpenRef = useRef(isProjectModalOpen);
+  useEffect(() => {
+    if (prevIsProjectModalOpenRef.current && !isProjectModalOpen) {
+      if (hoverInfo?.visible && hoverInfo.clientX != null && hoverInfo.clientY != null) {
+        updateTooltipPos(hoverInfo.clientX, hoverInfo.clientY);
+      }
+    }
+    prevIsProjectModalOpenRef.current = isProjectModalOpen;
+  }, [isProjectModalOpen, hoverInfo?.visible, hoverInfo?.clientX, hoverInfo?.clientY]);
 
   const handleExport = () => {
      if (!stageRef.current) return;
@@ -1938,7 +1961,13 @@ function LiveCanvas({
             }
           }}
           onEditProject={(project, isReadOnly, tab) => {
-            setHoverInfo(null);
+            if (tab === 'chat') {
+              isPinnedRef.current = true;
+              // Giữ lại tooltip khi mở comment: khi người dùng đóng modal comment thì tooltip vẫn tiếp tục hiển thị
+            } else {
+              isPinnedRef.current = false;
+              setHoverInfo(null);
+            }
             setEditingProject(project);
             setModalInitialTab(tab || 'details');
             setIsProjectModalOpen(true);
