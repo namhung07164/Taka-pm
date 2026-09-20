@@ -268,29 +268,6 @@ function DynamicHierarchyTab({
     });
   };
 
-  useEffect(() => {
-    if (!activeVersion || !isVersionActive) return;
-    
-    let colorChanges = false;
-    const nextUnits = [...units];
-    nextUnits.forEach((u, idx) => {
-      let assignedColor = "#3b82f6";
-      (activeVersion.groups || []).forEach((g) => {
-        if (activeVersion.groupMappings?.[g.id]?.includes(u.id)) {
-          assignedColor = g.color;
-        }
-      });
-      if (u.fill !== assignedColor) {
-        nextUnits[idx] = { ...u, fill: assignedColor };
-        colorChanges = true;
-      }
-    });
-
-    if (colorChanges) {
-      setUnits(nextUnits);
-    }
-  }, [activeVersion?.groupMappings, activeVersion?.groups, activeVersion?.id, isVersionActive]);
-
   const applyRules = () => {
     if (!activeVersion || !isVersionActive) return;
 
@@ -329,28 +306,8 @@ function DynamicHierarchyTab({
     });
 
     setVersions(updatedVersions);
-
-    // Also update unit styles based on active version's groups and evaluated mappings
-    let colorChanges = false;
-    const nextUnits = [...units];
-    nextUnits.forEach((u, idx) => {
-      let assignedColor = "#3b82f6";
-      (activeVersion.groups || []).forEach((g) => {
-        if (newMappings[g.id]?.includes(u.id)) {
-          assignedColor = g.color;
-        }
-      });
-      if (u.fill !== assignedColor) {
-        nextUnits[idx] = { ...u, fill: assignedColor };
-        colorChanges = true;
-      }
-    });
-
-    if (colorChanges) {
-      setUnits(nextUnits);
-    }
     
-    alert("Đã áp dụng điều kiện logic cho từng phiên bản / tầng.");
+    alert("Đã áp dụng điều kiện logic cho từng phiên bản / tầng. Màu sắc phân loại sẽ hiển thị chuẩn xác tại tab REVIEW.");
   };
 
   const currentLocationUnits = useMemo(() => {

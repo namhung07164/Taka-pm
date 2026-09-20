@@ -46,10 +46,37 @@ export function LayoutTab({
   const [projectCodeFilter, setProjectCodeFilter] = useState(initialProjectCode);
   
   useEffect(() => {
-    if (initialStore) setGlobalStoreFilter(initialStore);
-    if (initialLocation) setGlobalLocationFilter([initialLocation]);
-    if (initialProjectCode) setProjectCodeFilter(initialProjectCode);
-  }, [initialStore, initialLocation, initialProjectCode]);
+    if (initialStore && initialStore !== 'all') {
+      setGlobalStoreFilter(initialStore);
+    }
+    
+    let targetLoc = (initialLocation && initialLocation !== 'all') ? initialLocation : '';
+    
+    if (initialProjectCode) {
+      setProjectCodeFilter(initialProjectCode);
+      setUnitSearchInput(initialProjectCode);
+      setTargetUnitSearch(initialProjectCode);
+      setIsLiveMapMode(true);
+
+      if (!targetLoc) {
+        const matched = projects.find(p => 
+          (p.code && String(p.code).trim().toLowerCase() === String(initialProjectCode).trim().toLowerCase()) ||
+          ((p as any).unit && String((p as any).unit).trim().toLowerCase() === String(initialProjectCode).trim().toLowerCase()) ||
+          (p.name && String(p.name).trim().toLowerCase() === String(initialProjectCode).trim().toLowerCase())
+        );
+        if (matched?.location) {
+          targetLoc = matched.location;
+        } else {
+          const m = String(initialProjectCode).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+          if (m) targetLoc = m[1].toUpperCase();
+        }
+      }
+    }
+
+    if (targetLoc && targetLoc !== 'all') {
+      setGlobalLocationFilter([targetLoc]);
+    }
+  }, [initialStore, initialLocation, initialProjectCode, projects, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   const isAdmin = currentUser.role === 'admin';
   const role = currentUser.role as AppRole;
@@ -331,6 +358,7 @@ export function LayoutTab({
     setUnitSearchInput('');
     setTargetUnitSearch(null);
     setShowSuggestions(false);
+    onClearFocus?.();
   };
 
   // Close suggestions on outside click
@@ -724,7 +752,7 @@ export function LayoutTab({
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 relative h-full print:p-0 print:m-0 print:bg-white print:border-none print:shadow-none">
+      <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 dark:bg-slate-950 relative h-full print:p-0 print:m-0 print:bg-white print:border-none print:shadow-none">
       <div className="flex flex-col gap-2 mb-2 hide-on-actual-print print:hidden">
         {/* Row 1: Header, Filter Bar, and Back to Gantt */}
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -998,7 +1026,7 @@ export function LayoutTab({
             onClearFocus={handleClearSearchAndFocus}
           />
         ) : !url ? (
-          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
+          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900">
             <Map className="w-12 h-12 mb-3 opacity-20" />
             <p className="text-sm font-medium">No floor plan layout available for this location</p>
             {isAdmin && <p className="text-xs mt-1">Click "Edit URL" to configure layout link</p>}
@@ -1012,7 +1040,7 @@ export function LayoutTab({
             allow="autoplay"
           ></iframe>
         ) : (
-          <div className="w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-100">
+          <div className="w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950">
             <TransformWrapper
               initialScale={1}
               minScale={0.5}

@@ -450,32 +450,6 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
     if (hasChanges) {
       setVersions(nextVersions);
-    }
-    
-    // Update unit styles across all versions and locations
-    let colorChanges = false;
-    const nextUnits = [...units];
-    nextUnits.forEach((u, idx) => {
-      const targetVer = nextVersions.find(ver => ver.location && u.location ? ver.location === u.location : ver.id === activeVersion?.id) || activeVersion;
-      if (targetVer) {
-        let assignedColor = u.fill || "#3b82f6";
-        targetVer.groups.forEach((g) => {
-          if (targetVer.groupMappings[g.id]?.includes(u.id)) {
-            assignedColor = g.color;
-          }
-        });
-        if (u.fill !== assignedColor) {
-          nextUnits[idx] = { ...u, fill: assignedColor };
-          colorChanges = true;
-        }
-      }
-    });
-
-    if (colorChanges) {
-      setUnits(nextUnits);
-    }
-
-    if (hasChanges || colorChanges) {
       alert('Đã áp dụng điều kiện cho tất cả các phiên bản trên toàn bộ vị trí / tầng.');
     } else {
       alert('Không có thay đổi nào cần cập nhật.');

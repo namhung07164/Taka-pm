@@ -242,7 +242,7 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
 
   if (loading) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-500">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400">
         <RefreshCw className="w-6 h-6 animate-spin mb-2" />
         <p className="text-sm font-medium">Đang tải cấu hình Bản đồ Chuyên đề (Thematic Map)...</p>
       </div>
@@ -251,7 +251,7 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
 
   if (error || !config) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-amber-600 p-4">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-amber-600 dark:text-amber-400 p-4">
         <Layers className="w-10 h-10 mb-2 opacity-50" />
         <p className="text-sm font-medium px-4 text-center max-w-md">{error}</p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -1209,19 +1209,43 @@ function LiveCanvas({
       // 2. Project name, brand, or code match via aggregatedData
       if (!targetUnit) {
         targetUnit = units.find((u: any) => {
-          const uName = (u.name || '').toLowerCase();
+          const uName = (u.name || '').toLowerCase().trim();
+          const d = aggregatedData[uName];
+          if (!d) return false;
+          const matchCode = d.appProjectCode && String(d.appProjectCode).toLowerCase().trim() === q;
+          const matchName = d.projectName && String(d.projectName).toLowerCase().trim() === q;
+          const matchBrand = d.brandName && String(d.brandName).toLowerCase().trim() === q;
+          const matchUnit = d.unit && String(d.unit).toLowerCase().trim() === q;
+          return matchCode || matchName || matchBrand || matchUnit;
+        });
+      }
+      // 3. Prefix / stem match (e.g. project code "L3-303-1" matches unit "L3-303")
+      if (!targetUnit) {
+        const stem = q.replace(/[-_.#]\d+$/, '').trim();
+        if (stem && stem !== q) {
+          targetUnit = units.find((u: any) => 
+            (u.name || '').toLowerCase().trim() === stem ||
+            String(u.id).toLowerCase() === stem
+          );
+        }
+      }
+      // 4. Substring inclusion in aggregatedData or unit name
+      if (!targetUnit) {
+        targetUnit = units.find((u: any) => {
+          const uName = (u.name || '').toLowerCase().trim();
+          if (uName && (uName.includes(q) || q.includes(uName))) return true;
           const d = aggregatedData[uName];
           if (!d) return false;
           return (d.projectName && d.projectName.toLowerCase().includes(q)) ||
                  (d.brandName && d.brandName.toLowerCase().includes(q)) ||
-                 (d.appProjectCode && d.appProjectCode.toLowerCase().includes(q));
+                 (d.appProjectCode && (d.appProjectCode.toLowerCase().includes(q) || q.includes(d.appProjectCode.toLowerCase())));
         });
       }
-      // 3. Fallback: partial match
+      // 5. Fallback: partial match
       if (!targetUnit) {
         targetUnit = units.find((u: any) => 
           (u.name || '').toLowerCase().includes(q) ||
-          String(u.id).toLowerCase().includes(q)
+          String(u.id).toLowerCase() === q
         );
       }
     }
@@ -1271,10 +1295,8 @@ function LiveCanvas({
     const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
     const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
 
-    // Calculate optimal zoom scale to clearly frame the unit
-    const fitScaleX = (containerW * 0.5) / Math.max(80, uW);
-    const fitScaleY = (containerH * 0.5) / Math.max(60, uH);
-    const targetScale = Math.max(1.0, Math.min(Math.min(fitScaleX, fitScaleY), 3.2));
+    // Set zoom level to standard 100% (scale 1.0) without excessive zooming
+    const targetScale = 1.0;
 
     const posX = containerW / 2 - cx * targetScale;
     const posY = containerH / 2 - cy * targetScale;
@@ -1482,7 +1504,7 @@ function LiveCanvas({
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] print:bg-white print:bg-none print:p-0 print:m-0 print:border-none">
+    <div className="w-full h-full flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] [background-size:20px_20px] print:bg-white print:bg-none print:p-0 print:m-0 print:border-none">
       
       {/* Clean High-Contrast Print Legend Overlay - Renders only on print & print preview */}
       <div className="hidden print:flex absolute bottom-4 left-4 z-30 bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl border border-slate-300 shadow-md flex-col gap-1.5 min-w-[200px] max-w-xl pointer-events-none">

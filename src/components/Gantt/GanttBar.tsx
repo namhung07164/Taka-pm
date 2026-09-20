@@ -26,6 +26,7 @@ export interface GanttBarProps {
   setActiveTooltip: (id: string | null) => void;
   isEditMode: boolean;
   getBarColor: (status: string, duration?: string | number) => string;
+  onBarClick?: (ev: React.MouseEvent) => void;
 }
 
 export const getExactDays = (d1: Date, d2: Date) => {
@@ -45,6 +46,7 @@ export const GanttBar = React.memo(function GanttBar({
   setActiveTooltip,
   isEditMode,
   getBarColor,
+  onBarClick,
 }: GanttBarProps) {
   const isSimulation = !!extraVars?.isSimulation;
   const isTask = id.startsWith('task-') || id.startsWith('sim-task-');
@@ -96,6 +98,10 @@ export const GanttBar = React.memo(function GanttBar({
         onClick={(ev) => {
           ev.stopPropagation();
           if (isEditMode) return;
+          if (onBarClick) {
+            onBarClick(ev);
+            return;
+          }
           if (tooltipRef.current) positionTooltip(ev, tooltipRef.current);
           setActiveTooltip(activeTooltip === id ? null : id);
         }}
@@ -193,6 +199,10 @@ export const GanttBar = React.memo(function GanttBar({
       onClick={(ev) => {
         ev.stopPropagation();
         if (isEditMode) return;
+        if (onBarClick) {
+          onBarClick(ev);
+          return;
+        }
         if (tooltipRef.current) positionTooltip(ev, tooltipRef.current);
         setActiveTooltip(activeTooltip === id ? null : id);
       }}

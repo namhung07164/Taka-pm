@@ -328,6 +328,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
           setActiveTooltip={setActiveTooltip}
           isEditMode={isEditMode}
           getBarColor={getBarColor}
+          onBarClick={!isEditMode && onNavigateToLayout ? () => onNavigateToLayout(p.store || 'all', p.location || 'all', p.code) : undefined}
         />
         <GanttBaseline
           startStr={p.baselineStart}
