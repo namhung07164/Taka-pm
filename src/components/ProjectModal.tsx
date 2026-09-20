@@ -74,7 +74,9 @@ function getLinkCodesValidationError(
   inputLinkCodes: string,
   currentCode: string,
   currentProjectId: string | undefined,
-  allProjects: Project[]
+  allProjects: Project[],
+  currentYear?: string | number | null,
+  currentStore?: string | null
 ) {
   if (!inputLinkCodes || !inputLinkCodes.trim()) return null;
 
@@ -84,6 +86,8 @@ function getLinkCodesValidationError(
     .filter(Boolean);
 
   const selfCodeLower = (currentCode || '').trim().toLowerCase();
+  const currentYearStr = currentYear !== undefined && currentYear !== null ? String(currentYear).trim() : '';
+  const currentStoreStr = currentStore ? String(currentStore).trim().toLowerCase() : '';
 
   for (const code of enteredCodes) {
     const codeLower = code.toLowerCase();
@@ -92,14 +96,34 @@ function getLinkCodesValidationError(
     const duplicate = allProjects.find((p) => {
       if (currentProjectId && p.id === currentProjectId) return false;
       const otherCodeLower = String(p.code || '').trim().toLowerCase();
-      return otherCodeLower === codeLower && otherCodeLower !== '';
+      if (otherCodeLower !== codeLower || otherCodeLower === '') return false;
+
+      // Condition: Compare Year / Project Year
+      const pAny = p as any;
+      const otherYearStr = p.year !== undefined && p.year !== null 
+        ? String(p.year).trim() 
+        : (pAny.projectYear !== undefined && pAny.projectYear !== null ? String(pAny.projectYear).trim() : '');
+
+      if (currentYearStr && otherYearStr && currentYearStr !== otherYearStr) {
+        return false; // Different year - no collision
+      }
+
+      // Condition: Compare Store if both present
+      const otherStoreStr = p.store ? String(p.store).trim().toLowerCase() : (pAny.projectStore ? String(pAny.projectStore).trim().toLowerCase() : '');
+      if (currentStoreStr && otherStoreStr && currentStoreStr !== otherStoreStr) {
+        return false; // Different store - no collision
+      }
+
+      return true;
     });
 
     if (duplicate) {
+      const dupYear = duplicate.year || (duplicate as any).projectYear || '';
       return {
         invalidCode: code,
         duplicateProjectCode: duplicate.code,
         duplicateProjectName: duplicate.name,
+        duplicateProjectYear: dupYear,
       };
     }
   }
@@ -150,8 +174,8 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
 
   const linkCodesError = React.useMemo(() => {
     const rawLink = formData.linkCodes !== undefined ? String(formData.linkCodes) : String(formData.code || '');
-    return getLinkCodesValidationError(rawLink, String(formData.code || ''), project?.id, projects);
-  }, [formData.linkCodes, formData.code, project?.id, projects]);
+    return getLinkCodesValidationError(rawLink, String(formData.code || ''), project?.id, projects, formData.year, formData.store);
+  }, [formData.linkCodes, formData.code, formData.year, formData.store, project?.id, projects]);
   const yearRef = useRef<HTMLInputElement>(null);
 
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void}>({
@@ -276,9 +300,10 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
       }
 
       if (linkCodesError) {
+        const yearDetail = linkCodesError.duplicateProjectYear ? ` năm ${linkCodesError.duplicateProjectYear}` : '';
         useAppStore.getState().setToast({
           title: 'Mã dự án trùng lặp',
-          message: `Mã "${linkCodesError.invalidCode}" đã thuộc về dự án "${linkCodesError.duplicateProjectCode}" (${linkCodesError.duplicateProjectName}). Không thể dùng mã dự án khác làm Project Code Link.`,
+          message: `Mã "${linkCodesError.invalidCode}" đã thuộc về dự án "${linkCodesError.duplicateProjectCode}"${yearDetail} (${linkCodesError.duplicateProjectName}). Không thể dùng mã dự án khác làm Project Code Link.`,
           type: 'error'
         });
         setIsSubmitting(false);
@@ -670,133 +695,141 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         {activeTab === 'details' && (
         <form onSubmit={handleSubmit} className="flex flex-col flex-grow overflow-hidden">
           <div className="p-4 md:p-6 overflow-y-auto flex-grow">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Store *</label>
-              <select 
-                value={formData.store || ""}
-                onChange={(e) => setFormData({ ...formData, store: e.target.value })}
-                required 
-                disabled={!canWrite}
-                className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
-              >
-                <option value="" disabled hidden>Select Store</option>
-                <option value="HCM">HCM</option>
-                <option value="HN">HN</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 flex items-center justify-between">
-                <span>Location *</span>
-                {currentUser?.role === 'admin' && !isAddingLocation && (
-                  <button type="button" onClick={() => setIsAddingLocation(true)} className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-medium text-[10px] flex items-center gap-1">
-                    <Plus className="w-3 h-3" /> Add New
-                  </button>
-                )}
-              </label>
-              {isAddingLocation ? (
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={newLocation}
-                    onChange={e => setNewLocation(e.target.value)}
-                    placeholder="Enter new location"
-                    className="flex-grow p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
-                    autoFocus
-                  />
-                  <button type="button" 
-                    onClick={async () => {
-                      if (!newLocation.trim()) {
-                        setIsAddingLocation(false);
-                        return;
-                      }
-                      const locName = newLocation.trim();
-                      if (!locations.includes(locName)) {
-                        const newLocs = [...locations, locName];
-                        useAppStore.getState().setLocations(newLocs);
-                        try {
-                          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations"), { list: newLocs }, { merge: true });
-                          bumpConfigVersion('locations');
-                        } catch (e) {
-                          console.error(e);
+            {/* Row 1: Store, Location, Year */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Store *</label>
+                <select 
+                  value={formData.store || ""}
+                  onChange={(e) => setFormData({ ...formData, store: e.target.value })}
+                  required 
+                  disabled={!canWrite}
+                  className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+                >
+                  <option value="" disabled hidden>Select Store</option>
+                  <option value="HCM">HCM</option>
+                  <option value="HN">HN</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 flex items-center justify-between">
+                  <span>Location *</span>
+                  {currentUser?.role === 'admin' && !isAddingLocation && (
+                    <button type="button" onClick={() => setIsAddingLocation(true)} className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-medium text-[10px] flex items-center gap-1">
+                      <Plus className="w-3 h-3" /> Add New
+                    </button>
+                  )}
+                </label>
+                {isAddingLocation ? (
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={newLocation}
+                      onChange={e => setNewLocation(e.target.value)}
+                      placeholder="Enter new location"
+                      className="flex-grow p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+                      autoFocus
+                    />
+                    <button type="button" 
+                      onClick={async () => {
+                        if (!newLocation.trim()) {
+                          setIsAddingLocation(false);
+                          return;
                         }
-                      }
-                      setFormData({ ...formData, location: locName });
-                      setIsAddingLocation(false);
-                      setNewLocation('');
-                    }}
-                    className="px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold"
-                  >
-                    Add
-                  </button>
-                  <button type="button" 
-                    onClick={() => { setIsAddingLocation(false); setNewLocation(''); }}
-                    className="px-3 bg-slate-200 dark:bg-[#333336] text-slate-700 dark:text-[#e3e3e3] rounded-lg hover:bg-slate-300 dark:hover:bg-[#444446] text-sm font-bold"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-              <select 
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                required 
-                disabled={!canWrite}
-                className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
-              >
-                <option value="">Select Location</option>
-                {Array.from(new Set([...locations])).filter(loc => String(loc).toLowerCase() !== "all").filter(loc => {
-                  if (currentUser?.role === 'admin') return true;
-                  let permLoc = (loc as string).toLowerCase();
-                  if (["md-b1", "md-l1", "md-l2", "md-l3", "md-l4"].includes(permLoc)) {
-                    permLoc = permLoc.replace("md-", "");
-                  }
-                  return currentUser?.locationPermissions?.["all"] || currentUser?.locationPermissions?.[permLoc];
-                }).map(loc => (
-                  <option key={loc as string} value={loc as string}>{loc as string}</option>
-                ))}
-              </select>
-              )}
+                        const locName = newLocation.trim();
+                        if (!locations.includes(locName)) {
+                          const newLocs = [...locations, locName];
+                          useAppStore.getState().setLocations(newLocs);
+                          try {
+                            setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations"), { list: newLocs }, { merge: true });
+                            bumpConfigVersion('locations');
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }
+                        setFormData({ ...formData, location: locName });
+                        setIsAddingLocation(false);
+                        setNewLocation('');
+                      }}
+                      className="px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold"
+                    >
+                      Add
+                    </button>
+                    <button type="button" 
+                      onClick={() => { setIsAddingLocation(false); setNewLocation(''); }}
+                      className="px-3 bg-slate-200 dark:bg-[#333336] text-slate-700 dark:text-[#e3e3e3] rounded-lg hover:bg-slate-300 dark:hover:bg-[#444446] text-sm font-bold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                <select 
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  required 
+                  disabled={!canWrite}
+                  className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+                >
+                  <option value="">Select Location</option>
+                  {Array.from(new Set([...locations])).filter(loc => String(loc).toLowerCase() !== "all").filter(loc => {
+                    if (currentUser?.role === 'admin') return true;
+                    let permLoc = (loc as string).toLowerCase();
+                    if (["md-b1", "md-l1", "md-l2", "md-l3", "md-l4"].includes(permLoc)) {
+                      permLoc = permLoc.replace("md-", "");
+                    }
+                    return currentUser?.locationPermissions?.["all"] || currentUser?.locationPermissions?.[permLoc];
+                  }).map(loc => (
+                    <option key={loc as string} value={loc as string}>{loc as string}</option>
+                  ))}
+                </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Year *</label>
+                <input 
+                  ref={yearRef}
+                  type="number" 
+                  inputMode="numeric"
+                  value={formData.year || ''}
+                  onChange={(e) => setFormData({ ...formData, year: e.target.value ? parseInt(e.target.value) : '' })}
+                  required 
+                  readOnly={!canWrite}
+                  className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Year *</label>
-              <input 
-                ref={yearRef}
-                type="number" 
-                inputMode="numeric"
-                value={formData.year || ''}
-                onChange={(e) => setFormData({ ...formData, year: e.target.value ? parseInt(e.target.value) : '' })}
-                required 
-                readOnly={!canWrite}
-                className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Project Code *</label>
-              <FastInput 
-                type="text" 
-                inputMode="text"
-                value={formData.code || ''}
-                onChange={(val) => {
-                  setFormData(prev => {
-                    const newCode = val;
-                    const currentLink = prev.linkCodes;
-                    const oldCode = prev.code || '';
-                    const shouldSync = !currentLink || currentLink.trim() === '' || currentLink.trim() === oldCode.trim();
-                    return {
-                      ...prev,
-                      code: newCode,
-                      linkCodes: shouldSync ? newCode : currentLink
-                    };
-                  });
-                }}
-                required 
-                readOnly={!canWrite}
-                className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-              />
-              <div className="mt-2">
-                <label className="block text-[11px] font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
-                  Project Code Link <span className="text-[10px] text-slate-400 font-normal text-none lowercase">(multi, cách nhau ",")</span>
+
+            {/* Row 2: Project Code & Project Code Link (Wide side-by-side on iPad/desktop) */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-4">
+              <div className="sm:col-span-5">
+                <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Project Code *</label>
+                <FastInput 
+                  type="text" 
+                  inputMode="text"
+                  value={formData.code || ''}
+                  onChange={(val) => {
+                    setFormData(prev => {
+                      const newCode = val;
+                      const currentLink = prev.linkCodes;
+                      const oldCode = prev.code || '';
+                      const shouldSync = !currentLink || currentLink.trim() === '' || currentLink.trim() === oldCode.trim();
+                      return {
+                        ...prev,
+                        code: newCode,
+                        linkCodes: shouldSync ? newCode : currentLink
+                      };
+                    });
+                  }}
+                  required 
+                  readOnly={!canWrite}
+                  className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+              </div>
+
+              <div className="sm:col-span-7">
+                <label className="block text-[11px] font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 flex items-center justify-between">
+                  <span>Project Code Link</span>
+                  <span className="text-[10px] text-slate-400 font-normal lowercase">(multi, cách nhau ",")</span>
                 </label>
                 <FastInput 
                   type="text" 
@@ -806,7 +839,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                   placeholder="e.g. L3-303-1, L3-303-2"
                   readOnly={!canWrite}
                   className={cn(
-                    "w-full p-2 border rounded-lg focus:ring-2 outline-none text-xs bg-slate-50 dark:bg-[#1a1a1c]",
+                    "w-full p-2.5 border rounded-lg focus:ring-2 outline-none text-xs bg-slate-50 dark:bg-[#1a1a1c]",
                     linkCodesError 
                       ? "border-rose-500 text-rose-600 dark:text-rose-400 focus:ring-rose-500" 
                       : "border-slate-200 dark:border-[#444446] focus:ring-blue-500"
@@ -815,12 +848,11 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                 {linkCodesError && (
                   <p className="mt-1.5 text-[11px] text-rose-500 dark:text-rose-400 font-medium flex items-start gap-1 leading-tight">
                     <span className="shrink-0">⚠️</span>
-                    <span>Mã "<strong>{linkCodesError.invalidCode}</strong>" đã thuộc về dự án khác (<strong>{linkCodesError.duplicateProjectCode}</strong> - {linkCodesError.duplicateProjectName}). Không thể nhập.</span>
+                    <span>Mã "<strong>{linkCodesError.invalidCode}</strong>" đã thuộc về dự án khác (<strong>{linkCodesError.duplicateProjectCode}</strong>{linkCodesError.duplicateProjectYear ? ` - ${linkCodesError.duplicateProjectYear}` : ''} - {linkCodesError.duplicateProjectName}). Không thể nhập.</span>
                   </p>
                 )}
               </div>
             </div>
-          </div>
           <div className="mb-5">
             <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Project Name *</label>
             <FastInput 
