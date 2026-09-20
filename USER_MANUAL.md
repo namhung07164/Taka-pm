@@ -475,14 +475,17 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
        * **Tự động ẩn nút Menu tạm thời (Mobile Focus Mode)**: Khi Tooltip mở trên điện thoại, các nút Menu và Chú thích màu dưới đáy màn hình tự động làm mờ và tạm ẩn (`opacity-0 pointer-events-none`) để không che khuất hay tranh chấp thao tác bấm với Tooltip.
         * **Khóa ghim cố định (Pinning)**: Nhấp hoặc chạm vào gian hàng sẽ ghim cố định Tooltip, cho phép người dùng thoải mái xem thông tin tiến độ, mở trao đổi/bình luận mà không bị biến mất. Nhấp vào nền trống hoặc nút X để đóng.
         * **Tự động đo đạc theo thời gian thực (ResizeObserver & VisualViewport)**: Tooltip tự động tính toán lại kích thước linh hoạt, đảm bảo thẻ luôn nằm trọn trong vùng nhìn thấy được của màn hình (hỗ trợ hoàn hảo Safari iOS với dynamic URL bar).
-      - **Thanh tiêu đề (Header)**: Hiển thị Store - Mã Gian hàng (Unit) - Tên Dự án/Brand, Huy hiệu Trạng thái tiến độ (`Completed` xanh lá, `On Process` xanh dương, `Delay` đỏ) và Nút đóng (`X`). Nhấp vào tên dự án để mở xem chi tiết dự án.
+      - **Thanh tiêu đề (Header)**: Hiển thị Store - Mã Gian hàng (Unit) - Tên Dự án/Brand, Huy hiệu Trạng thái tiến độ (`Completed` xanh lá, `On Process` màu cam ấm đồng bộ chuẩn màu tab General, `Handover` xanh dương, `Delay` đỏ), Huy hiệu **`MD Status`** (tự động lấy từ trường MD Status của dự án với màu sắc trạng thái tương ứng) và Nút đóng (`X`). Nhấp vào tên dự án để mở xem chi tiết dự án.
       - **Thanh Tiến độ Đôi (Dual Progress Bars)**:
         * **Plan Progress**: Thanh phần trăm tiến độ theo Kế hoạch (màu xanh dương).
         * **Act Progress**: Thanh phần trăm tiến độ Thực tế (màu xanh ngọc).
       - **Hàng Thông tin Hợp nhất (Unified Info Row)**:
-        * **Vị trí / Tầng & Diện tích**: Thẻ nhỏ gọn `Vị trí / Tầng: L1` và `DT: ... m²` (thông tin bên liên quan Party/CP/Con1 đã được lược bỏ theo yêu cầu để giao diện tối giản, thoáng đãng).
+        * **Vị trí / Tầng, Diện tích & MD Status**: Thẻ nhỏ gọn `Vị trí / Tầng: L1`, `DT: ... m²` và nhãn `MD Status: ...` (thông tin bên liên quan Party/CP/Con1 đã được lược bỏ hoàn toàn theo yêu cầu để giao diện tối giản, thanh lịch).
         * **Biểu tượng Trao đổi / Bình luận (`MessageSquare`)**: Nút bình luận nhỏ gọn kèm số lượng tin nhắn ngay trên cùng hàng. Nhấp vào để mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án.
         * **Mốc Ngày Bắt đầu & Bàn giao (Start & Handover Dates)**: Ngày bắt đầu (màu xanh dương) và ngày bàn giao (màu hồng) nằm gọn gàng bên phải của cùng hàng, giúp tối ưu diện tích và không che khuất mặt bằng.
+      - **Khối Chi tiết Công việc & Ghi chú (Details Section - Chuẩn Tab General)**:
+        * Tự động hiển thị các dòng công việc đang chạy trong thời điểm hiện tại (`taskLines`) với màu sắc so le chuẩn mực (dòng 1 màu xanh dương, dòng 2 màu cam) giống hệt logic hiển thị cột Detail của tab General.
+        * Hiển thị đầy đủ nội dung ghi chú chi tiết (`detail`) bên dưới danh sách công việc giúp theo dõi toàn diện tiến độ của gian hàng ngay trên mặt bằng.
       - **Cơ chế Tối ưu Firestore Read Tuyệt đối (Tri-Gate Lazy Loading for Comments)**:
          - Hệ thống nhận diện trạng thái mở modal ở chế độ chỉ Chat (`isChatOnly` = `isProjectModalOpen && modalInitialTab === 'chat'`).
          - Khi mở ô Comment từ Tooltip của Layout Tab, hệ thống **CHỈ** đọc tin nhắn trao đổi của riêng dự án đó (subcollection chats hoặc document chats) mà **KHÔNG** tải hay lắng nghe (listen) toàn bộ danh sách Task, Cost, hay Delegation của toàn bộ hệ thống.

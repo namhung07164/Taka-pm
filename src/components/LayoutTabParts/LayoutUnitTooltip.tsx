@@ -159,7 +159,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const actProgressPercent = p?.computedActProgress ?? data.actProgressPercent ?? 0;
 
   // Status computation
-  const status = p?.computedStatus || data.appProjectStatus || data.status || data.mdStatus || 'On process';
+  const status = p?.computedStatus || data.appProjectStatus || data.status || 'On process';
   
   let statusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
   const lowerStatus = String(status).toLowerCase();
@@ -168,12 +168,51 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   } else if (lowerStatus.includes('handover')) {
     statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-900/60';
   } else if (lowerStatus.includes('on process') || lowerStatus.includes('process')) {
-    statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-900/60';
+    statusColorClass = 'bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800/60';
   } else if (lowerStatus.includes('delay') || lowerStatus.includes('canceled') || lowerStatus.includes('late')) {
     statusColorClass = 'bg-red-50 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60';
   } else if (lowerStatus.includes('ready')) {
     statusColorClass = 'bg-amber-50 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/60';
   }
+
+  // MD Status from project or layout data
+  const rawMdStatus = p?.mdStatus || data.mdStatus || (p as any)?.md_status || (data as any)?.md_status || '';
+  const mdStatus = (rawMdStatus && rawMdStatus !== '-' && String(rawMdStatus).trim().toLowerCase() !== 'null') 
+    ? String(rawMdStatus).trim() 
+    : '';
+
+  let mdStatusColorClass = 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800/60';
+  const lowerMdStatus = mdStatus.toLowerCase();
+  if (lowerMdStatus.includes('signed') || lowerMdStatus.includes('agreement')) {
+    mdStatusColorClass = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60';
+  } else if (lowerMdStatus.includes('reject')) {
+    mdStatusColorClass = 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/60';
+  }
+
+  // Task lines & Details (Strictly matching General Tab logic)
+  const taskLines: string[] = (data.taskLines && Array.isArray(data.taskLines) && data.taskLines.length > 0)
+    ? data.taskLines
+    : (() => {
+        if (!p) return [];
+        const now = new Date();
+        let activeTaskNames: string[] = [];
+        if (p.taskSummaries && p.taskSummaries.length > 0) {
+          const activeTasks = p.taskSummaries.filter(t => {
+            if (!t.start || !t.finish) return false;
+            const start = new Date(t.start);
+            const finish = new Date(t.finish);
+            return now >= start && now <= finish;
+          });
+          activeTaskNames = activeTasks.map(t => t.name);
+        }
+        const lines: string[] = [];
+        activeTaskNames.forEach(name => {
+          lines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
+        });
+        return lines;
+      })();
+
+  const detailText = p?.detail || data.detail || '';
 
   // Dates
   const computedTakStart = p?.computedTakStart || p?.start || data.startDate || '';
@@ -223,9 +262,23 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           </span>
         </div>
 
-        {/* Status Badge */}
-        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${statusColorClass}`}>
-          {status}
+        {/* Status Badges: MD Status + Project Status */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {/* MD Status Badge in Header */}
+          {mdStatus && (
+            <div 
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${mdStatusColorClass} flex items-center gap-1`}
+              title={`MD Status: ${mdStatus}`}
+            >
+              <span className="text-[8px] font-semibold uppercase opacity-75">MD:</span>
+              <span className="capitalize">{mdStatus}</span>
+            </div>
+          )}
+
+          {/* Project Status Badge (On process in orange matching General Tab) */}
+          <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${statusColorClass}`}>
+            {status}
+          </div>
         </div>
 
         {/* Close Button */}
@@ -274,9 +327,9 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       </div>
 
-      {/* 3. Unified Information Row: Vị trí / Tầng, Diện tích, Party, Comment Symbol & Dates */}
+      {/* 3. Unified Information Row: Vị trí / Tầng, Diện tích, MD Status, Comment Symbol & Dates */}
       <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
-        {/* Left Side: Vị trí / Tầng, Diện tích, Party Badge & Comment Symbol */}
+        {/* Left Side: Vị trí / Tầng, Diện tích, MD Status & Comment Symbol */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {/* Vị trí / Tầng Badge */}
           {floorValue && (
@@ -291,6 +344,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
               <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
               <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(data.size).toLocaleString('en-US')} m²</span>
+            </div>
+          )}
+
+          {/* MD Status Badge in Unified Info Row */}
+          {mdStatus && (
+            <div className="bg-purple-50/80 dark:bg-purple-950/40 px-2 py-0.5 rounded-md border border-purple-200/80 dark:border-purple-800/60 flex items-center gap-1 shrink-0">
+              <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider">MD Status:</span>
+              <span className="font-bold text-xs text-purple-700 dark:text-purple-300 capitalize">{mdStatus}</span>
             </div>
           )}
 
@@ -351,15 +412,33 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         )}
       </div>
 
-      {/* 4. Quick Description / Detail note if present */}
-      {data.detail && (
-        <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-2 border border-slate-200/60 dark:border-slate-700/60 text-xs">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
-            Ghi chú
+      {/* 4. Details Section (Strictly matching General Tab logic and styling) */}
+      {(taskLines.length > 0 || detailText) && (
+        <div className="bg-slate-50 dark:bg-[#1e1e20]/60 rounded-lg p-2.5 border border-slate-200/80 dark:border-[#444446] text-xs shadow-sm flex flex-col gap-1.5">
+          <div className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
+            Detail
           </div>
-          <div className="text-slate-700 dark:text-slate-300 font-normal whitespace-pre-wrap leading-relaxed">
-            {data.detail}
-          </div>
+          {taskLines.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              {taskLines.map((line, idx) => (
+                <div 
+                  key={idx} 
+                  className={`font-medium text-xs leading-relaxed ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
+                >
+                  {line}
+                </div>
+              ))}
+              {detailText && (
+                <div className="text-slate-600 dark:text-[#a3a3a3] text-[11px] font-normal whitespace-pre-wrap leading-relaxed pt-1.5 mt-0.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                  {detailText}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-blue-600 dark:text-[#8ab4f8] font-medium text-xs whitespace-pre-wrap leading-relaxed">
+              {detailText}
+            </div>
+          )}
         </div>
       )}
     </div>
