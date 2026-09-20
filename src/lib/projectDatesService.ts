@@ -99,6 +99,36 @@ export function calculateProjectComputedDates(
         computedOpening = validFinishes[0];
       }
     }
+  } else if (project.taskSummaries && project.taskSummaries.length > 0) {
+    const validStarts = project.taskSummaries
+      .map((t) => t.start)
+      .filter(Boolean)
+      .sort();
+    if (validStarts.length > 0 && !computedTakStart) {
+      computedTakStart = validStarts[0];
+    }
+
+    const validFinishes = project.taskSummaries
+      .map((t) => t.finish)
+      .filter(Boolean)
+      .sort((a, b) => (b || "").localeCompare(a || ""));
+    if (validFinishes.length > 0 && !computedTakCompl) {
+      computedTakCompl = validFinishes[0];
+    }
+
+    const openingTasks = project.taskSummaries.filter((t) => {
+      const name = String(t.name || "").toLowerCase();
+      return name.includes("opening") || name.includes("open");
+    });
+    if (openingTasks.length > 0) {
+      const validFinishes = openingTasks
+        .map((t) => t.finish)
+        .filter(Boolean)
+        .sort((a, b) => (b || "").localeCompare(a || ""));
+      if (validFinishes.length > 0 && !computedOpening) {
+        computedOpening = validFinishes[0];
+      }
+    }
   }
 
   const planProgressPercent = projectTasks && projectTasks.length > 0 
@@ -358,8 +388,7 @@ export async function syncAllProjectsTaskCountsToFirestore(
       const p = allProjects[i];
       if (!p.id || !p.code) continue;
 
-      const key = `${p.code || ""}-${p.year || ""}-${p.store || ""}`.toLowerCase();
-      const pTasks = tasksByProject.get(key) || [];
+      const pTasks = getTasksForProject(p, allTasks);
 
       const computed = calculateProjectComputedDates(p, pTasks, allDelegations);
 

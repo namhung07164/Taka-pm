@@ -24,6 +24,7 @@ import { useEnrichedData } from '../hooks/useEnrichedData';
 import { addPendingUpdate } from '../lib/syncQueue';
 import { bumpConfigVersion } from '../lib/configCacheService';
 import { getProjectCodeChangePredecessorUpdates } from '../lib/ganttUtils';
+import { calculateProjectComputedDates, getTasksForProject } from '../lib/projectDatesService';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -227,24 +228,32 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         return;
       }
 
+      const tasks = useAppStore.getState().tasks;
+      const delegationGroups = useAppStore.getState().delegationGroups;
+      const computedDates = calculateProjectComputedDates(
+        project || formData,
+        getTasksForProject(formData, tasks),
+        delegationGroups
+      );
+
       const dataToSave: any = { 
         ...formData, 
         no, 
         year: yearNum,
         code: String(formData.code).trim(),
-        taskCount: project?.taskCount !== undefined ? project.taskCount : 0,
-        taskSummaries: project?.taskSummaries || [],
-        computedPlanProgress: project?.computedPlanProgress !== undefined ? project.computedPlanProgress : 0,
-        computedActProgress: project?.computedActProgress !== undefined ? project.computedActProgress : 0
+        taskCount: computedDates.taskCount ?? project?.taskCount ?? 0,
+        taskSummaries: computedDates.taskSummaries || project?.taskSummaries || [],
+        computedPlanProgress: computedDates.computedPlanProgress ?? project?.computedPlanProgress ?? 0,
+        computedActProgress: computedDates.computedActProgress ?? project?.computedActProgress ?? 0,
+        computedTakStart: computedDates.computedTakStart || enrichedProject?.computedTakStart || project?.computedTakStart || formData.start || "",
+        computedTakCompl: computedDates.computedTakCompl || enrichedProject?.computedTakCompl || project?.computedTakCompl || formData.handover || "",
+        computedOpening: computedDates.computedOpening || enrichedProject?.computedOpening || project?.computedOpening || formData.opening || "",
       };
 
       // Draft mechanism when offline
       if (cloudStatus === 'offline') {
         const payload = { ...dataToSave, updatedAt: new Date().toISOString() };
         delete payload.id;
-        delete payload.computedTakStart;
-        delete payload.computedTakCompl;
-        delete payload.computedOpening;
         Object.keys(payload).forEach(key => {
           if ((payload as any)[key] === undefined) delete (payload as any)[key];
         });
@@ -256,9 +265,6 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
       }
 
       delete dataToSave.id;
-      delete dataToSave.computedTakStart;
-      delete dataToSave.computedTakCompl;
-      delete dataToSave.computedOpening;
 
       // Sanitize dataToSave to remove any undefined fields
       Object.keys(dataToSave).forEach(key => {

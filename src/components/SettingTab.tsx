@@ -220,6 +220,114 @@ export function SettingTab({ rules}: SettingTabProps) {
   const [isArchiving, setIsArchiving] = useState(false);
   const [isDeduplicatingDelegations, setIsDeduplicatingDelegations] = useState(false);
   const [isSyncingTaskCounts, setIsSyncingTaskCounts] = useState(false);
+  const [isScanningOrphans, setIsScanningOrphans] = useState(false);
+
+  const handleScanOrphanData = async () => {
+    if (!isAdmin) return;
+    setIsScanningOrphans(true);
+    try {
+      const collectionsToCheck = [
+        { name: "taka_projects", label: "Projects" },
+        { name: "taka_tasks", label: "Tasks" },
+        { name: "taka_costs", label: "Costs" },
+        { name: "taka_delegation_groups", label: "Delegations" }
+      ];
+
+      const stats: Record<string, { total: number, orphans: any[] }> = {};
+      let totalOrphans = 0;
+
+      for (const colInfo of collectionsToCheck) {
+        const colRef = collection(db, "artifacts", APP_ID, "public", "data", colInfo.name);
+        const snap = await getDocs(colRef);
+        const orphans: any[] = [];
+
+        snap.docs.forEach(docSnap => {
+          const d = docSnap.data();
+          const yr = d.year !== undefined && d.year !== null && String(d.year).trim() !== '' 
+            ? String(d.year).trim() 
+            : (d.projectYear !== undefined && d.projectYear !== null && String(d.projectYear).trim() !== '' ? String(d.projectYear).trim() : '');
+          
+          const st = d.store !== undefined && d.store !== null && String(d.store).trim() !== '' 
+            ? String(d.store).trim() 
+            : (d.projectStore !== undefined && d.projectStore !== null && String(d.projectStore).trim() !== '' ? String(d.projectStore).trim() : '');
+
+          const cd = d.code !== undefined && d.code !== null && String(d.code).trim() !== '' 
+            ? String(d.code).trim() 
+            : (d.projectCode !== undefined && d.projectCode !== null && String(d.projectCode).trim() !== '' ? String(d.projectCode).trim() : '');
+
+          if (!yr && !st && !cd) {
+            orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref });
+          }
+        });
+
+        stats[colInfo.name] = { total: snap.docs.length, orphans };
+        totalOrphans += orphans.length;
+      }
+
+      const summaryLines = collectionsToCheck.map(c => {
+        const s = stats[c.name];
+        return `• ${c.label} (${c.name}): Tổng ${s.total} bản ghi → ${s.orphans.length} bản ghi mồ côi (thiếu cả Year, Store, Code)`;
+      }).join('\n');
+
+      if (totalOrphans === 0) {
+        useAppStore.getState().setToast({
+          title: "Kiểm tra hoàn tất (Không có mồ côi)",
+          message: `Firestore hoàn toàn sạch sẽ! Không có bản ghi mồ côi nào thiếu cả 3 thông tin (Year, Store, Code).\n\nChi tiết:\n${summaryLines}`,
+          type: "success"
+        });
+      } else {
+        setConfirmModal({
+          isOpen: true,
+          title: `Phát hiện ${totalOrphans} bản ghi mồ côi!`,
+          message: `Kết quả kiểm tra trên Firestore:\n\n${summaryLines}\n\nBạn có muốn thực hiện xóa (dọn dẹp) ${totalOrphans} bản ghi mồ côi này không?`,
+          onConfirm: async () => {
+            try {
+              let batch = writeBatch(db);
+              let opCount = 0;
+
+              for (const colInfo of collectionsToCheck) {
+                const orphanList = stats[colInfo.name].orphans;
+                for (const item of orphanList) {
+                  batch.delete(item.ref);
+                  opCount++;
+                  if (opCount % 400 === 0) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                  }
+                }
+              }
+
+              if (opCount % 400 !== 0) {
+                await batch.commit();
+              }
+
+              useAppStore.getState().setToast({
+                title: "Dọn dẹp hoàn tất",
+                message: `Đã xóa thành công ${totalOrphans} bản ghi mồ côi khỏi Firestore.`,
+                type: "success"
+              });
+            } catch (err: any) {
+              console.error("Xóa orphan error:", err);
+              useAppStore.getState().setToast({
+                title: "Lỗi dọn dẹp",
+                message: err?.message || "Không thể xóa bản ghi mồ côi",
+                type: "error"
+              });
+            }
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error("Scan orphan error:", error);
+      useAppStore.getState().setToast({
+        title: "Lỗi kiểm tra",
+        message: error?.message || "Không thể quét dữ liệu",
+        type: "error"
+      });
+    } finally {
+      setIsScanningOrphans(false);
+    }
+  };
 
   const handleSyncAllTaskCounts = async () => {
     if (!isAdmin) return;
@@ -826,6 +934,16 @@ export function SettingTab({ rules}: SettingTabProps) {
           >
             <Sparkles className="w-4 h-4 text-teal-500" />
             {isSyncingTaskCounts ? "Đang cập nhật Task Counts..." : "Cập nhật Task Counts toàn bộ Dự án"}
+          </button>
+
+          <button 
+            onClick={handleScanOrphanData}
+            disabled={isScanningOrphans}
+            title="Quét và xóa dữ liệu mồ côi (bản ghi bị thiếu cả 3 thông tin: Year, Store, Project Code)"
+            className="px-5 py-2.5 rounded-lg border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-[#1e1e20] hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors flex items-center gap-3 font-medium text-rose-700 dark:text-rose-400 shadow-sm text-sm disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4 text-rose-500" />
+            {isScanningOrphans ? "Đang quét dữ liệu mồ côi..." : "Quét & Dọn dữ liệu Mồ côi"}
           </button>
         </div>
       )}

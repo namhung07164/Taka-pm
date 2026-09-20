@@ -457,6 +457,14 @@ export function enrichProjects(
       projectTasks = getTasksForProject(p, tasks);
     }
 
+    const taskSummaries = projectTasks.length > 0
+      ? projectTasks.filter(t => t.start && t.finish && t.name).map(t => ({
+          name: t.name!,
+          start: t.start!,
+          finish: t.finish!
+        }))
+      : (p.taskSummaries || []);
+
     let computedTakStart = p.computedTakStart || p.start;
     let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl || undefined;
     let computedOpening = p.computedOpening || p.opening;
@@ -491,6 +499,36 @@ export function enrichProjects(
           computedOpening = validFinishes[0];
         }
       }
+    } else if (taskSummaries.length > 0) {
+      const validStarts = taskSummaries
+        .map((t) => t.start)
+        .filter(Boolean)
+        .sort();
+      if (validStarts.length > 0 && !computedTakStart) {
+        computedTakStart = validStarts[0];
+      }
+
+      const validFinishes = taskSummaries
+        .map((t) => t.finish)
+        .filter(Boolean)
+        .sort((a, b) => (b || "").localeCompare(a || ""));
+      if (validFinishes.length > 0 && !computedTakCompl) {
+        computedTakCompl = validFinishes[0];
+      }
+
+      const openingTasks = taskSummaries.filter((t) => {
+        const name = String(t.name || "").toLowerCase();
+        return name.includes("opening") || name.includes("open");
+      });
+      if (openingTasks.length > 0) {
+        const validFinishes = openingTasks
+          .map((t) => t.finish)
+          .filter(Boolean)
+          .sort((a, b) => (b || "").localeCompare(a || ""));
+        if (validFinishes.length > 0 && !computedOpening) {
+          computedOpening = validFinishes[0];
+        }
+      }
     }
 
     const planProgressPercent = projectTasks.length > 0 
@@ -500,14 +538,6 @@ export function enrichProjects(
     const actProgressPercent = projectTasks.length > 0
       ? computeActProgressPercent(projectTasks, delegationGroups)
       : (p.computedActProgress ?? 0);
-
-    const taskSummaries = projectTasks.length > 0
-      ? projectTasks.filter(t => t.start && t.finish && t.name).map(t => ({
-          name: t.name!,
-          start: t.start!,
-          finish: t.finish!
-        }))
-      : (p.taskSummaries || []);
 
     const taskCount = projectTasks.length > 0
       ? projectTasks.length
