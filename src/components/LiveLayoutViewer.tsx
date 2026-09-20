@@ -4,7 +4,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
@@ -850,6 +850,9 @@ function LiveCanvas({
   // 1. Get real-time projects and Excel summary data
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
+  const setEditingProject = useAppStore(state => state.setEditingProject);
+  const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
   const summaryData = useSummaryData();
 
   // 2. Build aggregatedData
@@ -942,6 +945,7 @@ function LiveCanvas({
 
       pCodes.forEach(code => {
          if (dataMap[code]) {
+            dataMap[code].matchedProject = p;
             dataMap[code].appProjectStatus = status;
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
@@ -1905,6 +1909,23 @@ function LiveCanvas({
                     {hoverInfo.data.appProjectStatus}
                   </span>
                 )}
+                {hoverInfo.data?.matchedProject && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const p = hoverInfo.data.matchedProject;
+                      setHoverInfo(null);
+                      setModalInitialTab('chat');
+                      setEditingProject(p);
+                      setIsProjectModalOpen(true);
+                    }}
+                    className="p-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/80 text-blue-600 dark:text-blue-400 transition-colors active:scale-95 touch-manipulation flex items-center justify-center"
+                    title="Mở trao đổi / Bình luận dự án"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -2011,6 +2032,25 @@ function LiveCanvas({
                   {hoverInfo.data.detail}
                 </div>
               </div>
+            )}
+
+            {/* Quick Discussion / Comments Button */}
+            {hoverInfo.data?.matchedProject && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const p = hoverInfo.data.matchedProject;
+                  setHoverInfo(null);
+                  setModalInitialTab('chat');
+                  setEditingProject(p);
+                  setIsProjectModalOpen(true);
+                }}
+                className="mt-1 w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 text-xs font-semibold border border-blue-200/60 dark:border-blue-800/50 transition-all active:scale-95 touch-manipulation shadow-xs cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span>Bình luận / Trao đổi dự án</span>
+              </button>
             )}
           </div>
         </div>

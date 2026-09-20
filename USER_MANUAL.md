@@ -468,7 +468,12 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - **Nhấp đúp chuột / Chạm 2 lần (Double-click / Double-tap)**: Tự động zoom nhanh hoặc vừa vặn toàn bộ mặt bằng vào khung nhìn (Fit to Screen) với hiệu ứng chuyển cảnh mượt.
    - **Bộ điều khiển góc trên bên phải**: Nút `[+]`, `[-]`, tỉ lệ `%`, và nút `[⛶]` (Reset / Fit to Screen) phản hồi 1 chạm tức thì (`active:scale-95`).
 3. **Ghim vị trí dự án (Add Pin)**: Nhấp nút "Add Pin", sau đó nhấp vào vị trí gian hàng trên bản đồ và liên kết với Dự án tương ứng.
-4. **Xem nhanh thông tin**: Nhấp vào bất kỳ điểm ghim nào trên bản đồ để xem ngay tên gian hàng, thời gian thi công và hình ảnh hiện trường.
+4. **Xem nhanh thông tin & Bình luận Dự án (Interactive Tooltip & Comments)**: 
+   - Rê chuột (hoặc chạm trên thiết bị di động) vào bất kỳ gian hàng nào trên bản đồ để xem ngay bảng Tooltip thông tin chi tiết: Tên gian hàng, Thương hiệu/Dự án, Ngân sách, Thực chi, Ngày bắt đầu, Ngày hoàn thành Takashimaya, Ngày bàn giao, Ngày mở cửa, các hạng mục chi tiết và mô tả.
+   - **Nút Bình Luận / Trao Đổi Dự Án (Comment Button)**:
+     - Biểu tượng hội thoại (`MessageSquare`) được tích hợp ngay góc trên bên phải thanh tiêu đề Tooltip (cạnh nút đóng) và nút hành động nổi bật `[ 💬 Bình luận / Trao đổi dự án ]` ở chân thẻ Tooltip.
+     - Khi nhấp vào nút này, hệ thống sẽ mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án đó, cho phép người dùng xem lịch sử thảo luận, gửi tin nhắn trao đổi hoặc đính kèm tài liệu với đồng nghiệp theo thời gian thực.
+     - **Không tốn thêm Firestore Read & Không giật lag**: Tính năng sử dụng trực tiếp đối tượng dự án đã lưu trong bộ nhớ Zustand cache, không gửi thêm bất kỳ truy vấn nào lên Firestore khi xem tooltip, đảm bảo tốc độ xoay/zoom bản đồ đạt 60fps mượt mà.
 5. **Chế độ Bản đồ Trực quan (Live View) & Bảng Chú Thích Màu (Color Legend trên iOS/Mobile/Desktop)**:
    - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
    - **Thanh Chú Thích Màu Nổi (Floating Color Legend Bar)**: Ở góc dưới màn hình (đặc biệt tối ưu trải nghiệm 1 chạm cho iOS/iPhone/iPad), hệ thống hiển thị dải các chấm màu và tên nhóm phân loại tương ứng theo định dạng thẻ cuộn ngang mượt mà.
