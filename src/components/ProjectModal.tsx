@@ -45,7 +45,9 @@ const FastTextarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAtt
     ref={ref} 
     value={local} 
     onChange={e => { 
-      setLocal(e.target.value); 
+      const val = e.target.value;
+      setLocal(val); 
+      onChange(val);
       if (props.onChangeCapture) props.onChangeCapture(e); 
     }} 
     onBlur={(e) => { 
@@ -59,6 +61,7 @@ const FastTextarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAtt
       if (e.key === 'Escape') {
         isCanceling.current = true;
         setLocal(value);
+        onChange(value);
         e.currentTarget.blur();
       }
       if (props.onKeyDown) props.onKeyDown(e);
@@ -312,16 +315,16 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           if (pu) {
             payload.predecessor = pu.predecessor;
           }
-          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), payload);
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), payload, { merge: true });
         });
 
         // Update tasks in other projects that reference this project's tasks in predecessor
         predecessorUpdates.forEach(pu => {
           if (!relatedTaskIds.has(pu.id)) {
-            batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
               predecessor: pu.predecessor,
               updatedAt: pu.updatedAt
-            });
+            }, { merge: true });
           }
         });
 
@@ -335,11 +338,11 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         });
 
         relatedCosts.forEach(c => {
-          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), { 
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), { 
             projectCode: formData.code,
             projectYear: formData.year,
             projectStore: formData.store
-          });
+          }, { merge: true });
         });
 
         // Optimistic update in Zustand store (0ms UI latency)
@@ -358,7 +361,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         });
         useAppStore.getState().setTasks(updatedTasks);
 
-        const updatedProjects = projects.map(p => p.id === project.id ? { ...p, ...dataToSave, id: project.id, updatedAt: new Date().toISOString() } : p);
+        const updatedProjects = projects.map(p => ((p.id && p.id === project.id) || (p.no !== undefined && p.no === project.no)) ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } : p);
         useAppStore.getState().setProjects(updatedProjects);
 
         batch.commit().catch(e => {
@@ -373,29 +376,29 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
             revertBatch.set(projectRef, project);
             relatedTasks.forEach(t => {
               const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-              revertBatch.update(tRef, { 
+              revertBatch.set(tRef, { 
                 projectCode: project.code,
                 projectYear: project.year,
                 projectStore: project.store,
                 ...(t.taskCodePhu !== undefined ? { taskCodePhu: t.taskCodePhu } : {}),
                 ...(t.predecessor !== undefined ? { predecessor: t.predecessor } : {})
-              });
+              }, { merge: true });
             });
             predecessorUpdates.forEach(pu => {
               if (!relatedTaskIds.has(pu.id)) {
                 const originalTask = storeTasks.find(st => st.id === pu.id);
-                revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
                   predecessor: originalTask?.predecessor || ''
-                });
+                }, { merge: true });
               }
             });
             relatedCosts.forEach(c => {
               const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
-              revertBatch.update(cRef, { 
+              revertBatch.set(cRef, { 
                 projectCode: project.code,
                 projectYear: project.year,
                 projectStore: project.store
-              });
+              }, { merge: true });
             });
             revertBatch.commit().catch(console.error);
           }
@@ -404,8 +407,15 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), {
           ...dataToSave,
           updatedAt: new Date().toISOString()
-        });
+        }, { merge: true });
         
+        if (project) {
+          const updatedProjects = projects.map(p => ((p.id && p.id === project.id) || (p.no !== undefined && p.no === project.no)) ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } : p);
+          useAppStore.getState().setProjects(updatedProjects);
+        } else {
+          useAppStore.getState().setProjects([...projects, { ...dataToSave, id: docId, updatedAt: new Date().toISOString() } as any]);
+        }
+
         undoManager.push({
           description: project ? `Update Project: ${formData.code}` : `Create Project: ${formData.code}`,
           revert: async () => {

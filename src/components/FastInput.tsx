@@ -30,7 +30,9 @@ export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
           ref={ref}
           value={local}
           onChange={(e) => {
-            setLocal(e.target.value);
+            const val = e.target.value;
+            setLocal(val);
+            onChange(val);
             if (props.onChangeCapture) props.onChangeCapture(e);
           }}
           onBlur={(e) => {
@@ -44,10 +46,10 @@ export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
             if (e.key === 'Escape') {
               isCanceling.current = true;
               setLocal(value);
+              onChange(value);
               e.currentTarget.blur();
             } else if (e.key === 'Enter') {
               onChange(local);
-              e.currentTarget.blur();
             }
             if (props.onKeyDown) props.onKeyDown(e);
           }}
