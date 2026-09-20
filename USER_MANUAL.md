@@ -529,10 +529,14 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 2. **In ấn & Xuất hình ảnh độ nét cao (Print Preview & Export PNG/PDF)**:
    - **Cách kích hoạt**: Mở menu góc (Hamburger Menu ☰ trên thanh Header) khi đang ở bất kỳ tab nào (Gantt, Layout, General, Detail, Budget, Cost) và chọn **"Print Preview"** hoặc **"Export as PNG"**. Trên tab Layout Live View, cũng có thể mở qua nút Print Preview trong menu đáy màn hình.
    - **Tùy chọn in**:
-     - Chọn khổ giấy: `A3` hoặc `A4` (Hướng ngang Landscape hoặc Hướng dọc Portrait).
+     - Chọn khổ giấy: `A2`, `A3` hoặc `A4` (Hướng ngang Landscape hoặc Hướng dọc Portrait).
      - Điều chỉnh tỷ lệ thu phóng (Scale: 50% - 150%) hoặc chế độ Fit to Width / Fit to Height.
      - Tùy chọn đóng dấu mờ bản quyền: Tích chọn **"Watermark"** (`DRAFT`, `CONFIDENTIAL` hoặc `None`) để hiển thị dấu bảo mật nội bộ Takashimaya.
      - Tùy chọn hiển thị thông tin lọc (**Show Filter Header**) và ngày in (**Show Date**).
+   - **Chế độ In Mặt Bằng Tràn Khung & Kèm Bảng Ký Hiệu (Full-Bleed Layout Print with High-Contrast Legend Overlay)**:
+     - Khi in từ Tab **Layout**: Hệ thống tự động tối ưu hóa bản in tràn viền mép giấy (Edge-to-Edge), loại bỏ hoàn toàn các khoảng trống thừa 2 bên, viền hộp thừa và tiêu đề header bên ngoài.
+     - Tự động hiển thị **Bảng Chú Thích Ký Hiệu Màu Sắc (Legend Overlay)** sắc nét ngay góc bản vẽ với đầy đủ các nhóm ngành hàng/trạng thái và số lượng ô gian hàng tương ứng, giúp bản in mặt bằng trực quan và rõ ràng nhất.
+     - Tự động kích hoạt cơ chế `beforeprint` để căn chỉnh và phóng to hình nền bản vẽ vừa khít 100% trang in theo thời gian thực.
    - **In ấn & Xuất file**: Bấm **"Print Document"** (hoặc Save PDF) để in ra máy in hoặc lưu file PDF độ nét cao. Mọi thanh công cụ điều khiển, thanh zoom và menu nổi sẽ tự động ẩn đi để tạo bản in mặt bằng sạch sẽ, chuyên nghiệp.
 
 ---

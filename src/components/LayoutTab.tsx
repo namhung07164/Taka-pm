@@ -669,7 +669,7 @@ export function LayoutTab({
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 relative h-full">
+      <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 relative h-full print:p-0 print:m-0 print:bg-white print:border-none print:shadow-none">
       <div className="flex flex-col gap-2 mb-2 hide-on-actual-print print:hidden">
         {/* Row 1: Header, Filter Bar, and Back to Gantt */}
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -929,7 +929,7 @@ export function LayoutTab({
         </div>
       )}
 
-      <div className="flex-grow flex w-full min-h-[460px] h-[calc(100dvh-175px)] sm:h-[calc(100vh-195px)] bg-slate-50 dark:bg-slate-900/50 rounded-2xl shadow-inner border border-slate-200 dark:border-slate-800 overflow-hidden relative">
+      <div className="flex-grow flex w-full min-h-[460px] h-[calc(100dvh-175px)] sm:h-[calc(100vh-195px)] bg-slate-50 dark:bg-slate-900/50 rounded-2xl shadow-inner border border-slate-200 dark:border-slate-800 overflow-hidden relative print:h-[100vh] print:w-full print:min-h-0 print:border-none print:shadow-none print:rounded-none print:bg-white">
         {isLiveMapMode ? (
           <LiveLayoutViewer 
             storeFilter={activeStore} 

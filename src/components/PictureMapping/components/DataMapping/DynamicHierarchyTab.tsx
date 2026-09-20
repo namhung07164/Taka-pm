@@ -812,7 +812,7 @@ function DynamicHierarchyTab({
                     <Plus size={12} /> Create Group
                   </button>
 
-                  {versions.length > 1 && (
+                  {versions.filter(v => v.id !== activeVersion.id && (v.groups || []).length > 0).length > 0 && (
                     <select
                       className="bg-slate-800 hover:bg-slate-700 text-brand-400 text-xs font-bold uppercase px-3 py-1.5 rounded-lg border border-slate-700 outline-none transition-colors cursor-pointer"
                       value=""
@@ -824,9 +824,11 @@ function DynamicHierarchyTab({
                       }}
                     >
                         <option value="">[ Copy Groups From ]</option>
-                        {versions.filter(v => v.id !== activeVersion.id).map(v => (
+                        {versions
+                          .filter(v => v.id !== activeVersion.id && (v.groups || []).length > 0)
+                          .map(v => (
                             <option key={v.id} value={v.id}>
-                              {v.store ? `[${v.store}] ` : ""}{v.location ? `[${v.location}] ` : ""}{v.name}{v.year ? ` • ${v.year}` : ""}
+                              {v.store ? `[${v.store}] ` : ""}{v.location ? `[${v.location}] ` : ""}{v.name}{v.year ? ` • ${v.year}` : ""} ({v.groups.length} {v.groups.length === 1 ? 'group' : 'groups'})
                             </option>
                         ))}
                     </select>

@@ -205,6 +205,14 @@ select, option {
     display: none !important;
   }
 
+  .print\:flex {
+    display: flex !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+
   /* Simulate X-axis scroll in print for Gantt Tab */
   .print-gantt-table {
     transform: translateX(calc(-1 * var(--print-scroll-x, 0px))) !important;

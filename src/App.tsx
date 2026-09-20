@@ -1655,6 +1655,12 @@ const handlePrintToPDF = async () => {
     await new Promise(resolve => setTimeout(resolve, 150));
     
     try {
+      if (activeTab === 'layout') {
+        window.print();
+        setIsExportingPDF(false);
+        return;
+      }
+
       const pages = document.querySelectorAll('.print-paper');
       if (pages.length === 0) {
         setIsExportingPDF(false);
@@ -2020,13 +2026,13 @@ const handlePrintToPDF = async () => {
         @media print {
           @page {
             size: ${printPaperSize} ${printOrientation};
-            margin: 10mm !important;
+            margin: ${activeTab === 'layout' ? '0 !important' : '10mm !important'};
           }
           .print-content-wrapper {
-            transform: scale(${printScale / 100});
+            transform: ${activeTab === 'layout' ? 'none' : `scale(${printScale / 100})`};
             transform-origin: top left;
-            width: ${100 / (printScale / 100)}% !important;
-            height: ${100 / (printScale / 100)}% !important;
+            width: ${activeTab === 'layout' ? '100% !important' : `${100 / (printScale / 100)}% !important`};
+            height: ${activeTab === 'layout' ? '100% !important' : `${100 / (printScale / 100)}% !important`};
           }
         }
         ${isPrintPreview ? `
@@ -2035,30 +2041,30 @@ const handlePrintToPDF = async () => {
               background-color: #94a3b8 !important;
             }
             .print-preview-container {
-              padding-top: 100px !important;
-              padding-bottom: 60px !important;
+              padding-top: ${activeTab === 'layout' ? '50px !important' : '100px !important'};
+              padding-bottom: ${activeTab === 'layout' ? '20px !important' : '60px !important'};
               background-color: transparent !important;
               overflow: auto !important;
             }
             .print-paper {
-              width: max-content !important;
-              height: max-content !important;
-              min-width: ${printWidth}mm;
-              min-height: ${printHeight}mm;
+              width: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
+              height: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
+              min-width: ${activeTab === 'layout' ? '100%' : `${printWidth}mm`};
+              min-height: ${activeTab === 'layout' ? '85vh' : `${printHeight}mm`};
               background-color: white !important;
               margin: 0 auto;
               box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
-              padding: 10mm !important;
+              padding: ${activeTab === 'layout' ? '0 !important' : '10mm !important'};
               position: relative;
               overflow: hidden;
               display: flex;
               flex-direction: column;
             }
             .print-preview-content-active {
-              transform: scale(${printScale / 100});
+              transform: ${activeTab === 'layout' ? 'none' : `scale(${printScale / 100})`};
               transform-origin: top left;
-              width: max-content !important;
-              height: max-content !important;
+              width: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
+              height: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
               background-color: transparent !important;
               border: none !important;
               box-shadow: none !important;
@@ -2337,13 +2343,19 @@ const handlePrintToPDF = async () => {
               Printed on: {new Date().toLocaleString()}
             </div>
           )}
-          {printFilterHeader && isPrintPreview && (
+          {printFilterHeader && isPrintPreview && activeTab !== 'layout' && (
             <div className="w-full px-4 pt-3 pb-1 bg-white dark:bg-[#1e1e20] shrink-0">
               <PrintFilterHeader context={printFilterContext} />
             </div>
           )}
 
-          <div className={`w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] ${activeTab === 'picture_mapping' ? 'p-1.5 sm:p-2.5 pb-2 sm:pb-2.5' : 'p-4 lg:p-6 pb-20 lg:pb-6'} rounded-xl shadow-sm border border-slate-200 dark:border-[#333336] transition-colors print:border-none print:shadow-none print:rounded-none print-content-wrapper ${isPrintPreview ? 'print-preview-content-active' : ''}`}>
+          <div className={`w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] ${
+            activeTab === 'layout' 
+              ? 'p-0 pb-0 border-none shadow-none rounded-none' 
+              : activeTab === 'picture_mapping' 
+              ? 'p-1.5 sm:p-2.5 pb-2 sm:pb-2.5 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]' 
+              : 'p-4 lg:p-6 pb-20 lg:pb-6 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]'
+          } transition-colors print:p-0 print:m-0 print:border-none print:shadow-none print:rounded-none print-content-wrapper ${isPrintPreview ? 'print-preview-content-active' : ''}`}>
           <div className="print:hidden relative z-[200]">
             <Header
             
