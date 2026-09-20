@@ -1,8 +1,6 @@
 import React, { useMemo, useCallback, useLayoutEffect, useEffect } from 'react';
 import { 
-  Edit2, 
   MessageSquare, 
-  Maximize2, 
   X
 } from 'lucide-react';
 import { cn, parseDateTime } from '../../lib/utils';
@@ -17,6 +15,7 @@ interface LayoutUnitTooltipProps {
     clientY?: number;
   };
   tooltipRef: React.RefObject<HTMLDivElement>;
+  containerRef?: React.RefObject<HTMLDivElement>;
   onClose: () => void;
   onEditProject?: (project: Project, isReadOnly?: boolean, tab?: 'details' | 'chat' | 'delegation') => void;
   canWrite?: boolean;
@@ -26,6 +25,7 @@ interface LayoutUnitTooltipProps {
 export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   hoverInfo,
   tooltipRef,
+  containerRef,
   onClose,
   onEditProject,
   canWrite = false,
@@ -40,7 +40,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     const el = tooltipRef.current;
     const rect = el.getBoundingClientRect();
     const tooltipWidth = rect.width > 0 ? rect.width : 340;
-    const tooltipHeight = rect.height > 0 ? rect.height : 220;
+    const tooltipHeight = rect.height > 0 ? rect.height : 140;
 
     const viewportWidth = window.innerWidth;
     const visualVp = typeof window !== 'undefined' ? window.visualViewport : null;
@@ -48,9 +48,32 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     const isMobile = viewportWidth < 640;
 
     const pad = 12;
-    // Bottom clearance: 84px on mobile to leave room for Menu button & Home indicator, 72px on desktop
-    const bottomMargin = isMobile ? 84 : 72;
-    const topMargin = isMobile ? 64 : 16;
+    // Bottom clearance: 80px on mobile to leave room for Menu button & Home indicator, 64px on desktop
+    const bottomMargin = isMobile ? 80 : 64;
+
+    // Calculate safe top clearance to ensure the tooltip is NEVER covered by the App Header or Layout toolbars
+    let safeTop = isMobile ? 152 : 115;
+
+    // 1. Check if the map container element exists
+    const containerEl = containerRef?.current || (typeof document !== 'undefined' ? (document.getElementById('live-layout-canvas-container') || document.querySelector('.cursor-grab')) : null);
+    if (containerEl) {
+      const cRect = containerEl.getBoundingClientRect();
+      if (cRect.top > 0) {
+        // Place below the container top and clear floating top controls (HCM • L1 & Zoom)
+        safeTop = Math.max(safeTop, cRect.top + (isMobile ? 48 : 42));
+      }
+    }
+
+    // 2. Also inspect the App Header (.sticky or header)
+    if (typeof document !== 'undefined') {
+      const headerEl = document.querySelector('.sticky.top-0') || document.querySelector('header');
+      if (headerEl) {
+        const hRect = headerEl.getBoundingClientRect();
+        if (hRect.bottom > 0) {
+          safeTop = Math.max(safeTop, hRect.bottom + (isMobile ? 64 : 50));
+        }
+      }
+    }
 
     const clientX = hoverInfo.clientX !== undefined ? hoverInfo.clientX : viewportWidth / 2;
     const clientY = hoverInfo.clientY !== undefined ? hoverInfo.clientY : viewportHeight / 2;
@@ -62,12 +85,12 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       
       // Vertical placement:
       // If tapped in lower half of screen (clientY > viewportHeight * 0.52),
-      // place tooltip in UPPER half so tapped unit remains visible and tooltip never gets covered by Menu!
+      // place tooltip in UPPER half below header (safeTop) so tapped unit remains visible and tooltip never gets covered by Menu!
       let top: number;
       if (clientY > viewportHeight * 0.52) {
-        top = topMargin;
+        top = safeTop;
       } else {
-        top = Math.max(topMargin, viewportHeight - tooltipHeight - bottomMargin);
+        top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
       }
 
       el.style.position = 'fixed';
@@ -76,7 +99,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.top = `${top}px`;
       el.style.width = `calc(100vw - ${pad * 2}px)`;
       el.style.maxWidth = '420px';
-      el.style.maxHeight = `calc(${viewportHeight - topMargin - bottomMargin}px)`;
+      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
       el.style.margin = '0 auto';
       el.style.transform = 'none';
     } else {
@@ -91,7 +114,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       if (top + tooltipHeight > viewportHeight - bottomMargin) {
         top = clientY - tooltipHeight - 16;
       }
-      top = Math.max(topMargin, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
+      top = Math.max(safeTop, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
 
       el.style.position = 'fixed';
       el.style.left = `${left}px`;
@@ -99,11 +122,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.top = `${top}px`;
       el.style.width = '350px';
       el.style.maxWidth = `calc(100vw - ${pad * 2}px)`;
-      el.style.maxHeight = `calc(${viewportHeight - topMargin - bottomMargin}px)`;
+      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
       el.style.margin = '0';
       el.style.transform = 'none';
     }
-  }, [hoverInfo.clientX, hoverInfo.clientY, tooltipRef]);
+  }, [hoverInfo.clientX, hoverInfo.clientY, tooltipRef, containerRef]);
 
   useLayoutEffect(() => {
     positionTooltip();
@@ -163,12 +186,13 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const storeDisplay = p?.store || data.store || storeFilter || 'HCM';
   const unitCode = p?.code || hoverInfo.unitName;
   const projectName = p?.name || data.projectName || data.brandName || '';
+  const floorValue = data.floor || (p as any)?.floor;
 
   return (
     <div 
       ref={tooltipRef}
       className={cn(
-        "fixed z-[70] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-3.5 sm:p-4 flex flex-col gap-3 transition-all duration-150",
+        "fixed z-[120] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-all duration-150",
         "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
         "overflow-y-auto custom-scrollbar"
       )}
@@ -179,10 +203,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       onClick={(e) => e.stopPropagation()}
     >
       {/* 1. Header Row */}
-      <div className="flex items-start justify-between gap-2 pr-8">
-        <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-sm sm:text-base leading-snug flex items-start gap-1.5 flex-1 min-w-0">
-          {/* Store - Code - Name */}
-          <span className="break-words leading-tight">
+      <div className="flex items-start justify-between gap-2 pr-7">
+        <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-sm leading-snug flex items-start gap-1.5 flex-1 min-w-0">
+          {/* Store - Code - Name (Clickable to open Project Modal) */}
+          <span 
+            onClick={() => p && onEditProject?.(p, !canWrite, 'details')}
+            className={cn(
+              "break-words leading-tight",
+              p ? "cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors" : ""
+            )}
+            title={p ? "Nhấp để xem chi tiết dự án" : undefined}
+          >
             <span className={storeDisplay.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : storeDisplay.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>
               {storeDisplay}
             </span>
@@ -201,98 +232,69 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-3 right-3 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          className="absolute top-2.5 right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           title="Đóng tooltip"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* 2. Middle Section: Progress Bars & Floating Edit Action Button */}
-      <div className="flex items-center gap-2 px-0.5 mt-0.5">
-        <div className="flex-1 flex flex-col gap-1.5">
-          {/* Plan Progress */}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
-              Plan Prg:
-            </span>
-            <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
-              />
-            </div>
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
-              {planProgressPercent}%
-            </span>
+      {/* 2. Middle Section: Progress Bars (Full Width without pencil button) */}
+      <div className="flex flex-col gap-1.5 px-0.5">
+        {/* Plan Progress */}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
+            Plan Prg:
+          </span>
+          <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+              style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
+            />
           </div>
-
-          {/* Actual Progress */}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
-              Act Prg:
-            </span>
-            <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-              <div 
-                className="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
-                style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
-              />
-            </div>
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
-              {actProgressPercent}%
-            </span>
-          </div>
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
+            {planProgressPercent}%
+          </span>
         </div>
 
-        {/* Floating Edit Icon (Right-Side Square Button matching Task Summary) */}
-        {p && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditProject?.(p, !canWrite, 'details');
-            }}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#27272a] dark:hover:bg-[#323236] border border-slate-200 dark:border-[#3f3f46] text-blue-600 dark:text-blue-400 shadow-sm transition-all active:scale-95 touch-manipulation shrink-0"
-            title="Xem chi tiết & Chỉnh sửa dự án"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
-        )}
+        {/* Actual Progress */}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
+            Act Prg:
+          </span>
+          <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
+              style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
+            />
+          </div>
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
+            {actProgressPercent}%
+          </span>
+        </div>
       </div>
 
-      {/* Vacant / Non-Project Unit Attributes (If size or floor exists) */}
-      {(!p || data.size > 0 || data.floor) && (
-        <div className="grid grid-cols-2 gap-2 text-xs py-1">
+      {/* 3. Unified Information Row: Vị trí / Tầng, Diện tích, Party, Comment Symbol & Dates */}
+      <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
+        {/* Left Side: Vị trí / Tầng, Diện tích, Party Badge & Comment Symbol */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Vị trí / Tầng Badge */}
+          {floorValue && (
+            <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
+              <span className="text-[9px] text-slate-400 font-medium uppercase">Vị trí / Tầng:</span>
+              <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{floorValue}</span>
+            </div>
+          )}
+
+          {/* Area (if available) */}
           {data.size > 0 && (
-            <div className="bg-slate-50 dark:bg-slate-800/60 px-2.5 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800/80">
-              <div className="text-[10px] text-slate-400 font-medium uppercase">Diện tích</div>
-              <div className="font-semibold text-slate-700 dark:text-slate-200">
-                {Number(data.size).toLocaleString('en-US')} m²
-              </div>
+            <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
+              <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
+              <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(data.size).toLocaleString('en-US')} m²</span>
             </div>
           )}
-          {data.floor && (
-            <div className="bg-slate-50 dark:bg-slate-800/60 px-2.5 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800/80">
-              <div className="text-[10px] text-slate-400 font-medium uppercase">Vị trí / Tầng</div>
-              <div className="font-semibold text-slate-700 dark:text-slate-200">
-                {data.floor}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* 3. Bottom Row: Party, Chat, Maximize & Start/Finish Dates */}
-      <div className="flex justify-between items-center px-0.5 border-t border-slate-100 dark:border-slate-800 pt-2.5">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Party Badge (CP, etc.) */}
-          {(p?.party || data.party) && (
-            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 truncate max-w-[70px] shrink-0">
-              {p?.party || data.party}
-            </span>
-          )}
-
-          {/* Project Chat / Comment Button */}
+          {/* Project Chat / Comment Symbol Button */}
           {p && (
             <button
               type="button"
@@ -312,54 +314,41 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               {commentsCount > 0 && <span>{commentsCount}</span>}
             </button>
           )}
-
-          {/* Maximize / Open Modal */}
-          {p && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditProject?.(p, !canWrite, 'details');
-              }}
-              className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] p-1 rounded hover:bg-slate-100 dark:hover:bg-[#28282a] transition-colors shrink-0"
-              title="Xem đầy đủ dự án"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-          )}
         </div>
 
-        {/* Start Date (Blue) & Finish Date (Pink) */}
-        <div className="flex gap-2.5 sm:gap-3 text-[11px] font-bold leading-tight shrink-0">
-          {computedTakStart && (
-            <div className="text-blue-700 dark:text-[#8ab4f8] text-right">
-              {(() => {
-                const d = parseDateTime(computedTakStart);
-                if (!d) return null;
-                return (
-                  <>
-                    <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
-                    <div>{d.getFullYear()}</div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-          {computedTakCompl && (
-            <div className="text-pink-700 dark:text-pink-400 text-right">
-              {(() => {
-                const d = parseDateTime(computedTakCompl);
-                if (!d) return null;
-                return (
-                  <>
-                    <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
-                    <div>{d.getFullYear()}</div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
+        {/* Right Side: Start Date (Blue) & Finish Date (Pink) */}
+        {(computedTakStart || computedTakCompl) && (
+          <div className="flex gap-2 sm:gap-2.5 text-[11px] font-bold leading-tight shrink-0 ml-auto items-center">
+            {computedTakStart && (
+              <div className="text-blue-700 dark:text-[#8ab4f8] text-right">
+                {(() => {
+                  const d = parseDateTime(computedTakStart);
+                  if (!d) return null;
+                  return (
+                    <>
+                      <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
+                      <div>{d.getFullYear()}</div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+            {computedTakCompl && (
+              <div className="text-pink-700 dark:text-pink-400 text-right">
+                {(() => {
+                  const d = parseDateTime(computedTakCompl);
+                  if (!d) return null;
+                  return (
+                    <>
+                      <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
+                      <div>{d.getFullYear()}</div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 4. Quick Description / Detail note if present */}

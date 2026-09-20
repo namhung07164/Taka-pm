@@ -471,21 +471,19 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 4. **Xem nhanh thông tin & Bảng tóm tắt công việc (Interactive Task Summary Tooltip & Auto Anti-Obstruction)**: 
    - Rê chuột (hoặc chạm trên thiết bị di động) vào bất kỳ gian hàng nào trên bản đồ để xem ngay bảng Tooltip thông tin chi tiết đồng bộ hoàn toàn theo phong cách Bảng Task Summary (`IMG_9172`):
      - **Cơ chế Tự Động Định Vị Chống Che Khuất (Auto Anti-Obstruction & Safe Collision Engine)**:
-       * **Tự động tránh che khuất trên Di động (Mobile Smart Flip)**: Khi chạm vào gian hàng ở nửa dưới màn hình, Tooltip tự động lật lên nửa trên (dưới thanh công cụ chính), giúp gian hàng đang chọn luôn lộ rõ và Tooltip không bao giờ bị nút Menu hay mép dưới màn hình che khuất. Ngược lại, khi chạm vào gian hàng ở nửa trên, Tooltip tự động đặt ở nửa dưới với khoảng cách an toàn.
+       * **Tự động tránh che khuất trên Di động & Chống đè bởi Header (Mobile Smart Flip & Safe Header Clearance)**: Khi chạm vào gian hàng ở nửa dưới màn hình, Tooltip tự động tính toán khoảng an toàn (`safeTop`) căn theo đáy của thanh Header và các thanh công cụ để đặt Tooltip ở nửa trên trong vùng mặt bằng thông thoáng, tuyệt đối không bị Header ứng dụng đè hay che khuất. Ngược lại, khi chạm vào gian hàng ở nửa trên, Tooltip tự động đặt ở nửa dưới với khoảng cách an toàn.
        * **Tự động ẩn nút Menu tạm thời (Mobile Focus Mode)**: Khi Tooltip mở trên điện thoại, các nút Menu và Chú thích màu dưới đáy màn hình tự động làm mờ và tạm ẩn (`opacity-0 pointer-events-none`) để không che khuất hay tranh chấp thao tác bấm với Tooltip.
-       * **Khóa ghim cố định (Pinning)**: Nhấp hoặc chạm vào gian hàng sẽ ghim cố định Tooltip, cho phép người dùng thoải mái cuộn, thao tác công tắc ủy quyền, sắp xếp task con hay nhấn nút bình luận mà không bị biến mất. Nhấp vào nền trống hoặc nút X để đóng.
-       * **Tự động đo đạc theo thời gian thực (ResizeObserver & VisualViewport)**: Tooltip tự động tính toán lại tọa độ ngay khi người dùng bấm mở rộng danh sách công việc con, đảm bảo thẻ luôn nằm trọn trong vùng nhìn thấy được của màn hình (hỗ trợ hoàn hảo Safari iOS với dynamic URL bar).
-     - **Thanh tiêu đề (Header)**: Hiển thị Tên Gian hàng (Unit), Trạng thái tiến độ (Badge màu sắc nét: `Completed` xanh lá, `On Process` xanh dương, `Delay` đỏ), Nút mở Bình luận/Chat (`MessageSquare`), Nút mở Project Modal toàn màn hình (`Maximize2`), và Nút đóng (`X`).
-     - **Tên Dự án / Brand**: Tên dự án in đậm rõ nét kèm Mã dự án (Code).
-     - **Thông số Diện tích & Vị trí (Specs Grid)**: Thẻ Diện tích (`Size m²`) và Vị trí (`Location/Floor`).
-     - **Thanh Tiến độ Đôi (Dual Progress Bars)**:
-       * **Plan Progress**: Thanh phần trăm tiến độ theo Kế hoạch (màu xanh dương).
-       * **Act Progress**: Thanh phần trăm tiến độ Thực tế (màu xanh ngọc).
-     - **Mốc Thời gian Thi công (Timeline Milestones)**: Start, Handover, Opening kèm biểu tượng thư mục màu trực quan.
-     - **Nút Bình Luận / Trao Đổi Dự Án (Comment Button)**:
-       * Biểu tượng hội thoại (`MessageSquare`) được tích hợp ngay góc trên bên phải thanh tiêu đề Tooltip và nút hành động nổi bật `[ 💬 Bình luận / Trao đổi dự án ]` ở chân thẻ Tooltip.
-       * Khi nhấp vào nút này, hệ thống sẽ mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án đó.
-       * **Cơ chế Tối ưu Firestore Read Tuyệt đối (Tri-Gate Lazy Loading for Comments)**:
+        * **Khóa ghim cố định (Pinning)**: Nhấp hoặc chạm vào gian hàng sẽ ghim cố định Tooltip, cho phép người dùng thoải mái xem thông tin tiến độ, mở trao đổi/bình luận mà không bị biến mất. Nhấp vào nền trống hoặc nút X để đóng.
+        * **Tự động đo đạc theo thời gian thực (ResizeObserver & VisualViewport)**: Tooltip tự động tính toán lại kích thước linh hoạt, đảm bảo thẻ luôn nằm trọn trong vùng nhìn thấy được của màn hình (hỗ trợ hoàn hảo Safari iOS với dynamic URL bar).
+      - **Thanh tiêu đề (Header)**: Hiển thị Store - Mã Gian hàng (Unit) - Tên Dự án/Brand, Huy hiệu Trạng thái tiến độ (`Completed` xanh lá, `On Process` xanh dương, `Delay` đỏ) và Nút đóng (`X`). Nhấp vào tên dự án để mở xem chi tiết dự án.
+      - **Thanh Tiến độ Đôi (Dual Progress Bars)**:
+        * **Plan Progress**: Thanh phần trăm tiến độ theo Kế hoạch (màu xanh dương).
+        * **Act Progress**: Thanh phần trăm tiến độ Thực tế (màu xanh ngọc).
+      - **Hàng Thông tin Hợp nhất (Unified Info Row)**:
+        * **Vị trí / Tầng & Diện tích**: Thẻ nhỏ gọn `Vị trí / Tầng: L1` và `DT: ... m²` (thông tin bên liên quan Party/CP/Con1 đã được lược bỏ theo yêu cầu để giao diện tối giản, thoáng đãng).
+        * **Biểu tượng Trao đổi / Bình luận (`MessageSquare`)**: Nút bình luận nhỏ gọn kèm số lượng tin nhắn ngay trên cùng hàng. Nhấp vào để mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án.
+        * **Mốc Ngày Bắt đầu & Bàn giao (Start & Handover Dates)**: Ngày bắt đầu (màu xanh dương) và ngày bàn giao (màu hồng) nằm gọn gàng bên phải của cùng hàng, giúp tối ưu diện tích và không che khuất mặt bằng.
+      - **Cơ chế Tối ưu Firestore Read Tuyệt đối (Tri-Gate Lazy Loading for Comments)**:
          - Hệ thống nhận diện trạng thái mở modal ở chế độ chỉ Chat (`isChatOnly` = `isProjectModalOpen && modalInitialTab === 'chat'`).
          - Khi mở ô Comment từ Tooltip của Layout Tab, hệ thống **CHỈ** đọc tin nhắn trao đổi của riêng dự án đó (subcollection chats hoặc document chats) mà **KHÔNG** tải hay lắng nghe (listen) toàn bộ danh sách Task, Cost, hay Delegation của toàn bộ hệ thống.
          - Tiết kiệm 100% chi phí Firestore read không cần thiết, bảo vệ giới hạn đọc và duy trì hiệu năng 60fps mượt mà cho bản đồ.

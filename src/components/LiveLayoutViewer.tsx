@@ -1926,6 +1926,7 @@ function LiveCanvas({
         <LayoutUnitTooltip
           hoverInfo={hoverInfo}
           tooltipRef={tooltipRef}
+          containerRef={containerRef}
           onClose={() => {
             isPinnedRef.current = false;
             setHoverInfo(null);
@@ -1949,6 +1950,7 @@ function LiveCanvas({
 
       {/* Canvas Viewport */}
       <div 
+        id="live-layout-canvas-container"
         ref={containerRef} 
         className="flex-grow w-full h-full relative cursor-grab active:cursor-grabbing"
         style={{ touchAction: 'none' }}
