@@ -103,21 +103,23 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
   const [showLabelSettings, setShowLabelSettings] = useState(false);
 
-  // Optimize units rendering by pre-calculating styles and filtering
+  // Optimize units rendering by pre-calculating styles, bbox, and filtering
   const styledUnits = React.useMemo(() => {
     if (!activeVersion) return [];
 
     // Pre-map unit IDs to group styles for O(1) lookup
     const unitToGroupStyle = new Map<string, { color: string; opacity: number }>();
-    activeVersion.groups.forEach(group => {
-      const assignedIds = activeVersion.groupMappings[group.id] || [];
-      assignedIds.forEach(id => {
-        unitToGroupStyle.set(id, {
-          color: group.color,
-          opacity: group.opacity ?? 0.6
+    if (activeVersion.groups && activeVersion.groupMappings) {
+      activeVersion.groups.forEach(group => {
+        const assignedIds = activeVersion.groupMappings[group.id] || [];
+        assignedIds.forEach(id => {
+          unitToGroupStyle.set(id, {
+            color: group.color,
+            opacity: group.opacity ?? 0.6
+          });
         });
       });
-    });
+    }
 
     const summaryMap = new Map();
     summaryData.forEach(s => summaryMap.set(s.unit, s));
@@ -134,12 +136,32 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels);
+
+        // Pre-calculate Bounding Box (O(1)) to eliminate array filtering in JSX
+        let bbox = { x: unit.x, y: unit.y, width: unit.width || 100, height: unit.height || 30 };
+        if (unit.type === 'circle') {
+          const r = unit.radius || 0;
+          bbox = { x: unit.x - r, y: unit.y - r, width: r * 2, height: r * 2 };
+        } else if (unit.type === 'polygon' && unit.points && unit.points.length >= 2) {
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          for (let i = 0; i < unit.points.length; i += 2) {
+            const px = unit.points[i];
+            const py = unit.points[i + 1];
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
+          bbox = { x: minX, y: minY, width: Math.max(10, maxX - minX), height: Math.max(10, maxY - minY) };
+        }
+
         return {
           ...unit,
           displayColor: style.color,
           displayOpacity: style.opacity,
           sizeLabelLines,
-          sizeLabel
+          sizeLabel,
+          bbox
         };
       });
   }, [units, activeVersion, summaryData, selectedLabels]);
@@ -318,7 +340,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   const handleExportDrive = () => handleExportClick('drive');
   const handleExportR2 = () => handleExportClick('r2_jpeg');
 
-  const unitNamesStr = React.useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name }))), [units]);
+  const unitMap = React.useMemo(() => new Map(units.map(u => [u.id, u])), [units]);
 
   const appProjects = useAppStore(state => state.projects);
   const appTasks = useAppStore(state => state.tasks);
@@ -326,8 +348,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   const aggregatedData = React.useMemo(() => {
     const dataMap: Record<string, any> = {};
 
-    const parsedUnits = JSON.parse(unitNamesStr);
-    parsedUnits.forEach((u: any) => {
+    units.forEach((u) => {
       const uName = (u.name || '').toLowerCase();
       if (!uName) return;
       dataMap[uName] = {
@@ -429,7 +450,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     });
 
     return dataMap;
-  }, [unitNamesStr, summaryData, appProjects, appTasks, effectiveYear]);
+  }, [units, summaryData, appProjects, appTasks, effectiveYear]);
 
   const applyAllDynamicRules = () => {
     try {
@@ -728,8 +749,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                 scaleY={activeVersion?.imageScale || 1}
                 rotation={activeVersion?.backgroundRotation || 0}
               />}
-              {styledUnits.map((unit) => {
-                const { displayColor, displayOpacity } = unit as any;
+              {styledUnits.map((unit: any) => {
+                const { displayColor, displayOpacity, bbox } = unit;
                 
                 return (
                   <React.Fragment key={unit.id}>
@@ -743,9 +764,9 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         opacity={displayOpacity}
                         rotation={unit.rotation || 0}
                         stroke="#ffffff"
-                        strokeWidth={2 / scale}
-                        shadowBlur={4}
-                        shadowColor="rgba(0,0,0,0.5)"
+                        strokeWidth={1.5}
+                        strokeScaleEnabled={false}
+                        perfectDrawEnabled={false}
                         listening={false}
                       />
                     )}
@@ -758,9 +779,9 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         opacity={displayOpacity}
                         rotation={unit.rotation || 0}
                         stroke="#ffffff"
-                        strokeWidth={2 / scale}
-                        shadowBlur={4}
-                        shadowColor="rgba(0,0,0,0.5)"
+                        strokeWidth={1.5}
+                        strokeScaleEnabled={false}
+                        perfectDrawEnabled={false}
                         listening={false}
                       />
                     )}
@@ -773,47 +794,42 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         opacity={displayOpacity}
                         rotation={unit.rotation || 0}
                         stroke="#ffffff"
-                        strokeWidth={2 / scale}
-                        shadowBlur={4}
-                        shadowColor="rgba(0,0,0,0.5)"
+                        strokeWidth={1.5}
+                        strokeScaleEnabled={false}
+                        perfectDrawEnabled={false}
                         closed
                         listening={false}
                       />
                     )}
                     
                     {/* Unit Label - only show if scale is large enough to be readable */}
-                    {scale > 0.3 && (
+                    {scale > 0.3 && bbox && (
                       <Group
-                        x={unit.type === 'rect' ? unit.x : (unit.type === 'circle' ? unit.x - (unit.radius || 0) : (unit.points ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 0)) : unit.x))}
-                        y={unit.type === 'rect' ? unit.y : (unit.type === 'circle' ? unit.y - (unit.radius || 0) : (unit.points ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 1)) : unit.y))}
-                        width={unit.type === 'rect' ? unit.width : (unit.type === 'circle' ? (unit.radius || 0) * 2 : (unit.points ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 0)) - Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 0)) : 100))}
-                        height={unit.type === 'rect' ? unit.height : (unit.type === 'circle' ? (unit.radius || 0) * 2 : (unit.points ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 1)) - Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 1)) : 30))}
+                        x={bbox.x}
+                        y={bbox.y}
+                        width={bbox.width}
+                        height={bbox.height}
                         rotation={unit.rotation || 0}
                       >
                         {(() => {
                           const lines = unit.sizeLabelLines || [];
-                          const fontSize = 10 / scale;
+                          const fontSize = Math.max(7, Math.min(18, 10 / scale));
                           const lineHeight = fontSize * 1.2;
                           const totalHeight = lines.length * lineHeight;
-                          const boxHeight = unit.type === 'rect' ? unit.height : (unit.type === 'circle' ? (unit.radius || 0) * 2 : (unit.points ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 1)) - Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 1)) : 30));
-                          const boxWidth = unit.type === 'rect' ? unit.width : (unit.type === 'circle' ? (unit.radius || 0) * 2 : (unit.points ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 0)) - Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 0)) : 100));
-                          const startY = (boxHeight - totalHeight) / 2;
+                          const startY = (bbox.height - totalHeight) / 2;
                           return lines.map((line: any, i: number) => (
                             <Text
                               key={i}
                               x={0}
                               y={startY + i * lineHeight}
-                              width={boxWidth}
+                              width={bbox.width}
                               text={line.text}
                               fill={reviewLabelColors?.[line.key] || '#ffffff'}
                               align="center"
                               fontSize={fontSize}
                               fontStyle="bold"
                               listening={false}
-                              shadowColor="black"
-                              shadowBlur={2}
-                              shadowOpacity={1}
-                              shadowOffset={{ x: 1, y: 1 }}
+                              perfectDrawEnabled={false}
                             />
                           ));
                         })()}
@@ -884,7 +900,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                        </div>
                        <div className="flex flex-wrap gap-1">
                          {assignedUnitIds.map(uid => {
-                           const u = units.find(x => x.id === uid);
+                           const u = unitMap.get(uid);
                            return u ? (
                              <span key={u.id} className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 border border-slate-700/50 rounded">
                                {u.name}

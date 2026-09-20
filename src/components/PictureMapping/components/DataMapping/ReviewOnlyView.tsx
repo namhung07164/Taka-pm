@@ -11,15 +11,17 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
     if (!version) return [];
 
     const unitToGroupStyle = new Map<string, { color: string; opacity: number }>();
-    version.groups.forEach((group: any) => {
-      const assignedIds = version.groupMappings[group.id] || [];
-      assignedIds.forEach((id: string) => {
-        unitToGroupStyle.set(id, {
-          color: group.color,
-          opacity: group.opacity ?? 0.6
+    if (version.groups && version.groupMappings) {
+      version.groups.forEach((group: any) => {
+        const assignedIds = version.groupMappings[group.id] || [];
+        assignedIds.forEach((id: string) => {
+          unitToGroupStyle.set(id, {
+            color: group.color,
+            opacity: group.opacity ?? 0.6
+          });
         });
       });
-    });
+    }
 
     const summaryMap = new Map();
     summaryData.forEach((s: any) => summaryMap.set(s.unit, s));
@@ -31,12 +33,31 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels || ['Unit ID', 'Size SQM']);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels || ['Unit ID', 'Size SQM']);
+
+        let bbox = { x: unit.x, y: unit.y, width: unit.width || 100, height: unit.height || 30 };
+        if (unit.type === 'circle') {
+          const r = unit.radius || 0;
+          bbox = { x: unit.x - r, y: unit.y - r, width: r * 2, height: r * 2 };
+        } else if (unit.type === 'polygon' && unit.points && unit.points.length >= 2) {
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          for (let i = 0; i < unit.points.length; i += 2) {
+            const px = unit.points[i];
+            const py = unit.points[i + 1];
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
+          bbox = { x: minX, y: minY, width: Math.max(10, maxX - minX), height: Math.max(10, maxY - minY) };
+        }
+
         return {
           ...unit,
           displayColor: style.color,
           displayOpacity: style.opacity,
           sizeLabelLines,
-          sizeLabel
+          sizeLabel,
+          bbox
         };
       });
   }, [mapUnits, version, summaryData, selectedLabels]);
@@ -92,7 +113,7 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
             rotation={version?.backgroundRotation || 0}
           />}
           {styledUnits.map((unit: any) => {
-            const {  displayColor, displayOpacity } = unit;
+            const { displayColor, displayOpacity, bbox } = unit;
 
             const shapeProps = {
                 key: unit.id,
@@ -102,168 +123,52 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
                 opacity: displayOpacity,
                 rotation: unit.rotation || 0,
                 stroke: '#ffffff',
-                strokeWidth: 2 / scale,
-                shadowBlur: 4,
-                shadowColor: 'rgba(0,0,0,0.5)',
+                strokeWidth: 1.5,
+                strokeScaleEnabled: false,
+                perfectDrawEnabled: false,
                 listening: false,
             };
 
-            if (unit.type === 'rect') {
-                return (
-                    <React.Fragment key={unit.id}>
-                        <Rect {...shapeProps} width={unit.width} height={unit.height} cornerRadius={4} />
-                        {unit.name && scale > 0.4 && (
-                            <Group x={unit.x} y={unit.y} width={unit.width} height={unit.height} rotation={unit.rotation || 0}>
-                                {(() => {
-                                  const lines = unit.sizeLabelLines || [];
-                                  const fontSize = 14 / scale;
-                                  const lineHeight = fontSize * 1.2;
-                                  const estimatedCharWidth = fontSize * 0.55;
-                                  const effectiveWidth = unit.width;
-                                  
-                                  const blocks = lines.map((line: any) => {
-                                      const charsPerLine = Math.max(1, effectiveWidth / estimatedCharWidth);
-                                      const words = String(line.text).split(' ');
-                                      let linesCount = 1;
-                                      let currentLineLen = 0;
-                                      for (let i = 0; i < words.length; i++) {
-                                          const wordLen = words[i].length;
-                                          if (wordLen > charsPerLine) {
-                                              // Word itself is longer than a line, it will wrap
-                                              linesCount += Math.floor(wordLen / charsPerLine);
-                                              currentLineLen = wordLen % charsPerLine;
-                                          } else if (currentLineLen > 0 && currentLineLen + 1 + wordLen <= charsPerLine) {
-                                              currentLineLen += 1 + wordLen;
-                                          } else {
-                                              if (i > 0) linesCount++;
-                                              currentLineLen = wordLen;
-                                          }
-                                      }
-                                      const explicitNewlines = (String(line.text).match(/\n/g) || []).length;
-                                      linesCount += explicitNewlines;
-                                      return { ...line, blockHeight: linesCount * lineHeight };
-                                  });
-                                  
-                                  const totalHeight = blocks.reduce((sum: number, b: any) => sum + b.blockHeight, 0);
-                                  let currentY = (unit.height - totalHeight) / 2;
-                                  
-                                  return blocks.map((block: any, i: number) => {
-                                      const y = currentY;
-                                      currentY += block.blockHeight;
-                                      return (
-                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
-                                      );
-                                  });
-                                })()}
-                            </Group>
-                        )}
-                    </React.Fragment>
-                );
-            } else if (unit.type === 'circle') {
-                 return (
-                    <React.Fragment key={unit.id}>
-                        <Circle {...shapeProps} radius={unit.radius} />
-                        {unit.name && scale > 0.4 && (
-                            <Group x={unit.x - (unit.radius||0)} y={unit.y - (unit.radius||0)} width={(unit.radius||0)*2} height={(unit.radius||0)*2}>
-                                {(() => {
-                                  const lines = unit.sizeLabelLines || [];
-                                  const fontSize = 14 / scale;
-                                  const lineHeight = fontSize * 1.2;
-                                  const estimatedCharWidth = fontSize * 0.55;
-                                  const effectiveWidth = (unit.radius||0)*2;
-                                  
-                                  const blocks = lines.map((line: any) => {
-                                      const charsPerLine = Math.max(1, effectiveWidth / estimatedCharWidth);
-                                      const words = String(line.text).split(' ');
-                                      let linesCount = 1;
-                                      let currentLineLen = 0;
-                                      for (let i = 0; i < words.length; i++) {
-                                          const wordLen = words[i].length;
-                                          if (wordLen > charsPerLine) {
-                                              // Word itself is longer than a line, it will wrap
-                                              linesCount += Math.floor(wordLen / charsPerLine);
-                                              currentLineLen = wordLen % charsPerLine;
-                                          } else if (currentLineLen > 0 && currentLineLen + 1 + wordLen <= charsPerLine) {
-                                              currentLineLen += 1 + wordLen;
-                                          } else {
-                                              if (i > 0) linesCount++;
-                                              currentLineLen = wordLen;
-                                          }
-                                      }
-                                      const explicitNewlines = (String(line.text).match(/\n/g) || []).length;
-                                      linesCount += explicitNewlines;
-                                      return { ...line, blockHeight: linesCount * lineHeight };
-                                  });
-                                  
-                                  const totalHeight = blocks.reduce((sum: number, b: any) => sum + b.blockHeight, 0);
-                                  let currentY = (effectiveWidth - totalHeight) / 2;
-                                  
-                                  return blocks.map((block: any, i: number) => {
-                                      const y = currentY;
-                                      currentY += block.blockHeight;
-                                      return (
-                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
-                                      );
-                                  });
-                                })()}
-                            </Group>
-                        )}
-                    </React.Fragment>
-                );
-            } else if (unit.type === 'polygon' && unit.points) {
-                return (
-                    <React.Fragment key={unit.id}>
-                        <Line {...shapeProps} points={unit.points} closed={true} />
-                        {unit.name && scale > 0.4 && (() => {
-                                const bx = unit.points ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 0)) : unit.x;
-                                const by = unit.points ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 1)) : unit.y;
-                                const bw = unit.points ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 0)) - bx : 100;
-                                const bh = unit.points ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 1)) - by : 30;
-                                return (
-                                  <Group x={bx} y={by} width={bw} height={bh}>
-                                    {(() => {
-                                      const lines = unit.sizeLabelLines || [];
-                                      const fontSize = 14 / scale;
-                                      const lineHeight = fontSize * 1.2;
-                                      const estimatedCharWidth = fontSize * 0.55;
-                                      const effectiveWidth = bw;
-                                      
-                                      const blocks = lines.map((line: any) => {
-                                          const charsPerLine = Math.max(1, effectiveWidth / estimatedCharWidth);
-                                          const words = String(line.text).split(' ');
-                                          let linesCount = 1;
-                                          let currentLineLen = words[0].length;
-                                          for (let i = 1; i < words.length; i++) {
-                                              if (currentLineLen + 1 + words[i].length <= charsPerLine) {
-                                                  currentLineLen += 1 + words[i].length;
-                                              } else {
-                                                  linesCount++;
-                                                  currentLineLen = words[i].length;
-                                              }
-                                          }
-                                          const explicitNewlines = (String(line.text).match(/\n/g) || []).length;
-                                          linesCount += explicitNewlines;
-                                          return { ...line, blockHeight: linesCount * lineHeight };
-                                      });
-                                      
-                                      const totalHeight = blocks.reduce((sum: number, b: any) => sum + b.blockHeight, 0);
-                                      let currentY = (bh - totalHeight) / 2;
-                                      
-                                      return blocks.map((block: any, i: number) => {
-                                          const y = currentY;
-                                          currentY += block.blockHeight;
-                                          return (
-                                            <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
-                                          );
-                                      });
-                                    })()}
-                                  </Group>
-                                );
-                            })()}
-                    </React.Fragment>
-                );
-            }
-            return null;
+            return (
+              <React.Fragment key={unit.id}>
+                {unit.type === 'rect' && (
+                  <Rect {...shapeProps} width={unit.width} height={unit.height} cornerRadius={4} />
+                )}
+                {unit.type === 'circle' && (
+                  <Circle {...shapeProps} radius={unit.radius} />
+                )}
+                {unit.type === 'polygon' && unit.points && (
+                  <Line {...shapeProps} points={unit.points} closed={true} />
+                )}
+
+                {unit.name && scale > 0.3 && bbox && (
+                  <Group x={bbox.x} y={bbox.y} width={bbox.width} height={bbox.height} rotation={unit.rotation || 0}>
+                    {(() => {
+                      const lines = unit.sizeLabelLines || [];
+                      const fontSize = Math.max(7, Math.min(18, 10 / scale));
+                      const lineHeight = fontSize * 1.2;
+                      const totalHeight = lines.length * lineHeight;
+                      const startY = (bbox.height - totalHeight) / 2;
+                      return lines.map((line: any, i: number) => (
+                        <Text
+                          key={i}
+                          x={0}
+                          y={startY + i * lineHeight}
+                          width={bbox.width}
+                          text={line.text}
+                          fill={reviewLabelColors?.[line.key] || '#ffffff'}
+                          align="center"
+                          fontSize={fontSize}
+                          fontStyle="bold"
+                          listening={false}
+                          perfectDrawEnabled={false}
+                        />
+                      ));
+                    })()}
+                  </Group>
+                )}
+              </React.Fragment>
+            );
           })}
         </Layer>
       </Stage>
