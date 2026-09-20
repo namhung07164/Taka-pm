@@ -480,7 +480,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
         * **Plan Progress**: Thanh phần trăm tiến độ theo Kế hoạch (màu xanh dương).
         * **Act Progress**: Thanh phần trăm tiến độ Thực tế (màu xanh ngọc).
       - **Hàng Thông tin Hợp nhất (Unified Info Row)**:
-        * **Floor, Diện tích & MD Status**: Thẻ nhỏ gọn `Floor: L1`, `DT: ... m²` và nhãn `MD Status: ...` (thông tin bên liên quan Party/CP/Con1 đã được lược bỏ hoàn toàn theo yêu cầu để giao diện tối giản, thanh lịch).
+        * **Floor & Diện tích**: Thẻ nhỏ gọn `Floor: L1`, `DT: ... m²` (MD Status đã được gom gọn tinh tế lên hàng Header trên cùng, loại bỏ thẻ trùng lặp giúp giao diện thoáng đãng).
         * **Biểu tượng Trao đổi / Bình luận (`MessageSquare`)**: Nút bình luận nhỏ gọn kèm số lượng tin nhắn ngay trên cùng hàng. Nhấp vào để mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án.
         * **Mốc Ngày Bắt đầu & Bàn giao (Start & Handover Dates)**: Ngày bắt đầu (màu xanh dương) và ngày bàn giao (màu hồng) nằm gọn gàng bên phải của cùng hàng, giúp tối ưu diện tích và không che khuất mặt bằng.
       - **Khối Chi tiết Công việc & Ghi chú (Details Section - Chuẩn Tab General)**:

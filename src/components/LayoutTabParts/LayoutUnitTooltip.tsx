@@ -330,9 +330,9 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       </div>
 
-      {/* 3. Unified Information Row: Floor, Diện tích, MD Status, Comment Symbol & Dates */}
+      {/* 3. Unified Information Row: Floor, Diện tích, Comment Symbol & Dates */}
       <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
-        {/* Left Side: Floor, Diện tích, MD Status & Comment Symbol */}
+        {/* Left Side: Floor, Diện tích & Comment Symbol */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {/* Floor Badge */}
           {floorValue && (
@@ -347,14 +347,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
               <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
               <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(data.size).toLocaleString('en-US')} m²</span>
-            </div>
-          )}
-
-          {/* MD Status Badge in Unified Info Row */}
-          {mdStatus && (
-            <div className="bg-purple-50/80 dark:bg-purple-950/40 px-2 py-0.5 rounded-md border border-purple-200/80 dark:border-purple-800/60 flex items-center gap-1 shrink-0">
-              <span className="text-[9px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider">MD Status:</span>
-              <span className="font-bold text-xs text-purple-700 dark:text-purple-300 capitalize">{mdStatus}</span>
             </div>
           )}
 
