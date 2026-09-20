@@ -84,9 +84,8 @@ function DynamicHierarchyTab({
     });
   }, [versions, store, location, effectiveYear]);
 
-  // Ensure strict year tagging and auto-initialize independent version for current (store, location, effectiveYear)
+  // Ensure strict year tagging for legacy versions without auto-creating deleted versions
   useEffect(() => {
-    // 1. Tag legacy/untagged versions with effectiveYear to avoid unassigned versions
     let hasUntagged = false;
     const normalizedVersions = versions.map(v => {
       if (!v.year || !String(v.year).trim()) {
@@ -96,86 +95,10 @@ function DynamicHierarchyTab({
       return v;
     });
 
-    // 2. Check if current (store, location, effectiveYear) already has at least one version
-    const hasCurrentPartitionVersion = normalizedVersions.some(v => {
-      const matchStore = !v.store || v.store === store;
-      const matchLoc = !v.location || v.location === location;
-      const matchYear = String(v.year || '').trim() === String(effectiveYear).trim();
-      return matchStore && matchLoc && matchYear;
-    });
-
-    if (!hasCurrentPartitionVersion) {
-      // Find template version (e.g. from previous year or same location) to clone initial background and rules structure
-      const templateVersion = normalizedVersions.find(v => (v.location === location || !v.location) && v.groups && v.groups.length > 0)
-        || normalizedVersions.find(v => v.groups && v.groups.length > 0)
-        || null;
-      
-      const existingBg = normalizedVersions.find(v => (v.location === location || !v.location) && v.backgroundUrl)?.backgroundUrl || null;
-
-      // Deep clone groups with FRESH UUIDs and updated year rules so each year has its own isolated groups
-      const baseGroups: Group[] = templateVersion?.groups?.length
-        ? templateVersion.groups.map(g => ({
-            ...g,
-            id: uuidv4(),
-            rules: (g.rules || []).map(r => ({
-              ...r,
-              value: r.field === 'App: Year' ? String(effectiveYear) : r.value,
-            })),
-          }))
-        : [
-            {
-              id: uuidv4(),
-              name: 'Upcoming',
-              color: '#3b82f6',
-              rules: [
-                { field: 'Floor', operator: '=', value: location },
-                { field: 'App: Status', operator: '=', value: 'Upcoming' },
-                { field: 'App: Year', operator: '=', value: String(effectiveYear) },
-              ],
-            },
-            {
-              id: uuidv4(),
-              name: 'In Progress',
-              color: '#f97316',
-              rules: [
-                { field: 'Floor', operator: '=', value: location },
-                { field: 'App: Status', operator: '=', value: 'On process' },
-                { field: 'App: Year', operator: '=', value: String(effectiveYear) },
-              ],
-            },
-            {
-              id: uuidv4(),
-              name: 'Completed',
-              color: '#10b981',
-              rules: [
-                { field: 'Floor', operator: '=', value: location },
-                { field: 'App: Status', operator: '=', value: 'Completed' },
-                { field: 'App: Year', operator: '=', value: String(effectiveYear) },
-              ],
-            },
-          ];
-
-      const newDedicatedVersion: MapVersion = {
-        id: uuidv4(),
-        name: `PM-${location}-${store}`,
-        backgroundUrl: existingBg,
-        backgroundScale: 1,
-        backgroundPos: { x: 0, y: 0 },
-        groups: baseGroups,
-        groupMappings: {},
-        store,
-        location,
-        isDynamicActive: true,
-        year: String(effectiveYear),
-      };
-
-      const nextVersions = [...normalizedVersions, newDedicatedVersion];
-      setVersions(nextVersions);
-      setActiveVersionId(newDedicatedVersion.id);
-    } else if (hasUntagged) {
+    if (hasUntagged) {
       setVersions(normalizedVersions);
     }
-  }, [store, location, effectiveYear, versions, setVersions, setActiveVersionId]);
+  }, [effectiveYear, versions, setVersions]);
 
   const viewVersionId = (activeVersionId && filteredVersions.some(v => v.id === activeVersionId))
     ? activeVersionId
@@ -493,11 +416,20 @@ function DynamicHierarchyTab({
 
   const deleteVersion = () => {
     if (!activeVersion) return;
-    if (!confirm(`Bạn có chắc muốn xoá version "${activeVersion.name}"?`))
+    if (!confirm(`Bạn có chắc muốn xoá version "${activeVersion.name}" (${activeVersion.store || store} - ${activeVersion.location || location} - ${activeVersion.year || effectiveYear})?`))
       return;
     const newVersions = versions.filter((v) => v.id !== activeVersion.id);
     setVersions(newVersions);
-    setActiveVersionId(newVersions.length > 0 ? newVersions[0].id : null);
+
+    // Find remaining version in the same partition (store, location, effectiveYear)
+    const remainingInPartition = newVersions.filter(v => {
+      const matchStore = !v.store || v.store === store;
+      const matchLoc = !v.location || v.location === location;
+      const matchYear = String(v.year || '').trim() === String(effectiveYear).trim();
+      return matchStore && matchLoc && matchYear;
+    });
+
+    setActiveVersionId(remainingInPartition.length > 0 ? remainingInPartition[0].id : null);
   };
 
   const addGroup = () => {
@@ -1057,13 +989,22 @@ function DynamicHierarchyTab({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500 pb-20">
-              <FolderPlus size={48} className="mb-4 opacity-20" />
-              <p className="text-lg mb-2">No Version Selected</p>
-              <p className="text-sm">
-                Select a version or create a new one to manage dynamic
-                hierarchies.
+            <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+              <div className="p-4 rounded-full bg-slate-900 border border-slate-800 mb-4 text-slate-500">
+                <FolderPlus size={44} />
+              </div>
+              <p className="text-base font-bold text-white mb-1">
+                Chưa có Version nào cho [{store} • {location} • {effectiveYear}]
               </p>
+              <p className="text-xs text-slate-400 mb-6 max-w-md">
+                Bạn đã xóa hết version trong phân vùng này. Bấm nút dưới đây nếu bạn muốn tạo một version mới để cấu hình logic.
+              </p>
+              <button
+                onClick={addVersion}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase shadow-lg shadow-brand-900/30 transition-all active:scale-95"
+              >
+                <Plus size={16} /> Tạo Version Mới
+              </button>
             </div>
           )}
         </div>
