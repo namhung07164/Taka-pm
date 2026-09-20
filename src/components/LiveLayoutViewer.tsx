@@ -20,6 +20,7 @@ interface LiveLayoutViewerProps {
   locationFilter: string;
   targetUnitSearch?: string | null;
   onUnitSelected?: (unit: any) => void;
+  onClearFocus?: () => void;
 }
 
 // Calculate high-contrast text color based on background perceived luminance (No drop shadow, razor-sharp vector text)
@@ -59,7 +60,7 @@ function getContrastStyle(hexColor: string) {
   }
 }
 
-export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch, onUnitSelected }: LiveLayoutViewerProps) {
+export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch, onUnitSelected, onClearFocus }: LiveLayoutViewerProps) {
   const { r2Config, setR2Config, currentUser, permissionMatrix, globalYearFilter } = useAppStore();
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
@@ -362,6 +363,7 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
       locationFilter={locationFilter} 
       targetUnitSearch={targetUnitSearch}
       onUnitSelected={onUnitSelected}
+      onClearFocus={onClearFocus}
       onRefreshConfig={loadConfig} 
       onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} 
     />
@@ -374,6 +376,7 @@ function LiveCanvas({
   locationFilter, 
   targetUnitSearch,
   onUnitSelected,
+  onClearFocus,
   onRefreshConfig, 
   onOpenR2Config 
 }: { 
@@ -382,6 +385,7 @@ function LiveCanvas({
   locationFilter: string; 
   targetUnitSearch?: string | null;
   onUnitSelected?: (unit: any) => void;
+  onClearFocus?: () => void;
   onRefreshConfig?: () => Promise<void> | void; 
   onOpenR2Config: () => void;
 }) {
@@ -1281,6 +1285,21 @@ function LiveCanvas({
     }
   }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, fitToScreen]);
 
+  // Keyboard listener: Escape key to exit zoom focus
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && (focusedUnitId || targetUnitSearch)) {
+        setFocusedUnitId(null);
+        setHoverInfo(null);
+        if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+        fitToScreen(true);
+        onClearFocus?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusedUnitId, targetUnitSearch, fitToScreen, onClearFocus]);
+
   // If units reload after floor switch and targetUnitSearch is active, trigger zoom
   useEffect(() => {
     if (targetUnitSearch && String(targetUnitSearch).trim() && units.length > 0) {
@@ -1336,6 +1355,7 @@ function LiveCanvas({
               setHoverInfo(null);
               if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
               fitToScreen(true);
+              onClearFocus?.();
             }}
             className="flex items-center gap-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-full transition-all ml-1 active:scale-95 touch-manipulation"
             title="Thoát chế độ phóng to"
@@ -1860,7 +1880,15 @@ function LiveCanvas({
                 )}
                 <button
                   type="button"
-                  onClick={() => setHoverInfo(null)}
+                  onClick={() => {
+                    setHoverInfo(null);
+                    if (focusedUnitId) {
+                      setFocusedUnitId(null);
+                      if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+                      fitToScreen(true);
+                      onClearFocus?.();
+                    }
+                  }}
                   className="p-1 -mr-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                   title="Close tooltip"
                 >

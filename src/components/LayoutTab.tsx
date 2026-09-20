@@ -721,7 +721,11 @@ export function LayoutTab({
                   type="text"
                   value={unitSearchInput}
                   onChange={(e) => {
-                    setUnitSearchInput(e.target.value);
+                    const val = e.target.value;
+                    setUnitSearchInput(val);
+                    if (!val.trim()) {
+                      setTargetUnitSearch(null);
+                    }
                     setShowSuggestions(true);
                   }}
                   onFocus={() => setShowSuggestions(true)}
@@ -735,10 +739,11 @@ export function LayoutTab({
                       }
                     } else if (e.key === 'Escape') {
                       setShowSuggestions(false);
+                      handleClearSearchAndFocus();
                     }
                   }}
                   placeholder="Tìm ô unit hoặc dự án..."
-                  className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-600 dark:focus:border-purple-400 shadow-sm transition-all"
+                  className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-bold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-600 dark:focus:border-purple-400 shadow-sm transition-all"
                 />
                 {unitSearchInput && (
                   <button 
@@ -868,8 +873,11 @@ export function LayoutTab({
             locationFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'} 
             targetUnitSearch={targetUnitSearch}
             onUnitSelected={(unit) => {
-              if (unit?.name) setUnitSearchInput(unit.name);
+              if (unit?.name) {
+                setUnitSearchInput(unit.name);
+              }
             }}
+            onClearFocus={handleClearSearchAndFocus}
           />
         ) : !url ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
