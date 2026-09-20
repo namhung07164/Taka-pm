@@ -479,28 +479,21 @@ function LiveCanvas({
     if (availableStoreVersions.length === 0) return [];
     
     const tLoc = targetLoc.toUpperCase().trim();
-    let matched = availableStoreVersions.filter(v => {
+    const matched = availableStoreVersions.filter(v => {
       const vLoc = (v.location || '').toUpperCase().trim();
       const vName = (v.name || '').toUpperCase().trim();
       return vLoc === tLoc || vName.includes(tLoc) || vName.startsWith(`PM-${tLoc}`) || vName.startsWith(tLoc);
     });
 
     if (matched.length === 0) {
-      matched = availableStoreVersions;
+      return [];
     }
 
-    // Filter by year if globalYearFilter is active (synced with Picture tab)
+    // Filter STRICTLY by year if globalYearFilter is active (synced with Picture tab / Review tab)
     if (globalYearFilter && globalYearFilter !== 'all') {
       const targetYear = String(globalYearFilter).trim();
       const yearMatched = matched.filter(v => String(v.year || '').trim() === targetYear);
-      if (yearMatched.length > 0) {
-        return yearMatched;
-      }
-      // If no version explicitly tagged with this year, include untagged versions as fallback
-      const fallback = matched.filter(v => !v.year || String(v.year).trim() === targetYear);
-      if (fallback.length > 0) {
-        return fallback;
-      }
+      return yearMatched;
     }
 
     return matched;
@@ -526,20 +519,17 @@ function LiveCanvas({
       v = locationVersions.find(lv => lv.id === selectedVersionId);
     } else if (localActiveMapVersionId && locationVersions.some(lv => lv.id === localActiveMapVersionId)) {
       v = locationVersions.find(lv => lv.id === localActiveMapVersionId);
-    } else if (partition?.activeMapVersionId) {
-      v = locationVersions.find(lv => lv.id === partition.activeMapVersionId) ||
-          availableStoreVersions.find(av => av.id === partition.activeMapVersionId);
-    } else if (localActiveMapVersionId && availableStoreVersions.some(av => av.id === localActiveMapVersionId)) {
-      v = availableStoreVersions.find(av => av.id === localActiveMapVersionId);
-    }
-
-    if (!v) {
+    } else if (partition?.activeMapVersionId && locationVersions.some(lv => lv.id === partition.activeMapVersionId)) {
+      v = locationVersions.find(lv => lv.id === partition.activeMapVersionId);
+    } else if (locationVersions.length > 0) {
       // Prioritize version for this floor with dynamic rules or groups
       v = locationVersions.find(lv => lv.isDynamicActive !== false && Array.isArray(lv.groups) && lv.groups.length > 0) ||
           locationVersions.find(lv => Array.isArray(lv.groups) && lv.groups.length > 0) ||
-          locationVersions[0] ||
-          partition?.mapVersions?.[0] ||
-          config?.version || {};
+          locationVersions[0];
+    }
+
+    if (!v) {
+      return { r2Version: null, r2Units: [] };
     }
 
     // Resolve backgroundUrl if empty or r2://
@@ -683,7 +673,7 @@ function LiveCanvas({
 
   const version = r2Version;
   const units = r2Units;
-  const [bgImage] = useImage(version.backgroundUrl || '', 'anonymous');
+  const [bgImage] = useImage(version?.backgroundUrl || '', 'anonymous');
   
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -774,11 +764,11 @@ function LiveCanvas({
     if (bgImage) {
       const imgNaturalW = bgImage.naturalWidth || bgImage.width || 1000;
       const imgNaturalH = bgImage.naturalHeight || bgImage.height || 800;
-      const imgScale = version.imageScale || 1;
+      const imgScale = version?.imageScale || 1;
       contentW = imgNaturalW * imgScale;
       contentH = imgNaturalH * imgScale;
-      contentX = version.imagePos?.x || 0;
-      contentY = version.imagePos?.y || 0;
+      contentX = version?.imagePos?.x || 0;
+      contentY = version?.imagePos?.y || 0;
     } else if (units && units.length > 0) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       units.forEach((u: any) => {
@@ -980,7 +970,7 @@ function LiveCanvas({
     const opacityMap: Record<string, number> = {};
     const groupsInUse: any[] = [];
     
-    if (!version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
+    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
 
     version.groups.forEach((group: any) => {
         let matchCount = 0;
@@ -1054,7 +1044,7 @@ function LiveCanvas({
     });
 
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
-  }, [version.groups, version.groupMappings, version.isDynamicActive, units, aggregatedData]);
+  }, [version?.groups, version?.groupMappings, version?.isDynamicActive, units, aggregatedData]);
 
   // 4. Filter only units that appear in dynamic tab and precalculate bounds
   const displayedUnits = useMemo(() => {
@@ -1474,6 +1464,22 @@ function LiveCanvas({
 
   // Capped pixel ratio for silky smooth iOS GPU execution
   const pixelRatio = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+
+  if (!version || !version.id) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 text-slate-400 p-6 text-center select-none">
+        <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40 flex items-center justify-center mb-3 shadow-inner">
+          <Layers className="w-8 h-8 text-purple-600 dark:text-purple-400 opacity-80" />
+        </div>
+        <p className="text-base font-bold text-slate-700 dark:text-slate-200">
+          Chưa có dữ liệu Layout cho {storeFilter} • {targetLoc} ({globalYearFilter || 'Tất cả năm'})
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
+          Bộ lọc và dữ liệu mặt bằng đồng bộ trực tiếp theo các phiên bản tại tab Review. Hãy tạo hoặc gán phiên bản tại tab Picture Mapping để hiển thị tại đây.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full flex flex-col bg-slate-100 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] print:bg-white print:bg-none print:p-0 print:m-0 print:border-none">

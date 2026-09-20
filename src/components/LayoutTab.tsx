@@ -62,7 +62,34 @@ export function LayoutTab({
   const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const activeStore = effectiveStore === 'all' ? (allowedStores[0] || 'HCM') : effectiveStore;
 
+  const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
+  const storeLocationData = useDataStore((state) => state.storeLocationData);
+  const mapVersions = useDataStore((state) => state.mapVersions);
+
+  // All versions for activeStore (synced with PictureMapping / ReviewTab)
+  const allStoreVersions = React.useMemo(() => {
+    try {
+      return getAllStoreVersions((activeStore === 'HN' ? 'HN' : 'HCM'));
+    } catch {
+      return [];
+    }
+  }, [getAllStoreVersions, activeStore, storeLocationData, mapVersions]);
+
+  // Available years: strictly based on existing versions for this store (matching Review Tab)
   const availableYears = React.useMemo(() => {
+    const versionYears = Array.from(
+      new Set(
+        allStoreVersions
+          .map(v => (v.year ? String(v.year).trim() : ''))
+          .filter(y => y && y.toLowerCase() !== 'all')
+      )
+    ).sort((a, b) => Number(b) - Number(a));
+
+    if (versionYears.length > 0) {
+      return versionYears;
+    }
+
+    // Fallback if no version exists at all yet
     const currentYr = new Date().getFullYear().toString();
     const baseYears = ['2024', '2025', '2026', '2027', '2028'];
     const projectYears = projects.map(p => p.year ? String(p.year) : '').filter(Boolean);
@@ -71,16 +98,21 @@ export function LayoutTab({
       .filter(y => y && y.toLowerCase() !== 'all')
       .sort((a, b) => Number(b) - Number(a));
     return allYrs;
-  }, [projects, tasks]);
+  }, [allStoreVersions, projects, tasks]);
+
+  const effectiveYear = React.useMemo(() => {
+    if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
+      return globalYearFilter;
+    }
+    return availableYears[0] || new Date().getFullYear().toString();
+  }, [globalYearFilter, availableYears]);
 
   // Layout tab requires specific year selection (no 'all' option allowed)
   useEffect(() => {
-    if (globalYearFilter === 'all' && availableYears.length > 0) {
-      const currentYr = new Date().getFullYear().toString();
-      const defaultYear = availableYears.includes(currentYr) ? currentYr : availableYears[0];
-      setGlobalYearFilter(defaultYear);
+    if (availableYears.length > 0 && (!globalYearFilter || globalYearFilter === 'all' || !availableYears.includes(globalYearFilter))) {
+      setGlobalYearFilter(effectiveYear);
     }
-  }, [globalYearFilter, availableYears, setGlobalYearFilter]);
+  }, [globalYearFilter, availableYears, effectiveYear, setGlobalYearFilter]);
 
   // Layout tab only supports store-specific floor plans (HCM, HN), hide all-stores
   useEffect(() => {
@@ -105,9 +137,32 @@ export function LayoutTab({
   }, [locationOptions]);
 
   // Lọc danh sách location:
-  // Nếu là Admin -> hiển thị TOÀN BỘ locations để admin có thể chọn và add/edit link URL
-  // Nếu không phải Admin -> chỉ hiển thị các locations đã có URL hợp lệ
+  // Dựa vào Review tab: Chỉ hiển thị những location (tầng) thực sự có version trong activeStore và effectiveYear
   const availableLocations = React.useMemo(() => {
+    const yearVersions = allStoreVersions.filter(v => {
+      const vYear = String(v.year || '').trim();
+      return vYear === String(effectiveYear).trim();
+    });
+
+    const locationsWithVersions = Array.from(
+      new Set(
+        yearVersions
+          .map(v => (v.location || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (locationsWithVersions.length > 0) {
+      const filtered = userAllowedLocations.filter(loc => 
+        locationsWithVersions.includes(loc.toUpperCase().trim())
+      );
+      if (filtered.length > 0) {
+        return filtered;
+      }
+      return locationsWithVersions;
+    }
+
+    // Fallback nếu chưa có version nào:
     if (isAdmin) {
       return userAllowedLocations;
     }
@@ -115,7 +170,7 @@ export function LayoutTab({
       const specificKey = `url_${activeStore}_${loc}`;
       return isValidUrl(layoutSettings[specificKey]);
     });
-  }, [userAllowedLocations, isAdmin, layoutSettings, activeStore]);
+  }, [allStoreVersions, effectiveYear, userAllowedLocations, isAdmin, layoutSettings, activeStore]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor)
   useEffect(() => {
