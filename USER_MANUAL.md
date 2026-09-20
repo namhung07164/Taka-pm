@@ -458,9 +458,12 @@ Quản lý các công việc giao cho cá nhân, phòng ban hoặc đối tác b
 Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đồ mặt bằng TTTM Takashimaya.
 
 #### 🔹 Hướng dẫn Sử dụng Bản đồ & Live View:
-1. **Bộ lọc Cửa hàng & Khu vực (Store & Location Filter)**:
-   - **Chọn Cửa hàng (`HCM`, `HN`)**: Chuyển đổi linh hoạt giữa 2 chi nhánh; hệ thống **tự động đồng bộ và tính toán lại bảng dữ liệu tổng hợp (`useSummaryData`)** của chi nhánh tương ứng ngay tức thì (0ms) từ bộ nhớ đệm mà không cần người dùng phải bấm quay lại Tab General.
-   - **Bộ lọc Khu vực (Location)**: Tối ưu trực quan hóa bản vẽ 2D theo từng Tầng cụ thể (`L1`, `L2`, `L3`, `L4`, `B1`...), loại bỏ tùy chọn `All Locations` không cần thiết và tự động chọn tầng hợp lệ đầu tiên để hiển thị bản vẽ chính xác nhất. Tự động lọc các khu vực/tầng có bản vẽ hoặc URL hợp lệ được cấu hình.
+1. **Bộ lọc Cửa hàng, Khu vực & Đồng bộ Phân quyền (Store, Location & RBAC Access Control)**:
+   - **Chọn Cửa hàng (`HCM`, `HN`)**: Chuyển đổi linh hoạt giữa các chi nhánh được phân quyền; hệ thống **tự động đồng bộ và tính toán lại bảng dữ liệu tổng hợp (`useSummaryData`)** của chi nhánh tương ứng ngay tức thì (0ms) từ bộ nhớ đệm mà không cần người dùng phải bấm quay lại Tab General.
+   - **Bộ lọc Khu vực & Tự động Lọc theo Quyền (Location Permissions)**: Tối ưu trực quan hóa bản vẽ 2D theo từng Tầng cụ thể (`L1`, `L2`, `L3`, `L4`, `B1`...), loại bỏ tùy chọn `All Locations` không cần thiết. Áp dụng chuẩn 100% cơ chế phân quyền tài khoản (Account Control RBAC) giống như Tab General và Tab Detail:
+     * Người dùng **chỉ nhìn thấy các khu vực/tầng (Location) mà tài khoản được phân quyền** truy cập.
+     * Các gian hàng/mã dự án (Unit / Project Code) mà người dùng **không có quyền xem (theo quyền Store, Location, Đối tác / Phân công Party)** sẽ hoàn toàn không hiển thị thông tin dự án, tiến độ hay xuất hiện trong danh sách gợi ý tìm kiếm (Autocomplete).
+     * Tooltip thông tin gian hàng bảo mật tuyệt đối, chỉ hiển thị tên dự án, mốc ngày, tiến độ và bình luận đối với các dự án mà tài khoản được phép truy cập.
 2. **Kéo & Thu phóng Siêu Mượt 60fps (Hardware-Accelerated Zoom/Pan)**:
    - **Con lăn chuột**: Phóng to/thu nhỏ mượt mà theo đường cong mượt mà, định vị chính xác vị trí con trỏ chuột mà không giật lag.
    - **Kéo thả chuột / Chạm ngón tay (Pan)**: Giữ và kéo để lướt toàn bộ mặt bằng; tối ưu hóa GPU giảm thiểu render lại không cần thiết.

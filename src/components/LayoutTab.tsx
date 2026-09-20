@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
+import { useLocationOptions } from '../hooks/useLocationOptions';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
 import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Maximize2, Eye, Move, HelpCircle, Clipboard, Map } from 'lucide-react';
@@ -96,15 +97,12 @@ export function LayoutTab({
     return true;
   };
 
-  // Danh sách toàn bộ location mà người dùng được phân quyền (Admin thấy toàn bộ)
+  const locationOptions = useLocationOptions();
+
+  // Danh sách toàn bộ location mà người dùng được phân quyền (áp dụng chuẩn theo Account Control RBAC)
   const userAllowedLocations = React.useMemo(() => {
-    const baseList = Array.from(new Set([...locations, ...projects.map(p => p.location).filter(Boolean)]))
-      .filter(l => l && String(l).trim() !== '' && String(l).toLowerCase() !== 'all');
-    if (isAdmin || currentUser.locationPermissions?.['all']) {
-      return baseList;
-    }
-    return baseList.filter(loc => currentUser.locationPermissions?.[loc.toLowerCase()]);
-  }, [locations, projects, currentUser, isAdmin]);
+    return locationOptions.filter(loc => loc && String(loc).trim() !== '' && String(loc).toLowerCase() !== 'all');
+  }, [locationOptions]);
 
   // Lọc danh sách location:
   // Nếu là Admin -> hiển thị TOÀN BỘ locations để admin có thể chọn và add/edit link URL
@@ -165,8 +163,9 @@ export function LayoutTab({
   const unitSuggestions = React.useMemo(() => {
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
     const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string; code?: string }>();
+    const allowedLocsSet = new Set(userAllowedLocations.map(l => String(l).toLowerCase().trim()));
 
-    // 1. Index storeUnits
+    // 1. Index storeUnits (only if location is accessible for this user)
     storeUnits.forEach((u: any) => {
       if (u?.name) {
         let loc = u.location || '';
@@ -174,57 +173,57 @@ export function LayoutTab({
           const m = String(u.name).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
           if (m) loc = m[1].toUpperCase();
         }
-        map.set(u.name.toLowerCase().trim(), {
-          unit: u.name.trim(),
-          location: loc,
-          brand: '',
-          project: '',
-          code: u.name.trim()
-        });
+        if (isAdmin || !loc || allowedLocsSet.has(loc.toLowerCase().trim())) {
+          map.set(u.name.toLowerCase().trim(), {
+            unit: u.name.trim(),
+            location: loc,
+            brand: '',
+            project: '',
+            code: u.name.trim()
+          });
+        }
       }
     });
 
     // 2. Index projects (including project name, brand, code, unit, and location)
+    // Note: projects comes from useEnrichedData() which already respects user's store, location, party and byPartyAccess permissions
     projects.forEach((p: any) => {
       if (!p.store || p.store === activeStore || activeStore === 'all') {
-        const primaryCode = p.unit || p.code || p.name;
-        if (primaryCode) {
-          const key = String(primaryCode).toLowerCase().trim();
-          const existing = map.get(key) || { unit: String(primaryCode).trim(), location: '', brand: '', project: '', code: '' };
-          let loc = p.location || existing.location || '';
-          if (!loc) {
-            const m = String(primaryCode).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
-            if (m) loc = m[1].toUpperCase();
-          }
-          map.set(key, {
-            unit: String(primaryCode).trim(),
-            location: loc,
-            brand: p.brandName || existing.brand || '',
-            project: p.name || existing.project || '',
-            code: p.code || existing.code || ''
-          });
+        let loc = p.location || '';
+        if (!loc) {
+          const m = String(p.code || p.unit || '').match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+          if (m) loc = m[1].toUpperCase();
         }
-        // If project has both code and distinct project name, index project name as well
-        if (p.name && p.code && p.name.trim().toLowerCase() !== p.code.trim().toLowerCase()) {
-          const nameKey = `proj_${p.name.toLowerCase().trim()}`;
-          let loc = p.location || '';
-          if (!loc) {
-            const m = String(p.code || p.unit).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
-            if (m) loc = m[1].toUpperCase();
+        if (isAdmin || !loc || allowedLocsSet.has(loc.toLowerCase().trim())) {
+          const primaryCode = p.unit || p.code || p.name;
+          if (primaryCode) {
+            const key = String(primaryCode).toLowerCase().trim();
+            const existing = map.get(key) || { unit: String(primaryCode).trim(), location: '', brand: '', project: '', code: '' };
+            map.set(key, {
+              unit: String(primaryCode).trim(),
+              location: loc || existing.location || '',
+              brand: p.brandName || existing.brand || '',
+              project: p.name || existing.project || '',
+              code: p.code || existing.code || ''
+            });
           }
-          map.set(nameKey, {
-            unit: String(p.unit || p.code).trim(),
-            location: loc,
-            brand: p.brandName || '',
-            project: p.name.trim(),
-            code: p.code
-          });
+          // If project has both code and distinct project name, index project name as well
+          if (p.name && p.code && p.name.trim().toLowerCase() !== p.code.trim().toLowerCase()) {
+            const nameKey = `proj_${p.name.toLowerCase().trim()}`;
+            map.set(nameKey, {
+              unit: String(p.unit || p.code).trim(),
+              location: loc,
+              brand: p.brandName || '',
+              project: p.name.trim(),
+              code: p.code
+            });
+          }
         }
       }
     });
 
     return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string; code?: string }>;
-  }, [getAllStoreUnits, activeStore, projects]);
+  }, [getAllStoreUnits, activeStore, projects, userAllowedLocations, isAdmin]);
 
   const filteredUnitSuggestions = React.useMemo(() => {
     if (!unitSearchInput.trim()) return [];

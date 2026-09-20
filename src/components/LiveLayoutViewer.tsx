@@ -7,6 +7,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
+import { useEnrichedData } from '../hooks/useEnrichedData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects, formatDisplayDateTime } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
@@ -849,9 +850,8 @@ function LiveCanvas({
     fitToScreen();
   }, [fitToScreen]);
 
-  // 1. Get real-time projects and Excel summary data
-  const projects = useAppStore(state => state.projects);
-  const tasks = useAppStore(state => state.tasks);
+  // 1. Get real-time projects and Excel summary data (Filtered strictly by Account Control RBAC permissions)
+  const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
   const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
@@ -897,7 +897,6 @@ function LiveCanvas({
       }
     });
 
-    const enrichedProjects = enrichProjects(projects, tasks);
     const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -970,7 +969,7 @@ function LiveCanvas({
     });
 
     return dataMap;
-  }, [units, summaryData, projects, tasks, storeFilter, locationFilter, globalYearFilter]);
+  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {

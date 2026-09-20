@@ -6,6 +6,7 @@ import {
 import { cn, parseDateTime } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
 
 interface LayoutUnitTooltipProps {
   hoverInfo: {
@@ -32,7 +33,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   canWrite = false,
   storeFilter = 'HCM'
 }) => {
-  const projects = useAppStore(state => state.projects);
+  const { enrichedProjects: projects } = useEnrichedData();
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
   const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
