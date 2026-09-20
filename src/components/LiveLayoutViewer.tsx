@@ -708,7 +708,7 @@ function LiveCanvas({
     if (isExporting) return;
     try {
       setIsExporting(true);
-      setExportStatus('Bước 1/3: Đang tải dữ liệu từ Cloudflare R2...');
+      setExportStatus('Bước 1/4: Đang tải dữ liệu từ Cloudflare R2...');
       const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
       const res = await executeTriggerExportProcess(targetStore, (status) => {
         setExportStatus(status);

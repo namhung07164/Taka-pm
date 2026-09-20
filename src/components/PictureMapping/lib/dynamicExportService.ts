@@ -612,10 +612,11 @@ export function isPictureMappingDataLoaded(targetStore?: 'HCM' | 'HN'): boolean 
 }
 
 /**
- * Trigger toàn bộ quy trình 3 bước:
+ * Trigger toàn bộ quy trình 4 bước:
  * - Bước 1: Load Cloud R2 về app (kiểm tra nếu đã load trước đó thì bỏ qua)
  * - Bước 2: Apply All Dynamic Rules
  * - Bước 3: Lưu Cloud R2 & Ghi trigger Firestore
+ * - Bước 4: Load lại Cloud R2 về ứng dụng (Reload Cloud R2)
  */
 export async function executeTriggerExportProcess(
   targetStore: 'HCM' | 'HN',
@@ -624,22 +625,22 @@ export async function executeTriggerExportProcess(
   // BƯỚC 1: Load Cloud R2 về app (kiểm tra nếu đã load trước đó thì bỏ qua để tối ưu tốc độ và không ghi đè)
   const isAlreadyLoaded = isPictureMappingDataLoaded(targetStore);
   if (!isAlreadyLoaded) {
-    onProgress?.('Bước 1/3: Đang tải dữ liệu từ Cloudflare R2 về ứng dụng (Load Cloud)...');
+    onProgress?.('Bước 1/4: Đang tải dữ liệu từ Cloudflare R2 về ứng dụng (Load Cloud)...');
     try {
       await loadStoreFromCloudR2();
     } catch (loadErr: any) {
       console.warn('[TriggerExport] Cảnh báo khi tải từ R2 (có thể tiếp tục với dữ liệu hiện tại):', loadErr);
     }
   } else {
-    onProgress?.('Bước 1/3: Dữ liệu Picture Mapping đã sẵn sàng trong ứng dụng (bỏ qua tải lại từ Cloud)...');
+    onProgress?.('Bước 1/4: Dữ liệu Picture Mapping đã sẵn sàng trong ứng dụng (bỏ qua tải lại từ Cloud)...');
   }
 
   // BƯỚC 2: Apply all rules của toàn bộ tab dynamic cho store đang xem
-  onProgress?.('Bước 2/3: Đang áp dụng toàn bộ logic Dynamic Rules cho các tầng...');
+  onProgress?.('Bước 2/4: Đang áp dụng toàn bộ logic Dynamic Rules cho các tầng...');
   const { updatedStoreLocationData } = applyAllDynamicRulesForStore(targetStore);
 
   // BƯỚC 3: Lưu cloud của store đang xem lên R2 Cloudflare
-  onProgress?.('Bước 3/3: Đang đồng bộ và lưu bản vẽ lên Cloudflare R2 (Save Cloud)...');
+  onProgress?.('Bước 3/4: Đang đồng bộ và lưu bản vẽ lên Cloudflare R2 (Save Cloud)...');
   await saveStoreToCloudR2(targetStore, updatedStoreLocationData);
 
   // Ghi trigger Firestore để cập nhật cho các worker/listeners
@@ -658,8 +659,16 @@ export async function executeTriggerExportProcess(
     console.warn('[TriggerExport] Lỗi cập nhật layout_trigger Firestore:', firestoreErr);
   }
 
+  // BƯỚC 4: Load lại Cloud R2 về ứng dụng để đảm bảo ứng dụng có dữ liệu mới nhất được lưu từ R2
+  onProgress?.('Bước 4/4: Đang tải lại dữ liệu từ Cloudflare R2 về ứng dụng (Reload Cloud R2)...');
+  try {
+    await loadStoreFromCloudR2();
+  } catch (reloadErr: any) {
+    console.warn('[TriggerExport] Cảnh báo khi tải lại từ Cloud R2 ở bước 4:', reloadErr);
+  }
+
   return {
     success: true,
-    message: `Đã hoàn thành 3 bước: Tải Cloud R2 -> Áp dụng Dynamic Rules -> Lưu Cloud R2 cho ${targetStore}!`,
+    message: `Đã hoàn thành 4 bước: Tải Cloud R2 -> Áp dụng Dynamic Rules -> Lưu Cloud R2 -> Tải lại Cloud R2 cho ${targetStore}!`,
   };
 }
