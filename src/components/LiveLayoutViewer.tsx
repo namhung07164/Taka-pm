@@ -18,9 +18,55 @@ import { useDataStore } from './PictureMapping/DataContext';
 interface LiveLayoutViewerProps {
   storeFilter: string;
   locationFilter: string;
+  targetUnitSearch?: string | null;
+  onUnitSelected?: (unit: any) => void;
 }
 
-export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutViewerProps) {
+function getContrastStyle(hexColor: string) {
+  if (!hexColor || typeof hexColor !== 'string') {
+    return {
+      text: '#ffffff',
+      textStroke: '#000000',
+      textStrokeWidth: 1.6,
+      shapeStroke: '#ffffff',
+    };
+  }
+  let c = hexColor.replace('#', '').trim();
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  if (c.length !== 6) {
+    return {
+      text: '#ffffff',
+      textStroke: '#000000',
+      textStrokeWidth: 1.6,
+      shapeStroke: '#ffffff',
+    };
+  }
+  const r = parseInt(c.substring(0, 2), 16) || 0;
+  const g = parseInt(c.substring(2, 4), 16) || 0;
+  const b = parseInt(c.substring(4, 6), 16) || 0;
+  // Perceived luminance (YIQ standard)
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  
+  if (yiq >= 150) {
+    // Light / bright color background -> dark text with white halo for ultra crisp readability
+    return {
+      text: '#0f172a',
+      textStroke: '#ffffff',
+      textStrokeWidth: 1.8,
+      shapeStroke: '#1e293b',
+    };
+  } else {
+    // Dark / saturated color background -> white text with dark halo
+    return {
+      text: '#ffffff',
+      textStroke: '#000000',
+      textStrokeWidth: 1.8,
+      shapeStroke: '#ffffff',
+    };
+  }
+}
+
+export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch, onUnitSelected }: LiveLayoutViewerProps) {
   const { r2Config, setR2Config, currentUser, permissionMatrix, globalYearFilter } = useAppStore();
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
@@ -316,10 +362,36 @@ export function LiveLayoutViewer({ storeFilter, locationFilter }: LiveLayoutView
     );
   }
 
-  return <LiveCanvas config={config} storeFilter={storeFilter} locationFilter={locationFilter} onRefreshConfig={loadConfig} onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} />;
+  return (
+    <LiveCanvas 
+      config={config} 
+      storeFilter={storeFilter} 
+      locationFilter={locationFilter} 
+      targetUnitSearch={targetUnitSearch}
+      onUnitSelected={onUnitSelected}
+      onRefreshConfig={loadConfig} 
+      onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} 
+    />
+  );
 }
 
-function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOpenR2Config }: { config: any, storeFilter: string, locationFilter: string, onRefreshConfig?: () => Promise<void> | void, onOpenR2Config: () => void }) {
+function LiveCanvas({ 
+  config, 
+  storeFilter, 
+  locationFilter, 
+  targetUnitSearch,
+  onUnitSelected,
+  onRefreshConfig, 
+  onOpenR2Config 
+}: { 
+  config: any; 
+  storeFilter: string; 
+  locationFilter: string; 
+  targetUnitSearch?: string | null;
+  onUnitSelected?: (unit: any) => void;
+  onRefreshConfig?: () => Promise<void> | void; 
+  onOpenR2Config: () => void;
+}) {
   const { currentUser, permissionMatrix, globalYearFilter } = useAppStore();
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
@@ -604,8 +676,17 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
   const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(false);
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [focusedUnitId, setFocusedUnitId] = useState<string | null>(null);
+  const focusedTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+    };
+  }, []);
 
   const handleTriggerExport = async () => {
     if (!canWrite) {
@@ -1042,6 +1123,147 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
       el.style.transform = 'none';
     });
   };
+
+  // Zoom & Pan smoothly to target unit and highlight it
+  const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
+    if (!targetUnitOrName) return false;
+
+    let targetUnit: any = null;
+    if (typeof targetUnitOrName === 'object' && targetUnitOrName?.id) {
+      targetUnit = targetUnitOrName;
+    } else {
+      const q = String(targetUnitOrName).toLowerCase().trim();
+      targetUnit = units.find((u: any) => 
+        (u.name || '').toLowerCase().trim() === q || 
+        String(u.id).toLowerCase() === q
+      );
+      if (!targetUnit) {
+        // Fallback: partial match
+        targetUnit = units.find((u: any) => 
+          (u.name || '').toLowerCase().includes(q) ||
+          String(u.id).toLowerCase().includes(q)
+        );
+      }
+    }
+
+    if (!targetUnit) return false;
+
+    // Calculate center and bounding box of target unit
+    let cx = targetUnit.x || 0;
+    let cy = targetUnit.y || 0;
+    let uW = 100;
+    let uH = 60;
+
+    if (targetUnit.type === 'rect') {
+      uW = Math.abs(targetUnit.width || 100);
+      uH = Math.abs(targetUnit.height || 60);
+      cx = (targetUnit.x || 0) + uW / 2;
+      cy = (targetUnit.y || 0) + uH / 2;
+    } else if (targetUnit.type === 'circle') {
+      const r = targetUnit.radius || 30;
+      uW = r * 2;
+      uH = r * 2;
+      cx = targetUnit.x || 0;
+      cy = targetUnit.y || 0;
+    } else if (targetUnit.type === 'polygon' && targetUnit.points && targetUnit.points.length >= 2) {
+      let sumX = 0, sumY = 0, count = 0;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (let i = 0; i < targetUnit.points.length; i += 2) {
+        const px = targetUnit.points[i];
+        const py = targetUnit.points[i + 1];
+        sumX += px;
+        sumY += py;
+        count++;
+        minX = Math.min(minX, px);
+        maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py);
+        maxY = Math.max(maxY, py);
+      }
+      cx = count > 0 ? sumX / count : 0;
+      cy = count > 0 ? sumY / count : 0;
+      uW = maxX > minX ? maxX - minX : 100;
+      uH = maxY > minY ? maxY - minY : 60;
+    } else {
+      cx = (targetUnit.textX || targetUnit.x || 0) + (targetUnit.textWidth || 100) / 2;
+      cy = (targetUnit.textY || targetUnit.y || 0) + (targetUnit.textHeight || 30) / 2;
+    }
+
+    const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
+    const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
+
+    // Calculate optimal zoom scale to clearly frame the unit
+    const fitScaleX = (containerW * 0.5) / Math.max(80, uW);
+    const fitScaleY = (containerH * 0.5) / Math.max(60, uH);
+    const targetScale = Math.max(1.0, Math.min(Math.min(fitScaleX, fitScaleY), 3.2));
+
+    const posX = containerW / 2 - cx * targetScale;
+    const posY = containerH / 2 - cy * targetScale;
+    const newPos = { x: posX, y: posY };
+
+    const stage = stageRef.current;
+    if (stage) {
+      stage.to({
+        scaleX: targetScale,
+        scaleY: targetScale,
+        x: posX,
+        y: posY,
+        duration: 0.35,
+        easing: Konva.Easings.EaseInOut,
+        onFinish: () => {
+          setStageScale(targetScale);
+          setStagePos(newPos);
+        }
+      });
+    } else {
+      setStageScale(targetScale);
+      setStagePos(newPos);
+    }
+
+    // Highlight unit with pulse glow
+    setFocusedUnitId(targetUnit.id);
+    if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+    focusedTimerRef.current = setTimeout(() => {
+      setFocusedUnitId(null);
+    }, 7000);
+
+    // Open detailed info tooltip for unit
+    const uName = (targetUnit.name || '').toLowerCase();
+    setHoverInfo({
+      visible: true,
+      data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
+      unitName: targetUnit.name || 'Unknown'
+    });
+
+    setTimeout(() => {
+      updateTooltipPos(containerW / 2, Math.max(90, containerH * 0.25));
+    }, 150);
+
+    onUnitSelected?.(targetUnit);
+    return true;
+  }, [units, dimensions, aggregatedData, onUnitSelected]);
+
+  // Sync with incoming targetUnitSearch prop from toolbar
+  useEffect(() => {
+    if (targetUnitSearch && String(targetUnitSearch).trim()) {
+      const q = String(targetUnitSearch).trim();
+      const success = zoomAndPanToUnit(q);
+      if (!success) {
+        // Check other floors if available in availableStoreVersions
+        const foundInOther = availableStoreVersions.find((v: any) => {
+          if (!v?.groupMappings) return false;
+          return Object.values(v.groupMappings).some((m: any) => 
+            Array.isArray(m) && m.some(id => String(id).toLowerCase() === q.toLowerCase())
+          );
+        });
+        if (foundInOther && foundInOther.id !== selectedVersionId) {
+          setSelectedVersionId(foundInOther.id);
+          setTimeout(() => {
+            zoomAndPanToUnit(q);
+          }, 350);
+        }
+      }
+    }
+  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -1898,19 +2120,27 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
 
             {displayedUnits.map((unit: any) => {
                const fillColor = unit.targetColor || "#3b82f6";
+               const isFocused = focusedUnitId === unit.id;
                const isDimmed = selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
-               const displayOpacity = isDimmed ? 0.2 : (unit.targetOpacity ?? 0.65);
+               const contrast = getContrastStyle(fillColor);
+               
+               const displayOpacity = isFocused 
+                 ? 1.0 
+                 : isDimmed 
+                 ? 0.2 
+                 : Math.max(0.82, unit.targetOpacity ?? 0.85);
                
                const commonProps = {
                   id: unit.id,
                   fill: fillColor,
                   opacity: displayOpacity,
-                  stroke: isDimmed ? '#94a3b8' : '#ffffff',
-                  strokeWidth: 1.5,
+                  stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
+                  strokeWidth: isFocused ? 3 : 1.6,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
-                  shadowBlur: 0,
-                  shadowOpacity: 0,
+                  shadowColor: isFocused ? '#f59e0b' : '#000000',
+                  shadowBlur: isFocused ? 16 : 3,
+                  shadowOpacity: isFocused ? 0.9 : 0.22,
                   x: unit.x || 0,
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,
@@ -1979,6 +2209,13 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                   }
                };
 
+               // Calculated font size for optimal legibility
+               const unitW = unit.textWidth || 100;
+               const unitH = unit.textHeight || 30;
+               const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
+               const currentZoom = stageScale || 1;
+               const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
+
                return (
                  <React.Fragment key={unit.id}>
                     {unit.type === 'rect' && (
@@ -1990,7 +2227,24 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                     {unit.type === 'polygon' && unit.points && (
                        <Line {...commonProps} points={unit.points} closed={true} />
                     )}
-                    {unit.name && (stageScale || 1) > 0.15 && (
+
+                    {/* Focused Unit Golden Ring Indicator */}
+                    {isFocused && (
+                       <Rect
+                          x={(unit.textX || unit.x || 0) - 4}
+                          y={(unit.textY || unit.y || 0) - 4}
+                          width={(unit.textWidth || unit.width || 100) + 8}
+                          height={(unit.textHeight || unit.height || 40) + 8}
+                          stroke="#f59e0b"
+                          strokeWidth={2.5}
+                          strokeScaleEnabled={false}
+                          dash={[6, 4]}
+                          cornerRadius={6}
+                          listening={false}
+                       />
+                    )}
+
+                    {unit.name && (stageScale || 1) > 0.08 && (
                        <Text 
                           text={unit.name}
                           x={unit.textX}
@@ -2000,15 +2254,19 @@ function LiveCanvas({ config, storeFilter, locationFilter, onRefreshConfig, onOp
                           rotation={unit.rotation || 0}
                           align="center"
                           verticalAlign="middle"
-                          fontSize={Math.max(10, 11 / (stageScale || 1))}
+                          fontSize={dynamicFontSize}
                           fontStyle="bold"
-                          fill="#ffffff"
-                          stroke="#000000"
-                          strokeWidth={0.6}
+                          fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                          fill={contrast.text}
+                          stroke={contrast.textStroke}
+                          strokeWidth={contrast.textStrokeWidth}
                           strokeScaleEnabled={false}
                           perfectDrawEnabled={false}
-                          shadowBlur={0}
-                          shadowOpacity={0}
+                          shadowColor={contrast.text === '#ffffff' ? '#000000' : '#ffffff'}
+                          shadowBlur={2}
+                          shadowOpacity={0.6}
+                          wrap="none"
+                          ellipsis={true}
                           listening={false}
                        />
                     )}

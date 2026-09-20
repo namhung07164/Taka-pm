@@ -11,6 +11,7 @@ import { getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { LiveLayoutViewer } from './LiveLayoutViewer';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
+import { useDataStore } from './PictureMapping/DataContext';
 
 interface LayoutTabProps {
   initialStore?: string;
@@ -109,6 +110,89 @@ export function LayoutTab({
   const [triggerState, setTriggerState] = useState<any>(null);
   const [isFullscreenView, setIsFullscreenView] = useState(false);
   const fsScaleTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Search Unit functionality next to Trigger Export
+  const [unitSearchInput, setUnitSearchInput] = useState('');
+  const [targetUnitSearch, setTargetUnitSearch] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const getAllStoreUnits = useDataStore((state) => state.getAllStoreUnits);
+
+  // Aggregate all known units in active store for rapid autocomplete suggestions
+  const unitSuggestions = React.useMemo(() => {
+    const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
+    const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string }>();
+
+    storeUnits.forEach((u: any) => {
+      if (u?.name) {
+        map.set(u.name.toLowerCase().trim(), {
+          unit: u.name.trim(),
+          location: u.location,
+          brand: '',
+          project: ''
+        });
+      }
+    });
+
+    projects.forEach((p: any) => {
+      if (p.unit && (!p.store || p.store === activeStore)) {
+        const key = p.unit.toLowerCase().trim();
+        const existing = map.get(key) || { unit: p.unit.trim(), location: '', brand: '', project: '' };
+        map.set(key, {
+          unit: p.unit.trim(),
+          location: existing.location || p.location,
+          brand: p.brandName || existing.brand,
+          project: p.name || existing.project
+        });
+      }
+    });
+
+    return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string }>;
+  }, [getAllStoreUnits, activeStore, projects]);
+
+  const filteredUnitSuggestions = React.useMemo(() => {
+    if (!unitSearchInput.trim()) return [];
+    const q = unitSearchInput.toLowerCase().trim();
+    return unitSuggestions.filter((item: { unit: string; brand?: string; project?: string }) => {
+      const matchUnit = item.unit.toLowerCase().includes(q);
+      const matchBrand = (item.brand || '').toLowerCase().includes(q);
+      const matchProject = (item.project || '').toLowerCase().includes(q);
+      return matchUnit || matchBrand || matchProject;
+    });
+  }, [unitSuggestions, unitSearchInput]);
+
+  const handleSelectSearchUnit = (unitItem: { unit: string; location?: string }) => {
+    setUnitSearchInput(unitItem.unit);
+    setShowSuggestions(false);
+
+    // 1. Ensure Live Map Mode is active
+    if (!isLiveMapMode) {
+      setIsLiveMapMode(true);
+    }
+
+    // 2. If the unit is on a specific floor and we are on a different floor filter, switch floor
+    if (unitItem.location && unitItem.location !== 'all') {
+      const currentLoc = globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all';
+      if (currentLoc !== 'all' && currentLoc.toLowerCase() !== unitItem.location.toLowerCase()) {
+        setGlobalLocationFilter([unitItem.location]);
+      }
+    }
+
+    // 3. Zoom & Pan to target unit
+    setTargetUnitSearch(unitItem.unit);
+  };
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -574,6 +658,87 @@ export function LayoutTab({
                 {isExporting ? (exportStatusMessage || 'Đang xử lý xuất...') : 'Trigger Export'}
               </button>
             )}
+
+            {/* Search Unit Box directly next to Trigger Export */}
+            <div ref={searchContainerRef} className="relative flex-grow sm:flex-grow-0 min-w-[200px] max-w-[280px]">
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input 
+                  type="text"
+                  value={unitSearchInput}
+                  onChange={(e) => {
+                    setUnitSearchInput(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (filteredUnitSuggestions.length > 0) {
+                        handleSelectSearchUnit(filteredUnitSuggestions[0]);
+                      } else if (unitSearchInput.trim()) {
+                        handleSelectSearchUnit({ unit: unitSearchInput.trim() });
+                      }
+                    } else if (e.key === 'Escape') {
+                      setShowSuggestions(false);
+                    }
+                  }}
+                  placeholder="Tìm ô unit (vd: L2-210)..."
+                  className="w-full pl-8 pr-7 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 shadow-sm transition-all"
+                />
+                {unitSearchInput && (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setUnitSearchInput('');
+                      setTargetUnitSearch(null);
+                      setShowSuggestions(false);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Suggestions Dropdown */}
+              {showSuggestions && unitSearchInput.trim() && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-60 overflow-y-auto p-1 animate-in fade-in duration-100">
+                  {filteredUnitSuggestions.length === 0 ? (
+                    <div className="p-2 text-xs text-slate-400 text-center italic">
+                      Nhấn Enter để tìm "{unitSearchInput}"
+                    </div>
+                  ) : (
+                    filteredUnitSuggestions.slice(0, 15).map((item: { unit: string; location?: string; brand?: string; project?: string }) => (
+                      <button
+                        key={item.unit}
+                        type="button"
+                        onClick={() => handleSelectSearchUnit(item)}
+                        className="w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-200 transition-colors group cursor-pointer"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-bold text-xs font-mono text-purple-700 dark:text-purple-400 shrink-0">
+                            {item.unit}
+                          </span>
+                          {(item.brand || item.project) && (
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              - {item.brand || item.project}
+                            </span>
+                          )}
+                        </div>
+                        {item.location && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0 ml-1">
+                            {item.location}
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
             {isAdmin && (
               <button 
                 onClick={() => { setEditUrl(url); setIsEditing(true); }}
@@ -641,7 +806,14 @@ export function LayoutTab({
 
       <div className="flex-grow flex w-full min-h-[600px] h-[calc(100vh-270px)] bg-slate-50 rounded-xl shadow-inner border border-slate-200 overflow-hidden relative">
         {isLiveMapMode ? (
-          <LiveLayoutViewer storeFilter={activeStore} locationFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'} />
+          <LiveLayoutViewer 
+            storeFilter={activeStore} 
+            locationFilter={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'} 
+            targetUnitSearch={targetUnitSearch}
+            onUnitSelected={(unit) => {
+              if (unit?.name) setUnitSearchInput(unit.name);
+            }}
+          />
         ) : !url ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
             <Map className="w-12 h-12 mb-3 opacity-20" />

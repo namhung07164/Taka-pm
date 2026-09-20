@@ -1039,5 +1039,19 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - *Thanh công cụ nổi & Menu Drawer trên di động*: Trên màn hình điện thoại, thanh công cụ tự động thu gọn vào nút Menu nổi thông minh, mở ngăn kéo (Drawer) chứa Chú thích màu (Legend), Tùy chọn xuất ảnh/PDF (Export), và cấu hình URL một cách gọn gàng.
      - *Cụm phím điều khiển Zoom nổi*: Dễ dàng phóng to, thu nhỏ và cân chỉnh toàn cảnh qua cụm nút bấm nổi trực tiếp trên bản vẽ.
 
+7. **Tìm Kiếm Gian Hàng & Tự Động Phóng To / Cuộn Tới Ô Unit (Unit Search & Auto-Zoom on Live Layout)**:
+   - **Ô Tìm Kiếm Kế Nút Trigger Export**:
+     + Ngay bên cạnh nút **"Trigger Export"** tại thanh công cụ Tab Layout, hệ thống tích hợp ô tìm kiếm chuyên dụng `Tìm ô unit (vd: L2-210)...`.
+     + Hỗ trợ gợi ý tự động (Autocomplete Dropdown) thông minh: Khi bạn bắt đầu gõ mã ô (ví dụ: `210`, `L2-210`, `L1-101`), hệ thống lập tức lọc và hiển thị danh sách các gian hàng phù hợp kèm tên thương hiệu (Brand), dự án và phân khu tầng (Location).
+   - **Tự Động Cuộn & Phóng To Trực Tiếp Đến Unit (Auto-Zoom & Pan Smoothly)**:
+     + Khi bạn chọn gian hàng từ danh sách gợi ý hoặc nhấn phím **Enter**:
+       - Hệ thống tự động kích hoạt chế độ **Live Map Mode** (nếu đang ở chế độ xem ảnh tĩnh).
+       - Tự động chuyển tầng phù hợp nếu ô unit thuộc tầng khác.
+       - Tự động tính toán tâm điểm toạ độ và điều khiển Canvas lướt mượt mà, phóng to (Zoom In) chính xác vào vị trí của ô unit đó giữa màn hình với tỷ lệ khung hình trực quan nhất.
+       - Ô unit được tìm kiếm sẽ phát sáng với **viền vàng hổ phách đứt nét (Golden Glow Animation)** và tự động mở bảng thông tin chi tiết (Tooltip) của gian hàng.
+   - **Tối Ưu Độ Tương Phản Màu Sắc & Chữ Hiển Thị Ô Unit (High-Contrast Unit Readability)**:
+     + Thuật toán tự động tính toán độ sáng màu nền (Luminance YIQ) để áp dụng màu chữ và viền chữ tương phản tối ưu: nền tối chữ trắng viền đen sắc nét, nền sáng chữ đen viền trắng nổi khối.
+     + Kích thước chữ được tính toán động theo tỷ lệ khung hình và cấp độ thu phóng, đảm bảo tên gian hàng luôn rõ ràng, không bị vỡ nét hay nhòe mờ ở bất kỳ mức độ zoom nào.
+
 
 
