@@ -982,6 +982,8 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - Trên thanh công cụ trên cùng của phân hệ (Data Mapping Bar), hệ thống tích hợp sẵn cụm bộ lọc:
      - **Store**: Chọn chi nhánh **HCM** hoặc **HN**. Menu tự động lọc theo `storePermissions` của người dùng; nếu tài khoản chỉ có quyền HCM hoặc HN, hệ thống sẽ tự động khóa và chỉ cho phép thao tác trên chi nhánh được phân quyền.
      - **Location**: Chọn tầng cụ thể (**B2, B1, L1, L2, L3, L4, L5...**). Danh sách tầng được kiểm soát nghiêm ngặt theo quyền `locationPermissions` trong Account Control. Nếu người dùng không có quyền truy cập tầng nào đó, tầng đó sẽ tự động bị ẩn khỏi danh sách lựa chọn.
+     - **Year (Bộ lọc Niên độ Năm)**: Chọn năm làm việc cụ thể (**2024, 2025, 2026, 2027, 2028...**). Bộ lọc Year hiện diện đồng bộ ở thanh công cụ chính (Data Mapping Bar), tab **Dynamic Hierarchy**, và tab **Review**, giúp đồng bộ hoàn toàn với niên độ dự án của Task Detail, General và Layout.
+     - **Quản lý Phiên bản theo Year**: Bất kỳ phiên bản bản vẽ (`MapVersion`) nào được tạo mới (`Add Version`), nhân bản (`Duplicate Version`) trong tab Dynamic Hierarchy, Review hay Edit đều tự động lưu kèm trường dữ liệu `year`. Tab Layout Live View tự động đọc theo đúng `version` và lọc theo `year` được chọn tại Picture Mapping.
      - **Bộ đếm Unit**: Hiển thị số lượng gian hàng thực tế đang có tại tầng/chi nhánh tương ứng.
 2. **Cơ chế phân vùng và cô lập dữ liệu độc lập (Zero Cross-Contamination)**:
    - Toàn bộ dữ liệu gian hàng (`mapUnits`), hình vẽ (Polygon, Hình chữ nhật, Hình tròn), ảnh mặt bằng kỹ thuật (`backgroundUrl`), tỷ lệ scale/tọa độ và các phiên bản (`mapVersions`) được cô lập hoàn toàn theo từng cặp `(Store, Location)`.

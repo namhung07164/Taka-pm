@@ -1,7 +1,7 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin, Layers } from 'lucide-react';
+import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin, Layers, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
 import EditTab from './DataMapping/EditTab';
 import DynamicHierarchyTab from './DataMapping/DynamicHierarchyTab';
@@ -25,6 +25,24 @@ export default React.memo(function DataMappingTab() {
   const isAdmin = currentUser.role === 'admin';
   const appLocations = useAppStore(state => state.locations);
   const appProjects = useAppStore(state => state.projects);
+  const appTasks = useAppStore(state => state.tasks);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+
+  const availableYears = React.useMemo(() => {
+    const currentYr = new Date().getFullYear().toString();
+    const baseYears = ['2024', '2025', '2026', '2027', '2028'];
+    const projectYears = (appProjects || []).map(p => p.year ? String(p.year) : '').filter(Boolean);
+    const taskYears = (appTasks || []).map(t => t.projectYear ? String(t.projectYear) : '').filter(Boolean);
+    const allYrs = Array.from(new Set([currentYr, ...baseYears, ...projectYears, ...taskYears]))
+      .filter(y => y && y.toLowerCase() !== 'all')
+      .sort((a, b) => Number(b) - Number(a));
+    return allYrs;
+  }, [appProjects, appTasks]);
+
+  const effectiveYear = (globalYearFilter && globalYearFilter !== 'all')
+    ? globalYearFilter
+    : (availableYears[0] || new Date().getFullYear().toString());
 
   const allowedStores = React.useMemo(() => {
     const list = getUserAllowedStores(currentUser);
@@ -204,6 +222,23 @@ export default React.memo(function DataMappingTab() {
                   <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">Toàn bộ Location</span>
                 </div>
               )}
+
+              <div className="w-px h-3.5 bg-slate-700/80"></div>
+
+              {/* Year Filter */}
+              <div className="flex items-center gap-1.5" title="Chọn Năm (Year)">
+                <Calendar size={13} className="text-amber-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Year:</span>
+                <select
+                  value={effectiveYear}
+                  onChange={(e) => setGlobalYearFilter(e.target.value)}
+                  className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-amber-300 transition-colors"
+                >
+                  {availableYears.map(y => (
+                    <option key={y} value={y} className="bg-slate-950 text-slate-200 font-semibold">{y}</option>
+                  ))}
+                </select>
+              </div>
 
               <div className="w-px h-3.5 bg-slate-700/80"></div>
 

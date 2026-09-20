@@ -11,6 +11,7 @@ import {
   X,
   Copy,
   Layers,
+  Calendar,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
@@ -40,8 +41,38 @@ function DynamicHierarchyTab({
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
 
-  const viewVersionId = activeVersionId || versions[0]?.id || null;
+  const availableYears = useMemo(() => {
+    const currentYr = new Date().getFullYear().toString();
+    const baseYears = ['2024', '2025', '2026', '2027', '2028'];
+    const projectYears = projects.map(p => p.year ? String(p.year) : '').filter(Boolean);
+    const taskYears = tasks.map(t => t.projectYear ? String(t.projectYear) : '').filter(Boolean);
+    const versionYears = versions.map(v => v.year ? String(v.year) : '').filter(Boolean);
+    const allYrs = Array.from(new Set([currentYr, ...baseYears, ...projectYears, ...taskYears, ...versionYears]))
+      .filter(y => y && y.toLowerCase() !== 'all')
+      .sort((a, b) => Number(b) - Number(a));
+    return allYrs;
+  }, [projects, tasks, versions]);
+
+  const effectiveYear = (globalYearFilter && globalYearFilter !== 'all')
+    ? globalYearFilter
+    : (availableYears[0] || new Date().getFullYear().toString());
+
+  // Filter versions by effective year (or fallback to untagged versions if needed)
+  const filteredVersions = useMemo(() => {
+    if (!effectiveYear) return versions;
+    const matched = versions.filter(v => String(v.year || '').trim() === String(effectiveYear));
+    if (matched.length > 0) return matched;
+    // Fallback: show versions with matching year or untagged versions
+    const fallback = versions.filter(v => !v.year || String(v.year).trim() === String(effectiveYear));
+    return fallback.length > 0 ? fallback : versions;
+  }, [versions, effectiveYear]);
+
+  const viewVersionId = (activeVersionId && filteredVersions.some(v => v.id === activeVersionId))
+    ? activeVersionId
+    : (filteredVersions[0]?.id || versions[0]?.id || null);
+
   const activeVersion = versions.find((v) => v.id === viewVersionId);
   const isVersionActive = activeVersion?.isDynamicActive ?? true;
 
@@ -305,6 +336,7 @@ function DynamicHierarchyTab({
         store: activeVersion?.store || 'HCM',
         location: activeVersion?.location || 'L1',
         isDynamicActive: true,
+        year: effectiveYear,
       };
       setVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
@@ -335,6 +367,7 @@ function DynamicHierarchyTab({
         name,
         store: activeVersion.store || 'HCM',
         location: activeVersion.location || 'L1',
+        year: effectiveYear,
         groups: newGroups,
         groupMappings: newGroupMappings,
       };
@@ -557,12 +590,30 @@ function DynamicHierarchyTab({
     <div className="flex flex-col h-full gap-6">
       <div className="flex-1 bg-slate-900/50 rounded-2xl border border-slate-800/50 p-6 glass flex flex-col relative overflow-hidden">
         <div className="flex items-center justify-between mb-8 shrink-0">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 flex-wrap">
             <h3 className="text-lg font-bold text-white uppercase tracking-widest flex items-center gap-3">
               <Calculator className="text-brand-500" /> Dynamic Hierarchy
             </h3>
+
+            {/* Year Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-700 px-3 py-1.5 rounded-lg shadow-inner">
+              <Calendar size={13} className="text-brand-400" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year:</span>
+              <select
+                value={effectiveYear}
+                onChange={(e) => setGlobalYearFilter(e.target.value)}
+                className="bg-transparent border-none text-xs text-white font-bold outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                title="Filter Dynamic Hierarchy by Year"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y} className="bg-slate-950 text-white font-semibold">{y}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Version Select */}
             <select
-              className="bg-slate-950 text-white text-sm px-4 py-2 rounded-lg border border-slate-700 outline-none"
+              className="bg-slate-950 text-white text-sm px-4 py-2 rounded-lg border border-slate-700 outline-none cursor-pointer hover:border-brand-500 transition-colors"
               value={viewVersionId || ""}
               onChange={(e) =>
                 setActiveVersionId(
@@ -570,10 +621,10 @@ function DynamicHierarchyTab({
                 )
               }
             >
-              {!viewVersionId && <option value="">-- No Version --</option>}
-              {versions.map((v) => (
+              {!viewVersionId && <option value="">-- No Version ({effectiveYear}) --</option>}
+              {filteredVersions.map((v) => (
                 <option key={v.id} value={v.id}>
-                  {v.location ? `[${v.location}] ` : ""}{v.name}
+                  {v.location ? `[${v.location}] ` : ""}{v.name}{v.year ? ` • ${v.year}` : ""}
                 </option>
               ))}
             </select>

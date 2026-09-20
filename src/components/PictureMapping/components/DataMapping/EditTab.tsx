@@ -9,6 +9,7 @@ import { UnitShape, ShapeType, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { useDropzone } from 'react-dropzone';
 import { useSummaryData } from '../../lib/summaryData';
+import { useAppStore } from '../../../../store/useAppStore';
 
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
@@ -142,6 +143,8 @@ function SearchableSelect({
 }
 
 function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setActiveVersionId }: EditTabProps) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const effectiveYear = globalYearFilter && globalYearFilter !== 'all' ? globalYearFilter : new Date().getFullYear().toString();
   const summaryData = useSummaryData();
   const masterUnits = React.useMemo(() => {
     // Unique by unit name
@@ -952,6 +955,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         isDynamicActive: true,
         store: activeVersion?.store,
         location: activeVersion?.location,
+        year: effectiveYear,
     };
     
     setVersions([...versions, newVersion]);

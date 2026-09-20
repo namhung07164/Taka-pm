@@ -3,13 +3,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
-import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, MapPin } from 'lucide-react';
+import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, MapPin, Calendar } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
+import { useAppStore } from '../../../../store/useAppStore';
 import { Calculator, CloudUpload } from 'lucide-react';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -37,15 +38,45 @@ const AVAILABLE_LABELS = [
 ];
 
 function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: initialActiveVersionId }: ReviewTabProps) {
-  const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || versions[0]?.id || null);
+  const projects = useAppStore(state => state.projects);
+  const tasks = useAppStore(state => state.tasks);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+
+  const availableYears = React.useMemo(() => {
+    const currentYr = new Date().getFullYear().toString();
+    const baseYears = ['2024', '2025', '2026', '2027', '2028'];
+    const projectYears = projects.map(p => p.year ? String(p.year) : '').filter(Boolean);
+    const taskYears = tasks.map(t => t.projectYear ? String(t.projectYear) : '').filter(Boolean);
+    const versionYears = versions.map(v => v.year ? String(v.year) : '').filter(Boolean);
+    const allYrs = Array.from(new Set([currentYr, ...baseYears, ...projectYears, ...taskYears, ...versionYears]))
+      .filter(y => y && y.toLowerCase() !== 'all')
+      .sort((a, b) => Number(b) - Number(a));
+    return allYrs;
+  }, [projects, tasks, versions]);
+
+  const effectiveYear = (globalYearFilter && globalYearFilter !== 'all')
+    ? globalYearFilter
+    : (availableYears[0] || new Date().getFullYear().toString());
+
+  // Filter versions by effective year (or fallback to untagged versions if needed)
+  const filteredVersions = React.useMemo(() => {
+    if (!effectiveYear) return versions;
+    const matched = versions.filter(v => String(v.year || '').trim() === String(effectiveYear));
+    if (matched.length > 0) return matched;
+    const fallback = versions.filter(v => !v.year || String(v.year).trim() === String(effectiveYear));
+    return fallback.length > 0 ? fallback : versions;
+  }, [versions, effectiveYear]);
+
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || filteredVersions[0]?.id || versions[0]?.id || null);
 
   useEffect(() => {
-    if (initialActiveVersionId && versions.some(v => v.id === initialActiveVersionId)) {
+    if (initialActiveVersionId && filteredVersions.some(v => v.id === initialActiveVersionId)) {
       setActiveVersionId(initialActiveVersionId);
-    } else if (versions.length > 0 && (!activeVersionId || !versions.some(v => v.id === activeVersionId))) {
-      setActiveVersionId(versions[0].id);
+    } else if (filteredVersions.length > 0 && (!activeVersionId || !filteredVersions.some(v => v.id === activeVersionId))) {
+      setActiveVersionId(filteredVersions[0].id);
     }
-  }, [initialActiveVersionId, versions]);
+  }, [initialActiveVersionId, filteredVersions, activeVersionId]);
 
   const activeVersion = versions.find(v => v.id === activeVersionId);
   const summaryData = useSummaryData();
@@ -626,16 +657,32 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
              </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Year Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-lg shadow-inner">
+              <Calendar size={12} className="text-brand-400" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year:</span>
+              <select
+                value={effectiveYear}
+                onChange={(e) => setGlobalYearFilter(e.target.value)}
+                className="bg-transparent border-none text-xs text-white font-bold outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                title="Filter Review by Year"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y} className="bg-slate-950 text-white font-semibold">{y}</option>
+                ))}
+              </select>
+            </div>
+
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">Version:</span>
             <select 
               value={activeVersionId || ''} 
               onChange={(e) => setActiveVersionId(e.target.value)}
-              className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:border-brand-500 transition-all min-w-[140px] uppercase tracking-wider"
+              className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:border-brand-500 transition-all min-w-[140px] uppercase tracking-wider cursor-pointer hover:border-brand-500"
             >
-              {versions.length === 0 && <option value="">No versions available</option>}
-              {versions.map(v => (
-                <option key={v.id} value={v.id}>{v.location ? `[${v.location}] ` : ''}{v.name}</option>
+              {filteredVersions.length === 0 && <option value="">No versions available ({effectiveYear})</option>}
+              {filteredVersions.map(v => (
+                <option key={v.id} value={v.id}>{v.location ? `[${v.location}] ` : ''}{v.name}{v.year ? ` • ${v.year}` : ''}</option>
               ))}
             </select>
             {activeVersion?.location && (

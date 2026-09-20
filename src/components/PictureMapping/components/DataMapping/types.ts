@@ -52,4 +52,5 @@ export interface MapVersion {
   isDynamicActive?: boolean;
   store?: string;
   location?: string;
+  year?: string;
 }

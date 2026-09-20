@@ -472,19 +472,37 @@ function LiveCanvas({
     return Array.from(versionsMap.values());
   }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
 
-  // 2. Filter versions specific to targetLoc (e.g. L2)
+  // 2. Filter versions specific to targetLoc (e.g. L2) and year from Picture Mapping / global setting
   const locationVersions = useMemo(() => {
     if (availableStoreVersions.length === 0) return [];
     
     const tLoc = targetLoc.toUpperCase().trim();
-    const matched = availableStoreVersions.filter(v => {
+    let matched = availableStoreVersions.filter(v => {
       const vLoc = (v.location || '').toUpperCase().trim();
       const vName = (v.name || '').toUpperCase().trim();
       return vLoc === tLoc || vName.includes(tLoc) || vName.startsWith(`PM-${tLoc}`) || vName.startsWith(tLoc);
     });
 
-    return matched.length > 0 ? matched : availableStoreVersions;
-  }, [availableStoreVersions, targetLoc]);
+    if (matched.length === 0) {
+      matched = availableStoreVersions;
+    }
+
+    // Filter by year if globalYearFilter is active (synced with Picture tab)
+    if (globalYearFilter && globalYearFilter !== 'all') {
+      const targetYear = String(globalYearFilter).trim();
+      const yearMatched = matched.filter(v => String(v.year || '').trim() === targetYear);
+      if (yearMatched.length > 0) {
+        return yearMatched;
+      }
+      // If no version explicitly tagged with this year, include untagged versions as fallback
+      const fallback = matched.filter(v => !v.year || String(v.year).trim() === targetYear);
+      if (fallback.length > 0) {
+        return fallback;
+      }
+    }
+
+    return matched;
+  }, [availableStoreVersions, targetLoc, globalYearFilter]);
 
   // 3. Resolve active version & units
   const { r2Version, r2Units } = useMemo(() => {
@@ -500,13 +518,17 @@ function LiveCanvas({
       ? localPart
       : cloudPart;
 
-    // Pick version: check selectedVersionId first, then partition.activeMapVersionId, then matching location versions
+    // Pick version: check selectedVersionId first, then localActiveMapVersionId from Picture tab, then partition.activeMapVersionId, then matching location versions
     let v: any = null;
     if (selectedVersionId && locationVersions.some(lv => lv.id === selectedVersionId)) {
       v = locationVersions.find(lv => lv.id === selectedVersionId);
+    } else if (localActiveMapVersionId && locationVersions.some(lv => lv.id === localActiveMapVersionId)) {
+      v = locationVersions.find(lv => lv.id === localActiveMapVersionId);
     } else if (partition?.activeMapVersionId) {
       v = locationVersions.find(lv => lv.id === partition.activeMapVersionId) ||
           availableStoreVersions.find(av => av.id === partition.activeMapVersionId);
+    } else if (localActiveMapVersionId && availableStoreVersions.some(av => av.id === localActiveMapVersionId)) {
+      v = availableStoreVersions.find(av => av.id === localActiveMapVersionId);
     }
 
     if (!v) {
@@ -1392,7 +1414,7 @@ function LiveCanvas({
               >
                 {locationVersions.map((v: any) => (
                   <option key={v.id} value={v.id}>
-                    {v.name || v.id}
+                    {v.name || v.id}{v.year ? ` • ${v.year}` : ''}
                   </option>
                 ))}
               </select>
@@ -1401,7 +1423,7 @@ function LiveCanvas({
         )}
         {locationVersions.length <= 1 && version?.name && (
           <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-2 max-w-[180px] truncate">
-            {version.name}
+            {version.name}{version.year ? ` • ${version.year}` : ''}
           </span>
         )}
       </div>
