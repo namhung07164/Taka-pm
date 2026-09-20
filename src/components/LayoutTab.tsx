@@ -670,7 +670,7 @@ export function LayoutTab({
         )}
       </AnimatePresence>
       <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 relative h-full">
-      <div className="flex flex-col gap-2 mb-2">
+      <div className="flex flex-col gap-2 mb-2 hide-on-actual-print print:hidden">
         {/* Row 1: Header, Filter Bar, and Back to Gantt */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -923,7 +923,7 @@ export function LayoutTab({
 
       {/* Helpful hint depending on view mode - hidden on mobile to maximize map height */}
       {url && !url.includes('drive.google.com') && !isEditing && (
-        <div className="hidden md:flex mb-2 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 p-2 rounded-xl">
+        <div className="hidden md:flex mb-2 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 p-2 rounded-xl hide-on-actual-print print:hidden">
           <HelpCircle className="w-3.5 h-3.5 text-blue-500 shrink-0" />
           <span>💡 <b>Thao tác:</b> Cuộn chuột để di chuyển Lên/Xuống. Thu phóng: Giữ <b>Ctrl + Cuộn chuột</b> hoặc <b>Dùng 2 ngón tay</b> thu phóng trên màn hình cảm ứng/Touchpad.</span>
         </div>

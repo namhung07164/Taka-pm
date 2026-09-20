@@ -4,7 +4,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
@@ -856,6 +856,8 @@ function LiveCanvas({
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
   const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
   const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const setIsPrintPreview = useAppStore(state => state.setIsPrintPreview);
   const summaryData = useSummaryData();
 
   // 2. Build aggregatedData
@@ -1391,14 +1393,41 @@ function LiveCanvas({
     const updateSize = () => {
       if (containerRef.current) {
         setDimensions({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight
+          width: containerRef.current.offsetWidth || 800,
+          height: containerRef.current.offsetHeight || 600
         });
       }
     };
     updateSize();
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        updateSize();
+      });
+      ro.observe(containerRef.current);
+    }
+    return () => {
+      window.removeEventListener('resize', updateSize);
+      if (ro) ro.disconnect();
+    };
+  }, []);
+
+  // When print preview activates or deactivates, automatically fit floor plan to screen
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitToScreen(false);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [isPrintPreview, fitToScreen]);
+
+  // Listen to custom export-png window event (from hamburger menu)
+  useEffect(() => {
+    const handleExportPngEvent = () => {
+      handleExport();
+    };
+    window.addEventListener('export-png', handleExportPngEvent);
+    return () => window.removeEventListener('export-png', handleExportPngEvent);
   }, []);
 
   // Keep hoverInfo.data in sync with latest aggregatedData if projects update
@@ -1442,7 +1471,7 @@ function LiveCanvas({
       
       {/* Floating Focus Unit Banner with Cancel / Exit Button */}
       {focusedUnitId && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-slate-900/95 dark:bg-slate-800/95 text-white px-3.5 py-1.5 rounded-full shadow-2xl border border-amber-400/60 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-slate-900/95 dark:bg-slate-800/95 text-white px-3.5 py-1.5 rounded-full shadow-2xl border border-amber-400/60 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 hide-on-actual-print print:hidden">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
           <span className="text-xs font-bold text-amber-300">
             {units.find((u: any) => u.id === focusedUnitId)?.name || 'Gian hàng'}
@@ -1466,7 +1495,7 @@ function LiveCanvas({
       )}
 
       {/* Floating Top-Left Controls: Location & Layout Version Switcher */}
-      <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 z-20 flex items-center gap-1.5 sm:gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1 sm:px-3 sm:py-1.5 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl max-w-[55%] sm:max-w-none">
+      <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 z-20 flex items-center gap-1.5 sm:gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1 sm:px-3 sm:py-1.5 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl max-w-[55%] sm:max-w-none hide-on-actual-print print:hidden">
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-600 dark:text-brand-400 shrink-0" />
           <span className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider whitespace-nowrap">
@@ -1501,7 +1530,7 @@ function LiveCanvas({
       </div>
 
       {/* Floating Top-Right Controls */}
-      <div className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 z-20 flex items-center gap-0.5 sm:gap-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+      <div className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 z-20 flex items-center gap-0.5 sm:gap-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl hide-on-actual-print print:hidden">
         <button
           type="button"
           onClick={() => {
@@ -1586,7 +1615,7 @@ function LiveCanvas({
       </div>
 
       {/* iOS Floating Color Legend Bar - Hidden on mobile screens so it does not block the bottom floor plan */}
-      <div className="hidden sm:block absolute bottom-16 left-4 max-w-xl z-20 pointer-events-auto">
+      <div className="hidden sm:block absolute bottom-16 left-4 max-w-xl z-20 pointer-events-auto hide-on-actual-print print:hidden">
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl p-2.5 transition-all">
           {/* Header */}
           <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
@@ -1690,7 +1719,7 @@ function LiveCanvas({
       </div>
 
       {/* Floating Bottom Action Buttons */}
-      <div className={`absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 transition-all duration-150 ${hoverInfo?.visible ? 'max-sm:opacity-0 max-sm:pointer-events-none' : 'opacity-100'}`}>
+      <div className={`absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 transition-all duration-150 hide-on-actual-print print:hidden ${hoverInfo?.visible ? 'max-sm:opacity-0 max-sm:pointer-events-none' : 'opacity-100'}`}>
         <button 
           onClick={() => setShowLegendModal(true)} 
           className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-700 text-white backdrop-blur-md border border-purple-500 shadow-xl rounded-full text-xs font-bold active:scale-95 touch-manipulation transition-all whitespace-nowrap"
@@ -1714,7 +1743,7 @@ function LiveCanvas({
 
       {/* Full Color Legend Modal / Drawer (iOS friendly) */}
       {showLegendModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 text-slate-800 dark:text-slate-200 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
@@ -1856,7 +1885,7 @@ function LiveCanvas({
 
       {/* Floating Menu Drawer / Modal */}
       {showMenu && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 text-slate-800 dark:text-slate-200 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
@@ -1926,10 +1955,19 @@ function LiveCanvas({
                 </button>
               )}
               
-              <div className={`grid ${canWrite ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={() => {
+                    setShowMenu(false);
+                    setIsPrintPreview(!isPrintPreview);
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm active:scale-95 touch-manipulation"
+                >
+                  <Printer className="w-4 h-4" /> Print Preview
+                </button>
                 <button 
                   onClick={handleExport}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm active:scale-95 touch-manipulation"
                 >
                   <Download className="w-4 h-4" /> Xuất ảnh HD
                 </button>
@@ -1939,7 +1977,7 @@ function LiveCanvas({
                       setShowMenu(false);
                       onOpenR2Config();
                     }}
-                    className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700"
+                    className="col-span-2 flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700 active:scale-95 touch-manipulation"
                   >
                     <Settings className="w-4 h-4" /> Cấu hình R2
                   </button>
@@ -1952,35 +1990,37 @@ function LiveCanvas({
 
       {/* Tooltip */}
       {hoverInfo && hoverInfo.visible && (
-        <LayoutUnitTooltip
-          hoverInfo={hoverInfo}
-          tooltipRef={tooltipRef}
-          containerRef={containerRef}
-          onClose={() => {
-            isPinnedRef.current = false;
-            setHoverInfo(null);
-            if (focusedUnitId) {
-              setFocusedUnitId(null);
-              if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
-              fitToScreen(true);
-              onClearFocus?.();
-            }
-          }}
-          onEditProject={(project, isReadOnly, tab) => {
-            if (tab === 'chat') {
-              isPinnedRef.current = true;
-              // Giữ lại tooltip khi mở comment: khi người dùng đóng modal comment thì tooltip vẫn tiếp tục hiển thị
-            } else {
+        <div className="hide-on-actual-print print:hidden">
+          <LayoutUnitTooltip
+            hoverInfo={hoverInfo}
+            tooltipRef={tooltipRef}
+            containerRef={containerRef}
+            onClose={() => {
               isPinnedRef.current = false;
               setHoverInfo(null);
-            }
-            setEditingProject(project);
-            setModalInitialTab(tab || 'details');
-            setIsProjectModalOpen(true);
-          }}
-          canWrite={canWrite}
-          storeFilter={storeFilter}
-        />
+              if (focusedUnitId) {
+                setFocusedUnitId(null);
+                if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+                fitToScreen(true);
+                onClearFocus?.();
+              }
+            }}
+            onEditProject={(project, isReadOnly, tab) => {
+              if (tab === 'chat') {
+                isPinnedRef.current = true;
+                // Giữ lại tooltip khi mở comment: khi người dùng đóng modal comment thì tooltip vẫn tiếp tục hiển thị
+              } else {
+                isPinnedRef.current = false;
+                setHoverInfo(null);
+              }
+              setEditingProject(project);
+              setModalInitialTab(tab || 'details');
+              setIsProjectModalOpen(true);
+            }}
+            canWrite={canWrite}
+            storeFilter={storeFilter}
+          />
+        </div>
       )}
 
       {/* Canvas Viewport */}

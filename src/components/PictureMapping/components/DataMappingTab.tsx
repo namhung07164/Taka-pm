@@ -152,6 +152,9 @@ export default React.memo(function DataMappingTab() {
             setVersions={(newVersions) => updateStoreVersionsAcrossLocations(newVersions, store)}
             activeVersionId={activeMapVersionId}
             setActiveVersionId={setActiveMapVersionId}
+            store={store}
+            location={location}
+            year={effectiveYear}
           />
         );
       case 'review':
@@ -162,6 +165,9 @@ export default React.memo(function DataMappingTab() {
             versions={allStoreVersions}
             setVersions={(newVersions) => updateStoreVersionsAcrossLocations(newVersions, store)}
             activeVersionId={activeMapVersionId}
+            store={store}
+            location={location}
+            year={effectiveYear}
           />
         );
     }
@@ -184,25 +190,25 @@ export default React.memo(function DataMappingTab() {
               </div>
             </div>
 
-            {/* Store & Location Filter Dropdown */}
-            <div className="flex items-center gap-2 bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700/80 shadow-inner">
-              <div className="flex items-center gap-1.5" title="Chọn Chi nhánh (Store)">
-                <Building2 size={13} className="text-brand-400" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store:</span>
-                <select
-                  value={store}
-                  onChange={(e) => setStore(e.target.value as 'HCM' | 'HN')}
-                  className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-brand-300 transition-colors"
-                >
-                  {allowedStores.map(s => (
-                    <option key={s} value={s} className="bg-slate-950 text-slate-200 font-semibold">{s}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Store & Location Filter Dropdown */}
+              <div className="flex items-center gap-2 bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-700/80 shadow-inner">
+                <div className="flex items-center gap-1.5" title="Chọn Chi nhánh (Store)">
+                  <Building2 size={13} className="text-brand-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Store:</span>
+                  <select
+                    value={store}
+                    onChange={(e) => setStore(e.target.value as 'HCM' | 'HN')}
+                    className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                  >
+                    {allowedStores.map(s => (
+                      <option key={s} value={s} className="bg-slate-950 text-slate-200 font-semibold">{s}</option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="w-px h-3.5 bg-slate-700/80"></div>
+                <div className="w-px h-3.5 bg-slate-700/80"></div>
 
-              {activeSubTab === 'edit' ? (
+                {/* Location Filter on all tabs */}
                 <div className="flex items-center gap-1.5" title="Chọn Tầng / Vị trí (Location)">
                   <MapPin size={13} className="text-purple-400" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Location:</span>
@@ -216,39 +222,33 @@ export default React.memo(function DataMappingTab() {
                     ))}
                   </select>
                 </div>
-              ) : (
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/50" title="Tab này không lọc theo Location - Áp dụng chung cho toàn bộ vị trí / tầng">
-                  <Layers size={13} className="text-purple-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">Toàn bộ Location</span>
-                </div>
-              )}
 
-              <div className="w-px h-3.5 bg-slate-700/80"></div>
+                {/* Year Filter: ONLY on dynamic-hierarchy and review tabs, HIDDEN on edit tab */}
+                {activeSubTab !== 'edit' && (
+                  <>
+                    <div className="w-px h-3.5 bg-slate-700/80"></div>
+                    <div className="flex items-center gap-1.5" title="Chọn Năm quy hoạch (Year)">
+                      <Calendar size={13} className="text-amber-400" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Year:</span>
+                      <select
+                        value={effectiveYear}
+                        onChange={(e) => setGlobalYearFilter(e.target.value)}
+                        className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-amber-300 transition-colors"
+                      >
+                        {availableYears.map(y => (
+                          <option key={y} value={y} className="bg-slate-950 text-slate-200 font-semibold">{y}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
 
-              {/* Year Filter */}
-              <div className="flex items-center gap-1.5" title="Chọn Năm (Year)">
-                <Calendar size={13} className="text-amber-400" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Year:</span>
-                <select
-                  value={effectiveYear}
-                  onChange={(e) => setGlobalYearFilter(e.target.value)}
-                  className="bg-transparent border-none text-xs text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-amber-300 transition-colors"
-                >
-                  {availableYears.map(y => (
-                    <option key={y} value={y} className="bg-slate-950 text-slate-200 font-semibold">{y}</option>
-                  ))}
-                </select>
+                <div className="w-px h-3.5 bg-slate-700/80"></div>
+
+                <span className="text-[10px] font-medium text-slate-400">
+                  {mapUnits.length} {mapUnits.length === 1 ? 'unit' : 'units'} ({location})
+                </span>
               </div>
-
-              <div className="w-px h-3.5 bg-slate-700/80"></div>
-
-              <span className="text-[10px] font-medium text-slate-400">
-                {activeSubTab === 'edit'
-                  ? `${mapUnits.length} ${mapUnits.length === 1 ? 'unit' : 'units'}`
-                  : `${allStoreUnits.length} units (Tất cả vị trí)`
-                }
-              </span>
-            </div>
           </div>
 
           <div className="flex items-center gap-2">

@@ -320,7 +320,7 @@ export function Header({
                   </>
                 )}
 
-                {['detail', 'budget', 'cost', 'summary', 'gantt'].includes(activeTab) && (
+                {['detail', 'budget', 'cost', 'summary', 'gantt', 'layout'].includes(activeTab) && (
                   <>
                     {['detail', 'budget', 'cost'].includes(activeTab) && currentUser.role !== "guest" && (
                       <div className="h-px bg-slate-100 dark:bg-[#444446]"></div>
@@ -338,7 +338,7 @@ export function Header({
                       {isPrintPreview ? 'Exit Print Preview' : 'Print Preview'}
                     </button>
 
-                    {activeTab === 'gantt' && (
+                    {['gantt', 'layout'].includes(activeTab) && (
                       <button 
                         onClick={() => { 
                           window.dispatchEvent(new CustomEvent("export-png"));

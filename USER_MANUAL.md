@@ -525,12 +525,15 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 ---
 
 ### 4.9. 🖨️ XUẤT DỮ LIỆU & IN ẤN BÁO CÁO (EXPORT & PRINT)
-1. **Xuất Excel / CSV**: Nhấp nút **"Export CSV/Excel"** ở góc bảng để tải toàn bộ bảng tính về máy tính.
-2. **In ấn & Xuất hình ảnh độ nét cao**:
-   - Nhấp nút **"Print Preview"** (biểu tượng máy in).
-   - Chọn khổ giấy: `A3` hoặc `A4` (Hướng ngang Landscape hoặc Hướng dọc Portrait).
-   - Tùy chọn đóng dấu mờ bản quyền: Tích chọn **"Watermark"** để hiển thị dấu bảo mật nội bộ Takashimaya.
-   - Bấm **"Print / Save PDF"**.
+1. **Xuất Excel / CSV**: Nhấp nút **"Export CSV/Excel"** ở menu góc bảng để tải toàn bộ bảng tính về máy tính.
+2. **In ấn & Xuất hình ảnh độ nét cao (Print Preview & Export PNG/PDF)**:
+   - **Cách kích hoạt**: Mở menu góc (Hamburger Menu ☰ trên thanh Header) khi đang ở bất kỳ tab nào (Gantt, Layout, General, Detail, Budget, Cost) và chọn **"Print Preview"** hoặc **"Export as PNG"**. Trên tab Layout Live View, cũng có thể mở qua nút Print Preview trong menu đáy màn hình.
+   - **Tùy chọn in**:
+     - Chọn khổ giấy: `A3` hoặc `A4` (Hướng ngang Landscape hoặc Hướng dọc Portrait).
+     - Điều chỉnh tỷ lệ thu phóng (Scale: 50% - 150%) hoặc chế độ Fit to Width / Fit to Height.
+     - Tùy chọn đóng dấu mờ bản quyền: Tích chọn **"Watermark"** (`DRAFT`, `CONFIDENTIAL` hoặc `None`) để hiển thị dấu bảo mật nội bộ Takashimaya.
+     - Tùy chọn hiển thị thông tin lọc (**Show Filter Header**) và ngày in (**Show Date**).
+   - **In ấn & Xuất file**: Bấm **"Print Document"** (hoặc Save PDF) để in ra máy in hoặc lưu file PDF độ nét cao. Mọi thanh công cụ điều khiển, thanh zoom và menu nổi sẽ tự động ẩn đi để tạo bản in mặt bằng sạch sẽ, chuyên nghiệp.
 
 ---
 
@@ -1101,6 +1104,16 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Tối Ưu Độ Tương Phản Màu Sắc & Chữ Hiển Thị Ô Unit (High-Contrast Unit Readability)**:
      + Thuật toán tự động tính toán độ sáng màu nền (Luminance YIQ) để áp dụng màu chữ và viền chữ tương phản tối ưu: nền tối chữ trắng viền đen sắc nét, nền sáng chữ đen viền trắng nổi khối.
      + Kích thước chữ được tính toán động theo tỷ lệ khung hình và cấp độ thu phóng, đảm bảo tên gian hàng luôn rõ ràng, không bị vỡ nét hay nhòe mờ ở bất kỳ mức độ zoom nào.
+
+8. **Quy Hoạch Dữ Liệu Phân Vùng Theo Store, Vị Trí Tầng & Năm (Strict Data Partitioning: Store - Location - Year)**:
+   - **Phân Định Rõ Ràng Từng Phân Hệ Trong Picture Mapping**:
+     + **Tab Edit (Vẽ Mặt Bằng & Tải Ảnh)**: Được quản lý độc lập theo cặp `Store` và `Location` (Ví dụ: `HCM - B1`, `HN - L2`). Do hình học vật lý của gian hàng và ảnh nền bản vẽ mang tính cố định theo tầng, **bộ lọc Năm (Year) được ẩn đi tại tab Edit** để tránh gây nhầm lẫn.
+     + **Tab Dynamic (Cấu Hình Quy Tắc Động & Phiên Bản)**: Dữ liệu phiên bản (Version) được quy định chặt chẽ bởi cả 3 yếu tố: `Store` + `Location` + `Year` (Ví dụ: Mở `HCM - B1 - 2026` sẽ có danh sách version riêng; chuyển qua `HCM - B1 - 2027` sẽ có dữ liệu version riêng biệt, không bị trộn lẫn giữa các năm).
+       - Khi tạo mới version tại `HCM - B1 - 2026`, version tự động gắn nhãn và lưu trữ vào phân vùng `HCM - B1 - 2026`.
+       - Hỗ trợ tính năng sao chép bộ quy tắc nhóm (**Copy Groups From**) linh hoạt từ bất kỳ version nào của năm khác hoặc tầng khác để tiết kiệm thời gian thiết lập.
+       - Tự động kế thừa ảnh nền bản vẽ của tầng đó mà không cần tải lại ảnh.
+     + **Tab Review (Duyệt Màu Sắc & Nhãn Dữ Liệu)**: Dựa trên 3 bộ lọc `Store`, `Location`, `Year` để đọc chính xác phiên bản quy hoạch tương ứng, áp dụng màu sắc và hiển thị bảng mặt bằng hoàn chỉnh.
+     + **Tab Layout (Xem Mặt Bằng Trực Tiếp - Live Layout)**: Hệ thống tự động xác định chính xác theo `Store`, `Location` (Tầng) và `Year` (Năm đang chọn trên thanh bộ lọc chung) để nạp đúng version và các nhóm quy tắc tương ứng, đảm bảo dữ liệu hiển thị tức thời, nhất quán 100% giữa khâu thiết lập và khâu quan sát trực quan.
 
 
 

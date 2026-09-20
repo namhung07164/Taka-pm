@@ -19,6 +19,8 @@ import { useAppStore } from "../../../../store/useAppStore";
 import { getStatus, enrichProjects } from "../../../../lib/utils";
 import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
+import { useDataStore } from "../../DataContext";
+import { useShallow } from "zustand/react/shallow";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -27,6 +29,9 @@ interface DynamicHierarchyTabProps {
   setVersions: (v: MapVersion[]) => void;
   activeVersionId: string | null;
   setActiveVersionId: (id: string | null) => void;
+  store?: 'HCM' | 'HN';
+  location?: string;
+  year?: string;
 }
 
 function DynamicHierarchyTab({
@@ -36,12 +41,22 @@ function DynamicHierarchyTab({
   setVersions,
   activeVersionId,
   setActiveVersionId,
+  store: propStore,
+  location: propLocation,
 }: DynamicHierarchyTabProps) {
   const summaryData = useSummaryData();
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+
+  const { currentStore, currentLocation } = useDataStore(useShallow(state => ({
+    currentStore: state.store,
+    currentLocation: state.location,
+  })));
+
+  const store = propStore || currentStore || 'HCM';
+  const location = propLocation || currentLocation || 'L1';
 
   const availableYears = useMemo(() => {
     const currentYr = new Date().getFullYear().toString();
@@ -59,19 +74,27 @@ function DynamicHierarchyTab({
     ? globalYearFilter
     : (availableYears[0] || new Date().getFullYear().toString());
 
-  // Filter versions by effective year (or fallback to untagged versions if needed)
+  // Filter versions strictly by store, location, and effective year
   const filteredVersions = useMemo(() => {
-    if (!effectiveYear) return versions;
-    const matched = versions.filter(v => String(v.year || '').trim() === String(effectiveYear));
+    const matched = versions.filter(v => {
+      const matchStore = !v.store || v.store === store;
+      const matchLoc = !v.location || v.location === location;
+      const matchYear = !v.year || String(v.year).trim() === String(effectiveYear);
+      return matchStore && matchLoc && matchYear;
+    });
     if (matched.length > 0) return matched;
-    // Fallback: show versions with matching year or untagged versions
-    const fallback = versions.filter(v => !v.year || String(v.year).trim() === String(effectiveYear));
-    return fallback.length > 0 ? fallback : versions;
-  }, [versions, effectiveYear]);
+    // Fallback: search for version matching store + location without strict year tag if needed
+    const fallback = versions.filter(v => {
+      const matchStore = !v.store || v.store === store;
+      const matchLoc = !v.location || v.location === location;
+      return matchStore && matchLoc && (!v.year || String(v.year).trim() === String(effectiveYear));
+    });
+    return fallback;
+  }, [versions, store, location, effectiveYear]);
 
   const viewVersionId = (activeVersionId && filteredVersions.some(v => v.id === activeVersionId))
     ? activeVersionId
-    : (filteredVersions[0]?.id || versions[0]?.id || null);
+    : (filteredVersions[0]?.id || null);
 
   const activeVersion = versions.find((v) => v.id === viewVersionId);
   const isVersionActive = activeVersion?.isDynamicActive ?? true;
@@ -322,21 +345,28 @@ function DynamicHierarchyTab({
     alert("Đã áp dụng điều kiện logic cho từng phiên bản / tầng.");
   };
 
+  const currentLocationUnits = useMemo(() => {
+    if (!location) return units;
+    const matched = units.filter(u => !u.location || u.location === location);
+    return matched.length > 0 ? matched : units;
+  }, [units, location]);
+
   const addVersion = () => {
-    const name = prompt("Tên version mới:");
+    const name = prompt(`Tên version mới cho [${store} - ${location} - ${effectiveYear}]:`);
     if (name) {
+      const existingBg = versions.find(v => (v.location === location || !v.location) && v.backgroundUrl)?.backgroundUrl || null;
       const newVersion: MapVersion = {
         id: uuidv4(),
         name,
-        backgroundUrl: null,
+        backgroundUrl: existingBg,
         backgroundScale: 1,
         backgroundPos: { x: 0, y: 0 },
         groups: [],
         groupMappings: {},
-        store: activeVersion?.store || 'HCM',
-        location: activeVersion?.location || 'L1',
+        store,
+        location,
         isDynamicActive: true,
-        year: effectiveYear,
+        year: String(effectiveYear),
       };
       setVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
@@ -365,9 +395,9 @@ function DynamicHierarchyTab({
         ...activeVersion,
         id: newVersionId,
         name,
-        store: activeVersion.store || 'HCM',
-        location: activeVersion.location || 'L1',
-        year: effectiveYear,
+        store: store || activeVersion.store || 'HCM',
+        location: location || activeVersion.location || 'L1',
+        year: String(effectiveYear),
         groups: newGroups,
         groupMappings: newGroupMappings,
       };
@@ -621,16 +651,20 @@ function DynamicHierarchyTab({
                 )
               }
             >
-              {!viewVersionId && <option value="">-- No Version ({effectiveYear}) --</option>}
+              {!viewVersionId && <option value="">-- No Version for {location} ({effectiveYear}) --</option>}
               {filteredVersions.map((v) => (
                 <option key={v.id} value={v.id}>
-                  {v.location ? `[${v.location}] ` : ""}{v.name}{v.year ? ` • ${v.year}` : ""}
+                  {v.name}
                 </option>
               ))}
             </select>
-            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-950/70 text-purple-300 border border-purple-800/40 text-xs font-semibold" title="Tab này áp dụng mapping chung cho toàn bộ vị trí">
-              <Layers size={13} className="text-purple-400" />
-              <span>Chung toàn bộ vị trí ({units.length} units)</span>
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950 text-slate-300 border border-slate-700 text-xs font-semibold" title="Quy hoạch phân vùng dữ liệu theo Store, Vị trí và Năm">
+              <span className="text-brand-400 font-bold">{store}</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-purple-400 font-bold">{location}</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-amber-400 font-bold">{effectiveYear}</span>
+              <span className="text-slate-500 text-[11px]">({currentLocationUnits.length} units)</span>
             </div>
             {activeVersion && (
               <>
@@ -706,7 +740,9 @@ function DynamicHierarchyTab({
                     >
                         <option value="">[ Copy Groups From ]</option>
                         {versions.filter(v => v.id !== activeVersion.id).map(v => (
-                            <option key={v.id} value={v.id}>{v.location ? `[${v.location}] ` : ""}{v.name}</option>
+                            <option key={v.id} value={v.id}>
+                              {v.store ? `[${v.store}] ` : ""}{v.location ? `[${v.location}] ` : ""}{v.name}{v.year ? ` • ${v.year}` : ""}
+                            </option>
                         ))}
                     </select>
                   )}

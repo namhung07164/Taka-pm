@@ -24,7 +24,10 @@ interface ReviewTabProps {
   setUnits: (units: UnitShape[]) => void;
   versions: MapVersion[];
   setVersions: (versions: MapVersion[]) => void;
-  activeVersionId: string | null;
+  activeVersionId?: string | null;
+  store?: 'HCM' | 'HN';
+  location?: string;
+  year?: string;
 }
 
 const AVAILABLE_LABELS = [
@@ -37,11 +40,23 @@ const AVAILABLE_LABELS = [
     'HCM Sales Effi'
 ];
 
-function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: initialActiveVersionId }: ReviewTabProps) {
+function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: initialActiveVersionId, store: propStore, location: propLocation }: ReviewTabProps) {
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+
+  const { store: storeFromState, location: locationFromState, reviewSelectedLabels: selectedLabels, setReviewSelectedLabels: setSelectedLabels, reviewLabelColors, setReviewLabelColors } = useDataStore(useShallow(state => ({
+    store: state.store,
+    location: state.location,
+    reviewSelectedLabels: state.reviewSelectedLabels,
+    reviewLabelColors: state.reviewLabelColors,
+    setReviewLabelColors: state.setReviewLabelColors,
+    setReviewSelectedLabels: state.setReviewSelectedLabels,
+  })));
+
+  const store = propStore || storeFromState || 'HCM';
+  const location = propLocation || locationFromState || 'L1';
 
   const availableYears = React.useMemo(() => {
     const currentYr = new Date().getFullYear().toString();
@@ -59,35 +74,37 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     ? globalYearFilter
     : (availableYears[0] || new Date().getFullYear().toString());
 
-  // Filter versions by effective year (or fallback to untagged versions if needed)
+  // Filter versions strictly by store, location, and effective year
   const filteredVersions = React.useMemo(() => {
-    if (!effectiveYear) return versions;
-    const matched = versions.filter(v => String(v.year || '').trim() === String(effectiveYear));
+    const matched = versions.filter(v => {
+      const matchStore = !v.store || v.store === store;
+      const matchLoc = !v.location || v.location === location;
+      const matchYear = !v.year || String(v.year).trim() === String(effectiveYear);
+      return matchStore && matchLoc && matchYear;
+    });
     if (matched.length > 0) return matched;
-    const fallback = versions.filter(v => !v.year || String(v.year).trim() === String(effectiveYear));
-    return fallback.length > 0 ? fallback : versions;
-  }, [versions, effectiveYear]);
+    const fallback = versions.filter(v => {
+      const matchStore = !v.store || v.store === store;
+      const matchLoc = !v.location || v.location === location;
+      return matchStore && matchLoc && (!v.year || String(v.year).trim() === String(effectiveYear));
+    });
+    return fallback;
+  }, [versions, store, location, effectiveYear]);
 
-  const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || filteredVersions[0]?.id || versions[0]?.id || null);
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || filteredVersions[0]?.id || null);
 
   useEffect(() => {
     if (initialActiveVersionId && filteredVersions.some(v => v.id === initialActiveVersionId)) {
       setActiveVersionId(initialActiveVersionId);
     } else if (filteredVersions.length > 0 && (!activeVersionId || !filteredVersions.some(v => v.id === activeVersionId))) {
       setActiveVersionId(filteredVersions[0].id);
+    } else if (filteredVersions.length === 0) {
+      setActiveVersionId(null);
     }
   }, [initialActiveVersionId, filteredVersions, activeVersionId]);
 
   const activeVersion = versions.find(v => v.id === activeVersionId);
   const summaryData = useSummaryData();
-
-  const {  store, reviewSelectedLabels: selectedLabels, setReviewSelectedLabels: setSelectedLabels, reviewLabelColors, setReviewLabelColors  } = useDataStore(useShallow(state => ({
-    store: state.store,
-    reviewSelectedLabels: state.reviewSelectedLabels,
-    reviewLabelColors: state.reviewLabelColors,
-    setReviewLabelColors: state.setReviewLabelColors,
-    setReviewSelectedLabels: state.setReviewSelectedLabels,
-  })));
 
   const [showLabelSettings, setShowLabelSettings] = useState(false);
 
@@ -680,17 +697,16 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
               onChange={(e) => setActiveVersionId(e.target.value)}
               className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:border-brand-500 transition-all min-w-[140px] uppercase tracking-wider cursor-pointer hover:border-brand-500"
             >
-              {filteredVersions.length === 0 && <option value="">No versions available ({effectiveYear})</option>}
+              {filteredVersions.length === 0 && <option value="">No versions for {location} ({effectiveYear})</option>}
               {filteredVersions.map(v => (
-                <option key={v.id} value={v.id}>{v.location ? `[${v.location}] ` : ''}{v.name}{v.year ? ` • ${v.year}` : ''}</option>
+                <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
-            {activeVersion?.location && (
-              <span className="text-[10px] font-bold px-2 py-1 rounded bg-purple-950/80 text-purple-300 border border-purple-800/60 uppercase tracking-wider flex items-center gap-1" title="Vị trí tầng của bản vẽ này">
-                <MapPin size={11} className="text-purple-400" />
-                {activeVersion.location}
-              </span>
-            )}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 border border-slate-800 text-[11px] font-semibold">
+              <span className="text-brand-400 font-bold">{store}</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-purple-400 font-bold">{location}</span>
+            </div>
           </div>
         </div>
       </div>
