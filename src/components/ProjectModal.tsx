@@ -193,109 +193,130 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (isSubmitting) return;
     setIsSubmitting(true);
-    e.preventDefault();
-    if (!canWrite) { return; }
-
-    const validNos = projects.map(p => p.no).filter(n => typeof n === 'number' && !isNaN(n));
-    let no = project ? project.no : (validNos.length ? Math.max(...validNos) + 1 : 1);
-    if (isNaN(no)) no = (validNos.length ? Math.max(...validNos) + 1 : 1);
-    
-    // The document ID should be the project.id (if editing) or the new 'no' (if creating)
-    const docId = project?.id || String(no);
-    
-    if (!formData.year || String(formData.year).trim() === '') {
-      useAppStore.getState().setToast({ title: 'Validation Error', message: 'Project Year is strictly required.', type: 'error' });
-      setIsSubmitting(false); return;
-    }
-    const yearNum = Number(formData.year);
-    if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
-      useAppStore.getState().setToast({ title: 'Validation Error', message: 'Please enter a valid Project Year.', type: 'error' });
-      setIsSubmitting(false); return;
-    }
-
-    const dataToSave = { 
-      ...formData, 
-      no, 
-      year: yearNum,
-      taskCount: project?.taskCount !== undefined ? project.taskCount : 0,
-      taskSummaries: project?.taskSummaries || [],
-      computedPlanProgress: project?.computedPlanProgress !== undefined ? project.computedPlanProgress : 0,
-      computedActProgress: project?.computedActProgress !== undefined ? project.computedActProgress : 0
-    };
-    // Draft mechanism when offline
-    if (cloudStatus === 'offline') {
-      const payload = { ...dataToSave, updatedAt: new Date().toISOString() };
-      delete payload.id;
-      delete payload.computedTakStart;
-      delete payload.computedTakCompl;
-      delete payload.computedOpening;
-      Object.keys(payload).forEach(key => {
-        if (payload[key] === undefined) delete payload[key];
-      });
-      addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_projects`, action: 'set', docId, data: payload } as any);
-      setToast({ title: 'Draft Saved', message: 'Project saved offline. Will sync when connection returns.' });
-      onClose(); setIsSubmitting(false);
-      setIsSubmitting(false); return;
-    }
- // Ensure 'no' is included in data
-    delete (dataToSave as any).id; // Don't save id field inside document data to avoid redundancy if using random IDs, but we use it as docId
-    delete (dataToSave as any).computedTakStart;
-    delete (dataToSave as any).computedTakCompl;
-    delete (dataToSave as any).computedOpening;
-
-    // Sanitize dataToSave to remove any undefined fields
-    Object.keys(dataToSave).forEach(key => {
-      if ((dataToSave as any)[key] === undefined) {
-        delete (dataToSave as any)[key];
-      }
-    });
-
-
 
     try {
+      if (!canWrite) {
+        setIsSubmitting(false);
+        return;
+      }
+
+      const validNos = projects.map(p => p.no).filter(n => typeof n === 'number' && !isNaN(n));
+      let no = project ? project.no : (validNos.length ? Math.max(...validNos) + 1 : 1);
+      if (isNaN(no)) no = (validNos.length ? Math.max(...validNos) + 1 : 1);
+      
+      const docId = project?.id || String(no);
+      
+      if (!formData.year || String(formData.year).trim() === '') {
+        useAppStore.getState().setToast({ title: 'Validation Error', message: 'Project Year is strictly required.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+      const yearNum = Number(formData.year);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        useAppStore.getState().setToast({ title: 'Validation Error', message: 'Please enter a valid Project Year.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.code || String(formData.code).trim() === '') {
+        useAppStore.getState().setToast({ title: 'Validation Error', message: 'Project Code is strictly required.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const dataToSave: any = { 
+        ...formData, 
+        no, 
+        year: yearNum,
+        code: String(formData.code).trim(),
+        taskCount: project?.taskCount !== undefined ? project.taskCount : 0,
+        taskSummaries: project?.taskSummaries || [],
+        computedPlanProgress: project?.computedPlanProgress !== undefined ? project.computedPlanProgress : 0,
+        computedActProgress: project?.computedActProgress !== undefined ? project.computedActProgress : 0
+      };
+
+      // Draft mechanism when offline
+      if (cloudStatus === 'offline') {
+        const payload = { ...dataToSave, updatedAt: new Date().toISOString() };
+        delete payload.id;
+        delete payload.computedTakStart;
+        delete payload.computedTakCompl;
+        delete payload.computedOpening;
+        Object.keys(payload).forEach(key => {
+          if ((payload as any)[key] === undefined) delete (payload as any)[key];
+        });
+        addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_projects`, action: 'set', docId, data: payload } as any);
+        setToast({ title: 'Draft Saved', message: 'Project saved offline. Will sync when connection returns.' });
+        onClose();
+        setIsSubmitting(false);
+        return;
+      }
+
+      delete dataToSave.id;
+      delete dataToSave.computedTakStart;
+      delete dataToSave.computedTakCompl;
+      delete dataToSave.computedOpening;
+
+      // Sanitize dataToSave to remove any undefined fields
+      Object.keys(dataToSave).forEach(key => {
+        if (dataToSave[key] === undefined) {
+          delete dataToSave[key];
+        }
+      });
+
       // Check for duplicate project code in the same year and store
       const isDuplicate = projects.some(p => 
-        String(p.code).trim().toLowerCase() === String(formData.code).trim().toLowerCase() && 
+        String(p.code || '').trim().toLowerCase() === String(formData.code || '').trim().toLowerCase() && 
         String(p.year) === String(formData.year) && 
-        String(p.store) === String(formData.store) &&
-        (!project || p.no !== project.no)
+        String(p.store || '').trim().toLowerCase() === String(formData.store || '').trim().toLowerCase() &&
+        (!project || (project.id && p.id ? p.id !== project.id : String(p.no) !== String(project.no)))
       );
 
       if (isDuplicate) {
-        setToast({ title: "Error", message: `Project code "${formData.code}" already exists in year ${formData.year} - Store ${formData.store}. Please enter a different code.` });
-        setIsSubmitting(false); return;
+        setToast({ title: "Error", message: `Project code "${formData.code}" already exists in year ${formData.year} - Store ${formData.store}. Please enter a different code.`, type: "error" });
+        setIsSubmitting(false);
+        return;
       }
 
-      const isIdentityChange = project && (project.code !== formData.code || project.year !== formData.year || project.store !== formData.store);
+      const isIdentityChange = project && (
+        String(project.code || '').trim() !== String(formData.code || '').trim() || 
+        String(project.year) !== String(formData.year) || 
+        String(project.store || '').trim() !== String(formData.store || '').trim()
+      );
 
       if (isIdentityChange) {
         const batch = writeBatch(db);
         
-        // Update project
+        // Update project document
         const projectRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
         batch.set(projectRef, {
           ...dataToSave,
           updatedAt: new Date().toISOString()
-        });
+        }, { merge: true });
 
         // Compute cascaded code & predecessor updates across all tasks
         const storeTasks = useAppStore.getState().tasks || [];
         const { taskUpdates, predecessorUpdates } = getProjectCodeChangePredecessorUpdates(
           project,
-          formData.code,
+          String(formData.code).trim(),
           formData.year,
           formData.store,
           storeTasks,
           projects
         );
 
-        // Update tasks associated with the old (code, year, store)
+        // Update tasks associated with old project identity
+        const oldPCode = String(project.code || '').trim().toLowerCase();
+        const oldPYear = String(project.year || '');
+        const oldPStore = String(project.store || '').trim().toLowerCase();
+
         const relatedTasks = storeTasks.filter(t => {
-          const matchesCode = t.projectCode === project.code;
-          const matchesYear = !t.projectYear || String(t.projectYear) === String(project.year);
-          const matchesStore = !t.projectStore || String(t.projectStore) === String(project.store);
+          const matchesCode = String(t.projectCode || '').trim().toLowerCase() === oldPCode;
+          const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
+          const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
           return matchesCode && matchesYear && matchesStore;
         });
 
@@ -303,8 +324,8 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
 
         relatedTasks.forEach(t => {
           const tUpdate = taskUpdates.get(t.id) || { 
-            projectCode: formData.code,
-            projectYear: formData.year,
+            projectCode: String(formData.code).trim(),
+            projectYear: yearNum,
             projectStore: formData.store
           };
           const pu = predecessorUpdates.find(p => p.id === t.id);
@@ -312,37 +333,51 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
             ...tUpdate,
             updatedAt: new Date().toISOString()
           };
-          if (pu) {
+          if (pu && pu.predecessor !== undefined) {
             payload.predecessor = pu.predecessor;
           }
+          // Remove any undefined keys to prevent Firestore errors
+          Object.keys(payload).forEach(k => {
+            if (payload[k] === undefined) delete payload[k];
+          });
+
           batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), payload, { merge: true });
         });
 
         // Update tasks in other projects that reference this project's tasks in predecessor
         predecessorUpdates.forEach(pu => {
           if (!relatedTaskIds.has(pu.id)) {
-            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+            const payload: any = {
               predecessor: pu.predecessor,
-              updatedAt: pu.updatedAt
-            }, { merge: true });
+              updatedAt: pu.updatedAt || new Date().toISOString()
+            };
+            Object.keys(payload).forEach(k => {
+              if (payload[k] === undefined) delete payload[k];
+            });
+            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), payload, { merge: true });
           }
         });
 
-        // Update costs from memory store (Zero-read optimization)
+        // Update costs from memory store
         const storeCosts = useAppStore.getState().costs || [];
         const relatedCosts = storeCosts.filter(c => {
-          const matchesCode = c.projectCode === project.code;
-          const matchesYear = !c.projectYear || String(c.projectYear) === String(project.year);
-          const matchesStore = !c.projectStore || String(c.projectStore) === String(project.store);
+          const matchesCode = String(c.projectCode || '').trim().toLowerCase() === oldPCode;
+          const matchesYear = !c.projectYear || !oldPYear || String(c.projectYear) === oldPYear;
+          const matchesStore = !c.projectStore || !oldPStore || String(c.projectStore).trim().toLowerCase() === oldPStore;
           return matchesCode && matchesYear && matchesStore;
         });
 
         relatedCosts.forEach(c => {
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), { 
-            projectCode: formData.code,
-            projectYear: formData.year,
-            projectStore: formData.store
-          }, { merge: true });
+          const payload: any = { 
+            projectCode: String(formData.code).trim(),
+            projectYear: yearNum,
+            projectStore: formData.store,
+            updatedAt: new Date().toISOString()
+          };
+          Object.keys(payload).forEach(k => {
+            if (payload[k] === undefined) delete payload[k];
+          });
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), payload, { merge: true });
         });
 
         // Optimistic update in Zustand store (0ms UI latency)
@@ -361,7 +396,12 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         });
         useAppStore.getState().setTasks(updatedTasks);
 
-        const updatedProjects = projects.map(p => ((p.id && p.id === project.id) || (p.no !== undefined && p.no === project.no)) ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } : p);
+        const rawProjects = useAppStore.getState().projects || [];
+        const updatedProjects = rawProjects.map(p => 
+          ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) 
+            ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } 
+            : p
+        );
         useAppStore.getState().setProjects(updatedProjects);
 
         batch.commit().catch(e => {
@@ -373,7 +413,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           description: `Update Identity: ${project.code}(${project.year}) -> ${formData.code}(${formData.year})`,
           revert: async () => {
             const revertBatch = writeBatch(db);
-            revertBatch.set(projectRef, project);
+            revertBatch.set(projectRef, project, { merge: true });
             relatedTasks.forEach(t => {
               const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
               revertBatch.set(tRef, { 
@@ -409,26 +449,36 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           updatedAt: new Date().toISOString()
         }, { merge: true });
         
+        const rawProjects = useAppStore.getState().projects || [];
         if (project) {
-          const updatedProjects = projects.map(p => ((p.id && p.id === project.id) || (p.no !== undefined && p.no === project.no)) ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } : p);
+          const updatedProjects = rawProjects.map(p => 
+            ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) 
+              ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } 
+              : p
+          );
           useAppStore.getState().setProjects(updatedProjects);
         } else {
-          useAppStore.getState().setProjects([...projects, { ...dataToSave, id: docId, updatedAt: new Date().toISOString() } as any]);
+          useAppStore.getState().setProjects([...rawProjects, { ...dataToSave, id: docId, updatedAt: new Date().toISOString() } as any]);
         }
 
         undoManager.push({
           description: project ? `Update Project: ${formData.code}` : `Create Project: ${formData.code}`,
           revert: async () => {
             if (project) {
-              setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), project);
+              setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), project, { merge: true });
             } else {
               deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId));
             }
           }
         });
       }
-      onClose(); setIsSubmitting(false);
-    } catch (e) { console.error(e); }
+      onClose();
+    } catch (e: any) { 
+      console.error("Save project error:", e);
+      useAppStore.getState().setToast({ title: "Error", message: e?.message || "Failed to save project.", type: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDelete = async () => {
