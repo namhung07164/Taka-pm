@@ -23,6 +23,7 @@ export interface Project {
   store: string;
   year: number | string;
   code: string;
+  linkCodes?: string;
   name: string;
   detail?: string;
   party?: string;

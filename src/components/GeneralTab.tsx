@@ -284,6 +284,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
         store: p.store || '',
         location: p.location || '',
         code: p.code || '',
+        linkCodes: p.linkCodes || p.code || '',
         projectName: p.name || '',
         status: status,
         detail: detailString,
@@ -335,7 +336,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
 
   const filteredProjects = projects.filter(p=> {
     const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
-    const searchFields = [p.no, p.store, p.code, p.name, p.detail, status, p.year];
+    const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, status, p.year];
     const matchesSearch = !searchTerm || searchFields.some(val => String(val || "").toLowerCase().includes(searchTerm.toLowerCase()));
     const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
     const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
@@ -1210,7 +1211,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                   )}
                 </div>
                 <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base leading-snug pr-32">
-                  <span className="text-slate-400 dark:text-[#838383] font-normal">{p.year}</span> - <span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store}</span> - <span className="text-slate-400 dark:text-[#838383] font-normal">{p.location}</span> - <span className="text-blue-600 dark:text-[#8ab4f8]">{p.code}</span> - {p.name}
+                  <span className="text-slate-400 dark:text-[#838383] font-normal">{p.year}</span> - <span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store}</span> - <span className="text-slate-400 dark:text-[#838383] font-normal">{p.location}</span> - <span className="text-blue-600 dark:text-[#8ab4f8]">{p.code}</span>{p.linkCodes && p.linkCodes !== p.code && <span className="text-xs text-slate-500 dark:text-[#a3a3a3] font-normal ml-1">({p.linkCodes})</span>} - {p.name}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-[#a3a3a3] flex flex-wrap gap-x-3 gap-y-1 mt-1">
                   <span><span className="font-medium">{t('Start')}:</span> {formatDisplayDateMain(p.computedTakStart || p.start)}</span>

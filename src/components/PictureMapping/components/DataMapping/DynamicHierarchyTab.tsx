@@ -127,8 +127,9 @@ function DynamicHierarchyTab({
 
     // Merge real Project data
     enrichedProjects.forEach((p) => {
-      if (!p.code) return;
-      const pCodes = String(p.code).split(/[+;,/]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
+      if (!p.code && !p.linkCodes) return;
+      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
+      const pCodes = rawCodes.split(/[+;,/]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       pCodes.forEach(code => {
          if (dataMap[code]) {

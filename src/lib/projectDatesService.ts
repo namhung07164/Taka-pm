@@ -36,12 +36,13 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   if (!project.code || !allTasks || allTasks.length === 0) return [];
   const pYear = project.year ? String(project.year).trim() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
-  const pCodeParts = String(project.code).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
+  const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
   return allTasks.filter(t => {
     if (!t.projectCode) return false;
     const tCode = String(t.projectCode).trim().toLowerCase();
-    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code);
+    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code) || matchProjectCode(t.projectCode, project.linkCodes);
     if (!matchesCode) return false;
 
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';

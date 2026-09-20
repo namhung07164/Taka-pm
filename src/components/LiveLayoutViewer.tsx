@@ -872,9 +872,10 @@ function LiveCanvas({
     const enrichedProjects = enrichProjects(projects, tasks);
     const now = new Date();
     enrichedProjects.forEach((p) => {
-      if (!p.code) return;
+      if (!p.code && !p.linkCodes) return;
       if (storeFilter !== 'all' && p.store && String(p.store).trim().toUpperCase() !== String(storeFilter).trim().toUpperCase()) return;
-      const pCodes = String(p.code || '').split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
+      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
+      const pCodes = rawCodes.split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       
       // Match tasks directly from Zustand tasks store for real-time subtasks without Firestore reads

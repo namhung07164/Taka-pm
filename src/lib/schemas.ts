@@ -38,6 +38,7 @@ export const ProjectSchema = z.object({
   store: z.string().nullable().optional(),
   year: z.union([z.number(), z.string()]).nullable().optional(),
   code: z.string().nullable().optional(),
+  linkCodes: z.string().nullable().optional(),
   name: z.string().nullable().optional(),
   detail: z.string().nullable().optional(),
   party: z.string().nullable().optional(),

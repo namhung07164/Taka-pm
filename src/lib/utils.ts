@@ -435,7 +435,8 @@ export function enrichProjects(
     const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
     const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
-    const pCodeParts = pCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+    const rawCodeCombined = (p.linkCodes && p.linkCodes.trim()) ? `${pCode}, ${p.linkCodes.toLowerCase()}` : pCode;
+    const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
     const matchedTaskMap = new Map<string, Task>();
     const directKey = `${pCode}-${pYear}-${pStore}`;

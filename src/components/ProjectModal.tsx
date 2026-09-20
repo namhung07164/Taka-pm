@@ -140,7 +140,10 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
 
   useEffect(() => {
     if (project) {
-      setFormData(project);
+      setFormData({
+        ...project,
+        linkCodes: project.linkCodes ?? project.code ?? ''
+      });
     } else {
       // Default suggestions based on permissions
       let defaultStore = 'HCM';
@@ -181,6 +184,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         location: defaultLocation,
         year: new Date().getFullYear(),
         code: '',
+        linkCodes: '',
         name: '',
         party: '',
         detail: '',
@@ -241,6 +245,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         no, 
         year: yearNum,
         code: String(formData.code).trim(),
+        linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
         taskCount: computedDates.taskCount ?? project?.taskCount ?? 0,
         taskSummaries: computedDates.taskSummaries || project?.taskSummaries || [],
         computedPlanProgress: computedDates.computedPlanProgress ?? project?.computedPlanProgress ?? 0,
@@ -719,11 +724,37 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                 type="text" 
                 inputMode="text"
                 value={formData.code || ''}
-                onChange={(val) => setFormData({ ...formData, code: val })}
+                onChange={(val) => {
+                  setFormData(prev => {
+                    const newCode = val;
+                    const currentLink = prev.linkCodes;
+                    const oldCode = prev.code || '';
+                    const shouldSync = !currentLink || currentLink.trim() === '' || currentLink.trim() === oldCode.trim();
+                    return {
+                      ...prev,
+                      code: newCode,
+                      linkCodes: shouldSync ? newCode : currentLink
+                    };
+                  });
+                }}
                 required 
                 readOnly={!canWrite}
                 className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
               />
+              <div className="mt-2">
+                <label className="block text-[11px] font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+                  Project Code Link <span className="text-[10px] text-slate-400 font-normal text-none lowercase">(multi, cách nhau ",")</span>
+                </label>
+                <FastInput 
+                  type="text" 
+                  inputMode="text"
+                  value={formData.linkCodes ?? (formData.code || '')}
+                  onChange={(val) => setFormData({ ...formData, linkCodes: val })}
+                  placeholder="e.g. L3-303-1, L3-303-2"
+                  readOnly={!canWrite}
+                  className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs bg-slate-50 dark:bg-[#1a1a1c]"
+                />
+              </div>
             </div>
           </div>
           <div className="mb-5">
