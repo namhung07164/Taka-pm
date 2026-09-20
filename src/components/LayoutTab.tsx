@@ -53,12 +53,33 @@ export function LayoutTab({
   const isAdmin = currentUser.role === 'admin';
   const role = currentUser.role as AppRole;
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
 
   const allowedStores = React.useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const activeStore = effectiveStore === 'all' ? (allowedStores[0] || 'HCM') : effectiveStore;
+
+  const availableYears = React.useMemo(() => {
+    const currentYr = new Date().getFullYear().toString();
+    const baseYears = ['2024', '2025', '2026', '2027', '2028'];
+    const projectYears = projects.map(p => p.year ? String(p.year) : '').filter(Boolean);
+    const taskYears = tasks.map(t => t.projectYear ? String(t.projectYear) : '').filter(Boolean);
+    const allYrs = Array.from(new Set([currentYr, ...baseYears, ...projectYears, ...taskYears]))
+      .filter(y => y && y.toLowerCase() !== 'all')
+      .sort((a, b) => Number(b) - Number(a));
+    return allYrs;
+  }, [projects, tasks]);
+
+  // Layout tab requires specific year selection (no 'all' option allowed)
+  useEffect(() => {
+    if (globalYearFilter === 'all' && availableYears.length > 0) {
+      const currentYr = new Date().getFullYear().toString();
+      const defaultYear = availableYears.includes(currentYr) ? currentYr : availableYears[0];
+      setGlobalYearFilter(defaultYear);
+    }
+  }, [globalYearFilter, availableYears, setGlobalYearFilter]);
 
   // Layout tab only supports store-specific floor plans (HCM, HN), hide all-stores
   useEffect(() => {
@@ -661,11 +682,21 @@ export function LayoutTab({
                 const val = e.target.value;
                 setGlobalLocationFilter(val === 'all' ? [] : [val]);
               }}
-              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[80px] outline-none cursor-pointer pr-1"
+              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[80px] outline-none cursor-pointer"
             >
               <option value="all">All Locations</option>
               {availableLocations.map(loc => (
                 <option key={loc} value={loc}>{loc}</option>
+              ))}
+            </select>
+            <div className="w-px h-4 bg-slate-200 dark:bg-[#444446]"></div>
+            <select
+              value={globalYearFilter === 'all' ? (new Date().getFullYear().toString()) : globalYearFilter}
+              onChange={(e) => setGlobalYearFilter(e.target.value)}
+              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[70px] outline-none cursor-pointer pr-1"
+            >
+              {availableYears.map(y => (
+                <option key={y} value={y}>{y}</option>
               ))}
             </select>
           </div>

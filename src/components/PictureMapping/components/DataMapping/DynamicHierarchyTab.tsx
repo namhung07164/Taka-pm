@@ -39,6 +39,7 @@ function DynamicHierarchyTab({
   const summaryData = useSummaryData();
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
 
   const viewVersionId = activeVersionId || versions[0]?.id || null;
   const activeVersion = versions.find((v) => v.id === viewVersionId);
@@ -66,6 +67,7 @@ function DynamicHierarchyTab({
         name: u.name || '',
         id: u.id,
         unit: u.name || '',
+        year: "",
         size: 0,
         sales: 0,
         salesByCp: 0,
@@ -93,6 +95,7 @@ function DynamicHierarchyTab({
         appProjectBudget: 0,
         appProjectActual: 0,
         appProjectCode: "",
+        appProjectYear: "",
       };
     });
 
@@ -122,12 +125,16 @@ function DynamicHierarchyTab({
         dataMap[key].brandName = sumData.brandName || "";
         dataMap[key].classCode = sumData.classCode || "";
         dataMap[key].floor = dataMap[key].floor || (sumData as any).floor || "";
+        dataMap[key].year = (sumData as any).year || dataMap[key].year || "";
       }
     });
 
-    // Merge real Project data
+    // Merge real Project data synchronized by globalYearFilter
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
+      const pYear = String(p.year || (p as any).projectYear || '').trim();
+      if (globalYearFilter && globalYearFilter !== 'all' && pYear && pYear !== String(globalYearFilter)) return;
+
       const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
       const pCodes = rawCodes.split(/[+;,/]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
@@ -137,12 +144,14 @@ function DynamicHierarchyTab({
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
+            dataMap[code].appProjectYear = pYear;
+            if (!dataMap[code].year) dataMap[code].year = pYear;
          }
       });
     });
 
     return dataMap;
-  }, [unitNamesStr, summaryData, enrichedProjects]);
+  }, [unitNamesStr, summaryData, enrichedProjects, globalYearFilter]);
 
   // Evaluates rules for a given group against a unit shape
   const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
@@ -770,6 +779,7 @@ function DynamicHierarchyTab({
                                 </optgroup>
                                 <optgroup label="Attributes">
                                   <option value="unit">Unit</option>
+                                  <option value="year">Year</option>
                                   <option value="size">Size</option>
                                   <option value="floor">Floor</option>
                                   <option value="classCode">Class Code</option>
@@ -790,6 +800,7 @@ function DynamicHierarchyTab({
                                   <option value="appProjectBudget">App: Budget</option>
                                   <option value="appProjectActual">App: Actual</option>
                                   <option value="appProjectCode">App: Project Code</option>
+                                  <option value="appProjectYear">App: Year</option>
                                 </optgroup>
                               </select>
 

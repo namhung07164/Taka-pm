@@ -874,6 +874,10 @@ function LiveCanvas({
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
       if (storeFilter !== 'all' && p.store && String(p.store).trim().toUpperCase() !== String(storeFilter).trim().toUpperCase()) return;
+      if (globalYearFilter && globalYearFilter !== 'all') {
+        const pYear = String(p.year || (p as any).projectYear || '').trim();
+        if (pYear && pYear !== String(globalYearFilter)) return;
+      }
       const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
       const pCodes = rawCodes.split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
@@ -933,7 +937,7 @@ function LiveCanvas({
     });
 
     return dataMap;
-  }, [units, summaryData, projects, tasks, storeFilter, locationFilter]);
+  }, [units, summaryData, projects, tasks, storeFilter, locationFilter, globalYearFilter]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {

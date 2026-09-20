@@ -110,7 +110,12 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
     dataMap[uName] = { ...(item || {}), unitName: u.name };
   });
 
+  const globalYearFilter = appState.globalYearFilter;
+
   enrichedProjects.forEach((p) => {
+    const pYear = String(p.year || (p as any).projectYear || '').trim();
+    if (globalYearFilter && globalYearFilter !== 'all' && pYear && pYear !== String(globalYearFilter)) return;
+
     const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
     const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
     const status = getStatus(
@@ -125,6 +130,8 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
         dataMap[code].appProjectBudget = p.budget || 0;
         dataMap[code].appProjectActual = p.actual || 0;
         dataMap[code].appProjectCode = String(p.code);
+        dataMap[code].appProjectYear = pYear;
+        if (!dataMap[code].year) dataMap[code].year = pYear;
       }
     });
   });
