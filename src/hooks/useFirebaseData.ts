@@ -76,6 +76,7 @@ export function useFirebaseData() {
   const setIsDelegationsLoading = useAppStore((state) => state.setIsDelegationsLoading);
   const isTaskModalOpen = useAppStore((state) => state.isTaskModalOpen);
   const isProjectModalOpen = useAppStore((state) => state.isProjectModalOpen);
+  const modalInitialTab = useAppStore((state) => state.modalInitialTab);
   // We use user to trigger data fetch
   const user = useAppStore((state) => state.user);
 
@@ -91,10 +92,12 @@ export function useFirebaseData() {
         "taskDelegation",
         "taskDelegationCalendar"
       ];
-      const needsTasks = tabsRequiringTasks.includes(activeTab) || isTaskModalOpen || isProjectModalOpen;
+      const isChatOnly = isProjectModalOpen && modalInitialTab === 'chat';
+      const isLayoutTab = activeTab === 'layout';
+      const needsTasks = tabsRequiringTasks.includes(activeTab) || isTaskModalOpen || (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
       const tabsRequiringCosts: TabId[] = ["cost", "budget"];
-      const needsCosts = tabsRequiringCosts.includes(activeTab) || isProjectModalOpen;
+      const needsCosts = tabsRequiringCosts.includes(activeTab) || (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
       const tabsRequiringDelegations: TabId[] = [
         "gantt",
@@ -103,7 +106,7 @@ export function useFirebaseData() {
         "taskDelegationCalendar",
         "notification"
       ];
-      const needsDelegations = tabsRequiringDelegations.includes(activeTab) || isTaskModalOpen || isProjectModalOpen;
+      const needsDelegations = tabsRequiringDelegations.includes(activeTab) || isTaskModalOpen || (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
       // App is evaluating active tab needs. 
       // We NEVER unmount (set to false) because destroying the listener drops the IDB resumeToken,
@@ -119,7 +122,7 @@ export function useFirebaseData() {
     return () => {
       document.removeEventListener('visibilitychange', evaluate);
     };
-  }, [activeTab, isTaskModalOpen, isProjectModalOpen, setIsTasksRequested, setIsCostsRequested, setIsDelegationsRequested]);
+  }, [activeTab, isTaskModalOpen, isProjectModalOpen, modalInitialTab, setIsTasksRequested, setIsCostsRequested, setIsDelegationsRequested]);
 
   // Auth Effect
 

@@ -9,6 +9,7 @@ import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects, formatDisplayDateTime } from '../lib/utils';
+import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
@@ -958,6 +959,10 @@ function LiveCanvas({
             dataMap[code].taskLines = taskLines;
             dataMap[code].mdStatus = p.mdStatus || dataMap[code].mdStatus || "";
             dataMap[code].party = p.party || (p as any).contractor || "";
+            dataMap[code].matchedTasks = matchedTasks;
+            dataMap[code].subTasks = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
+            dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
+            dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
          }
       });
     });
@@ -1398,22 +1403,22 @@ function LiveCanvas({
       )}
 
       {/* Floating Top-Left Controls: Location & Layout Version Switcher */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-1.5 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
-        <div className="flex items-center gap-1.5">
-          <Layers className="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0" />
-          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider whitespace-nowrap">
+      <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 z-20 flex items-center gap-1.5 sm:gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1 sm:px-3 sm:py-1.5 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl max-w-[55%] sm:max-w-none">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-600 dark:text-brand-400 shrink-0" />
+          <span className="text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider whitespace-nowrap">
             {storeFilter} • {targetLoc}
           </span>
         </div>
         {locationVersions.length > 1 && (
           <>
-            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 shrink-0" />
-            <div className="flex items-center gap-1">
+            <div className="h-3.5 w-px bg-slate-200 dark:bg-slate-700 shrink-0" />
+            <div className="flex items-center gap-1 min-w-0">
               <span className="text-[10px] font-semibold text-slate-400 uppercase hidden sm:inline">Version:</span>
               <select
                 value={version?.id || ''}
                 onChange={(e) => setSelectedVersionId(e.target.value)}
-                className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer max-w-[180px] truncate"
+                className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-[10px] sm:text-xs font-semibold rounded-lg px-1.5 py-0.5 sm:px-2 sm:py-1 outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer max-w-[85px] sm:max-w-[180px] truncate"
                 title="Select Layout Version"
               >
                 {locationVersions.map((v: any) => (
@@ -1426,14 +1431,14 @@ function LiveCanvas({
           </>
         )}
         {locationVersions.length <= 1 && version?.name && (
-          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-2 max-w-[180px] truncate">
+          <span className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-1.5 sm:pl-2 max-w-[80px] sm:max-w-[180px] truncate">
             {version.name}{version.year ? ` • ${version.year}` : ''}
           </span>
         )}
       </div>
 
       {/* Floating Top-Right Controls */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+      <div className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 z-20 flex items-center gap-0.5 sm:gap-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
         <button
           type="button"
           onClick={() => {
@@ -1463,10 +1468,10 @@ function LiveCanvas({
               }
             });
           }}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+          className="p-1 sm:p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
           title="Zoom In"
         >
-          <ZoomIn className="w-4 h-4" />
+          <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
         <button
           type="button"
@@ -1497,12 +1502,12 @@ function LiveCanvas({
               }
             });
           }}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+          className="p-1 sm:p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
           title="Zoom Out"
         >
-          <ZoomOut className="w-4 h-4" />
+          <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
-        <div className="px-2 py-0.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border-l border-r border-slate-200 dark:border-slate-700">
+        <div className="px-1.5 py-0.5 text-[10px] sm:text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border-l border-r border-slate-200 dark:border-slate-700 min-w-[34px] sm:min-w-[42px] text-center">
           {Math.round(stageScale * 100)}%
         </div>
         <button 
@@ -1510,15 +1515,15 @@ function LiveCanvas({
           onClick={() => {
             fitToScreen(true);
           }}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+          className="p-1 sm:p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
           title="Reset / Fit to Screen"
         >
-          <Maximize2 className="w-4 h-4" />
+          <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
       </div>
 
-      {/* iOS Floating Color Legend Bar */}
-      <div className="absolute bottom-16 left-3 right-3 sm:left-4 sm:right-auto sm:max-w-xl z-20 pointer-events-auto">
+      {/* iOS Floating Color Legend Bar - Hidden on mobile screens so it does not block the bottom floor plan */}
+      <div className="hidden sm:block absolute bottom-16 left-4 max-w-xl z-20 pointer-events-auto">
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl p-2.5 transition-all">
           {/* Header */}
           <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
@@ -1622,12 +1627,12 @@ function LiveCanvas({
       </div>
 
       {/* Floating Bottom Action Buttons */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+      <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
         <button 
           onClick={() => setShowLegendModal(true)} 
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white backdrop-blur-md border border-purple-500 shadow-xl rounded-full text-xs font-bold active:scale-95 transition-all"
+          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-700 text-white backdrop-blur-md border border-purple-500 shadow-xl rounded-full text-xs font-bold active:scale-95 touch-manipulation transition-all whitespace-nowrap"
         >
-          <Palette className="w-4 h-4" /> 
+          <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 
           <span>Chú thích màu</span>
           {activeGroups.length > 0 && (
             <span className="bg-white/25 px-1.5 py-0.2 rounded-full text-[10px] font-mono">
@@ -1638,9 +1643,9 @@ function LiveCanvas({
 
         <button 
           onClick={() => setShowMenu(true)} 
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 backdrop-blur-md border border-slate-700 dark:border-slate-300 shadow-xl rounded-full text-xs font-bold hover:bg-slate-800 active:scale-95 transition-all"
+          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 backdrop-blur-md border border-slate-700 dark:border-slate-300 shadow-xl rounded-full text-xs font-bold hover:bg-slate-800 active:scale-95 touch-manipulation transition-all whitespace-nowrap"
         >
-          <Menu className="w-4 h-4" /> Menu
+          <Menu className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Menu</span>
         </button>
       </div>
 
@@ -1884,176 +1889,27 @@ function LiveCanvas({
 
       {/* Tooltip */}
       {hoverInfo && hoverInfo.visible && (
-        <div 
-          ref={tooltipRef}
-          className="fixed z-50 pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/80 dark:border-slate-700 p-3.5 sm:p-4 w-72 sm:w-80 max-w-[calc(100vw-24px)] max-h-[calc(100vh-28px)] overflow-y-auto text-sm text-slate-700 dark:text-slate-200 transition-opacity duration-150 custom-scrollbar"
-          style={{ 
-            left: -9999, 
-            top: -9999,
-            transformOrigin: 'top left'
+        <LayoutUnitTooltip
+          hoverInfo={hoverInfo}
+          tooltipRef={tooltipRef}
+          onClose={() => {
+            setHoverInfo(null);
+            if (focusedUnitId) {
+              setFocusedUnitId(null);
+              if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+              fitToScreen(true);
+              onClearFocus?.();
+            }
           }}
-        >
-          <div className="flex flex-col gap-2.5">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-              <div className="font-bold text-base sm:text-lg text-slate-800 dark:text-slate-100 truncate max-w-[140px] sm:max-w-[170px]" title={hoverInfo.unitName}>
-                {hoverInfo.unitName}
-              </div>
-              <div className="flex items-center gap-1.5">
-                {hoverInfo.data?.appProjectStatus && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    hoverInfo.data.appProjectStatus === 'Completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
-                    hoverInfo.data.appProjectStatus === 'On Process' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' :
-                    hoverInfo.data.appProjectStatus === 'Delay' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' :
-                    'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                  }`}>
-                    {hoverInfo.data.appProjectStatus}
-                  </span>
-                )}
-                {hoverInfo.data?.matchedProject && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const p = hoverInfo.data.matchedProject;
-                      setHoverInfo(null);
-                      setModalInitialTab('chat');
-                      setEditingProject(p);
-                      setIsProjectModalOpen(true);
-                    }}
-                    className="p-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/80 text-blue-600 dark:text-blue-400 transition-colors active:scale-95 touch-manipulation flex items-center justify-center"
-                    title="Mở trao đổi / Bình luận dự án"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHoverInfo(null);
-                    if (focusedUnitId) {
-                      setFocusedUnitId(null);
-                      if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
-                      fitToScreen(true);
-                      onClearFocus?.();
-                    }
-                  }}
-                  className="p-1 -mr-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                  title="Close tooltip"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            
-            {(hoverInfo.data?.projectName || hoverInfo.data?.brandName) && (
-              <div>
-                <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">BRAND / PROJECT</div>
-                <div className="font-semibold text-sm sm:text-base text-slate-800 dark:text-slate-200 leading-snug">
-                  {hoverInfo.data.projectName || hoverInfo.data.brandName}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              {hoverInfo.data?.size > 0 && (
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Size (m²)</div>
-                  <div className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-200">{Number(hoverInfo.data.size).toLocaleString('en-US')}</div>
-                </div>
-              )}
-              {hoverInfo.data?.floor && (
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase mb-0.5">Location</div>
-                  <div className="font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-200">{hoverInfo.data.floor}</div>
-                </div>
-              )}
-            </div>
-
-            {hoverInfo.data?.mdStatus && (
-              <div className="bg-purple-50/70 dark:bg-purple-950/30 px-2.5 py-1.5 rounded-lg border border-purple-100 dark:border-purple-900/50 flex items-center justify-between text-xs">
-                <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider">MD Status:</span>
-                <span className="font-semibold text-purple-700 dark:text-purple-300">{hoverInfo.data.mdStatus}</span>
-              </div>
-            )}
-
-            {(hoverInfo.data?.startDate || hoverInfo.data?.handoverDate || hoverInfo.data?.openingDate) && (
-              <div className="border-t border-slate-100 dark:border-slate-800 pt-2 flex flex-col gap-1.5">
-                {hoverInfo.data.startDate && (
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500 font-medium">Start:</span>
-                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      <FolderOutput className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      <span>{formatDisplayDateTime(hoverInfo.data.startDate)}</span>
-                    </div>
-                  </div>
-                )}
-                {hoverInfo.data.handoverDate && (
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500 font-medium">Handover:</span>
-                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      <FolderOutput className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                      <span>{formatDisplayDateTime(hoverInfo.data.handoverDate)}</span>
-                    </div>
-                  </div>
-                )}
-                {hoverInfo.data.openingDate && (
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500 font-medium">Opening:</span>
-                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
-                      <FolderOutput className="w-3.5 h-3.5 text-pink-500 shrink-0" />
-                      <span>{formatDisplayDateTime(hoverInfo.data.openingDate)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Subtasks from General Tab */}
-            {hoverInfo.data?.taskLines && hoverInfo.data.taskLines.length > 0 && (
-              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-700 text-xs shadow-sm flex flex-col gap-1">
-                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">
-                  DETAILS
-                </div>
-                {hoverInfo.data.taskLines.map((line: string, idx: number) => (
-                  <div key={idx} className={`font-semibold ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
-                    {line}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Project Modular Description */}
-            {hoverInfo.data?.detail && (
-              <div className="bg-slate-50 dark:bg-slate-800/80 rounded-lg p-2.5 border border-slate-200/80 dark:border-slate-700 text-xs shadow-sm flex flex-col gap-1">
-                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider mb-0.5">
-                  DESCRIPTION
-                </div>
-                <div className="text-slate-700 dark:text-slate-300 font-medium whitespace-pre-wrap">
-                  {hoverInfo.data.detail}
-                </div>
-              </div>
-            )}
-
-            {/* Quick Discussion / Comments Button */}
-            {hoverInfo.data?.matchedProject && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const p = hoverInfo.data.matchedProject;
-                  setHoverInfo(null);
-                  setModalInitialTab('chat');
-                  setEditingProject(p);
-                  setIsProjectModalOpen(true);
-                }}
-                className="mt-1 w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 text-xs font-semibold border border-blue-200/60 dark:border-blue-800/50 transition-all active:scale-95 touch-manipulation shadow-xs cursor-pointer"
-              >
-                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                <span>Bình luận / Trao đổi dự án</span>
-              </button>
-            )}
-          </div>
-        </div>
+          onEditProject={(project, isReadOnly, tab) => {
+            setHoverInfo(null);
+            setEditingProject(project);
+            setModalInitialTab(tab || 'details');
+            setIsProjectModalOpen(true);
+          }}
+          canWrite={canWrite}
+          storeFilter={storeFilter}
+        />
       )}
 
       {/* Canvas Viewport */}

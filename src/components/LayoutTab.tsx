@@ -649,105 +649,78 @@ export function LayoutTab({
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex-grow flex flex-col p-4 md:p-6 bg-slate-50 relative h-full">
-      <div className="flex flex-col gap-3 mb-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-[#e3e3e3]">Layout</h2>
-          
-          {onBackToGantt && (
-            <button
-              onClick={onBackToGantt}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Gantt
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 bg-white dark:bg-[#1e1e20] p-1.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm">
-            <Filter className="w-4 h-4 text-slate-400 dark:text-[#838383] ml-1" />
-            <select
-              value={activeStore}
-              onChange={(e) => setGlobalStoreFilter(e.target.value)}
-              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[70px] outline-none cursor-pointer"
-            >
-              {allowedStores.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <div className="w-px h-4 bg-slate-200 dark:bg-[#444446]"></div>
-            <select
-              value={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'}
-              onChange={(e) => {
-                const val = e.target.value;
-                setGlobalLocationFilter(val === 'all' ? [] : [val]);
-              }}
-              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[80px] outline-none cursor-pointer"
-            >
-              <option value="all">All Locations</option>
-              {availableLocations.map(loc => (
-                <option key={loc} value={loc}>{loc}</option>
-              ))}
-            </select>
-            <div className="w-px h-4 bg-slate-200 dark:bg-[#444446]"></div>
-            <select
-              value={globalYearFilter === 'all' ? (new Date().getFullYear().toString()) : globalYearFilter}
-              onChange={(e) => setGlobalYearFilter(e.target.value)}
-              className="bg-transparent border-none text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[70px] outline-none cursor-pointer pr-1"
-            >
-              {availableYears.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+      <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 relative h-full">
+      <div className="flex flex-col gap-2 mb-2">
+        {/* Row 1: Header, Filter Bar, and Back to Gantt */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-[#e3e3e3]">Layout</h2>
+            
+            {/* Unified Filter Pill */}
+            <div className="flex items-center gap-1 sm:gap-1.5 bg-white dark:bg-[#1e1e20] p-1 sm:p-1.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-xs">
+              <Filter className="w-3.5 h-3.5 text-slate-400 dark:text-[#838383] ml-1 shrink-0" />
+              <select
+                value={activeStore}
+                onChange={(e) => setGlobalStoreFilter(e.target.value)}
+                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[70px] outline-none cursor-pointer"
+              >
+                {allowedStores.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
+              <select
+                value={globalLocationFilter.length > 0 ? globalLocationFilter[0] : 'all'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setGlobalLocationFilter(val === 'all' ? [] : [val]);
+                }}
+                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[70px] sm:min-w-[80px] outline-none cursor-pointer"
+              >
+                <option value="all">All Locations</option>
+                {availableLocations.map(loc => (
+                  <option key={loc} value={loc}>{loc}</option>
+                ))}
+              </select>
+              <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
+              <select
+                value={globalYearFilter === 'all' ? (new Date().getFullYear().toString()) : globalYearFilter}
+                onChange={(e) => setGlobalYearFilter(e.target.value)}
+                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer pr-1"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {(!triggerState || !isExporting) ? (
-            <div className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-slate-200 dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700">
-              Status: false (Done)
-            </div>
-          ) : (
-            <div className="text-xs text-amber-700 font-mono bg-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-200">
-              Status: true (Waiting for App 1)
-            </div>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Active Export Status Banner - Only displayed when exporting or waiting */}
+            {isExporting && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-700 font-medium bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800 animate-pulse">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span className="hidden sm:inline">{exportStatusMessage || 'Đang xử lý xuất...'}</span>
+              </div>
+            )}
+
+            {onBackToGantt && (
+              <button
+                onClick={onBackToGantt}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-xs active:scale-95 touch-manipulation"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline">Back to Gantt</span>
+                <span className="xs:hidden">Gantt</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {!isEditing && (
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
-            <button
-              onClick={() => setIsLiveMapMode(!isLiveMapMode)}
-              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-sm ${
-                isLiveMapMode 
-                  ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400' 
-                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200'
-              }`}
-            >
-              <Map className="w-4 h-4" />
-              {isLiveMapMode ? 'Exit Live Map' : 'View Live Map'}
-            </button>
-            <button 
-              onClick={() => setCacheBuster(Date.now())}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 shadow-sm"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
-            {canWrite && (
-              <button 
-                onClick={handleTriggerReExport}
-                disabled={isExporting}
-                title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
-                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 shadow-sm"
-              >
-                <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
-                {isExporting ? (exportStatusMessage || 'Đang xử lý xuất...') : 'Trigger Export'}
-              </button>
-            )}
-
-            {/* Search Unit & Project Box directly next to Trigger Export */}
-            <div ref={searchContainerRef} className="relative flex-grow sm:flex-grow-0 min-w-[220px] max-w-[320px]">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {/* Search Unit & Project Box - Full width on mobile, flexible on desktop */}
+            <div ref={searchContainerRef} className="relative flex-1 min-w-[200px] w-full sm:w-auto">
               <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input 
                   type="text"
                   value={unitSearchInput}
@@ -773,14 +746,14 @@ export function LayoutTab({
                       handleClearSearchAndFocus();
                     }
                   }}
-                  placeholder="Tìm ô unit hoặc dự án..."
-                  className="w-full pl-8 pr-8 py-2 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-bold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-600 dark:focus:border-purple-400 shadow-sm transition-all"
+                  placeholder="Tìm ô unit, brand hoặc dự án..."
+                  className="w-full pl-9 pr-8 py-1.5 sm:py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-xs transition-all"
                 />
                 {unitSearchInput && (
                   <button 
                     type="button"
                     onClick={handleClearSearchAndFocus}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 transition-colors shadow-xs active:scale-95 touch-manipulation"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 transition-colors shadow-xs active:scale-95 touch-manipulation"
                     title="Xóa tìm kiếm & Thoát phóng to"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -832,15 +805,53 @@ export function LayoutTab({
               )}
             </div>
 
-            {isAdmin && (
-              <button 
-                onClick={() => { setEditUrl(url); setIsEditing(true); }}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 shadow-sm"
+            {/* Action Buttons Cluster */}
+            <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-0.5">
+              <button
+                onClick={() => setIsLiveMapMode(!isLiveMapMode)}
+                className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-xs whitespace-nowrap active:scale-95 touch-manipulation ${
+                  isLiveMapMode 
+                    ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400' 
+                    : 'bg-white dark:bg-[#1e1e20] text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-slate-200 dark:border-[#444446]'
+                }`}
               >
-                <Edit2 className="w-4 h-4" />
-                Edit URL
+                <Map className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span>{isLiveMapMode ? 'Exit Live' : 'Live Map'}</span>
               </button>
-            )}
+
+              <button 
+                onClick={() => setCacheBuster(Date.now())}
+                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 dark:border-[#444446] shadow-xs whitespace-nowrap active:scale-95 touch-manipulation"
+                title="Làm mới dữ liệu mặt bằng"
+              >
+                <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                <span className="hidden xs:inline">Refresh</span>
+              </button>
+
+              {canWrite && (
+                <button 
+                  onClick={handleTriggerReExport}
+                  disabled={isExporting}
+                  title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
+                  className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${isExporting ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{isExporting ? (exportStatusMessage || 'Đang xuất...') : 'Trigger Export'}</span>
+                  <span className="sm:hidden">Export</span>
+                </button>
+              )}
+
+              {isAdmin && (
+                <button 
+                  onClick={() => { setEditUrl(url); setIsEditing(true); }}
+                  className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 dark:border-blue-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation"
+                  title="Chỉnh sửa liên kết URL bản đồ"
+                >
+                  <Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="hidden md:inline">Edit URL</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
         {isAdmin && isEditing && (
@@ -889,15 +900,15 @@ export function LayoutTab({
         )}
       </div>
 
-      {/* Helpful hint depending on view mode */}
+      {/* Helpful hint depending on view mode - hidden on mobile to maximize map height */}
       {url && !url.includes('drive.google.com') && !isEditing && (
-        <div className="mb-2.5 flex items-center gap-1.5 text-xs text-slate-500 bg-blue-50/50 border border-blue-100 p-2 rounded-lg">
-          <HelpCircle className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-          <span>💡 <b>Scroll:</b> Scroll mouse to move up/down. To Zoom: Hold <b>Ctrl + Scroll</b> or <b>Pinch with 2 fingers</b>.</span>
+        <div className="hidden md:flex mb-2 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 p-2 rounded-xl">
+          <HelpCircle className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <span>💡 <b>Thao tác:</b> Cuộn chuột để di chuyển Lên/Xuống. Thu phóng: Giữ <b>Ctrl + Cuộn chuột</b> hoặc <b>Dùng 2 ngón tay</b> thu phóng trên màn hình cảm ứng/Touchpad.</span>
         </div>
       )}
 
-      <div className="flex-grow flex w-full min-h-[600px] h-[calc(100vh-270px)] bg-slate-50 rounded-xl shadow-inner border border-slate-200 overflow-hidden relative">
+      <div className="flex-grow flex w-full min-h-[460px] h-[calc(100dvh-175px)] sm:h-[calc(100vh-195px)] bg-slate-50 dark:bg-slate-900/50 rounded-2xl shadow-inner border border-slate-200 dark:border-slate-800 overflow-hidden relative">
         {isLiveMapMode ? (
           <LiveLayoutViewer 
             storeFilter={activeStore} 

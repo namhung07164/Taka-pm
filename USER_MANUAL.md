@@ -468,12 +468,27 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - **Nhấp đúp chuột / Chạm 2 lần (Double-click / Double-tap)**: Tự động zoom nhanh hoặc vừa vặn toàn bộ mặt bằng vào khung nhìn (Fit to Screen) với hiệu ứng chuyển cảnh mượt.
    - **Bộ điều khiển góc trên bên phải**: Nút `[+]`, `[-]`, tỉ lệ `%`, và nút `[⛶]` (Reset / Fit to Screen) phản hồi 1 chạm tức thì (`active:scale-95`).
 3. **Ghim vị trí dự án (Add Pin)**: Nhấp nút "Add Pin", sau đó nhấp vào vị trí gian hàng trên bản đồ và liên kết với Dự án tương ứng.
-4. **Xem nhanh thông tin & Bình luận Dự án (Interactive Tooltip & Comments)**: 
-   - Rê chuột (hoặc chạm trên thiết bị di động) vào bất kỳ gian hàng nào trên bản đồ để xem ngay bảng Tooltip thông tin chi tiết: Tên gian hàng, Thương hiệu/Dự án, Ngân sách, Thực chi, Ngày bắt đầu, Ngày hoàn thành Takashimaya, Ngày bàn giao, Ngày mở cửa, các hạng mục chi tiết và mô tả.
-   - **Nút Bình Luận / Trao Đổi Dự Án (Comment Button)**:
-     - Biểu tượng hội thoại (`MessageSquare`) được tích hợp ngay góc trên bên phải thanh tiêu đề Tooltip (cạnh nút đóng) và nút hành động nổi bật `[ 💬 Bình luận / Trao đổi dự án ]` ở chân thẻ Tooltip.
-     - Khi nhấp vào nút này, hệ thống sẽ mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án đó, cho phép người dùng xem lịch sử thảo luận, gửi tin nhắn trao đổi hoặc đính kèm tài liệu với đồng nghiệp theo thời gian thực.
-     - **Không tốn thêm Firestore Read & Không giật lag**: Tính năng sử dụng trực tiếp đối tượng dự án đã lưu trong bộ nhớ Zustand cache, không gửi thêm bất kỳ truy vấn nào lên Firestore khi xem tooltip, đảm bảo tốc độ xoay/zoom bản đồ đạt 60fps mượt mà.
+4. **Xem nhanh thông tin & Bảng tóm tắt công việc (Interactive Task Summary Tooltip & Comments)**: 
+   - Rê chuột (hoặc chạm trên thiết bị di động) vào bất kỳ gian hàng nào trên bản đồ để xem ngay bảng Tooltip thông tin chi tiết đồng bộ hoàn toàn theo phong cách Bảng Task Summary (`IMG_9172`):
+     - **Thanh tiêu đề (Header)**: Hiển thị Tên Gian hàng (Unit), Trạng thái tiến độ (Badge màu sắc nét: `Completed` xanh lá, `On Process` xanh dương, `Delay` đỏ), Nút mở Bình luận/Chat (`MessageSquare`), Nút mở Project Modal toàn màn hình (`Maximize2`), và Nút đóng (`X`).
+     - **Tên Dự án / Brand**: Tên dự án in đậm rõ nét kèm Mã dự án (Code).
+     - **Thông số Diện tích & Vị trí (Specs Grid)**: Thẻ Diện tích (`Size m²`) và Vị trí (`Location/Floor`).
+     - **Thanh Tiến độ Đôi (Dual Progress Bars)**:
+       * **Plan Progress**: Thanh phần trăm tiến độ theo Kế hoạch (màu xanh dương).
+       * **Act Progress**: Thanh phần trăm tiến độ Thực tế (màu xanh ngọc).
+     - **Mốc Thời gian Thi công (Timeline Milestones)**: Start, Handover, Opening kèm biểu tượng thư mục màu trực quan.
+     - **Bảng Chi tiết Công việc Con (Subtasks / Task Lines)**:
+       * Nút bấm bật/tắt mở rộng danh sách công việc con (hiển thị số lượng đầu việc).
+       * Hỗ trợ nút Đảo chiều sắp xếp (`Sort A-Z / Z-A`) theo thứ tự thời gian/tên công việc.
+       * Danh sách từng task con có mã task, tên task, ngày bắt đầu/kết thúc và badge trạng thái chi tiết.
+     - **Công tắc Ủy quyền Nhanh (Fast Delegation Toggle)**: Cho phép chuyển đổi trạng thái ủy quyền của dự án trực tiếp trên tooltip (cập nhật tức thì 0ms vào Zustand cache và đồng bộ ngầm Firestore).
+     - **Nút Bình Luận / Trao Đổi Dự Án (Comment Button)**:
+       * Biểu tượng hội thoại (`MessageSquare`) được tích hợp ngay góc trên bên phải thanh tiêu đề Tooltip và nút hành động nổi bật `[ 💬 Bình luận / Trao đổi dự án ]` ở chân thẻ Tooltip.
+       * Khi nhấp vào nút này, hệ thống sẽ mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án đó.
+       * **Cơ chế Tối ưu Firestore Read Tuyệt đối (Tri-Gate Lazy Loading for Comments)**:
+         - Hệ thống nhận diện trạng thái mở modal ở chế độ chỉ Chat (`isChatOnly` = `isProjectModalOpen && modalInitialTab === 'chat'`).
+         - Khi mở ô Comment từ Tooltip của Layout Tab, hệ thống **CHỈ** đọc tin nhắn trao đổi của riêng dự án đó (subcollection chats hoặc document chats) mà **KHÔNG** tải hay lắng nghe (listen) toàn bộ danh sách Task, Cost, hay Delegation của toàn bộ hệ thống.
+         - Tiết kiệm 100% chi phí Firestore read không cần thiết, bảo vệ giới hạn đọc và duy trì hiệu năng 60fps mượt mà cho bản đồ.
 5. **Chế độ Bản đồ Trực quan (Live View) & Bảng Chú Thích Màu (Color Legend trên iOS/Mobile/Desktop)**:
    - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
    - **Thanh Chú Thích Màu Nổi (Floating Color Legend Bar)**: Ở góc dưới màn hình (đặc biệt tối ưu trải nghiệm 1 chạm cho iOS/iPhone/iPad), hệ thống hiển thị dải các chấm màu và tên nhóm phân loại tương ứng theo định dạng thẻ cuộn ngang mượt mà.
@@ -490,6 +505,18 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 6. **Quản lý Dynamic Hierarchy & Nhóm theo từng Version (Per-Version Groups)**:
    - Các nhóm quy tắc (Rule-Based Groups) và điều kiện lọc (Conditions API) được lưu trữ độc lập theo từng phiên bản (version). Khi chuyển đổi giữa các version, hệ thống sẽ tự động hiển thị chính xác các nhóm và điều kiện thuộc riêng version đó.
    - Khi cần sao chép nhanh bộ quy tắc từ version khác, sử dụng tính năng **`[ COPY GROUPS FROM ]`** để nhân bản danh sách nhóm sang version đang chọn.
+7. **Giao Diện Thanh Công Cụ Tinh Gọn, Chống Che Khuất & Tối Ưu Màn Hình Nhỏ (Optimized & Collision-Free Responsive Toolbar)**:
+   - **Hàng 1 — Tiêu Đề & Cụm Bộ Lọc Hợp Nhất (Unified Filter Pill)**:
+     * Tích hợp Store, Location và Year vào một thanh kính mờ bo tròn nhỏ gọn, giảm thiểu chiều cao thanh công cụ.
+     * Trạng thái xuất file (`Export Status`) chỉ hiển thị khi đang trong tiến trình xuất (kèm biểu tượng xoay linh hoạt), loại bỏ hoàn toàn các thông báo trạng thái dư thừa (`Status: false Done`) gây chật chội màn hình.
+     * Nút `Back to Gantt` được thu gọn với cơ chế phản hồi chạm tức thì (`active:scale-95 touch-manipulation`).
+   - **Hàng 2 — Hộp Tìm Kiếm Rộng Rãi & Cụm Nút Hành Động Responsive**:
+     * Ô tìm kiếm `Tìm ô unit, brand hoặc tên dự án...` được thiết kế co giãn linh hoạt (`flex-1` trên máy tính và toàn chiều rộng trên điện thoại), đảm bảo văn bản gợi ý không bao giờ bị cắt ngắn hay tràn viền trên màn hình di động.
+     * Cụm nút hành động (`Live Map`, `Refresh`, `Trigger Export`, `Edit URL`) được xếp thành một hàng ngang gọn gàng, hỗ trợ cuộn nhẹ trên màn hình rất hẹp, không bị rớt dòng làm đẩy bản đồ xuống sâu.
+   - **Chống Va Chạm & Chồng Lấn Trên Bản Đồ (Anti-Collision Floating Controls)**:
+     * Cụm góc trên bên trái (`Store • Location • Version`) và cụm góc trên bên phải (`Zoom In/Out/Percentage/Fit`) được điều chỉnh kích thước và khoảng cách an toàn (`top-2.5`, font chữ và padding tối ưu theo màn hình), đảm bảo khoảng cách thông thoáng > 100px ở giữa, tuyệt đối không bị đè hay chạm vào nhau trên bất kỳ kích cỡ điện thoại nào.
+     * Chiều cao bản đồ sử dụng đơn vị `100dvh` (Dynamic Viewport Height) chuẩn xác cho Safari/Chrome Mobile, loại bỏ tình trạng thanh công cụ đẩy bản đồ xuống quá dài gây hiện tượng cuộn trang không mong muốn.
+     * Ở góc dưới, cụm nút nổi `[ 🎨 Chú thích màu ]` và `[ ☰ Menu ]` được bo tròn mềm mại ngay chính giữa đáy màn hình, giúp thao tác ngón cái dễ dàng mà không che lấp các gian hàng ở rìa dưới.
 
 ---
 
