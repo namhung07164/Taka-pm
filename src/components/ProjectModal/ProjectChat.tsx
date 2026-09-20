@@ -9,7 +9,7 @@ import { googleSignIn, getAccessToken } from '../../lib/firebase';
 import { LazyImage } from '../LazyImage';
 import { useAppStore } from '../../store/useAppStore';
 import { safeGetItemLocal, safeSetItemLocal } from '../../lib/storage';
-import { X, Paperclip, Edit2, Trash2, Send, Loader2, ExternalLink, Hash, AtSign } from 'lucide-react';
+import { X, Paperclip, Edit2, Trash2, Send, Loader2, ExternalLink, Hash, AtSign, Clock, ChevronUp } from 'lucide-react';
 
 export interface ProjectChatProps {
   project: Project;
@@ -59,12 +59,32 @@ export const ProjectChat = React.memo(function ProjectChat({
   const [localComments, setLocalComments] = useState<TaskComment[]>(project.comments || []);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  // Limit to last 25 comments by default (Fast UI & Memory Guard)
+  const [visibleCount, setVisibleCount] = useState(25);
 
   const chatInputRef = useRef<any>(null);
 
   useEffect(() => {
     setLocalComments(project.comments || []);
   }, [project.comments]);
+
+  // If targeted via focusCommentId from an older notification, auto-expand visibleCount
+  useEffect(() => {
+    if (focusCommentId && localComments.length > 0) {
+      const idx = localComments.findIndex((c) => c.id === focusCommentId);
+      if (idx !== -1) {
+        const fromEnd = localComments.length - idx;
+        if (fromEnd > visibleCount) {
+          setVisibleCount(Math.min(localComments.length, fromEnd + 10));
+        }
+      }
+    }
+  }, [focusCommentId, localComments, visibleCount]);
+
+  const displayedComments = useMemo(() => {
+    if (localComments.length <= visibleCount) return localComments;
+    return localComments.slice(localComments.length - visibleCount);
+  }, [localComments, visibleCount]);
 
   useEffect(() => {
     if (focusCommentId) {
@@ -339,7 +359,21 @@ export const ProjectChat = React.memo(function ProjectChat({
   return (
     <div className="flex flex-col h-full flex-grow overflow-hidden relative">
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-        {localComments.map((c) => {
+        {/* Load older messages button if more comments exist (Pagination / Limit to Last 25) */}
+        {localComments.length > visibleCount && (
+          <div className="flex justify-center pb-2">
+            <button
+              type="button"
+              onClick={() => setVisibleCount((prev) => Math.min(localComments.length, prev + 25))}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-blue-600 dark:text-[#8ab4f8] bg-blue-50 dark:bg-[#28282a] hover:bg-blue-100 dark:hover:bg-[#333336] rounded-full border border-blue-200 dark:border-blue-900/60 shadow-sm transition-all active:scale-95 touch-manipulation"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span>{t('Load older messages')} ({localComments.length - visibleCount} {t('remaining')})</span>
+            </button>
+          </div>
+        )}
+
+        {displayedComments.map((c) => {
           const isMe = c.userId === currentUser.id;
           const author = appUsers.find((u) => u.id === c.userId);
           const isEditing = editingCommentId === c.id;

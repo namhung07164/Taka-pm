@@ -688,7 +688,8 @@ function LiveCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; data: any; unitName: string } | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; data: any; unitName: string; clientX?: number; clientY?: number } | null>(null);
+  const isPinnedRef = useRef(false);
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
@@ -1130,30 +1131,60 @@ function LiveCanvas({
       if (!tooltipRef.current) return;
       const el = tooltipRef.current;
       const rect = el.getBoundingClientRect();
-      const tooltipWidth = rect.width > 0 ? rect.width : 300;
-      const tooltipHeight = rect.height > 0 ? rect.height : 260;
+      const tooltipWidth = rect.width > 0 ? rect.width : 340;
+      const tooltipHeight = rect.height > 0 ? rect.height : 280;
 
       const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
+      const visualVp = typeof window !== 'undefined' ? window.visualViewport : null;
+      const viewportHeight = visualVp ? visualVp.height : window.innerHeight;
+      const isMobile = viewportWidth < 640;
+
       const pad = 12;
+      const bottomMargin = isMobile ? 84 : 72;
+      const topMargin = isMobile ? 64 : 16;
 
-      // 1. Calculate X position (try right first, then flip left, then clamp)
-      let left = clientX + 16;
-      if (left + tooltipWidth > viewportWidth - pad) {
-        left = clientX - tooltipWidth - 16;
+      if (isMobile) {
+        const left = pad;
+        const right = pad;
+        let top: number;
+        if (clientY > viewportHeight * 0.52) {
+          top = topMargin;
+        } else {
+          top = Math.max(topMargin, viewportHeight - tooltipHeight - bottomMargin);
+        }
+
+        el.style.position = 'fixed';
+        el.style.left = `${left}px`;
+        el.style.right = `${right}px`;
+        el.style.top = `${top}px`;
+        el.style.width = `calc(100vw - ${pad * 2}px)`;
+        el.style.maxWidth = '420px';
+        el.style.maxHeight = `calc(${viewportHeight - topMargin - bottomMargin}px)`;
+        el.style.margin = '0 auto';
+        el.style.transform = 'none';
+      } else {
+        let left = clientX + 16;
+        if (left + tooltipWidth > viewportWidth - pad) {
+          left = clientX - tooltipWidth - 16;
+        }
+        left = Math.max(pad, Math.min(left, viewportWidth - tooltipWidth - pad));
+
+        let top = clientY + 16;
+        if (top + tooltipHeight > viewportHeight - bottomMargin) {
+          top = clientY - tooltipHeight - 16;
+        }
+        top = Math.max(topMargin, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
+
+        el.style.position = 'fixed';
+        el.style.left = `${left}px`;
+        el.style.right = 'auto';
+        el.style.top = `${top}px`;
+        el.style.width = '350px';
+        el.style.maxWidth = `calc(100vw - ${pad * 2}px)`;
+        el.style.maxHeight = `calc(${viewportHeight - topMargin - bottomMargin}px)`;
+        el.style.margin = '0';
+        el.style.transform = 'none';
       }
-      left = Math.max(pad, Math.min(left, viewportWidth - tooltipWidth - pad));
-
-      // 2. Calculate Y position (try bottom first, then flip top, then clamp)
-      let top = clientY + 16;
-      if (top + tooltipHeight > viewportHeight - pad) {
-        top = clientY - tooltipHeight - 16;
-      }
-      top = Math.max(pad, Math.min(top, viewportHeight - tooltipHeight - pad));
-
-      el.style.left = `${left}px`;
-      el.style.top = `${top}px`;
-      el.style.transform = 'none';
     });
   };
 
@@ -1278,10 +1309,13 @@ function LiveCanvas({
 
     // Open detailed info tooltip for unit
     const uName = (targetUnit.name || '').toLowerCase();
+    isPinnedRef.current = true;
     setHoverInfo({
       visible: true,
       data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
-      unitName: targetUnit.name || 'Unknown'
+      unitName: targetUnit.name || 'Unknown',
+      clientX: containerW / 2,
+      clientY: Math.max(90, containerH * 0.25)
     });
 
     setTimeout(() => {
@@ -1627,7 +1661,7 @@ function LiveCanvas({
       </div>
 
       {/* Floating Bottom Action Buttons */}
-      <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+      <div className={`absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 transition-all duration-150 ${hoverInfo?.visible ? 'max-sm:opacity-0 max-sm:pointer-events-none' : 'opacity-100'}`}>
         <button 
           onClick={() => setShowLegendModal(true)} 
           className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-700 text-white backdrop-blur-md border border-purple-500 shadow-xl rounded-full text-xs font-bold active:scale-95 touch-manipulation transition-all whitespace-nowrap"
@@ -1893,6 +1927,7 @@ function LiveCanvas({
           hoverInfo={hoverInfo}
           tooltipRef={tooltipRef}
           onClose={() => {
+            isPinnedRef.current = false;
             setHoverInfo(null);
             if (focusedUnitId) {
               setFocusedUnitId(null);
@@ -1939,11 +1974,13 @@ function LiveCanvas({
             }}
             onClick={(e) => {
               if (e.target === stageRef.current) {
+                isPinnedRef.current = false;
                 setHoverInfo(null);
               }
             }}
             onTap={(e) => {
               if (e.target === stageRef.current) {
+                isPinnedRef.current = false;
                 setHoverInfo(null);
               }
             }}
@@ -2146,7 +2183,7 @@ function LiveCanvas({
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,
                   onMouseEnter: (e: any) => {
-                     if (isInteractingRef.current) return;
+                     if (isInteractingRef.current || isPinnedRef.current) return;
                      try {
                         const container = e.target.getStage()?.container();
                         if (container) container.style.cursor = 'pointer';
@@ -2154,7 +2191,9 @@ function LiveCanvas({
                         setHoverInfo({
                            visible: true,
                            data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
-                           unitName: unit.name || 'Unknown'
+                           unitName: unit.name || 'Unknown',
+                           clientX: e.evt.clientX,
+                           clientY: e.evt.clientY
                         });
                         setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
                      } catch (err) {
@@ -2162,7 +2201,7 @@ function LiveCanvas({
                      }
                   },
                   onMouseMove: (e: any) => {
-                     if (isInteractingRef.current) return;
+                     if (isInteractingRef.current || isPinnedRef.current) return;
                      try {
                         updateTooltipPos(e.evt.clientX, e.evt.clientY);
                      } catch (err) {
@@ -2173,6 +2212,7 @@ function LiveCanvas({
                      try {
                         const container = e.target.getStage()?.container();
                         if (container) container.style.cursor = 'grab';
+                        if (isPinnedRef.current) return;
                         setHoverInfo(null);
                      } catch (err) {
                         console.error("Defensive Check: Error onMouseLeave unit in LiveLayoutViewer:", err, unit);
@@ -2181,11 +2221,14 @@ function LiveCanvas({
                   onClick: (e: any) => {
                      if (isInteractingRef.current) return;
                      try {
+                        isPinnedRef.current = true;
                         const uName = (unit.name || '').toLowerCase();
                         setHoverInfo({
                            visible: true,
                            data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
-                           unitName: unit.name || 'Unknown'
+                           unitName: unit.name || 'Unknown',
+                           clientX: e.evt.clientX,
+                           clientY: e.evt.clientY
                         });
                         setTimeout(() => updateTooltipPos(e.evt.clientX, e.evt.clientY), 0);
                      } catch (err) {
@@ -2195,13 +2238,16 @@ function LiveCanvas({
                   onTap: (e: any) => {
                      if (isInteractingRef.current) return;
                      try {
+                        isPinnedRef.current = true;
                         const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
                         const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
                         const uName = (unit.name || '').toLowerCase();
                         setHoverInfo({
                            visible: true,
                            data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
-                           unitName: unit.name || 'Unknown'
+                           unitName: unit.name || 'Unknown',
+                           clientX,
+                           clientY
                         });
                         setTimeout(() => updateTooltipPos(clientX, clientY), 0);
                      } catch (err) {

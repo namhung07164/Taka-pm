@@ -468,8 +468,13 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - **Nhấp đúp chuột / Chạm 2 lần (Double-click / Double-tap)**: Tự động zoom nhanh hoặc vừa vặn toàn bộ mặt bằng vào khung nhìn (Fit to Screen) với hiệu ứng chuyển cảnh mượt.
    - **Bộ điều khiển góc trên bên phải**: Nút `[+]`, `[-]`, tỉ lệ `%`, và nút `[⛶]` (Reset / Fit to Screen) phản hồi 1 chạm tức thì (`active:scale-95`).
 3. **Ghim vị trí dự án (Add Pin)**: Nhấp nút "Add Pin", sau đó nhấp vào vị trí gian hàng trên bản đồ và liên kết với Dự án tương ứng.
-4. **Xem nhanh thông tin & Bảng tóm tắt công việc (Interactive Task Summary Tooltip & Comments)**: 
+4. **Xem nhanh thông tin & Bảng tóm tắt công việc (Interactive Task Summary Tooltip & Auto Anti-Obstruction)**: 
    - Rê chuột (hoặc chạm trên thiết bị di động) vào bất kỳ gian hàng nào trên bản đồ để xem ngay bảng Tooltip thông tin chi tiết đồng bộ hoàn toàn theo phong cách Bảng Task Summary (`IMG_9172`):
+     - **Cơ chế Tự Động Định Vị Chống Che Khuất (Auto Anti-Obstruction & Safe Collision Engine)**:
+       * **Tự động tránh che khuất trên Di động (Mobile Smart Flip)**: Khi chạm vào gian hàng ở nửa dưới màn hình, Tooltip tự động lật lên nửa trên (dưới thanh công cụ chính), giúp gian hàng đang chọn luôn lộ rõ và Tooltip không bao giờ bị nút Menu hay mép dưới màn hình che khuất. Ngược lại, khi chạm vào gian hàng ở nửa trên, Tooltip tự động đặt ở nửa dưới với khoảng cách an toàn.
+       * **Tự động ẩn nút Menu tạm thời (Mobile Focus Mode)**: Khi Tooltip mở trên điện thoại, các nút Menu và Chú thích màu dưới đáy màn hình tự động làm mờ và tạm ẩn (`opacity-0 pointer-events-none`) để không che khuất hay tranh chấp thao tác bấm với Tooltip.
+       * **Khóa ghim cố định (Pinning)**: Nhấp hoặc chạm vào gian hàng sẽ ghim cố định Tooltip, cho phép người dùng thoải mái cuộn, thao tác công tắc ủy quyền, sắp xếp task con hay nhấn nút bình luận mà không bị biến mất. Nhấp vào nền trống hoặc nút X để đóng.
+       * **Tự động đo đạc theo thời gian thực (ResizeObserver & VisualViewport)**: Tooltip tự động tính toán lại tọa độ ngay khi người dùng bấm mở rộng danh sách công việc con, đảm bảo thẻ luôn nằm trọn trong vùng nhìn thấy được của màn hình (hỗ trợ hoàn hảo Safari iOS với dynamic URL bar).
      - **Thanh tiêu đề (Header)**: Hiển thị Tên Gian hàng (Unit), Trạng thái tiến độ (Badge màu sắc nét: `Completed` xanh lá, `On Process` xanh dương, `Delay` đỏ), Nút mở Bình luận/Chat (`MessageSquare`), Nút mở Project Modal toàn màn hình (`Maximize2`), và Nút đóng (`X`).
      - **Tên Dự án / Brand**: Tên dự án in đậm rõ nét kèm Mã dự án (Code).
      - **Thông số Diện tích & Vị trí (Specs Grid)**: Thẻ Diện tích (`Size m²`) và Vị trí (`Location/Floor`).
@@ -477,11 +482,6 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
        * **Plan Progress**: Thanh phần trăm tiến độ theo Kế hoạch (màu xanh dương).
        * **Act Progress**: Thanh phần trăm tiến độ Thực tế (màu xanh ngọc).
      - **Mốc Thời gian Thi công (Timeline Milestones)**: Start, Handover, Opening kèm biểu tượng thư mục màu trực quan.
-     - **Bảng Chi tiết Công việc Con (Subtasks / Task Lines)**:
-       * Nút bấm bật/tắt mở rộng danh sách công việc con (hiển thị số lượng đầu việc).
-       * Hỗ trợ nút Đảo chiều sắp xếp (`Sort A-Z / Z-A`) theo thứ tự thời gian/tên công việc.
-       * Danh sách từng task con có mã task, tên task, ngày bắt đầu/kết thúc và badge trạng thái chi tiết.
-     - **Công tắc Ủy quyền Nhanh (Fast Delegation Toggle)**: Cho phép chuyển đổi trạng thái ủy quyền của dự án trực tiếp trên tooltip (cập nhật tức thì 0ms vào Zustand cache và đồng bộ ngầm Firestore).
      - **Nút Bình Luận / Trao Đổi Dự Án (Comment Button)**:
        * Biểu tượng hội thoại (`MessageSquare`) được tích hợp ngay góc trên bên phải thanh tiêu đề Tooltip và nút hành động nổi bật `[ 💬 Bình luận / Trao đổi dự án ]` ở chân thẻ Tooltip.
        * Khi nhấp vào nút này, hệ thống sẽ mở ngay cửa sổ **Project Modal** chuyển thẳng vào tab **Chat (Trao đổi)** của dự án đó.
@@ -489,6 +489,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
          - Hệ thống nhận diện trạng thái mở modal ở chế độ chỉ Chat (`isChatOnly` = `isProjectModalOpen && modalInitialTab === 'chat'`).
          - Khi mở ô Comment từ Tooltip của Layout Tab, hệ thống **CHỈ** đọc tin nhắn trao đổi của riêng dự án đó (subcollection chats hoặc document chats) mà **KHÔNG** tải hay lắng nghe (listen) toàn bộ danh sách Task, Cost, hay Delegation của toàn bộ hệ thống.
          - Tiết kiệm 100% chi phí Firestore read không cần thiết, bảo vệ giới hạn đọc và duy trì hiệu năng 60fps mượt mà cho bản đồ.
+          - **Phân trang Tin nhắn (Pagination / Limit to Last 25)**: Mặc định chỉ hiển thị 25 tin nhắn trao đổi gần nhất để giao diện chat mở tức thì (0ms) và chống tràn bộ nhớ. Phía trên có nút `[ ⬆️ Xem thêm tin nhắn cũ hơn (+25) ]` để người dùng chủ động tải thêm khi cần xem lại lịch sử trao đổi. Khi nhấp từ thông báo (`focusCommentId`), hệ thống tự động mở rộng vùng hiển thị để cuộn chính xác đến tin nhắn cần xem.
 5. **Chế độ Bản đồ Trực quan (Live View) & Bảng Chú Thích Màu (Color Legend trên iOS/Mobile/Desktop)**:
    - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
    - **Thanh Chú Thích Màu Nổi (Floating Color Legend Bar)**: Ở góc dưới màn hình (đặc biệt tối ưu trải nghiệm 1 chạm cho iOS/iPhone/iPad), hệ thống hiển thị dải các chấm màu và tên nhóm phân loại tương ứng theo định dạng thẻ cuộn ngang mượt mà.
