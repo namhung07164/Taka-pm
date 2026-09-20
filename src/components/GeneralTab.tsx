@@ -542,8 +542,8 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
 
         if (col.key === 'no') text = String(i + 1);
         if (col.key === 'status') text = status;
-        if (col.key === 'start') text = formatDisplayDateMain(item.computedTakStart);
-        else if (col.key === 'handover') text = formatDisplayDateMain(item.computedTakCompl);
+        if (col.key === 'start') text = formatDisplayDateMain(item.computedTakStart || item.start);
+        else if (col.key === 'handover') text = formatDisplayDateMain(item.computedTakCompl || item.handover || (item as any).takCompl);
         else if (col.key === 'opening') text = formatDisplayDateMain(item.computedOpening || item.opening);
 
         const width = colWidths[colIdx];
@@ -553,8 +553,8 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
 
         if (col.key === 'start' || col.key === 'handover' || col.key === 'opening') {
            let dateStr = '';
-           if (col.key === 'start') dateStr = item.computedTakStart || '';
-           else if (col.key === 'handover') dateStr = item.computedTakCompl || '';
+           if (col.key === 'start') dateStr = item.computedTakStart || item.start || '';
+           else if (col.key === 'handover') dateStr = item.computedTakCompl || item.handover || (item as any).takCompl || '';
            else if (col.key === 'opening') dateStr = item.computedOpening || item.opening || '';
            
            if (dateStr && status !== 'Completed' && status !== 'Canceled') {
@@ -1213,8 +1213,8 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                   <span className="text-slate-400 dark:text-[#838383] font-normal">{p.year}</span> - <span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store}</span> - <span className="text-slate-400 dark:text-[#838383] font-normal">{p.location}</span> - <span className="text-blue-600 dark:text-[#8ab4f8]">{p.code}</span> - {p.name}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-[#a3a3a3] flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                  <span><span className="font-medium">{t('Start')}:</span> {formatDisplayDateMain(p.computedTakStart)}</span>
-                  <span><span className="font-medium">{t('Finish')}:</span> {formatDisplayDateMain(p.computedTakCompl)}</span>
+                  <span><span className="font-medium">{t('Start')}:</span> {formatDisplayDateMain(p.computedTakStart || p.start)}</span>
+                  <span><span className="font-medium">{t('Finish')}:</span> {formatDisplayDateMain(p.computedTakCompl || p.handover || (p as any).takCompl)}</span>
                   <span><span className="font-medium">{t('Opening')}:</span> {formatDisplayDateMain(p.computedOpening || p.opening)}</span>
                 </div>
                 <div className="flex flex-col gap-1 mt-2">

@@ -11,6 +11,7 @@ import { undoManager } from '../lib/undoManager';
 import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors, normalizeAndHealTaskPredecessors } from '../lib/ganttUtils';
 import { generateId } from '../lib/utils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
+import { saveTaskStateUnified } from '../lib/taskStateService';
 
 export interface UseTaskModalLogicProps {
   task: Task | null;
@@ -458,7 +459,8 @@ export function useTaskModalLogic({
           optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
         }
       });
-      useAppStore.getState().optimisticUpdateTasks(optimisticList);
+      // Optimistic UI update in Zustand & sync project dates immediately
+      saveTaskStateUnified(optimisticList);
 
       try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
@@ -485,9 +487,10 @@ export function useTaskModalLogic({
         depUpdates.length > 0;
 
       if (datesOrStatusChanged) {
-        syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear);
+        const allTasksCurrent = useAppStore.getState().tasks;
+        syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent);
         if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
-          syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear);
+          syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent);
         }
       }
       

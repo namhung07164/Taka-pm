@@ -376,17 +376,31 @@ export function formatDisplayDateTime(dateStr: string | undefined): string {
 export function enrichProjects(projects: Project[], tasks: Task[]): Project[] {
   const tasksByProject = new Map<string, Task[]>();
   tasks.forEach(t => {
-    const key = `${t.projectCode || ""}-${t.projectYear || ""}-${t.projectStore || ""}`;
+    const key = `${String(t.projectCode || "").trim().toLowerCase()}-${String(t.projectYear || "").trim()}-${String(t.projectStore || "").trim().toLowerCase()}`;
     if (!tasksByProject.has(key)) tasksByProject.set(key, []);
     tasksByProject.get(key)!.push(t);
   });
 
   const enrichedProjects = projects.map((p) => {
-    const pKey = `${p.code || ""}-${p.year || ""}-${p.store || ""}`;
-    const projectTasks = tasksByProject.get(pKey) || [];
+    const pYear = String(p.year || "").trim();
+    const pStore = String(p.store || "").trim().toLowerCase();
+    const pCode = String(p.code || "").trim().toLowerCase();
+    const pCodeParts = pCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+    let projectTasks: Task[] = [];
+    if (pCodeParts.length > 1) {
+      pCodeParts.forEach(part => {
+        const key = `${part}-${pYear}-${pStore}`;
+        const subTasks = tasksByProject.get(key);
+        if (subTasks) projectTasks.push(...subTasks);
+      });
+    } else {
+      const pKey = `${pCode}-${pYear}-${pStore}`;
+      projectTasks = tasksByProject.get(pKey) || [];
+    }
 
     let computedTakStart = p.computedTakStart || p.start;
-    let computedTakCompl: string | undefined = p.computedTakCompl || undefined; // Ưu tiên pre-computed từ project document nếu tasks chưa tải
+    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl || undefined;
     let computedOpening = p.computedOpening || p.opening;
 
     if (projectTasks.length > 0) {
@@ -421,6 +435,10 @@ export function enrichProjects(projects: Project[], tasks: Task[]): Project[] {
       }
     }
 
+    const planProgressPercent = projectTasks.length > 0 
+      ? Math.round((projectTasks.filter(t => t.start && t.finish && getTaskStatus(t.start, t.finish) === "Completed").length / projectTasks.length) * 100)
+      : (p.computedPlanProgress ?? 0);
+
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
 
     return {
@@ -428,6 +446,7 @@ export function enrichProjects(projects: Project[], tasks: Task[]): Project[] {
       computedTakStart,
       computedTakCompl,
       computedOpening,
+      computedPlanProgress: planProgressPercent,
       computedStatus: status,
     };
   });

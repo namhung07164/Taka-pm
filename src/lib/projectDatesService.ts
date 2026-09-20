@@ -16,6 +16,45 @@ export interface ComputedProjectDates {
 }
 
 /**
+ * So sánh 2 mã dự án: hỗ trợ chuỗi đơn, chuỗi nhiều mã phân tách bởi dấu phẩy/chấm phẩy,
+ * không phân biệt chữ hoa/thường và khoảng trắng thừa.
+ */
+export function matchProjectCode(codeA?: string, codeB?: string): boolean {
+  if (!codeA || !codeB) return false;
+  const a = String(codeA).trim().toLowerCase();
+  const b = String(codeB).trim().toLowerCase();
+  if (a === b) return true;
+  const partsA = a.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const partsB = b.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  return partsA.some(pa => partsB.includes(pa));
+}
+
+/**
+ * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác multi-code, store và year).
+ */
+export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
+  if (!project.code || !allTasks || allTasks.length === 0) return [];
+  const pYear = project.year ? String(project.year).trim() : '';
+  const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+  const pCodeParts = String(project.code).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+  return allTasks.filter(t => {
+    if (!t.projectCode) return false;
+    const tCode = String(t.projectCode).trim().toLowerCase();
+    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code);
+    if (!matchesCode) return false;
+
+    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+    if (pStore && tStore && pStore !== tStore) return false;
+
+    const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+    if (pYear && tYear && pYear !== tYear) return false;
+
+    return true;
+  });
+}
+
+/**
  * Thuật toán tính toán mốc thời gian tĩnh (Pre-computed Dates) cho Dự án từ danh sách Tasks con:
  * - computedTakStart: Ngày bắt đầu sớm nhất trong các Task con (hoặc giữ project.start)
  * - computedTakCompl: Ngày hoàn thành (finish) muộn nhất trong các Task con (đại diện cho Handover / Pj Compl)
@@ -26,8 +65,9 @@ export function calculateProjectComputedDates(
   projectTasks: Task[],
   delegationGroups: DelegationGroup[] = []
 ): ComputedProjectDates {
-  let computedTakStart = project.start;
-  let computedTakCompl: string | undefined = undefined;
+  let computedTakStart = project.computedTakStart || project.start || "";
+  let computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
+  let computedOpening = project.computedOpening || project.opening || "";
 
   if (projectTasks && projectTasks.length > 0) {
     const validStarts = projectTasks
@@ -45,30 +85,31 @@ export function calculateProjectComputedDates(
     if (validFinishes.length > 0) {
       computedTakCompl = validFinishes[0];
     }
-  }
 
-  let computedOpening = project.opening;
-  const openingTasks = (projectTasks || []).filter((t) => {
-    const name = String(t.name || "").toLowerCase();
-    return name.includes("opening") || name.includes("open");
-  });
-  if (openingTasks.length > 0) {
-    const validFinishes = openingTasks
-      .map((t) => t.finish)
-      .filter(Boolean)
-      .sort((a, b) => (b || "").localeCompare(a || ""));
-    if (validFinishes.length > 0) {
-      computedOpening = validFinishes[0];
+    const openingTasks = projectTasks.filter((t) => {
+      const name = String(t.name || "").toLowerCase();
+      return name.includes("opening") || name.includes("open");
+    });
+    if (openingTasks.length > 0) {
+      const validFinishes = openingTasks
+        .map((t) => t.finish)
+        .filter(Boolean)
+        .sort((a, b) => (b || "").localeCompare(a || ""));
+      if (validFinishes.length > 0) {
+        computedOpening = validFinishes[0];
+      }
     }
   }
 
-  const planProgressPercent = projectTasks.length > 0 
+  const planProgressPercent = projectTasks && projectTasks.length > 0 
     ? Math.round((projectTasks.filter(t => t.start && t.finish && getTaskStatus(t.start, t.finish) === "Completed").length / projectTasks.length) * 100) 
-    : 0;
+    : (project.computedPlanProgress ?? 0);
   
-  const actProgressPercent = computeActProgressPercent(projectTasks, delegationGroups);
+  const actProgressPercent = projectTasks && projectTasks.length > 0
+    ? computeActProgressPercent(projectTasks, delegationGroups)
+    : (project.computedActProgress ?? 0);
 
-  const taskSummaries = projectTasks
+  const taskSummaries = (projectTasks || [])
     .filter(t => t.start && t.finish && t.name)
     .map(t => ({
       name: t.name!,
@@ -76,7 +117,9 @@ export function calculateProjectComputedDates(
       finish: t.finish!
     }));
 
-  const taskCount = projectTasks ? projectTasks.length : (project.taskCount ?? 0);
+  const taskCount = projectTasks && projectTasks.length > 0 
+    ? projectTasks.length 
+    : (project.taskCount ?? (projectTasks ? projectTasks.length : 0));
 
   return {
     computedTakStart: computedTakStart || "",
@@ -85,7 +128,7 @@ export function calculateProjectComputedDates(
     computedPlanProgress: planProgressPercent,
     computedActProgress: actProgressPercent,
     taskCount,
-    taskSummaries,
+    taskSummaries: taskSummaries.length > 0 ? taskSummaries : (project.taskSummaries || []),
   };
 }
 
@@ -191,20 +234,15 @@ export async function syncProjectDatesByCode(
   const { projects, tasks, delegationGroups } = useAppStore.getState();
   const project = projects.find(
     (p) =>
-      p.code === projectCode &&
-      (!projectStore || String(p.store).toLowerCase() === String(projectStore).toLowerCase()) &&
-      (!projectYear || String(p.year) === String(projectYear))
+      (p.code === projectCode || matchProjectCode(p.code, projectCode)) &&
+      (!projectStore || !p.store || String(p.store).trim().toLowerCase() === String(projectStore).trim().toLowerCase()) &&
+      (!projectYear || !p.year || String(p.year).trim() === String(projectYear).trim())
   );
 
   if (!project || !project.id) return;
 
   const currentTasks = overrideTasks || tasks;
-  const projectTasks = currentTasks.filter(
-    (t) =>
-      t.projectCode === projectCode &&
-      (!projectStore || String(t.projectStore || project.store).toLowerCase() === String(projectStore).toLowerCase()) &&
-      (!projectYear || String(t.projectYear || project.year) === String(projectYear))
-  );
+  const projectTasks = getTasksForProject(project, currentTasks);
 
   const dates = calculateProjectComputedDates(project, projectTasks, delegationGroups);
   await syncProjectDatesToFirestore(project.id, dates);
@@ -225,19 +263,11 @@ export async function backfillMissingProjectDates(
   if (hasBackfilledInSession || !projects.length || !tasks.length) return 0;
   hasBackfilledInSession = true;
 
-  const tasksByProject = new Map<string, Task[]>();
-  tasks.forEach((t) => {
-    const key = `${t.projectCode || ""}-${t.projectYear || ""}-${t.projectStore || ""}`.toLowerCase();
-    if (!tasksByProject.has(key)) tasksByProject.set(key, []);
-    tasksByProject.get(key)!.push(t);
-  });
-
   let count = 0;
   for (const p of projects) {
     if (!p.id || !p.code) continue;
 
-    const key = `${p.code || ""}-${p.year || ""}-${p.store || ""}`.toLowerCase();
-    const pTasks = tasksByProject.get(key) || [];
+    const pTasks = getTasksForProject(p, tasks);
     if (pTasks.length === 0) continue;
 
     const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);

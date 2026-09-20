@@ -1,19 +1,8 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { enrichProjects } from '../lib/utils';
+import { matchProjectCode } from '../lib/projectDatesService';
 import { Task, Project, DelegationGroup, AppUser } from '../types';
-
-let globalCache = {
-  projects: null as Project[] | null,
-  tasks: null as Task[] | null,
-  delegationGroups: null as DelegationGroup[] | null,
-  currentUser: null as AppUser | null,
-  result: {
-    enrichedProjects: [] as any[],
-    filteredTasks: [] as any[],
-    visibleDelegationGroups: [] as any[]
-  }
-};
 
 export function useEnrichedData() {
   const projects = useAppStore(state => state.projects);
@@ -22,15 +11,6 @@ export function useEnrichedData() {
   const currentUser = useAppStore(state => state.currentUser)!;
 
   const result = useMemo(() => {
-    if (
-      globalCache.projects === projects &&
-      globalCache.tasks === tasks &&
-      globalCache.delegationGroups === delegationGroups &&
-      globalCache.currentUser === currentUser
-    ) {
-      return globalCache.result;
-    }
-
     const tasksByProject = new Map<string, Task[]>();
     tasks.forEach(t => {
       const key = `${String(t.projectCode || "").trim().toLowerCase()}-${String(t.projectYear || "").trim()}-${String(t.projectStore || "").trim().toLowerCase()}`;
@@ -82,8 +62,20 @@ export function useEnrichedData() {
           pPartyList.includes(username) ||
           pPartyList.includes(userId);
 
-        const pKey = `${String(p.code || "").trim().toLowerCase()}-${String(p.year || "").trim()}-${String(p.store || "").trim().toLowerCase()}`;
-        const groupTasks = tasksByProject.get(pKey) || [];
+        const pYear = String(p.year || "").trim();
+        const pStore = String(p.store || "").trim().toLowerCase();
+        const pCodeParts = String(p.code || "").toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+        let groupTasks: Task[] = [];
+        if (pCodeParts.length > 1) {
+          pCodeParts.forEach(part => {
+            const sub = tasksByProject.get(`${part}-${pYear}-${pStore}`);
+            if (sub) groupTasks.push(...sub);
+          });
+        } else {
+          groupTasks = tasksByProject.get(`${String(p.code || "").trim().toLowerCase()}-${pYear}-${pStore}`) || [];
+        }
+
         const tMatch = groupTasks.some((t) => {
           const tPartyList = String(t.party || "")
             .toLowerCase()
@@ -109,18 +101,31 @@ export function useEnrichedData() {
 
     let filteredTasks = tasks;
     if (currentUser.role !== "admin") {
-      const visibleProjectKeys = new Set(
-        enrichedProjects.map((p) =>
-          `${String(p.code).trim()}_${String(p.year || "").trim()}_${String(p.store || "").trim()}`.toLowerCase(),
-        ),
-      );
+      const visibleProjectKeys = new Set<string>();
+      enrichedProjects.forEach((p) => {
+        const pYear = String(p.year || "").trim().toLowerCase();
+        const pStore = String(p.store || "").trim().toLowerCase();
+        const rawCode = String(p.code || "").trim().toLowerCase();
+        visibleProjectKeys.add(`${rawCode}_${pYear}_${pStore}`);
+        visibleProjectKeys.add(`${rawCode}__`);
+
+        const pCodeParts = rawCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+        pCodeParts.forEach(part => {
+          visibleProjectKeys.add(`${part}_${pYear}_${pStore}`);
+          visibleProjectKeys.add(`${part}__`);
+        });
+      });
       
       let visibleTasks = tasks.filter((t) => {
-        const taskKey =
-          `${String(t.projectCode).trim()}_${String(t.projectYear || "").trim()}_${String(t.projectStore || "").trim()}`.toLowerCase();
+        const taskCode = String(t.projectCode || "").trim().toLowerCase();
+        const taskYear = String(t.projectYear || "").trim().toLowerCase();
+        const taskStore = String(t.projectStore || "").trim().toLowerCase();
+        const taskKey = `${taskCode}_${taskYear}_${taskStore}`;
+
         return (
           visibleProjectKeys.has(taskKey) ||
-          visibleProjectKeys.has(`${String(t.projectCode).trim()}__`.toLowerCase())
+          visibleProjectKeys.has(`${taskCode}__`) ||
+          enrichedProjects.some(p => matchProjectCode(p.code, t.projectCode))
         );
       });
 
@@ -138,7 +143,7 @@ export function useEnrichedData() {
             (p) =>
               `${String(p.code).trim()}_${String(p.year || "").trim()}_${String(p.store || "").trim()}`.toLowerCase() ===
                 `${String(t.projectCode).trim()}_${String(t.projectYear || "").trim()}_${String(t.projectStore || "").trim()}`.toLowerCase() ||
-              `${String(p.code).trim()}__`.toLowerCase() === `${String(t.projectCode).trim()}__`.toLowerCase(),
+              matchProjectCode(p.code, t.projectCode)
           );
           const projectPartyList = parentProject
             ? String(parentProject.party || "")
@@ -199,14 +204,7 @@ export function useEnrichedData() {
       });
     }
 
-    globalCache = {
-      projects,
-      tasks,
-      delegationGroups,
-      currentUser,
-      result: { enrichedProjects, filteredTasks, visibleDelegationGroups }
-    };
-    return globalCache.result;
+    return { enrichedProjects, filteredTasks, visibleDelegationGroups };
   }, [projects, tasks, delegationGroups, currentUser]);
 
   return result;

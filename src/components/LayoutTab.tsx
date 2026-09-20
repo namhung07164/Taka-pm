@@ -210,7 +210,7 @@ export function LayoutTab({
     let targetFloor = unitItem.location;
     if (!targetFloor || targetFloor.toLowerCase() === 'all') {
       const matchedP = projects.find(p => 
-        (p.unit && p.unit.toLowerCase() === unitItem.unit.toLowerCase()) ||
+        ((p as any).unit && (p as any).unit.toLowerCase() === unitItem.unit.toLowerCase()) ||
         (p.code && p.code.toLowerCase() === unitItem.unit.toLowerCase()) ||
         (p.name && p.name.toLowerCase() === (unitItem.project || '').toLowerCase())
       );

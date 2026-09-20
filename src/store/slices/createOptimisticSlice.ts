@@ -4,41 +4,101 @@ import { AppState, OptimisticSlice } from "../storeTypes";
 
 export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSlice> = (set) => ({
   optimisticUpdateTasks: (updatedTasks) => set((state) => {
+    if (!updatedTasks || updatedTasks.length === 0) return state;
     const updatedMap = new Map(updatedTasks.map(t => [t.id, t]));
-    return {
-      tasks: state.tasks.map(t => {
+    const existingIds = new Set(state.tasks.map(t => t.id));
+    
+    const mapped = state.tasks
+      .map(t => {
         const update = updatedMap.get(t.id);
         if (update) {
+          if ((update as any).isDeleted) return null;
           return { ...t, ...update } as Task;
         }
         return t;
       })
+      .filter((t): t is Task => t !== null);
+
+    const newTasks = updatedTasks.filter(
+      t => t.id && !existingIds.has(t.id) && !(t as any).isDeleted
+    ) as Task[];
+
+    return {
+      tasks: newTasks.length > 0 ? [...mapped, ...newTasks] : mapped
+    };
+  }),
+
+  optimisticDeleteTasks: (taskIds) => set((state) => {
+    if (!taskIds || taskIds.length === 0) return state;
+    const idSet = new Set(taskIds);
+    return {
+      tasks: state.tasks.filter(t => !idSet.has(t.id))
     };
   }),
 
   optimisticUpdateCosts: (updatedCosts) => set((state) => {
+    if (!updatedCosts || updatedCosts.length === 0) return state;
     const updatedMap = new Map(updatedCosts.map(c => [c.id, c]));
-    return {
-      costs: state.costs.map(c => {
+    const existingIds = new Set(state.costs.map(c => c.id));
+
+    const mapped = state.costs
+      .map(c => {
         const update = updatedMap.get(c.id);
         if (update) {
+          if ((update as any).isDeleted) return null;
           return { ...c, ...update } as Cost;
         }
         return c;
       })
+      .filter((c): c is Cost => c !== null);
+
+    const newCosts = updatedCosts.filter(
+      c => c.id && !existingIds.has(c.id) && !(c as any).isDeleted
+    ) as Cost[];
+
+    return {
+      costs: newCosts.length > 0 ? [...mapped, ...newCosts] : mapped
+    };
+  }),
+
+  optimisticDeleteCosts: (costIds) => set((state) => {
+    if (!costIds || costIds.length === 0) return state;
+    const idSet = new Set(costIds);
+    return {
+      costs: state.costs.filter(c => !idSet.has(c.id))
     };
   }),
 
   optimisticUpdateProjects: (updatedProjects) => set((state) => {
+    if (!updatedProjects || updatedProjects.length === 0) return state;
     const updatedMap = new Map(updatedProjects.map(p => [p.id, p]));
-    return {
-      projects: state.projects.map(p => {
+    const existingIds = new Set(state.projects.map(p => p.id));
+
+    const mapped = state.projects
+      .map(p => {
         const update = updatedMap.get(p.id);
         if (update) {
+          if ((update as any).isDeleted) return null;
           return { ...p, ...update } as Project;
         }
         return p;
       })
+      .filter((p): p is Project => p !== null);
+
+    const newProjects = updatedProjects.filter(
+      p => p.id && !existingIds.has(p.id) && !(p as any).isDeleted
+    ) as Project[];
+
+    return {
+      projects: newProjects.length > 0 ? [...mapped, ...newProjects] : mapped
+    };
+  }),
+
+  optimisticDeleteProjects: (projectIds) => set((state) => {
+    if (!projectIds || projectIds.length === 0) return state;
+    const idSet = new Set(projectIds);
+    return {
+      projects: state.projects.filter(p => !idSet.has(p.id))
     };
   }),
 

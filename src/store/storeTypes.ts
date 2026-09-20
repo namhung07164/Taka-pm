@@ -185,9 +185,12 @@ export interface DataSlice {
 }
 
 export interface OptimisticSlice {
-  optimisticUpdateTasks: (updatedTasks: Partial<Task>[]) => void;
-  optimisticUpdateCosts: (updatedCosts: Partial<Cost>[]) => void;
-  optimisticUpdateProjects: (updatedProjects: Partial<Project>[]) => void;
+  optimisticUpdateTasks: (updatedTasks: (Partial<Task> & { id: string })[]) => void;
+  optimisticDeleteTasks: (taskIds: string[]) => void;
+  optimisticUpdateCosts: (updatedCosts: (Partial<Cost> & { id: string })[]) => void;
+  optimisticDeleteCosts: (costIds: string[]) => void;
+  optimisticUpdateProjects: (updatedProjects: (Partial<Project> & { id: string })[]) => void;
+  optimisticDeleteProjects: (projectIds: string[]) => void;
   optimisticUpdateProjectFinancial: (projectId: string, updates: any) => void;
   rollbackProjectFinancial: (projectId: string, oldFinancial: any) => void;
 }

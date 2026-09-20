@@ -20,6 +20,11 @@ import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
 import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors } from '../lib/ganttUtils';
 import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/projectDatesService';
+import { 
+  saveTaskStateUnified, 
+  deleteTaskStateUnified, 
+  reorderTasksStateUnified 
+} from '../lib/taskStateService';
 import { QRCodeButton } from './QRCodeButton';
 import { safeGetItemSession, safeSetItemSession } from '../lib/storage';
 import { PredecessorMultiInput } from "./PredecessorMultiInput";
@@ -535,8 +540,8 @@ export function DetailTab({
         });
       }
 
-      // Optimistic UI update in Zustand immediately (0ms)
-      useAppStore.getState().setTasks(allUpdatedTasks);
+      // Optimistic UI update in Zustand & sync project dates immediately (0ms)
+      reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
@@ -625,8 +630,8 @@ export function DetailTab({
         });
       }
 
-      // Optimistic UI update in Zustand immediately (0ms)
-      useAppStore.getState().setTasks(allUpdatedTasks);
+      // Optimistic UI update in Zustand & sync project dates immediately (0ms)
+      reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
@@ -734,8 +739,8 @@ export function DetailTab({
       );
       if (!result) return;
 
-      // Optimistic local state update in Zustand
-      useAppStore.getState().setTasks(result.allUpdatedTasks);
+      // Optimistic local state update in Zustand & sync project dates immediately
+      reorderTasksStateUnified(result.allUpdatedTasks);
 
       const writeBatches: any[] = [];
       let currentWriteBatch = writeBatch(db);
@@ -970,8 +975,8 @@ export function DetailTab({
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
         return;
       }
-          const remainingTasks = tasks.filter(task => task.id !== t.id);
-          syncProjectDatesByCode(t.projectCode, t.projectStore, t.projectYear, remainingTasks);
+          // Xóa tức thì khỏi Zustand store & đồng bộ lại tiến độ/mốc ngày của Project
+          deleteTaskStateUnified([t.id]);
           
           undoManager.push({
             description: `Delete Task: ${t.name}`,
@@ -1429,12 +1434,13 @@ export function DetailTab({
         }
       });
       
-      // Optimistically update the UI to prevent input lag
-      useAppStore.getState().optimisticUpdateTasks([
+      // Optimistically update the UI and sync computed project dates to prevent lag
+      const allUpdatesToSave = [
         newT,
         ...depUpdates,
         ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
-      ]);
+      ];
+      saveTaskStateUnified(allUpdatesToSave);
 
       try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
@@ -1443,10 +1449,9 @@ export function DetailTab({
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
         
         // Revert optimistic updates on failure
-        useAppStore.getState().optimisticUpdateTasks([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
+        saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
         return;
       }
-      syncProjectDatesByCode(newT.projectCode, newT.projectStore, newT.projectYear);
       
       undoManager.push({
         description: `Update Task Schedule: ${t.name}`,
@@ -2128,11 +2133,7 @@ export function DetailTab({
          importCount++;
       }
       
-      const affectedProjectCodes = new Set(tasksToImport.map(t => t.projectCode));
-      affectedProjectCodes.forEach(code => {
-        const sample = tasksToImport.find(t => t.projectCode === code);
-        syncProjectDatesByCode(code, sample?.projectStore, sample?.projectYear);
-      });
+      saveTaskStateUnified(tasksToImport);
       
       if (importCount > 0) {
         undoManager.push({
@@ -2242,6 +2243,30 @@ export function DetailTab({
       });
       
       if (updateCount > 0) {
+        if (action === 'delete') {
+          deleteTaskStateUnified(Array.from(selectedTaskIds));
+        } else {
+          const updatedTasksList: (Partial<Task> & { id: string })[] = [];
+          Array.from(selectedTaskIds).forEach(taskId => {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+              const u: any = { id: taskId, updatedAt: now };
+              if (action === 'delegation_on') u.delegation = true;
+              if (action === 'delegation_off') u.delegation = false;
+              if (action === 'flexible_on') u.realtimeUpdate = true;
+              if (action === 'flexible_off') u.realtimeUpdate = false;
+              if (action === 'baseline') {
+                u.baselineStart = task.start;
+                u.baselineFinish = task.finish;
+              }
+              updatedTasksList.push(u);
+            }
+          });
+          if (updatedTasksList.length > 0) {
+            saveTaskStateUnified(updatedTasksList);
+          }
+        }
+
         try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
       } catch (error: any) {

@@ -211,6 +211,11 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
      + **Cơ Chế Tự Động Chữa Lành Tiền Nhiệm (Smart Predecessor Auto-Healing Engine)**: Ngay khi nạp giao diện, sắp xếp (Sort), di chuyển task, hoặc mở hộp thoại Task Modal, hệ thống tự động nhận diện các tiền nhiệm còn lưu mã cũ/mã ghép phân đoạn và tự động chuẩn hóa, điền lại ngay lập tức theo Task Code mới nhất (`0ms Optimistic UI`) và lưu đồng bộ ngầm vào cơ sở dữ liệu.
      + Hỗ trợ cơ chế Optimistic UI (cập nhật tức thì 0ms trên giao diện) và hỗ trợ hoàn tác (`Undo`) trọn vẹn.
 
+6. **Đồng Bộ Ngày Bắt Đầu & Kết Thúc Tức Thì Sang Tab General (Real-Time Pre-computed Dates Sync)**:
+   - Mọi thao tác thêm mới, chỉnh sửa ngày (`Start`/`Finish`), xóa hoặc cập nhật tiến độ công việc trên tab **Task detail** đều tự động tính toán lại ngày bắt đầu sớm nhất (`computedTakStart`), ngày kết thúc muộn nhất (`computedTakCompl`) và ngày khai trương (`computedOpening`) của dự án.
+   - **Hỗ trợ Dự án Multi-code**: Đối với các dự án ghép mã gian hàng (ví dụ: `L3-333-2, L3-333-3` hoặc `L3-303-1`), hệ thống tự động gom chính xác toàn bộ danh sách task thuộc tất cả các phân đoạn mã để cập nhật tiến độ và mốc thời gian toàn diện.
+   - **Cơ chế Fallback bảo toàn dữ liệu**: Tab General luôn hiển thị mốc ngày đầy đủ và chính xác ngay cả khi danh sách task đang được tải hoặc lọc theo năm, không bao giờ bị mất hay rỗng ngày Start/Finish.
+
 #### 🔹 Hướng dẫn Quy trình Phê Duyệt Tiến Độ (Approval Workflow):
 1. Mỗi dòng công việc có cột trạng thái phê duyệt: **Pending (Chờ duyệt)**, **Approved (Đã duyệt)**, **Rejected (Từ chối)**.
 2. Cấp Quản lý (Manager/Admin) nhấp vào nút trạng thái:
