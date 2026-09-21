@@ -47,7 +47,8 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     message: '',
   });
 
-  const { r2Config, setR2Config } = useAppStore();
+  const r2Config = useAppStore(state => state.r2Config);
+  const setR2Config = useAppStore(state => state.setR2Config);
 
   useEffect(() => {
     setMounted(true);

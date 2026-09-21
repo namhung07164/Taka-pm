@@ -156,6 +156,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
   const setDetailTabStoreFilter = useAppStore(state => state.setDetailTabStoreFilter);
   const setActiveTab = useAppStore(state => state.setActiveTab);
+  const budgetTabSearchTerm = useAppStore(state => state.budgetTabSearchTerm);
 
   const handleProjectLinkClick = (p: Project) => {
     if (!p) return;
@@ -178,13 +179,15 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     setActiveTab("detail");
   };
   
-  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || budgetTabSearchTerm || '');
 
   useEffect(() => {
-    if (initialSearchTerm !== undefined) {
+    if (initialSearchTerm) {
       setSearchTerm(initialSearchTerm);
+    } else if (budgetTabSearchTerm) {
+      setSearchTerm(budgetTabSearchTerm);
     }
-  }, [initialSearchTerm]);
+  }, [initialSearchTerm, budgetTabSearchTerm]);
 
   const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
   const [moneyFilter, setMoneyFilter] = useState(() => {

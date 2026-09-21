@@ -157,6 +157,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
   const setDetailTabStoreFilter = useAppStore(state => state.setDetailTabStoreFilter);
   const setActiveTab = useAppStore(state => state.setActiveTab);
+  const costTabSearchTerm = useAppStore(state => state.costTabSearchTerm);
 
   const handleProjectLinkClick = (p: Project) => {
     if (!p) return;
@@ -189,11 +190,15 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
   // Clean up link cost when unmounting / leaving CostTab
 
-  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || costTabSearchTerm || '');
 
   useEffect(() => {
-    if (initialSearchTerm) setSearchTerm(initialSearchTerm);
-  }, [initialSearchTerm]);
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+    } else if (costTabSearchTerm) {
+      setSearchTerm(costTabSearchTerm);
+    }
+  }, [initialSearchTerm, costTabSearchTerm]);
 
   const [hasActForcFilter, setHasActForcFilter] = useState(() => {
     if ((initialSearchTerm || '').trim()) return 'all';

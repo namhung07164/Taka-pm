@@ -63,8 +63,9 @@ const AVAILABLE_COLUMNS = [
   { id: 'action', label: 'Action' }
 ];
 export function DetailTab({
-  initialFilterCode,
-  initialFocusTaskId,
+  initialFilterCode: propInitialFilterCode,
+  initialFocusTaskId: propInitialFocusTaskId,
+  returnScrollId: propReturnScrollId,
   onClearFocus,
   onBackToGantt,
   onAddProject,
@@ -73,6 +74,13 @@ export function DetailTab({
   onEditProject,
   onNavigateToDelegation
 }: DetailTabProps) {
+  const storeFilterCode = useAppStore(state => state.detailTabFilterCode);
+  const storeFocusTaskId = useAppStore(state => state.detailTabFocusTaskId);
+  const storeReturnScrollId = useAppStore(state => state.detailReturnScrollId);
+
+  const initialFilterCode = propInitialFilterCode !== undefined ? propInitialFilterCode : storeFilterCode;
+  const initialFocusTaskId = propInitialFocusTaskId !== undefined ? propInitialFocusTaskId : storeFocusTaskId;
+  const returnScrollId = propReturnScrollId !== undefined ? propReturnScrollId : storeReturnScrollId;
 
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const costs = useAppStore(state => state.costs);

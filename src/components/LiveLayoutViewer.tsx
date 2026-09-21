@@ -63,7 +63,14 @@ function getContrastStyle(hexColor: string) {
 }
 
 export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch, onUnitSelected, onClearFocus }: LiveLayoutViewerProps) {
-  const { r2Config, setR2Config, currentUser, permissionMatrix, globalYearFilter, layoutTooltipVisibility, setLayoutTooltipVisibility, resetLayoutTooltipVisibility } = useAppStore();
+  const r2Config = useAppStore(state => state.r2Config);
+  const setR2Config = useAppStore(state => state.setR2Config);
+  const currentUser = useAppStore(state => state.currentUser);
+  const permissionMatrix = useAppStore(state => state.permissionMatrix);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
+  const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility);
+  const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
     currentUser?.role === 'admin'
@@ -391,7 +398,12 @@ function LiveCanvas({
   onRefreshConfig?: () => Promise<void> | void; 
   onOpenR2Config: () => void;
 }) {
-  const { currentUser, permissionMatrix, globalYearFilter, layoutTooltipVisibility, setLayoutTooltipVisibility, resetLayoutTooltipVisibility } = useAppStore();
+  const currentUser = useAppStore(state => state.currentUser);
+  const permissionMatrix = useAppStore(state => state.permissionMatrix);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
+  const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility);
+  const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
     currentUser?.role === 'admin'

@@ -23,8 +23,16 @@ interface LayoutTabProps {
 }
 
 export function LayoutTab({ 
-   
-  initialStore = 'all', initialLocation = 'all', initialProjectCode = '', onClearFocus, onBackToGantt}: LayoutTabProps) {
+  initialStore: propInitialStore,
+  initialLocation: propInitialLocation,
+  initialProjectCode: propInitialProjectCode,
+  onClearFocus,
+  onBackToGantt
+}: LayoutTabProps) {
+  const layoutTabFilters = useAppStore(state => state.layoutTabFilters);
+  const initialStore = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || 'all');
+  const initialLocation = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || 'all');
+  const initialProjectCode = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
 
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser)!;
