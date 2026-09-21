@@ -5,7 +5,7 @@ import { Search, RefreshCw, Pin, GripVertical, CheckCircle2, ArrowUp, ArrowDown,
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { Project, Task, AppUser, DelegationGroup } from '../types';
-import { getStatus, formatDisplayDateMain, cn, parseDateTime, getTaskStatus, getDefaultStoreFilter, resolveActualStatus, computeActProgressPercent, getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
+import { getStatus, formatDisplayDateMain, cn, parseDateTime, getTaskStatus, getDefaultStoreFilter, getDefaultLocationFilter, resolveActualStatus, computeActProgressPercent, getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
 import { useLanguage } from '../lib/LanguageContext';
 import { useLocationOptions } from '../hooks/useLocationOptions';
 import { safeGetItemSession, safeSetItemSession } from '../lib/storage';
@@ -54,6 +54,11 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
       wasSearchingRef.current = false;
     }
   }, [searchTerm]);
+
+  useEffect(() => {
+    const defaultLocs = getDefaultLocationFilter(currentUser, locations);
+    setGlobalLocationFilter(defaultLocs);
+  }, [currentUser?.id, locations]);
   const [flashToggle, setFlashToggle] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);

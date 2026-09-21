@@ -1,5 +1,6 @@
 import { StateCreator } from "zustand";
 import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
+import { loadCachedStaticConfig } from "../../lib/configCacheService";
 import { TabId } from "../../types";
 import { AppState, UISlice } from "../storeTypes";
 
@@ -229,14 +230,32 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
   },
   globalLocationFilter: (() => {
     try {
-      const stored = safeGetItemLocal("taka_location_filter");
-      if (!stored) return [];
-      const parsed = JSON.parse(stored);
-      if (!Array.isArray(parsed)) {
-        if (typeof parsed === 'string' && parsed !== 'all') return [parsed];
+      const savedAuth = safeGetItemLocal("taka_auth_v1");
+      let currentUser: any = null;
+      if (savedAuth) {
+        currentUser = JSON.parse(savedAuth);
+      }
+      
+      const config = loadCachedStaticConfig();
+      const allLocations = config?.locations || [];
+
+      // If user is admin or has 'all' location permission
+      if (!currentUser || currentUser.role === 'admin' || currentUser.locationPermissions?.['all']) {
         return [];
       }
-      return parsed.filter((l: string) => l !== 'all');
+
+      // If user has specific location permissions
+      if (currentUser.locationPermissions) {
+        const allowed = allLocations.filter((loc: string) => {
+          const lKey = loc.toLowerCase().trim();
+          return !!currentUser.locationPermissions?.[lKey];
+        });
+        if (allLocations.length > 0 && allowed.length >= allLocations.length) {
+          return [];
+        }
+        return allowed;
+      }
+      return [];
     } catch {
       return [];
     }

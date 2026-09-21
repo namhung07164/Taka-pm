@@ -126,6 +126,34 @@ export const getUserAllowedStores = (
   return list;
 };
 
+export const getUserAllowedLocations = (
+  currentUser: AppUser | null | undefined,
+  allConfigLocations: string[] = []
+): string[] => {
+  if (!currentUser || currentUser.role === "admin" || currentUser.locationPermissions?.['all']) {
+    return allConfigLocations;
+  }
+  if (!currentUser.locationPermissions) return [];
+  return allConfigLocations.filter(loc => {
+    const lKey = loc.toLowerCase().trim();
+    return !!currentUser.locationPermissions?.[lKey];
+  });
+};
+
+export const getDefaultLocationFilter = (
+  currentUser: AppUser | null | undefined,
+  allConfigLocations: string[] = []
+): string[] => {
+  if (!currentUser || currentUser.role === "admin" || currentUser.locationPermissions?.['all']) {
+    return []; // Empty array represents 'all locations'
+  }
+  const allowed = getUserAllowedLocations(currentUser, allConfigLocations);
+  if (allConfigLocations.length > 0 && allowed.length >= allConfigLocations.length) {
+    return []; // If user can see all configured locations, default to all ([])
+  }
+  return allowed;
+};
+
 export const getEffectiveStoreFilter = (
   globalStoreFilter: string,
   currentUser: AppUser | null | undefined,
