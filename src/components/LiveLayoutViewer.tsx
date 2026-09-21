@@ -2450,29 +2450,32 @@ function LiveCanvas({
             {displayedUnits.map((unit: any) => {
                const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
                const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-               const defaultNeutralColor = isDarkMode ? '#475569' : '#94a3b8';
-               const fillColor = isLegendColorOn ? (unit.targetColor || "#3b82f6") : defaultNeutralColor;
+               const fillColor = isLegendColorOn ? (unit.targetColor || "#3b82f6") : "rgba(0, 0, 0, 0.001)";
                const isFocused = focusedUnitId === unit.id;
                const isDimmed = isLegendColorOn && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
-               const contrast = getContrastStyle(fillColor);
+               const contrast = isLegendColorOn 
+                 ? getContrastStyle(fillColor) 
+                 : { text: isDarkMode ? '#f8fafc' : '#0f172a', shapeStroke: isDarkMode ? '#64748b' : '#94a3b8' };
                
-               const displayOpacity = isFocused 
-                 ? 1.0 
-                 : isDimmed 
-                 ? 0.2 
-                 : Math.max(0.82, unit.targetOpacity ?? 0.85);
+               const displayOpacity = !isLegendColorOn
+                 ? (isFocused ? 1.0 : 0.9)
+                 : (isFocused 
+                     ? 1.0 
+                     : isDimmed 
+                     ? 0.2 
+                     : Math.max(0.82, unit.targetOpacity ?? 0.85));
                
                const commonProps = {
                   id: unit.id,
                   fill: fillColor,
                   opacity: displayOpacity,
-                  stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : isLegendColorOn ? contrast.shapeStroke : (isDarkMode ? '#64748b' : '#64748b')),
-                  strokeWidth: isFocused ? 3 : 1.6,
+                  stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
+                  strokeWidth: isFocused ? 3 : 1.5,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
                   shadowColor: isFocused ? '#f59e0b' : '#000000',
-                  shadowBlur: isFocused ? 16 : (isLegendColorOn ? 3 : 1.5),
-                  shadowOpacity: isFocused ? 0.9 : 0.22,
+                  shadowBlur: isFocused ? 16 : (isLegendColorOn ? 3 : 0),
+                  shadowOpacity: isFocused ? 0.9 : (isLegendColorOn ? 0.22 : 0),
                   x: unit.x || 0,
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,
