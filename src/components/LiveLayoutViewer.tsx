@@ -877,13 +877,14 @@ function LiveCanvas({
         name: u.name || '',
         id: u.id,
         unit: u.name || '',
+        year: globalYearFilter || '2026',
         size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
         profit: 0, profitByCp: 0, profitByHcmcate: 0,
         margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
         mdStatus: "", task: "", projectStatus: "", actStatus: "",
         endDate: "", status: "", vendorCode: "",
         brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
-        appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
+        appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", appProjectYear: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
         appProjectMdStatus: "", appMdStatus: "", appProjectActStatus: "", appActStatus: "", appProjectDetail: "", appDetail: "", appProjectDescription: "", appDescription: "", appProjectParty: "", appParty: ""
       };
     });
@@ -913,8 +914,8 @@ function LiveCanvas({
         const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
         if (pStore && pStore !== String(storeFilter).trim().toUpperCase()) return;
       }
+      const pYear = String(p.year || (p as any).projectYear || '').trim();
       if (globalYearFilter && globalYearFilter !== 'all') {
-        const pYear = String(p.year || (p as any).projectYear || '').trim();
         if (pYear && pYear !== String(globalYearFilter)) return;
       }
       const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
@@ -970,6 +971,11 @@ function LiveCanvas({
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
+            dataMap[code].appProjectYear = pYear;
+            dataMap[code].year = pYear || dataMap[code].year || '';
+            dataMap[code].floor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
+            dataMap[code].appProjectFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
+            dataMap[code].appFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
             dataMap[code].projectName = p.name || "";
             dataMap[code].startDate = p.start || p.computedTakStart || "";
             dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";
@@ -979,6 +985,8 @@ function LiveCanvas({
             dataMap[code].mdStatus = mdStatusStr || dataMap[code].mdStatus || "";
             dataMap[code].actStatus = actStatus || dataMap[code].actStatus || "";
             dataMap[code].party = partyStr;
+            dataMap[code].projectStatus = status || dataMap[code].projectStatus || "";
+            dataMap[code].status = status || dataMap[code].status || "";
 
             dataMap[code].appProjectMdStatus = mdStatusStr;
             dataMap[code].appMdStatus = mdStatusStr;
@@ -1037,22 +1045,31 @@ function LiveCanvas({
                     if (data) {
                         const passedRules = group.rules.every((rule: any) => {
                             let val = data[rule.field];
-                            if (val === undefined || val === null) {
-                              if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
+                            if (val === undefined || val === null || String(val).trim() === '') {
+                              const f = String(rule.field || '').toLowerCase().trim();
+                              if (f === 'floor' || f === 'location' || f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
+                                val = data.floor || data.appProjectFloor || data.appFloor || u.location || targetLoc || '';
+                              } else if (f === 'year' || f === 'appprojectyear' || f === 'app: year' || f === 'appyear' || f === 'projectyear') {
+                                val = data.appProjectYear || data.year || globalYearFilter || '';
+                              } else if (f === 'appprojectstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
+                                val = data.appProjectStatus || data.projectStatus || data.status || '';
+                              } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'code' || f === 'unit') {
+                                val = data.appProjectCode || data.unit || u.name || '';
+                              } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status' || f === 'mdstatus') {
                                 val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
-                              } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
+                              } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
                                 val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
-                              } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
+                              } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
                                 val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
-                              } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
+                              } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)' || f === 'description (project)') {
                                 val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
-                              } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
+                              } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party' || f === 'party') {
                                 val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
                               }
                             }
-                            if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
+                            if (rule.field === "margin" || rule.field === "marginByCp") val = Number(val || 0) * 100;
                             const numVal = Number(rule.value);
-                            const isNum = !isNaN(numVal) && rule.value.trim() !== "";
+                            const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== "";
                             
                             let compareValStr = String(val || "").toLowerCase().trim();
                             let compareRuleStr = String(rule.value || "").toLowerCase().trim();
@@ -1098,19 +1115,11 @@ function LiveCanvas({
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
   }, [version?.groups, version?.groupMappings, version?.isDynamicActive, units, aggregatedData]);
 
-  // 4. Filter only units that appear in dynamic tab and precalculate bounds
+  // 4. Filter only units and precalculate bounds
   const displayedUnits = useMemo(() => {
-    const hasVersionGroups = Array.isArray(version?.groups) && version.groups.length > 0;
-
     return units
       .filter((unit: any) => {
         if (unit.visible === false) return false;
-        
-        // When version has categorized groups (e.g. In Progress, Upcoming), strictly only display units mapped or evaluated to a group
-        // This matches ReviewTab behavior perfectly and prevents stale or leaked shapes from other stores/versions
-        if (hasVersionGroups) {
-          if (!unitColorMap[unit.id]) return false;
-        }
 
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
@@ -1126,8 +1135,8 @@ function LiveCanvas({
         return true;
       })
       .map((unit: any) => {
-        const targetColor = unitColorMap[unit.id] || (hasVersionGroups ? '#3b82f6' : (unit.fill && unit.fill !== '#ffffff' ? unit.fill : '#3b82f6'));
-        const targetOpacity = unitOpacityMap[unit.id] ?? (hasVersionGroups ? 0.65 : 0.85);
+        const targetColor = unitColorMap[unit.id] || null;
+        const targetOpacity = unitOpacityMap[unit.id] ?? 0.85;
         
         let textX = unit.x || 0;
         let textY = unit.y || 0;
@@ -1237,7 +1246,7 @@ function LiveCanvas({
     });
   };
 
-  // Reset selected version and ensure useDataStore partition syncs when locationFilter or storeFilter changes
+  // Reset selected version and ensure useDataStore partition syncs when locationFilter, storeFilter, or globalYearFilter changes
   useEffect(() => {
     setSelectedVersionId(null);
     const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
@@ -1247,7 +1256,7 @@ function LiveCanvas({
     if (currStore !== targetStore || currLocation !== targetFloor) {
       useDataStore.getState().setStoreAndLocation(targetStore, targetFloor);
     }
-  }, [locationFilter, storeFilter]);
+  }, [locationFilter, storeFilter, globalYearFilter]);
 
   // Zoom & Pan smoothly to target unit and highlight it
   const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
@@ -2454,14 +2463,15 @@ function LiveCanvas({
             {displayedUnits.map((unit: any) => {
                const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
                const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-               const fillColor = isLegendColorOn ? (unit.targetColor || "#3b82f6") : "rgba(0, 0, 0, 0.001)";
+               const hasColor = Boolean(unit.targetColor);
+               const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
                const isFocused = focusedUnitId === unit.id;
-               const isDimmed = isLegendColorOn && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
-               const contrast = isLegendColorOn 
+               const isDimmed = isLegendColorOn && hasColor && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
+               const contrast = isLegendColorOn && hasColor 
                  ? getContrastStyle(fillColor) 
                  : { text: isDarkMode ? '#f8fafc' : '#0f172a', shapeStroke: isDarkMode ? '#64748b' : '#94a3b8' };
                
-               const displayOpacity = !isLegendColorOn
+               const displayOpacity = !isLegendColorOn || !hasColor
                  ? (isFocused ? 1.0 : 0.9)
                  : (isFocused 
                      ? 1.0 
