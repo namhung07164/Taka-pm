@@ -461,12 +461,12 @@ function LiveCanvas({
       });
     }
 
-    // From cloud config root versions
-    if (Array.isArray(config?.versions)) {
+    // From cloud config root versions (legacy fallback for HCM only)
+    if (storeFilter === 'HCM' && Array.isArray(config?.versions)) {
       config.versions.forEach((v: any) => {
         if (v?.id) {
           const existing = versionsMap.get(v.id) || {};
-          versionsMap.set(v.id, { ...existing, ...v });
+          versionsMap.set(v.id, { ...existing, ...v, store: v.store || 'HCM' });
         }
       });
     }
@@ -562,16 +562,18 @@ function LiveCanvas({
     // Resolve units: collect all drawn shapes across all sources so any floor's shapes are readily available
     const unitsMap = new Map<string, any>();
 
-    // 1. From config.storeLocationData across ALL partitions
+    const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+
+    // 1. From config.storeLocationData across partitions matching storeFilter
     if (config?.storeLocationData) {
       Object.entries(config.storeLocationData).forEach(([key, part]: [string, any]) => {
-        if (storeFilter === 'all' || key.startsWith(`${storeFilter}_`)) {
+        if (key.startsWith(`${targetStoreParam}_`)) {
           const loc = key.split('_')[1] || '';
           if (Array.isArray(part?.mapUnits)) {
             part.mapUnits.forEach((u: any) => {
               if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
                 const existing = unitsMap.get(u.id) || {};
-                unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || loc });
+                unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || loc });
               }
             });
           }
@@ -579,26 +581,26 @@ function LiveCanvas({
       });
     }
 
-    // 2. From config.mapUnits (root-level drawn shapes)
-    if (Array.isArray(config?.mapUnits)) {
+    // 2. From config.mapUnits (root-level drawn shapes - ONLY for HCM legacy fallback)
+    if (targetStoreParam === 'HCM' && !config?.storeLocationData?.[pKey] && Array.isArray(config?.mapUnits)) {
       config.mapUnits.forEach((u: any) => {
         if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
           const existing = unitsMap.get(u.id) || {};
-          unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || targetLoc });
+          unitsMap.set(u.id, { ...existing, ...u, store: 'HCM', location: u.location || existing.location || targetLoc });
         }
       });
     }
 
-    // 3. From local in-memory storeLocationData across all partitions
+    // 3. From local in-memory storeLocationData across partitions matching storeFilter
     if (localStoreLocationData) {
       Object.entries(localStoreLocationData).forEach(([key, part]: [string, any]) => {
-        if (storeFilter === 'all' || key.startsWith(`${storeFilter}_`)) {
+        if (key.startsWith(`${targetStoreParam}_`)) {
           const loc = key.split('_')[1] || '';
           if (Array.isArray(part?.mapUnits)) {
             part.mapUnits.forEach((u: any) => {
               if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
                 const existing = unitsMap.get(u.id) || {};
-                unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || loc });
+                unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || loc });
               }
             });
           }
@@ -606,25 +608,24 @@ function LiveCanvas({
       });
     }
 
-    // 4. From current active in-memory partition
-    if (Array.isArray(localMapUnits)) {
+    // 4. From current active in-memory partition (ONLY if localStore matches targetStoreParam)
+    if (localStore === targetStoreParam && Array.isArray(localMapUnits)) {
       localMapUnits.forEach((u: any) => {
         if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
           const existing = unitsMap.get(u.id) || {};
-          unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || targetLoc });
+          unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || targetLoc });
         }
       });
     }
 
     // 5. From global store helper
     try {
-      const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM');
       const storeUnits = getAllStoreUnits(targetStoreParam);
       if (Array.isArray(storeUnits)) {
         storeUnits.forEach((u: any) => {
           if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
             const existing = unitsMap.get(u.id) || {};
-            unitsMap.set(u.id, { ...existing, ...u, location: u.location || existing.location || targetLoc });
+            unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || targetLoc });
           }
         });
       }
@@ -641,8 +642,11 @@ function LiveCanvas({
     const vLoc = (finalVersion.location || targetLoc || '').toUpperCase().trim();
     const tLoc = targetLoc.toUpperCase().trim();
 
-    // 7. Filter units for finalVersion: include mapped units or units matching this floor
+    // 7. Filter units for finalVersion: include mapped units or units strictly matching this store & floor
     const finalUnitsList = Array.from(unitsMap.values()).filter((u: any) => {
+      // Must match store
+      if (u.store && String(u.store).toUpperCase() !== targetStoreParam) return false;
+
       // If mapped in this version's groups, ALWAYS include
       if (mappedUnitIds.has(String(u.id))) return true;
 
@@ -650,16 +654,16 @@ function LiveCanvas({
       const uLoc = (u.location || '').toUpperCase().trim();
       if (uLoc && (uLoc === vLoc || uLoc === tLoc || vLoc.includes(uLoc) || uLoc.includes(vLoc))) return true;
 
-      // Fallback: if no location info, include
-      if (!uLoc && !vLoc) return true;
+      // Fallback: if no location info, include only if both vLoc and tLoc are empty
+      if (!uLoc && !vLoc && !tLoc) return true;
 
       return false;
     });
 
-    // 8. Fallback to config.units if no drawn shapes found at all
-    if (finalUnitsList.length === 0 && Array.isArray(config?.units)) {
+    // 8. Fallback to config.units if no drawn shapes found at all (ONLY for HCM legacy fallback)
+    if (finalUnitsList.length === 0 && targetStoreParam === 'HCM' && Array.isArray(config?.units)) {
       config.units.forEach((u: any) => {
-        if (u?.id) unitsMap.set(u.id, { ...u, location: u.location || targetLoc });
+        if (u?.id) unitsMap.set(u.id, { ...u, store: 'HCM', location: u.location || targetLoc });
       });
       return { r2Version: finalVersion, r2Units: Array.from(unitsMap.values()) };
     }
@@ -892,7 +896,10 @@ function LiveCanvas({
     const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      if (storeFilter !== 'all' && p.store && String(p.store).trim().toUpperCase() !== String(storeFilter).trim().toUpperCase()) return;
+      if (storeFilter !== 'all') {
+        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
+        if (pStore && pStore !== String(storeFilter).trim().toUpperCase()) return;
+      }
       if (globalYearFilter && globalYearFilter !== 'all') {
         const pYear = String(p.year || (p as any).projectYear || '').trim();
         if (pYear && pYear !== String(globalYearFilter)) return;
@@ -1025,10 +1032,6 @@ function LiveCanvas({
                 }
             }
 
-            if (!isMatch && u.fill && u.fill !== '#ffffff' && u.fill !== '#3b82f6' && group.color && (String(u.fill).toLowerCase() === String(group.color).toLowerCase())) {
-                isMatch = true;
-            }
-
             if (isMatch) {
                 colorMap[u.id] = group.color;
                 groupMap[u.id] = group.id;
@@ -1048,12 +1051,17 @@ function LiveCanvas({
 
   // 4. Filter only units that appear in dynamic tab and precalculate bounds
   const displayedUnits = useMemo(() => {
+    const hasVersionGroups = Array.isArray(version?.groups) && version.groups.length > 0;
+
     return units
       .filter((unit: any) => {
         if (unit.visible === false) return false;
         
-        const targetColor = unitColorMap[unit.id] || (unit.fill && unit.fill !== '#ffffff' && unit.fill !== '#3b82f6' ? unit.fill : null);
-        if (!targetColor) return false;
+        // When version has categorized groups (e.g. In Progress, Upcoming), strictly only display units mapped or evaluated to a group
+        // This matches ReviewTab behavior perfectly and prevents stale or leaked shapes from other stores/versions
+        if (hasVersionGroups) {
+          if (!unitColorMap[unit.id]) return false;
+        }
 
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
@@ -1069,8 +1077,8 @@ function LiveCanvas({
         return true;
       })
       .map((unit: any) => {
-        const targetColor = unitColorMap[unit.id] || (unit.fill && unit.fill !== '#ffffff' && unit.fill !== '#3b82f6' ? unit.fill : '#3b82f6');
-        const targetOpacity = unitOpacityMap[unit.id] ?? 0.65;
+        const targetColor = unitColorMap[unit.id] || (hasVersionGroups ? '#3b82f6' : (unit.fill && unit.fill !== '#ffffff' ? unit.fill : '#3b82f6'));
+        const targetOpacity = unitOpacityMap[unit.id] ?? (hasVersionGroups ? 0.65 : 0.85);
         
         let textX = unit.x || 0;
         let textY = unit.y || 0;
