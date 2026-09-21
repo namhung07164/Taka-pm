@@ -122,7 +122,10 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
 3. **Chỉ báo Phân bổ Ủy quyền (Project Delegation Toggle)**:
    - Nút gạt Toggle Delegation trên dòng dự án mẹ sẽ tự động hiển thị **Màu xanh lá** nếu chính dự án đó hoặc **bất kỳ task con nào bên trong có bật Toggle ủy quyền**.
    - Bấm vào nút gạt để bật/tắt ủy quyền trực tiếp.
-4. **Sắp xếp thứ tự Task con**: Nhấp nút **"Sort"** (Predecessor) để tự động sắp xếp lại các task con theo trình tự ngày bắt đầu.
+4. **Sắp xếp thứ tự Task con**: Nhấp nút **"Sort"** (Predecessor) để tự động sắp xếp lại các task con theo trình tự ngày bắt đầu (trên giao diện máy tính).
+5. **Tối ưu Thao tác Nhanh trên Điện thoại / iOS Card View**:
+   - Tại thẻ dự án di động (iOS / Mobile Card View), nút **"Sort"** đã được thay thế bằng nút **Phóng to / Mở Modal Dự án** (biểu tượng ⤢ `Maximize2`), giúp người dùng mở xem và chỉnh sửa thông tin dự án toàn diện ngay lập tức mà không cần cuộn tìm.
+   - Vị trí nút phóng to cũ được thay thế bằng nút bật bảng **Quick Navigator** (biểu tượng ↗ `ExternalLink`), cho phép mở ngay bảng điều hướng tắt chuyển đổi tức thì sang các phân hệ khác (General, Gantt, Cost, Budget, Layout, Dynamic) tương ứng với dự án đang chọn.
 
 #### 🔹 Hướng dẫn Kéo Thả Chèn Giữa Các Nhiệm Vụ (Drag & Drop Task Reorder):
 1. **Thao tác Kéo Thả (Drag Handle)**:

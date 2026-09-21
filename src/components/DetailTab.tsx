@@ -3597,14 +3597,11 @@ export function DetailTab({
                     {effectiveTaskCount} Sub-
                   </div>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSortSubTasks(p, groupTasks);
-                    }}
-                    className="flex items-center text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors cursor-pointer border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 active:bg-slate-100"
+                    onClick={(e) => { e.stopPropagation(); onEditProject?.(p, false, "chat"); }}
+                    className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] p-1 rounded hover:bg-slate-100 dark:hover:bg-[#28282a] transition-colors"
+                    title="Open Project Modal"
                   >
-                    <ArrowDownUp className="w-2.5 h-2.5 mr-0.5" />
-                    Sort
+                    <Maximize2 className="w-3.5 h-3.5" />
                   </button>
                   <div className="flex items-center gap-1.5">
                     {p.party && (
@@ -3613,13 +3610,11 @@ export function DetailTab({
                       </span>
                     )}
                     <FastToggle value={Boolean(isProjDelegationOn)} canWrite={canWrite} onToggle={(val) => handleUpdateProject(p, 'delegation', val)} isSmall={true} />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onEditProject?.(p, false, "chat"); }}
-                      className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] p-1 rounded hover:bg-slate-100 dark:hover:bg-[#28282a] transition-colors"
-                      title="Open Project Modal"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                    </button>
+                    <QuickNavButton 
+                      project={p} 
+                      title={`Quick Navigator (${p.code})`} 
+                      className="p-1! rounded!"
+                    />
                     {canWrite && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onAddTask(p); }}
