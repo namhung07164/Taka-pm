@@ -16,6 +16,7 @@ import { ColumnAdder } from './ColumnAdder';
 import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { QRCodeButton } from './QRCodeButton';
+import { QuickNavButton } from './QuickNavButton';
 import { useLanguage } from '../lib/LanguageContext';
 import { safeSetItemLocal, safeSetItemSession, safeGetItemSession } from '../lib/storage';
 
@@ -1114,6 +1115,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
           {visibleColumns.includes('actions') && (
             <td className="px-4 py-3 text-center">
               <div className="flex items-center justify-center gap-1.5">
+                <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
                 <QRCodeButton title={node.name || node.code} url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}`} />
                 {canWrite && (
                   <>

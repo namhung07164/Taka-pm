@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, Link, Unlink, Edit, Trash2, CornerDownRight, GripVertical, Play, Pin } from 'lucide-react';
+import { QuickNavButton } from '../QuickNavButton';
 import { cn } from '../../lib/utils';
 import { Project, Task, AppUser } from '../../types';
 import { getTaskStatus, computeActProgressPercent, resolveActualStatus, getUserDelegationRoleForTask } from '../../lib/utils';
@@ -290,6 +291,13 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
                                   )}
                                   <span>{t.name}</span>
                                 </div>
+                                <QuickNavButton 
+                                  project={p} 
+                                  task={t} 
+                                  taskCode={computeTaskCode(projects, tasks, t) || t.taskCodePhu || (p ? `${p.code}-1` : t.projectCode || "")} 
+                                  className="opacity-50 group-hover:opacity-100 transition-opacity shrink-0 ml-1" 
+                                  title={`Quick Navigator (${computeTaskCode(projects, tasks, t) || t.taskCodePhu || (p ? `${p.code}-1` : t.projectCode || "")})`} 
+                                />
                               </div>
                             </td>
                             {showStart && (

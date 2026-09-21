@@ -7,29 +7,27 @@ import {
   PieChart, 
   Receipt, 
   X, 
-  Building2, 
-  Calendar, 
+  GripHorizontal,
   ChevronRight,
-  Sparkles
+  ExternalLink
 } from 'lucide-react';
-import { Project, TabId } from '../types';
-import { useLanguage } from '../lib/LanguageContext';
+import { TabId } from '../types';
+import { QuickNavTarget } from '../store/storeTypes';
 import { useAppStore } from '../store/useAppStore';
 
 interface ProjectQuickNavModalProps {
-  project: Project | null;
+  target: QuickNavTarget | null;
   isOpen: boolean;
   onClose: () => void;
-  onNavigate: (targetTab: TabId, project: Project) => void;
+  onNavigate: (targetTab: TabId, target: QuickNavTarget) => void;
 }
 
 export function ProjectQuickNavModal({
-  project,
+  target,
   isOpen,
   onClose,
   onNavigate
 }: ProjectQuickNavModalProps) {
-  const { t } = useLanguage();
   const currentUser = useAppStore(state => state.currentUser);
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -45,7 +43,15 @@ export function ProjectQuickNavModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !project) return null;
+  if (!isOpen || !target || !target.project) return null;
+
+  const { project, task, taskCode } = target;
+  const isTaskMode = !!task;
+  const effectiveCode = taskCode || (isTaskMode ? (task.taskCodePhu || project.code) : project.code) || 'NAV';
+  const displayName = isTaskMode ? (task.name || project.name) : (project.name || 'Project');
+  const store = project.store || task?.projectStore;
+  const location = project.location;
+  const year = project.year || task?.projectYear;
 
   const userRole = currentUser?.role || 'user';
   const perms = permissionMatrix[userRole] || {};
@@ -59,84 +65,79 @@ export function ProjectQuickNavModal({
   const canSeeCost = isAdmin || !!perms.See?.costDetail;
 
   // Exact 5 ordered tabs as requested:
-  // 1/ 🗺️ Mặt Bằng (Layout): Định vị gian hàng trên bản vẽ mặt bằng (Tím / Indigo)
-  // 2/ 📊 Gantt Chart: Xem tiến độ & biểu đồ Gantt theo thời gian (Xanh lá / Emerald)
-  // 3/ 📋 Task Detail: Xem & chỉnh sửa chi tiết các đầu việc (Xanh dương)
-  // 4/ 💰 Ngân Sách (Budget): Tra cứu hạn mức & phân bổ ngân sách (Vàng hổ phách / Amber)
-  // 5/ 🧾 Chi Phí (Cost): Xem chi phí thực tế & quyết toán (Đỏ cam / Rose)
+  // 1/ Layout: Floor Plan (Indigo)
+  // 2/ Gantt: Timeline (Emerald)
+  // 3/ Detail: Task Detail (Blue)
+  // 4/ Budget: Budget (Amber)
+  // 5/ Cost: Expenses (Rose)
   const navItems = [
     {
       id: 'layout' as TabId,
       allowed: canSeeLayout,
-      badgeNumber: '1',
+      num: '1',
       icon: MapPin,
-      title: t('Mặt Bằng (Layout)'),
-      subtitle: t('Định vị gian hàng trên bản vẽ mặt bằng'),
+      label: 'Layout',
+      desc: 'Floor Plan',
       theme: {
-        border: 'hover:border-indigo-500/80 dark:hover:border-indigo-400/80',
-        bgHover: 'hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30',
+        border: 'hover:border-indigo-500/70 dark:hover:border-indigo-400/70',
+        bgHover: 'hover:bg-indigo-50/80 dark:hover:bg-indigo-950/40',
         iconBg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300',
-        badgeBg: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
         accentText: 'text-indigo-600 dark:text-indigo-400',
       }
     },
     {
       id: 'gantt' as TabId,
       allowed: canSeeGantt,
-      badgeNumber: '2',
+      num: '2',
       icon: BarChartHorizontal,
-      title: t('Gantt Chart'),
-      subtitle: t('Xem tiến độ & biểu đồ Gantt theo thời gian'),
+      label: 'Gantt',
+      desc: 'Timeline',
       theme: {
-        border: 'hover:border-emerald-500/80 dark:hover:border-emerald-400/80',
-        bgHover: 'hover:bg-emerald-50/70 dark:hover:bg-emerald-950/30',
+        border: 'hover:border-emerald-500/70 dark:hover:border-emerald-400/70',
+        bgHover: 'hover:bg-emerald-50/80 dark:hover:bg-emerald-950/40',
         iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300',
-        badgeBg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
         accentText: 'text-emerald-600 dark:text-emerald-400',
       }
     },
     {
       id: 'detail' as TabId,
       allowed: canSeeDetail,
-      badgeNumber: '3',
+      num: '3',
       icon: ListOrdered,
-      title: t('Task Detail'),
-      subtitle: t('Xem & chỉnh sửa chi tiết các đầu việc'),
+      label: 'Detail',
+      desc: 'Task Detail',
       theme: {
-        border: 'hover:border-blue-500/80 dark:hover:border-blue-400/80',
-        bgHover: 'hover:bg-blue-50/70 dark:hover:bg-blue-950/30',
+        border: 'hover:border-blue-500/70 dark:hover:border-blue-400/70',
+        bgHover: 'hover:bg-blue-50/80 dark:hover:bg-blue-950/40',
         iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300',
-        badgeBg: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
         accentText: 'text-blue-600 dark:text-blue-400',
       }
     },
     {
       id: 'budget' as TabId,
       allowed: canSeeBudget,
-      badgeNumber: '4',
+      num: '4',
       icon: PieChart,
-      title: t('Ngân Sách (Budget)'),
-      subtitle: t('Tra cứu hạn mức & phân bổ ngân sách'),
+      label: 'Budget',
+      desc: 'Allocations',
       theme: {
-        border: 'hover:border-amber-500/80 dark:hover:border-amber-400/80',
-        bgHover: 'hover:bg-amber-50/70 dark:hover:bg-amber-950/30',
+        border: 'hover:border-amber-500/70 dark:hover:border-amber-400/70',
+        bgHover: 'hover:bg-amber-50/80 dark:hover:bg-amber-950/40',
         iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300',
-        badgeBg: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
         accentText: 'text-amber-600 dark:text-amber-400',
       }
     },
     {
       id: 'cost' as TabId,
       allowed: canSeeCost,
-      badgeNumber: '5',
+      num: '5',
       icon: Receipt,
-      title: t('Chi Phí (Cost)'),
-      subtitle: t('Xem chi phí thực tế & quyết toán'),
+      label: 'Cost',
+      desc: 'Expenses',
       theme: {
-        border: 'hover:border-rose-500/80 dark:hover:border-rose-400/80',
-        bgHover: 'hover:bg-rose-50/70 dark:hover:bg-rose-950/30',
+        border: 'hover:border-rose-500/70 dark:hover:border-rose-400/70',
+        bgHover: 'hover:bg-rose-50/80 dark:hover:bg-rose-950/40',
         iconBg: 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300',
-        badgeBg: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800',
         accentText: 'text-rose-600 dark:text-rose-400',
       }
     }
@@ -146,7 +147,7 @@ export function ProjectQuickNavModal({
     <AnimatePresence>
       <div 
         id="project-quick-nav-modal-backdrop"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-3 bg-slate-900/40 backdrop-blur-[2px] transition-opacity"
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
         }}
@@ -154,110 +155,103 @@ export function ProjectQuickNavModal({
         <motion.div
           ref={modalRef}
           id="project-quick-nav-modal-container"
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          drag
+          dragMomentum={false}
+          dragElastic={0.06}
+          initial={{ opacity: 0, scale: 0.94, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ duration: 0.16, ease: 'easeOut' }}
-          className="w-full max-w-lg bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col max-h-[90vh]"
+          exit={{ opacity: 0, scale: 0.94, y: 8 }}
+          transition={{ duration: 0.14, ease: 'easeOut' }}
+          className="w-[88vw] sm:w-[270px] max-w-[290px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation"
         >
-          {/* Header */}
-          <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50/70 dark:bg-[#252528] flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5 font-bold border border-blue-500/20">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
-                    {project.code || 'NO-CODE'}
+          {/* Draggable Header */}
+          <div className="px-3 py-2 border-b border-slate-100 dark:border-[#333336] bg-slate-50/90 dark:bg-[#252528] flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 truncate max-w-[120px]">
+                    {effectiveCode}
                   </span>
-                  {project.store && (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200">
-                      {project.store}
+                  {store && (
+                    <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300">
+                      {store}
                     </span>
                   )}
-                  {project.location && (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200">
-                      {project.location}
+                  {location && (
+                    <span className="text-[9px] font-medium px-1 py-0.2 rounded bg-slate-200/80 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
+                      {location}
                     </span>
                   )}
-                  {project.year && (
-                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {project.year}
+                  {year && (
+                    <span className="text-[9px] text-slate-400 font-mono">
+                      {year}
                     </span>
                   )}
                 </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white truncate mt-1">
-                  {project.name || t('Chi tiết dự án')}
-                </h3>
+                <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight mt-0.5" title={displayName}>
+                  {displayName}
+                </div>
               </div>
             </div>
 
             <button
               id="quick-nav-close-btn"
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors shrink-0"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors shrink-0"
               aria-label="Close"
+              title="Close"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Body: 5 Interactive Nav Cards in Exact Order */}
-          <div className="p-4 overflow-y-auto space-y-2.5">
-            <div className="px-1 text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>{t('Chọn phân hệ cần điều hướng:')}</span>
-              <span className="text-[11px] flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
-                <Sparkles className="w-3 h-3" />
-                {t('Tự động điền bộ lọc')}
-              </span>
-            </div>
+          {/* 5 Ordered Navigation Buttons - Compact English */}
+          <div className="p-2 space-y-1.5 bg-slate-50/30 dark:bg-[#1a1a1c]">
+            {navItems.map((item) => {
+              const IconComp = item.icon;
+              if (!item.allowed) return null;
 
-            <div className="space-y-2">
-              {navItems.map((item) => {
-                const IconComponent = item.icon;
-                if (!item.allowed) return null;
-
-                return (
-                  <button
-                    key={item.id}
-                    id={`quick-nav-tab-${item.id}`}
-                    onClick={() => {
-                      onNavigate(item.id, project);
-                      onClose();
-                    }}
-                    className={`w-full text-left p-3 rounded-xl border border-slate-200/80 dark:border-[#38383b] bg-white dark:bg-[#232326] transition-all duration-150 flex items-center justify-between group active:scale-[0.99] touch-manipulation cursor-pointer shadow-xs ${item.theme.border} ${item.theme.bgHover}`}
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-xs ${item.theme.iconBg}`}>
-                        <IconComponent className="w-5 h-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-slate-950 dark:group-hover:text-white">
-                            {item.title}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                          {item.subtitle}
-                        </p>
-                      </div>
+              return (
+                <button
+                  key={item.id}
+                  id={`quick-nav-tab-${item.id}`}
+                  onClick={() => {
+                    onNavigate(item.id, target);
+                    onClose();
+                  }}
+                  className={`w-full h-9 px-2 rounded-lg border border-slate-200/90 dark:border-[#333336] bg-white dark:bg-[#232326] transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer shadow-xs ${item.theme.border} ${item.theme.bgHover}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 font-semibold w-3 shrink-0 text-center">
+                      {item.num}
+                    </span>
+                    <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${item.theme.iconBg}`}>
+                      <IconComp className="w-3 h-3" />
                     </div>
+                    <span className="font-bold text-xs text-slate-800 dark:text-slate-200 group-hover:text-slate-950 dark:group-hover:text-white truncate">
+                      {item.label}
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500 group-hover:translate-x-0.5 transition-transform shrink-0 ml-2">
-                      <ChevronRight className={`w-4 h-4 ${item.theme.accentText}`} />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+                      {item.desc}
+                    </span>
+                    <ChevronRight className={`w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform ${item.theme.accentText}`} />
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Footer Info */}
-          <div className="px-5 py-3 border-t border-slate-100 dark:border-[#333336] bg-slate-50/50 dark:bg-[#1a1a1c] text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-            <span>{t('Nhấn')} <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono text-[10px]">Esc</kbd> {t('để đóng')}</span>
-            <span className="font-mono text-[11px] text-slate-400">Takashimaya PM</span>
+          {/* Micro Footer */}
+          <div className="px-2.5 py-1 border-t border-slate-100 dark:border-[#333336] bg-slate-50/80 dark:bg-[#202022] text-[9px] text-slate-400 flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <ExternalLink className="w-2.5 h-2.5 text-blue-500" />
+              <span>Quick Nav</span>
+            </span>
+            <span>Esc to close</span>
           </div>
         </motion.div>
       </div>

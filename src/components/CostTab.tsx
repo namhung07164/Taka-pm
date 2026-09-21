@@ -16,6 +16,7 @@ import { ColumnAdder } from './ColumnAdder';
 import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { QRCodeButton } from './QRCodeButton';
+import { QuickNavButton } from './QuickNavButton';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
 import { safeSetItemLocal, safeSetItemSession, safeGetItemSession } from '../lib/storage';
@@ -1309,6 +1310,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                     {visibleColumns.includes('action') && (
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          <QuickNavButton project={p} title={`Quick Navigator (${p.code})`} />
                           <QRCodeButton title={p.name || p.code} url={`${window.location.origin}${window.location.pathname}?tab=cost&q=${encodeURIComponent(p.code || '')}`} />
                           {canWrite && (
                             <button 
@@ -1414,6 +1416,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center justify-center gap-1">
                             <div className="flex items-center justify-center gap-2">
+                              <QuickNavButton project={p} taskCode={(c as any).taskCode || c.projectCode || p.code} title={`Quick Navigator (${(c as any).taskCode || c.projectCode || p.code})`} />
                               <QRCodeButton title={c.description || c.vendor || 'Cost Entry'} url={`${window.location.origin}${window.location.pathname}?tab=cost&q=${encodeURIComponent(c.description || c.vendor || '')}`} />
                               {canWrite && (
                                 <button onClick={() => handleDeleteCost(c)} className="text-red-400 hover:text-red-600 transition-colors p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30">

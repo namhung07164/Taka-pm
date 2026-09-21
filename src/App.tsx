@@ -279,7 +279,8 @@ export default function App() {
   const setPrintEndDate = useAppStore(state => state.setPrintEndDate);
   const allProjectsForNotifs = useAppStore(state => state.allProjectsForNotifs);
   const allTasksForNotifs = useAppStore(state => state.allTasksForNotifs);
-  const [quickNavProject, setQuickNavProject] = useState<Project | null>(null);
+  const quickNavTarget = useAppStore(state => state.quickNavTarget);
+  const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
 
   useEffect(() => {
     // Clear custom today line so it refreshes once on app launch
@@ -963,21 +964,28 @@ export default function App() {
     handleTabChange("layout");
   };
 
-  const handleQuickNavigate = (targetTab: TabId, p: Project) => {
+  const handleQuickNavigate = (targetTab: TabId, target: any) => {
+    const p = target.project;
+    const task = target.task;
+    const taskCode = target.taskCode;
+    const effectiveFilterCode = taskCode || (task ? (task.taskCodePhu || p?.code) : p?.code) || "";
+
     startTransition(() => {
       // 1. Sync Year filter
-      if (p.year) {
-        setGlobalYearFilter(String(p.year));
+      const yearVal = p?.year || (task?.projectYear ? Number(task.projectYear) : null);
+      if (yearVal) {
+        setGlobalYearFilter(String(yearVal));
       } else {
         setGlobalYearFilter("all");
       }
 
       // 2. Sync Store filter
-      if (p.store) {
-        setGlobalStoreFilter(p.store);
+      const storeVal = p?.store || task?.projectStore;
+      if (storeVal) {
+        setGlobalStoreFilter(storeVal);
         safeSetItemLocal(
           `taka_store_filter_${currentUser.id}`,
-          String(p.store),
+          String(storeVal),
         );
       } else {
         setGlobalStoreFilter("all");
@@ -991,16 +999,19 @@ export default function App() {
       switch (targetTab) {
         case "layout": {
           setLayoutTabFilters({
-            store: p.store || "all",
-            location: p.location || "all",
-            projectCode: p.code || "",
+            store: p?.store || task?.projectStore || "all",
+            location: p?.location || "all",
+            projectCode: p?.code || task?.projectCode || "",
           });
           handleTabChange("layout");
           break;
         }
         case "gantt": {
-          if (p.code) {
-            safeSetItemSession("taka_gantt_search", p.code);
+          if (effectiveFilterCode) {
+            safeSetItemSession("taka_gantt_search", effectiveFilterCode);
+          }
+          if (task?.id) {
+            setGanttTabFocusTaskId(task.id);
           }
           safeSetItemSession("taka_gantt_trigger_today", "true");
           triggerGanttToday();
@@ -1008,20 +1019,23 @@ export default function App() {
           break;
         }
         case "detail": {
-          if (p.code) {
-            setDetailTabFilterCode(p.code);
+          if (effectiveFilterCode) {
+            setDetailTabFilterCode(effectiveFilterCode);
           } else {
             setDetailTabFilterCode("");
           }
-          if (p.store) {
-            setDetailTabStoreFilter(p.store);
+          if (p?.store || task?.projectStore) {
+            setDetailTabStoreFilter(p?.store || task?.projectStore || "");
+          }
+          if (task?.id) {
+            setDetailTabFocusTaskId(task.id);
           }
           handleTabChange("detail");
           break;
         }
         case "budget": {
-          if (p.code) {
-            setBudgetTabSearchTerm(p.code);
+          if (effectiveFilterCode) {
+            setBudgetTabSearchTerm(effectiveFilterCode);
           } else {
             setBudgetTabSearchTerm("");
           }
@@ -1029,8 +1043,8 @@ export default function App() {
           break;
         }
         case "cost": {
-          if (p.code) {
-            setCostTabSearchTerm(p.code);
+          if (effectiveFilterCode) {
+            setCostTabSearchTerm(effectiveFilterCode);
           } else {
             setCostTabSearchTerm("");
           }
@@ -2581,7 +2595,7 @@ const handlePrintToPDF = async () => {
                   
                   
                   onProjectClick={(p) => {
-                    setQuickNavProject(p);
+                    setQuickNavTarget({ project: p });
                   }}
                 />
               )}
@@ -2848,9 +2862,9 @@ const handlePrintToPDF = async () => {
       />
 
       <ProjectQuickNavModal
-        project={quickNavProject}
-        isOpen={!!quickNavProject}
-        onClose={() => setQuickNavProject(null)}
+        target={quickNavTarget}
+        isOpen={!!quickNavTarget}
+        onClose={() => setQuickNavTarget(null)}
         onNavigate={handleQuickNavigate}
       />
 

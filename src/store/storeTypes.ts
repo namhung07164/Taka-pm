@@ -3,6 +3,12 @@ import { User } from "firebase/auth";
 import { Project, Task, Cost, AppUser, DelegationGroup, PermissionMatrix, TabId } from "../types";
 import { UndoAction } from "../lib/undoManager";
 
+export interface QuickNavTarget {
+  project: Project;
+  task?: Task | null;
+  taskCode?: string;
+}
+
 export interface UISlice {
   isFocusMode: boolean;
   setIsFocusMode: (val: boolean) => void;
@@ -68,6 +74,9 @@ export interface UISlice {
   setIsUserModalOpen: (isOpen: boolean) => void;
   isCalendarSyncModalOpen: boolean;
   setIsCalendarSyncModalOpen: (isOpen: boolean) => void;
+
+  quickNavTarget: QuickNavTarget | null;
+  setQuickNavTarget: (target: QuickNavTarget | null) => void;
 
   editingProject: Project | null;
   setEditingProject: (project: Project | null) => void;
