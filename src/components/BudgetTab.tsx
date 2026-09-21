@@ -178,6 +178,13 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   };
   
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+
+  useEffect(() => {
+    if (initialSearchTerm !== undefined) {
+      setSearchTerm(initialSearchTerm);
+    }
+  }, [initialSearchTerm]);
+
   const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
   const [moneyFilter, setMoneyFilter] = useState(() => {
     if ((initialSearchTerm || '').trim()) return 'all';

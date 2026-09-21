@@ -50,6 +50,7 @@ const ManualTab = lazyWithRetry(() => import("./components/ManualTab").then(m =>
 const AuditLogTab = lazyWithRetry(() => import("./components/AuditLogTab").then(m => ({ default: m.AuditLogTab })), "AuditLogTab");
 const AppTour = lazyWithRetry(() => import("./components/AppTour").then(m => ({ default: m.AppTour })), "AppTour");
 import { AppModals } from "./components/AppModals";
+import { ProjectQuickNavModal } from "./components/ProjectQuickNavModal";
 import { Toast } from "./components/Toast";
 import { initAuth } from './lib/firebase';
 import { enrichProjects, calculateActiveNotifications } from "./lib/utils";
@@ -278,6 +279,7 @@ export default function App() {
   const setPrintEndDate = useAppStore(state => state.setPrintEndDate);
   const allProjectsForNotifs = useAppStore(state => state.allProjectsForNotifs);
   const allTasksForNotifs = useAppStore(state => state.allTasksForNotifs);
+  const [quickNavProject, setQuickNavProject] = useState<Project | null>(null);
 
   useEffect(() => {
     // Clear custom today line so it refreshes once on app launch
@@ -959,6 +961,88 @@ export default function App() {
   ) => {
     setLayoutTabFilters({ store, location, projectCode, sourceTaskId });
     handleTabChange("layout");
+  };
+
+  const handleQuickNavigate = (targetTab: TabId, p: Project) => {
+    startTransition(() => {
+      // 1. Sync Year filter
+      if (p.year) {
+        setGlobalYearFilter(String(p.year));
+      } else {
+        setGlobalYearFilter("all");
+      }
+
+      // 2. Sync Store filter
+      if (p.store) {
+        setGlobalStoreFilter(p.store);
+        safeSetItemLocal(
+          `taka_store_filter_${currentUser.id}`,
+          String(p.store),
+        );
+      } else {
+        setGlobalStoreFilter("all");
+        safeSetItemLocal(
+          `taka_store_filter_${currentUser.id}`,
+          "all",
+        );
+      }
+
+      // 3. Tab-specific search & filter synchronization
+      switch (targetTab) {
+        case "layout": {
+          setLayoutTabFilters({
+            store: p.store || "all",
+            location: p.location || "all",
+            projectCode: p.code || "",
+          });
+          handleTabChange("layout");
+          break;
+        }
+        case "gantt": {
+          if (p.code) {
+            safeSetItemSession("taka_gantt_search", p.code);
+          }
+          safeSetItemSession("taka_gantt_trigger_today", "true");
+          triggerGanttToday();
+          handleTabChange("gantt");
+          break;
+        }
+        case "detail": {
+          if (p.code) {
+            setDetailTabFilterCode(p.code);
+          } else {
+            setDetailTabFilterCode("");
+          }
+          if (p.store) {
+            setDetailTabStoreFilter(p.store);
+          }
+          handleTabChange("detail");
+          break;
+        }
+        case "budget": {
+          if (p.code) {
+            setBudgetTabSearchTerm(p.code);
+          } else {
+            setBudgetTabSearchTerm("");
+          }
+          handleTabChange("budget");
+          break;
+        }
+        case "cost": {
+          if (p.code) {
+            setCostTabSearchTerm(p.code);
+          } else {
+            setCostTabSearchTerm("");
+          }
+          handleTabChange("cost");
+          break;
+        }
+        default: {
+          handleTabChange(targetTab);
+          break;
+        }
+      }
+    });
   };
 
   const handleDataUndo = async () => {
@@ -2497,32 +2581,7 @@ const handlePrintToPDF = async () => {
                   
                   
                   onProjectClick={(p) => {
-                    startTransition(() => {
-                      if (p.year) {
-                        setGlobalYearFilter(String(p.year));
-                      } else {
-                        setGlobalYearFilter("all");
-                      }
-                      if (p.store) {
-                        setGlobalStoreFilter(p.store);
-                        safeSetItemLocal(
-                          `taka_store_filter_${currentUser.id}`,
-                          String(p.store),
-                        );
-                      } else {
-                        setGlobalStoreFilter("all");
-                        safeSetItemLocal(
-                          `taka_store_filter_${currentUser.id}`,
-                          "all",
-                        );
-                      }
-                      if (p.code) {
-                        safeSetItemSession("taka_gantt_search", p.code);
-                      }
-                      safeSetItemSession("taka_gantt_trigger_today", "true");
-                      triggerGanttToday();
-                      handleTabChange("gantt");
-                    });
+                    setQuickNavProject(p);
                   }}
                 />
               )}
@@ -2786,6 +2845,13 @@ const handlePrintToPDF = async () => {
       <AppModals
         onLogin={handleLogin}
         onTabChange={handleTabChange}
+      />
+
+      <ProjectQuickNavModal
+        project={quickNavProject}
+        isOpen={!!quickNavProject}
+        onClose={() => setQuickNavProject(null)}
+        onNavigate={handleQuickNavigate}
       />
 
       {toast && (

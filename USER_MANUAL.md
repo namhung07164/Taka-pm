@@ -1138,3 +1138,13 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Chuyển Tab Không Chặn Con Trỏ Chuột (Concurrent Rendering with startTransition)**: Thao tác bấm vào dự án từ General Tab để điều hướng sang Gantt Tab hoặc Task Detail Tab được bọc trong `startTransition`, tách biệt luồng xử lý UI ưu tiên cao khỏi quá trình dựng giao diện của các bảng dữ liệu lớn, giúp con trỏ chuột không bị khựng, lag hay đơ khi chuyển đổi.
    - **Bộ Nhớ Đệm Kết Quả Tính Toán (Module-Level Caching)**: Kết quả của hàm `enrichProjects` được lưu cache tham chiếu; khi không có thay đổi dữ liệu, hàm phản hồi trong 0ms mà không phải duyệt hay sắp xếp lại hàng ngàn bản ghi.
    - **Giảm Tải Trọng Dựng Giao Diện (Debounced Background Synchronization)**: Các tiến trình tự động chuẩn hóa tiền nhiệm và vẽ liên kết trên Gantt được chuyển sang chế độ nền (background non-blocking) và điều tiết bằng animation frame, giữ cho tốc độ khung hình (FPS) luôn ổn định ở mức 60 FPS.
+
+10. **Bảng Điều Hướng Nhanh Dự Án (Project Quick Navigation Hub Modal)**:
+   - **Thao Tác Kích Hoạt**: Tại tab **General (Tổng quan)**, khi người dùng nhấp vào bất kỳ dự án nào (cả trên bản vẽ Canvas máy tính và Card danh sách điện thoại), hệ thống sẽ mở ngay bảng pop-up điều hướng nhanh (Quick Nav Modal) với phản hồi 0ms.
+   - **Thứ Tự Phân Hệ Lựa Chọn (5 Tùy Chọn Chuẩn)**:
+     1. 🗺️ **Mặt Bằng (Layout)**: Tự động chuyển sang bản vẽ mặt bằng trực tiếp (Live Layout Viewer), kích hoạt chế độ xem mặt bằng theo tầng, store của dự án và tự động tìm kiếm/highlight gian hàng tương ứng với mã dự án (`p.code`).
+     2. 📊 **Gantt Chart**: Tự động lọc theo năm, store, điền mã dự án vào ô tìm kiếm Gantt (`taka_gantt_search`) và tự động cuộn đến mốc thời gian hiện tại (`triggerGanttToday`).
+     3. 📋 **Task Detail**: Tự động chuyển sang bảng chi tiết công việc, lọc chính xác theo mã dự án (`detailTabFilterCode`) và gian hàng.
+     4. 💰 **Ngân Sách (Budget)**: Tự động chuyển sang bảng ngân sách, đồng bộ năm/store và tự động điền mã dự án vào ô tìm kiếm ngân sách.
+     5. 🧾 **Chi Phí (Cost)**: Tự động chuyển sang bảng chi tiết chi phí, đồng bộ năm/store và tự động điền mã dự án vào ô tìm kiếm chi phí.
+   - **Thao Tác Nhanh**: Nhấn phím `Esc` hoặc bấm ra ngoài nền mờ để đóng modal ngay lập tức mà không làm ảnh hưởng đến màn hình hiện tại.
