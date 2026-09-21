@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { useAppStore } from "../store/useAppStore";
 import { usePerformanceStore } from "../store/usePerformanceStore";
 import { safeGetItemLocal, safeSetItemLocal } from "./storage";
-import { NotificationRule } from "../types";
+import { NotificationRule, PermissionMatrix } from "../types";
 
 export interface ConfigVersions {
   locationsVersion?: number;
@@ -11,6 +11,8 @@ export interface ConfigVersions {
   ratesVersion?: number;
   rulesVersion?: number;
   r2Version?: number;
+  permissionsVersion?: number;
+  subAppUsersVersion?: number;
   updatedAt?: string;
 }
 
@@ -23,6 +25,8 @@ const CACHE_KEYS = {
   RULES: "taka_cache_rules_v1",
   VERSIONS: "taka_cache_config_versions_v1",
   R2_CONFIG: "taka_cache_r2_config_v1",
+  PERMISSIONS: "taka_cache_permissions_v1",
+  SUB_APP_USERS: "taka_cache_sub_app_users_v1",
 };
 
 /**
@@ -56,6 +60,8 @@ export function loadCachedStaticConfig(): {
   usdRate: number;
   rules: NotificationRule[];
   r2Config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null;
+  permissions: PermissionMatrix;
+  subAppUsers: any[];
 } {
   let locations: string[] = [];
   let locationVisibility: Record<string, boolean> = {};
@@ -64,6 +70,8 @@ export function loadCachedStaticConfig(): {
   let usdRate = 25000;
   let rules: NotificationRule[] = [];
   let r2Config = null;
+  let permissions: PermissionMatrix = {} as PermissionMatrix;
+  let subAppUsers: any[] = [];
 
   try {
     const rawLocs = safeGetItemLocal(CACHE_KEYS.LOCATIONS);
@@ -92,11 +100,17 @@ export function loadCachedStaticConfig(): {
 
     const rawR2 = safeGetItemLocal(CACHE_KEYS.R2_CONFIG);
     if (rawR2) r2Config = JSON.parse(rawR2);
+
+    const rawPerms = safeGetItemLocal(CACHE_KEYS.PERMISSIONS);
+    if (rawPerms) permissions = JSON.parse(rawPerms);
+
+    const rawSubUsers = safeGetItemLocal(CACHE_KEYS.SUB_APP_USERS);
+    if (rawSubUsers) subAppUsers = JSON.parse(rawSubUsers);
   } catch (e) {
     console.warn("Failed to parse cached static config:", e);
   }
 
-  return { locations, locationVisibility, parties, jpyRate, usdRate, rules, r2Config };
+  return { locations, locationVisibility, parties, jpyRate, usdRate, rules, r2Config, permissions, subAppUsers };
 }
 
 /**
@@ -153,11 +167,29 @@ export function cacheRules(rules: NotificationRule[]): void {
 }
 
 /**
+ * Lưu Permissions vào LocalStorage
+ */
+export function cachePermissions(permissions: PermissionMatrix): void {
+  try {
+    safeSetItemLocal(CACHE_KEYS.PERMISSIONS, JSON.stringify(permissions));
+  } catch (e) {}
+}
+
+/**
+ * Lưu Sub App Users vào LocalStorage
+ */
+export function cacheSubAppUsers(subAppUsers: any[]): void {
+  try {
+    safeSetItemLocal(CACHE_KEYS.SUB_APP_USERS, JSON.stringify(subAppUsers));
+  } catch (e) {}
+}
+
+/**
  * Gửi tín hiệu tăng số phiên bản của một danh mục cấu hình khi Admin chỉnh sửa.
  * Giúp các client khác tự động kích hoạt tải lại chỉ 1 document tương ứng.
  */
 export async function bumpConfigVersion(
-  type: "locations" | "parties" | "rates" | "rules"
+  type: "locations" | "parties" | "rates" | "rules" | "permissions" | "sub_app_users"
 ): Promise<void> {
   const versionRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions");
   const now = Date.now();
@@ -169,6 +201,8 @@ export async function bumpConfigVersion(
   if (type === "parties") updatePayload.partiesVersion = now;
   if (type === "rates") updatePayload.ratesVersion = now;
   if (type === "rules") updatePayload.rulesVersion = now;
+  if (type === "permissions") updatePayload.permissionsVersion = now;
+  if (type === "sub_app_users") updatePayload.subAppUsersVersion = now;
 
   try {
     await setDoc(versionRef, updatePayload, { merge: true });
@@ -179,7 +213,7 @@ export async function bumpConfigVersion(
 
 /**
  * Đồng bộ danh mục cấu hình tĩnh theo cơ chế Cache + Versioning.
- * Thay vì mở 4 onSnapshot liên tục, chỉ lắng nghe 1 document version nhẹ duy nhất.
+ * Thay vì mở nhiều onSnapshot liên tục, chỉ lắng nghe 1 document version nhẹ duy nhất.
  */
 export function setupStaticConfigSync(): Unsubscribe {
   const versionRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions");
@@ -295,6 +329,41 @@ export function setupStaticConfigSync(): Unsubscribe {
         }
       }
 
+      // 6. Permissions Matrix
+      const remotePermsVer = remoteData.permissionsVersion || 1;
+      if (localVersions.permissionsVersion !== remotePermsVer || Object.keys(store.permissionMatrix || {}).length === 0 || needsInit) {
+        try {
+          const permsDoc = await getDoc(
+            doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "permissions")
+          );
+          if (permsDoc.exists()) {
+            const data = permsDoc.data() as PermissionMatrix;
+            store.setPermissionMatrix(data);
+            cachePermissions(data);
+          }
+        } catch (err) {
+          console.error("Error fetching permissions config:", err);
+        }
+      }
+
+      // 7. Sub App Users
+      const remoteSubUsersVer = remoteData.subAppUsersVersion || 1;
+      if (localVersions.subAppUsersVersion !== remoteSubUsersVer || store.subAppUsers.length === 0 || needsInit) {
+        try {
+          const subUsersSnap = await getDocs(
+            collection(db, "artifacts", APP_ID, "public", "data", "taka_sub_app_users")
+          );
+          const loaded: any[] = [];
+          subUsersSnap.forEach((docSnap) => {
+            loaded.push({ id: docSnap.id, ...docSnap.data() });
+          });
+          store.setSubAppUsers(loaded);
+          cacheSubAppUsers(loaded);
+        } catch (err) {
+          console.error("Error fetching subAppUsers config:", err);
+        }
+      }
+
       // Cập nhật lại versions vào local cache
       setLocalConfigVersions({
         locationsVersion: remoteLocVer,
@@ -302,6 +371,8 @@ export function setupStaticConfigSync(): Unsubscribe {
         ratesVersion: remoteRateVer,
         rulesVersion: remoteRuleVer,
         r2Version: remoteR2Ver,
+        permissionsVersion: remotePermsVer,
+        subAppUsersVersion: remoteSubUsersVer,
         updatedAt: remoteData.updatedAt || new Date().toISOString(),
       });
     },

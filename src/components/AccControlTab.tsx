@@ -182,7 +182,9 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
       if (!newMatrix[role]) newMatrix[role] = {};
       if (!newMatrix[role][action]) newMatrix[role][action] = {};
       newMatrix[role][action][module] = value;
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'permissions'), newMatrix);
+      useAppStore.getState().setPermissionMatrix(newMatrix);
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'permissions'), newMatrix);
+      bumpConfigVersion("permissions");
     } catch (e) { console.error(e); }
   };
 

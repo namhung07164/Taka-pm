@@ -14,7 +14,7 @@ import {   auth, db, APP_ID , writeBatch , setDoc } from "../lib/firebase";
 import { getPendingUpdates, clearPendingUpdates } from "../lib/syncQueue";
 import { getEffectiveStoreFilter, ACTIVE_YEARS } from "../lib/utils";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { collection, onSnapshot, query, where, doc, getDocs, getDoc, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, doc, getDocs, getDoc, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
 import {
   Project,
   Task,
@@ -324,54 +324,8 @@ export function useFirebaseData() {
       (e) => handleFetchError("users", e),
     );
 
-    usePerformanceStore.getState().registerListener("taka_sub_app_users");
-    const unsubSubUsers = onSnapshot(
-      collection(
-        db,
-        "artifacts",
-        APP_ID,
-        "public",
-        "data",
-        "taka_sub_app_users",
-      ),
-      (snapshot) => {
-        usePerformanceStore.getState().trackSnapshot("taka_sub_app_users", snapshot);
-        const loaded: any[] = [];
-        snapshot.forEach((docSnap) =>
-          loaded.push({ id: docSnap.id, ...docSnap.data() }),
-        );
-
-        setSubAppUsers(loaded);
-      },
-      (e) => handleFetchError("sub users", e),
-    );
-
-    // Load permissions from IDB first for instant startup
-    // Load global project and task caches from IDB for zero-read instant notification calculation
-    usePerformanceStore.getState().registerListener("taka_settings/permissions");
-    const unsubPerms = onSnapshot(
-      doc(
-        db,
-        "artifacts",
-        APP_ID,
-        "public",
-        "data",
-        "taka_settings",
-        "permissions",
-      ),
-      (docSnap) => {
-        usePerformanceStore.getState().trackSnapshot("taka_settings/permissions", docSnap);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-
-          setPermissionMatrix(data as PermissionMatrix);
-                  }
-      },
-      (e) => handleFetchError("perms", e),
-    );
-
-    // Enterprise Cache + Versioning for truly static configs (locations, parties, exchange rates, notification rules)
-    // Replaces 4 continuous listeners with 1 lightweight version watcher (Zero-Read on unchanged sessions)
+    // Enterprise Cache + Versioning for static configs (locations, parties, exchange rates, notification rules, permissions, sub_app_users)
+    // Replaces multiple continuous listeners with 1 lightweight version watcher (Zero-Read on unchanged sessions)
     const unsubStaticConfig = setupStaticConfigSync();
 
     // Delegation groups are now fetched in a separate useEffect
@@ -379,12 +333,8 @@ export function useFirebaseData() {
     return () => {
       window.removeEventListener('online', testConnection);
       unsubUsers();
-      unsubSubUsers();
-      unsubPerms();
       unsubStaticConfig();
       usePerformanceStore.getState().unregisterListener("taka_users");
-      usePerformanceStore.getState().unregisterListener("taka_sub_app_users");
-      usePerformanceStore.getState().unregisterListener("taka_settings/permissions");
     };
   }, [user?.uid]);
 
@@ -518,18 +468,27 @@ export function useFirebaseData() {
       if (isCancelled) return;
       try {
         const now = new Date();
-        const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-        const future30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+        const past7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+        const future14 = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
 
         const qNotifTasks = query(
           collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-          where("finish", ">=", past30),
-          where("finish", "<=", future30),
-          limit(150)
+          where("finish", ">=", past7),
+          where("finish", "<=", future14),
+          limit(50)
         );
 
-        // Uses getDocs instead of onSnapshot to prevent continuous read storms for background data
-        const snapshot = await getDocs(qNotifTasks);
+        // Cache-First strategy: read from IndexedDB cache first (0 Read cost).
+        // Only fetch from Server if cache is empty or unavailable.
+        let snapshot;
+        try {
+          snapshot = await getDocsFromCache(qNotifTasks);
+          if (snapshot.empty) {
+            snapshot = await getDocsFromServer(qNotifTasks);
+          }
+        } catch {
+          snapshot = await getDocsFromServer(qNotifTasks);
+        }
         if (isCancelled) return;
 
         const loadedNotifTasks: Task[] = [];

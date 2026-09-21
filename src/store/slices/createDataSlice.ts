@@ -44,7 +44,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
   setIsCostsLoading: (isCostsLoading) => set({ isCostsLoading }),
   appUsers: [],
   setAppUsers: (appUsers) => set({ appUsers }),
-  subAppUsers: [],
+  subAppUsers: initialStaticConfig.subAppUsers || [],
   setSubAppUsers: (subAppUsers) => set({ subAppUsers }),
   notificationRules: initialStaticConfig.rules,
   setNotificationRules: (notificationRules) => set({ notificationRules }),
@@ -60,7 +60,9 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
   setIsDelegationsRequested: (isDelegationsRequested) => set({ isDelegationsRequested }),
   isDelegationsLoading: false,
   setIsDelegationsLoading: (isDelegationsLoading) => set({ isDelegationsLoading }),
-  permissionMatrix: DEFAULT_PERMISSION_MATRIX,
+  permissionMatrix: initialStaticConfig.permissions && Object.keys(initialStaticConfig.permissions).length > 0
+    ? initialStaticConfig.permissions
+    : DEFAULT_PERMISSION_MATRIX,
   setPermissionMatrix: (permissionMatrix) => set({ permissionMatrix }),
   activeNotifications: [],
   setActiveNotifications: (activeNotifications) => set({ activeNotifications }),
