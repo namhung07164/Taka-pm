@@ -406,6 +406,45 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   });
 }
 
+export function computeProjectActStatus(
+  p: Project,
+  delegationGroups: DelegationGroup[] = [],
+  matchedTasks: Task[] = []
+): string {
+  if ((p as any).actStatus) return String((p as any).actStatus);
+  if ((p as any).actualStatus) return String((p as any).actualStatus);
+
+  if (delegationGroups && delegationGroups.length > 0) {
+    const pCode = String(p.code || '').trim().toLowerCase();
+    const matchedTaskIds = new Set(matchedTasks.map(t => t.id).filter(Boolean));
+    const pGroups = delegationGroups.filter(g => {
+      if (g.projectCode && String(g.projectCode).trim().toLowerCase() === pCode) return true;
+      if (g.parentTaskId && matchedTaskIds.has(g.parentTaskId)) return true;
+      return false;
+    });
+
+    if (pGroups.length > 0) {
+      const statuses = pGroups.map(g => {
+        if (g.actStatus) return g.actStatus;
+        return resolveActualStatus(p.computedStatus || 'On process', g.subTasks || []).label;
+      });
+      if (statuses.some(s => s === 'Rejected')) return 'Rejected';
+      if (statuses.every(s => s === 'Completed')) return 'Completed';
+      if (statuses.some(s => s === 'Pending Completed')) return 'Pending Completed';
+      if (statuses.some(s => s === 'In Progress' || s === 'On Process')) return 'In Progress';
+      return statuses[0] || 'Planned';
+    }
+  }
+
+  if (p.computedActProgress === 100) return 'Completed';
+  const plStatus = p.computedStatus || getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+  if (plStatus === 'Completed') return 'Completed';
+  if (plStatus === 'Canceled') return 'Cancel';
+  if (p.computedActProgress && p.computedActProgress > 0) return 'In Progress';
+  if (plStatus === 'On process' || plStatus === 'Handover') return 'In Progress';
+  return 'Planned';
+}
+
 // Module-level cache for zero-cost multi-component calls to enrichProjects
 let _lastProjectsRef: Project[] | null = null;
 let _lastTasksRef: Task[] | null = null;
@@ -564,6 +603,11 @@ export function enrichProjects(
       : (p.taskCount ?? (p.taskSummaries?.length || 0));
 
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+    const actStatus = computeProjectActStatus(
+      { ...p, computedStatus: status, computedActProgress: actProgressPercent },
+      delegationGroups,
+      projectTasks
+    );
 
     return {
       ...p,
@@ -573,6 +617,7 @@ export function enrichProjects(
       computedPlanProgress: planProgressPercent,
       computedActProgress: actProgressPercent,
       computedStatus: status,
+      computedActStatus: actStatus,
       taskSummaries,
       taskCount,
     };

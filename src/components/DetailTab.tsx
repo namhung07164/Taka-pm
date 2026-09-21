@@ -3420,7 +3420,6 @@ export function DetailTab({
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center justify-center gap-1">
                             <div className="flex items-center justify-center gap-2">
-                              <QuickNavButton project={p} task={t} taskCode={computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`} title={`Quick Navigator (${computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`})`} />
                               <QRCodeButton title={t.name} url={`${window.location.origin}${window.location.pathname}?tab=detail&q=${encodeURIComponent(t.taskCodePhu || '')}`} />
                               <button onClick={(e) => { e.stopPropagation(); onEditTask(t, false, "chat"); }} className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] transition-colors p-1.5 rounded hover:bg-slate-100 dark:hover:bg-[#28282a]" title="Open Task Modal"><Maximize2 className="w-4 h-4" /></button>
                               {canWrite && (

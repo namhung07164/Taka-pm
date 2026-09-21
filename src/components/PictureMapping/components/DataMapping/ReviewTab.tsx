@@ -7,7 +7,7 @@ import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, 
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
-import { enrichProjects, getStatus } from '../../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus } from '../../../../lib/utils';
 import { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
@@ -344,6 +344,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
   const appProjects = useAppStore(state => state.projects);
   const appTasks = useAppStore(state => state.tasks);
+  const appDelegationGroups = useAppStore(state => state.delegationGroups);
 
   const aggregatedData = React.useMemo(() => {
     const dataMap: Record<string, any> = {};
@@ -421,7 +422,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       }
     });
 
-    const enrichedProjects = enrichProjects(appProjects || [], appTasks || []);
+    const enrichedProjects = enrichProjects(appProjects || [], appTasks || [], appDelegationGroups || []);
     enrichedProjects.forEach((p) => {
       const pYear = String(p.year || (p as any).projectYear || '').trim();
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
@@ -434,6 +435,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         p.computedOpening || p.opening,
         p.code
       );
+      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, appDelegationGroups);
+      const detailStr = p.detail || '';
+      const descStr = p.detail || (p as any).description || p.note || '';
+      const partyStr = p.party || (p as any).contractor || '';
+      const mdStatusStr = p.mdStatus || '';
+
       pCodes.forEach((code) => {
         if (dataMap[code]) {
           dataMap[code].appProjectStatus = status;
@@ -441,6 +448,22 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code);
           dataMap[code].appProjectYear = pYear;
+
+          dataMap[code].appProjectMdStatus = mdStatusStr;
+          dataMap[code].appMdStatus = mdStatusStr;
+
+          dataMap[code].appProjectActStatus = actStatus;
+          dataMap[code].appActStatus = actStatus;
+
+          dataMap[code].appProjectDetail = detailStr;
+          dataMap[code].appDetail = detailStr;
+
+          dataMap[code].appProjectDescription = descStr;
+          dataMap[code].appDescription = descStr;
+
+          dataMap[code].appProjectParty = partyStr;
+          dataMap[code].appParty = partyStr;
+
           if (!dataMap[code].projectStatus) dataMap[code].projectStatus = status;
           if (!dataMap[code].task) dataMap[code].task = (p as any).title || (p as any).name || '';
           if (!dataMap[code].startDate && (p.computedTakStart || p.start)) dataMap[code].startDate = p.computedTakStart || p.start;
@@ -450,7 +473,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     });
 
     return dataMap;
-  }, [units, summaryData, appProjects, appTasks, effectiveYear]);
+  }, [units, summaryData, appProjects, appTasks, appDelegationGroups, effectiveYear]);
 
   const applyAllDynamicRules = () => {
     try {

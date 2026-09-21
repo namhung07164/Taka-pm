@@ -510,6 +510,13 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 6. **Quản lý Dynamic Hierarchy & Nhóm theo từng Version (Per-Version Groups)**:
    - Các nhóm quy tắc (Rule-Based Groups) và điều kiện lọc (Conditions API) được lưu trữ độc lập theo từng phiên bản (version). Khi chuyển đổi giữa các version, hệ thống sẽ tự động hiển thị chính xác các nhóm và điều kiện thuộc riêng version đó.
    - Khi cần sao chép nhanh bộ quy tắc từ version khác, sử dụng tính năng **`[ COPY GROUPS FROM ]`** để nhân bản danh sách nhóm sang version đang chọn.
+   - **Các trường lọc quy tắc thông minh (Rule Conditions & Project Integration)**: Bên cạnh các chỉ số bán hàng và diện tích từ Excel (Sales, Margin, Size, Profit...), hệ thống tích hợp sâu các trường dữ liệu dự án thời gian thực (Real-time Project Attributes) liên kết theo mã gian hàng (Unit Code):
+     * **`App: MD Status`**: Lọc theo trạng thái MD Status của dự án (ví dụ: `Renew`, `New`, `Close`...).
+     * **`App: Act Status`**: Lọc theo trạng thái thi công thực tế (Actual Status) được tính toán tự động dựa trên tiến độ và các nhóm ủy quyền (Delegation Groups) của dự án.
+     * **`App: Detail (Project)`**: Lọc theo nội dung chi tiết hoặc ghi chú của dự án mẹ.
+     * **`App: Description (Project)`**: Lọc theo mô tả công việc/dự án (tự động nhận diện từ các trường Detail, Description hoặc Note).
+     * **`App: Party`**: Lọc theo tên nhà thầu, đơn vị phụ trách hoặc đối tác thi công (`party` / `contractor`).
+     * Hỗ trợ đầy đủ các toán tử so sánh chuỗi linh hoạt: `=`, `contains` (chứa các từ khóa), `exclude` (loại trừ từ khóa) cũng như các toán tử số học `>`, `<`, `>=`, `<=`. Dữ liệu được chuẩn hóa và tự động đồng bộ xuyên suốt từ giao diện Dynamic Tab, Live Layout Viewer cho đến tiến trình Trigger Export.
 
 7. **Kiến Trúc Tối Ưu 3 Lớp Cho Dynamic Rules (3-Tier Architecture for Zero-Lag Dynamic Hierarchy)**:
    - **Lớp 1: Đánh giá trên bộ nhớ RAM (Memory Evaluation - 0ms)**: Khi cờ Dynamic Rules bật (`isDynamicActive: true`), danh sách gian hàng thuộc các nhóm quy tắc được đánh giá tự động tức thì trên RAM (Zustand Global Store `useAppStore` & `useDataStore`) thông qua thuật toán tối ưu hóa `useDynamicRules`. Tốc độ tính toán dưới 3ms cho toàn bộ các tầng, không tốn bất kỳ lượt đọc/ghi Firestore nào, không làm giật lag giao diện (duy trì 60 FPS mượt mà).
@@ -1142,9 +1149,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 10. **Bảng Điều Hướng Nhanh Dự Án & Tác Vụ (Project & Task Quick Navigation Hub Modal)**:
    - **Thao Tác Kích Hoạt**: 
      - Tại tab **General (Tổng quan)**: Nhấp vào bất kỳ dự án nào (trên bản vẽ Canvas hoặc Card danh sách điện thoại).
-     - Tại tab **Gantt Chart**: **Nhấp trực tiếp vào Tiêu đề dự án (Project Title)** hoặc nhấp biểu tượng Quick Navigator (`QuickNavButton`) trên từng dòng dự án và từng công việc (task).
+     - Tại tab **Gantt Chart**: **Nhấp trực tiếp vào Tiêu đề dự án (Project Title)** (nút icon Quick Navigator ở dòng dự án mẹ và các tác vụ con đã được ẩn để giữ giao diện Gantt tinh gọn, thoáng đãng).
      - Tại tab **Layout (Mặt bằng 2D)**: **Nhấp vào nút Quick Navigator (`QuickNavButton`) ngay trong Tooltip chi tiết của gian hàng/ô unit** (ở góc phải phía trên kế bên nút đóng và trên thanh thao tác bên dưới).
-     - Tại các tab **Task Detail**, **Ngân Sách (Budget)**, và **Chi Phí (Cost)**: Nhấp vào nút biểu tượng điều hướng (`QuickNavButton`) nằm ở cột **Action** của từng dòng dự án hoặc từng đầu việc (task).
+     - Tại các tab **Task Detail**, **Ngân Sách (Budget)**, và **Chi Phí (Cost)**: Nhấp vào nút biểu tượng điều hướng (`QuickNavButton`) nằm ở cột **Action** của từng dòng dự án mẹ (các dòng con đã được ẩn nút để tránh rối mắt).
    - **Hỗ Trợ Task Code Phụ (Sub-task Code)**: Khi kích hoạt từ từng tác vụ/task cụ thể, hệ thống tự động nhận diện và ưu tiên điền mã `taskCodePhu` (hoặc tính toán chuẩn theo `computeTaskCode`) để lọc và định vị chính xác nhiệm vụ đó tại các tab đích (Gantt, Task Detail, Cost).
    - **Giao Diện Tinh Gọn & Đa Nền Tảng (Compact English UI & Draggable)**:
      - Giao diện thiết kế siêu gọn nhẹ theo chuẩn tiếng Anh (`Layout`, `Gantt`, `Tasks`, `Budget`, `Cost`), tối ưu hiển thị hoàn hảo trên cả iOS/Mobile và Desktop.

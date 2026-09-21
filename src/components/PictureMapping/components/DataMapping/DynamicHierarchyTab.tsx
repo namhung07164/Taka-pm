@@ -18,7 +18,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
 import { useAppStore } from "../../../../store/useAppStore";
-import { getStatus, enrichProjects } from "../../../../lib/utils";
+import { getStatus, enrichProjects, computeProjectActStatus } from "../../../../lib/utils";
 import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 import { useDataStore } from "../../DataContext";
@@ -43,6 +43,15 @@ interface DynamicHierarchyTabProps {
   year?: string;
 }
 
+const normalizeRuleField = (f: string) => {
+  if (f === "appMdStatus" || f === "app:md status") return "appProjectMdStatus";
+  if (f === "appActStatus" || f === "app: act status") return "appProjectActStatus";
+  if (f === "appDetail" || f === "app: detail (project)") return "appProjectDetail";
+  if (f === "appDescription" || f === "app: description (project)" || f === "description (project)") return "appProjectDescription";
+  if (f === "appParty" || f === "app: party") return "appProjectParty";
+  return f;
+};
+
 function DynamicHierarchyTab({
   units,
   setUnits,
@@ -56,6 +65,7 @@ function DynamicHierarchyTab({
   const summaryData = useSummaryData();
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
+  const delegationGroups = useAppStore(state => state.delegationGroups);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
 
@@ -210,7 +220,7 @@ function DynamicHierarchyTab({
   const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name, location: u.location }))), [units]);
 
   // Pre-compute aggregated data for unit evaluation
-  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks), [projects, tasks]);
+  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks, delegationGroups), [projects, tasks, delegationGroups]);
 
   const aggregatedData = useMemo(() => {
     const dataMap: Record<string, any> = {};
@@ -253,6 +263,16 @@ function DynamicHierarchyTab({
         appProjectActual: 0,
         appProjectCode: "",
         appProjectYear: "",
+        appProjectMdStatus: "",
+        appMdStatus: "",
+        appProjectActStatus: "",
+        appActStatus: "",
+        appProjectDetail: "",
+        appDetail: "",
+        appProjectDescription: "",
+        appDescription: "",
+        appProjectParty: "",
+        appParty: "",
       };
     });
 
@@ -295,6 +315,12 @@ function DynamicHierarchyTab({
       const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
       const pCodes = rawCodes.split(/[+;,/]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
+      const detailStr = p.detail || '';
+      const descStr = p.detail || (p as any).description || p.note || '';
+      const partyStr = p.party || (p as any).contractor || '';
+      const mdStatusStr = p.mdStatus || '';
+
       pCodes.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].appProjectStatus = status;
@@ -302,13 +328,29 @@ function DynamicHierarchyTab({
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
             dataMap[code].appProjectYear = pYear;
+
+            dataMap[code].appProjectMdStatus = mdStatusStr;
+            dataMap[code].appMdStatus = mdStatusStr;
+
+            dataMap[code].appProjectActStatus = actStatus;
+            dataMap[code].appActStatus = actStatus;
+
+            dataMap[code].appProjectDetail = detailStr;
+            dataMap[code].appDetail = detailStr;
+
+            dataMap[code].appProjectDescription = descStr;
+            dataMap[code].appDescription = descStr;
+
+            dataMap[code].appProjectParty = partyStr;
+            dataMap[code].appParty = partyStr;
+
             if (!dataMap[code].year) dataMap[code].year = pYear;
          }
       });
     });
 
     return dataMap;
-  }, [unitNamesStr, summaryData, enrichedProjects, globalYearFilter]);
+  }, [unitNamesStr, summaryData, enrichedProjects, globalYearFilter, delegationGroups]);
 
   // Evaluates rules for a given group against a unit shape
   const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
@@ -320,6 +362,20 @@ function DynamicHierarchyTab({
     // Must pass all rules (AND condition)
     return rules.every((rule) => {
       let val = data[rule.field];
+      if (val === undefined || val === null) {
+        if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
+          val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
+        } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
+          val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
+        } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
+          val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
+        } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
+          val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
+        } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
+          val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
+        }
+      }
+
       if (rule.field === "margin" || rule.field === "marginByCp") {
         val = val * 100; // evaluate margin as percentage, e.g. 25 instead of 0.25
       }
@@ -951,7 +1007,7 @@ function DynamicHierarchyTab({
                             >
                               <select
                                 className="bg-slate-900 text-slate-300 text-sm outline-none w-1/3 flex-shrink-0 px-2 py-1 rounded border border-slate-700"
-                                value={rule.field}
+                                value={normalizeRuleField(rule.field)}
                                 onChange={(e) =>
                                   updateRule(
                                     group.id,
@@ -993,6 +1049,11 @@ function DynamicHierarchyTab({
                                 </optgroup>
                                 <optgroup label="App Data (Real-time)">
                                   <option value="appProjectStatus">App: Status</option>
+                                  <option value="appProjectMdStatus">App: MD Status</option>
+                                  <option value="appProjectActStatus">App: Act Status</option>
+                                  <option value="appProjectDetail">App: Detail (Project)</option>
+                                  <option value="appProjectDescription">App: Description (Project)</option>
+                                  <option value="appProjectParty">App: Party</option>
                                   <option value="appProjectBudget">App: Budget</option>
                                   <option value="appProjectActual">App: Actual</option>
                                   <option value="appProjectCode">App: Project Code</option>

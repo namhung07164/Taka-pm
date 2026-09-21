@@ -1,6 +1,5 @@
 import React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { QuickNavButton } from '../QuickNavButton';
 import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
 import { Project, Task } from '../../types';
@@ -260,11 +259,6 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               </span>
             </div>
           </button>
-          <QuickNavButton 
-            project={p} 
-            className="opacity-70 group-hover:opacity-100 transition-opacity shrink-0 ml-0.5" 
-            title={`Quick Navigator (${p.code})`} 
-          />
         </div>
         <div
           className={cn(

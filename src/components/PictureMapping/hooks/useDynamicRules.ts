@@ -3,7 +3,7 @@ import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/type
 import { SummaryDataItem, calculateSummaryData } from '../lib/summaryData';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus } from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
 
 // ============================================================================
 // TIER 1: MEMORY EVALUATION (0ms - 100% RAM EXECUTION)
@@ -12,6 +12,20 @@ import { enrichProjects, getStatus } from '../../../lib/utils';
 
 export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>): boolean {
   let val = data[rule.field];
+  if (val === undefined || val === null) {
+    if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
+      val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
+    } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
+      val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
+    } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
+      val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
+    } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
+      val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
+    } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
+      val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
+    }
+  }
+
   if (rule.field === 'margin' || rule.field === 'marginByCp' || rule.field === 'hcmMargin') {
     val = Number(val) * 100; // evaluate margin as percentage, e.g. 25 instead of 0.25
   }
@@ -103,6 +117,7 @@ export function useDynamicRules(
   // Reactively track projects and tasks from Zustand Global Store
   const projects = useAppStore((state) => state.projects || []);
   const tasks = useAppStore((state) => state.tasks || []);
+  const delegationGroups = useAppStore((state) => state.delegationGroups || []);
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
   const effectiveYear = year || (globalYearFilter && globalYearFilter !== 'all' ? globalYearFilter : '2026');
 
@@ -119,7 +134,7 @@ export function useDynamicRules(
   const basePlan = useDataStore((state) => state.basePlan);
   const storeUnits = useDataStore((state) => state.units);
 
-  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks), [projects, tasks]);
+  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks, delegationGroups), [projects, tasks, delegationGroups]);
 
   const internalSummaryData = useMemo(() => {
     if (options.summaryData && options.summaryData.length > 0) {
@@ -249,6 +264,12 @@ export function useDynamicRules(
         p.code
       );
 
+      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
+      const detailStr = p.detail || '';
+      const descStr = p.detail || (p as any).description || p.note || '';
+      const partyStr = p.party || (p as any).contractor || '';
+      const mdStatusStr = p.mdStatus || '';
+
       pCodes.forEach((code) => {
         if (dataMap[code]) {
           dataMap[code].appProjectStatus = status;
@@ -256,13 +277,29 @@ export function useDynamicRules(
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code);
           dataMap[code].appProjectYear = pYear;
+
+          dataMap[code].appProjectMdStatus = mdStatusStr;
+          dataMap[code].appMdStatus = mdStatusStr;
+
+          dataMap[code].appProjectActStatus = actStatus;
+          dataMap[code].appActStatus = actStatus;
+
+          dataMap[code].appProjectDetail = detailStr;
+          dataMap[code].appDetail = detailStr;
+
+          dataMap[code].appProjectDescription = descStr;
+          dataMap[code].appDescription = descStr;
+
+          dataMap[code].appProjectParty = partyStr;
+          dataMap[code].appParty = partyStr;
+
           if (!dataMap[code].year) dataMap[code].year = pYear;
         }
       });
     });
 
     return dataMap;
-  }, [unitNamesStr, internalSummaryData, enrichedProjects, effectiveYear]);
+  }, [unitNamesStr, internalSummaryData, enrichedProjects, effectiveYear, delegationGroups]);
 
   // Pure in-memory calculation function (< 3ms)
   const calculateNextVersions = useCallback(

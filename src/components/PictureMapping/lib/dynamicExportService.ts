@@ -7,7 +7,7 @@ import { useDataStore } from '../DataContext';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { calculateSummaryData } from './summaryData';
 import { getStoredR2Credentials, uploadSingleR2File, extractR2Key } from './r2Upload';
-import { enrichProjects, getStatus } from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
 
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
 
@@ -20,6 +20,20 @@ export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | unde
 
   return rules.every((rule) => {
     let val = data[rule.field];
+    if (val === undefined || val === null) {
+      if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
+        val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
+      } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
+        val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
+      } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
+        val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
+      } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
+        val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
+      } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
+        val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
+      }
+    }
+
     if (rule.field === 'margin' || rule.field === 'marginByCp') {
       val = val * 100;
     }
@@ -77,7 +91,8 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
 
   const projects = appState.projects || [];
   const tasks = appState.tasks || [];
-  const enrichedProjects = enrichProjects(projects, tasks);
+  const delegationGroups = appState.delegationGroups || [];
+  const enrichedProjects = enrichProjects(projects, tasks, delegationGroups);
 
   const summaryData = calculateSummaryData({
     unitInfo: dataState.unitInfo,
@@ -201,6 +216,12 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
       p.computedOpening || p.opening,
       p.code
     );
+    const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
+    const detailStr = p.detail || '';
+    const descStr = p.detail || (p as any).description || p.note || '';
+    const partyStr = p.party || (p as any).contractor || '';
+    const mdStatusStr = p.mdStatus || '';
+
     pCodes.forEach((code) => {
       if (dataMap[code]) {
         dataMap[code].appProjectStatus = status;
@@ -208,6 +229,22 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
         dataMap[code].appProjectActual = p.actual || 0;
         dataMap[code].appProjectCode = String(p.code);
         dataMap[code].appProjectYear = pYear;
+
+        dataMap[code].appProjectMdStatus = mdStatusStr;
+        dataMap[code].appMdStatus = mdStatusStr;
+
+        dataMap[code].appProjectActStatus = actStatus;
+        dataMap[code].appActStatus = actStatus;
+
+        dataMap[code].appProjectDetail = detailStr;
+        dataMap[code].appDetail = detailStr;
+
+        dataMap[code].appProjectDescription = descStr;
+        dataMap[code].appDescription = descStr;
+
+        dataMap[code].appProjectParty = partyStr;
+        dataMap[code].appParty = partyStr;
+
         if (!dataMap[code].year) dataMap[code].year = pYear;
         if (!dataMap[code].projectStatus) dataMap[code].projectStatus = status;
         if (!dataMap[code].task) dataMap[code].task = (p as any).title || (p as any).name || '';

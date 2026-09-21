@@ -9,7 +9,7 @@ import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
-import { getStatus, enrichProjects, formatDisplayDateTime } from '../lib/utils';
+import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
@@ -846,6 +846,7 @@ function LiveCanvas({
 
   // 1. Get real-time projects and Excel summary data (Filtered strictly by Account Control RBAC permissions)
   const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
+  const delegationGroups = useAppStore(state => state.delegationGroups);
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
   const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
@@ -871,7 +872,8 @@ function LiveCanvas({
         mdStatus: "", task: "", projectStatus: "", actStatus: "",
         endDate: "", status: "", vendorCode: "",
         brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
-        appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: ""
+        appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
+        appProjectMdStatus: "", appMdStatus: "", appProjectActStatus: "", appActStatus: "", appProjectDetail: "", appDetail: "", appProjectDescription: "", appDescription: "", appProjectParty: "", appParty: ""
       };
     });
 
@@ -944,6 +946,12 @@ function LiveCanvas({
         taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
       });
 
+      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
+      const detailStr = p.detail || '';
+      const descStr = p.detail || (p as any).description || p.note || '';
+      const partyStr = p.party || (p as any).contractor || '';
+      const mdStatusStr = p.mdStatus || '';
+
       pCodes.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].matchedProject = p;
@@ -955,10 +963,27 @@ function LiveCanvas({
             dataMap[code].startDate = p.start || p.computedTakStart || "";
             dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";
             dataMap[code].openingDate = p.opening || p.computedOpening || "";
-            dataMap[code].detail = p.detail || "";
+            dataMap[code].detail = detailStr;
             dataMap[code].taskLines = taskLines;
-            dataMap[code].mdStatus = p.mdStatus || dataMap[code].mdStatus || "";
-            dataMap[code].party = p.party || (p as any).contractor || "";
+            dataMap[code].mdStatus = mdStatusStr || dataMap[code].mdStatus || "";
+            dataMap[code].actStatus = actStatus || dataMap[code].actStatus || "";
+            dataMap[code].party = partyStr;
+
+            dataMap[code].appProjectMdStatus = mdStatusStr;
+            dataMap[code].appMdStatus = mdStatusStr;
+
+            dataMap[code].appProjectActStatus = actStatus;
+            dataMap[code].appActStatus = actStatus;
+
+            dataMap[code].appProjectDetail = detailStr;
+            dataMap[code].appDetail = detailStr;
+
+            dataMap[code].appProjectDescription = descStr;
+            dataMap[code].appDescription = descStr;
+
+            dataMap[code].appProjectParty = partyStr;
+            dataMap[code].appParty = partyStr;
+
             dataMap[code].matchedTasks = matchedTasks;
             dataMap[code].subTasks = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
             dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
@@ -968,7 +993,7 @@ function LiveCanvas({
     });
 
     return dataMap;
-  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter]);
+  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
@@ -1001,6 +1026,19 @@ function LiveCanvas({
                     if (data) {
                         const passedRules = group.rules.every((rule: any) => {
                             let val = data[rule.field];
+                            if (val === undefined || val === null) {
+                              if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
+                                val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
+                              } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
+                                val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
+                              } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
+                                val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
+                              } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
+                                val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
+                              } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
+                                val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
+                              }
+                            }
                             if (rule.field === "margin" || rule.field === "marginByCp") val = val * 100;
                             const numVal = Number(rule.value);
                             const isNum = !isNaN(numVal) && rule.value.trim() !== "";
