@@ -4,7 +4,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
@@ -1142,9 +1142,22 @@ function LiveCanvas({
       .filter((unit: any) => {
         if (unit.visible === false) return false;
 
+        const uName = (unit.name || '').toLowerCase().trim();
+        const uData = (uName && aggregatedData[uName]) ? aggregatedData[uName] : {};
+        const hasProject = Boolean(uData?.matchedProject || uData?.projectName || uData?.appProjectCode);
+        const isMappedInGroup = Boolean(unitColorMap[unit.id]);
+        const isFocused = focusedUnitId === unit.id;
+
+        // Performance & Clarity Optimization: Only render units that have active projects or custom group classification
+        // (Unless the user is searching or this unit is currently focused/zoomed)
+        if (!searchQuery.trim() && !isFocused) {
+          if (!hasProject && !isMappedInGroup) {
+            return false;
+          }
+        }
+
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
-          const uData = aggregatedData[unit.name?.toLowerCase() || ''] || {};
           const matchName = (unit.name || '').toLowerCase().includes(q);
           const matchBrand = (uData.brandName || '').toLowerCase().includes(q);
           const matchProject = (uData.projectName || '').toLowerCase().includes(q);
@@ -1202,7 +1215,7 @@ function LiveCanvas({
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, searchQuery, aggregatedData]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, searchQuery, aggregatedData, focusedUnitId]);
 
   // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
   const updateTooltipPos = (clientX: number, clientY: number) => {
