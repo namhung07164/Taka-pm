@@ -499,7 +499,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
           - **Phân trang Tin nhắn (Pagination / Limit to Last 25)**: Mặc định chỉ hiển thị 25 tin nhắn trao đổi gần nhất để giao diện chat mở tức thì (0ms) và chống tràn bộ nhớ. Phía trên có nút `[ ⬆️ Xem thêm tin nhắn cũ hơn (+25) ]` để người dùng chủ động tải thêm khi cần xem lại lịch sử trao đổi. Khi nhấp từ thông báo (`focusCommentId`), hệ thống tự động mở rộng vùng hiển thị để cuộn chính xác đến tin nhắn cần xem.
 5. **Chế độ Bản đồ Trực quan (Live View), Bảng Chú Thích Màu & Cấu Hình Hiển Thị Labels Appear (Tooltip Visibility)**:
    - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
-   - **Tùy Chỉnh Bật/Tắt Nhãn Tooltip (Labels Appear Settings)**: Trong bảng Menu bản đồ (nút `[ ☰ Menu ]`), người dùng có thể linh hoạt ẩn/hiện từng trường dữ liệu hiển thị trên ô chi tiết khi rê chuột/chạm vào gian hàng (Tooltip):
+   - **Edit Mode & Tùy Chỉnh Bật/Tắt Nhãn Tooltip (Labels Appear Settings)**: Trong menu Hamburger góc phải trên cùng (nằm giữa mục "Đồng bộ Apple Calendar" và "Print Preview"), mục **Edit Mode** cho phép người dùng mở bảng cấu hình chuyên sâu của mặt bằng:
      * `Project Code`: Mã gian hàng / Mã dự án.
      * `Project Name`: Tên dự án / Tên thương hiệu.
      * `MD Status`: Huy hiệu trạng thái MD (Renew, New, Close...).

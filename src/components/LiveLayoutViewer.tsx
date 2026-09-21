@@ -697,6 +697,17 @@ function LiveCanvas({
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
 
+  // Listen for Edit Mode trigger from hamburger menu
+  useEffect(() => {
+    const handleOpenEditMode = () => {
+      setShowMenu(true);
+    };
+    window.addEventListener("open-layout-edit-mode", handleOpenEditMode);
+    return () => {
+      window.removeEventListener("open-layout-edit-mode", handleOpenEditMode);
+    };
+  }, []);
+
   // Clean up timer on unmount
   useEffect(() => {
     return () => {
@@ -1871,13 +1882,6 @@ function LiveCanvas({
             </span>
           )}
         </button>
-
-        <button 
-          onClick={() => setShowMenu(true)} 
-          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 backdrop-blur-md border border-slate-700 dark:border-slate-300 shadow-xl rounded-full text-xs font-bold hover:bg-slate-800 active:scale-95 touch-manipulation transition-all whitespace-nowrap"
-        >
-          <Menu className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Menu</span>
-        </button>
       </div>
 
       {/* Full Color Legend Modal / Drawer (iOS friendly) */}
@@ -2022,14 +2026,14 @@ function LiveCanvas({
         </div>
       )}
 
-      {/* Floating Menu Drawer / Modal */}
+      {/* Floating Edit Mode Drawer / Modal */}
       {showMenu && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 text-slate-800 dark:text-slate-200 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
-                <Layers className="w-5 h-5 text-purple-600" />
-                Menu & Chú thích Bản đồ
+                <SlidersHorizontal className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                Edit Mode
               </div>
               <button 
                 onClick={() => setShowMenu(false)}

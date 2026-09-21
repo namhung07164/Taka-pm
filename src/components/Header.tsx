@@ -30,6 +30,7 @@ import {
   PieChart,
   DollarSign,
   Shield,
+  SlidersHorizontal,
 } from "lucide-react";
 import { ShortcutsModal } from "./ShortcutsModal";
 import { QRScannerModal } from "./QRScannerModal";
@@ -240,6 +241,19 @@ export function Header({
                   <Calendar className="w-4 h-4 text-red-600 dark:text-red-400" />
                   <span>Đồng bộ Apple Calendar (iOS)</span>
                 </button>
+
+                {activeTab === 'layout' && (
+                  <button 
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent("open-layout-edit-mode"));
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446]"
+                  >
+                    <SlidersHorizontal className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="font-semibold text-purple-700 dark:text-purple-300">Edit Mode</span>
+                  </button>
+                )}
 
                 {currentUser.role !== "guest" && activeTab === 'detail' && (
                   <>
