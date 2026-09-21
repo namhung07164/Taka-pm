@@ -1756,6 +1756,118 @@ const handlePrintToPDF = async () => {
     
     try {
       if (activeTab === 'layout') {
+        const stage = (window as any).__taka_layout_stage;
+        const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
+        
+        let dataUrl: string | null = null;
+        let imgW = 1200;
+        let imgH = 800;
+
+        if (stage && typeof stage.toDataURL === 'function') {
+          const exportRatio = Math.min(3, Math.max(1.5, printDpi / 96));
+          dataUrl = stage.toDataURL({ pixelRatio: exportRatio });
+          imgW = (stage.width ? stage.width() : 1200) * exportRatio;
+          imgH = (stage.height ? stage.height() : 800) * exportRatio;
+        } else if (stageCanvas) {
+          dataUrl = stageCanvas.toDataURL('image/jpeg', 0.95);
+          imgW = stageCanvas.width;
+          imgH = stageCanvas.height;
+        }
+
+        if (dataUrl) {
+          const orientation = printOrientation === "landscape" ? "l" : "p";
+          const format = printPaperSize.toLowerCase();
+          
+          const { jsPDF } = await import('jspdf');
+          const pdf = new jsPDF({
+            orientation,
+            unit: 'mm',
+            format
+          });
+
+          const pdfPageWidth = pdf.internal.pageSize.getWidth();
+          const pdfPageHeight = pdf.internal.pageSize.getHeight();
+          const margin = 10;
+          const usableWidth = pdfPageWidth - margin * 2;
+          let usableHeight = pdfPageHeight - margin * 2;
+          let topOffset = margin;
+
+          // Filter Header
+          if (printFilterHeader) {
+            const isDark = false;
+            drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
+            topOffset += 14;
+            usableHeight -= 14;
+          }
+
+          // Date & footer spacing
+          if (printDate) {
+            usableHeight -= 8;
+          }
+
+          // Compute exact aspect ratio fit to 1 page
+          const imgAspect = imgW / imgH;
+          const pageAspect = usableWidth / usableHeight;
+
+          let targetW = usableWidth;
+          let targetH = usableHeight;
+
+          if (imgAspect > pageAspect) {
+            targetW = usableWidth;
+            targetH = usableWidth / imgAspect;
+          } else {
+            targetH = usableHeight;
+            targetW = usableHeight * imgAspect;
+          }
+
+          const xPos = margin + (usableWidth - targetW) / 2;
+          const yPos = topOffset + (usableHeight - targetH) / 2;
+
+          pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
+
+          // Watermark
+          if (printWatermark && printWatermark !== 'none') {
+            try {
+              pdf.saveGraphicsState();
+              pdf.setGState(new (pdf as any).GState({ opacity: 0.15 }));
+              pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
+              pdf.setFont('helvetica', 'bold');
+              pdf.setTextColor(150, 150, 150);
+              pdf.text(
+                printWatermark.toUpperCase(),
+                pdfPageWidth / 2,
+                pdfPageHeight / 2,
+                { align: 'center', angle: 45 }
+              );
+              pdf.restoreGraphicsState();
+            } catch (e) {
+              pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
+              pdf.setFont('helvetica', 'bold');
+              pdf.setTextColor(220, 220, 220);
+              pdf.text(
+                printWatermark.toUpperCase(),
+                pdfPageWidth / 2,
+                pdfPageHeight / 2,
+                { align: 'center', angle: 45 }
+              );
+            }
+          }
+
+          // Footer info
+          const footerY = pdfPageHeight - 4;
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(130, 130, 130);
+          let footerText = `Takashimaya PM • Layout Plan (${printFilterContext.storeDisplay || 'HCM'} - ${printFilterContext.yearDisplay || 'All'})`;
+          if (printDate) {
+            footerText += ` • Printed: ${new Date().toLocaleString()}`;
+          }
+          pdf.text(footerText, margin, footerY);
+
+          pdf.save(`layout_plan_${new Date().toISOString().slice(0, 10)}_${new Date().getTime()}.pdf`);
+          setIsExportingPDF(false);
+          return;
+        }
+
         window.print();
         setIsExportingPDF(false);
         return;
@@ -2126,13 +2238,28 @@ const handlePrintToPDF = async () => {
         @media print {
           @page {
             size: ${printPaperSize} ${printOrientation};
-            margin: ${activeTab === 'layout' ? '0 !important' : '10mm !important'};
+            margin: ${activeTab === 'layout' ? '5mm !important' : '10mm !important'};
           }
           .print-content-wrapper {
             transform: ${activeTab === 'layout' ? 'none' : `scale(${printScale / 100})`};
             transform-origin: top left;
             width: ${activeTab === 'layout' ? '100% !important' : `${100 / (printScale / 100)}% !important`};
             height: ${activeTab === 'layout' ? '100% !important' : `${100 / (printScale / 100)}% !important`};
+          }
+          #live-layout-canvas-container {
+            width: 100% !important;
+            height: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+          #live-layout-canvas-container canvas {
+            max-width: 100% !important;
+            max-height: 95vh !important;
+            object-fit: contain !important;
+          }
+          .hide-on-actual-print, .print\:hidden {
+            display: none !important;
           }
         }
         ${isPrintPreview ? `
@@ -2881,7 +3008,7 @@ const handlePrintToPDF = async () => {
       </div>
           {showTour && <AppTour onClose={handleCloseTour} />}
       {isExportingPDF && (
-        <div className="fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+        <div className="fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white print:hidden hide-on-actual-print">
           <svg className="w-12 h-12 animate-spin text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>

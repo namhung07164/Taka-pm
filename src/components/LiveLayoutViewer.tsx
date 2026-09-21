@@ -759,6 +759,15 @@ function LiveCanvas({
   const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
+    (window as any).__taka_layout_stage = stageRef.current;
+    return () => {
+      if ((window as any).__taka_layout_stage === stageRef.current) {
+        (window as any).__taka_layout_stage = null;
+      }
+    };
+  });
+
+  useEffect(() => {
     return () => {
       if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
       if (rafWheelIdRef.current !== null) cancelAnimationFrame(rafWheelIdRef.current);

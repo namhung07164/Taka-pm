@@ -226,6 +226,134 @@ const handlePrintToPDF = async () => {
     await new Promise(resolve => setTimeout(resolve, 150));
     
     try {
+      const state = useAppStore.getState();
+      const printFilterContext = getPrintFilterContext({
+        activeTab: 'layout',
+        globalStoreFilter: state.globalStoreFilter,
+        globalYearFilter: state.globalYearFilter,
+        currentUser: state.currentUser,
+        detailTabFilterCode: state.detailTabFilterCode,
+        layoutTabFilters: state.layoutTabFilters,
+      });
+
+      if (activeTab === 'layout') {
+        const stage = (window as any).__taka_layout_stage;
+        const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
+        
+        let dataUrl: string | null = null;
+        let imgW = 1200;
+        let imgH = 800;
+
+        if (stage && typeof stage.toDataURL === 'function') {
+          const exportRatio = Math.min(3, Math.max(1.5, printDpi / 96));
+          dataUrl = stage.toDataURL({ pixelRatio: exportRatio });
+          imgW = (stage.width ? stage.width() : 1200) * exportRatio;
+          imgH = (stage.height ? stage.height() : 800) * exportRatio;
+        } else if (stageCanvas) {
+          dataUrl = stageCanvas.toDataURL('image/jpeg', 0.95);
+          imgW = stageCanvas.width;
+          imgH = stageCanvas.height;
+        }
+
+        if (dataUrl) {
+          const orientation = printOrientation === "landscape" ? "l" : "p";
+          const format = printPaperSize.toLowerCase();
+          
+          const { jsPDF } = await import("jspdf");
+          const pdf = new jsPDF({
+            orientation,
+            unit: 'mm',
+            format
+          });
+
+          const pdfPageWidth = pdf.internal.pageSize.getWidth();
+          const pdfPageHeight = pdf.internal.pageSize.getHeight();
+          const margin = 10;
+          const usableWidth = pdfPageWidth - margin * 2;
+          let usableHeight = pdfPageHeight - margin * 2;
+          let topOffset = margin;
+
+          // Filter Header
+          if (printFilterHeader) {
+            const isDark = false;
+            drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
+            topOffset += 14;
+            usableHeight -= 14;
+          }
+
+          // Date & footer spacing
+          if (printDate) {
+            usableHeight -= 8;
+          }
+
+          // Compute exact aspect ratio fit to 1 page
+          const imgAspect = imgW / imgH;
+          const pageAspect = usableWidth / usableHeight;
+
+          let targetW = usableWidth;
+          let targetH = usableHeight;
+
+          if (imgAspect > pageAspect) {
+            targetW = usableWidth;
+            targetH = usableWidth / imgAspect;
+          } else {
+            targetH = usableHeight;
+            targetW = usableHeight * imgAspect;
+          }
+
+          const xPos = margin + (usableWidth - targetW) / 2;
+          const yPos = topOffset + (usableHeight - targetH) / 2;
+
+          pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
+
+          // Watermark
+          if (printWatermark && printWatermark !== 'none') {
+            try {
+              pdf.saveGraphicsState();
+              pdf.setGState(new (pdf as any).GState({ opacity: 0.15 }));
+              pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
+              pdf.setFont('helvetica', 'bold');
+              pdf.setTextColor(150, 150, 150);
+              pdf.text(
+                printWatermark.toUpperCase(),
+                pdfPageWidth / 2,
+                pdfPageHeight / 2,
+                { align: 'center', angle: 45 }
+              );
+              pdf.restoreGraphicsState();
+            } catch (e) {
+              pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
+              pdf.setFont('helvetica', 'bold');
+              pdf.setTextColor(220, 220, 220);
+              pdf.text(
+                printWatermark.toUpperCase(),
+                pdfPageWidth / 2,
+                pdfPageHeight / 2,
+                { align: 'center', angle: 45 }
+              );
+            }
+          }
+
+          // Footer info
+          const footerY = pdfPageHeight - 4;
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(130, 130, 130);
+          let footerText = `Takashimaya PM • Layout Plan (${printFilterContext.storeDisplay || 'HCM'} - ${printFilterContext.yearDisplay || 'All'})`;
+          if (printDate) {
+            footerText += ` • Printed: ${new Date().toLocaleString()}`;
+          }
+          pdf.text(footerText, margin, footerY);
+
+          pdf.save(`layout_plan_${new Date().toISOString().slice(0, 10)}_${new Date().getTime()}.pdf`);
+          setIsExportingPDF(false);
+          return;
+        }
+
+        window.print();
+        setIsExportingPDF(false);
+        return;
+      }
+
       const pages = document.querySelectorAll('.print-paper');
       if (pages.length === 0) {
         setIsExportingPDF(false);
