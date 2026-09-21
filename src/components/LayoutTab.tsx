@@ -22,6 +22,22 @@ interface LayoutTabProps {
   onBackToGantt?: () => void;
 }
 
+const extractFloorFromCodeOrName = (str?: string | null): string | null => {
+  if (!str) return null;
+  const s = String(str).trim();
+  const m = s.match(/(?:^|[^a-zA-Z0-9])(B\d|L\d|\d+F|\d+L|GF|MF|RF|BASEMENT\s*\d?|LEVEL\s*\d?|FLOOR\s*\d?)(?:[^a-zA-Z0-9]|$)/i);
+  if (m) {
+    let token = m[1].toUpperCase().replace(/\s+/g, '');
+    if (token.startsWith('BASEMENT')) token = token.replace('BASEMENT', 'B') || 'B1';
+    if (token.startsWith('LEVEL')) token = token.replace('LEVEL', 'L') || 'L1';
+    if (token.startsWith('FLOOR')) token = token.replace('FLOOR', 'L') || 'L1';
+    if (/^\d+F$/.test(token)) token = 'L' + token.replace('F', '');
+    if (/^\d+L$/.test(token)) token = 'L' + token.replace('L', '');
+    return token;
+  }
+  return null;
+};
+
 export function LayoutTab({ 
   initialStore: propInitialStore,
   initialLocation: propInitialLocation,
@@ -53,39 +69,6 @@ export function LayoutTab({
 
   const [projectCodeFilter, setProjectCodeFilter] = useState(initialProjectCode);
   
-  useEffect(() => {
-    if (initialStore && initialStore !== 'all') {
-      setGlobalStoreFilter(initialStore);
-    }
-    
-    let targetLoc = (initialLocation && initialLocation !== 'all') ? initialLocation : '';
-    
-    if (initialProjectCode) {
-      setProjectCodeFilter(initialProjectCode);
-      setUnitSearchInput(initialProjectCode);
-      setTargetUnitSearch(initialProjectCode);
-      setIsLiveMapMode(true);
-
-      if (!targetLoc) {
-        const matched = projects.find(p => 
-          (p.code && String(p.code).trim().toLowerCase() === String(initialProjectCode).trim().toLowerCase()) ||
-          ((p as any).unit && String((p as any).unit).trim().toLowerCase() === String(initialProjectCode).trim().toLowerCase()) ||
-          (p.name && String(p.name).trim().toLowerCase() === String(initialProjectCode).trim().toLowerCase())
-        );
-        if (matched?.location) {
-          targetLoc = matched.location;
-        } else {
-          const m = String(initialProjectCode).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
-          if (m) targetLoc = m[1].toUpperCase();
-        }
-      }
-    }
-
-    if (targetLoc && targetLoc !== 'all') {
-      setGlobalLocationFilter([targetLoc]);
-    }
-  }, [initialStore, initialLocation, initialProjectCode, projects, setGlobalStoreFilter, setGlobalLocationFilter]);
-
   const isAdmin = currentUser.role === 'admin';
   const role = currentUser.role as AppRole;
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
@@ -109,6 +92,101 @@ export function LayoutTab({
       return [];
     }
   }, [getAllStoreVersions, activeStore, storeLocationData, mapVersions]);
+
+  useEffect(() => {
+    if (initialStore && initialStore !== 'all') {
+      setGlobalStoreFilter(initialStore);
+    }
+    
+    let targetLoc = (initialLocation && initialLocation !== 'all') ? String(initialLocation).trim().toUpperCase() : '';
+    
+    if (initialProjectCode) {
+      setProjectCodeFilter(initialProjectCode);
+      setUnitSearchInput(initialProjectCode);
+      setTargetUnitSearch(initialProjectCode);
+      setIsLiveMapMode(true);
+
+      if (!targetLoc) {
+        const qCode = String(initialProjectCode).trim().toLowerCase();
+
+        // 1. Search in projects
+        const matched = projects.find(p => 
+          (p.code && String(p.code).trim().toLowerCase() === qCode) ||
+          ((p as any).unit && String((p as any).unit).trim().toLowerCase() === qCode) ||
+          (p.name && String(p.name).trim().toLowerCase() === qCode) ||
+          (p.id && String(p.id).trim().toLowerCase() === qCode)
+        );
+        if (matched?.location && matched.location.toLowerCase() !== 'all') {
+          targetLoc = String(matched.location).trim().toUpperCase();
+        }
+
+        // 2. Search in project tasks
+        if (!targetLoc) {
+          const matchedTask = tasks.find(t => 
+            (t.projectCode && String(t.projectCode).trim().toLowerCase() === qCode) ||
+            (matched?.id && (t as any).projectId === matched.id)
+          );
+          if ((matchedTask as any)?.location && (matchedTask as any).location.toLowerCase() !== 'all') {
+            targetLoc = String((matchedTask as any).location).trim().toUpperCase();
+          }
+        }
+
+        // 3. Search in useDataStore unitInfo
+        if (!targetLoc) {
+          const unitInfo = useDataStore.getState().unitInfo || [];
+          const matchedUInfo = unitInfo.find((u: any) => 
+            (u.unit && String(u.unit).trim().toLowerCase() === qCode) ||
+            (u.name && String(u.name).trim().toLowerCase() === qCode) ||
+            (u.unitId && String(u.unitId).trim().toLowerCase() === qCode)
+          );
+          if (matchedUInfo?.floor || matchedUInfo?.location) {
+            targetLoc = String(matchedUInfo.floor || matchedUInfo.location).trim().toUpperCase();
+          }
+        }
+
+        // 4. Search in allStoreVersions for active store
+        if (!targetLoc) {
+          for (const v of allStoreVersions) {
+            if (!v.location) continue;
+            if (v.groupMappings) {
+              const hasUnit = Object.values(v.groupMappings).some((arr: any) => 
+                Array.isArray(arr) && arr.some(id => String(id).trim().toLowerCase() === qCode)
+              );
+              if (hasUnit) {
+                targetLoc = String(v.location).trim().toUpperCase();
+                break;
+              }
+            }
+            if ((v as any).mapUnits && Array.isArray((v as any).mapUnits)) {
+              const hasUnit = (v as any).mapUnits.some((u: any) => 
+                (u.name && String(u.name).trim().toLowerCase() === qCode) ||
+                (u.id && String(u.id).trim().toLowerCase() === qCode)
+              );
+              if (hasUnit) {
+                targetLoc = String(v.location).trim().toUpperCase();
+                break;
+              }
+            }
+          }
+        }
+
+        // 5. Enhanced Regex fallback across projectCode, projectName, matched.code
+        if (!targetLoc) {
+          const extracted = extractFloorFromCodeOrName(initialProjectCode) ||
+            extractFloorFromCodeOrName(matched?.code) ||
+            extractFloorFromCodeOrName(matched?.name) ||
+            extractFloorFromCodeOrName((matched as any)?.unit);
+          if (extracted) {
+            targetLoc = extracted;
+          }
+        }
+      }
+    }
+
+    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+      setGlobalLocationFilter([targetLoc]);
+    }
+  }, [initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   // Available years: strictly based on existing versions for this store (matching Review Tab)
   const availableYears = React.useMemo(() => {
@@ -210,15 +288,33 @@ export function LayoutTab({
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor)
   useEffect(() => {
     if (availableLocations.length > 0) {
-      if (globalLocationFilter.length === 0 || globalLocationFilter[0] === 'all' || !availableLocations.includes(globalLocationFilter[0])) {
+      const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
+      const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
+      if (matched) {
+        if (globalLocationFilter[0] !== matched) {
+          setGlobalLocationFilter([matched]);
+        }
+      } else if (!currentLoc || currentLoc === 'ALL') {
         setGlobalLocationFilter([availableLocations[0]]);
+      } else {
+        const allowedMatched = userAllowedLocations.find(l => l.toUpperCase().trim() === currentLoc);
+        if (!allowedMatched) {
+          setGlobalLocationFilter([availableLocations[0]]);
+        }
       }
     }
-  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter]);
+  }, [availableLocations, globalLocationFilter, userAllowedLocations, setGlobalLocationFilter]);
 
-  const locFilterStr = globalLocationFilter.length > 0 && globalLocationFilter[0] !== 'all' && availableLocations.includes(globalLocationFilter[0])
-    ? globalLocationFilter[0] 
-    : (availableLocations[0] || 'L1');
+  const locFilterStr = React.useMemo(() => {
+    const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
+    if (currentLoc && currentLoc !== 'ALL') {
+      const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc) ||
+        userAllowedLocations.find(l => l.toUpperCase().trim() === currentLoc);
+      if (matched) return matched;
+      return currentLoc;
+    }
+    return availableLocations[0] || 'B1';
+  }, [globalLocationFilter, availableLocations, userAllowedLocations]);
   const docKey = `url_${activeStore}_${locFilterStr}`;
 
   // Automatically sync activeStore and floor partition to useDataStore (PictureMapping / useSummaryData)
@@ -338,18 +434,23 @@ export function LayoutTab({
     }
 
     // 2. Resolve floor / location reliably
-    let targetFloor = unitItem.location;
-    if (!targetFloor || targetFloor.toLowerCase() === 'all') {
+    let targetFloor = (unitItem.location && unitItem.location.toLowerCase() !== 'all')
+      ? String(unitItem.location).trim().toUpperCase()
+      : '';
+    if (!targetFloor) {
+      const qCode = String(unitItem.unit).trim().toLowerCase();
       const matchedP = projects.find(p => 
-        ((p as any).unit && (p as any).unit.toLowerCase() === unitItem.unit.toLowerCase()) ||
-        (p.code && p.code.toLowerCase() === unitItem.unit.toLowerCase()) ||
-        (p.name && p.name.toLowerCase() === (unitItem.project || '').toLowerCase())
+        ((p as any).unit && String((p as any).unit).trim().toLowerCase() === qCode) ||
+        (p.code && String(p.code).trim().toLowerCase() === qCode) ||
+        (p.name && String(p.name).trim().toLowerCase() === String(unitItem.project || '').trim().toLowerCase())
       );
-      if (matchedP?.location) {
-        targetFloor = matchedP.location;
+      if (matchedP?.location && matchedP.location.toLowerCase() !== 'all') {
+        targetFloor = String(matchedP.location).trim().toUpperCase();
       } else {
-        const m = unitItem.unit.match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
-        if (m) targetFloor = m[1].toUpperCase();
+        const extracted = extractFloorFromCodeOrName(unitItem.unit) ||
+          extractFloorFromCodeOrName(matchedP?.code) ||
+          extractFloorFromCodeOrName(matchedP?.name);
+        if (extracted) targetFloor = extracted;
       }
     }
 

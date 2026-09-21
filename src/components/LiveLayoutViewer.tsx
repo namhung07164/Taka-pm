@@ -1442,16 +1442,34 @@ function LiveCanvas({
       if (!success) {
         // Check other floor versions in availableStoreVersions
         const foundInOther = availableStoreVersions.find((v: any) => {
-          if (!v?.groupMappings) return false;
-          return Object.values(v.groupMappings).some((m: any) => 
-            Array.isArray(m) && m.some(id => String(id).toLowerCase() === q.toLowerCase())
-          );
+          if (v?.groupMappings) {
+            const inGroup = Object.values(v.groupMappings).some((m: any) => 
+              Array.isArray(m) && m.some(id => String(id).toLowerCase() === q.toLowerCase())
+            );
+            if (inGroup) return true;
+          }
+          if (v?.mapUnits && Array.isArray(v.mapUnits)) {
+            const inUnits = v.mapUnits.some((u: any) => 
+              (u.name && String(u.name).toLowerCase() === q.toLowerCase()) ||
+              (u.id && String(u.id).toLowerCase() === q.toLowerCase())
+            );
+            if (inUnits) return true;
+          }
+          return false;
         });
-        if (foundInOther && foundInOther.id !== selectedVersionId) {
-          setSelectedVersionId(foundInOther.id);
-          setTimeout(() => {
-            zoomAndPanToUnit(q);
-          }, 400);
+        if (foundInOther) {
+          if (foundInOther.location) {
+            const floorLoc = String(foundInOther.location).trim().toUpperCase();
+            if (useAppStore.getState().globalLocationFilter[0] !== floorLoc) {
+              useAppStore.getState().setGlobalLocationFilter([floorLoc]);
+            }
+          }
+          if (foundInOther.id !== selectedVersionId) {
+            setSelectedVersionId(foundInOther.id);
+            setTimeout(() => {
+              zoomAndPanToUnit(q);
+            }, 400);
+          }
         }
       }
     } else if (targetUnitSearch === null || targetUnitSearch === '') {
