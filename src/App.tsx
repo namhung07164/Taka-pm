@@ -49,14 +49,14 @@ const SettingTab = lazyWithRetry(() => import("./components/SettingTab"), "Setti
 const ManualTab = lazyWithRetry(() => import("./components/ManualTab").then(m => ({ default: m.ManualTab })), "ManualTab");
 const AuditLogTab = lazyWithRetry(() => import("./components/AuditLogTab").then(m => ({ default: m.AuditLogTab })), "AuditLogTab");
 const AppTour = lazyWithRetry(() => import("./components/AppTour").then(m => ({ default: m.AppTour })), "AppTour");
+const ProjectQuickNavModal = lazyWithRetry(() => import("./components/ProjectQuickNavModal").then(m => ({ default: m.ProjectQuickNavModal })), "ProjectQuickNavModal");
+const PrintPreviewOverlay = lazyWithRetry(() => import("./components/PrintPreviewOverlay").then(m => ({ default: m.PrintPreviewOverlay })), "PrintPreviewOverlay");
 import { AppModals } from "./components/AppModals";
-import { ProjectQuickNavModal } from "./components/ProjectQuickNavModal";
 import { Toast } from "./components/Toast";
 import { initAuth } from './lib/firebase';
 import { enrichProjects, calculateActiveNotifications } from "./lib/utils";
 import { undoManager, UndoAction } from "./lib/undoManager";
 import { useAppStore } from "./store/useAppStore";
-import { PrintPreviewOverlay } from "./components/PrintPreviewOverlay";
 import { PrintFilterHeader } from "./components/PrintFilterHeader";
 import { getPrintFilterContext, drawPdfFilterHeader } from "./lib/printFilterHelper";
 
@@ -2524,13 +2524,15 @@ const handlePrintToPDF = async () => {
               )}
               <div className="w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] p-0 print-content-wrapper print-preview-content-active relative overflow-hidden">
                                   {isPrintPreview && (
-                    <PrintPreviewOverlay
-                      printScale={printScale}
-                      printPaperSize={printPaperSize}
-                      printOrientation={printOrientation}
-                      printScaleMode={printScaleMode}
-                    />
-                 )}
+                    <Suspense fallback={null}>
+                      <PrintPreviewOverlay
+                        printScale={printScale}
+                        printPaperSize={printPaperSize}
+                        printOrientation={printOrientation}
+                        printScaleMode={printScaleMode}
+                      />
+                    </Suspense>
+                  )}
                  <Profiler id={`GanttTab-Page-${idx}`} onRender={onRenderCallback}>
                    <GanttTab
                      
@@ -2988,12 +2990,16 @@ const handlePrintToPDF = async () => {
         onTabChange={handleTabChange}
       />
 
-      <ProjectQuickNavModal
-        target={quickNavTarget}
-        isOpen={!!quickNavTarget}
-        onClose={() => setQuickNavTarget(null)}
-        onNavigate={handleQuickNavigate}
-      />
+      {quickNavTarget && (
+        <Suspense fallback={null}>
+          <ProjectQuickNavModal
+            target={quickNavTarget}
+            isOpen={!!quickNavTarget}
+            onClose={() => setQuickNavTarget(null)}
+            onNavigate={handleQuickNavigate}
+          />
+        </Suspense>
+      )}
 
       {toast && (
         <Toast

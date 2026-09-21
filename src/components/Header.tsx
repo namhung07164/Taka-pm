@@ -3,7 +3,7 @@ import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSes
 import { useAppStore } from "../store/useAppStore";
 import { doc } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import {
   Menu,
   Bell,
@@ -32,8 +32,8 @@ import {
   Shield,
   SlidersHorizontal,
 } from "lucide-react";
-import { ShortcutsModal } from "./ShortcutsModal";
-import { QRScannerModal } from "./QRScannerModal";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
+const QRScannerModal = lazyWithRetry(() => import("./QRScannerModal").then(m => ({ default: m.QRScannerModal })), "QRScannerModal");
 import { AppUser, TabId, AppRole } from "../types";
 import { cn } from "../lib/utils";
 import { useLanguage } from "../lib/LanguageContext";
@@ -578,19 +578,23 @@ export function Header({
           <span>{formatTime(currentTime)}</span>
         </div>
       </div>
-      <QRScannerModal 
-        isOpen={isQRScannerOpen} 
-        onClose={() => setIsQRScannerOpen(false)} 
-        onScan={(url) => {
-          if (!url) return;
-          setIsQRScannerOpen(false);
-          if (onDeepLink) {
-            onDeepLink(url);
-          } else {
-            window.location.href = url;
-          }
-        }} 
-      />
+      {isQRScannerOpen && (
+        <Suspense fallback={null}>
+          <QRScannerModal 
+            isOpen={isQRScannerOpen} 
+            onClose={() => setIsQRScannerOpen(false)} 
+            onScan={(url) => {
+              if (!url) return;
+              setIsQRScannerOpen(false);
+              if (onDeepLink) {
+                onDeepLink(url);
+              } else {
+                window.location.href = url;
+              }
+            }} 
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

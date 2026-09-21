@@ -8,14 +8,12 @@ import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { enrichProjects, getStatus, computeProjectActStatus } from '../../../../lib/utils';
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
 import { useAppStore } from '../../../../store/useAppStore';
 import { Calculator, CloudUpload } from 'lucide-react';
 import { applyAllDynamicRulesForStore } from '../../lib/dynamicExportService';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { uploadFileToDrive } from '../../lib/drive';
 import { initAuth, googleSignIn, getAccessToken } from '../../lib/auth';
 import R2UploadModal from '../R2UploadModal';
@@ -1598,6 +1596,8 @@ export const ExportAllManager = ({ versions, units, summaryData, format, paperSi
           const dataURL = stage.toDataURL({ pixelRatio: currentPxRatio, mimeType: 'image/jpeg', quality: jpegQuality });
           const isLandscape = width > height;
           const orientationStr = isLandscape ? 'landscape' : 'portrait';
+
+          const { jsPDF } = await import('jspdf');
 
           if (!pdfRef.current) {
             if (paperSize === 'original') {
