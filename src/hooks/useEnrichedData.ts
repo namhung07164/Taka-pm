@@ -14,6 +14,20 @@ export function useEnrichedData() {
     
     let enrichedProjects = enriched;
     if (currentUser.role !== "admin") {
+      const tasksByCodeMap = new Map<string, Task[]>();
+      tasks.forEach(t => {
+        if (!t.projectCode) return;
+        const codeParts = String(t.projectCode).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+        codeParts.forEach(cp => {
+          let list = tasksByCodeMap.get(cp);
+          if (!list) {
+            list = [];
+            tasksByCodeMap.set(cp, list);
+          }
+          list.push(t);
+        });
+      });
+
       enrichedProjects = enriched.filter((p) => {
         // Store check
         const store = String(p.store || "").toUpperCase().trim();
@@ -54,20 +68,38 @@ export function useEnrichedData() {
           pPartyList.includes(username) ||
           pPartyList.includes(userId);
 
-        const groupTasks = getTasksForProject(p, tasks);
+        const pCodeParts = String(p.code || "").toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+        const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+        const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
 
-        const tMatch = groupTasks.some((t) => {
-          const tPartyList = String(t.party || "")
-            .toLowerCase()
-            .split(/[,;/+]+/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-          const tMatch =
-            tPartyList.some((party) => userParties.includes(party)) ||
-            tPartyList.includes(username) ||
-            tPartyList.includes(userId);
-          return tMatch;
-        });
+        let tMatch = false;
+        for (let i = 0; i < pCodeParts.length; i++) {
+          const candidateTasks = tasksByCodeMap.get(pCodeParts[i]);
+          if (candidateTasks) {
+            for (let j = 0; j < candidateTasks.length; j++) {
+              const t = candidateTasks[j];
+              const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+              if (pStore && tStore && pStore !== tStore) continue;
+              const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+              if (pYear && tYear && pYear !== tYear) continue;
+
+              const tPartyList = String(t.party || "")
+                .toLowerCase()
+                .split(/[,;/+]+/)
+                .map((s) => s.trim())
+                .filter(Boolean);
+              if (
+                tPartyList.some((party) => userParties.includes(party)) ||
+                tPartyList.includes(username) ||
+                tPartyList.includes(userId)
+              ) {
+                tMatch = true;
+                break;
+              }
+            }
+          }
+          if (tMatch) break;
+        }
 
         if (pMatch || tMatch) {
           return true;

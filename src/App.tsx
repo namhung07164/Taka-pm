@@ -3,7 +3,7 @@ import { useFirebaseData } from "./hooks/useFirebaseData";
 import { useDeepLinkLogic } from "./hooks/useDeepLinkLogic";
 import { useNotificationActions } from "./hooks/useNotificationActions";
 import { usePushNotifications } from "./hooks/usePushNotifications";
-import { useState, useEffect, useMemo, useRef, useCallback, Profiler, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, Profiler, lazy, Suspense, startTransition } from "react";
 
 import { auth, APP_ID } from "./lib/firebase";
 import { requestNotificationPermission } from "./lib/notifications";
@@ -911,42 +911,44 @@ export default function App() {
   }, [activeTab]);
 
   const handleNavigateToTaskDetail = (taskId: string) => {
-    const targetTask = tasks.find((t) => t.id === taskId);
-    if (targetTask) {
-      const targetProject = projects.find(
-        (p) =>
-          String(p.code || "").trim().toLowerCase() === String(targetTask.projectCode || "").trim().toLowerCase() &&
-          (!targetTask.projectStore || !p.store || String(p.store).trim().toLowerCase() === String(targetTask.projectStore).trim().toLowerCase()) &&
-          (!targetTask.projectYear || !p.year || String(p.year).trim() === String(targetTask.projectYear).trim())
-      ) || projects.find(
-        (p) => String(p.code || "").trim().toLowerCase() === String(targetTask.projectCode || "").trim().toLowerCase()
-      );
+    startTransition(() => {
+      const targetTask = tasks.find((t) => t.id === taskId);
+      if (targetTask) {
+        const targetProject = projects.find(
+          (p) =>
+            String(p.code || "").trim().toLowerCase() === String(targetTask.projectCode || "").trim().toLowerCase() &&
+            (!targetTask.projectStore || !p.store || String(p.store).trim().toLowerCase() === String(targetTask.projectStore).trim().toLowerCase()) &&
+            (!targetTask.projectYear || !p.year || String(p.year).trim() === String(targetTask.projectYear).trim())
+        ) || projects.find(
+          (p) => String(p.code || "").trim().toLowerCase() === String(targetTask.projectCode || "").trim().toLowerCase()
+        );
 
-      const subTaskCode = computeTaskCode(projects, tasks, targetTask) || targetTask.taskCodePhu || (targetProject ? `${targetProject.code}-1` : targetTask.projectCode || "");
+        const subTaskCode = computeTaskCode(projects, tasks, targetTask) || targetTask.taskCodePhu || (targetProject ? `${targetProject.code}-1` : targetTask.projectCode || "");
 
-      if (targetProject) {
-        setDetailTabFilterCode(subTaskCode);
-        if (targetProject.store) {
-          setGlobalStoreFilter(targetProject.store);
+        if (targetProject) {
+          setDetailTabFilterCode(subTaskCode);
+          if (targetProject.store) {
+            setGlobalStoreFilter(targetProject.store);
+          }
+          if (targetProject.year) {
+            setGlobalYearFilter(String(targetProject.year));
+          }
+        } else if (targetTask.projectCode) {
+          setDetailTabFilterCode(subTaskCode);
+          if (targetTask.projectStore) {
+            setGlobalStoreFilter(targetTask.projectStore);
+          }
+          if (targetTask.projectYear) {
+            setGlobalYearFilter(String(targetTask.projectYear));
+          }
         }
-        if (targetProject.year) {
-          setGlobalYearFilter(String(targetProject.year));
-        }
-      } else if (targetTask.projectCode) {
-        setDetailTabFilterCode(subTaskCode);
-        if (targetTask.projectStore) {
-          setGlobalStoreFilter(targetTask.projectStore);
-        }
-        if (targetTask.projectYear) {
-          setGlobalYearFilter(String(targetTask.projectYear));
-        }
+      } else {
+        setDetailTabFilterCode("");
       }
-    } else {
-      setDetailTabFilterCode("");
-    }
-    setGanttTabFocusTaskId(taskId);
-    setDetailTabFocusTaskId(taskId);
-    handleTabChange("detail");
+      setGanttTabFocusTaskId(taskId);
+      setDetailTabFocusTaskId(taskId);
+      handleTabChange("detail");
+    });
   };
 
   const handleNavigateToLayout = (
@@ -2495,30 +2497,32 @@ const handlePrintToPDF = async () => {
                   
                   
                   onProjectClick={(p) => {
-                    if (p.year) {
-                      setGlobalYearFilter(String(p.year));
-                    } else {
-                      setGlobalYearFilter("all");
-                    }
-                    if (p.store) {
-                      setGlobalStoreFilter(p.store);
-                      safeSetItemLocal(
-                        `taka_store_filter_${currentUser.id}`,
-                        String(p.store),
-                      );
-                    } else {
-                      setGlobalStoreFilter("all");
-                      safeSetItemLocal(
-                        `taka_store_filter_${currentUser.id}`,
-                        "all",
-                      );
-                    }
-                    if (p.code) {
-                      safeSetItemSession("taka_gantt_search", p.code);
-                    }
-                    safeSetItemSession("taka_gantt_trigger_today", "true");
-                    triggerGanttToday();
-                    handleTabChange("gantt");
+                    startTransition(() => {
+                      if (p.year) {
+                        setGlobalYearFilter(String(p.year));
+                      } else {
+                        setGlobalYearFilter("all");
+                      }
+                      if (p.store) {
+                        setGlobalStoreFilter(p.store);
+                        safeSetItemLocal(
+                          `taka_store_filter_${currentUser.id}`,
+                          String(p.store),
+                        );
+                      } else {
+                        setGlobalStoreFilter("all");
+                        safeSetItemLocal(
+                          `taka_store_filter_${currentUser.id}`,
+                          "all",
+                        );
+                      }
+                      if (p.code) {
+                        safeSetItemSession("taka_gantt_search", p.code);
+                      }
+                      safeSetItemSession("taka_gantt_trigger_today", "true");
+                      triggerGanttToday();
+                      handleTabChange("gantt");
+                    });
                   }}
                 />
               )}

@@ -143,6 +143,7 @@ export function DetailTab({
 
     // Track intersection ratios / bounding tops of observed project rows
     const visibleEntriesMap = new Map<Element, IntersectionObserverEntry>();
+    let rafId: number | null = null;
 
     const updateActiveProject = () => {
       let topProjectEl: Element | null = null;
@@ -189,6 +190,11 @@ export function DetailTab({
       }
     };
 
+    const scheduleUpdate = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateActiveProject);
+    };
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -198,7 +204,7 @@ export function DetailTab({
             visibleEntriesMap.delete(entry.target);
           }
         });
-        updateActiveProject();
+        scheduleUpdate();
       },
       {
         root: null,
@@ -208,20 +214,18 @@ export function DetailTab({
       }
     );
 
-    const projectElements = document.querySelectorAll<HTMLElement>('[data-project-item="true"]');
-    projectElements.forEach((el) => observer.observe(el));
+    const observeVisibleElements = () => {
+      const projectElements = document.querySelectorAll<HTMLElement>('[data-project-item="true"]');
+      projectElements.forEach((el) => observer.observe(el));
+    };
 
-    // Also observe newly rendered items if DOM updates
-    const mutationObserver = new MutationObserver(() => {
-      const currentElements = document.querySelectorAll<HTMLElement>('[data-project-item="true"]');
-      currentElements.forEach((el) => observer.observe(el));
-    });
-
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    // Observe initial items on next frame
+    const frameId = requestAnimationFrame(observeVisibleElements);
 
     return () => {
+      cancelAnimationFrame(frameId);
+      if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
-      mutationObserver.disconnect();
       visibleEntriesMap.clear();
     };
   }, [projects]);
@@ -277,7 +281,7 @@ export function DetailTab({
         // Zero-delay optimistic UI update (0ms)
         useAppStore.getState().setTasks(healed.updatedTasks);
 
-        // Batch update to Firestore in background
+        // Batch update to Firestore in background (non-blocking)
         const batch = writeBatch(db);
         healed.updatesToSave.forEach(u => {
           const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
@@ -286,7 +290,7 @@ export function DetailTab({
           if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
           batch.update(tRef, updatePayload);
         });
-        await batch.commit();
+        batch.commit().catch(e => console.error("Background sync predecessors error:", e));
 
         if (showToast) {
           useAppStore.getState().setToast({
@@ -317,10 +321,13 @@ export function DetailTab({
     }
   }, [tasks, projects]);
 
-  // Auto-heal on data change if needed in background
+  // Auto-heal on data change if needed in background (debounced to avoid mount lag)
   useEffect(() => {
     if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
-    handleSyncAllPredecessors(false);
+    const timer = setTimeout(() => {
+      handleSyncAllPredecessors(false);
+    }, 2500);
+    return () => clearTimeout(timer);
   }, [tasks, projects, handleSyncAllPredecessors]);
 
   // Escape key triggers Clear Focus when not in modals
@@ -2294,18 +2301,29 @@ export function DetailTab({
     });
   };
 
-  const tasksByProjectKey = useMemo(() => {
-    const map = new Map<string, Task[]>();
+  const { tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
+    const keyMap = new Map<string, Task[]>();
+    const codeMap = new Map<string, Task[]>();
     tasks.forEach(t => {
       const key = `${t.projectCode || ''}-${t.projectYear || ''}-${t.projectStore || ''}`;
-      let list = map.get(key);
+      let list = keyMap.get(key);
       if (!list) {
         list = [];
-        map.set(key, list);
+        keyMap.set(key, list);
       }
       list.push(t);
+
+      if (t.projectCode) {
+        const c = String(t.projectCode).trim().toLowerCase();
+        let cList = codeMap.get(c);
+        if (!cList) {
+          cList = [];
+          codeMap.set(c, cList);
+        }
+        cList.push(t);
+      }
     });
-    return map;
+    return { tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
   }, [tasks]);
 
   const delegationGroupByParentKey = useMemo(() => {
@@ -2338,9 +2356,8 @@ export function DetailTab({
       let rawGroupTasks = tasksByProjectKey.get(key);
       if (!rawGroupTasks || rawGroupTasks.length === 0) {
         const pCode = String(p.code || "").trim().toLowerCase();
-        rawGroupTasks = tasks.filter(t => {
-          const tCode = String(t.projectCode || "").trim().toLowerCase();
-          if (tCode !== pCode) return false;
+        const candidateTasks = tasksByCodeMap.get(pCode) || [];
+        rawGroupTasks = candidateTasks.filter(t => {
           const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
           const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
           return matchesStore && matchesYear;
@@ -2351,7 +2368,8 @@ export function DetailTab({
       let computedTakStart = p.computedTakStart || p.start;
       if (sortedTasks.length > 0) {
         let minStart: string | undefined = undefined;
-        for (const t of sortedTasks) {
+        for (let i = 0; i < sortedTasks.length; i++) {
+          const t = sortedTasks[i];
           if (t.start && (!minStart || t.start < minStart)) {
             minStart = t.start;
           }
@@ -2362,7 +2380,8 @@ export function DetailTab({
       let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
       if (sortedTasks.length > 0) {
         let maxFinish: string | undefined = undefined;
-        for (const t of sortedTasks) {
+        for (let i = 0; i < sortedTasks.length; i++) {
+          const t = sortedTasks[i];
           if (t.finish && (!maxFinish || t.finish > maxFinish)) {
             maxFinish = t.finish;
           }
@@ -2371,7 +2390,8 @@ export function DetailTab({
       }
 
       let computedOpening = p.computedOpening || p.opening;
-      for (const t of sortedTasks) {
+      for (let i = 0; i < sortedTasks.length; i++) {
+        const t = sortedTasks[i];
         const name = String(t.name || '').toLowerCase();
         if (name.includes('opening') || name.includes('open')) {
           if (t.finish && (!computedOpening || t.finish > computedOpening)) {
@@ -2396,7 +2416,7 @@ export function DetailTab({
     });
 
     return map;
-  }, [projects, tasksByProjectKey]);
+  }, [projects, tasksByProjectKey, tasksByCodeMap]);
 
   const getProjectInfo = (p: Project) => {
     const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -2407,9 +2427,8 @@ export function DetailTab({
     let rawGroupTasks = tasksByProjectKey.get(key);
     if (!rawGroupTasks || rawGroupTasks.length === 0) {
       const pCode = String(p.code || "").trim().toLowerCase();
-      rawGroupTasks = tasks.filter(t => {
-        const tCode = String(t.projectCode || "").trim().toLowerCase();
-        if (tCode !== pCode) return false;
+      const candidateTasks = tasksByCodeMap.get(pCode) || [];
+      rawGroupTasks = candidateTasks.filter(t => {
         const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
         const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
         return matchesStore && matchesYear;
@@ -2418,22 +2437,31 @@ export function DetailTab({
     const sortedTasks = sortGroupTasks(rawGroupTasks);
     let computedTakStart = p.computedTakStart || p.start;
     if (sortedTasks.length > 0) {
-      const validStarts = sortedTasks.map(t => t.start).filter(Boolean).sort();
-      if (validStarts.length > 0) computedTakStart = validStarts[0];
+      let minStart: string | undefined = undefined;
+      for (let i = 0; i < sortedTasks.length; i++) {
+        const t = sortedTasks[i];
+        if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
+      }
+      if (minStart) computedTakStart = minStart;
     }
     let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
     if (sortedTasks.length > 0) {
-      const validFinishes = sortedTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
-      if (validFinishes.length > 0) computedTakCompl = validFinishes[0];
+      let maxFinish: string | undefined = undefined;
+      for (let i = 0; i < sortedTasks.length; i++) {
+        const t = sortedTasks[i];
+        if (t.finish && (!maxFinish || t.finish > maxFinish)) maxFinish = t.finish;
+      }
+      if (maxFinish) computedTakCompl = maxFinish;
     }
     let computedOpening = p.computedOpening || p.opening;
-    const openingTasks = sortedTasks.filter(t => {
+    for (let i = 0; i < sortedTasks.length; i++) {
+      const t = sortedTasks[i];
       const name = String(t.name || '').toLowerCase();
-      return name.includes('opening') || name.includes('open');
-    });
-    if (openingTasks.length > 0) {
-      const validFinishes = openingTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
-      if (validFinishes.length > 0) computedOpening = validFinishes[0];
+      if (name.includes('opening') || name.includes('open')) {
+        if (t.finish && (!computedOpening || t.finish > computedOpening)) {
+          computedOpening = t.finish;
+        }
+      }
     }
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';

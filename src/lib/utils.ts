@@ -387,12 +387,13 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   if (!project.code || !allTasks || allTasks.length === 0) return [];
   const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
-  const pCodeParts = String(project.code).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const rawPCode = String(project.code).trim().toLowerCase();
+  const pCodeParts = rawPCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
   return allTasks.filter(t => {
     if (!t.projectCode) return false;
     const tCode = String(t.projectCode).trim().toLowerCase();
-    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code);
+    const matchesCode = tCode === rawPCode || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code);
     if (!matchesCode) return false;
 
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
@@ -405,30 +406,56 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   });
 }
 
+// Module-level cache for zero-cost multi-component calls to enrichProjects
+let _lastProjectsRef: Project[] | null = null;
+let _lastTasksRef: Task[] | null = null;
+let _lastDelegationRef: DelegationGroup[] | null = null;
+let _lastEnrichedResult: Project[] | null = null;
+
 export function enrichProjects(
   projects: Project[], 
   tasks: Task[], 
   delegationGroups: DelegationGroup[] = []
 ): Project[] {
-  const tasksByProjectKey = new Map<string, Task[]>();
+  if (
+    _lastProjectsRef === projects &&
+    _lastTasksRef === tasks &&
+    _lastDelegationRef === delegationGroups &&
+    _lastEnrichedResult
+  ) {
+    return _lastEnrichedResult;
+  }
+
+  const tasksByFullKey = new Map<string, Task[]>();
+  const tasksByCodeOnly = new Map<string, Task[]>();
+
   tasks.forEach(t => {
     if (!t.projectCode) return;
     const tCode = String(t.projectCode).trim().toLowerCase();
     const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : "";
 
-    const fullKey = `${tCode}-${tYear}-${tStore}`;
-    if (!tasksByProjectKey.has(fullKey)) tasksByProjectKey.set(fullKey, []);
-    tasksByProjectKey.get(fullKey)!.push(t);
-
     const tCodeParts = tCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-    if (tCodeParts.length > 1) {
-      tCodeParts.forEach(part => {
-        const partKey = `${part}-${tYear}-${tStore}`;
-        if (!tasksByProjectKey.has(partKey)) tasksByProjectKey.set(partKey, []);
-        tasksByProjectKey.get(partKey)!.push(t);
-      });
-    }
+    const codesToIndex = tCodeParts.length > 0 ? tCodeParts : [tCode];
+
+    codesToIndex.forEach(code => {
+      // 1. Full key
+      const fullKey = `${code}-${tYear}-${tStore}`;
+      let fullList = tasksByFullKey.get(fullKey);
+      if (!fullList) {
+        fullList = [];
+        tasksByFullKey.set(fullKey, fullList);
+      }
+      fullList.push(t);
+
+      // 2. Code only fallback
+      let codeList = tasksByCodeOnly.get(code);
+      if (!codeList) {
+        codeList = [];
+        tasksByCodeOnly.set(code, codeList);
+      }
+      codeList.push(t);
+    });
   });
 
   const enrichedProjects = projects.map((p) => {
@@ -439,24 +466,44 @@ export function enrichProjects(
     const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
     const matchedTaskMap = new Map<string, Task>();
+
+    // Check direct key and part keys
     const directKey = `${pCode}-${pYear}-${pStore}`;
-    const directTasks = tasksByProjectKey.get(directKey);
+    const directTasks = tasksByFullKey.get(directKey);
     if (directTasks) {
-      directTasks.forEach(t => matchedTaskMap.set(t.id, t));
-    }
-
-    pCodeParts.forEach(part => {
-      const partKey = `${part}-${pYear}-${pStore}`;
-      const subTasks = tasksByProjectKey.get(partKey);
-      if (subTasks) {
-        subTasks.forEach(t => matchedTaskMap.set(t.id, t));
+      for (let i = 0; i < directTasks.length; i++) {
+        matchedTaskMap.set(directTasks[i].id, directTasks[i]);
       }
-    });
-
-    let projectTasks = Array.from(matchedTaskMap.values());
-    if (projectTasks.length === 0 && tasks.length > 0) {
-      projectTasks = getTasksForProject(p, tasks);
     }
+
+    for (let i = 0; i < pCodeParts.length; i++) {
+      const partKey = `${pCodeParts[i]}-${pYear}-${pStore}`;
+      const subTasks = tasksByFullKey.get(partKey);
+      if (subTasks) {
+        for (let j = 0; j < subTasks.length; j++) {
+          matchedTaskMap.set(subTasks[j].id, subTasks[j]);
+        }
+      }
+    }
+
+    // Fast fallback to code-only if no exact store/year match
+    if (matchedTaskMap.size === 0 && tasks.length > 0) {
+      for (let i = 0; i < pCodeParts.length; i++) {
+        const fallbackTasks = tasksByCodeOnly.get(pCodeParts[i]);
+        if (fallbackTasks) {
+          for (let j = 0; j < fallbackTasks.length; j++) {
+            const t = fallbackTasks[j];
+            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+            if (pStore && tStore && pStore !== tStore) continue;
+            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+            if (pYear && tYear && pYear !== tYear) continue;
+            matchedTaskMap.set(t.id, t);
+          }
+        }
+      }
+    }
+
+    const projectTasks = Array.from(matchedTaskMap.values());
 
     const taskSummaries = projectTasks.length > 0
       ? projectTasks.filter(t => t.start && t.finish && t.name).map(t => ({
@@ -471,63 +518,35 @@ export function enrichProjects(
     let computedOpening = p.computedOpening || p.opening;
 
     if (projectTasks.length > 0) {
-      const validStarts = projectTasks
-        .map((t) => t.start)
-        .filter(Boolean)
-        .sort();
-      if (validStarts.length > 0) {
-        computedTakStart = validStarts[0];
-      }
-
-      const validFinishes = projectTasks
-        .map((t) => t.finish)
-        .filter(Boolean)
-        .sort((a, b) => (b || "").localeCompare(a || ""));
-      if (validFinishes.length > 0) {
-        computedTakCompl = validFinishes[0];
-      }
-
-      const openingTasks = projectTasks.filter((t) => {
-        const name = String(t.name || "").toLowerCase();
-        return name.includes("opening") || name.includes("open");
-      });
-      if (openingTasks.length > 0) {
-        const validFinishes = openingTasks
-          .map((t) => t.finish)
-          .filter(Boolean)
-          .sort((a, b) => (b || "").localeCompare(a || ""));
-        if (validFinishes.length > 0) {
-          computedOpening = validFinishes[0];
+      for (let i = 0; i < projectTasks.length; i++) {
+        const t = projectTasks[i];
+        if (t.start && (!computedTakStart || t.start < computedTakStart)) {
+          computedTakStart = t.start;
+        }
+        if (t.finish && (!computedTakCompl || t.finish > computedTakCompl)) {
+          computedTakCompl = t.finish;
+        }
+        const name = t.name ? String(t.name).toLowerCase() : "";
+        if ((name.includes("opening") || name.includes("open")) && t.finish && (!computedOpening || t.finish > computedOpening)) {
+          computedOpening = t.finish;
         }
       }
     } else if (taskSummaries.length > 0) {
-      const validStarts = taskSummaries
-        .map((t) => t.start)
-        .filter(Boolean)
-        .sort();
-      if (validStarts.length > 0 && !computedTakStart) {
-        computedTakStart = validStarts[0];
-      }
-
-      const validFinishes = taskSummaries
-        .map((t) => t.finish)
-        .filter(Boolean)
-        .sort((a, b) => (b || "").localeCompare(a || ""));
-      if (validFinishes.length > 0 && !computedTakCompl) {
-        computedTakCompl = validFinishes[0];
-      }
-
-      const openingTasks = taskSummaries.filter((t) => {
-        const name = String(t.name || "").toLowerCase();
-        return name.includes("opening") || name.includes("open");
-      });
-      if (openingTasks.length > 0) {
-        const validFinishes = openingTasks
-          .map((t) => t.finish)
-          .filter(Boolean)
-          .sort((a, b) => (b || "").localeCompare(a || ""));
-        if (validFinishes.length > 0 && !computedOpening) {
-          computedOpening = validFinishes[0];
+      for (let i = 0; i < taskSummaries.length; i++) {
+        const ts = taskSummaries[i];
+        if (ts.start && !computedTakStart) {
+          computedTakStart = ts.start;
+        } else if (ts.start && computedTakStart && ts.start < computedTakStart) {
+          computedTakStart = ts.start;
+        }
+        if (ts.finish && !computedTakCompl) {
+          computedTakCompl = ts.finish;
+        } else if (ts.finish && computedTakCompl && ts.finish > computedTakCompl) {
+          computedTakCompl = ts.finish;
+        }
+        const name = ts.name ? String(ts.name).toLowerCase() : "";
+        if ((name.includes("opening") || name.includes("open")) && ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+          computedOpening = ts.finish;
         }
       }
     }
@@ -602,6 +621,13 @@ export function enrichProjects(
 
     return String(a.code || '').localeCompare(String(b.code || '')) || String(a.year || '').localeCompare(String(b.year || ''));
   });
+
+  _lastProjectsRef = projects;
+  _lastTasksRef = tasks;
+  _lastDelegationRef = delegationGroups;
+  _lastEnrichedResult = enrichedProjects;
+
+  return enrichedProjects;
 }
 
 export function calculateActiveNotifications(

@@ -1132,3 +1132,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 
 
 
+
+9. **Tối Ưu Hiệu Năng & Chuyển Đổi Tab Mượt Mà (Zero-Lag Navigation & Rendering Optimization)**:
+   - **Tối Ưu Hoá Bộ Lọc & Chỉ Mục Dữ Liệu (Hash Indexing)**: Toàn bộ quá trình đối soát giữa Dự án (Projects) và Công việc (Tasks) được tăng tốc bằng cơ chế lập chỉ mục bản đồ bộ nhớ (Hash Index Map), giảm độ phức tạp từ O(N × M) xuống O(1).
+   - **Chuyển Tab Không Chặn Con Trỏ Chuột (Concurrent Rendering with startTransition)**: Thao tác bấm vào dự án từ General Tab để điều hướng sang Gantt Tab hoặc Task Detail Tab được bọc trong `startTransition`, tách biệt luồng xử lý UI ưu tiên cao khỏi quá trình dựng giao diện của các bảng dữ liệu lớn, giúp con trỏ chuột không bị khựng, lag hay đơ khi chuyển đổi.
+   - **Bộ Nhớ Đệm Kết Quả Tính Toán (Module-Level Caching)**: Kết quả của hàm `enrichProjects` được lưu cache tham chiếu; khi không có thay đổi dữ liệu, hàm phản hồi trong 0ms mà không phải duyệt hay sắp xếp lại hàng ngàn bản ghi.
+   - **Giảm Tải Trọng Dựng Giao Diện (Debounced Background Synchronization)**: Các tiến trình tự động chuẩn hóa tiền nhiệm và vẽ liên kết trên Gantt được chuyển sang chế độ nền (background non-blocking) và điều tiết bằng animation frame, giữ cho tốc độ khung hình (FPS) luôn ổn định ở mức 60 FPS.
