@@ -1742,120 +1742,132 @@ function LiveCanvas({
       </div>
 
       {/* iOS Floating Color Legend Bar - Hidden on mobile screens so it does not block the bottom floor plan */}
-      <div className="hidden sm:block absolute bottom-16 left-4 max-w-xl z-20 pointer-events-auto hide-on-actual-print print:hidden">
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl p-2.5 transition-all">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-1.5">
-              <span className="p-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
-                <Palette className="w-3.5 h-3.5" />
-              </span>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                Chú thích màu
-              </span>
-              {activeGroups.length > 0 && (
-                <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded-full bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                  {activeGroups.length} nhóm
+      {layoutTooltipVisibility?.legendColor !== false && (
+        <div className="hidden sm:block absolute bottom-16 left-4 max-w-xl z-20 pointer-events-auto hide-on-actual-print print:hidden">
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl p-2.5 transition-all">
+            {/* Header */}
+            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-1.5">
+                <span className="p-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
+                  <Palette className="w-3.5 h-3.5" />
                 </span>
-              )}
-            </div>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                  Chú thích màu
+                </span>
+                {activeGroups.length > 0 && (
+                  <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded-full bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    {activeGroups.length} nhóm
+                  </span>
+                )}
+              </div>
 
-            <div className="flex items-center gap-1">
-              {selectedLegendGroupId && (
+              <div className="flex items-center gap-1">
+                {selectedLegendGroupId && (
+                  <button
+                    onClick={() => setSelectedLegendGroupId(null)}
+                    className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline px-1.5 py-0.5"
+                  >
+                    Bỏ lọc
+                  </button>
+                )}
                 <button
-                  onClick={() => setSelectedLegendGroupId(null)}
-                  className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline px-1.5 py-0.5"
+                  onClick={() => setShowLegendModal(true)}
+                  className="text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
-                  Bỏ lọc
+                  Bảng đầy đủ
                 </button>
-              )}
-              <button
-                onClick={() => setShowLegendModal(true)}
-                className="text-[10px] font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                Bảng đầy đủ
-              </button>
-              <button
-                onClick={() => setIsLegendStripCollapsed(!isLegendStripCollapsed)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                title={isLegendStripCollapsed ? "Mở rộng" : "Thu gọn"}
-              >
-                {isLegendStripCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Swatches List */}
-          {!isLegendStripCollapsed && (
-            <div className="pt-2">
-              {activeGroups.length === 0 ? (
-                <div className="flex items-center gap-2 overflow-x-auto py-0.5 text-xs" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="text-[11px] font-medium whitespace-nowrap">Completed</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-                    <span className="text-[11px] font-medium whitespace-nowrap">On Process</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
-                    <span className="text-[11px] font-medium whitespace-nowrap">Upcoming</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
-                    <span className="text-[11px] font-medium whitespace-nowrap">Delay</span>
-                  </div>
-                </div>
-              ) : (
-                <div 
-                  className="flex items-center gap-1.5 overflow-x-auto pb-0.5 touch-pan-x"
-                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                <button
+                  onClick={() => setIsLegendStripCollapsed(!isLegendStripCollapsed)}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  title={isLegendStripCollapsed ? "Mở rộng" : "Thu gọn"}
                 >
-                  {activeGroups.map((g: any) => {
-                    const isSelected = selectedLegendGroupId === g.id;
-                    return (
-                      <button
-                        key={g.id}
-                        onClick={() => setSelectedLegendGroupId(isSelected ? null : g.id)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 transition-all border ${
-                          isSelected
-                            ? 'bg-purple-100 dark:bg-purple-950 border-purple-400 text-purple-900 dark:text-purple-100 shadow-sm scale-105'
-                            : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-                        }`}
-                        title={`Bấm để ${isSelected ? 'bỏ lọc' : 'lọc & highlight'} nhóm ${g.name}`}
-                      >
-                        <span 
-                          className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs border border-black/15" 
-                          style={{ backgroundColor: g.color }}
-                        />
-                        <span className="whitespace-nowrap font-medium text-[11px] sm:text-xs">
-                          {g.name}
-                        </span>
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                          {g.matchCount}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                  {isLegendStripCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
-          )}
+
+            {/* Swatches List */}
+            {!isLegendStripCollapsed && (
+              <div className="pt-2">
+                {activeGroups.length === 0 ? (
+                  <div className="flex items-center gap-2 overflow-x-auto py-0.5 text-xs" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="text-[11px] font-medium whitespace-nowrap">Completed</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+                      <span className="text-[11px] font-medium whitespace-nowrap">On Process</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                      <span className="text-[11px] font-medium whitespace-nowrap">Upcoming</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                      <span className="text-[11px] font-medium whitespace-nowrap">Delay</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    className="flex items-center gap-1.5 overflow-x-auto pb-0.5 touch-pan-x"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                  >
+                    {activeGroups.map((g: any) => {
+                      const isSelected = selectedLegendGroupId === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          onClick={() => setSelectedLegendGroupId(isSelected ? null : g.id)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 transition-all border ${
+                            isSelected
+                              ? 'bg-purple-100 dark:bg-purple-950 border-purple-400 text-purple-900 dark:text-purple-100 shadow-sm scale-105'
+                              : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                          }`}
+                          title={`Bấm để ${isSelected ? 'bỏ lọc' : 'lọc & highlight'} nhóm ${g.name}`}
+                        >
+                          <span 
+                            className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs border border-black/15" 
+                            style={{ backgroundColor: g.color }}
+                          />
+                          <span className="whitespace-nowrap font-medium text-[11px] sm:text-xs">
+                            {g.name}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            {g.matchCount}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Floating Bottom Action Buttons */}
       <div className={`absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 transition-all duration-150 hide-on-actual-print print:hidden ${hoverInfo?.visible ? 'max-sm:opacity-0 max-sm:pointer-events-none' : 'opacity-100'}`}>
         <button 
           onClick={() => setShowLegendModal(true)} 
-          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-700 text-white backdrop-blur-md border border-purple-500 shadow-xl rounded-full text-xs font-bold active:scale-95 touch-manipulation transition-all whitespace-nowrap"
+          className={cn(
+            "flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 backdrop-blur-md border shadow-xl rounded-full text-xs font-bold active:scale-95 touch-manipulation transition-all whitespace-nowrap",
+            layoutTooltipVisibility?.legendColor !== false
+              ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500"
+              : "bg-slate-700/90 hover:bg-slate-800 text-slate-200 border-slate-600"
+          )}
         >
           <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 
           <span>Chú thích màu</span>
-          {activeGroups.length > 0 && (
+          {layoutTooltipVisibility?.legendColor !== false && activeGroups.length > 0 && (
             <span className="bg-white/25 px-1.5 py-0.2 rounded-full text-[10px] font-mono">
               {activeGroups.length}
+            </span>
+          )}
+          {layoutTooltipVisibility?.legendColor === false && (
+            <span className="bg-black/30 px-1.5 py-0.2 rounded-full text-[9px] font-medium text-slate-300">
+              Tắt
             </span>
           )}
         </button>
@@ -2092,7 +2104,7 @@ function LiveCanvas({
                   { key: 'projectName', label: 'Project Name', desc: 'Tên thương hiệu' },
                   { key: 'mdStatus', label: 'MD Status', desc: 'Trạng thái MD' },
                   { key: 'actStatus', label: 'AC Status', desc: 'Trạng thái thi công' },
-                  { key: 'legendColor', label: 'Màu sắc Legend', desc: 'Màu sắc trạng thái' },
+                  { key: 'legendColor', label: 'Màu sắc Legend', desc: 'Màu bản đồ & Tooltip' },
                   { key: 'floor', label: 'Floor / Store', desc: 'Tầng & Chi nhánh' },
                   { key: 'startDate', label: 'Start Date', desc: 'Ngày bắt đầu' },
                   { key: 'endDate', label: 'End Date', desc: 'Ngày kết thúc' },
@@ -2436,9 +2448,12 @@ function LiveCanvas({
             )}
 
             {displayedUnits.map((unit: any) => {
-               const fillColor = unit.targetColor || "#3b82f6";
+               const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
+               const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+               const defaultNeutralColor = isDarkMode ? '#475569' : '#94a3b8';
+               const fillColor = isLegendColorOn ? (unit.targetColor || "#3b82f6") : defaultNeutralColor;
                const isFocused = focusedUnitId === unit.id;
-               const isDimmed = selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
+               const isDimmed = isLegendColorOn && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
                const contrast = getContrastStyle(fillColor);
                
                const displayOpacity = isFocused 
@@ -2451,12 +2466,12 @@ function LiveCanvas({
                   id: unit.id,
                   fill: fillColor,
                   opacity: displayOpacity,
-                  stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
+                  stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : isLegendColorOn ? contrast.shapeStroke : (isDarkMode ? '#64748b' : '#64748b')),
                   strokeWidth: isFocused ? 3 : 1.6,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
                   shadowColor: isFocused ? '#f59e0b' : '#000000',
-                  shadowBlur: isFocused ? 16 : 3,
+                  shadowBlur: isFocused ? 16 : (isLegendColorOn ? 3 : 1.5),
                   shadowOpacity: isFocused ? 0.9 : 0.22,
                   x: unit.x || 0,
                   y: unit.y || 0,

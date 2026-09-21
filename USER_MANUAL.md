@@ -504,7 +504,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
      * `Project Name`: Tên dự án / Tên thương hiệu.
      * `MD Status`: Huy hiệu trạng thái MD (Renew, New, Close...).
      * `AC Status`: Huy hiệu trạng thái thi công thực tế (Actual Status).
-     * `Màu sắc Legend`: Tô màu theo bảng màu trạng thái hoặc hiển thị màu đơn sắc tối giản.
+     * `Màu sắc Legend`: Bật/tắt toàn bộ màu sắc phân nhóm & tiến độ trên các gian hàng ngoài mặt bằng Live View lẫn trong ô Tooltip (chuyển đổi linh hoạt giữa chế độ màu trực quan và chế độ đơn sắc / monochrome trung tính, đồng thời tự động ẩn thanh chú thích màu nổi).
      * `Floor / Store`: Tầng và chi nhánh (HCM/HN).
      * `Start Date` & `End Date`: Mốc thời gian bắt đầu và kết thúc thi công.
      * `Detail`: Chi tiết các đầu việc phân nhóm.
