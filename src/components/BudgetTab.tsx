@@ -1149,15 +1149,6 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
                     )}
                   </>
                 )}
-                {onGoToCost && (
-                  <button 
-                    onClick={() => onGoToCost(node.code)} 
-                    className="p-1 text-slate-400 hover:text-blue-600 rounded bg-slate-100 hover:bg-blue-100 dark:bg-[#28282a] dark:hover:bg-[#333336] transition-colors" 
-                    title="View in Cost Tab"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
             </td>
           )}
@@ -1343,6 +1334,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
             </div>
 
             <div className="flex items-center gap-1.5 ml-auto">
+              <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
               {canWrite && (
                 <>
                   {node.isParentNode ? (
@@ -1374,15 +1366,6 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
                     )
                   )}
                 </>
-              )}
-              {onGoToCost && (
-                <button 
-                  onClick={() => onGoToCost(node.code)} 
-                  className="px-2 py-0.5 text-[10px] text-slate-600 hover:text-blue-600 dark:text-[#a3a3a3] dark:hover:text-[#8ab4f8] rounded bg-slate-100 hover:bg-slate-200 dark:bg-[#28282a] dark:hover:bg-[#333336] transition-colors flex items-center gap-1"
-                  title="View in Cost Tab"
-                >
-                  <ExternalLink className="w-3 h-3" /> Cost
-                </button>
               )}
             </div>
           </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
+import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
 import { Project, Task } from '../../types';
 import { getStatus, computeActProgressPercent } from '../../lib/utils';
@@ -57,6 +58,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   timeUnits, delegationGroups, getRowVisibilityClass, startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor,
   onNavigateToLayout
 }) => {
+  const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
   const pStart = p.computedTakStart || p.start;
   const pEnd = p.computedTakCompl || p.handover;
 
@@ -215,12 +217,8 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
             type="button"
             onClick={(e) => {
               if (isEditMode) return;
-              if (onNavigateToLayout) {
-                e.stopPropagation();
-                onNavigateToLayout(p.store || 'all', p.location || 'all', p.code);
-              } else {
-                toggleProject(p.id!);
-              }
+              e.stopPropagation();
+              setQuickNavTarget({ project: p });
             }}
             onDoubleClick={(e) => {
               e.stopPropagation();
@@ -228,11 +226,11 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
             }}
             className={cn(
               "flex items-center gap-1.5 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1.5 rounded transition-colors group/pname",
-              onNavigateToLayout && !isEditMode ? "cursor-pointer" : ""
+              !isEditMode ? "cursor-pointer" : ""
             )}
             title={
-              onNavigateToLayout && !isEditMode
-                ? `Xem sơ đồ mặt bằng Layout (${p.store}${p.location ? ` • ${p.location}` : ''}) - Dự án: ${p.name} (${p.code})`
+              !isEditMode
+                ? `Quick Navigator - Dự án: ${p.name} (${p.code})`
                 : p.name
             }
           >
@@ -240,7 +238,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               <span 
                 className={cn(
                   "font-bold text-xs truncate text-slate-800 dark:text-[#e3e3e3]",
-                  onNavigateToLayout && !isEditMode && "group-hover/pname:text-blue-600 dark:group-hover/pname:text-[#8ab4f8] group-hover/pname:underline transition-colors"
+                  !isEditMode && "group-hover/pname:text-blue-600 dark:group-hover/pname:text-[#8ab4f8] group-hover/pname:underline transition-colors"
                 )} 
                 title={p.name}
               >

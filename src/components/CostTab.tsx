@@ -1321,15 +1321,6 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                               Add Cost
                             </button>
                           )}
-                          {onGoToBudget && (
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); onGoToBudget(p.code); }} 
-                              className="p-1.5 bg-slate-100 dark:bg-[#333336] text-slate-500 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-[#8ab4f8] hover:bg-blue-50 dark:hover:bg-[#444446] rounded shadow-sm transition-colors flex items-center justify-center" 
-                              title="View in Budget Tab"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-                          )}
                         </div>
                       </td>
                     )}
@@ -1658,11 +1649,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                 </button>
                 <div className="flex-1 flex flex-wrap items-center gap-1.5 pt-0.5">
                   <span><span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store || '-'}</span> - {p.code} - {p.name} ({p.year || '-'})</span>
-                  {onGoToBudget && (
-                        <button onClick={(e) => { e.stopPropagation(); onGoToBudget(p.code); }} className="text-slate-300 dark:text-slate-600 hover:text-blue-600 dark:text-[#8ab4f8] transition-colors p-1 bg-slate-50 dark:bg-[#1e1e20]/50 hover:bg-blue-50 dark:hover:bg-[#333336] rounded">
-                          <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <QuickNavButton project={p} title={`Quick Navigator (${p.code})`} />
                 </div>
               </div>
               

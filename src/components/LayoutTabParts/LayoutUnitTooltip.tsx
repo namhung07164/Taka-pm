@@ -3,6 +3,7 @@ import {
   MessageSquare, 
   X
 } from 'lucide-react';
+import { QuickNavButton } from '../QuickNavButton';
 import { cn, parseDateTime } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -231,6 +232,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const projectName = p?.name || data.projectName || data.brandName || '';
   const floorValue = data.floor || (p as any)?.floor;
 
+  const targetProject: Project = p || ({
+    id: `unit_${unitCode}`,
+    code: unitCode,
+    name: projectName || unitCode,
+    store: storeDisplay,
+    location: floorValue ? String(floorValue) : undefined,
+  } as Project);
+
   return (
     <div 
       ref={tooltipRef}
@@ -246,7 +255,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       onClick={(e) => e.stopPropagation()}
     >
       {/* 1. Header Row */}
-      <div className="flex items-start justify-between gap-2 pr-7">
+      <div className="flex items-start justify-between gap-2 pr-16">
         <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-sm leading-snug flex items-start gap-1.5 flex-1 min-w-0">
           {/* Store - Code - Name (Clickable to open Project Modal) */}
           <span 
@@ -285,15 +294,22 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           </div>
         </div>
 
-        {/* Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-2.5 right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          title="Đóng tooltip"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {/* Actions: Quick Navigator + Close Button */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+          <QuickNavButton 
+            project={targetProject}
+            title={`Quick Navigator (${unitCode})`}
+            className="p-1 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-[#333336] dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446]"
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Đóng tooltip"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* 2. Middle Section: Progress Bars (Full Width without pencil button) */}
@@ -371,6 +387,13 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               {commentsCount > 0 && <span>{commentsCount}</span>}
             </button>
           )}
+
+          {/* Quick Navigator Button */}
+          <QuickNavButton 
+            project={targetProject} 
+            title={`Quick Navigator (${unitCode})`}
+            className="p-1 rounded border border-slate-200 dark:border-[#444446] bg-slate-50 dark:bg-slate-800/50 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-50 dark:hover:bg-[#333336]"
+          />
         </div>
 
         {/* Right Side: Start Date (Blue) & Finish Date (Pink) */}

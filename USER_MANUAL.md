@@ -1142,7 +1142,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 10. **Bảng Điều Hướng Nhanh Dự Án & Tác Vụ (Project & Task Quick Navigation Hub Modal)**:
    - **Thao Tác Kích Hoạt**: 
      - Tại tab **General (Tổng quan)**: Nhấp vào bất kỳ dự án nào (trên bản vẽ Canvas hoặc Card danh sách điện thoại).
-     - Tại các tab **Gantt Chart**, **Task Detail**, **Ngân Sách (Budget)**, và **Chi Phí (Cost)**: Nhấp vào nút biểu tượng la bàn/điều hướng (`QuickNavButton`) nằm ở cột **Action** của từng dòng dự án hoặc từng đầu việc (task).
+     - Tại tab **Gantt Chart**: **Nhấp trực tiếp vào Tiêu đề dự án (Project Title)** hoặc nhấp biểu tượng Quick Navigator (`QuickNavButton`) trên từng dòng dự án và từng công việc (task).
+     - Tại tab **Layout (Mặt bằng 2D)**: **Nhấp vào nút Quick Navigator (`QuickNavButton`) ngay trong Tooltip chi tiết của gian hàng/ô unit** (ở góc phải phía trên kế bên nút đóng và trên thanh thao tác bên dưới).
+     - Tại các tab **Task Detail**, **Ngân Sách (Budget)**, và **Chi Phí (Cost)**: Nhấp vào nút biểu tượng điều hướng (`QuickNavButton`) nằm ở cột **Action** của từng dòng dự án hoặc từng đầu việc (task).
    - **Hỗ Trợ Task Code Phụ (Sub-task Code)**: Khi kích hoạt từ từng tác vụ/task cụ thể, hệ thống tự động nhận diện và ưu tiên điền mã `taskCodePhu` (hoặc tính toán chuẩn theo `computeTaskCode`) để lọc và định vị chính xác nhiệm vụ đó tại các tab đích (Gantt, Task Detail, Cost).
    - **Giao Diện Tinh Gọn & Đa Nền Tảng (Compact English UI & Draggable)**:
      - Giao diện thiết kế siêu gọn nhẹ theo chuẩn tiếng Anh (`Layout`, `Gantt`, `Tasks`, `Budget`, `Cost`), tối ưu hiển thị hoàn hảo trên cả iOS/Mobile và Desktop.
