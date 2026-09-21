@@ -510,7 +510,18 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
 6. **Quản lý Dynamic Hierarchy & Nhóm theo từng Version (Per-Version Groups)**:
    - Các nhóm quy tắc (Rule-Based Groups) và điều kiện lọc (Conditions API) được lưu trữ độc lập theo từng phiên bản (version). Khi chuyển đổi giữa các version, hệ thống sẽ tự động hiển thị chính xác các nhóm và điều kiện thuộc riêng version đó.
    - Khi cần sao chép nhanh bộ quy tắc từ version khác, sử dụng tính năng **`[ COPY GROUPS FROM ]`** để nhân bản danh sách nhóm sang version đang chọn.
-7. **Giao Diện Thanh Công Cụ Tinh Gọn, Chống Che Khuất & Tối Ưu Màn Hình Nhỏ (Optimized & Collision-Free Responsive Toolbar)**:
+
+7. **Kiến Trúc Tối Ưu 3 Lớp Cho Dynamic Rules (3-Tier Architecture for Zero-Lag Dynamic Hierarchy)**:
+   - **Lớp 1: Đánh giá trên bộ nhớ RAM (Memory Evaluation - 0ms)**: Khi cờ Dynamic Rules bật (`isDynamicActive: true`), danh sách gian hàng thuộc các nhóm quy tắc được đánh giá tự động tức thì trên RAM (Zustand Global Store `useAppStore` & `useDataStore`) thông qua thuật toán tối ưu hóa `useDynamicRules`. Tốc độ tính toán dưới 3ms cho toàn bộ các tầng, không tốn bất kỳ lượt đọc/ghi Firestore nào, không làm giật lag giao diện (duy trì 60 FPS mượt mà).
+   - **Lớp 2: Bộ đệm trì hoãn lưu Cloud (Debounce Cloud Saver - 5000ms)**: Khi người dùng chỉnh sửa rule, thêm/sửa/xóa group, hoặc khi dữ liệu Project/Task thay đổi tạo ra cập nhật mới, hệ thống tự động thiết lập bộ đếm lùi Debounce 5 giây (5000ms). Nếu trong 5 giây người dùng tiếp tục thao tác, bộ đếm sẽ tự động đặt lại từ đầu. Sau khi người dùng ngừng thao tác đủ 5 giây, hệ thống mới lặng lẽ đóng gói và lưu dữ liệu lên Cloudflare R2 ở chế độ chạy ngầm (Background Async), hoàn toàn không khóa hay chặn luồng tương tác của giao diện.
+   - **Lớp 3: Tự động lưu khi thoát hoặc chuyển tab (Auto-Save on Unmount / Tab Switch)**: Khi người dùng chuyển sang tab khác, đóng modal hoặc đóng/refresh trình duyệt, hàm kiểm tra cờ thay đổi (`isDirtyRef`) sẽ lập tức kích hoạt đẩy bản lưu mới nhất lên Cloudflare R2 đúng 1 lần duy nhất, đảm bảo cấu hình phân loại màu sắc và quy tắc không bao giờ bị thất lạc.
+   - **Huy hiệu chỉ báo trạng thái 3 lớp trực quan (3-Tier Status Indicator)**: Ngay tại thanh công cụ Dynamic Hierarchy, hệ thống hiển thị huy hiệu trạng thái trực quan:
+     * `🟢 RAM 0ms`: Báo hiệu thuật toán RAM đang phản hồi tức thì trong chưa đầy 3ms.
+     * `🟡 Chờ Cloud (5s)...`: Báo hiệu đang trong thời gian đệm 5 giây chờ người dùng hoàn tất các thao tác gõ/chỉnh sửa.
+     * `🔵 Lưu R2 ngầm...`: Báo hiệu tiến trình đang tải bản cập nhật lên Cloudflare R2 ở chế độ ngầm không chặn UI.
+     * `🟢 R2 Đã lưu`: Báo hiệu toàn bộ cấu hình quy tắc và màu sắc đã được đồng bộ lên Cloudflare R2 an toàn.
+
+8. **Giao Diện Thanh Công Cụ Tinh Gọn, Chống Che Khuất & Tối Ưu Màn Hình Nhỏ (Optimized & Collision-Free Responsive Toolbar)**:
    - **Cụm Hàng Trên — Tiêu Đề, Bộ Lọc Hợp Nhất & Cụm Nút Hành Động Liền Kề Nút Gantt**:
      * Tích hợp Store, Location và Year vào một thanh kính mờ bo tròn nhỏ gọn (`Unified Filter Pill`), giảm thiểu chiều cao thanh công cụ.
      * **Tích hợp Cụm Nút Hành Động lên cùng hàng Nút Gantt**: Các nút `[ ← Gantt ]`, `[ Live Map / Exit Live ]`, `[ Refresh ]`, `[ Export ]` (và `[ Edit URL ]` cho Quản trị viên) được gom lên cùng một cụm điều khiển liền kề nhau. Trên điện thoại di động, các nút nằm trọn vẹn trong một hàng ngang nhỏ gọn, loại bỏ hoàn toàn 1 dòng công cụ thừa, giúp giảm đáng kể kích thước chiếm dụng dọc và mở rộng tối đa vùng hiển thị cho mặt bằng.

@@ -579,6 +579,82 @@ export async function saveStoreToCloudR2(
   return { success: true, message: 'Đã lưu cấu hình lên Cloudflare R2 thành công.' };
 }
 
+// ============================================================================
+// 3-TIER ARCHITECTURE: NON-BLOCKING BACKGROUND CLOUD SYNC MANAGER (R2)
+// ============================================================================
+let isBackgroundSyncInProgress = false;
+let pendingBackgroundSync: {
+  targetStore: 'HCM' | 'HN';
+  customStoreLocationData?: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>;
+} | null = null;
+
+export type BackgroundSyncStatus = 'idle' | 'syncing' | 'saved' | 'error';
+const syncStatusListeners = new Set<(status: BackgroundSyncStatus, lastSavedAt?: number) => void>();
+let currentSyncStatus: BackgroundSyncStatus = 'idle';
+let lastSavedTimestamp: number = 0;
+
+export function getBackgroundSyncStatus(): { status: BackgroundSyncStatus; lastSavedAt: number } {
+  return { status: currentSyncStatus, lastSavedAt: lastSavedTimestamp };
+}
+
+export function subscribeBackgroundSyncStatus(listener: (status: BackgroundSyncStatus, lastSavedAt?: number) => void) {
+  syncStatusListeners.add(listener);
+  return () => {
+    syncStatusListeners.delete(listener);
+  };
+}
+
+function updateSyncStatus(status: BackgroundSyncStatus) {
+  currentSyncStatus = status;
+  if (status === 'saved') lastSavedTimestamp = Date.now();
+  syncStatusListeners.forEach((fn) => fn(status, lastSavedTimestamp));
+}
+
+/**
+ * Trigger background non-blocking sync to Cloudflare R2.
+ * - Runs fully asynchronous outside the main React render loop.
+ * - Concurrency-safe: Queues subsequent edits to prevent overlapping R2 uploads.
+ * - Zero UI freezing: Never blocks the user typing or navigating tabs.
+ */
+export async function triggerBackgroundR2Sync(
+  targetStore: 'HCM' | 'HN',
+  customStoreLocationData?: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>
+): Promise<void> {
+  const creds = getStoredR2Credentials();
+  if (!creds) {
+    console.info('[BackgroundSync] R2 credentials not configured, skipping background upload.');
+    return;
+  }
+
+  if (isBackgroundSyncInProgress) {
+    // Queue up the latest requested payload to sync right after current finishes
+    pendingBackgroundSync = { targetStore, customStoreLocationData };
+    return;
+  }
+
+  isBackgroundSyncInProgress = true;
+  updateSyncStatus('syncing');
+
+  // Defer execution using setTimeout(..., 0) so the main thread is freed immediately
+  setTimeout(async () => {
+    try {
+      await saveStoreToCloudR2(targetStore, customStoreLocationData);
+      updateSyncStatus('saved');
+    } catch (err: any) {
+      console.warn('[BackgroundSync] Background Cloud R2 sync warning (non-blocking):', err?.message || err);
+      updateSyncStatus('error');
+    } finally {
+      isBackgroundSyncInProgress = false;
+      // If a newer payload was queued while this one was uploading, process it next
+      if (pendingBackgroundSync) {
+        const next = pendingBackgroundSync;
+        pendingBackgroundSync = null;
+        triggerBackgroundR2Sync(next.targetStore, next.customStoreLocationData);
+      }
+    }
+  }, 0);
+}
+
 /**
  * Kiểm tra xem dữ liệu tab Picture Mapping đã được load Cloud trước đó chưa
  */
