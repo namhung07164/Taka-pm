@@ -4,12 +4,12 @@ import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } fr
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal } from 'lucide-react';
 import useImage from 'use-image';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
-import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus } from '../lib/utils';
+import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
 import { doc, setDoc } from 'firebase/firestore';
@@ -63,7 +63,7 @@ function getContrastStyle(hexColor: string) {
 }
 
 export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch, onUnitSelected, onClearFocus }: LiveLayoutViewerProps) {
-  const { r2Config, setR2Config, currentUser, permissionMatrix, globalYearFilter } = useAppStore();
+  const { r2Config, setR2Config, currentUser, permissionMatrix, globalYearFilter, layoutTooltipVisibility, setLayoutTooltipVisibility, resetLayoutTooltipVisibility } = useAppStore();
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
     currentUser?.role === 'admin'
@@ -391,7 +391,7 @@ function LiveCanvas({
   onRefreshConfig?: () => Promise<void> | void; 
   onOpenR2Config: () => void;
 }) {
-  const { currentUser, permissionMatrix, globalYearFilter } = useAppStore();
+  const { currentUser, permissionMatrix, globalYearFilter, layoutTooltipVisibility, setLayoutTooltipVisibility, resetLayoutTooltipVisibility } = useAppStore();
   const isAdmin = currentUser ? currentUser.role === 'admin' : false;
   const role = (
     currentUser?.role === 'admin'
@@ -2044,28 +2044,103 @@ function LiveCanvas({
               )}
             </div>
 
-            {/* Active Groups Legend */}
-            <div>
-              <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider mb-2">
-                Nhóm Phân Loại Đang Hiển Thị ({activeGroups.length})
-              </div>
-              {activeGroups.length === 0 ? (
-                <div className="text-xs text-slate-400 italic py-2">Không có nhóm phân loại nào khớp dữ liệu.</div>
-              ) : (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {activeGroups.map((g: any) => (
-                    <div key={g.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60">
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded-full shadow-sm border border-black/10" style={{ backgroundColor: g.color }} />
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{g.name}</span>
-                      </div>
-                      <span className="text-[11px] font-mono font-bold bg-white dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
-                        {g.matchCount} units
-                      </span>
-                    </div>
-                  ))}
+            {/* Labels Appear / Tooltip Visibility Config */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <span>Labels Appear / Hiển thị Tooltip</span>
                 </div>
-              )}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLayoutTooltipVisibility({
+                        projectCode: true,
+                        projectName: true,
+                        mdStatus: true,
+                        actStatus: true,
+                        legendColor: true,
+                        floor: true,
+                        startDate: true,
+                        endDate: true,
+                        detail: true,
+                        description: true,
+                        progressBars: true,
+                        area: true,
+                      });
+                    }}
+                    className="text-[10px] text-purple-600 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    Bật tất cả
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-600">|</span>
+                  <button
+                    type="button"
+                    onClick={() => resetLayoutTooltipVisibility()}
+                    className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium cursor-pointer"
+                  >
+                    Mặc định
+                  </button>
+                </div>
+              </div>
+
+              {/* Toggle Items Grid */}
+              <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                {[
+                  { key: 'projectCode', label: 'Project Code', desc: 'Mã dự án / Unit' },
+                  { key: 'projectName', label: 'Project Name', desc: 'Tên thương hiệu' },
+                  { key: 'mdStatus', label: 'MD Status', desc: 'Trạng thái MD' },
+                  { key: 'actStatus', label: 'AC Status', desc: 'Trạng thái thi công' },
+                  { key: 'legendColor', label: 'Màu sắc Legend', desc: 'Màu sắc trạng thái' },
+                  { key: 'floor', label: 'Floor / Store', desc: 'Tầng & Chi nhánh' },
+                  { key: 'startDate', label: 'Start Date', desc: 'Ngày bắt đầu' },
+                  { key: 'endDate', label: 'End Date', desc: 'Ngày kết thúc' },
+                  { key: 'detail', label: 'Detail', desc: 'Chi tiết công việc' },
+                  { key: 'description', label: 'Description', desc: 'Mô tả / Ghi chú' },
+                  { key: 'progressBars', label: 'Progress Bars', desc: 'Tiến độ Plan & Act' },
+                  { key: 'area', label: 'Diện tích (m²)', desc: 'Kích thước sàn' },
+                ].map((item) => {
+                  const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        setLayoutTooltipVisibility((prev) => ({
+                          ...prev,
+                          [item.key]: !isActive,
+                        }));
+                      }}
+                      className={cn(
+                        "flex items-center justify-between p-2 rounded-xl border text-left transition-all active:scale-95 touch-manipulation cursor-pointer",
+                        isActive
+                          ? "bg-purple-50/80 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/80 text-purple-900 dark:text-purple-200 shadow-xs"
+                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60 text-slate-400 dark:text-slate-500 opacity-60 hover:opacity-100"
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold truncate leading-tight">
+                          {item.label}
+                        </div>
+                        <div className="text-[9px] opacity-75 truncate">
+                          {item.desc}
+                        </div>
+                      </div>
+                      <div
+                        className={cn(
+                          "w-4 h-4 rounded-full flex items-center justify-center shrink-0 ml-1.5 transition-colors",
+                          isActive
+                            ? "bg-purple-600 text-white"
+                            : "bg-slate-200 dark:bg-slate-700 text-transparent"
+                        )}
+                      >
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Action Buttons */}

@@ -270,4 +270,51 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
   setLayoutTabFilters: (layoutTabFilters) => set({ layoutTabFilters }),
   notificationFilterId: null,
   setNotificationFilterId: (notificationFilterId) => set({ notificationFilterId }),
+
+  layoutTooltipVisibility: (() => {
+    const defaultVal = {
+      projectCode: true,
+      projectName: true,
+      mdStatus: true,
+      actStatus: true,
+      legendColor: true,
+      floor: true,
+      startDate: true,
+      endDate: true,
+      detail: true,
+      description: true,
+      progressBars: true,
+      area: true,
+    };
+    try {
+      const stored = safeGetItemLocal("taka_layout_tooltip_visibility");
+      if (stored) {
+        return { ...defaultVal, ...JSON.parse(stored) };
+      }
+    } catch {}
+    return defaultVal;
+  })(),
+  setLayoutTooltipVisibility: (updater) => set((state) => {
+    const next = typeof updater === 'function' ? updater(state.layoutTooltipVisibility) : { ...state.layoutTooltipVisibility, ...updater };
+    safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(next));
+    return { layoutTooltipVisibility: next };
+  }),
+  resetLayoutTooltipVisibility: () => set(() => {
+    const defaultVal = {
+      projectCode: true,
+      projectName: true,
+      mdStatus: true,
+      actStatus: true,
+      legendColor: true,
+      floor: true,
+      startDate: true,
+      endDate: true,
+      detail: true,
+      description: true,
+      progressBars: true,
+      area: true,
+    };
+    safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(defaultVal));
+    return { layoutTooltipVisibility: defaultVal };
+  }),
 });

@@ -35,6 +35,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   storeFilter = 'HCM'
 }) => {
   const { enrichedProjects: projects } = useEnrichedData();
+  const vis = useAppStore(state => state.layoutTooltipVisibility);
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
   const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
@@ -218,6 +219,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       })();
 
   const detailText = p?.detail || data.detail || '';
+  const descriptionText = (p as any)?.description || (p as any)?.note || data.description || data.note || '';
 
   // Dates
   const computedTakStart = p?.computedTakStart || p?.start || data.startDate || '';
@@ -239,6 +241,22 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     store: storeDisplay,
     location: floorValue ? String(floorValue) : undefined,
   } as Project);
+
+  // Safe fallback if vis is undefined
+  const v = vis || {
+    projectCode: true,
+    projectName: true,
+    mdStatus: true,
+    actStatus: true,
+    legendColor: true,
+    floor: true,
+    startDate: true,
+    endDate: true,
+    detail: true,
+    description: true,
+    progressBars: true,
+    area: true,
+  };
 
   return (
     <div 
@@ -266,21 +284,27 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             )}
             title={p ? "Nhấp để xem chi tiết dự án" : undefined}
           >
-            <span className={storeDisplay.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : storeDisplay.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>
-              {storeDisplay}
-            </span>
-            {' - '}
-            <span className="font-bold font-mono">{unitCode}</span>
-            {projectName ? ` - ${projectName}` : ''}
+            {v.floor && (
+              <span className={storeDisplay.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : storeDisplay.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>
+                {storeDisplay}
+              </span>
+            )}
+            {v.floor && (v.projectCode || (v.projectName && projectName)) ? ' - ' : ''}
+            {v.projectCode && <span className="font-bold font-mono">{unitCode}</span>}
+            {v.projectCode && v.projectName && projectName ? ' - ' : ''}
+            {v.projectName && projectName ? <span>{projectName}</span> : ''}
+            {!v.floor && !v.projectCode && (!v.projectName || !projectName) && (
+              <span className="font-bold font-mono text-slate-400">{unitCode}</span>
+            )}
           </span>
         </div>
 
         {/* Status Badges: MD Status + Project Status */}
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
           {/* MD Status Badge in Header */}
-          {mdStatus && (
+          {v.mdStatus && mdStatus && (
             <div 
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${mdStatusColorClass} flex items-center gap-1`}
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${v.legendColor ? mdStatusColorClass : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600'} flex items-center gap-1`}
               title={`MD Status: ${mdStatus}`}
             >
               <span className="text-[8px] font-semibold uppercase opacity-75">MD:</span>
@@ -288,16 +312,18 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             </div>
           )}
 
-          {/* Project Status Badge (On process in orange matching General Tab) */}
-          <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${statusColorClass}`}>
-            {status}
-          </div>
+          {/* Project Status Badge */}
+          {v.actStatus && (
+            <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${v.legendColor ? statusColorClass : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600'}`}>
+              {status}
+            </div>
+          )}
         </div>
 
         {/* Actions: Quick Navigator + Close Button */}
         <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
           <QuickNavButton 
-            project={targetProject}
+            project={targetProject} 
             title={`Quick Navigator (${unitCode})`}
             className="p-1 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-[#333336] dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446]"
           />
@@ -312,150 +338,169 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       </div>
 
-      {/* 2. Middle Section: Progress Bars (Full Width without pencil button) */}
-      <div className="flex flex-col gap-1.5 px-0.5">
-        {/* Plan Progress */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
-            Plan Prg:
-          </span>
-          <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-            <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
-            />
+      {/* 2. Middle Section: Progress Bars */}
+      {v.progressBars && (
+        <div className="flex flex-col gap-1.5 px-0.5">
+          {/* Plan Progress */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
+              Plan Prg:
+            </span>
+            <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
+              />
+            </div>
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
+              {planProgressPercent}%
+            </span>
           </div>
-          <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
-            {planProgressPercent}%
-          </span>
-        </div>
 
-        {/* Actual Progress */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
-            Act Prg:
-          </span>
-          <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-            <div 
-              className="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
-            />
+          {/* Actual Progress */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
+              Act Prg:
+            </span>
+            <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
+              />
+            </div>
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
+              {actProgressPercent}%
+            </span>
           </div>
-          <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
-            {actProgressPercent}%
-          </span>
         </div>
-      </div>
+      )}
 
       {/* 3. Unified Information Row: Floor, Diện tích, Comment Symbol & Dates */}
-      <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
-        {/* Left Side: Floor, Diện tích & Comment Symbol */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Floor Badge */}
-          {floorValue && (
-            <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
-              <span className="text-[9px] text-slate-400 font-medium uppercase">Floor:</span>
-              <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{floorValue}</span>
-            </div>
-          )}
-
-          {/* Area (if available) */}
-          {data.size > 0 && (
-            <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
-              <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
-              <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(data.size).toLocaleString('en-US')} m²</span>
-            </div>
-          )}
-
-          {/* Project Chat / Comment Symbol Button */}
-          {p && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditProject?.(p, false, 'chat');
-              }}
-              className={cn(
-                "flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border transition-all active:scale-95 touch-manipulation cursor-pointer shrink-0",
-                commentsCount > 0 
-                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-800/80 hover:bg-blue-100" 
-                  : "bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-[#444446] hover:text-blue-500"
-              )}
-              title="Mở trao đổi / Bình luận dự án"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              {commentsCount > 0 && <span>{commentsCount}</span>}
-            </button>
-          )}
-
-          {/* Quick Navigator Button */}
-          <QuickNavButton 
-            project={targetProject} 
-            title={`Quick Navigator (${unitCode})`}
-            className="p-1 rounded border border-slate-200 dark:border-[#444446] bg-slate-50 dark:bg-slate-800/50 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-50 dark:hover:bg-[#333336]"
-          />
-        </div>
-
-        {/* Right Side: Start Date (Blue) & Finish Date (Pink) */}
-        {(computedTakStart || computedTakCompl) && (
-          <div className="flex gap-2 sm:gap-2.5 text-[11px] font-bold leading-tight shrink-0 ml-auto items-center">
-            {computedTakStart && (
-              <div className="text-blue-700 dark:text-[#8ab4f8] text-right">
-                {(() => {
-                  const d = parseDateTime(computedTakStart);
-                  if (!d) return null;
-                  return (
-                    <>
-                      <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
-                      <div>{d.getFullYear()}</div>
-                    </>
-                  );
-                })()}
+      {(v.floor || v.area || v.startDate || v.endDate || commentsCount > 0) && (
+        <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
+          {/* Left Side: Floor, Diện tích & Comment Symbol */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Floor Badge */}
+            {v.floor && floorValue && (
+              <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
+                <span className="text-[9px] text-slate-400 font-medium uppercase">Floor:</span>
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{floorValue}</span>
               </div>
             )}
-            {computedTakCompl && (
-              <div className="text-pink-700 dark:text-pink-400 text-right">
-                {(() => {
-                  const d = parseDateTime(computedTakCompl);
-                  if (!d) return null;
-                  return (
-                    <>
-                      <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
-                      <div>{d.getFullYear()}</div>
-                    </>
-                  );
-                })()}
+
+            {/* Area (if available) */}
+            {v.area && data.size > 0 && (
+              <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
+                <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(data.size).toLocaleString('en-US')} m²</span>
               </div>
             )}
-          </div>
-        )}
-      </div>
 
-      {/* 4. Details Section (Strictly matching General Tab logic and styling) */}
-      {(taskLines.length > 0 || detailText) && (
-        <div className="bg-slate-50 dark:bg-[#1e1e20]/60 rounded-lg p-2.5 border border-slate-200/80 dark:border-[#444446] text-xs shadow-sm flex flex-col gap-1.5">
-          <div className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
-            Detail
+            {/* Project Chat / Comment Symbol Button */}
+            {p && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditProject?.(p, false, 'chat');
+                }}
+                className={cn(
+                  "flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border transition-all active:scale-95 touch-manipulation cursor-pointer shrink-0",
+                  commentsCount > 0 
+                    ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-800/80 hover:bg-blue-100" 
+                    : "bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-[#444446] hover:text-blue-500"
+                )}
+                title="Mở trao đổi / Bình luận dự án"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                {commentsCount > 0 && <span>{commentsCount}</span>}
+              </button>
+            )}
+
+            {/* Quick Navigator Button */}
+            <QuickNavButton 
+              project={targetProject} 
+              title={`Quick Navigator (${unitCode})`}
+              className="p-1 rounded border border-slate-200 dark:border-[#444446] bg-slate-50 dark:bg-slate-800/50 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-50 dark:hover:bg-[#333336]"
+            />
           </div>
-          {taskLines.length > 0 ? (
-            <div className="flex flex-col gap-1">
-              {taskLines.map((line, idx) => (
-                <div 
-                  key={idx} 
-                  className={`font-medium text-xs leading-relaxed ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
-                >
-                  {line}
+
+          {/* Right Side: Start Date (Blue) & Finish Date (Pink) */}
+          {(v.startDate || v.endDate) && (computedTakStart || computedTakCompl) && (
+            <div className="flex gap-2 sm:gap-2.5 text-[11px] font-bold leading-tight shrink-0 ml-auto items-center">
+              {v.startDate && computedTakStart && (
+                <div className="text-blue-700 dark:text-[#8ab4f8] text-right">
+                  {(() => {
+                    const d = parseDateTime(computedTakStart);
+                    if (!d) return null;
+                    return (
+                      <>
+                        <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
+                        <div>{d.getFullYear()}</div>
+                      </>
+                    );
+                  })()}
                 </div>
-              ))}
-              {detailText && (
-                <div className="text-slate-600 dark:text-[#a3a3a3] text-[11px] font-normal whitespace-pre-wrap leading-relaxed pt-1.5 mt-0.5 border-t border-slate-200/60 dark:border-slate-700/60">
+              )}
+              {v.endDate && computedTakCompl && (
+                <div className="text-pink-700 dark:text-pink-400 text-right">
+                  {(() => {
+                    const d = parseDateTime(computedTakCompl);
+                    if (!d) return null;
+                    return (
+                      <>
+                        <div>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},</div>
+                        <div>{d.getFullYear()}</div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. Details & Description Section */}
+      {((v.detail && (taskLines.length > 0 || detailText)) || (v.description && descriptionText)) && (
+        <div className="bg-slate-50 dark:bg-[#1e1e20]/60 rounded-lg p-2.5 border border-slate-200/80 dark:border-[#444446] text-xs shadow-sm flex flex-col gap-1.5">
+          {v.detail && (taskLines.length > 0 || detailText) && (
+            <div className="flex flex-col gap-1">
+              <div className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
+                Detail
+              </div>
+              {taskLines.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  {taskLines.map((line, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`font-medium text-xs leading-relaxed ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
+                    >
+                      {line}
+                    </div>
+                  ))}
+                  {detailText && (
+                    <div className="text-slate-600 dark:text-[#a3a3a3] text-[11px] font-normal whitespace-pre-wrap leading-relaxed pt-1.5 mt-0.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                      {detailText}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-blue-600 dark:text-[#8ab4f8] font-medium text-xs whitespace-pre-wrap leading-relaxed">
                   {detailText}
                 </div>
               )}
             </div>
-          ) : (
-            <div className="text-blue-600 dark:text-[#8ab4f8] font-medium text-xs whitespace-pre-wrap leading-relaxed">
-              {detailText}
+          )}
+
+          {v.description && descriptionText && (
+            <div className={cn("flex flex-col gap-1", v.detail && (taskLines.length > 0 || detailText) ? "pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60" : "")}>
+              <div className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
+                Description / Note
+              </div>
+              <div className="text-slate-700 dark:text-slate-200 font-medium text-xs whitespace-pre-wrap leading-relaxed">
+                {descriptionText}
+              </div>
             </div>
           )}
         </div>

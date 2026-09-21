@@ -497,8 +497,21 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
          - Khi mở ô Comment từ Tooltip của Layout Tab, hệ thống **CHỈ** đọc tin nhắn trao đổi của riêng dự án đó (subcollection chats hoặc document chats) mà **KHÔNG** tải hay lắng nghe (listen) toàn bộ danh sách Task, Cost, hay Delegation của toàn bộ hệ thống.
          - Tiết kiệm 100% chi phí Firestore read không cần thiết, bảo vệ giới hạn đọc và duy trì hiệu năng 60fps mượt mà cho bản đồ.
           - **Phân trang Tin nhắn (Pagination / Limit to Last 25)**: Mặc định chỉ hiển thị 25 tin nhắn trao đổi gần nhất để giao diện chat mở tức thì (0ms) và chống tràn bộ nhớ. Phía trên có nút `[ ⬆️ Xem thêm tin nhắn cũ hơn (+25) ]` để người dùng chủ động tải thêm khi cần xem lại lịch sử trao đổi. Khi nhấp từ thông báo (`focusCommentId`), hệ thống tự động mở rộng vùng hiển thị để cuộn chính xác đến tin nhắn cần xem.
-5. **Chế độ Bản đồ Trực quan (Live View) & Bảng Chú Thích Màu (Color Legend trên iOS/Mobile/Desktop)**:
+5. **Chế độ Bản đồ Trực quan (Live View), Bảng Chú Thích Màu & Cấu Hình Hiển Thị Labels Appear (Tooltip Visibility)**:
    - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
+   - **Tùy Chỉnh Bật/Tắt Nhãn Tooltip (Labels Appear Settings)**: Trong bảng Menu bản đồ (nút `[ ☰ Menu ]`), người dùng có thể linh hoạt ẩn/hiện từng trường dữ liệu hiển thị trên ô chi tiết khi rê chuột/chạm vào gian hàng (Tooltip):
+     * `Project Code`: Mã gian hàng / Mã dự án.
+     * `Project Name`: Tên dự án / Tên thương hiệu.
+     * `MD Status`: Huy hiệu trạng thái MD (Renew, New, Close...).
+     * `AC Status`: Huy hiệu trạng thái thi công thực tế (Actual Status).
+     * `Màu sắc Legend`: Tô màu theo bảng màu trạng thái hoặc hiển thị màu đơn sắc tối giản.
+     * `Floor / Store`: Tầng và chi nhánh (HCM/HN).
+     * `Start Date` & `End Date`: Mốc thời gian bắt đầu và kết thúc thi công.
+     * `Detail`: Chi tiết các đầu việc phân nhóm.
+     * `Description`: Mô tả và ghi chú dự án.
+     * `Progress Bars`: Thanh tiến độ kế hoạch (Plan) và tiến độ thực tế (Act).
+     * `Diện tích (m²)`: Kích thước diện tích sàn của gian hàng.
+     * *Hệ thống tự động lưu cấu hình cá nhân này vào bộ nhớ thiết bị, có sẵn các nút "Bật tất cả" và "Mặc định" để thao tác 1 chạm nhanh chóng.*
    - **Thanh Chú Thích Màu Nổi (Floating Color Legend Bar)**: Ở góc dưới màn hình (đặc biệt tối ưu trải nghiệm 1 chạm cho iOS/iPhone/iPad), hệ thống hiển thị dải các chấm màu và tên nhóm phân loại tương ứng theo định dạng thẻ cuộn ngang mượt mà.
      - **Chạm 1 chạm để Lọc & Highlight**: Khi chạm vào một thẻ nhóm màu trên thanh Legend, hệ thống sẽ tự động highlight các gian hàng thuộc nhóm đó và làm mờ các gian hàng còn lại để nhận diện nhanh trên mặt bằng; chạm lại lần nữa để trở về bình thường.
      - **Nút Thu gọn/Mở rộng**: Có thể bấm nút Chevron để thu gọn thanh Swatches thành một dải badge nhỏ gọn nhằm tối đa hóa diện tích quan sát bản đồ.

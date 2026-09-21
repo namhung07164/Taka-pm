@@ -127,6 +127,25 @@ export interface UISlice {
   setLayoutTabFilters: (filters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string } | null) => void;
   notificationFilterId: string | null;
   setNotificationFilterId: (id: string | null) => void;
+
+  layoutTooltipVisibility: LayoutTooltipVisibility;
+  setLayoutTooltipVisibility: (updater: Partial<LayoutTooltipVisibility> | ((prev: LayoutTooltipVisibility) => LayoutTooltipVisibility)) => void;
+  resetLayoutTooltipVisibility: () => void;
+}
+
+export interface LayoutTooltipVisibility {
+  projectCode: boolean;
+  projectName: boolean;
+  mdStatus: boolean;
+  actStatus: boolean;
+  legendColor: boolean;
+  floor: boolean;
+  startDate: boolean;
+  endDate: boolean;
+  detail: boolean;
+  description: boolean;
+  progressBars: boolean;
+  area: boolean;
 }
 
 export interface DataSlice {
