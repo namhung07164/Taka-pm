@@ -1,10 +1,11 @@
 import React from 'react';
 import { Project, Task } from '../../types';
-import { cn, formatDisplayDateMain } from '../../lib/utils';
-import { ChevronRight, ChevronDown, Plus, Trash2, Edit3, ArrowDownUp } from 'lucide-react';
+import { cn, formatDisplayDateTime, calculateDays } from '../../lib/utils';
+import { ChevronRight, ChevronDown, Plus, Trash2, Edit3, ArrowDownUp, GripVertical } from 'lucide-react';
 import { DetailTableRow } from '../DetailTab';
 import { EditableCell } from './EditableCell';
 import { FastToggle } from './FastToggle';
+import { QuickNavButton } from '../QuickNavButton';
 
 interface DetailProjectRowProps {
   item: DetailTableRow & { type: 'project' };
@@ -45,6 +46,33 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   const planProgressPercent = item.planProgressPercent;
   const actProgressPercent = item.actProgressPercent;
 
+  const computedStart = React.useMemo(() => {
+    if (groupTasks && groupTasks.length > 0) {
+      let minStart: string | undefined = undefined;
+      for (const t of groupTasks) {
+        if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
+      }
+      if (minStart) return minStart;
+    }
+    return p.computedTakStart || p.start;
+  }, [groupTasks, p.computedTakStart, p.start]);
+
+  const computedFinish = React.useMemo(() => {
+    if (groupTasks && groupTasks.length > 0) {
+      let maxFinish: string | undefined = undefined;
+      for (const t of groupTasks) {
+        if (t.finish && (!maxFinish || t.finish > maxFinish)) maxFinish = t.finish;
+      }
+      if (maxFinish) return maxFinish;
+    }
+    return p.computedTakCompl || p.handover || p.opening;
+  }, [groupTasks, p.computedTakCompl, p.handover, p.opening]);
+
+  const computedDuration = React.useMemo(() => {
+    if (!computedStart || !computedFinish) return '-';
+    return calculateDays(computedStart, computedFinish);
+  }, [computedStart, computedFinish]);
+
   return (
     <tr
       id={`detail-project-${p.no ?? p.code}`}
@@ -59,7 +87,11 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       )}
     >
       {visibleColumns.includes('drag') && (
-        <td className="px-2 py-2 text-center select-none w-8"></td>
+        <td className="px-2 py-2 text-center select-none w-8 text-slate-400">
+          <div className="flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <GripVertical size={14} />
+          </div>
+        </td>
       )}
       {visibleColumns.includes('checkbox') && (
         <td className="px-2 py-2 text-center select-none">
@@ -85,11 +117,12 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
           </div>
         </td>
       )}
-      {visibleColumns.includes('code') && (
-        <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
+      {visibleColumns.includes('year') && (
+        <td className="px-3 py-2">
           <EditableCell
-            value={p.code}
-            onSave={(val) => onUpdateProject(p, 'code', val)}
+            value={p.year}
+            type="number"
+            onSave={(val) => onUpdateProject(p, 'year', Number(val))}
             canWrite={canWrite}
           />
         </td>
@@ -100,17 +133,15 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
             value={p.store}
             type="select"
             options={allowedStoreOptions}
+            className={cn(
+              "font-bold",
+              p.store?.toLowerCase() === 'hcm' 
+                ? "text-blue-600 dark:text-[#8ab4f8]" 
+                : p.store?.toLowerCase() === 'hn' 
+                ? "text-red-600 dark:text-red-400" 
+                : "text-slate-700 dark:text-[#e3e3e3]"
+            )}
             onSave={(val) => onUpdateProject(p, 'store', val)}
-            canWrite={canWrite}
-          />
-        </td>
-      )}
-      {visibleColumns.includes('year') && (
-        <td className="px-3 py-2">
-          <EditableCell
-            value={p.year}
-            type="number"
-            onSave={(val) => onUpdateProject(p, 'year', Number(val))}
             canWrite={canWrite}
           />
         </td>
@@ -126,6 +157,15 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
           />
         </td>
       )}
+      {visibleColumns.includes('code') && (
+        <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
+          <EditableCell
+            value={p.code}
+            onSave={(val) => onUpdateProject(p, 'code', val)}
+            canWrite={canWrite}
+          />
+        </td>
+      )}
       {visibleColumns.includes('projectName') && (
         <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
           <div className="flex items-center gap-2">
@@ -134,26 +174,55 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               onSave={(val) => onUpdateProject(p, 'name', val)}
               canWrite={canWrite}
             />
-            <span className="text-[11px] font-normal text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full shrink-0">
+            {!visibleColumns.includes('taskName') && (
+              <span className={cn(
+                "text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0",
+                effectiveTaskCount >= 2
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+                  : effectiveTaskCount === 1
+                  ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800"
+                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+              )}>
+                {effectiveTaskCount} tasks
+              </span>
+            )}
+          </div>
+        </td>
+      )}
+      {visibleColumns.includes('taskName') && (
+        <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
+          <div className="flex items-center gap-2">
+            <EditableCell
+              value={p.name}
+              onSave={(val) => onUpdateProject(p, 'name', val)}
+              canWrite={canWrite}
+            />
+            <span className={cn(
+              "text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0",
+              effectiveTaskCount >= 2
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+                : effectiveTaskCount === 1
+                ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800"
+                : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+            )}>
               {effectiveTaskCount} tasks
             </span>
           </div>
         </td>
       )}
-      {visibleColumns.includes('taskName') && (
-        <td className="px-3 py-2 text-slate-400">-</td>
-      )}
       {visibleColumns.includes('duration') && (
-        <td className="px-3 py-2 text-slate-400 font-mono text-xs">-</td>
+        <td className="px-3 py-2 text-slate-500 dark:text-[#a3a3a3] italic font-mono text-xs">
+          {computedDuration}
+        </td>
       )}
       {visibleColumns.includes('start') && (
-        <td className="px-3 py-2 text-sky-600 dark:text-sky-400 font-mono text-xs font-medium">
-          {formatDisplayDateMain(p.computedTakStart || p.start)}
+        <td className="px-3 py-2 text-blue-600 dark:text-[#8ab4f8] font-mono text-xs font-semibold">
+          {formatDisplayDateTime(computedStart)}
         </td>
       )}
       {visibleColumns.includes('finish') && (
-        <td className="px-3 py-2 text-purple-600 dark:text-purple-400 font-mono text-xs font-medium">
-          {formatDisplayDateMain(p.computedTakCompl || p.handover)}
+        <td className="px-3 py-2 text-pink-600 dark:text-pink-400 font-mono text-xs font-semibold">
+          {formatDisplayDateTime(computedFinish)}
         </td>
       )}
       {visibleColumns.includes('planProgress') && (
@@ -190,27 +259,36 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
         <td className="px-3 py-2 text-slate-400">-</td>
       )}
       {visibleColumns.includes('party') && (
-        <td className="px-3 py-2 text-center">
-          <FastToggle
-            value={isProjDelegationOn}
-            canWrite={canWrite}
-            onToggle={(val) => onUpdateProject(p, 'delegation', val)}
-          />
+        <td className="px-3 py-2">
+          <div className="flex items-center justify-between gap-2 pr-1">
+            <div className="flex-1 text-slate-400 text-xs">-</div>
+            <FastToggle
+              value={isProjDelegationOn}
+              canWrite={canWrite}
+              onToggle={(val) => onUpdateProject(p, 'delegation', val)}
+              isSmall={true}
+            />
+          </div>
         </td>
       )}
       {visibleColumns.includes('action') && (
         <td className="px-3 py-2 text-right">
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            <QuickNavButton 
+              project={p} 
+              title={`Quick Navigator (${p.code})`} 
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-blue-500 hover:text-blue-400 bg-transparent border-0 shadow-none"
+            />
             <button
               onClick={() => onSortSubTasks(p, groupTasks)}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors"
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors cursor-pointer"
               title="Sort sub-tasks by Start Date"
             >
               <ArrowDownUp size={14} />
             </button>
             <button
               onClick={() => onEditProject(p)}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors"
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors cursor-pointer"
               title="Edit Project"
             >
               <Edit3 size={14} />
@@ -218,7 +296,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
             {canWrite && (
               <button
                 onClick={() => onAddTask(p)}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-green-600 transition-colors"
+                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-green-600 transition-colors cursor-pointer"
                 title="Add Task to this Project"
               >
                 <Plus size={14} />
@@ -227,7 +305,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
             {canWrite && (
               <button
                 onClick={() => onDeleteProject(p)}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-red-600 transition-colors"
+                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-red-600 transition-colors cursor-pointer"
                 title="Delete Project"
               >
                 <Trash2 size={14} />

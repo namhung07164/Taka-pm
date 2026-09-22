@@ -6,6 +6,7 @@ import { DetailTableRow } from '../DetailTab';
 import { EditableCell } from './EditableCell';
 import { PredecessorEditableCell } from './PredecessorEditableCell';
 import { FastToggle } from './FastToggle';
+import { QuickNavButton } from '../QuickNavButton';
 
 interface DetailTaskRowProps {
   item: DetailTableRow & { type: 'task' };
@@ -109,7 +110,12 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       )}
       {visibleColumns.includes('no') && (
         <td className="px-3 py-2 text-slate-500 text-xs font-mono">
-          <div className="flex items-center gap-1.5 pl-4">
+          <div className="flex items-center gap-1.5 pl-2">
+            {canWrite && (
+              <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <GripVertical size={13} />
+              </div>
+            )}
             <span className="text-slate-400">{item.taskIndex + 1}</span>
             {isChildTask && (
               <span className="text-[10px] text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-1 rounded">
@@ -125,7 +131,14 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('store') && (
-        <td className="px-3 py-2 text-slate-600 dark:text-[#a3a3a3] text-xs">
+        <td className={cn(
+          "px-3 py-2 text-xs font-bold",
+          (t.projectStore || p.store)?.toLowerCase() === 'hcm'
+            ? "text-blue-600 dark:text-[#8ab4f8]"
+            : (t.projectStore || p.store)?.toLowerCase() === 'hn'
+            ? "text-red-600 dark:text-red-400"
+            : "text-slate-600 dark:text-[#a3a3a3]"
+        )}>
           {t.projectStore || p.store}
         </td>
       )}
@@ -135,7 +148,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('code') && (
-        <td className="px-3 py-2 text-slate-600 dark:text-[#a3a3a3] font-mono text-xs">
+        <td className="px-3 py-2 text-blue-600 dark:text-[#8ab4f8] font-mono text-xs font-semibold">
           {taskCode || p.code}
         </td>
       )}
@@ -159,8 +172,8 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('duration') && (
-        <td className="px-3 py-2 text-amber-600 dark:text-amber-400 font-mono text-xs font-medium">
-          {t.duration !== undefined ? t.duration : calculateDays(t.start, t.finish)}
+        <td className="px-3 py-2 text-slate-500 dark:text-[#a3a3a3] italic font-mono text-xs">
+          {t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}
         </td>
       )}
       {visibleColumns.includes('start') && (
@@ -169,7 +182,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             value={t.start}
             type="datetime-local"
             isDate={true}
-            className="text-sky-600 dark:text-sky-400 font-medium"
+            className="text-blue-600 dark:text-[#8ab4f8] font-semibold font-mono"
             onSave={(val) => onUpdateTask(t, { start: val })}
             canWrite={canWrite}
           />
@@ -181,7 +194,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             value={t.finish}
             type="datetime-local"
             isDate={true}
-            className="text-purple-600 dark:text-purple-400 font-medium"
+            className="text-pink-600 dark:text-pink-400 font-semibold font-mono"
             onSave={(val) => onUpdateTask(t, { finish: val })}
             canWrite={canWrite}
           />
@@ -211,7 +224,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       )}
       {visibleColumns.includes('party') && (
         <td className="px-3 py-2">
-          <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center justify-between gap-2 pr-1">
             <div className="flex-1">
               <EditableCell
                 value={t.party}
@@ -230,13 +243,20 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       )}
       {visibleColumns.includes('action') && (
         <td className="px-3 py-2 text-right">
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+            <QuickNavButton 
+              project={p} 
+              task={t} 
+              taskCode={taskCode} 
+              title={`Quick Navigator (${taskCode || t.name})`} 
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-blue-500 hover:text-blue-400 bg-transparent border-0 shadow-none"
+            />
             {canWrite && (
               <>
                 <button
                   onClick={(e) => { e.stopPropagation(); onMoveTask(p, groupTasks, i, 'up'); }}
                   disabled={i === 0}
-                  className={cn("p-1 rounded text-slate-400 hover:text-blue-600 transition-colors", i === 0 && "opacity-30 cursor-not-allowed")}
+                  className={cn("p-1 rounded text-slate-400 hover:text-blue-600 transition-colors cursor-pointer", i === 0 && "opacity-30 cursor-not-allowed")}
                   title="Move Up"
                 >
                   <ArrowUp size={14} />
@@ -244,7 +264,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
                 <button
                   onClick={(e) => { e.stopPropagation(); onMoveTask(p, groupTasks, i, 'down'); }}
                   disabled={i === groupTasks.length - 1}
-                  className={cn("p-1 rounded text-slate-400 hover:text-blue-600 transition-colors", i === groupTasks.length - 1 && "opacity-30 cursor-not-allowed")}
+                  className={cn("p-1 rounded text-slate-400 hover:text-blue-600 transition-colors cursor-pointer", i === groupTasks.length - 1 && "opacity-30 cursor-not-allowed")}
                   title="Move Down"
                 >
                   <ArrowDown size={14} />
@@ -253,7 +273,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             )}
             <button
               onClick={() => onEditTask(t)}
-              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors"
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors cursor-pointer"
               title="Edit Task / Notes"
             >
               <Edit3 size={14} />
@@ -261,7 +281,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             {canWrite && (
               <button
                 onClick={() => onDeleteTask(t)}
-                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-red-600 transition-colors"
+                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-red-600 transition-colors cursor-pointer"
                 title="Delete Task"
               >
                 <Trash2 size={14} />

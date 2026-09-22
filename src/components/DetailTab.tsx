@@ -458,26 +458,30 @@ export function DetailTab({
   const [visibleColumns, setVisibleColumns] = useState<string[]>(availableColumnsForUser.map(c => c.id));
 
   const [colWidths, setColWidths] = useState<Record<string, number>>({
-    no: 80,
+    no: 90,
     year: 80,
     store: 80,
-    location: 150,
-    code: 120,
-    projectName: 200,
+    location: 120,
+    code: 130,
+    projectName: 220,
     taskName: 250,
-    duration: 120,
+    duration: 100,
     start: 200,
     finish: 200,
-    predecessor: 120,
+    predecessor: 140,
     party: 150,
-    action: 80
+    action: 160
   });
 
   useEffect(() => {
     const saved = localStorage.getItem(`taka_detail_col_widths_${currentUser.id}`);
     if (saved) {
       try {
-        setColWidths(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed.action && parsed.action < 160) {
+          parsed.action = 160;
+        }
+        setColWidths(parsed);
       } catch (e) { console.error(e); }
     }
     
@@ -2997,6 +3001,14 @@ export function DetailTab({
         </ResizableHeader>
       )}
       {visibleColumns.includes('action') && <ResizableHeader width={colWidths.action} onResize={(w) => handleResize('action', w)} className="px-4 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('action')}>Action</ResizableHeader>}
+      <th className="px-1.5 py-3 w-9 text-center">
+        <ColumnAdder 
+          availableColumns={availableColumnsForUser} 
+          visibleColumns={visibleColumns} 
+          onAddColumn={handleToggleColumn} 
+          isHeader={true}
+        />
+      </th>
     </tr>
   );
 

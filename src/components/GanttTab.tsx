@@ -1803,10 +1803,10 @@ export function GanttTab({
             <span className="text-sky-300 dark:text-sky-200 font-medium">{formatGanttDate(startStr) || "N/A"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-purple-400 dark:text-purple-300 font-semibold w-10">
+            <span className="text-pink-400 dark:text-pink-300 font-semibold w-10">
               Finish:
             </span>
-            <span className="text-purple-300 dark:text-purple-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
+            <span className="text-pink-300 dark:text-pink-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
           </div>
           {extraVars?.actStatus && (
             <div className="flex items-center gap-2">

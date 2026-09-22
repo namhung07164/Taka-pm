@@ -181,7 +181,7 @@ export const GanttBar = React.memo(function GanttBar({
               <span className="font-medium">
                 <span className="text-sky-300 dark:text-sky-200">{formatGanttDate(startStr) || "N/A"}</span>
                 <span className="text-slate-400 mx-1">-</span>
-                <span className="text-purple-300 dark:text-purple-200">{formatGanttDate(endStr) || "N/A"}</span>
+                <span className="text-pink-300 dark:text-pink-300">{formatGanttDate(endStr) || "N/A"}</span>
               </span>
             </div>
           </div>,
@@ -276,10 +276,10 @@ export const GanttBar = React.memo(function GanttBar({
             <span className="text-sky-300 dark:text-sky-200 font-medium">{formatGanttDate(startStr) || "N/A"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-purple-400 dark:text-purple-300 font-semibold w-10">
+            <span className="text-pink-400 dark:text-pink-300 font-semibold w-10">
               Finish:
             </span>
-            <span className="text-purple-300 dark:text-purple-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
+            <span className="text-pink-300 dark:text-pink-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
           </div>
           {(extraVars?.party || extraVars?.predecessors) && (
             <div className="flex items-start gap-4 mt-1 border-t border-slate-600 pt-1.5">

@@ -45,7 +45,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
 
   if (!canWrite) {
     return (
-      <span className={displayVal ? 'font-mono text-xs text-indigo-600 dark:text-indigo-400 font-medium' : 'text-slate-400'}>
+      <span className={displayVal ? 'font-mono text-xs text-blue-600 dark:text-[#8ab4f8] font-medium' : 'text-slate-400'}>
         {displayVal !== undefined && displayVal !== null && displayVal !== '' ? displayVal : '-'}
       </span>
     );
@@ -80,7 +80,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
       className="cursor-pointer min-h-[24px] w-full flex items-center hover:bg-slate-50 dark:hover:bg-[#202023] rounded transition-colors group"
       onClick={() => setIsEditing(true)}
     >
-      <span className={displayVal ? 'font-mono text-xs text-indigo-600 dark:text-indigo-400 font-medium' : 'text-slate-400 dark:text-slate-600'}>
+      <span className={displayVal ? 'font-mono text-xs text-blue-600 dark:text-[#8ab4f8] font-medium' : 'text-slate-400 dark:text-slate-600'}>
         {displayVal || '...'}
       </span>
     </div>
