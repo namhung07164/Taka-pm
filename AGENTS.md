@@ -35,3 +35,11 @@ Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file
 - **Strict Isolation**: Gom toàn bộ UI/Logic mới vào thư mục riêng biệt (vd: `src/components/NewFeature/`). Tuyệt đối không trộn lẫn vào các core components hiện tại.
 - **Zero-Modification**: TUYỆT ĐỐI KHÔNG sửa/xóa/ghi đè UI layout, CSS, custom hooks, hay các hàm đang chạy. Việc kết nối tính năng mới CHỈ ĐƯỢC cắm thêm qua 1 Nút/Tab Navigation (Plug-and-play).
 - **State & Schema Safety**: Mọi state mới phải là slice độc lập trong Zustand (không can thiệp vào `tasks`, `projects`, v.v.). Type mới viết nối ở cuối `src/types.ts` hoặc tạo file riêng. Cấm sửa đổi `BUSINESS_LOGIC.md`.
+
+## 7. UI/UX & Responsive Performance Architecture
+- **Atomic UI Component Isolation**: Mọi nút điều khiển UI/UX phức tạp (vd: `RibbonDisplayMenu`, Quick Access Toolbar) phải tách riêng thành standalone component và quản lý qua `UISlice` trong Zustand. Tuyệt đối không nhồi chung UI state vào data slices để tránh làm re-render toàn bộ bảng tính / danh sách công việc.
+- **Mobile/iOS Responsive Anti-Cluttering**:
+  - Trên màn hình di động/iOS, KHÔNG nhân bản hay xếp đè nhiều nút công cụ lên Header/Navigation.
+  - Sử dụng class `hidden lg:inline-flex` để ẩn các nút Ribbon/Toolbar phức tạp trên mobile và gom gọn vào đúng 1 vị trí trực quan duy nhất trong Slide-out Navigation Drawer.
+- **Sticky Controls & Reflow Prevention**: Các thanh công cụ/nút bấm quan trọng (vd: nút Edit Mode trong Task Detail, thanh Gantt Controls) phải dùng `sticky top-0 z-[100]` với `backdrop-blur-md` để theo dõi vị trí cuộn mượt mà mà không gây giật lag hay tính toán lại vị trí DOM (layout reflow).
+- **Keyboard Shortcuts & Clean Listeners**: Các chế độ hiển thị toàn màn hình (Full-screen/Focus mode) phải gắn listener phím `Escape` trên `window` và bắt buộc cleanup listener khi unmount để chống rò rỉ bộ nhớ (memory leak).
