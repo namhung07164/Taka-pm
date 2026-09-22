@@ -2616,7 +2616,7 @@ export function DetailTab({
         onSave={handleSaveNotes}
         canWrite={canWrite}
       />
-      <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
+      <div className="sticky top-[56px] lg:top-[128px] z-30 bg-slate-50/95 dark:bg-[#1e1e20]/95 backdrop-blur-md px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-200 dark:border-[#333336] shadow-md flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden transition-all">
         <div className="flex flex-col gap-2.5 sm:gap-3 w-full xl:w-auto flex-grow max-w-4xl">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
             <select 
@@ -2862,7 +2862,7 @@ export function DetailTab({
 
       <div className="hidden xl:block overflow-x-auto flex-grow pb-16">
         <table className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full" style={{ width: `${visibleColumns.reduce((acc, col) => acc + (colWidths[col] || 100), 0)}px` }}>
-          <thead className="text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20]/50 sticky top-0 border-b border-slate-200 dark:border-[#444446] z-10 shadow-sm">
+          <thead className="text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20] sticky top-[170px] xl:top-[192px] border-b border-slate-200 dark:border-[#444446] z-20 shadow-sm">
             <tr>
               {visibleColumns.includes('no') && (
                 <ResizableHeader width={colWidths.no} onResize={(w) => handleResize('no', w)} className="px-6 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('no')}>
