@@ -141,13 +141,13 @@ export const GanttBar = React.memo(function GanttBar({
                 {extraVars?.actPrg !== undefined && (
                   <div className="flex gap-2">
                     <span className="text-slate-400">Prog:</span>
-                    <span>{extraVars.actPrg}%</span>
+                    <span className="font-medium text-emerald-400 dark:text-emerald-300">{extraVars.actPrg}%</span>
                   </div>
                 )}
                 {extraVars?.duration !== undefined && (
                   <div className="flex gap-2">
                     <span className="text-slate-400">Dur:</span>
-                    <span>{extraVars.duration}d</span>
+                    <span className="font-medium text-amber-400 dark:text-amber-300">{extraVars.duration}d</span>
                   </div>
                 )}
               </div>
@@ -178,9 +178,10 @@ export const GanttBar = React.memo(function GanttBar({
             )}
             <div className="flex justify-between gap-4">
               <span className="text-slate-400">Dates:</span>
-              <span>
-                {formatGanttDate(startStr) || "N/A"} -{" "}
-                {formatGanttDate(endStr) || "N/A"}
+              <span className="font-medium">
+                <span className="text-sky-300 dark:text-sky-200">{formatGanttDate(startStr) || "N/A"}</span>
+                <span className="text-slate-400 mx-1">-</span>
+                <span className="text-purple-300 dark:text-purple-200">{formatGanttDate(endStr) || "N/A"}</span>
               </span>
             </div>
           </div>,
@@ -255,7 +256,7 @@ export const GanttBar = React.memo(function GanttBar({
                   <span className="text-slate-400 dark:text-[#838383] w-10">
                     Prog:
                   </span>
-                  <span className="w-8">{extraVars.actPrg}%</span>
+                  <span className="w-8 font-medium text-emerald-400 dark:text-emerald-300">{extraVars.actPrg}%</span>
                 </>
               )}
               {extraVars?.duration !== undefined && (
@@ -263,22 +264,22 @@ export const GanttBar = React.memo(function GanttBar({
                   <span className="text-slate-400 dark:text-[#838383] w-10 ml-2">
                     Dur:
                   </span>
-                  <span>{extraVars.duration}d</span>
+                  <span className="font-medium text-amber-400 dark:text-amber-300">{extraVars.duration}d</span>
                 </>
               )}
             </div>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-slate-400 dark:text-[#838383] w-10">
+            <span className="text-sky-400 dark:text-sky-300 font-semibold w-10">
               Start:
             </span>
-            <span>{formatGanttDate(startStr) || "N/A"}</span>
+            <span className="text-sky-300 dark:text-sky-200 font-medium">{formatGanttDate(startStr) || "N/A"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-400 dark:text-[#838383] w-10">
+            <span className="text-purple-400 dark:text-purple-300 font-semibold w-10">
               Finish:
             </span>
-            <span>{formatGanttDate(endStr) || "N/A"}</span>
+            <span className="text-purple-300 dark:text-purple-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
           </div>
           {(extraVars?.party || extraVars?.predecessors) && (
             <div className="flex items-start gap-4 mt-1 border-t border-slate-600 pt-1.5">

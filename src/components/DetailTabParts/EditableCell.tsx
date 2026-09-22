@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { formatDisplayDateTime, getDefaultDatetimeLocal } from '../../lib/utils';
+import { formatDisplayDateTime, getDefaultDatetimeLocal, cn } from '../../lib/utils';
 
 export const EditableCell = React.memo(function EditableCell({ 
   value, 
@@ -8,7 +8,8 @@ export const EditableCell = React.memo(function EditableCell({
   onSave, 
   canWrite, 
   isDate = false,
-  listId
+  listId,
+  className
 }: { 
   value: any, 
   type?: string, 
@@ -16,7 +17,8 @@ export const EditableCell = React.memo(function EditableCell({
   onSave: (val: any) => void, 
   canWrite: boolean, 
   isDate?: boolean,
-  listId?: string
+  listId?: string,
+  className?: string
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
@@ -41,7 +43,7 @@ export const EditableCell = React.memo(function EditableCell({
   };
 
   if (!canWrite) {
-    return <span>{isDate ? formatDisplayDateTime(value) : (value !== undefined && value !== null && value !== '' ? value : '-')}</span>;
+    return <span className={className}>{isDate ? formatDisplayDateTime(value) : (value !== undefined && value !== null && value !== '' ? value : '-')}</span>;
   }
 
   if (isEditing) {
@@ -90,7 +92,10 @@ export const EditableCell = React.memo(function EditableCell({
   return (
     <div 
       onClick={handleEditClick} 
-      className="cursor-pointer hover:bg-slate-100 dark:hover:bg-[#28282a] px-1 py-0.5 rounded border border-transparent hover:border-slate-200 min-h-[24px] break-words whitespace-normal"
+      className={cn(
+        "cursor-pointer hover:bg-slate-100 dark:hover:bg-[#28282a] px-1 py-0.5 rounded border border-transparent hover:border-slate-200 min-h-[24px] break-words whitespace-normal",
+        className
+      )}
     >
       {isDate ? formatDisplayDateTime(value) : (value !== undefined && value !== null && value !== '' ? value : '-')}
     </div>

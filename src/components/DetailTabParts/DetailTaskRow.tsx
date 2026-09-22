@@ -159,7 +159,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('duration') && (
-        <td className="px-3 py-2 text-slate-500 font-mono text-xs">
+        <td className="px-3 py-2 text-amber-600 dark:text-amber-400 font-mono text-xs font-medium">
           {t.duration !== undefined ? t.duration : calculateDays(t.start, t.finish)}
         </td>
       )}
@@ -169,6 +169,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             value={t.start}
             type="datetime-local"
             isDate={true}
+            className="text-sky-600 dark:text-sky-400 font-medium"
             onSave={(val) => onUpdateTask(t, { start: val })}
             canWrite={canWrite}
           />
@@ -180,6 +181,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             value={t.finish}
             type="datetime-local"
             isDate={true}
+            className="text-purple-600 dark:text-purple-400 font-medium"
             onSave={(val) => onUpdateTask(t, { finish: val })}
             canWrite={canWrite}
           />

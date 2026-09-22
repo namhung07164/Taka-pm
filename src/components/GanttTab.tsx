@@ -1783,7 +1783,7 @@ export function GanttTab({
                   <span className="text-slate-400 dark:text-[#838383] w-10">
                     Prog:
                   </span>
-                  <span className="w-8">{extraVars.actPrg}%</span>
+                  <span className="w-8 font-medium text-emerald-400 dark:text-emerald-300">{extraVars.actPrg}%</span>
                 </>
               )}
               {extraVars?.duration !== undefined && (
@@ -1791,22 +1791,22 @@ export function GanttTab({
                   <span className={cn("text-slate-400 dark:text-[#838383]", extraVars?.actPrg !== undefined ? "ml-1" : "w-10")}>
                     Dur:
                   </span>
-                  <span>{extraVars.duration}</span>
+                  <span className="font-medium text-amber-400 dark:text-amber-300">{extraVars.duration}</span>
                 </>
               )}
             </div>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-slate-400 dark:text-[#838383] w-10">
+            <span className="text-sky-400 dark:text-sky-300 font-semibold w-10">
               Start:
             </span>
-            <span>{formatGanttDate(startStr) || "N/A"}</span>
+            <span className="text-sky-300 dark:text-sky-200 font-medium">{formatGanttDate(startStr) || "N/A"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-400 dark:text-[#838383] w-10">
+            <span className="text-purple-400 dark:text-purple-300 font-semibold w-10">
               Finish:
             </span>
-            <span>{formatGanttDate(endStr) || "N/A"}</span>
+            <span className="text-purple-300 dark:text-purple-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
           </div>
           {extraVars?.actStatus && (
             <div className="flex items-center gap-2">

@@ -147,12 +147,12 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
         <td className="px-3 py-2 text-slate-400 font-mono text-xs">-</td>
       )}
       {visibleColumns.includes('start') && (
-        <td className="px-3 py-2 text-slate-500 font-mono text-xs">
+        <td className="px-3 py-2 text-sky-600 dark:text-sky-400 font-mono text-xs font-medium">
           {formatDisplayDateMain(p.computedTakStart || p.start)}
         </td>
       )}
       {visibleColumns.includes('finish') && (
-        <td className="px-3 py-2 text-slate-500 font-mono text-xs">
+        <td className="px-3 py-2 text-purple-600 dark:text-purple-400 font-mono text-xs font-medium">
           {formatDisplayDateMain(p.computedTakCompl || p.handover)}
         </td>
       )}
