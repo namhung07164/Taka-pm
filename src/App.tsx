@@ -57,6 +57,7 @@ import { PrintOptionsPanel } from "./components/PrintOptionsPanel";
 import { Toast } from "./components/Toast";
 import { initAuth } from './lib/firebase';
 import { enrichProjects, calculateActiveNotifications } from "./lib/utils";
+import { findProjectLayoutUnit } from "./lib/layoutUnitFinder";
 import { undoManager, UndoAction } from "./lib/undoManager";
 import { useAppStore } from "./store/useAppStore";
 import { PrintFilterHeader } from "./components/PrintFilterHeader";
@@ -2810,22 +2811,67 @@ const handlePrintToPDF = async () => {
                   onNotificationClick={(notif) => {
                     notifActions.onNotificationClick(notif);
                     
-                    // Navigate logic still belongs to App.tsx
+                    // Navigate logic
                     if (notif.targetId && notif.targetType) {
                       if (notif.targetType === "notification") {
                         setNotificationFilterId(notif.targetId);
                         handleTabChange("notification");
-                      } else {
-                        executeDeepLinkRef.current?.(
-                          notif.targetType,
-                          notif.targetId,
-                          {
-                            store: notif.projectStore,
-                            year: String(notif.projectYear),
-                            code: notif.projectCode,
-                          }
-                        );
+                        return;
                       }
+
+                      // Check if user has permission to see layout tab
+                      const canSeeLayout = currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.layout;
+                      const combinedProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().allProjectsForNotifs || []);
+                      const combinedTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().allTasksForNotifs || []);
+                      const layoutMatch = canSeeLayout ? findProjectLayoutUnit(notif, combinedProjects, combinedTasks) : null;
+
+                      if (layoutMatch?.hasUnit) {
+                        // 1. Synchronize global Year & Store filters if needed
+                        if (layoutMatch.project?.year && String(layoutMatch.project.year) !== globalYearFilter) {
+                          setGlobalYearFilter(String(layoutMatch.project.year));
+                        }
+                        if (layoutMatch.store && globalStoreFilter !== "all" && layoutMatch.store.toLowerCase() !== globalStoreFilter.toLowerCase()) {
+                          setGlobalStoreFilter("all");
+                        }
+
+                        // 2. Set layoutTabFilters to zoom, pan, focus, and open the unit tooltip on Liveview
+                        setLayoutTabFilters({
+                          store: layoutMatch.store,
+                          location: layoutMatch.location,
+                          projectCode: layoutMatch.unitCode,
+                          sourceTaskId: layoutMatch.task?.id,
+                        });
+
+                        // 3. Switch to layout liveview tab
+                        handleTabChange("layout");
+
+                        // 4. If notification is for comments, open comments modal (closing keeps user on liveview)
+                        if (layoutMatch.isComment) {
+                          if (layoutMatch.isTaskComment && layoutMatch.task) {
+                            setEditingTask(layoutMatch.task);
+                            setIsReadOnlyModal(false);
+                            setModalInitialTab("chat");
+                            setIsTaskModalOpen(true);
+                          } else if (layoutMatch.project) {
+                            setEditingProject(layoutMatch.project);
+                            setIsReadOnlyModal(false);
+                            setModalInitialTab("chat");
+                            setIsProjectModalOpen(true);
+                          }
+                        }
+                        return;
+                      }
+
+                      // 5. If project has no unit in layout tab, keep standard deep link flow
+                      executeDeepLinkRef.current?.(
+                        notif.targetType,
+                        notif.targetId,
+                        {
+                          store: notif.projectStore,
+                          year: String(notif.projectYear),
+                          code: notif.projectCode,
+                        }
+                      );
                     }
                   }}
                 />
