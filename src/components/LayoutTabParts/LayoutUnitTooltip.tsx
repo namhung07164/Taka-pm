@@ -228,7 +228,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.left = `${left}px`;
       el.style.right = 'auto';
       el.style.top = `${top}px`;
-      el.style.width = '350px';
+      el.style.width = '370px';
       el.style.maxWidth = `calc(100vw - ${pad * 2}px)`;
       el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
       el.style.margin = '0';
@@ -365,7 +365,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     <div 
       ref={tooltipRef}
       className={cn(
-        "fixed z-[120] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-all duration-150",
+        "fixed z-[120] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
         "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
         "overflow-y-auto custom-scrollbar"
       )}
@@ -375,42 +375,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 1. Header Row (Draggable Handle) */}
+      {/* 1. Top Bar: Badges (MD Status & Act Status) + Action Buttons (Drag, QuickNav, Close) */}
       <div 
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="flex items-start justify-between gap-2 pr-24 cursor-grab active:cursor-grabbing select-none"
+        className="flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing select-none pb-1 border-b border-slate-100 dark:border-slate-800/80"
       >
-        <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-sm leading-snug flex items-start gap-1.5 flex-1 min-w-0">
-          {/* Store - Code - Name (Clickable to open Project Modal) */}
-          <span 
-            onClick={() => p && onEditProject?.(p, !canWrite, 'details')}
-            className={cn(
-              "break-words leading-tight",
-              p ? "cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors" : ""
-            )}
-            title={p ? "Click to view project details" : undefined}
-          >
-            {v.floor && (
-              <span className={storeDisplay.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : storeDisplay.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>
-                {storeDisplay}
-              </span>
-            )}
-            {v.floor && (v.projectCode || (v.projectName && projectName)) ? ' - ' : ''}
-            {v.projectCode && <span className="font-bold font-mono">{unitCode}</span>}
-            {v.projectCode && v.projectName && projectName ? ' - ' : ''}
-            {v.projectName && projectName ? <span>{projectName}</span> : ''}
-            {!v.floor && !v.projectCode && (!v.projectName || !projectName) && (
-              <span className="font-bold font-mono text-slate-400">{unitCode}</span>
-            )}
-          </span>
-        </div>
-
-        {/* Status Badges: MD Status + Project Status */}
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {/* MD Status Badge in Header */}
+        {/* Left: MD Status & Project Status Badges */}
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
+          {/* MD Status Badge */}
           {v.mdStatus && mdStatus && (
             <div 
               className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 ${v.legendColor ? mdStatusColorClass : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600'} flex items-center gap-1`}
@@ -429,8 +404,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           )}
         </div>
 
-        {/* Actions: Drag Handle + Quick Navigator + Close Button */}
-        <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10">
+        {/* Right: Actions (Drag Handle, Quick Nav, Close) */}
+        <div className="flex items-center gap-1 shrink-0 ml-auto">
           <div
             title="Drag to move tooltip"
             className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -453,10 +428,39 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       </div>
 
+      {/* 2. Full-Width Task / Unit Title */}
+      <div className="w-full pt-0.5">
+        <div 
+          onClick={() => p && onEditProject?.(p, !canWrite, 'details')}
+          className={cn(
+            "font-bold text-slate-800 dark:text-[#f0f0f3] text-sm sm:text-[14px] leading-tight break-words flex items-start gap-1.5 flex-wrap",
+            p ? "cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors" : ""
+          )}
+          title={p ? "Click to view project details" : undefined}
+        >
+          {v.floor && (
+            <span className={cn(
+              "text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded border shrink-0 inline-block my-0.5",
+              storeDisplay.toLowerCase() === 'hcm' 
+                ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-[#8ab4f8] dark:border-blue-800/80' 
+                : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/60 dark:text-red-400 dark:border-red-800/80'
+            )}>
+              {storeDisplay}
+            </span>
+          )}
+          {v.projectCode && <span className="font-bold font-mono text-blue-600 dark:text-[#8ab4f8]">{unitCode}</span>}
+          {(v.projectCode && v.projectName && projectName) && <span className="text-slate-400 dark:text-slate-500">-</span>}
+          {v.projectName && projectName && <span className="text-slate-800 dark:text-slate-100">{projectName}</span>}
+          {!v.floor && !v.projectCode && (!v.projectName || !projectName) && (
+            <span className="font-bold font-mono text-slate-400">{unitCode}</span>
+          )}
+        </div>
+      </div>
+
       {/* Smart Alert Notification Banner */}
       {data.alerts?.hasAlert && vis?.notifications !== false && (
         <div className={cn(
-          "flex items-start gap-2 p-2 rounded-lg text-xs border font-medium",
+          "flex items-start gap-2 p-2 rounded-lg text-xs border font-medium my-0.5",
           data.alerts.level === 'critical'
             ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/50"
             : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/50"
@@ -481,12 +485,12 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* 2. Middle Section: Progress Bars */}
+      {/* 3. Progress Bars */}
       {v.progressBars && (
-        <div className="flex flex-col gap-1.5 px-0.5">
+        <div className="flex flex-col gap-1 px-0.5 pt-0.5">
           {/* Plan Progress */}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
+            <span className="text-[10.5px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[70px] shrink-0">
               Plan Prg:
             </span>
             <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
@@ -495,14 +499,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
               />
             </div>
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
+            <span className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300 w-9 text-right shrink-0">
               {planProgressPercent}%
             </span>
           </div>
 
           {/* Actual Progress */}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[65px] shrink-0">
+            <span className="text-[10.5px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[70px] shrink-0">
               Act Prg:
             </span>
             <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
@@ -511,17 +515,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
               />
             </div>
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right shrink-0">
+            <span className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300 w-9 text-right shrink-0">
               {actProgressPercent}%
             </span>
           </div>
         </div>
       )}
 
-      {/* 3. Unified Information Row: Floor, Diện tích, Comment Symbol & Dates */}
+      {/* 4. Unified Information Row: Floor, Area, Comment Symbol & Dates */}
       {(v.floor || v.area || v.startDate || v.endDate || commentsCount > 0) && (
-        <div className="flex items-center justify-between gap-2 px-0.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap sm:flex-nowrap">
-          {/* Left Side: Floor, Diện tích & Comment Symbol */}
+        <div className="flex items-center justify-between gap-2 px-0.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap sm:flex-nowrap">
+          {/* Left Side: Floor, Area & Comment Symbol */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Floor Badge */}
             {v.floor && floorValue && (
@@ -565,7 +569,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           {(v.startDate || v.endDate) && (computedTakStart || computedTakCompl) && (
             <div className="flex gap-2 sm:gap-2.5 text-[11px] font-bold leading-tight shrink-0 ml-auto items-center">
               {v.startDate && computedTakStart && (
-                <div className="text-blue-700 dark:text-[#8ab4f8] text-right">
+                <div className="text-blue-600 dark:text-[#8ab4f8] text-right">
                   {(() => {
                     const d = parseDateTime(computedTakStart);
                     if (!d) return null;
@@ -579,7 +583,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 </div>
               )}
               {v.endDate && computedTakCompl && (
-                <div className="text-pink-700 dark:text-pink-400 text-right">
+                <div className="text-pink-600 dark:text-pink-400 text-right">
                   {(() => {
                     const d = parseDateTime(computedTakCompl);
                     if (!d) return null;
@@ -597,32 +601,32 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* 4. Details & Description Section */}
+      {/* 5. Details & Description Section */}
       {((v.detail && (taskLines.length > 0 || detailText)) || (v.description && descriptionText)) && (
-        <div className="bg-slate-50 dark:bg-[#1e1e20]/60 rounded-lg p-2.5 border border-slate-200/80 dark:border-[#444446] text-xs shadow-sm flex flex-col gap-1.5">
+        <div className="bg-slate-50 dark:bg-[#1e1e20]/60 rounded-lg p-2 sm:p-2.5 border border-slate-200/80 dark:border-[#444446] text-xs shadow-sm flex flex-col gap-1.5 mt-0.5">
           {v.detail && (taskLines.length > 0 || detailText) && (
-            <div className="flex flex-col gap-1">
-              <div className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
+            <div className="flex flex-col gap-0.5">
+              <div className="text-[9.5px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
                 Detail
               </div>
               {taskLines.length > 0 ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-0.5">
                   {taskLines.map((line, idx) => (
                     <div 
                       key={idx} 
-                      className={`font-medium text-xs leading-relaxed ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
+                      className={`font-semibold text-xs leading-snug ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
                     >
                       {line}
                     </div>
                   ))}
                   {detailText && (
-                    <div className="text-slate-600 dark:text-[#a3a3a3] text-[11px] font-normal whitespace-pre-wrap leading-relaxed pt-1.5 mt-0.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                    <div className="text-slate-600 dark:text-[#a3a3a3] text-[11px] font-normal whitespace-pre-wrap leading-relaxed pt-1 mt-0.5 border-t border-slate-200/60 dark:border-slate-700/60">
                       {detailText}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-blue-600 dark:text-[#8ab4f8] font-medium text-xs whitespace-pre-wrap leading-relaxed">
+                <div className="text-blue-600 dark:text-[#8ab4f8] font-semibold text-xs whitespace-pre-wrap leading-snug">
                   {detailText}
                 </div>
               )}
@@ -630,8 +634,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           )}
 
           {v.description && descriptionText && (
-            <div className={cn("flex flex-col gap-1", v.detail && (taskLines.length > 0 || detailText) ? "pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60" : "")}>
-              <div className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
+            <div className={cn("flex flex-col gap-0.5", v.detail && (taskLines.length > 0 || detailText) ? "pt-1 border-t border-slate-200/60 dark:border-slate-700/60" : "")}>
+              <div className="text-[9.5px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
                 Description / Note
               </div>
               <div className="text-slate-700 dark:text-slate-200 font-medium text-xs whitespace-pre-wrap leading-relaxed">
