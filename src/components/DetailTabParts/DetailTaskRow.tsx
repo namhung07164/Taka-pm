@@ -1,0 +1,282 @@
+import React from 'react';
+import { Project, Task } from '../../types';
+import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays } from '../../lib/utils';
+import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown } from 'lucide-react';
+import { DetailTableRow } from '../DetailTab';
+import { EditableCell } from './EditableCell';
+import { PredecessorEditableCell } from './PredecessorEditableCell';
+import { FastToggle } from './FastToggle';
+
+interface DetailTaskRowProps {
+  item: DetailTableRow & { type: 'task' };
+  visibleColumns: string[];
+  canWrite: boolean;
+  isSelected: boolean;
+  isDragging: boolean;
+  isDragOver: boolean;
+  dropPosition: 'before' | 'after' | null;
+  draggingTaskNames: string;
+  taskCode: string;
+  isFocused: boolean;
+  delStatusText: string;
+  delStatusColorClass: string;
+  tasks: Task[];
+  projects: Project[];
+  onToggleSelectTask: (id: string, shiftKey: boolean) => void;
+  onEditTask: (t: Task) => void;
+  onUpdateTask: (t: Task, updates: Partial<Task>) => Promise<void>;
+  onMoveTask: (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => Promise<void>;
+  onDeleteTask: (t: Task) => void;
+  onDragStart: (e: React.DragEvent, taskId: string) => void;
+  onDragOver: (e: React.DragEvent, taskId: string) => void;
+  onDragLeave: (e: React.DragEvent, taskId: string) => void;
+  onDragEnd: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, targetTask: Task, targetProject: Project) => Promise<void>;
+}
+
+export const DetailTaskRow = React.memo(function DetailTaskRow({
+  item,
+  visibleColumns,
+  canWrite,
+  isSelected,
+  isDragging,
+  isDragOver,
+  dropPosition,
+  taskCode,
+  isFocused,
+  delStatusText,
+  delStatusColorClass,
+  tasks,
+  projects,
+  onToggleSelectTask,
+  onEditTask,
+  onUpdateTask,
+  onMoveTask,
+  onDeleteTask,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDragEnd,
+  onDrop,
+}: DetailTaskRowProps) {
+  const t = item.task;
+  const p = item.project;
+  const groupTasks = item.groupTasks;
+  const i = item.taskIndex;
+  const isChildTask = Boolean(t.parentTaskId);
+
+  return (
+    <tr
+      id={`detail-task-${t.id}`}
+      data-task-item="true"
+      data-task-id={t.id}
+      data-project-code={t.projectCode}
+      draggable={canWrite}
+      onDragStart={(e) => onDragStart(e, t.id)}
+      onDragOver={(e) => onDragOver(e, t.id)}
+      onDragLeave={(e) => onDragLeave(e, t.id)}
+      onDragEnd={onDragEnd}
+      onDrop={(e) => onDrop(e, t, p)}
+      className={cn(
+        "border-b border-slate-100 dark:border-[#333336] transition-colors relative",
+        item.taskIndex % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-slate-50/50 dark:bg-[#252528]",
+        isSelected && "bg-blue-50/80 dark:bg-blue-900/20",
+        isDragging && "opacity-40",
+        isFocused && "ring-2 ring-blue-500 z-10"
+      )}
+    >
+      {visibleColumns.includes('drag') && (
+        <td className="px-2 py-2 text-center select-none w-8 text-slate-400">
+          {canWrite && (
+            <div className="cursor-grab active:cursor-grabbing flex justify-center items-center">
+              <GripVertical size={14} />
+            </div>
+          )}
+        </td>
+      )}
+      {visibleColumns.includes('checkbox') && (
+        <td className="px-2 py-2 text-center select-none">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => {
+              const nativeEvent = e.nativeEvent as MouseEvent;
+              onToggleSelectTask(t.id, nativeEvent.shiftKey);
+            }}
+            className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 bg-white dark:bg-[#28282a] border-slate-300 dark:border-[#444446]"
+          />
+        </td>
+      )}
+      {visibleColumns.includes('no') && (
+        <td className="px-3 py-2 text-slate-500 text-xs font-mono">
+          <div className="flex items-center gap-1.5 pl-4">
+            <span className="text-slate-400">{item.taskIndex + 1}</span>
+            {isChildTask && (
+              <span className="text-[10px] text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-1 rounded">
+                sub
+              </span>
+            )}
+          </div>
+        </td>
+      )}
+      {visibleColumns.includes('year') && (
+        <td className="px-3 py-2 text-slate-600 dark:text-[#a3a3a3] text-xs">
+          {t.projectYear || p.year}
+        </td>
+      )}
+      {visibleColumns.includes('store') && (
+        <td className="px-3 py-2 text-slate-600 dark:text-[#a3a3a3] text-xs">
+          {t.projectStore || p.store}
+        </td>
+      )}
+      {visibleColumns.includes('location') && (
+        <td className="px-3 py-2 text-slate-600 dark:text-[#a3a3a3] text-xs">
+          {p.location}
+        </td>
+      )}
+      {visibleColumns.includes('code') && (
+        <td className="px-3 py-2 text-slate-600 dark:text-[#a3a3a3] font-mono text-xs">
+          {taskCode || p.code}
+        </td>
+      )}
+      {visibleColumns.includes('projectName') && (
+        <td className="px-3 py-2 text-slate-400 text-xs">-</td>
+      )}
+      {visibleColumns.includes('taskName') && (
+        <td className="px-3 py-2 font-medium text-slate-800 dark:text-[#f5f5f7]">
+          <div className="flex items-center gap-2">
+            <EditableCell
+              value={t.name}
+              onSave={(val) => onUpdateTask(t, { name: val })}
+              canWrite={canWrite}
+            />
+            {t.notes && t.notes.length > 0 && (
+              <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1.5 py-0.2 rounded-full font-mono">
+                {t.notes.length} note
+              </span>
+            )}
+          </div>
+        </td>
+      )}
+      {visibleColumns.includes('duration') && (
+        <td className="px-3 py-2 text-slate-500 font-mono text-xs">
+          {t.duration !== undefined ? t.duration : calculateDays(t.start, t.finish)}
+        </td>
+      )}
+      {visibleColumns.includes('start') && (
+        <td className="px-3 py-2 font-mono text-xs">
+          <EditableCell
+            value={t.start}
+            type="datetime-local"
+            isDate={true}
+            onSave={(val) => onUpdateTask(t, { start: val })}
+            canWrite={canWrite}
+          />
+        </td>
+      )}
+      {visibleColumns.includes('finish') && (
+        <td className="px-3 py-2 font-mono text-xs">
+          <EditableCell
+            value={t.finish}
+            type="datetime-local"
+            isDate={true}
+            onSave={(val) => onUpdateTask(t, { finish: val })}
+            canWrite={canWrite}
+          />
+        </td>
+      )}
+      {visibleColumns.includes('planProgress') && (
+        <td className="px-3 py-2 text-slate-400 font-mono text-xs">-</td>
+      )}
+      {visibleColumns.includes('actProgress') && (
+        <td className="px-3 py-2">
+          <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium inline-block", delStatusColorClass)}>
+            {delStatusText}
+          </span>
+        </td>
+      )}
+      {visibleColumns.includes('predecessor') && (
+        <td className="px-3 py-2">
+          <PredecessorEditableCell
+            value={t.predecessor}
+            onSave={(val) => onUpdateTask(t, { predecessor: val })}
+            canWrite={canWrite}
+            task={t}
+            tasks={tasks}
+            projects={projects}
+          />
+        </td>
+      )}
+      {visibleColumns.includes('party') && (
+        <td className="px-3 py-2">
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex-1">
+              <EditableCell
+                value={t.party}
+                onSave={(val) => onUpdateTask(t, { party: val })}
+                canWrite={canWrite}
+              />
+            </div>
+            <FastToggle
+              value={Boolean(t.delegation)}
+              canWrite={canWrite}
+              onToggle={(val) => onUpdateTask(t, { delegation: val })}
+              isSmall={true}
+            />
+          </div>
+        </td>
+      )}
+      {visibleColumns.includes('action') && (
+        <td className="px-3 py-2 text-right">
+          <div className="flex items-center justify-end gap-1">
+            {canWrite && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onMoveTask(p, groupTasks, i, 'up'); }}
+                  disabled={i === 0}
+                  className={cn("p-1 rounded text-slate-400 hover:text-blue-600 transition-colors", i === 0 && "opacity-30 cursor-not-allowed")}
+                  title="Move Up"
+                >
+                  <ArrowUp size={14} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onMoveTask(p, groupTasks, i, 'down'); }}
+                  disabled={i === groupTasks.length - 1}
+                  className={cn("p-1 rounded text-slate-400 hover:text-blue-600 transition-colors", i === groupTasks.length - 1 && "opacity-30 cursor-not-allowed")}
+                  title="Move Down"
+                >
+                  <ArrowDown size={14} />
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => onEditTask(t)}
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-blue-600 transition-colors"
+              title="Edit Task / Notes"
+            >
+              <Edit3 size={14} />
+            </button>
+            {canWrite && (
+              <button
+                onClick={() => onDeleteTask(t)}
+                className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 hover:text-red-600 transition-colors"
+                title="Delete Task"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        </td>
+      )}
+      {isDragOver && dropPosition && (
+        <td
+          colSpan={visibleColumns.length}
+          className={cn(
+            "absolute left-0 right-0 h-1 bg-blue-500 pointer-events-none z-20",
+            dropPosition === 'before' ? "top-0" : "bottom-0"
+          )}
+        />
+      )}
+    </tr>
+  );
+});

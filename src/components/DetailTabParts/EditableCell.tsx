@@ -4,7 +4,7 @@ import { formatDisplayDateTime, getDefaultDatetimeLocal } from '../../lib/utils'
 export const EditableCell = React.memo(function EditableCell({ 
   value, 
   type = 'text', 
-  options,
+  options, 
   onSave, 
   canWrite, 
   isDate = false,
@@ -12,7 +12,7 @@ export const EditableCell = React.memo(function EditableCell({
 }: { 
   value: any, 
   type?: string, 
-  options?: {label: string, value: string}[],
+  options?: ({label: string, value: string} | string)[], 
   onSave: (val: any) => void, 
   canWrite: boolean, 
   isDate?: boolean,
@@ -27,7 +27,7 @@ export const EditableCell = React.memo(function EditableCell({
 
   const handleBlur = () => {
     setIsEditing(false);
-    const newVal = type === 'number' ? Number(String(val).replace(',', '.')) : val;
+    const newVal = type === 'number' ? Number(val) : val;
     if (newVal !== value) {
       onSave(newVal);
     }
@@ -61,9 +61,11 @@ export const EditableCell = React.memo(function EditableCell({
           className="w-full bg-white dark:bg-[#1e1e20] border border-blue-400 rounded px-1 py-0.5 outline-none text-inherit font-inherit text-slate-900 dark:text-[#e3e3e3]"
         >
           <option value="">-</option>
-          {options?.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
+          {options?.map(opt => {
+            const optVal = typeof opt === 'string' ? opt : opt.value;
+            const optLbl = typeof opt === 'string' ? opt : opt.label;
+            return <option key={optVal} value={optVal}>{optLbl}</option>;
+          })}
         </select>
       );
     }
