@@ -360,12 +360,14 @@ export function LayoutTab({
           if (m) loc = m[1].toUpperCase();
         }
         if (isAdmin || !loc || allowedLocsSet.has(loc.toLowerCase().trim())) {
-          map.set(u.name.toLowerCase().trim(), {
-            unit: u.name.trim(),
+          const uName = String(u.name).trim();
+          const key = `${uName.toLowerCase()}_${loc.toLowerCase().trim()}`;
+          map.set(key, {
+            unit: uName,
             location: loc,
             brand: '',
             project: '',
-            code: u.name.trim()
+            code: uName
           });
         }
       }
@@ -381,27 +383,16 @@ export function LayoutTab({
           if (m) loc = m[1].toUpperCase();
         }
         if (isAdmin || !loc || allowedLocsSet.has(loc.toLowerCase().trim())) {
-          const primaryCode = p.unit || p.code || p.name;
+          const primaryCode = String(p.unit || p.code || p.name || '').trim();
           if (primaryCode) {
-            const key = String(primaryCode).toLowerCase().trim();
-            const existing = map.get(key) || { unit: String(primaryCode).trim(), location: '', brand: '', project: '', code: '' };
+            const key = `${primaryCode.toLowerCase()}_${(p.code || '').toLowerCase().trim()}_${loc.toLowerCase().trim()}`;
+            const existing = map.get(key) || { unit: primaryCode, location: loc, brand: '', project: '', code: '' };
             map.set(key, {
-              unit: String(primaryCode).trim(),
+              unit: primaryCode,
               location: loc || existing.location || '',
               brand: p.brandName || existing.brand || '',
               project: p.name || existing.project || '',
-              code: p.code || existing.code || ''
-            });
-          }
-          // If project has both code and distinct project name, index project name as well
-          if (p.name && p.code && p.name.trim().toLowerCase() !== p.code.trim().toLowerCase()) {
-            const nameKey = `proj_${p.name.toLowerCase().trim()}`;
-            map.set(nameKey, {
-              unit: String(p.unit || p.code).trim(),
-              location: loc,
-              brand: p.brandName || '',
-              project: p.name.trim(),
-              code: p.code
+              code: p.code || existing.code || primaryCode
             });
           }
         }
@@ -413,16 +404,93 @@ export function LayoutTab({
 
   const filteredUnitSuggestions = React.useMemo(() => {
     if (!unitSearchInput.trim()) return [];
-    const q = unitSearchInput.toLowerCase().trim();
-    return unitSuggestions.filter((item: { unit: string; location?: string; brand?: string; project?: string; code?: string }) => {
-      const matchUnit = item.unit.toLowerCase().includes(q);
-      const matchBrand = (item.brand || '').toLowerCase().includes(q);
-      const matchProject = (item.project || '').toLowerCase().includes(q);
-      const matchCode = (item.code || '').toLowerCase().includes(q);
-      const matchLoc = (item.location || '').toLowerCase().includes(q);
-      return matchUnit || matchBrand || matchProject || matchCode || matchLoc;
+    
+    // Normalize string for diacritic-insensitive & case-insensitive matching
+    const norm = (s: string) =>
+      (s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    const qRaw = unitSearchInput.toLowerCase().trim();
+    const q = norm(unitSearchInput);
+    const currentLoc = norm(globalLocationFilter[0] || '');
+
+    const scoredList: Array<{
+      item: { unit: string; location?: string; brand?: string; project?: string; code?: string };
+      score: number;
+    }> = [];
+
+    unitSuggestions.forEach((item) => {
+      const uRaw = (item.unit || '').toLowerCase().trim();
+      const bRaw = (item.brand || '').toLowerCase().trim();
+      const pRaw = (item.project || '').toLowerCase().trim();
+      const cRaw = (item.code || '').toLowerCase().trim();
+      const lRaw = (item.location || '').toLowerCase().trim();
+
+      const uNorm = norm(item.unit);
+      const bNorm = norm(item.brand || '');
+      const pNorm = norm(item.project || '');
+      const cNorm = norm(item.code || '');
+      const lNorm = norm(item.location || '');
+
+      let score = 0;
+
+      // 1. Exact Match (Highest priority - 10000+)
+      if (bNorm === q || bRaw === qRaw) score = 12000;
+      else if (uNorm === q || uRaw === qRaw) score = 11000;
+      else if (cNorm === q || cRaw === qRaw) score = 10000;
+      else if (pNorm === q || pRaw === qRaw) score = 9000;
+
+      // 2. Starts With (Prefix match - 5000 - 8000)
+      else if (bNorm.startsWith(q) || bRaw.startsWith(qRaw)) score = 8000;
+      else if (uNorm.startsWith(q) || uRaw.startsWith(qRaw)) score = 7000;
+      else if (cNorm.startsWith(q) || cRaw.startsWith(qRaw)) score = 6000;
+      else if (pNorm.startsWith(q) || pRaw.startsWith(qRaw)) score = 5000;
+
+      // 3. Word starts with query (e.g. brand "Tokyo Ito", project "Khu Ito")
+      else {
+        const bWords = bNorm.split(/[\s\-_\/.,;]+/);
+        const uWords = uNorm.split(/[\s\-_\/.,;]+/);
+        const cWords = cNorm.split(/[\s\-_\/.,;]+/);
+        const pWords = pNorm.split(/[\s\-_\/.,;]+/);
+
+        if (bWords.some(w => w.startsWith(q))) score = 4000;
+        else if (uWords.some(w => w.startsWith(q))) score = 3500;
+        else if (cWords.some(w => w.startsWith(q))) score = 3000;
+        else if (pWords.some(w => w.startsWith(q))) score = 2500;
+
+        // 4. Substring contains (1000 - 2000)
+        else if (bNorm.includes(q) || bRaw.includes(qRaw)) score = 2000;
+        else if (uNorm.includes(q) || uRaw.includes(qRaw)) score = 1700;
+        else if (cNorm.includes(q) || cRaw.includes(qRaw)) score = 1400;
+        else if (pNorm.includes(q) || pRaw.includes(qRaw)) score = 1100;
+        else if (lNorm.includes(q) || lRaw.includes(qRaw)) score = 600;
+      }
+
+      if (score > 0) {
+        // Precision bonus: shorter matched text = tighter match (e.g. "Ito" vs "Very long sentence with ito")
+        const matchLen = (bNorm.includes(q) ? bNorm.length : (uNorm.includes(q) ? uNorm.length : (cNorm.includes(q) ? cNorm.length : pNorm.length))) || 50;
+        score += Math.max(0, 100 - Math.min(matchLen, 100));
+
+        // Floor proximity bonus: currently viewed floor gets a boost when relevance is similar
+        if (currentLoc && lNorm === currentLoc) {
+          score += 50;
+        }
+
+        scoredList.push({ item, score });
+      }
     });
-  }, [unitSuggestions, unitSearchInput]);
+
+    // Sort descending by calculated score
+    scoredList.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (a.item.unit || '').localeCompare(b.item.unit || '');
+    });
+
+    return scoredList.map(s => s.item);
+  }, [unitSuggestions, unitSearchInput, globalLocationFilter]);
 
   const handleSelectSearchUnit = (unitItem: { unit: string; location?: string; brand?: string; project?: string; code?: string }) => {
     setUnitSearchInput(unitItem.unit);
