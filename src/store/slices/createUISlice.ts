@@ -1,6 +1,5 @@
 import { StateCreator } from "zustand";
 import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
-import { loadCachedStaticConfig } from "../../lib/configCacheService";
 import { TabId } from "../../types";
 import { AppState, UISlice } from "../storeTypes";
 
@@ -230,37 +229,34 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
   },
   globalLocationFilter: (() => {
     try {
-      const savedAuth = safeGetItemLocal("taka_auth_v1");
-      let currentUser: any = null;
-      if (savedAuth) {
-        currentUser = JSON.parse(savedAuth);
-      }
-      
-      const config = loadCachedStaticConfig();
-      const allLocations = config?.locations || [];
+      const LAST_ACT_KEY = "taka_last_activity_time";
+      const FIFTEEN_MINS_MS = 15 * 60 * 1000;
+      const lastAct = safeGetItemLocal(LAST_ACT_KEY);
+      const now = Date.now();
 
-      // If user is admin or has 'all' location permission
-      if (!currentUser || currentUser.role === 'admin' || currentUser.locationPermissions?.['all']) {
+      // If first launch or inactivity > 15 minutes: default to [] ("All Locations")
+      if (!lastAct || (now - Number(lastAct) > FIFTEEN_MINS_MS)) {
+        safeSetItemLocal(LAST_ACT_KEY, String(now));
+        safeSetItemLocal("taka_location_filter", JSON.stringify([]));
         return [];
       }
 
-      // If user has specific location permissions
-      if (currentUser.locationPermissions) {
-        const allowed = allLocations.filter((loc: string) => {
-          const lKey = loc.toLowerCase().trim();
-          return !!currentUser.locationPermissions?.[lKey];
-        });
-        if (allLocations.length > 0 && allowed.length >= allLocations.length) {
-          return [];
-        }
-        return allowed;
+      const stored = safeGetItemLocal("taka_location_filter");
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        if (typeof parsed === 'string' && parsed !== 'all') return [parsed];
+        return [];
       }
-      return [];
+      return parsed.filter((l: string) => l !== 'all');
     } catch {
       return [];
     }
   })(),
   setGlobalLocationFilter: (globalLocationFilter) => {
+    try {
+      safeSetItemLocal("taka_last_activity_time", String(Date.now()));
+    } catch {}
     const cleaned = Array.isArray(globalLocationFilter) ? globalLocationFilter.filter(l => l !== 'all') : [];
     safeSetItemLocal("taka_location_filter", JSON.stringify(cleaned));
     set({ globalLocationFilter: cleaned });

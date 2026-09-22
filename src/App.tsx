@@ -112,6 +112,61 @@ export default function App() {
   const toast = useAppStore(state => state.toast);
   const setToast = useAppStore(state => state.setToast);
 
+  // 15-minute inactivity reset check for location filter
+  useEffect(() => {
+    const LAST_ACTIVITY_KEY = "taka_last_activity_time";
+    const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+
+    const checkAndTouchActivity = () => {
+      const now = Date.now();
+      const lastAct = safeGetItemLocal(LAST_ACTIVITY_KEY);
+      if (lastAct) {
+        const lastTime = parseInt(lastAct, 10);
+        if (!isNaN(lastTime) && (now - lastTime > FIFTEEN_MINUTES_MS)) {
+          // Exceeded 15 minutes of inactivity -> Reset location filter to all location ([])
+          useAppStore.getState().setGlobalLocationFilter([]);
+        }
+      } else {
+        // First launch
+        useAppStore.getState().setGlobalLocationFilter([]);
+      }
+      safeSetItemLocal(LAST_ACTIVITY_KEY, String(now));
+    };
+
+    // Check on initial mount
+    checkAndTouchActivity();
+
+    // Listen to user interactions and visibility/focus changes
+    let lastThrottledTime = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastThrottledTime > 30000) { // Throttle activity updates every 30s
+        lastThrottledTime = now;
+        checkAndTouchActivity();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndTouchActivity();
+      }
+    };
+
+    window.addEventListener('click', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('touchstart', handleUserActivity);
+    window.addEventListener('focus', checkAndTouchActivity);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('touchstart', handleUserActivity);
+      window.removeEventListener('focus', checkAndTouchActivity);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   const currentUser = useAppStore(state => state.currentUser);
   useEffect(() => {
     if (currentUser?.role === 'guest') {

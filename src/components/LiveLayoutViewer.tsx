@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import Konva from 'konva';
-import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
+import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -928,6 +928,22 @@ function LiveCanvas({
       }
     });
 
+    // Pre-index tasks by code map for O(1) lookup to eliminate O(N*M) loop
+    const tasksByCodeMap = new Map<string, any[]>();
+    tasks.forEach(t => {
+      if (!t || !t.name || !t.projectCode) return;
+      const rawCode = String(t.projectCode).trim().toLowerCase();
+      const codeParts = rawCode.split(/[+;,/]/).map(c => c.trim()).filter(Boolean);
+      codeParts.forEach(c => {
+        let list = tasksByCodeMap.get(c);
+        if (!list) {
+          list = [];
+          tasksByCodeMap.set(c, list);
+        }
+        list.push(t);
+      });
+    });
+
     const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -943,14 +959,18 @@ function LiveCanvas({
       const pCodes = rawCodes.split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       
-      // Match tasks directly from Zustand tasks store for real-time subtasks without Firestore reads
-      const matchedTasks = tasks.filter(t => {
-        if (!t || !t.name) return false;
-        const tCode = String(t.projectCode || '').trim().toLowerCase();
-        if (pCodes.includes(tCode)) return true;
-        if (p.code && tCode === String(p.code).trim().toLowerCase()) return true;
-        return false;
+      // Match tasks directly from pre-indexed map for O(1) lookup
+      const matchedTaskSet = new Set<any>();
+      pCodes.forEach(c => {
+        const list = tasksByCodeMap.get(c);
+        if (list) list.forEach(t => matchedTaskSet.add(t));
       });
+      if (p.code) {
+        const pCodeLower = String(p.code).trim().toLowerCase();
+        const list = tasksByCodeMap.get(pCodeLower);
+        if (list) list.forEach(t => matchedTaskSet.add(t));
+      }
+      const matchedTasks = Array.from(matchedTaskSet);
 
       // Match active tasks following STRICTLY the same logic as General Tab (Project General Table):
       // Only tasks that are currently active right now (now >= start && now <= finish).
@@ -2497,8 +2517,8 @@ function LiveCanvas({
               }
             }}
         >
-          {/* Single Unified Layer matching ReviewTab for consistent z-ordering and crisp rendering */}
-          <Layer>
+          {/* Static FastLayer for background CAD layout image to bypass hit-graph calculations */}
+          <FastLayer listening={false}>
             {bgImage && (
               <KonvaImage
                 image={bgImage}
@@ -2511,7 +2531,10 @@ function LiveCanvas({
                 rotation={version.backgroundRotation || 0}
               />
             )}
+          </FastLayer>
 
+          {/* Dynamic Layer for interactive unit shapes and tooltips */}
+          <Layer>
             {displayedUnits.map((unit: any) => {
                const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
                const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
@@ -2540,8 +2563,8 @@ function LiveCanvas({
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
                   shadowColor: isFocused ? '#f59e0b' : '#000000',
-                  shadowBlur: isFocused ? 16 : (isLegendColorOn ? 3 : 0),
-                  shadowOpacity: isFocused ? 0.9 : (isLegendColorOn ? 0.22 : 0),
+                  shadowBlur: isFocused ? 16 : 0,
+                  shadowOpacity: isFocused ? 0.9 : 0,
                   x: unit.x || 0,
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,
