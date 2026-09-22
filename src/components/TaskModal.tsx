@@ -78,8 +78,10 @@ const PredecessorDatalist = React.memo(({ projects, tasks, currentProjectCode, c
   );
 });
 
+import { TaskModalHeader } from './TaskModalParts/TaskModalHeader';
+
 export function TaskModal(props: TaskModalProps) {
-    const logic = useTaskModalLogic(props);
+  const logic = useTaskModalLogic(props);
   const {
     activeTab, setActiveTab, confirmModal, setConfirmModal, isSubmitting,
     handleOpenProjectComments, handleSubmit, t, nodeRef, canWrite, formData,
@@ -89,68 +91,39 @@ export function TaskModal(props: TaskModalProps) {
 
   if (!isOpen) return null;
 
-
   return (
-<Portal>
-    <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
-      <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
-        <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-md overflow-hidden relative flex flex-col pointer-events-auto">
-          <div className="modal-handle cursor-move px-4 md:px-6 py-4 border-b border-slate-100 dark:border-[#333336] flex justify-between items-center bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0 pt-[env(safe-area-inset-top)] md:pt-4">
-          {task ? (
-            <div className="flex items-center gap-2 sm:gap-4">
-              <div className="flex gap-1 bg-slate-200/50 dark:bg-[#28282a] p-1 rounded-lg">
-                <button onClick={() => setActiveTab('details')} 
-                  className={cn("px-3 py-1.5 rounded-md text-sm font-bold transition-colors", activeTab === 'details' ? "bg-white dark:bg-[#333336] text-slate-800 dark:text-[#e3e3e3] shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
-                >{t("Details")}</button>
-                <button onClick={() => setActiveTab('chat')} 
-                  className={cn("px-3 py-1.5 rounded-md text-sm font-bold transition-colors", activeTab === 'chat' ? "bg-white dark:bg-[#333336] text-slate-800 dark:text-[#e3e3e3] shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
-                >{t("Comments")}</button>
-              </div>
-              <button 
-                type="button"
-                onClick={handleOpenProjectComments}
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-200/50 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] px-2.5 py-1.5 rounded-lg transition-colors"
-                title="Go to Project Comments"
-              >
-                <LinkIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{t("Project")}</span>
-              </button>
-            </div>
-          ) : (
-            <h3 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">Task Details</h3>
-          )}
-          <div className="flex items-center gap-1">
-            {task && task.id && (
-              <QRCodeButton 
-                title={task.name} 
-                url={`${window.location.origin}${window.location.pathname}?targetType=task&targetId=${task.id}&code=${encodeURIComponent(task.projectCode || '')}&store=${task.projectStore || ''}&year=${task.projectYear || ''}`} 
-              />
+    <Portal>
+      <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4">
+        <ConfirmModal 
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        />
+        <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
+          <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-md overflow-hidden relative flex flex-col pointer-events-auto">
+            <TaskModalHeader 
+              task={task}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              handleOpenProjectComments={handleOpenProjectComments}
+              onClose={onClose}
+              t={t}
+            />
+          
+            {activeTab === 'details' && (
+              <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto flex-grow pb-[env(safe-area-inset-bottom)]">
+                <TaskBasicInfo logic={logic} task={task} onNavigateToDelegation={onNavigateToDelegation} onClose={onClose} />
+              </form>
             )}
-            <button onClick={onClose} className="text-slate-400 dark:text-[#838383] hover:text-slate-600 p-3 -mr-3">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-        
-        {activeTab === 'details' && (
-          <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto flex-grow pb-[env(safe-area-inset-bottom)]">
-          <TaskBasicInfo logic={logic} task={task} onNavigateToDelegation={onNavigateToDelegation} onClose={onClose} />
-        </form>
-        )}
 
-        {activeTab === 'chat' && task && (
-          <TaskChat task={task} projects={projects} tasks={tasks} currentUser={currentUser} appUsers={appUsers} subAppUsers={subAppUsers} delegationGroups={delegationGroups} onNavigateToDelegation={onNavigateToDelegation} setConfirmModal={setConfirmModal} />
-        )}
+            {activeTab === 'chat' && task && (
+              <TaskChat task={task} projects={projects} tasks={tasks} currentUser={currentUser} appUsers={appUsers} subAppUsers={subAppUsers} delegationGroups={delegationGroups} onNavigateToDelegation={onNavigateToDelegation} setConfirmModal={setConfirmModal} />
+            )}
+          </div>
+        </Draggable>
       </div>
-      </Draggable>
-    </div>
-</Portal>
+    </Portal>
   );
 }

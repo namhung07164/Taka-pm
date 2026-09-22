@@ -29,6 +29,8 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
   const isUserModalOpen = useAppStore(state => state.isUserModalOpen);
   const setIsUserModalOpen = useAppStore(state => state.setIsUserModalOpen);
   
+  const isCalendarSyncModalOpen = useAppStore(state => state.isCalendarSyncModalOpen);
+  
   const editingProject = useAppStore(state => state.editingProject);
   const editingTask = useAppStore(state => state.editingTask);
   const setEditingTask = useAppStore(state => state.setEditingTask);
@@ -47,62 +49,70 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
 
   return (
     <Suspense fallback={null}>
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLogin={onLogin}
-      />
+      {isLoginModalOpen && (
+        <LoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => setIsLoginModalOpen(false)}
+          onLogin={onLogin}
+        />
+      )}
 
-      <ProjectModal
-        isOpen={isProjectModalOpen}
-        onClose={() => setIsProjectModalOpen(false)}
-        project={editingProject}
-        isReadOnly={isReadOnlyModal}
-        initialTab={modalInitialTab}
-        onOpenTask={(taskId) => {
-          const t = tasks.find((item) => item.id === taskId);
-          if (t) {
-            setEditingTask(t);
-            setIsReadOnlyModal(false);
-            setModalInitialTab("chat");
-            setIsProjectModalOpen(false);
-            setIsTaskModalOpen(true);
-          }
-        }}
-      />
-
-      <TabErrorBoundary tabKey="TaskModal">
-        <TaskModal
-          isOpen={isTaskModalOpen}
-          onClose={() => setIsTaskModalOpen(false)}
-          task={editingTask}
-          visibleDelegationGroups={visibleDelegationGroups}
-          prefillProjectCode={prefillProjectCode}
-          prefillProjectYear={prefillProjectYear}
-          prefillProjectStore={prefillProjectStore}
+      {isProjectModalOpen && (
+        <ProjectModal
+          isOpen={isProjectModalOpen}
+          onClose={() => setIsProjectModalOpen(false)}
+          project={editingProject}
           isReadOnly={isReadOnlyModal}
-          initialTab={modalInitialTab === "chat" ? "chat" : "details"}
-          onNavigateToDelegation={(groupId) => {
-            setIsTaskModalOpen(false);
-            onTabChange("taskDelegation");
-            setTimeout(() => {
-              window.dispatchEvent(
-                new CustomEvent("taka_open_delegation_group", {
-                  detail: { groupId },
-                })
-              );
-            }, 400);
+          initialTab={modalInitialTab}
+          onOpenTask={(taskId) => {
+            const t = tasks.find((item) => item.id === taskId);
+            if (t) {
+              setEditingTask(t);
+              setIsReadOnlyModal(false);
+              setModalInitialTab("chat");
+              setIsProjectModalOpen(false);
+              setIsTaskModalOpen(true);
+            }
           }}
         />
-      </TabErrorBoundary>
+      )}
 
-      <UserModal
-        isOpen={isUserModalOpen}
-        onClose={() => setIsUserModalOpen(false)}
-        user={editingUser}
-      />
+      {isTaskModalOpen && (
+        <TabErrorBoundary tabKey="TaskModal">
+          <TaskModal
+            isOpen={isTaskModalOpen}
+            onClose={() => setIsTaskModalOpen(false)}
+            task={editingTask}
+            visibleDelegationGroups={visibleDelegationGroups}
+            prefillProjectCode={prefillProjectCode}
+            prefillProjectYear={prefillProjectYear}
+            prefillProjectStore={prefillProjectStore}
+            isReadOnly={isReadOnlyModal}
+            initialTab={modalInitialTab === "chat" ? "chat" : "details"}
+            onNavigateToDelegation={(groupId) => {
+              setIsTaskModalOpen(false);
+              onTabChange("taskDelegation");
+              setTimeout(() => {
+                window.dispatchEvent(
+                  new CustomEvent("taka_open_delegation_group", {
+                    detail: { groupId },
+                  })
+                );
+              }, 400);
+            }}
+          />
+        </TabErrorBoundary>
+      )}
 
-      <CalendarSyncModal />
+      {isUserModalOpen && (
+        <UserModal
+          isOpen={isUserModalOpen}
+          onClose={() => setIsUserModalOpen(false)}
+          user={editingUser}
+        />
+      )}
+
+      {isCalendarSyncModalOpen && <CalendarSyncModal />}
     </Suspense>
   );
 });

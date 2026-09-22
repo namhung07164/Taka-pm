@@ -192,6 +192,44 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   const costs = useAppStore(state => state.costs);
   const setIsCostsRequested = useAppStore(state => state.setIsCostsRequested);
 
+  // O(1) Pre-indexed Map for Costs by Project Code
+  const costsMapByCode = useMemo(() => {
+    const map = new Map<string, Cost[]>();
+    for (let i = 0; i < costs.length; i++) {
+      const c = costs[i];
+      if (c.isDeleted) continue;
+      const cCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
+      if (!cCode) continue;
+      let list = map.get(cCode);
+      if (!list) {
+        list = [];
+        map.set(cCode, list);
+      }
+      list.push(c);
+    }
+    return map;
+  }, [costs]);
+
+  // Helper to get matching costs for a project in O(1) + O(k) candidate filter
+  const getGroupCostsForProject = (p: Project) => {
+    const pCode = String(p.code || '').trim().toLowerCase();
+    const candidateCosts = costsMapByCode.get(pCode) || [];
+    const pYr = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+    const pStore = String(p.store || '').trim().toLowerCase();
+
+    return candidateCosts.filter(c => {
+      const costYear = String(c.projectYear || (c as any).year || '').trim();
+      const matchesYear = !costYear || !pYr || costYear === pYr;
+      if (!matchesYear) return false;
+
+      const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
+      const matchesStore = !costStore || !pStore || costStore === pStore;
+      if (!matchesStore) return false;
+
+      return true;
+    });
+  };
+
   useEffect(() => {
     setIsCostsRequested(true);
   }, [setIsCostsRequested]);
@@ -247,23 +285,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
       if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
       if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
 
-      const groupCosts = costs.filter(c => {
-        const costCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
-        const pCode = String(p.code || '').trim().toLowerCase();
-        if (costCode !== pCode) return false;
-
-        const costYear = String(c.projectYear || (c as any).year || '').trim();
-        const pYr = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
-        const matchesYear = !costYear || !pYr || costYear === pYr;
-        if (!matchesYear) return false;
-
-        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
-        const pStore = String(p.store || '').trim().toLowerCase();
-        const matchesStore = !costStore || !pStore || costStore === pStore;
-        if (!matchesStore) return false;
-
-        return true;
-      });
+      const groupCosts = getGroupCostsForProject(p);
 
       const isMatch = matchesAdvancedSearch(
         term,
@@ -854,23 +876,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
       if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
       if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
 
-      const groupCosts = costs.filter(c => {
-        const costCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
-        const pCode = String(p.code || '').trim().toLowerCase();
-        if (costCode !== pCode) return false;
-
-        const costYear = String(c.projectYear || (c as any).year || '').trim();
-        const pYear = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
-        const matchesYear = !costYear || !pYear || costYear === pYear;
-        if (!matchesYear) return false;
-
-        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
-        const pStore = String(p.store || '').trim().toLowerCase();
-        const matchesStore = !costStore || !pStore || costStore === pStore;
-        if (!matchesStore) return false;
-
-        return true;
-      });
+      const groupCosts = getGroupCostsForProject(p);
 
       if (paidDateStart || paidDateEnd) {
         const hasMatchingPaidCost = groupCosts.some(c => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches);
@@ -939,12 +945,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   const totalSupAll = filteredCostsForTotals.reduce((sum, c) => sum + (c.supportingFee || 0), 0);
   const totalBudgetAll = filteredProjectsForDisplay.reduce((sum, p) => sum + (Number(p.financial?.totalApproved || p.budget) || 0), 0);
   const totalRemainingAll = filteredProjectsForDisplay.reduce((sum, p) => {
-    const pDerivedYear = p.year ? p.year : (p.start ? Number(String(p.start).substring(0, 4)) : undefined);
-    const projectCosts = costs.filter(c => 
-       String(c.projectCode).trim().toLowerCase() === String(p.code).trim().toLowerCase() &&
-       (String(c.projectYear || '') === String(pDerivedYear || '') || (!c.projectYear && !pDerivedYear)) &&
-       (String(c.projectStore || '') === String(p.store || '') || (!c.projectStore && !p.store))
-    );
+    const projectCosts = getGroupCostsForProject(p);
     const hasCosts = projectCosts.length > 0;
     const computedActual = projectCosts.reduce((s, c) => s + (Number(c.actual) || 0), 0);
     const computedSup = projectCosts.reduce((s, c) => s + (Number(c.supportingFee) || 0), 0);

@@ -2928,7 +2928,11 @@ const handlePrintToPDF = async () => {
       <div className="fixed bottom-1 right-3 text-[10px] text-slate-400 z-50 pointer-events-none">
         copyright by Nam Hung CP
       </div>
-          {showTour && <AppTour onClose={handleCloseTour} />}
+          {showTour && (
+            <Suspense fallback={null}>
+              <AppTour onClose={handleCloseTour} />
+            </Suspense>
+          )}
       {isExportingPDF && (
         <div className="fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white print:hidden hide-on-actual-print">
           <svg className="w-12 h-12 animate-spin text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

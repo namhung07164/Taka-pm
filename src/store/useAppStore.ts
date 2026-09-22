@@ -11,3 +11,5 @@ export const useAppStore = create<AppState>((...a) => ({
 }));
 
 export type { AppState };
+export { useUISlice, useDataSlice, useOptimisticSlice, useStoreShallow } from "./storeSelectors";
+
