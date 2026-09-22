@@ -62,3 +62,9 @@ Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file
 
 ## 11. Draggable Modals & Tooltips Mandate
 - **Universal Draggability**: Mọi modal, hộp thoại (ProjectModal, TaskModal, UserModal, ConfirmModal, CalendarSync, DesktopOptimization, QuickNav) và các bảng modular, floating tooltips (LayoutUnitTooltip, v.v.) hiện tại và tạo mới trong tương lai **BẮT BUỘC** hỗ trợ tính năng kéo thả di chuyển (Draggable / Pointer Drag) với tay cầm (`.modal-handle`, `cursor-grab active:cursor-grabbing` hoặc icon `GripHorizontal`) để người dùng linh hoạt dịch chuyển vị trí, không bị che khuất dữ liệu bên dưới.
+
+## 12. Modal & Component Performance Standards (Render Isolation & JIT)
+- **Conditional JIT Mounting**: Mọi modal nặng (`TaskModal`, `ProjectModal`, `UserModal`, `CalendarSyncModal`, `QRScannerModal`) BẮT BUỘC dùng Dynamic Import JIT, bọc trong `<Suspense fallback={null}>` và CHỈ MOUNT khi có lệnh mở (`{isOpen && <Modal />}`). Cấm duy trì DOM ẩn chạy ngầm khi Modal đóng.
+- **Form Sub-Component Modularization**: Mọi modal form phức tạp BẮT BUỘC tách thành các sub-components độc lập bọc `React.memo` (vd: `TaskDatesSection`, `TaskPredecessorSection`, `TaskModalHeader`). Thao tác gõ văn bản hoặc thay đổi input ở 1 phần không được gây re-render các phần còn lại.
+- **Unified Shallow Subscriptions**: Tận dụng triệt để các shallow selector hooks (`useUISlice`, `useDataSlice`, `useStoreShallow` trong `src/store/useAppStore.ts`) để đảm bảo component chỉ re-render khi đúng thuộc tính được lắng nghe thay đổi.
+
