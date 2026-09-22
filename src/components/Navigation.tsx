@@ -402,6 +402,13 @@ export function Navigation({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {/* Mobile Ribbon Display Section */}
+                <div className="p-3 bg-slate-50 dark:bg-[#28282a] rounded-xl border border-slate-200/80 dark:border-[#333336]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600 dark:text-[#c3c3c3]">Ribbon Display</span>
+                    <RibbonDisplayMenu variant="navbar" />
+                  </div>
+                </div>
                 {visibleParentTabs.map((pt) => {
                   const childTabs = childTabMap[pt.id as ParentTabId]
                     .map((childId) => tabs.find((t) => t.id === childId))

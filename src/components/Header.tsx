@@ -583,7 +583,9 @@ export function Header({
             </div>
           </>
         )}
-        <RibbonDisplayMenu variant="header" />
+        <div className="hidden lg:inline-flex items-center">
+          <RibbonDisplayMenu variant="header" />
+        </div>
       </div>
       {isQRScannerOpen && (
         <Suspense fallback={null}>
