@@ -5,7 +5,7 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Search, Plus, Trash2, ChevronRight, ChevronDown, ChevronUp, FolderOutput, Pin, Play, Download, Upload, FileText, Edit3, MessageSquare, ArrowDownUp, Printer, EyeOff, X, GripVertical, ArrowLeft, Maximize2, Wand2 } from 'lucide-react';
 import { Project, Task, AppUser, TaskNote, PermissionMatrix, AppRole, DelegationGroup } from '../types';
-import { cn, formatDisplayDateMain, formatDisplayDateTime, calculateDays, parseDateTime, formatToDatetimeLocal, getStatus, getTaskStatus, getDefaultDatetimeLocal, resolveActualStatus, getDefaultStoreFilter, computeActProgressPercent, computePlanProgressPercent, generateId, getUserAllowedStores, getEffectiveStoreFilter, scrollToElement } from '../lib/utils';
+import { cn, formatDisplayDateMain, formatDisplayDateTime, calculateDays, parseDateTime, formatToDatetimeLocal, getStatus, getTaskStatus, getDefaultDatetimeLocal, resolveActualStatus, getDefaultStoreFilter, computeActProgressPercent, computePlanProgressPercent, generateId, getUserAllowedStores, getEffectiveStoreFilter, scrollToElement, matchesAdvancedSearch } from '../lib/utils';
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
 import {    db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
 import { undoManager } from '../lib/undoManager';
@@ -2519,37 +2519,39 @@ export function DetailTab({
 
       const groupTasks = info.sortedTasks || tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
 
-      if (lowerSearchTerm) {
-        const projectFields = [p.store, p.location, p.year, p.code, p.name];
-        const projectMatches = projectFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
-        
-        const summariesMatch = p.taskSummaries?.some(ts =>
-          String(ts.name || "").toLowerCase().includes(lowerSearchTerm)
-        ) || false;
+      if (deferredSearchTerm) {
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [p.store, p.location, p.year, p.code, p.name],
+          [],
+          (term) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(term)
+            ) || false;
 
-        const taskMatches = groupTasks.some((t, idx) => {
-          const taskFields = [
-            t.taskCodePhu,
-            `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-            t.name,
-            t.duration,
-            t.start,
-            t.finish,
-            t.party,
-            formatDisplayDateMain(t.start),
-            formatDisplayDateTime(t.start),
-            formatDisplayDateMain(t.finish),
-            formatDisplayDateTime(t.finish)
-          ];
-          const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
-          const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm)) || false;
-          
-          return fieldMatch || notesMatch;
-        });
+            const taskMatches = groupTasks.some((t, idx) => {
+              const taskFields = [
+                t.taskCodePhu,
+                `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                t.name,
+                t.duration,
+                t.start,
+                t.finish,
+                t.party,
+                formatDisplayDateMain(t.start),
+                formatDisplayDateTime(t.start),
+                formatDisplayDateMain(t.finish),
+                formatDisplayDateTime(t.finish)
+              ];
+              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(term));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(term)) || false;
+              return fieldMatch || notesMatch;
+            });
 
-        if (!projectMatches && !summariesMatch && !taskMatches) {
-          return false;
-        }
+            return summariesMatch || taskMatches;
+          }
+        );
+        if (!isMatch) return false;
       }
       return true;
     });

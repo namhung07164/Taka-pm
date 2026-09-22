@@ -12,7 +12,7 @@ import {
   Info,
 } from "lucide-react";
 import { Task, Project } from "../types";
-import { cn } from "../lib/utils";
+import { cn, matchesAdvancedSearch } from "../lib/utils";
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 
 interface TaskModularModalProps {
@@ -134,11 +134,8 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
       // Search term filter
       if (searchTerm.trim()) {
-        const term = searchTerm.trim().toLowerCase();
-        const nameMatch = String(t.name || "").toLowerCase().includes(term);
-        const codeMatch = String(t.projectCode || "").toLowerCase().includes(term);
-        const partyMatch = String(t.party || "").toLowerCase().includes(term);
-        if (!nameMatch && !codeMatch && !partyMatch) return false;
+        const isMatch = matchesAdvancedSearch(searchTerm, [t.name, t.projectCode, t.party, t.taskCodePhu]);
+        if (!isMatch) return false;
       }
 
       return true;

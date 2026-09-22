@@ -8,7 +8,7 @@ import { downloadCSV, parseCSV, generateCSV } from '../lib/csvUtils';
 import { doc, collection, getDocs, query, where } from 'firebase/firestore';
 import {   db, APP_ID , writeBatch , setDoc } from "../lib/firebase";
 import { undoManager } from '../lib/undoManager';
-import { cn, getDefaultStoreFilter, formatCurrencyValue, getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
+import { cn, getDefaultStoreFilter, formatCurrencyValue, getUserAllowedStores, getEffectiveStoreFilter, matchesAdvancedSearch } from '../lib/utils';
 import { calculateParentBudgetRollup } from '../lib/financialService';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { ResizableHeader } from './ResizableHeader';
@@ -697,7 +697,6 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
 
   const isChildMatchSearch = (child: any, term: string): boolean => {
     if (!term) return false;
-    const lowerTerm = term.toLowerCase().trim();
     const cSearchFields = [
       child.code,
       child.name,
@@ -710,12 +709,11 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
       child.totalActual,
       child.remaining
     ];
-    return cSearchFields.some(val => String(val ?? "").toLowerCase().includes(lowerTerm));
+    return matchesAdvancedSearch(term, cSearchFields);
   };
 
   const isParentMatchSearch = (node: any, term: string): boolean => {
     if (!term) return false;
-    const lowerTerm = term.toLowerCase().trim();
     const searchFields = [
       node.code,
       node.name,
@@ -728,7 +726,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
       node.totalActual,
       node.remaining
     ];
-    return searchFields.some(val => String(val ?? "").toLowerCase().includes(lowerTerm));
+    return matchesAdvancedSearch(term, searchFields);
   };
 
   const [visibleCount, setVisibleCount] = useState(20);

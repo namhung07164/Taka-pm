@@ -4,6 +4,7 @@ import {   db, APP_ID , writeBatch , deleteDoc } from "../lib/firebase";
 import { DevicePerformanceData } from "../store/usePerformanceStore";
 import { reportDevicePerformance, getOrCreateDeviceId } from "../lib/deviceTelemetry";
 import { useAppStore } from "../store/useAppStore";
+import { matchesAdvancedSearch } from "../lib/utils";
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import {
   Smartphone,
@@ -134,13 +135,7 @@ export function GlobalFleetMonitorView() {
   const filteredDevices = devices.filter((d) => {
     if (roleFilter !== "all" && d.userRole !== roleFilter) return false;
     if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      return (
-        d.deviceName?.toLowerCase().includes(q) ||
-        d.userName?.toLowerCase().includes(q) ||
-        d.platform?.toLowerCase().includes(q) ||
-        d.deviceId?.toLowerCase().includes(q)
-      );
+      return matchesAdvancedSearch(searchTerm, [d.deviceName, d.userName, d.platform, d.deviceId]);
     }
     return true;
   });

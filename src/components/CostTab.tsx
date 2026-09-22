@@ -5,7 +5,7 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Search, Plus, Trash2, ChevronRight, ChevronDown, ChevronUp, Download, Upload, ExternalLink, Printer, Lock, Calendar, X } from 'lucide-react';
 import { Project, Cost, AppUser, PermissionMatrix, AppRole } from '../types';
-import { cn, formatDisplayDateMain, parseDateTime, getDefaultStoreFilter, generateId, formatCurrencyValue, getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
+import { cn, formatDisplayDateMain, parseDateTime, getDefaultStoreFilter, generateId, formatCurrencyValue, getUserAllowedStores, getEffectiveStoreFilter, matchesAdvancedSearch } from '../lib/utils';
 import { doc } from 'firebase/firestore';
 import {    db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
 import { undoManager } from '../lib/undoManager';
@@ -796,19 +796,19 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         : groupCosts;
 
       if (deferredSearchTerm) {
-        const term = deferredSearchTerm.toLowerCase();
-        const projectFields = [p.store, p.location, p.year, p.code, p.name];
-        const projectMatches = projectFields.some(val => String(val || "").toLowerCase().includes(term));
-        
-        const costMatches = matchingGroupCosts.some(c => {
-          const cBalance = (c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0);
-          const costFields = [c.description, c.vendor, c.actual, c.firstPaid, c.secondPaid, c.thirdPaid, c.supportingFee, cBalance];
-          return costFields.some(val => String(val || "").toLowerCase().includes(term));
-        });
-
-        if (!projectMatches && !costMatches) {
-          return false;
-        }
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [p.store, p.location, p.year, p.code, p.name],
+          [],
+          (term) => {
+            return matchingGroupCosts.some(c => {
+              const cBalance = (c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0);
+              const costFields = [c.description, c.vendor, c.actual, c.firstPaid, c.secondPaid, c.thirdPaid, c.supportingFee, cBalance];
+              return costFields.some(val => String(val || "").toLowerCase().includes(term));
+            });
+          }
+        );
+        if (!isMatch) return false;
       }
 
       const totalAct = matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0);

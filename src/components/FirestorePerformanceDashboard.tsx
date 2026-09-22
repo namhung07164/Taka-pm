@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { usePerformanceStore, ReadEvent } from "../store/usePerformanceStore";
+import { matchesAdvancedSearch } from "../lib/utils";
 import {
   Activity,
   Zap,
@@ -100,7 +101,7 @@ export function FirestorePerformanceDashboard({ onClose }: FirestorePerformanceD
   const filteredEvents = events.filter((ev) => {
     if (filterType === "server" && ev.fromCache) return false;
     if (filterType === "cache" && !ev.fromCache) return false;
-    if (searchTerm && !ev.collection.toLowerCase().includes(searchTerm.toLowerCase())) {
+    if (searchTerm && !matchesAdvancedSearch(searchTerm, [ev.collection, ev.type, ev.details, ev.id])) {
       return false;
     }
     return true;

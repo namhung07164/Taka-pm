@@ -12,8 +12,8 @@ import {
 
 export function matchesAdvancedSearch(
   searchTerm: string,
-  mainFields: (string | undefined | null)[],
-  subFields: (string | undefined | null)[] = [],
+  mainFields: (string | number | boolean | undefined | null)[],
+  subFields: (string | number | boolean | undefined | null)[] = [],
   evaluateSubItems?: (term: string, andTerms: string[]) => boolean,
 ): boolean {
   if (!searchTerm) return true;

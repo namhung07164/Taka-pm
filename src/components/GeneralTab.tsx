@@ -5,7 +5,7 @@ import { Search, RefreshCw, Pin, GripVertical, CheckCircle2, ArrowUp, ArrowDown,
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { Project, Task, AppUser, DelegationGroup } from '../types';
-import { getStatus, formatDisplayDateMain, cn, parseDateTime, getTaskStatus, getDefaultStoreFilter, resolveActualStatus, computeActProgressPercent, getUserAllowedStores, getEffectiveStoreFilter } from '../lib/utils';
+import { getStatus, formatDisplayDateMain, cn, parseDateTime, getTaskStatus, getDefaultStoreFilter, resolveActualStatus, computeActProgressPercent, getUserAllowedStores, getEffectiveStoreFilter, matchesAdvancedSearch } from '../lib/utils';
 import { useLanguage } from '../lib/LanguageContext';
 import { useLocationOptions } from '../hooks/useLocationOptions';
 import { safeGetItemSession, safeSetItemSession } from '../lib/storage';
@@ -338,7 +338,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   const filteredProjects = projects.filter(p=> {
     const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
     const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, status, p.year];
-    const matchesSearch = !deferredSearchTerm || searchFields.some(val => String(val || "").toLowerCase().includes(deferredSearchTerm.toLowerCase()));
+    const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
     const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
     const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
     const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
