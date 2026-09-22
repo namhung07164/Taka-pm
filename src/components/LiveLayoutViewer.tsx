@@ -890,11 +890,16 @@ function LiveCanvas({
   }, [bgImage, version, units, dimensions]);
 
   // Trigger fitToScreen when background image or partition version changes (only if no unit is currently searched/focused)
+  const lastFloorVersionKeyRef = useRef<string>('');
   useEffect(() => {
-    if (!targetUnitSearch && !focusedUnitId) {
+    const currentKey = `${storeFilter}_${targetLoc}_${version?.id || ''}_${bgImage ? 'loaded' : 'none'}`;
+    const floorChanged = lastFloorVersionKeyRef.current !== currentKey;
+    lastFloorVersionKeyRef.current = currentKey;
+
+    if (floorChanged && !targetUnitSearch && !focusedUnitId && !lastHandledSearchRef.current) {
       fitToScreen();
     }
-  }, [fitToScreen, targetUnitSearch, focusedUnitId]);
+  }, [storeFilter, targetLoc, version?.id, bgImage, fitToScreen, targetUnitSearch, focusedUnitId]);
 
   // 1. Get real-time projects and Excel summary data (Filtered strictly by Account Control RBAC permissions)
   const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
@@ -1743,12 +1748,16 @@ function LiveCanvas({
     };
   }, []);
 
-  // When print preview activates or deactivates, automatically fit floor plan to screen
+  // When print preview activates or deactivates, automatically fit floor plan to screen (strictly on print state transition)
+  const prevPrintPreviewRef = useRef(isPrintPreview);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitToScreen(false);
-    }, 150);
-    return () => clearTimeout(timer);
+    if (prevPrintPreviewRef.current !== isPrintPreview) {
+      prevPrintPreviewRef.current = isPrintPreview;
+      const timer = setTimeout(() => {
+        fitToScreen(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
   }, [isPrintPreview, fitToScreen]);
 
   // Handle browser native print events (Ctrl+P / window.print)
