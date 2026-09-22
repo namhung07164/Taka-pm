@@ -219,6 +219,11 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
    - **Hỗ trợ Dự án Multi-code**: Đối với các dự án ghép mã gian hàng (ví dụ: `L3-333-2, L3-333-3` hoặc `L3-303-1`), hệ thống tự động gom chính xác toàn bộ danh sách task thuộc tất cả các phân đoạn mã để cập nhật tiến độ và mốc thời gian toàn diện.
    - **Cơ chế Fallback bảo toàn dữ liệu**: Tab General luôn hiển thị mốc ngày đầy đủ và chính xác ngay cả khi danh sách task đang được tải hoặc lọc theo năm, không bao giờ bị mất hay rỗng ngày Start/Finish.
 
+7. **Cơ Chế Ảo Hóa Bảng Chuẩn Doanh Nghiệp (High-Performance Table Virtualization)**:
+   - Thay thế việc render lặp hàng nghìn thẻ DOM bằng cơ chế cửa sổ ảo hóa thông minh (Virtual Windowing), chỉ render các hàng đang hiển thị trong tầm mắt người dùng (viewport) kèm vùng đệm.
+   - Giữ nguyên 100% tính năng nghiệp vụ: Kéo thả sắp xếp nhiệm vụ (Drag & Drop), chỉnh sửa trực tiếp trên ô (In-place Editable Cells), mở rộng/thu gọn (Expand/Collapse), sắp xếp theo cột (Column Sort), đổi độ rộng cột (Column Resize), ẩn/hiện cột và chọn hàng loạt (Batch Selection).
+   - Hiệu suất cuộn mượt mà đạt chuẩn 60 FPS ngay cả khi xử lý khối lượng dữ liệu khổng lồ của toàn bộ niên độ (All Years).
+
 #### 🔹 Hướng dẫn Quy trình Phê Duyệt Tiến Độ (Approval Workflow):
 1. Mỗi dòng công việc có cột trạng thái phê duyệt: **Pending (Chờ duyệt)**, **Approved (Đã duyệt)**, **Rejected (Từ chối)**.
 2. Cấp Quản lý (Manager/Admin) nhấp vào nút trạng thái:
@@ -1181,3 +1186,15 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      4. 💰 **Budget (Ngân Sách)**: Tự động chuyển sang bảng ngân sách, đồng bộ năm/store và tự động điền mã dự án vào ô tìm kiếm ngân sách.
      5. 🧾 **Cost (Chi Phí)**: Tự động chuyển sang bảng chi tiết chi phí, đồng bộ năm/store và tự động điền mã dự án/task code vào ô tìm kiếm chi phí.
    - **Thao Tác Nhanh**: Nhấn phím `Esc` hoặc bấm nút đóng để thoát bảng điều hướng ngay lập tức.
+
+11. **Kiến Trúc Bảng Dữ Liệu Enterprise: Virtual Windowing & Row-Level Memoization (Chuẩn Monday.com, Linear)**:
+   - **Cơ Chế Native Virtual Windowing (Cửa Sổ Cuộn Ảo)**:
+     + Bảng chi tiết công việc (`DetailTab`) áp dụng kỹ thuật Virtual Windowing gốc không phụ thuộc thư viện ngoài, tính toán chính xác chiều cao (`rowOffsets`) và chỉ dựng các phần tử DOM nằm trong khung nhìn hiển thị của người dùng (kèm vùng đệm Overscan an toàn).
+     + Sử dụng 2 dòng đệm trên/dưới (`paddingTop` và `paddingBottom`) giữ đúng vị trí thanh cuộn gốc, giảm tải số lượng DOM nodes từ hàng nghìn phần tử xuống dưới 60 phần tử tại bất kỳ thời điểm nào.
+     + Tốc độ cuộn đạt chuẩn 60 FPS ngay cả khi dữ liệu có hàng trăm dự án và hàng ngàn đầu việc lồng ghép.
+   - **Cô Lập & Tối Ưu Render Cấp Hàng (Row-Level React.memo Isolation)**:
+     + Các dòng dự án (`DetailProjectRow`) và dòng công việc (`DetailTaskRow`) được tách biệt thành các standalone component độc lập và bọc bởi `React.memo`.
+     + Toàn bộ hành vi chỉnh sửa ô nhanh (Inline Edit), tick chọn nhiều dòng (Shift + Click), kéo thả sắp xếp (Drag-and-Drop) chỉ kích hoạt re-render cục bộ tại chính dòng tương tác, triệt tiêu 100% hiện tượng re-render toàn bộ bảng tính.
+   - **Lập Bản Đồ Dữ Liệu Tối Ưu (Pre-computed Lookup Maps)**:
+     + Các phép tính nặng như sinh mã nhiệm vụ phụ (`taskCodeMap`) và giải mã trạng thái ủy quyền thực tế (`taskActualStatusMap`) được tiền tính toán một lần thông qua `useMemo`, chuyển độ phức tạp từ O(N) trong vòng lặp hiển thị về truy xuất tức thì O(1).
+

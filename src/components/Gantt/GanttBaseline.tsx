@@ -10,7 +10,7 @@ export interface GanttBaselineProps {
   dayWidth: number;
 }
 
-export const GanttBaseline: React.FC<GanttBaselineProps> = ({ startStr, endStr, startDate, dayWidth }) => {
+export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({ startStr, endStr, startDate, dayWidth }) => {
   if (!startStr || !endStr) return null;
   const s = parseDateTime(startStr);
   const e = parseDateTime(endStr);
@@ -29,4 +29,9 @@ export const GanttBaseline: React.FC<GanttBaselineProps> = ({ startStr, endStr, 
       title="Baseline Plan"
     />
   );
-};
+}, (prev, next) => {
+  return prev.startStr === next.startStr &&
+         prev.endStr === next.endStr &&
+         prev.dayWidth === next.dayWidth &&
+         prev.startDate.getTime() === next.startDate.getTime();
+});

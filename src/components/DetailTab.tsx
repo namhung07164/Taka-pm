@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
@@ -32,6 +32,32 @@ import { PredecessorMultiInput } from "./PredecessorMultiInput";
 import { EditableCell } from './DetailTabParts/EditableCell';
 import { PredecessorEditableCell } from './DetailTabParts/PredecessorEditableCell';
 import { FastToggle } from './DetailTabParts/FastToggle';
+import { DetailProjectRow } from './DetailTabParts/DetailProjectRow';
+import { DetailTaskRow } from './DetailTabParts/DetailTaskRow';
+// Enterprise Table Virtualization (Virtual Windowing)
+
+export type DetailTableRow = 
+  | {
+      type: 'project';
+      key: string;
+      project: Project;
+      projectIndex: number;
+      effectiveTaskCount: number;
+      isExpanded: boolean;
+      groupTasks: Task[];
+      isProjDelegationOn: boolean;
+      planProgressPercent: number;
+      actProgressPercent: number;
+    }
+  | {
+      type: 'task';
+      key: string;
+      task: Task;
+      taskIndex: number;
+      project: Project;
+      projectIndex: number;
+      groupTasks: Task[];
+    };
 
 interface DetailTabProps {
   initialFilterCode?: string;
@@ -2603,6 +2629,377 @@ export function DetailTab({
 
   const lowerSearchTerm = searchTerm.toLowerCase().trim();
 
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(650);
+  const scrollRafIdRef = useRef<number | null>(null);
+
+  const totalTableWidth = useMemo(() => {
+    return visibleColumns.reduce((acc, col) => acc + (colWidths[col] || 100), 0);
+  }, [visibleColumns, colWidths]);
+
+  const flatTableRows = useMemo<DetailTableRow[]>(() => {
+    const rows: DetailTableRow[] = [];
+    const visibleProjects = filteredProjects.slice(0, visibleCount);
+
+    visibleProjects.forEach((p, pIdx) => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const sortedTasks = pInfo.sortedTasks || [];
+      const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
+        let valA = '';
+        let valB = '';
+        let direction = 'asc';
+        
+        if (sortConfig.key === 'start') {
+          valA = a.start || '9999-12-31';
+          valB = b.start || '9999-12-31';
+        } else if (sortConfig.key === 'finish') {
+          valA = a.finish || '9999-12-31';
+          valB = b.finish || '9999-12-31';
+        } else if (sortConfig.key === 'taskName') {
+          valA = a.name || '';
+          valB = b.name || '';
+        } else if (sortConfig.key === 'duration') {
+          valA = a.duration || '0';
+          valB = b.duration || '0';
+          direction = sortConfig.direction;
+          const numA = Number(valA);
+          const numB = Number(valB);
+          if (numA < numB) return direction === 'asc' ? -1 : 1;
+          if (numA > numB) return direction === 'asc' ? 1 : -1;
+          return 0;
+        }
+        direction = sortConfig.direction;
+        
+        if (valA < valB) return direction === 'asc' ? -1 : 1;
+        if (valA > valB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      }) : sortedTasks;
+
+      const effectiveTaskCount = groupTasks.length > 0 
+        ? groupTasks.length 
+        : (p.taskCount !== undefined 
+            ? p.taskCount 
+            : (p.taskSummaries?.length ?? 0));
+      const isExpanded = expandedCodes.includes(String(p.id!));
+      const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
+      const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
+
+      const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
+      const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
+
+      const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
+      const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
+        const taskFields = [
+          t.taskCodePhu,
+          `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+          t.name,
+          t.duration,
+          t.start,
+          t.finish,
+          t.party,
+          formatDisplayDateMain(t.start),
+          formatDisplayDateTime(t.start),
+          formatDisplayDateMain(t.finish),
+          formatDisplayDateTime(t.finish)
+        ];
+        const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
+        const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm)) || false;
+        return fieldMatch || notesMatch;
+      });
+
+      rows.push({
+        type: 'project',
+        key: `project-${p.id || `${p.code}-${p.year}-${p.no}`}`,
+        project: p,
+        projectIndex: pIdx,
+        effectiveTaskCount,
+        isExpanded,
+        groupTasks,
+        isProjDelegationOn,
+        planProgressPercent,
+        actProgressPercent,
+      });
+
+      if (isExpanded) {
+        tasksToRender.forEach((t) => {
+          const originalIndex = groupTasks.findIndex(gt => gt.id === t.id);
+          const i = originalIndex !== -1 ? originalIndex : 0;
+          rows.push({
+            type: 'task',
+            key: `task-${t.id}`,
+            task: t,
+            taskIndex: i,
+            project: p,
+            projectIndex: pIdx,
+            groupTasks,
+          });
+        });
+      }
+    });
+
+    return rows;
+  }, [filteredProjects, visibleCount, projectInfoMap, sortConfig, expandedCodes, delegationGroups, lowerSearchTerm]);
+
+  const flatTableRowsRef = useRef(flatTableRows);
+  useEffect(() => {
+    flatTableRowsRef.current = flatTableRows;
+  }, [flatTableRows]);
+
+  const { totalHeight, rowOffsets } = useMemo(() => {
+    const totalRows = flatTableRows.length;
+    const offsets = new Float64Array(totalRows + 1);
+    let sum = 0;
+    for (let i = 0; i < totalRows; i++) {
+      offsets[i] = sum;
+      sum += (flatTableRows[i].type === 'project' ? 42 : 36);
+    }
+    offsets[totalRows] = sum;
+    return { totalHeight: sum, rowOffsets: offsets };
+  }, [flatTableRows]);
+
+  const OVERSCAN = 20;
+  const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
+    const totalRows = flatTableRows.length;
+    if (totalRows === 0) {
+      return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
+    }
+
+    let low = 0;
+    let high = totalRows - 1;
+    let start = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (rowOffsets[mid + 1] <= Math.max(0, scrollTop)) {
+        low = mid + 1;
+      } else {
+        start = mid;
+        high = mid - 1;
+      }
+    }
+
+    const viewStart = Math.max(0, start - OVERSCAN);
+
+    const bottomTarget = scrollTop + containerHeight;
+    low = start;
+    high = totalRows - 1;
+    let end = totalRows - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (rowOffsets[mid] < bottomTarget) {
+        end = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    const viewEnd = Math.min(totalRows, end + 1 + OVERSCAN);
+    const topPad = rowOffsets[viewStart] || 0;
+    const bottomPad = Math.max(0, totalHeight - (rowOffsets[viewEnd] || totalHeight));
+
+    return {
+      startIndex: viewStart,
+      endIndex: viewEnd,
+      paddingTop: topPad,
+      paddingBottom: bottomPad,
+    };
+  }, [rowOffsets, totalHeight, scrollTop, containerHeight, flatTableRows.length]);
+
+  const handleTableScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const st = target.scrollTop;
+    const sh = target.scrollHeight;
+    const ch = target.clientHeight;
+
+    if (scrollRafIdRef.current !== null) {
+      cancelAnimationFrame(scrollRafIdRef.current);
+    }
+    scrollRafIdRef.current = requestAnimationFrame(() => {
+      setScrollTop(st);
+      scrollRafIdRef.current = null;
+    });
+
+    if (sh - (st + ch) < 400) {
+      if (visibleCount < filteredProjects.length) {
+        setVisibleCount(prev => Math.min(prev + 20, filteredProjects.length));
+      }
+    }
+  }, [visibleCount, filteredProjects.length]);
+
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        if (h > 0) setContainerHeight(h);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!initialFocusTaskId || !tableContainerRef.current) return;
+    const idx = flatTableRows.findIndex(r => r.type === 'task' && r.task.id === initialFocusTaskId);
+    if (idx >= 0 && rowOffsets[idx] !== undefined) {
+      const targetScroll = Math.max(0, rowOffsets[idx] - 120);
+      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    }
+  }, [initialFocusTaskId, flatTableRows, rowOffsets]);
+
+  // Enterprise Optimization: Pre-computed Task Codes Map
+  const taskCodeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      map.set(t.id, computeTaskCode(projects, tasks, t) || t.taskCodePhu || '');
+    }
+    return map;
+  }, [projects, tasks]);
+
+  // Enterprise Optimization: Pre-computed Actual Statuses Map
+  const taskActualStatusMap = useMemo(() => {
+    const map = new Map<string, { label: string; color: string }>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      const taskStatus = getTaskStatus(t.start, t.finish);
+      const delegationGroup = delegationGroupByParentKey.get(t.id);
+      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || []);
+      map.set(t.id, actStatus);
+    }
+    return map;
+  }, [tasks, delegationGroupByParentKey]);
+
+  // Enterprise Optimization: Pre-computed Dragging Task Names
+  const draggingTaskNames = useMemo(() => {
+    if (draggingTaskIds.length === 0) return '';
+    return tasks.filter(tk => draggingTaskIds.includes(tk.id)).map(tk => tk.name).join(', ');
+  }, [draggingTaskIds, tasks]);
+
+  // Enterprise Optimization: Stable Row Action Callbacks
+  const handleSelectAllTasksInProject = useCallback((groupTasks: Task[], select: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      groupTasks.forEach(t => {
+        if (select) next.add(t.id);
+        else next.delete(t.id);
+      });
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      const isChecked = !prev.has(taskId);
+      if (isChecked) {
+        if (shiftKey && lastCheckedTaskIdRef.current) {
+          const lastIdx = allVisibleTaskIds.indexOf(lastCheckedTaskIdRef.current);
+          const currentIdx = allVisibleTaskIds.indexOf(taskId);
+          if (lastIdx !== -1 && currentIdx !== -1) {
+            const minIdx = Math.min(lastIdx, currentIdx);
+            const maxIdx = Math.max(lastIdx, currentIdx);
+            for (let idx = minIdx; idx <= maxIdx; idx++) {
+              next.add(allVisibleTaskIds[idx]);
+            }
+          } else {
+            next.add(taskId);
+          }
+        } else {
+          next.add(taskId);
+        }
+        lastCheckedTaskIdRef.current = taskId;
+      } else {
+        next.delete(taskId);
+        lastCheckedTaskIdRef.current = null;
+      }
+      return next;
+    });
+  }, [allVisibleTaskIds]);
+
+  const renderTableHeader = () => (
+    <tr>
+      {visibleColumns.includes('no') && (
+        <ResizableHeader width={colWidths.no} onResize={(w) => handleResize('no', w)} className="px-6 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('no')}>
+          <div className="flex items-center justify-center gap-1">
+            {canWrite && (
+              <input 
+                type="checkbox" 
+                title="Select All Visible Tasks"
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedTaskIds(new Set(allVisibleTaskIds));
+                  } else {
+                    setSelectedTaskIds(new Set());
+                  }
+                }}
+                checked={selectedTaskIds.size > 0 && selectedTaskIds.size === allVisibleTaskIds.length}
+                className="cursor-pointer rounded border-slate-300 dark:border-slate-600 mr-1"
+              />
+            )}
+            No.
+            <button onClick={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8]">
+              {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </ResizableHeader>
+      )}
+      {visibleColumns.includes('year') && (
+        <ResizableHeader width={colWidths.year} onResize={(w) => handleResize('year', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('year')}>Year</ResizableHeader>
+      )}
+      {visibleColumns.includes('store') && <ResizableHeader width={colWidths.store} onResize={(w) => handleResize('store', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('store')}>Store</ResizableHeader>}
+      {visibleColumns.includes('location') && <ResizableHeader width={colWidths.location} onResize={(w) => handleResize('location', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('location')}>Location</ResizableHeader>}
+      {visibleColumns.includes('code') && <ResizableHeader width={colWidths.code} onResize={(w) => handleResize('code', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('code')}>Code</ResizableHeader>}
+      {visibleColumns.includes('projectName') && <ResizableHeader width={colWidths.projectName} onResize={(w) => handleResize('projectName', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('projectName')}>Project Name</ResizableHeader>}
+      {visibleColumns.includes('taskName') && <ResizableHeader width={colWidths.taskName} onResize={(w) => handleResize('taskName', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('taskName')}>Task Name</ResizableHeader>}
+      {visibleColumns.includes('duration') && <ResizableHeader width={colWidths.duration} onResize={(w) => handleResize('duration', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('duration')}>Duration</ResizableHeader>}
+      {visibleColumns.includes('start') && (
+        <ResizableHeader 
+          width={colWidths.start} 
+          onResize={(w) => handleResize('start', w)} 
+          className="px-6 py-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
+          onClick={() => handleSort('start')}
+          hideable onHide={() => handleToggleColumn('start')}
+        >
+          Start (Plan) {sortConfig?.key === 'start' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+        </ResizableHeader>
+      )}
+      {visibleColumns.includes('finish') && (
+        <ResizableHeader 
+          width={colWidths.finish} 
+          onResize={(w) => handleResize('finish', w)} 
+          className="px-6 py-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
+          onClick={() => handleSort('finish')}
+          hideable onHide={() => handleToggleColumn('finish')}
+        >
+          Finish (Plan) {sortConfig?.key === 'finish' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+        </ResizableHeader>
+      )}
+      {visibleColumns.includes('predecessor') && (
+        <ResizableHeader width={colWidths.predecessor} onResize={(w) => handleResize('predecessor', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('predecessor')}>
+          Predecessor
+        </ResizableHeader>
+      )}
+      {visibleColumns.includes('party') && (
+        <ResizableHeader width={colWidths.party} onResize={(w) => handleResize('party', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('party')}>
+          <div className="flex flex-col items-center justify-center text-center">
+            <span>Party</span>
+            <div className="mt-1 flex flex-col items-center">
+              <span className="text-[9px] font-bold text-slate-400 dark:text-[#838383] normal-case leading-none mb-1">deleg</span>
+              <div className="relative inline-flex h-3 w-5 items-center rounded-full bg-green-500">
+                <span className="inline-block h-2 w-2 transform translate-x-2.5 rounded-full bg-white dark:bg-[#1e1e20]" />
+              </div>
+            </div>
+          </div>
+        </ResizableHeader>
+      )}
+      {visibleColumns.includes('action') && <ResizableHeader width={colWidths.action} onResize={(w) => handleResize('action', w)} className="px-4 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('action')}>Action</ResizableHeader>}
+    </tr>
+  );
+
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm">
       <ConfirmModal 
@@ -2876,608 +3273,103 @@ export function DetailTab({
           </div>
       </div>
 
-      <div className="hidden xl:block overflow-x-auto flex-grow pb-16">
-        <table className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full" style={{ width: `${visibleColumns.reduce((acc, col) => acc + (colWidths[col] || 100), 0)}px` }}>
-          <thead className="text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20]/50 sticky top-0 border-b border-slate-200 dark:border-[#444446] z-10 shadow-sm">
-            <tr>
-              {visibleColumns.includes('no') && (
-                <ResizableHeader width={colWidths.no} onResize={(w) => handleResize('no', w)} className="px-6 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('no')}>
-                  <div className="flex items-center justify-center gap-1">
-                    {canWrite && (
-                      <input 
-                        type="checkbox" 
-                        title="Select All Visible Tasks"
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedTaskIds(new Set(allVisibleTaskIds));
-                          } else {
-                            setSelectedTaskIds(new Set());
-                          }
-                        }}
-                        checked={selectedTaskIds.size > 0 && selectedTaskIds.size === allVisibleTaskIds.length}
-                        className="cursor-pointer rounded border-slate-300 dark:border-slate-600 mr-1"
-                      />
-                    )}
-                    No.
-                    <button onClick={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])} className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8]">
-                      {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </ResizableHeader>
+      <div className="hidden xl:block flex-grow pb-16">
+        <div 
+          ref={tableContainerRef}
+          onScroll={handleTableScroll}
+          className="overflow-auto border border-slate-200 dark:border-[#444446] rounded-xl shadow-xs bg-white dark:bg-[#1e1e20]"
+          style={{ height: "calc(100vh - 210px)", minHeight: "520px" }}
+        >
+          <table 
+            className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full"
+            style={{ width: `${totalTableWidth}px` }}
+          >
+            <thead className="sticky top-0 z-20 text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446] shadow-xs">
+              {renderTableHeader()}
+            </thead>
+            <tbody>
+              {paddingTop > 0 && (
+                <tr style={{ height: `${paddingTop}px` }}>
+                  <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none' }} />
+                </tr>
               )}
-              {visibleColumns.includes('year') && (
-                <ResizableHeader width={colWidths.year} onResize={(w) => handleResize('year', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('year')}>Year</ResizableHeader>
-              )}
-              {visibleColumns.includes('store') && <ResizableHeader width={colWidths.store} onResize={(w) => handleResize('store', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('store')}>Store</ResizableHeader>}
-              {visibleColumns.includes('location') && <ResizableHeader width={colWidths.location} onResize={(w) => handleResize('location', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('location')}>Location</ResizableHeader>}
-              {visibleColumns.includes('code') && <ResizableHeader width={colWidths.code} onResize={(w) => handleResize('code', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('code')}>Code</ResizableHeader>}
-              {visibleColumns.includes('projectName') && <ResizableHeader width={colWidths.projectName} onResize={(w) => handleResize('projectName', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('projectName')}>Project Name</ResizableHeader>}
-              {visibleColumns.includes('taskName') && <ResizableHeader width={colWidths.taskName} onResize={(w) => handleResize('taskName', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('taskName')}>Task Name</ResizableHeader>}
-              {visibleColumns.includes('duration') && <ResizableHeader width={colWidths.duration} onResize={(w) => handleResize('duration', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('duration')}>Duration</ResizableHeader>}
-              {visibleColumns.includes('start') && (
-                <ResizableHeader 
-                  width={colWidths.start} 
-                  onResize={(w) => handleResize('start', w)} 
-                  className="px-6 py-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
-                  onClick={() => handleSort('start')}
-                  hideable onHide={() => handleToggleColumn('start')}
-                >
-                  Start (Plan) {sortConfig?.key === 'start' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                </ResizableHeader>
-              )}
-              {visibleColumns.includes('finish') && (
-                <ResizableHeader 
-                  width={colWidths.finish} 
-                  onResize={(w) => handleResize('finish', w)} 
-                  className="px-6 py-3 font-bold cursor-pointer hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
-                  onClick={() => handleSort('finish')}
-                  hideable onHide={() => handleToggleColumn('finish')}
-                >
-                  Finish (Plan) {sortConfig?.key === 'finish' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                </ResizableHeader>
-              )}
-              {visibleColumns.includes('predecessor') && (
-                <ResizableHeader width={colWidths.predecessor} onResize={(w) => handleResize('predecessor', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('predecessor')}>
-                  Predecessor
-                </ResizableHeader>
-              )}
-              {visibleColumns.includes('party') && (
-                <ResizableHeader width={colWidths.party} onResize={(w) => handleResize('party', w)} className="px-6 py-3 font-bold" hideable onHide={() => handleToggleColumn('party')}>
-                  <div className="flex flex-col items-center justify-center text-center">
-                    <span>Party</span>
-                    <div className="mt-1 flex flex-col items-center">
-                      <span className="text-[9px] font-bold text-slate-400 dark:text-[#838383] normal-case leading-none mb-1">deleg</span>
-                      <div className="relative inline-flex h-3 w-5 items-center rounded-full bg-green-500">
-                        <span className="inline-block h-2 w-2 transform translate-x-2.5 rounded-full bg-white dark:bg-[#1e1e20]" />
-                      </div>
-                    </div>
-                  </div>
-                </ResizableHeader>
-              )}
-              {visibleColumns.includes('action') && <ResizableHeader width={colWidths.action} onResize={(w) => handleResize('action', w)} className="px-4 py-3 font-bold text-center" hideable onHide={() => handleToggleColumn('action')}>Action</ResizableHeader>}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProjects.slice(0, visibleCount).map((p, pIdx) => {
-              const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-              const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
-              const sortedTasks = pInfo.sortedTasks || [];
-              const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
-                let valA = '';
-                let valB = '';
-                let direction = 'asc';
-                
-                if (sortConfig.key === 'start') {
-                  valA = a.start || '9999-12-31';
-                  valB = b.start || '9999-12-31';
-                } else if (sortConfig.key === 'finish') {
-                  valA = a.finish || '9999-12-31';
-                  valB = b.finish || '9999-12-31';
-                } else if (sortConfig.key === 'taskName') {
-                  valA = a.name || '';
-                  valB = b.name || '';
-                } else if (sortConfig.key === 'duration') {
-                  valA = a.duration || '0';
-                  valB = b.duration || '0';
-                  direction = sortConfig.direction;
-                  const numA = Number(valA);
-                  const numB = Number(valB);
-                  if (numA < numB) return direction === 'asc' ? -1 : 1;
-                  if (numA > numB) return direction === 'asc' ? 1 : -1;
-                  return 0;
+              {flatTableRows.slice(startIndex, endIndex).map((item) => {
+                if (item.type === "project") {
+                  const groupTasks = item.groupTasks;
+                  const isAllTasksSelected = groupTasks.length > 0 && groupTasks.every(t => selectedTaskIds.has(t.id));
+                  return (
+                    <DetailProjectRow
+                      key={item.key}
+                      item={item}
+                      visibleColumns={visibleColumns}
+                      canWrite={canWrite}
+                      isAllTasksSelected={isAllTasksSelected}
+                      allowedStoreOptions={allowedStoreOptions}
+                      allowedLocationOptions={allowedLocationOptions}
+                      onToggleGroup={toggleGroup}
+                      onSelectAllTasksInProject={handleSelectAllTasksInProject}
+                      onUpdateProject={handleUpdateProject}
+                      onSortSubTasks={handleSortSubTasks}
+                      onEditProject={onEditProject}
+                      onAddTask={onAddTask}
+                      onDeleteProject={handleDeleteProject}
+                    />
+                  );
                 }
-                direction = sortConfig.direction;
-                
-                if (valA < valB) return direction === 'asc' ? -1 : 1;
-                if (valA > valB) return direction === 'asc' ? 1 : -1;
-                return 0;
-              }) : sortedTasks;
 
-              const effectiveTaskCount = groupTasks.length > 0 
-                ? groupTasks.length 
-                : (p.taskCount !== undefined 
-                    ? p.taskCount 
-                    : (p.taskSummaries?.length ?? 0));
-              const isExpanded = expandedCodes.includes(String(p.id!));
-              const hasDelegatedSubTask = groupTasks.some(t => t.delegation);
-              const isProjDelegationOn = !!(p.delegation || hasDelegatedSubTask);
+                const t = item.task;
+                const actStatus = taskActualStatusMap.get(t.id) || { label: 'Pending', color: 'bg-slate-50 text-slate-600' };
 
-              const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
-              const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
-
-              const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
-              const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
-                const taskFields = [
-                  t.taskCodePhu,
-                  `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-                  t.name,
-                  t.duration,
-                  t.start,
-                  t.finish,
-                  t.party,
-                  formatDisplayDateMain(t.start),
-                  formatDisplayDateTime(t.start),
-                  formatDisplayDateMain(t.finish),
-                  formatDisplayDateTime(t.finish)
-                ];
-                const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
-                const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm)) || false;
-                return fieldMatch || notesMatch;
-              });
-
-              return (
-                <React.Fragment key={p.id || `${p.code}-${p.year}-${p.no}`}>
-                  <tr 
-                    id={`detail-project-${p.no ?? p.code}`}
-                    data-project-item="true"
-                    data-project-id={String(p.id || p.no || p.code)}
-                    data-project-code={p.code}
-                    data-project-year={p.year || ''}
-                    data-project-store={p.store || ''}
-                    className={cn("border-b-2 border-slate-200 dark:border-[#444446] transition-colors", pIdx % 2 === 0 ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-blue-50/50 dark:bg-[#28282a]")}
-                  >
-                    {visibleColumns.includes('no') && (
-                      <td className="px-6 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {canWrite && (
-                            <input
-                              type="checkbox"
-                              title="Select All Tasks in Project"
-                              onChange={(e) => {
-                                const newSet = new Set(selectedTaskIds);
-                                groupTasks.forEach(t => {
-                                  if (e.target.checked) newSet.add(t.id);
-                                  else newSet.delete(t.id);
-                                });
-                                setSelectedTaskIds(newSet);
-                              }}
-                              checked={groupTasks.length > 0 && groupTasks.every(t => selectedTaskIds.has(t.id))}
-                              className="cursor-pointer rounded border-slate-300 dark:border-slate-600"
-                            />
-                          )}
-                          <button 
-                             onClick={() => toggleGroup(p.id!)} 
-                             className={cn(
-                               "flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                               effectiveTaskCount >= 2
-                                  ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
-                                  : effectiveTaskCount === 1
-                                  ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
-                                  : "bg-slate-200 hover:bg-slate-300 dark:bg-[#333336] dark:hover:bg-[#444446] text-slate-600 dark:text-slate-300"
-                             )}
-                             title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
-                          >
-                            {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            <span className="text-[10px]">({effectiveTaskCount})</span>
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                    {visibleColumns.includes('year') && (
-                      <td className="px-6 py-3 font-bold text-slate-700 dark:text-[#c3c3c3]">
-                        <EditableCell 
-                          value={p.year} 
-                          type="number"
-                          onSave={(val) => handleUpdateProject(p, 'year', val)} 
-                          canWrite={canWrite} 
-                        />
-                      </td>
-                    )}
-                    {visibleColumns.includes('store') && (
-                      <td className={cn("px-6 py-3 font-bold", p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-[#c3c3c3]')}>
-                        <EditableCell 
-                          value={p.store} 
-                          type="select" 
-                          options={allowedStoreOptions} 
-                          onSave={(val) => handleUpdateProject(p, 'store', val)} 
-                          canWrite={canWrite} 
-                        />
-                      </td>
-                    )}
-                    {visibleColumns.includes('location') && (
-                      <td className="px-6 py-3 font-bold text-slate-700 dark:text-[#c3c3c3] break-words whitespace-normal">
-                        <EditableCell 
-                          value={p.location} 
-                          type="select" 
-                          options={allowedLocationOptions.map(l => ({label: l, value: l}))} 
-                          onSave={(val) => handleUpdateProject(p, 'location', val)} 
-                          canWrite={canWrite} 
-                        />
-                      </td>
-                    )}
-                    {visibleColumns.includes('code') && (
-                      <td className="px-6 py-3 font-mono text-blue-700 dark:text-[#8ab4f8] font-extrabold uppercase break-words whitespace-normal">
-                        <EditableCell 
-                          value={p.code} 
-                          onSave={(val) => handleUpdateProject(p, 'code', String(val || '').toUpperCase())} 
-                          canWrite={canWrite} 
-                        />
-                      </td>
-                    )}
-                    {visibleColumns.includes('projectName') && (
-                      <td className="px-6 py-3 font-bold text-slate-800 dark:text-[#e3e3e3] break-words whitespace-normal">
-                        <EditableCell 
-                          value={p.name} 
-                          onSave={(val) => handleUpdateProject(p, 'name', val)} 
-                          canWrite={canWrite} 
-                        />
-                      </td>
-                    )}
-                    {visibleColumns.includes('taskName') && (
-                      <td className="px-6 py-3 font-bold text-slate-500 dark:text-[#a3a3a3] text-xs italic">
-                        <div className="flex flex-col gap-1.5">
-                          <div className="truncate">{effectiveTaskCount} Sub-</div>
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-bold text-slate-400 uppercase w-8">Plan:</span>
-                              <div className="flex-grow bg-slate-200 dark:bg-slate-700/50 rounded-full h-1.5 min-w-[50px] overflow-hidden">
-                                <div className="bg-blue-500 dark:bg-blue-400 h-full rounded-full transition-all duration-300" style={{ width: `${planProgressPercent}%` }}></div>
-                              </div>
-                              <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 w-6 text-right leading-none">{planProgressPercent}%</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-bold text-slate-400 uppercase w-8">Act:</span>
-                              <div className="flex-grow bg-slate-200 dark:bg-slate-700/50 rounded-full h-1.5 min-w-[50px] overflow-hidden">
-                                <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{ width: `${actProgressPercent}%` }}></div>
-                              </div>
-                              <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 w-6 text-right leading-none">{actProgressPercent}%</span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    )}
-                    {visibleColumns.includes('duration') && (
-                      <td className="px-6 py-3 font-bold text-slate-700 dark:text-[#c3c3c3]">
-                        {calculateDays(p.computedTakStart, p.computedTakCompl)}
-                      </td>
-                    )}
-                    {visibleColumns.includes('start') && (
-                      <td className="px-6 py-3 font-mono text-xs font-bold text-blue-700 dark:text-[#8ab4f8]">{formatDisplayDateMain(p.computedTakStart)}</td>
-                    )}
-                    {visibleColumns.includes('finish') && (
-                      <td className="px-6 py-3 font-mono text-xs font-bold text-pink-700">{formatDisplayDateMain(p.computedTakCompl)}</td>
-                    )}
-                    {visibleColumns.includes('predecessor') && (
-                      <td className="px-6 py-3">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSortSubTasks(p, groupTasks);
-                          }}
-                          className="flex items-center text-[10px] px-2 py-1 rounded shadow-sm transition-colors cursor-pointer border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 active:bg-slate-100"
-                        >
-                          <ArrowDownUp className="w-3 h-3 mr-1" />
-                          Sort
-                        </button>
-                      </td>
-                    )}
-                    {visibleColumns.includes('party') && (
-                      <td className="px-6 py-3">
-                        <div className="flex flex-col gap-2">
-                          <EditableCell 
-                            value={p.party} 
-                            onSave={(val) => handleUpdateProject(p, 'party', val)} 
-                            canWrite={canWrite} 
-                          />
-                          <div className="flex items-center gap-2">
-                            <FastToggle value={Boolean(isProjDelegationOn)} canWrite={canWrite} onToggle={(val) => handleUpdateProject(p, 'delegation', val)} />
-                          </div>
-                        </div>
-                      </td>
-                    )}
-                    {visibleColumns.includes('action') && (
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          <div className="flex items-center justify-center gap-2">
-                            <QuickNavButton project={p} title={`Quick Navigator (${p.code})`} />
-                            <QRCodeButton title={p.name || p.code} url={`${window.location.origin}${window.location.pathname}?tab=detail&q=${encodeURIComponent(p.code || '')}`} />
-                            <button onClick={(e) => { e.stopPropagation(); onEditProject?.(p, false, "chat"); }} className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] transition-colors p-1.5 rounded hover:bg-slate-100 dark:hover:bg-[#28282a]" title="Open Project Modal"><Maximize2 className="w-4 h-4" /></button>
-                            {canWrite && (
-                              <>
-                                <button onClick={(e) => { e.stopPropagation(); onAddTask(p); }} className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] transition-colors p-1.5 rounded hover:bg-slate-100 dark:hover:bg-[#28282a]" title="Add Task"><Plus className="w-4 h-4" /></button>
-                                <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p); }} className="text-red-500 hover:text-red-700 transition-colors p-1.5 rounded hover:bg-slate-100 dark:hover:bg-[#28282a]" title="Delete Project"><Trash2 className="w-4 h-4" /></button>
-                              </>
-                            )}
-                          </div>
-                          {p.updatedAt && (
-                            <div className="text-[9px] text-slate-400 dark:text-[#838383] font-mono text-center leading-tight mt-1">
-                              Update<br/>{formatDisplayDateMain(p.updatedAt)}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                  {isExpanded && tasksToRender.map((t) => {
-                    const originalIndex = groupTasks.findIndex(gt => gt.id === t.id);
-                    const i = originalIndex !== -1 ? originalIndex : 0;
-                    const taskStatus = getTaskStatus(t.start, t.finish);
-                    let taskStatusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
-                    if (taskStatus === 'Completed') taskStatusColorClass = 'bg-green-50 text-green-600 dark:text-emerald-400 border-green-200';
-                    else if (taskStatus === 'On process') taskStatusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
-
-                    const delegationGroup = delegationGroupByParentKey.get(t.id);
-                    const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || []);
-                    let delStatusText = actStatus.label;
-                    let delStatusColorClass = actStatus.color;
-
-                    return (
-                      <tr
-                        id={`detail-task-${t.id}`}
-                        key={t.id}
-                        onDragStart={(e) => canWrite && handleDetailTaskDragStart(e, t.id)}
-                        onDragOver={(e) => canWrite && handleDetailTaskDragOver(e, t.id)}
-                        onDragLeave={(e) => canWrite && handleDetailTaskDragLeave(e, t.id)}
-                        onDragEnd={handleDetailTaskDragEnd}
-                        onDrop={(e) => canWrite && handleDetailTaskDrop(e, t, p)}
-                        className={cn(
-                          draggingTaskIds.includes(t.id)
-                            ? "opacity-40 bg-blue-50/30 dark:bg-blue-950/20 border-dashed border-2 border-blue-400"
-                            : "bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50/50 dark:hover:bg-[#444446]",
-                          "transition-all text-xs relative",
-                          initialFocusTaskId === t.id ? "ring-2 ring-inset ring-yellow-400 !bg-yellow-50 dark:!bg-yellow-900/20" : "",
-                          dragOverTaskId === t.id && dropPosition === 'before' ? "border-t-[3px] !border-t-blue-600 dark:!border-t-blue-400 shadow-[0_-2px_6px_rgba(37,99,235,0.3)]" : "",
-                          dragOverTaskId === t.id && dropPosition === 'after' ? "border-b-[3px] !border-b-blue-600 dark:!border-b-blue-400 shadow-[0_2px_6px_rgba(37,99,235,0.3)]" : ""
-                        )}
-                      >
-                      {visibleColumns.includes('no') && (
-                        <td className="px-6 py-3 text-center text-slate-300 dark:text-slate-600 font-mono italic" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>
-                          <div className="flex items-center justify-center gap-2">
-                            {canWrite && (
-                              <input
-                                type="checkbox"
-                                onClick={(e) => {
-                                  const newSet = new Set(selectedTaskIds);
-                                  const isChecked = !selectedTaskIds.has(t.id);
-                                  if (isChecked) {
-                                    if (e.shiftKey && lastCheckedTaskIdRef.current) {
-                                      const lastIdx = allVisibleTaskIds.indexOf(lastCheckedTaskIdRef.current);
-                                      const currentIdx = allVisibleTaskIds.indexOf(t.id);
-                                      if (lastIdx !== -1 && currentIdx !== -1) {
-                                        const minIdx = Math.min(lastIdx, currentIdx);
-                                        const maxIdx = Math.max(lastIdx, currentIdx);
-                                        for (let i = minIdx; i <= maxIdx; i++) {
-                                          newSet.add(allVisibleTaskIds[i]);
-                                        }
-                                      } else {
-                                        newSet.add(t.id);
-                                      }
-                                    } else {
-                                      newSet.add(t.id);
-                                    }
-                                    lastCheckedTaskIdRef.current = t.id;
-                                  } else {
-                                    newSet.delete(t.id);
-                                    lastCheckedTaskIdRef.current = null;
-                                  }
-                                  setSelectedTaskIds(newSet);
-                                }}
-                                onChange={() => {}}
-                                checked={selectedTaskIds.has(t.id)}
-                                className="cursor-pointer rounded border-slate-300 dark:border-slate-600"
-                              />
-                            )}
-                            <span>{pIdx + 1}.${i + 1}</span>
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('year') && <td className="px-6 py-3 text-slate-400 dark:text-[#838383] font-medium" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{p.year || '-'}</td>}
-                      {visibleColumns.includes('store') && <td className="px-6 py-3 text-slate-400 dark:text-[#838383] font-medium" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{p.store || '-'}</td>}
-                      {visibleColumns.includes('location') && <td className="px-6 py-3 text-slate-400 dark:text-[#838383] font-medium" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{p.location || '-'}</td>}
-                      {visibleColumns.includes('code') && <td className="px-6 py-3 font-mono text-blue-700 dark:text-[#8ab4f8] font-bold text-xs" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>{computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`}</td>}
-                      {visibleColumns.includes('projectName') && (
-                        <td className="px-6 py-3" onDoubleClick={() => canWrite && onEditTask(t, false, "chat")}>
-                          <div className="flex flex-col gap-1.5 items-start">
-                            <span className={`inline-block text-[11px] font-bold px-3 py-1 rounded-full border text-center ${taskStatusColorClass}`}>
-                              Pl: {taskStatus}
-                            </span>
-                            <span className={`inline-block text-[11px] font-bold px-3 py-1 rounded-full border text-center ${delStatusColorClass}`}>
-                              Act: {delStatusText}
-                            </span>
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('taskName') && (
-                        <td className="px-6 py-3 font-bold text-slate-800 dark:text-[#e3e3e3] pl-6 flex items-center gap-1 group relative">
-                          {dragOverTaskId === t.id && (
-                            <div
-                              className={cn(
-                                "absolute left-0 right-0 h-[3px] bg-blue-600 dark:bg-blue-400 z-30 pointer-events-none flex items-center shadow-[0_0_8px_rgba(37,99,235,0.7)]",
-                                dropPosition === 'before' ? "top-0" : "bottom-0"
-                              )}
-                            >
-                              <div className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-blue-400 -ml-1 border-2 border-white dark:border-slate-900 shadow-sm ring-2 ring-blue-300" />
-                              <div className="ml-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-600 text-white shadow-xl text-[10px] font-bold ring-2 ring-white dark:ring-[#1e1e20] whitespace-nowrap animate-in fade-in duration-75">
-                                <span className="w-1.5 h-1.5 rounded-full bg-yellow-300 animate-ping shrink-0" />
-                                <span>{dropPosition === 'before' ? '▲ Chèn trước:' : '▼ Chèn sau:'}</span>
-                                <span className="font-semibold max-w-[200px] truncate text-blue-100">
-                                  {tasks.filter(tk => draggingTaskIds.includes(tk.id)).map(tk => tk.name).join(', ')}
-                                </span>
-                                <span className="ml-1 text-[9px] bg-blue-700/80 px-1.5 py-0.5 rounded text-blue-200 font-normal">Thả để chèn</span>
-                              </div>
-                            </div>
-                          )}
-                          {canWrite && (
-                            <div className="absolute left-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <div
-                                onMouseDown={(e) => {
-                                  const tr = e.currentTarget.closest('tr');
-                                  if (tr) tr.setAttribute('draggable', 'true');
-                                }}
-                                onMouseUp={(e) => {
-                                  const tr = e.currentTarget.closest('tr');
-                                  if (tr) tr.removeAttribute('draggable');
-                                }}
-                                onMouseLeave={(e) => {
-                                  const tr = e.currentTarget.closest('tr');
-                                  if (tr) tr.removeAttribute('draggable');
-                                }}
-                                onTouchStart={(e) => {
-                                  const tr = e.currentTarget.closest('tr');
-                                  if (tr) tr.setAttribute('draggable', 'true');
-                                }}
-                                onTouchEnd={(e) => {
-                                  const tr = e.currentTarget.closest('tr');
-                                  if (tr) tr.removeAttribute('draggable');
-                                }}
-                                className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-blue-600 dark:text-slate-500 dark:hover:text-blue-400 p-0.5"
-                                title="Kéo để chèn giữa các nhiệm vụ"
-                              >
-                                <GripVertical className="w-3.5 h-3.5" />
-                              </div>
-                              <div className="flex flex-col items-center justify-center">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleMoveTask(p, groupTasks, i, 'up'); }}
-                                  disabled={i === 0}
-                                  className="p-0 text-slate-400 dark:text-[#838383] hover:text-blue-600 dark:text-[#8ab4f8] disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed"
-                                >
-                                  <ChevronUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleMoveTask(p, groupTasks, i, 'down'); }}
-                                  disabled={i === groupTasks.length - 1}
-                                  className="p-0 text-slate-400 dark:text-[#838383] hover:text-blue-600 dark:text-[#8ab4f8] disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed"
-                                >
-                                  <ChevronDown className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {!canWrite && <span className="text-slate-400 dark:text-[#838383]">↳</span>}
-                          <div className="flex-grow pl-1">
-                            <EditableCell value={t.name} onSave={(val) => handleUpdateTask(t, { name: val })} canWrite={canWrite} />
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('duration') && (
-                        <td className="px-6 py-3 italic text-slate-500 dark:text-[#a3a3a3] bg-slate-50 dark:bg-[#1e1e20]/30">
-                          <div className="flex items-center gap-1.5">
-                            <button 
-                              onClick={() => canWrite && handleUpdateTask(t, { durationManual: !t.durationManual })}
-                              className={cn("p-1 rounded hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors", t.durationManual ? "text-cyan-400" : "text-blue-500")}
-                            >
-                              {t.durationManual ? <Pin className="w-3.5 h-3.5" /> : <FolderOutput className="w-3.5 h-3.5" />}
-                            </button>
-                            <div className="flex-grow">
-                              <EditableCell 
-                                value={parseFloat(t.duration || '0')} 
-                                type="number" 
-                                onSave={(val) => handleUpdateTask(t, { duration: String(val) })} 
-                                canWrite={canWrite && t.durationManual} 
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('start') && (
-                        <td className="px-6 py-3 font-mono">
-                          <div className="flex items-center gap-1.5">
-                            <FolderOutput className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                            <div className="flex-grow">
-                              <EditableCell 
-                                value={t.start} 
-                                type="datetime-local" 
-                                isDate 
-                                onSave={(val) => handleUpdateTask(t, { start: val })} 
-                                canWrite={canWrite} 
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('finish') && (
-                        <td className="px-6 py-3 font-mono">
-                          <div className="flex items-center gap-1.5">
-                            <button 
-                              onClick={() => canWrite && handleUpdateTask(t, { durationManual: !t.durationManual })}
-                              className={cn("p-1 rounded hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors shrink-0", !t.durationManual ? "text-cyan-400" : "text-blue-500")}
-                            >
-                              {!t.durationManual ? <Pin className="w-3.5 h-3.5" /> : <FolderOutput className="w-3.5 h-3.5" />}
-                            </button>
-                            <div className="flex-grow">
-                              <EditableCell 
-                                value={t.finish} 
-                                type="datetime-local" 
-                                isDate 
-                                onSave={(val) => handleUpdateTask(t, { finish: val })} 
-                                canWrite={canWrite && !t.durationManual} 
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      )}
-                      {visibleColumns.includes('predecessor') && (
-                        <td className="px-6 py-3 font-mono text-sm text-slate-600 dark:text-[#a3a3a3]">
-                          <PredecessorEditableCell value={t.predecessor} onSave={(val) => handleUpdateTask(t, { predecessor: val })} canWrite={canWrite} task={t} tasks={tasks} projects={projects} />
-                        </td>
-                      )}
-                      {visibleColumns.includes('party') && (
-                        <td className="px-6 py-3">
-                          <div className="flex flex-col gap-2">
-                            <EditableCell value={t.party} onSave={(val) => handleUpdateTask(t, { party: val })} canWrite={canWrite} />
-                            <div className="flex items-center gap-2">
-                              <FastToggle value={Boolean(t.delegation)} canWrite={canWrite} onToggle={(val) => handleUpdateTask(t, { delegation: val })} />
-                            </div>
-                        </div>
-                      </td>
-                      )}
-                      {visibleColumns.includes('action') && (
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex flex-col items-center justify-center gap-1">
-                            <div className="flex items-center justify-center gap-2">
-                              <QRCodeButton title={t.name} url={`${window.location.origin}${window.location.pathname}?tab=detail&q=${encodeURIComponent(t.taskCodePhu || '')}`} />
-                              <button onClick={(e) => { e.stopPropagation(); onEditTask(t, false, "chat"); }} className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] transition-colors p-1.5 rounded hover:bg-slate-100 dark:hover:bg-[#28282a]" title="Open Task Modal"><Maximize2 className="w-4 h-4" /></button>
-                              {canWrite && (
-                                <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(t); }} className="text-red-500 hover:text-red-700 transition-colors p-1.5 rounded hover:bg-slate-100 dark:hover:bg-[#28282a]"><Trash2 className="w-4 h-4" /></button>
-                              )}
-                            </div>
-                            {t.updatedAt && (
-                              <div className="text-[9px] text-slate-400 dark:text-[#838383] font-mono text-center leading-tight mt-1">
-                                Update<br/>{formatDisplayDateMain(t.updatedAt)}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  )})}
-                </React.Fragment>
-              );
-            })}
-            {visibleCount < filteredProjects.length && (
-              <tr>
-                <td colSpan={visibleColumns.length} className="py-4 text-center">
-                  <button
-                    onClick={() => setVisibleCount(prev => prev + 20)}
-                    className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm"
-                  >
-                    Load More Projects ({filteredProjects.length - visibleCount} remaining)
-                  </button>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                return (
+                  <DetailTaskRow
+                    key={item.key}
+                    item={item}
+                    visibleColumns={visibleColumns}
+                    canWrite={canWrite}
+                    isSelected={selectedTaskIds.has(t.id)}
+                    isDragging={draggingTaskIds.includes(t.id)}
+                    isDragOver={dragOverTaskId === t.id}
+                    dropPosition={dragOverTaskId === t.id ? dropPosition : null}
+                    draggingTaskNames={draggingTaskNames}
+                    taskCode={taskCodeMap.get(t.id) || ''}
+                    isFocused={initialFocusTaskId === t.id}
+                    delStatusText={actStatus.label}
+                    delStatusColorClass={actStatus.color}
+                    tasks={tasks}
+                    projects={projects}
+                    onToggleSelectTask={handleToggleSelectTask}
+                    onEditTask={onEditTask}
+                    onUpdateTask={handleUpdateTask}
+                    onMoveTask={handleMoveTask}
+                    onDeleteTask={handleDeleteTask}
+                    onDragStart={handleDetailTaskDragStart}
+                    onDragOver={handleDetailTaskDragOver}
+                    onDragLeave={handleDetailTaskDragLeave}
+                    onDragEnd={handleDetailTaskDragEnd}
+                    onDrop={handleDetailTaskDrop}
+                  />
+                );
+              })}
+              {paddingBottom > 0 && (
+                <tr style={{ height: `${paddingBottom}px` }}>
+                  <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none' }} />
+                </tr>
+              )}
+              {visibleCount < filteredProjects.length && (
+                <tr>
+                  <td colSpan={visibleColumns.length} className="py-4 text-center bg-white/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm border-t border-slate-200 dark:border-[#444446]">
+                    <button
+                      onClick={() => setVisibleCount(prev => Math.min(prev + 20, filteredProjects.length))}
+                      className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-xs transition-colors text-sm cursor-pointer active:scale-95 touch-manipulation"
+                    >
+                      Load More Projects ({filteredProjects.length - visibleCount} remaining)
+                    </button>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="xl:hidden flex justify-between items-center px-2 pb-2">

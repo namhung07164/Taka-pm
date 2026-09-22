@@ -60,6 +60,8 @@ export interface GanttTaskRowProps {
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   hiddenRowsSet: Set<string>;
   onNavigateToTaskDetail?: (id: string) => void;
+  taskCode?: string;
+  delegationGroup?: any;
 }
 
 export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
@@ -74,32 +76,33 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
   draggingTaskIds, handleTaskDragStart, handleTaskDragOver, handleTaskDragLeave,
   handleTaskDrop, handleTaskDragEnd, dragOverTaskId, dropPosition,
   handleTaskCheckboxChange, isHideMode, toggleHideRow, hiddenRowsSet, onNavigateToTaskDetail,
-  initialFocusTaskId, ganttTabFocusTaskId
+  initialFocusTaskId, ganttTabFocusTaskId, taskCode: taskCodeProp, delegationGroup: delegationGroupProp
 }) => {
-                        const tStatus = getTaskStatus(t.start, t.finish);
-                        const delegationGroup = delegationGroups.find(
-                          (g) => g.parentTaskId === t.id,
-                        );
-                        const actStatusObj = resolveActualStatus(
-                          tStatus,
-                          delegationGroup?.subTasks || [],
-                        );
-                        const actStatus = actStatusObj.label;
-                        const tActPrg = computeActProgressPercent(
-                          [t], delegationGroups
-                          
-                        );
-                        const taskCode = computeTaskCode(projects, tasks, t);
-                        const extraVars = {
-                          actStatus: actStatus,
-                          actStatusColor: actStatusObj.color,
-                          party: t.party,
-                          actPrg: tActPrg,
-                          duration: t.duration,
-                          taskCode: taskCode,
-                          predecessors: t.predecessor,
-                          highlight: isHighlightDelegationOn ? getUserDelegationRoleForTask(t, currentUser, delegationGroups) : null,
-                        };
+  const tStatus = getTaskStatus(t.start, t.finish);
+  const delegationGroup = delegationGroupProp !== undefined
+    ? delegationGroupProp
+    : delegationGroups.find((g) => g.parentTaskId === t.id);
+  const actStatusObj = resolveActualStatus(
+    tStatus,
+    delegationGroup?.subTasks || [],
+  );
+  const actStatus = actStatusObj.label;
+  const tActPrg = computeActProgressPercent(
+    [t], delegationGroups
+  );
+  const taskCode = taskCodeProp !== undefined
+    ? taskCodeProp
+    : computeTaskCode(projects, tasks, t);
+  const extraVars = React.useMemo(() => ({
+    actStatus: actStatus,
+    actStatusColor: actStatusObj.color,
+    party: t.party,
+    actPrg: tActPrg,
+    duration: t.duration,
+    taskCode: taskCode,
+    predecessors: t.predecessor,
+    highlight: isHighlightDelegationOn ? getUserDelegationRoleForTask(t, currentUser, delegationGroups) : null,
+  }), [actStatus, actStatusObj.color, t.party, tActPrg, t.duration, taskCode, t.predecessor, isHighlightDelegationOn, currentUser, delegationGroups]);
                         return (
                           <tr
                             id={`gantt-task-${t.id}`}
@@ -462,7 +465,10 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
          prev.isHighlightDelegationOn === next.isHighlightDelegationOn &&
          prev.isEditMode === next.isEditMode &&
          prev.canWrite === next.canWrite &&
+         prev.taskCode === next.taskCode &&
+         prev.isHideMode === next.isHideMode &&
          prev.selectedTaskSet.has(String(prev.t.id)) === next.selectedTaskSet.has(String(next.t.id)) &&
+         (prev.hiddenRowsSet.has(`task-${prev.t.id}`) === next.hiddenRowsSet.has(`task-${next.t.id}`)) &&
          prev.sideWidth === next.sideWidth &&
          prev.startColWidth === next.startColWidth &&
          prev.finishColWidth === next.finishColWidth &&
@@ -475,8 +481,12 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
          prev.timeUnits.length === next.timeUnits.length &&
          prev.t === next.t &&
          prev.p === next.p &&
-         prev.startDate === next.startDate &&
+         prev.startDate.getTime() === next.startDate.getTime() &&
          prev.dayWidth === next.dayWidth &&
+         (prev.dragOverTaskId === prev.t.id || next.dragOverTaskId === next.t.id
+           ? prev.dragOverTaskId === next.dragOverTaskId && prev.dropPosition === next.dropPosition
+           : true) &&
+         (prev.draggingTaskIds.includes(prev.t.id) === next.draggingTaskIds.includes(next.t.id)) &&
          (prev.activeTooltip === `task-${prev.t.id}` || next.activeTooltip === `task-${next.t.id}` ? prev.activeTooltip === next.activeTooltip : true) &&
          (prev.initialFocusTaskId === prev.t.id || next.initialFocusTaskId === next.t.id ? prev.initialFocusTaskId === next.initialFocusTaskId : true) &&
          (prev.ganttTabFocusTaskId === prev.t.id || next.ganttTabFocusTaskId === next.t.id ? prev.ganttTabFocusTaskId === next.ganttTabFocusTaskId : true);

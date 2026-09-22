@@ -117,6 +117,7 @@ import { GanttProjectRow } from './Gantt/GanttProjectRow';
 import { GanttTaskRow } from './Gantt/GanttTaskRow';
 import { GanttToolbar } from './Gantt/GanttToolbar';
 import { GanttTimelineHeader } from './Gantt/GanttTimelineHeader';
+import { GanttGridOverlay } from './Gantt/GanttGridOverlay';
 
 export function GanttTab({
   
@@ -275,8 +276,11 @@ export function GanttTab({
   }, [hiddenRows]);
   const [isHideMode, setIsHideMode] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   useEffect(() => {
     const handleBeforePrint = () => {
+      setIsPrinting(true);
       if (mainScrollRef.current && containerRef.current) {
         containerRef.current.style.setProperty(
           "--print-scroll-x",
@@ -285,6 +289,7 @@ export function GanttTab({
       }
     };
     const handleAfterPrint = () => {
+      setIsPrinting(false);
       if (containerRef.current) {
         containerRef.current.style.setProperty("--print-scroll-x", `0px`);
       }
@@ -964,6 +969,292 @@ export function GanttTab({
     return map;
   }, [delegationGroups]);
 
+  // --- GANTT TIMELINE VIRTUALIZATION ENGINE ---
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(800);
+  const scrollRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    setViewportHeight(el.clientHeight || 800);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 0) {
+          setViewportHeight(entry.contentRect.height);
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mainScrollRef]);
+
+  const handleCombinedMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleMainScroll();
+    const st = e.currentTarget.scrollTop;
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      setScrollTop(st);
+    });
+  }, [handleMainScroll]);
+
+  // Flatten Gantt projects and their expanded tasks into a single linear array
+  const flatGanttRows = useMemo(() => {
+    type FlatRow =
+      | {
+          type: 'project';
+          key: string;
+          p: Project;
+          pIdx: number;
+          projectTasks: Task[];
+          isExpanded: boolean;
+        }
+      | {
+          type: 'task';
+          key: string;
+          t: Task;
+          isChild: boolean;
+          parentTask?: Task;
+          hasChildren: boolean;
+          childCount: number;
+          isModularExpanded: boolean;
+          p: Project;
+          taskCode: string;
+          delegationGroup?: any;
+        };
+
+    const rows: FlatRow[] = [];
+
+    paginatedProjects.forEach((p, pIdx) => {
+      const isExpanded = expandedProjects.includes(p.id!);
+      const pKey = getPKey(p.code, p.year, p.store);
+      let projectTasks = tasksByProject.get(pKey);
+      if (!projectTasks || projectTasks.length === 0) {
+        const pCode = String(p.code || "").trim().toLowerCase();
+        projectTasks = tasks.filter(t => {
+          const tCode = String(t.projectCode || "").trim().toLowerCase();
+          if (tCode !== pCode) return false;
+          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+          return matchesStore && matchesYear;
+        });
+      }
+      projectTasks = projectTasks || [];
+      if (filterStartDate || filterEndDate) {
+        projectTasks = projectTasks.filter(t => filterTaskByDate(t, filterStartDate, filterEndDate));
+      }
+      if (searchTerm) {
+        projectTasks = projectTasks.filter((t) =>
+          matchesAdvancedSearch(
+            searchTerm,
+            [p.code, p.name, p.store, p.location],
+            [t.name, t.party],
+          ),
+        );
+      }
+
+      projectTasks = sortGroupTasks(projectTasks);
+
+      rows.push({
+        type: 'project',
+        key: `project-${p.code || ''}-${p.no || ''}-${pIdx}`,
+        p,
+        pIdx,
+        projectTasks,
+        isExpanded,
+      });
+
+      if (isExpanded) {
+        const childTasksMap = new Map<string, Task[]>();
+        const isChildSet = new Set<string>();
+        const ptMap = new Map(projectTasks.map(pt => [String(pt.id), pt]));
+
+        projectTasks.forEach((t) => {
+          if (t.parentTaskId) {
+            const currParentId = String(t.parentTaskId);
+            if (ptMap.has(currParentId)) {
+              let rootParentId = currParentId;
+              const visited = new Set<string>([String(t.id), rootParentId]);
+              while (true) {
+                const pTask = ptMap.get(rootParentId);
+                if (pTask && pTask.parentTaskId && !visited.has(String(pTask.parentTaskId))) {
+                  if (ptMap.has(String(pTask.parentTaskId))) {
+                    rootParentId = String(pTask.parentTaskId);
+                    visited.add(rootParentId);
+                    continue;
+                  }
+                }
+                break;
+              }
+              isChildSet.add(String(t.id));
+              const list = childTasksMap.get(rootParentId) || [];
+              list.push(t);
+              childTasksMap.set(rootParentId, list);
+            }
+          }
+        });
+
+        projectTasks.forEach((t) => {
+          const tIdStr = String(t.id);
+          if (isChildSet.has(tIdStr)) return;
+          const children = childTasksMap.get(tIdStr) || [];
+          const hasChildren = children.length > 0;
+          const isModularExpanded = expandedModularTasks.includes(tIdStr);
+          const taskCode = taskCodeMap.get(t.id) || t.taskCodePhu || '';
+          const delGroup = delegationGroupByTaskId.get(t.id);
+
+          rows.push({
+            type: 'task',
+            key: `task-${t.id}`,
+            t,
+            isChild: false,
+            hasChildren,
+            childCount: children.length,
+            isModularExpanded,
+            p,
+            taskCode,
+            delegationGroup: delGroup,
+          });
+
+          if (hasChildren && isModularExpanded) {
+            children.forEach((c) => {
+              const childTaskCode = taskCodeMap.get(c.id) || c.taskCodePhu || '';
+              const childDelGroup = delegationGroupByTaskId.get(c.id);
+              rows.push({
+                type: 'task',
+                key: `task-${c.id}`,
+                t: c,
+                isChild: true,
+                parentTask: t,
+                hasChildren: false,
+                childCount: 0,
+                isModularExpanded: false,
+                p,
+                taskCode: childTaskCode,
+                delegationGroup: childDelGroup,
+              });
+            });
+          }
+        });
+      }
+    });
+
+    return rows;
+  }, [
+    paginatedProjects,
+    expandedProjects,
+    tasksByProject,
+    tasks,
+    filterStartDate,
+    filterEndDate,
+    searchTerm,
+    taskCodeMap,
+    delegationGroupByTaskId,
+    expandedModularTasks,
+    getPKey,
+  ]);
+
+  const { totalHeight, rowOffsets } = useMemo(() => {
+    const totalRows = flatGanttRows.length;
+    const offsets = new Float64Array(totalRows + 1);
+    let sum = 0;
+    for (let i = 0; i < totalRows; i++) {
+      offsets[i] = sum;
+      sum += (flatGanttRows[i].type === 'project' ? 44 : 38);
+    }
+    offsets[totalRows] = sum;
+    return { totalHeight: sum, rowOffsets: offsets };
+  }, [flatGanttRows]);
+
+  const OVERSCAN = 15;
+  const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
+    const totalRows = flatGanttRows.length;
+    if (isPrinting || isExporting || printDateRangeOverride || totalRows === 0) {
+      return {
+        startIndex: 0,
+        endIndex: totalRows,
+        paddingTop: 0,
+        paddingBottom: 0,
+      };
+    }
+
+    const visibleTop = Math.max(0, scrollTop);
+    const bottomTarget = visibleTop + (viewportHeight || 800);
+
+    let low = 0;
+    let high = totalRows - 1;
+    let start = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (rowOffsets[mid + 1] <= visibleTop) {
+        low = mid + 1;
+      } else {
+        start = mid;
+        high = mid - 1;
+      }
+    }
+
+    const viewStart = Math.max(0, start - OVERSCAN);
+
+    low = start;
+    high = totalRows - 1;
+    let end = totalRows - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (rowOffsets[mid] < bottomTarget) {
+        end = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    const viewEnd = Math.min(totalRows, end + 1 + OVERSCAN);
+    const topPad = rowOffsets[viewStart] || 0;
+    const bottomPad = Math.max(0, totalHeight - (rowOffsets[viewEnd] || totalHeight));
+
+    return {
+      startIndex: viewStart,
+      endIndex: viewEnd,
+      paddingTop: topPad,
+      paddingBottom: bottomPad,
+    };
+  }, [
+    rowOffsets,
+    totalHeight,
+    scrollTop,
+    viewportHeight,
+    flatGanttRows.length,
+    isPrinting,
+    isExporting,
+    printDateRangeOverride,
+  ]);
+
+  const visibleGanttRows = useMemo(() => {
+    return flatGanttRows.slice(startIndex, endIndex);
+  }, [flatGanttRows, startIndex, endIndex]);
+
+  const totalColSpan = useMemo(() => {
+    return 1 +
+      (showStart ? 1 : 0) +
+      (showFinish ? 1 : 0) +
+      (showParty ? 1 : 0) +
+      (showDuration ? 1 : 0) +
+      timeUnits.length;
+  }, [showStart, showFinish, showParty, showDuration, timeUnits.length]);
+
+  useEffect(() => {
+    const focusId = initialFocusTaskId || ganttTabFocusTaskId;
+    if (!focusId || !mainScrollRef.current) return;
+    const idx = flatGanttRows.findIndex(r => r.type === 'task' && r.t.id === focusId);
+    if (idx >= 0 && rowOffsets[idx] !== undefined) {
+      const targetScroll = Math.max(0, rowOffsets[idx] - 120);
+      mainScrollRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    }
+  }, [initialFocusTaskId, ganttTabFocusTaskId, flatGanttRows, rowOffsets]);
+
   const drawDependencies = useCallback(() => {
     if (!tableRef.current) return;
     const tableBody = tableRef.current;
@@ -1050,6 +1341,8 @@ export function GanttTab({
     sideWidth,
     safeColumns,
     hiddenRows,
+    startIndex,
+    endIndex,
     drawDependencies,
   ]);
 
@@ -1909,8 +2202,6 @@ export function GanttTab({
     }
   };
 
-  const [isExporting, setIsExporting] = useState(false);
-
   const handleExportToPDF = async () => {
     if (!mainScrollRef.current) return;
     setIsExporting(true);
@@ -2624,7 +2915,7 @@ export function GanttTab({
       <div
         className={cn("relative bg-slate-50 dark:bg-[#1e1e20]/50 print:overflow-hidden print:w-full print:max-w-full print:block", !!printDateRangeOverride ? "overflow-visible" : "flex-grow overflow-auto")}
         ref={mainScrollRef}
-        onScroll={handleMainScroll}
+        onScroll={handleCombinedMainScroll}
         onDragOver={handleContainerDragOver}
         style={{ WebkitOverflowScrolling: "touch" }}
       >
@@ -2659,69 +2950,20 @@ export function GanttTab({
               dayWidth={dayWidth}
             />
             <tbody className="relative">
-              {paginatedProjects.map((p, pIdx) => {
-                const isExpanded = expandedProjects.includes(p.id!);
-                const pKey = getPKey(p.code, p.year, p.store);
-                let projectTasks = tasksByProject.get(pKey);
-                if (!projectTasks || projectTasks.length === 0) {
-                  const pCode = String(p.code || "").trim().toLowerCase();
-                  projectTasks = tasks.filter(t => {
-                    const tCode = String(t.projectCode || "").trim().toLowerCase();
-                    if (tCode !== pCode) return false;
-                    const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-                    const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-                    return matchesStore && matchesYear;
-                  });
-                }
-                projectTasks = projectTasks || [];
-                if (filterStartDate || filterEndDate) {
-                  projectTasks = projectTasks.filter(t => filterTaskByDate(t, filterStartDate, filterEndDate));
-                }
-                if (searchTerm) {
-
-                  projectTasks = projectTasks.filter((t) =>
-                    matchesAdvancedSearch(
-                      searchTerm,
-                      [p.code, p.name, p.store, p.location],
-                      [t.name, t.party],
-                    ),
-                  );
-                }
-
-                projectTasks = sortGroupTasks(projectTasks);
-
-                const pStart = p.computedTakStart || p.start;
-                const pEnd = p.computedTakCompl || p.handover;
-                let projectDuration = "-";
-                if (pStart && pEnd) {
-                  const sD = new Date(pStart);
-                  const eD = new Date(pEnd);
-                  if (!isNaN(sD.getTime()) && !isNaN(eD.getTime())) {
-                    const days = Math.round(
-                      (eD.getTime() - sD.getTime()) / (1000 * 60 * 60 * 24),
-                    );
-                    projectDuration = String(days);
-                  }
-                }
-
-                const pStatus = getStatus(
-                  pStart,
-                  pEnd,
-                  p.computedOpening || p.opening,
-                  p.code,
-                );
-                const pActPrg = projectTasks.length > 0
-                  ? computeActProgressPercent(projectTasks, delegationGroups)
-                  : (p.computedActProgress ?? 0);
-
-                
-                return (
-                  <React.Fragment key={`${p.code}-${p.no}-${pIdx}`}>
+              {paddingTop > 0 && (
+                <tr style={{ height: `${paddingTop}px` }} className="pointer-events-none select-none">
+                  <td colSpan={totalColSpan} className="p-0 border-0 m-0" />
+                </tr>
+              )}
+              {visibleGanttRows.map((item) => {
+                if (item.type === 'project') {
+                  return (
                     <GanttProjectRow
-                      p={p}
-                      pIdx={pIdx}
-                      projectTasks={projectTasks}
-                      isExpanded={isExpanded}
+                      key={item.key}
+                      p={item.p}
+                      pIdx={item.pIdx}
+                      projectTasks={item.projectTasks}
+                      isExpanded={item.isExpanded}
                       expandedModularTasks={expandedModularTasks}
                       setExpandedModularTasks={setExpandedModularTasks}
                       isEditMode={isEditMode}
@@ -2752,156 +2994,87 @@ export function GanttTab({
                       getBarColor={getBarColor}
                       onNavigateToLayout={onNavigateToLayout}
                     />
-                    {isExpanded &&
-                      (() => {
-                        const childTasksMap = new Map<string, Task[]>();
-                        const isChildSet = new Set<string>();
-                        const ptMap = new Map(projectTasks.map(pt => [String(pt.id), pt]));
-                        
-                        projectTasks.forEach((t) => {
-                          if (t.parentTaskId) {
-                            const currParentId = String(t.parentTaskId);
-                            if (ptMap.has(currParentId)) {
-                              let rootParentId = currParentId;
-                              const visited = new Set<string>([String(t.id), rootParentId]);
-                              while (true) {
-                                const pTask = ptMap.get(rootParentId);
-                                if (pTask && pTask.parentTaskId && !visited.has(String(pTask.parentTaskId))) {
-                                  if (ptMap.has(String(pTask.parentTaskId))) {
-                                    rootParentId = String(pTask.parentTaskId);
-                                    visited.add(rootParentId);
-                                    continue;
-                                  }
-                                }
-                                break;
-                              }
-                              isChildSet.add(String(t.id));
-                              const list = childTasksMap.get(rootParentId) || [];
-                              list.push(t);
-                              childTasksMap.set(rootParentId, list);
-                            }
-                          }
-                        });
-                        interface DisplayGanttItem {
-                          t: Task;
-                          isChild: boolean;
-                          parentTask?: Task;
-                          hasChildren: boolean;
-                          childCount: number;
-                          isModularExpanded: boolean;
-                        }
-                        const displayTasks: DisplayGanttItem[] = [];
-                        projectTasks.forEach((t) => {
-                          const tIdStr = String(t.id);
-                          if (isChildSet.has(tIdStr)) return;
-                          const children = childTasksMap.get(tIdStr) || [];
-                          const hasChildren = children.length > 0;
-                          const isModularExpanded = expandedModularTasks.includes(tIdStr);
-                          displayTasks.push({
-                            t,
-                            isChild: false,
-                            hasChildren,
-                            childCount: children.length,
-                            isModularExpanded,
-                          });
-                          if (hasChildren && isModularExpanded) {
-                            children.forEach((c) => {
-                              displayTasks.push({
-                                t: c,
-                                isChild: true,
-                                parentTask: t,
-                                hasChildren: false,
-                                childCount: 0,
-                                isModularExpanded: false,
-                              });
-                            });
-                          }
-                        });
-
-                        return displayTasks.map(({ t, isChild, parentTask, hasChildren, childCount, isModularExpanded }) => (
-                          <GanttTaskRow
-                            key={t.id}
-                            t={t}
-                            isChild={isChild}
-                            parentTask={parentTask}
-                            hasChildren={hasChildren}
-                            childCount={childCount}
-                            isModularExpanded={isModularExpanded}
-                            p={p}
-                            projects={projects}
-                            tasks={tasks}
-                            delegationGroups={delegationGroups}
-                            isHighlightDelegationOn={isHighlightDelegationOn}
-                            currentUser={currentUser}
-                            selectedTaskSet={selectedTaskSet}
-                            selectedTaskIds={selectedTaskIds}
-                            setSelectedTaskIds={setSelectedTaskIds}
-                            isEditMode={isEditMode}
-                            canWrite={canWrite}
-                            handleGroupModularTasks={handleGroupModularTasks}
-                            handleUnlinkModularTasks={handleUnlinkModularTasks}
-                            toggleModularParent={toggleModularParent}
-                            getRowVisibilityClass={getRowVisibilityClass}
-                            sideWidth={sideWidth}
-                            showStart={showStart}
-                            startColWidth={startColWidth}
-                            showFinish={showFinish}
-                            finishColWidth={finishColWidth}
-                            showParty={showParty}
-                            partyColWidth={partyColWidth}
-                            showDuration={showDuration}
-                            durationColWidth={durationColWidth}
-                            timeUnits={timeUnits}
-                            startDate={startDate}
-                            dayWidth={dayWidth}
-                            activeTooltip={activeTooltip}
-                            setActiveTooltip={setActiveTooltip}
-                            getBarColor={getBarColor}
-                            draggingTaskIds={draggingTaskIds}
-                            handleTaskDragStart={handleTaskDragStart}
-                            handleTaskDragOver={handleTaskDragOver}
-                            handleTaskDragLeave={handleTaskDragLeave}
-                            handleTaskDrop={handleTaskDrop}
-                            handleTaskDragEnd={handleTaskDragEnd}
-                            dragOverTaskId={dragOverTaskId}
-                            dropPosition={dropPosition}
-                            handleTaskCheckboxChange={handleTaskCheckboxChange}
-                            isHideMode={isHideMode}
-                            toggleHideRow={toggleHideRow}
-                            hiddenRowsSet={hiddenRowsSet}
-                            onNavigateToTaskDetail={onNavigateToTaskDetail}
-                            initialFocusTaskId={initialFocusTaskId}
-                            ganttTabFocusTaskId={ganttTabFocusTaskId}
-                          />
-                        ));
-                      })()}
-                  </React.Fragment>
+                  );
+                }
+                return (
+                  <GanttTaskRow
+                    key={item.key}
+                    t={item.t}
+                    isChild={item.isChild}
+                    parentTask={item.parentTask}
+                    hasChildren={item.hasChildren}
+                    childCount={item.childCount}
+                    isModularExpanded={item.isModularExpanded}
+                    p={item.p}
+                    projects={projects}
+                    tasks={tasks}
+                    delegationGroups={delegationGroups}
+                    isHighlightDelegationOn={isHighlightDelegationOn}
+                    currentUser={currentUser}
+                    selectedTaskSet={selectedTaskSet}
+                    selectedTaskIds={selectedTaskIds}
+                    setSelectedTaskIds={setSelectedTaskIds}
+                    isEditMode={isEditMode}
+                    canWrite={canWrite}
+                    handleGroupModularTasks={handleGroupModularTasks}
+                    handleUnlinkModularTasks={handleUnlinkModularTasks}
+                    toggleModularParent={toggleModularParent}
+                    getRowVisibilityClass={getRowVisibilityClass}
+                    sideWidth={sideWidth}
+                    showStart={showStart}
+                    startColWidth={startColWidth}
+                    showFinish={showFinish}
+                    finishColWidth={finishColWidth}
+                    showParty={showParty}
+                    partyColWidth={partyColWidth}
+                    showDuration={showDuration}
+                    durationColWidth={durationColWidth}
+                    timeUnits={timeUnits}
+                    startDate={startDate}
+                    dayWidth={dayWidth}
+                    activeTooltip={activeTooltip}
+                    setActiveTooltip={setActiveTooltip}
+                    getBarColor={getBarColor}
+                    draggingTaskIds={draggingTaskIds}
+                    handleTaskDragStart={handleTaskDragStart}
+                    handleTaskDragOver={handleTaskDragOver}
+                    handleTaskDragLeave={handleTaskDragLeave}
+                    handleTaskDrop={handleTaskDrop}
+                    handleTaskDragEnd={handleTaskDragEnd}
+                    dragOverTaskId={dragOverTaskId}
+                    dropPosition={dropPosition}
+                    handleTaskCheckboxChange={handleTaskCheckboxChange}
+                    isHideMode={isHideMode}
+                    toggleHideRow={toggleHideRow}
+                    hiddenRowsSet={hiddenRowsSet}
+                    onNavigateToTaskDetail={onNavigateToTaskDetail}
+                    initialFocusTaskId={initialFocusTaskId}
+                    ganttTabFocusTaskId={ganttTabFocusTaskId}
+                    taskCode={item.taskCode}
+                    delegationGroup={item.delegationGroup}
+                  />
                 );
               })}
+              {paddingBottom > 0 && (
+                <tr style={{ height: `${paddingBottom}px` }} className="pointer-events-none select-none">
+                  <td colSpan={totalColSpan} className="p-0 border-0 m-0" />
+                </tr>
+              )}
             </tbody>
           </table>
 
           {/* Global Grid Lines Overlay */}
-          <div className="absolute top-0 bottom-0 pointer-events-none z-10 flex"
-            style={{
-                left: sideWidth +
-                  (showStart ? startColWidth : 0) +
-                  (showFinish ? finishColWidth : 0) +
-                  (showParty ? partyColWidth : 0) +
-                  (showDuration ? durationColWidth : 0)
-            }}>
-             {timeUnits.map((unit) => (
-               <div
-                  key={unit.date.getTime()}
-                  className="border-r border-slate-100 dark:border-[#333336] shrink-0 h-full"
-                  style={{
-                    width: `${unit.days * dayWidth}px`,
-                    minWidth: `${unit.days * dayWidth}px`,
-                    maxWidth: `${unit.days * dayWidth}px`,
-                  }}
-               />
-             ))}
-          </div>
+          <GanttGridOverlay
+            leftOffset={
+              sideWidth +
+              (showStart ? startColWidth : 0) +
+              (showFinish ? finishColWidth : 0) +
+              (showParty ? partyColWidth : 0) +
+              (showDuration ? durationColWidth : 0)
+            }
+            timeUnits={timeUnits}
+            dayWidth={dayWidth}
+          />
           <svg className="absolute inset-0 pointer-events-none z-[15] overflow-visible print:hidden" width="100%" height="100%">
             <defs>
               <marker

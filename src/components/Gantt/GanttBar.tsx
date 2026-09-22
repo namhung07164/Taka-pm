@@ -320,4 +320,30 @@ export const GanttBar = React.memo(function GanttBar({
       )}
     </div>
   );
+}, (prev, next) => {
+  if (prev.id !== next.id) return false;
+  if (prev.startStr !== next.startStr || prev.endStr !== next.endStr) return false;
+  if (prev.status !== next.status || prev.label !== next.label) return false;
+  if (prev.dayWidth !== next.dayWidth) return false;
+  if (prev.startDate.getTime() !== next.startDate.getTime()) return false;
+  if (prev.isEditMode !== next.isEditMode) return false;
+  
+  const prevTooltipActive = prev.activeTooltip === prev.id;
+  const nextTooltipActive = next.activeTooltip === next.id;
+  if (prevTooltipActive !== nextTooltipActive) return false;
+
+  const pe = prev.extraVars;
+  const ne = next.extraVars;
+  if (pe === ne) return true;
+  if (!pe || !ne) return false;
+
+  return pe.actStatus === ne.actStatus &&
+         pe.actStatusColor === ne.actStatusColor &&
+         pe.actPrg === ne.actPrg &&
+         pe.party === ne.party &&
+         pe.duration === ne.duration &&
+         pe.taskCode === ne.taskCode &&
+         pe.predecessors === ne.predecessors &&
+         pe.highlight === ne.highlight &&
+         pe.isSimulation === ne.isSimulation;
 });

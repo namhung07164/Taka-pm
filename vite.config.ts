@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, '.'),
     },
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     hmr: process.env.DISABLE_HMR !== 'true',
@@ -32,7 +33,7 @@ export default defineConfig({
             if (id.includes('html5-qrcode') || id.includes('qrcode.react')) return 'vendor-qrcode';
             if (id.includes('motion')) return 'vendor-motion';
             if (id.includes('date-fns')) return 'vendor-date-fns';
-            if (id.includes('react-virtuoso') || id.includes('react-zoom-pan-pinch') || id.includes('react-markdown') || id.includes('react-draggable') || id.includes('react-dropzone')) return 'vendor-ui-helpers';
+            if (id.includes('react-zoom-pan-pinch') || id.includes('react-markdown') || id.includes('react-draggable') || id.includes('react-dropzone')) return 'vendor-ui-helpers';
             if (id.includes('react-dom') || id.includes('scheduler') || id.includes('/react/')) return 'vendor-react-core';
           }
         }

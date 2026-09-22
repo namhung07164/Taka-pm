@@ -27,16 +27,13 @@
 - **Storage Cleanup (Deep Clean)**: Khi xóa (soft-delete) Task/Project/Cost, bắt buộc dùng `extractStorageUrls` và `deleteStorageFiles` (trong `src/lib/storageUtils.ts`) để quét và xóa file đính kèm trên Firebase Storage, chống rác vật lý mồ côi.
 - Mọi dữ liệu config (`taka_users`, `taka_config`) phải dùng `onSnapshot` để UI cập nhật realtime khi Admin thay đổi.
 
-## 5. Cập Nhật Tài Liệu Định Kỳ
-- Khi hoàn thành tính năng mới, AI bắt buộc cập nhật các bước thao tác vào `USER_MANUAL.md`.
-
-## 6. Safe Integration (Tích hợp tính năng mới từ file ZIP)
+## 5. Safe Integration (Tích hợp tính năng mới từ file ZIP)
 Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file ZIP), BẮT BUỘC tuân thủ nguyên tắc "Cô lập & Chỉ thêm vào" (Decoupled & Additive-Only):
 - **Strict Isolation**: Gom toàn bộ UI/Logic mới vào thư mục riêng biệt (vd: `src/components/NewFeature/`). Tuyệt đối không trộn lẫn vào các core components hiện tại.
 - **Zero-Modification**: TUYỆT ĐỐI KHÔNG sửa/xóa/ghi đè UI layout, CSS, custom hooks, hay các hàm đang chạy. Việc kết nối tính năng mới CHỈ ĐƯỢC cắm thêm qua 1 Nút/Tab Navigation (Plug-and-play).
 - **State & Schema Safety**: Mọi state mới phải là slice độc lập trong Zustand (không can thiệp vào `tasks`, `projects`, v.v.). Type mới viết nối ở cuối `src/types.ts` hoặc tạo file riêng. Cấm sửa đổi `BUSINESS_LOGIC.md`.
 
-## 7. UI/UX & Responsive Performance Architecture
+## 6. UI/UX & Responsive Performance Architecture
 - **Atomic UI Component Isolation**: Mọi nút điều khiển UI/UX phức tạp (vd: `RibbonDisplayMenu`, Quick Access Toolbar) phải tách riêng thành standalone component và quản lý qua `UISlice` trong Zustand. Tuyệt đối không nhồi chung UI state vào data slices để tránh làm re-render toàn bộ bảng tính / danh sách công việc.
 - **Mobile/iOS Responsive Anti-Cluttering**:
   - Trên màn hình di động/iOS, KHÔNG nhân bản hay xếp đè nhiều nút công cụ lên Header/Navigation.

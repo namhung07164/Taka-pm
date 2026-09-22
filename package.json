@@ -45,7 +45,6 @@
     "react-dropzone": "^20.1.2",
     "react-konva": "^19.3.0",
     "react-markdown": "^10.1.0",
-    "react-virtuoso": "^4.18.12",
     "react-zoom-pan-pinch": "^4.0.3",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",

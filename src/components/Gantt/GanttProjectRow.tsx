@@ -339,8 +339,11 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     </tr>
   );
 }, (prev, next) => {
+  const prevModularExpanded = prev.projectTasks?.some(t => prev.expandedModularTasks.includes(String(t.id)));
+  const nextModularExpanded = next.projectTasks?.some(t => next.expandedModularTasks.includes(String(t.id)));
+  if (prevModularExpanded !== nextModularExpanded) return false;
+
   return prev.isExpanded === next.isExpanded &&
-         prev.expandedModularTasks === next.expandedModularTasks &&
          prev.isEditMode === next.isEditMode &&
          prev.canWrite === next.canWrite &&
          prev.selectedProjectSet.has(String(prev.p.no)) === next.selectedProjectSet.has(String(next.p.no)) &&
@@ -356,7 +359,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
          prev.timeUnits.length === next.timeUnits.length &&
          prev.p === next.p &&
          prev.projectTasks === next.projectTasks &&
-         prev.startDate === next.startDate &&
+         prev.startDate.getTime() === next.startDate.getTime() &&
          prev.dayWidth === next.dayWidth &&
          (prev.activeTooltip === `project-${prev.p.no}` || next.activeTooltip === `project-${next.p.no}` ? prev.activeTooltip === next.activeTooltip : true);
 });
