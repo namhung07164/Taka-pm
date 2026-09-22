@@ -879,6 +879,8 @@ function LiveCanvas({
 
   // 1. Get real-time projects and Excel summary data (Filtered strictly by Account Control RBAC permissions)
   const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
+  const allProjects = useAppStore(state => state.projects);
+  const currUser = useAppStore(state => state.currentUser);
   const delegationGroups = useAppStore(state => state.delegationGroups);
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
@@ -888,17 +890,47 @@ function LiveCanvas({
   const setIsPrintPreview = useAppStore(state => state.setIsPrintPreview);
   const summaryData = useSummaryData();
 
+  // Compute set of project codes that the current user is NOT allowed to access (RBAC)
+  const restrictedProjectCodes = useMemo(() => {
+    if (!currUser || currUser.role === 'admin') return new Set<string>();
+
+    const allowedCodeSet = new Set<string>();
+    enrichedProjects.forEach(p => {
+      if (p.code) allowedCodeSet.add(String(p.code).trim().toLowerCase());
+      if (p.linkCodes) {
+        p.linkCodes.split(/[+;,/]/).forEach(c => {
+          if (c.trim()) allowedCodeSet.add(c.trim().toLowerCase());
+        });
+      }
+    });
+
+    const restrictedSet = new Set<string>();
+    allProjects.forEach(p => {
+      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
+      const pCodes = rawCodes.split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
+      pCodes.forEach(code => {
+        if (!allowedCodeSet.has(code)) {
+          restrictedSet.add(code);
+        }
+      });
+    });
+
+    return restrictedSet;
+  }, [allProjects, enrichedProjects, currUser]);
+
   // 2. Build aggregatedData
   const aggregatedData = useMemo(() => {
     const dataMap: Record<string, any> = {};
     
     units.forEach((u: any) => {
-      const uName = (u?.name || '').toLowerCase();
+      const uName = (u?.name || '').toLowerCase().trim();
       if (!uName) return;
+      const isRestricted = restrictedProjectCodes.has(uName);
       dataMap[uName] = {
         name: u.name || '',
         id: u.id,
         unit: u.name || '',
+        isRestricted,
         year: globalYearFilter || '2026',
         size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
         profit: 0, profitByCp: 0, profitByHcmcate: 0,
@@ -912,8 +944,12 @@ function LiveCanvas({
     });
 
     summaryData.forEach((sumData) => {
-      const key = sumData.unit?.toLowerCase();
+      const key = sumData.unit?.toLowerCase().trim();
       if (key && dataMap[key]) {
+        if (dataMap[key].isRestricted || restrictedProjectCodes.has(key)) {
+          dataMap[key].isRestricted = true;
+          return;
+        }
         Object.assign(dataMap[key], {
             size: sumData.size || 0,
             sales: sumData.salesAmount || 0,
@@ -1072,6 +1108,11 @@ function LiveCanvas({
         const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
         
         units.forEach((u: any) => {
+            const uName = String(u.name || '').toLowerCase().trim();
+            if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) {
+                // Restricted project for current user -> DO NOT match color or group
+                return;
+            }
             let isMatch = false;
             
             if (mappedUnitIds.has(String(u.id))) {
@@ -1155,7 +1196,7 @@ function LiveCanvas({
     });
 
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
-  }, [version?.groups, version?.groupMappings, version?.isDynamicActive, units, aggregatedData]);
+  }, [version?.groups, version?.groupMappings, version?.isDynamicActive, units, aggregatedData, restrictedProjectCodes]);
 
   // 4. Filter only units and precalculate bounds
   const displayedUnits = useMemo(() => {
@@ -1165,6 +1206,12 @@ function LiveCanvas({
 
         const uName = (unit.name || '').toLowerCase().trim();
         const uData = (uName && aggregatedData[uName]) ? aggregatedData[uName] : {};
+        const isRestricted = restrictedProjectCodes.has(uName) || uData?.isRestricted;
+
+        if (isRestricted) {
+          return false;
+        }
+
         const hasProject = Boolean(uData?.matchedProject || uData?.projectName || uData?.appProjectCode);
         const isMappedInGroup = Boolean(unitColorMap[unit.id]);
         const isFocused = focusedUnitId === unit.id;
@@ -1372,6 +1419,11 @@ function LiveCanvas({
     }
 
     if (!targetUnit) return false;
+
+    const targetUName = (targetUnit.name || '').toLowerCase().trim();
+    if (restrictedProjectCodes.has(targetUName) || aggregatedData[targetUName]?.isRestricted) {
+      return false;
+    }
 
     // Calculate center and bounding box of target unit
     let cx = targetUnit.x || 0;

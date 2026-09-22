@@ -416,13 +416,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 {commentsCount > 0 && <span>{commentsCount}</span>}
               </button>
             )}
-
-            {/* Quick Navigator Button */}
-            <QuickNavButton 
-              project={targetProject} 
-              title={`Quick Navigator (${unitCode})`}
-              className="p-1 rounded border border-slate-200 dark:border-[#444446] bg-slate-50 dark:bg-slate-800/50 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-50 dark:hover:bg-[#333336]"
-            />
           </div>
 
           {/* Right Side: Start Date (Blue) & Finish Date (Pink) */}
