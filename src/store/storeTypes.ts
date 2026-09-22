@@ -150,6 +150,12 @@ export interface LayoutTooltipVisibility {
   description: boolean;
   progressBars: boolean;
   area: boolean;
+  // Smart Notifications & Alerts Config
+  notifications?: boolean;
+  alertOverdue?: boolean;
+  alertDelay?: boolean;
+  alertHandover?: boolean;
+  alertOpening?: boolean;
 }
 
 export interface DataSlice {

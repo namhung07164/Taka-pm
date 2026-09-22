@@ -56,3 +56,6 @@ Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file
 - **Pure In-Memory Computed Rollup**: Mọi ngày bắt đầu (start), kết thúc (finish), thời lượng (duration) và tiến độ (%) của Task mẹ phải được tính tự động từ danh sách Task con **hoàn toàn trong bộ nhớ client** (Pure Function).
 - **Zero Cascading Database Triggers**: Không tạo Cloud Function trigger hoặc vòng lặp write ngược lại Firestore để cập nhật Task mẹ, bảo toàn ngân sách Firestore và ngăn chặn lag mạng.
 - **Circular Dependency Guard**: Luôn kiểm tra `visited` Set trong các hàm duyệt cây task để chống treo trình duyệt do vòng lặp cha - con vô tận.
+
+## 10. Language & Terminology Standard (English UI Mandate)
+- **English UI & Titles**: Toàn bộ tiêu đề (Titles), nhãn điều khiển (Labels), chú thích (Tooltips), diễn giải chức năng (Descriptions), cảnh báo (Notifications & Alerts), và trạng thái (Badges) trên giao diện ứng dụng **BẮT BUỘC** viết bằng tiếng Anh ngắn gọn, súc tích và chuẩn chuyên nghiệp (Enterprise-grade English).

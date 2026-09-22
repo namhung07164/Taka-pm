@@ -1088,52 +1088,62 @@ function LiveCanvas({
             dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
             dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
 
-            // Compute Smart Alert for this unit
+            // Compute Smart Alert for this unit based on notification preferences
             const todayStr = now.toISOString().split('T')[0];
             const alertReasons: string[] = [];
             let alertLevel: 'critical' | 'warning' | null = null;
 
-            // 1. Overdue tasks check
-            const subTasksList = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
-            let overdueCount = 0;
-            subTasksList.forEach((st: any) => {
-              if (st.finish && st.finish < todayStr) {
-                const prog = st.progress ?? st.computedActProgress ?? 0;
-                if (prog < 100 && st.status !== 'Completed' && st.status !== 'Done') {
-                  overdueCount++;
+            if (layoutTooltipVisibility?.notifications !== false) {
+              // 1. Overdue tasks check
+              if (layoutTooltipVisibility?.alertOverdue !== false) {
+                const subTasksList = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
+                let overdueCount = 0;
+                subTasksList.forEach((st: any) => {
+                  if (st.finish && st.finish < todayStr) {
+                    const prog = st.progress ?? st.computedActProgress ?? 0;
+                    if (prog < 100 && st.status !== 'Completed' && st.status !== 'Done') {
+                      overdueCount++;
+                    }
+                  }
+                });
+                if (overdueCount > 0) {
+                  alertReasons.push(`${overdueCount} overdue task${overdueCount > 1 ? 's' : ''}`);
+                  alertLevel = 'critical';
                 }
               }
-            });
-            if (overdueCount > 0) {
-              alertReasons.push(`${overdueCount} task quá hạn`);
-              alertLevel = 'critical';
-            }
 
-            // 2. Project status delayed / late
-            const lowerStat = String(status).toLowerCase();
-            const lowerAct = String(actStatus).toLowerCase();
-            if (lowerStat.includes('delay') || lowerStat.includes('late') || lowerAct.includes('delay') || lowerAct.includes('late')) {
-              alertReasons.push('Tiến độ dự án bị trễ');
-              alertLevel = 'critical';
-            }
-
-            // 3. Upcoming handover within 3 days (if not completed)
-            const hDate = p.handover || p.computedTakCompl;
-            if (hDate && hDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
-              const diffDays = Math.ceil((new Date(hDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-              if (diffDays >= 0 && diffDays <= 3) {
-                alertReasons.push(`Bàn giao ${diffDays === 0 ? 'hôm nay' : 'trong ' + diffDays + ' ngày'}`);
-                if (!alertLevel) alertLevel = 'warning';
+              // 2. Project status delayed / late
+              if (layoutTooltipVisibility?.alertDelay !== false) {
+                const lowerStat = String(status).toLowerCase();
+                const lowerAct = String(actStatus).toLowerCase();
+                if (lowerStat.includes('delay') || lowerStat.includes('late') || lowerAct.includes('delay') || lowerAct.includes('late')) {
+                  alertReasons.push('Project delayed');
+                  alertLevel = 'critical';
+                }
               }
-            }
 
-            // 4. Upcoming opening within 3 days (if not completed)
-            const oDate = p.opening || p.computedOpening;
-            if (oDate && oDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
-              const diffDays = Math.ceil((new Date(oDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-              if (diffDays >= 0 && diffDays <= 3) {
-                alertReasons.push(`Khai trương ${diffDays === 0 ? 'hôm nay' : 'trong ' + diffDays + ' ngày'}`);
-                if (!alertLevel) alertLevel = 'warning';
+              // 3. Upcoming handover within 3 days (if not completed)
+              if (layoutTooltipVisibility?.alertHandover !== false) {
+                const hDate = p.handover || p.computedTakCompl;
+                if (hDate && hDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
+                  const diffDays = Math.ceil((new Date(hDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  if (diffDays >= 0 && diffDays <= 3) {
+                    alertReasons.push(`Handover ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'}`);
+                    if (!alertLevel) alertLevel = 'warning';
+                  }
+                }
+              }
+
+              // 4. Upcoming opening within 3 days (if not completed)
+              if (layoutTooltipVisibility?.alertOpening !== false) {
+                const oDate = p.opening || p.computedOpening;
+                if (oDate && oDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
+                  const diffDays = Math.ceil((new Date(oDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  if (diffDays >= 0 && diffDays <= 3) {
+                    alertReasons.push(`Opening ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'}`);
+                    if (!alertLevel) alertLevel = 'warning';
+                  }
+                }
               }
             }
 
@@ -1148,7 +1158,7 @@ function LiveCanvas({
     });
 
     return dataMap;
-  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups]);
+  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups, layoutTooltipVisibility]);
 
   // 3. Evaluate rules on the fly to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
@@ -1890,7 +1900,7 @@ function LiveCanvas({
                 ? "bg-red-500 text-white border-red-600 shadow-sm"
                 : "bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:hover:bg-red-900/60 dark:text-red-300 border-red-200 dark:border-red-900/60"
             )}
-            title={filterOnlyAlerts ? "Đang lọc gian hàng có cảnh báo (Nhấn để xem tất cả)" : `Lọc ${totalFloorAlerts} gian hàng có cảnh báo`}
+            title={filterOnlyAlerts ? "Filtering alert units (Click to show all)" : `Filter ${totalFloorAlerts} alert units`}
           >
             <Bell className={cn("w-3.5 h-3.5", filterOnlyAlerts ? "text-white animate-bounce" : "text-red-500")} />
             <span className="font-bold font-mono">{totalFloorAlerts}</span>
@@ -2277,7 +2287,7 @@ function LiveCanvas({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm Unit / Brand / Project..."
+                placeholder="Search Unit / Brand / Project..."
                 className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
               />
               {searchQuery && (
@@ -2287,12 +2297,105 @@ function LiveCanvas({
               )}
             </div>
 
+            {/* Smart Notifications & Alerts Config */}
+            <div className="space-y-2 p-3 bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[11px] uppercase font-bold text-red-600 dark:text-red-400 tracking-wider">
+                  <Bell className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                  <span>Smart Notifications & Alerts</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLayoutTooltipVisibility({
+                        notifications: true,
+                        alertOverdue: true,
+                        alertDelay: true,
+                        alertHandover: true,
+                        alertOpening: true,
+                      });
+                    }}
+                    className="text-[10px] text-red-600 dark:text-red-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    Enable All
+                  </button>
+                  <span className="text-red-200 dark:text-red-800">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLayoutTooltipVisibility({
+                        notifications: false,
+                        alertOverdue: false,
+                        alertDelay: false,
+                        alertHandover: false,
+                        alertOpening: false,
+                      });
+                    }}
+                    className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium cursor-pointer"
+                  >
+                    Disable All
+                  </button>
+                </div>
+              </div>
+
+              {/* Notification Toggle Items Grid */}
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { key: 'notifications', label: 'All Alert Badges', desc: 'Master alert switch' },
+                  { key: 'alertOverdue', label: 'Overdue Tasks', desc: 'Past due unfinished tasks' },
+                  { key: 'alertDelay', label: 'Project Delay', desc: 'Late / delayed status' },
+                  { key: 'alertHandover', label: 'Handover Notice', desc: 'Handover within 3 days' },
+                  { key: 'alertOpening', label: 'Opening Notice', desc: 'Opening within 3 days' },
+                ].map((item) => {
+                  const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        setLayoutTooltipVisibility((prev) => ({
+                          ...prev,
+                          [item.key]: !isActive,
+                        }));
+                      }}
+                      className={cn(
+                        "flex items-center justify-between p-2 rounded-xl border text-left transition-all active:scale-95 touch-manipulation cursor-pointer",
+                        isActive
+                          ? "bg-red-500/10 dark:bg-red-950/40 border-red-300 dark:border-red-800/80 text-red-900 dark:text-red-200 shadow-xs"
+                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60 text-slate-400 dark:text-slate-500 opacity-60 hover:opacity-100"
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold truncate leading-tight">
+                          {item.label}
+                        </div>
+                        <div className="text-[9px] opacity-75 truncate">
+                          {item.desc}
+                        </div>
+                      </div>
+                      <div
+                        className={cn(
+                          "w-4 h-4 rounded-full flex items-center justify-center shrink-0 ml-1.5 transition-colors",
+                          isActive
+                            ? "bg-red-600 text-white"
+                            : "bg-slate-200 dark:bg-slate-700 text-transparent"
+                        )}
+                      >
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Labels Appear / Tooltip Visibility Config */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                  <span>Labels Appear / Hiển thị Tooltip</span>
+                  <span>Display & Tooltip Fields</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -2315,7 +2418,7 @@ function LiveCanvas({
                     }}
                     className="text-[10px] text-purple-600 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
                   >
-                    Bật tất cả
+                    Enable All
                   </button>
                   <span className="text-slate-300 dark:text-slate-600">|</span>
                   <button
@@ -2323,7 +2426,7 @@ function LiveCanvas({
                     onClick={() => resetLayoutTooltipVisibility()}
                     className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium cursor-pointer"
                   >
-                    Mặc định
+                    Default
                   </button>
                 </div>
               </div>
@@ -2331,18 +2434,18 @@ function LiveCanvas({
               {/* Toggle Items Grid */}
               <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
                 {[
-                  { key: 'projectCode', label: 'Project Code', desc: 'Mã dự án / Unit' },
-                  { key: 'projectName', label: 'Project Name', desc: 'Tên thương hiệu' },
-                  { key: 'mdStatus', label: 'MD Status', desc: 'Trạng thái MD' },
-                  { key: 'actStatus', label: 'AC Status', desc: 'Trạng thái thi công' },
-                  { key: 'legendColor', label: 'Màu sắc Legend', desc: 'Màu bản đồ & Tooltip' },
-                  { key: 'floor', label: 'Floor / Store', desc: 'Tầng & Chi nhánh' },
-                  { key: 'startDate', label: 'Start Date', desc: 'Ngày bắt đầu' },
-                  { key: 'endDate', label: 'End Date', desc: 'Ngày kết thúc' },
-                  { key: 'detail', label: 'Detail', desc: 'Chi tiết công việc' },
-                  { key: 'description', label: 'Description', desc: 'Mô tả / Ghi chú' },
-                  { key: 'progressBars', label: 'Progress Bars', desc: 'Tiến độ Plan & Act' },
-                  { key: 'area', label: 'Diện tích (m²)', desc: 'Kích thước sàn' },
+                  { key: 'projectCode', label: 'Project Code', desc: 'Unit / Project ID' },
+                  { key: 'projectName', label: 'Project Name', desc: 'Brand / Tenant Name' },
+                  { key: 'mdStatus', label: 'MD Status', desc: 'Merchandising status' },
+                  { key: 'actStatus', label: 'AC Status', desc: 'Fit-out actual status' },
+                  { key: 'legendColor', label: 'Legend Color', desc: 'Unit & Tooltip color' },
+                  { key: 'floor', label: 'Floor / Store', desc: 'Location & Store level' },
+                  { key: 'startDate', label: 'Start Date', desc: 'Planned start date' },
+                  { key: 'endDate', label: 'End Date', desc: 'Planned end date' },
+                  { key: 'detail', label: 'Detail', desc: 'Work breakdown summary' },
+                  { key: 'description', label: 'Description', desc: 'Notes & Descriptions' },
+                  { key: 'progressBars', label: 'Progress Bars', desc: 'Plan & Actual progress' },
+                  { key: 'area', label: 'Area (m²)', desc: 'Floor surface area' },
                 ].map((item) => {
                   const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;
                   return (
@@ -2392,11 +2495,11 @@ function LiveCanvas({
                 <button 
                   onClick={handleTriggerExport}
                   disabled={isExporting}
-                  title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
+                  title="Automatically: Step 1 Apply all rules Dynamic -> Step 2 Save Cloud R2"
                   className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
                 >
                   <RefreshCw className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`} />
-                  {isExporting ? (exportStatus || 'Đang xử lý...') : 'Trigger Export (Apply Rules & Cloud)'}
+                  {isExporting ? (exportStatus || 'Processing...') : 'Trigger Export (Apply Rules & Cloud)'}
                 </button>
               )}
               
@@ -2414,7 +2517,7 @@ function LiveCanvas({
                   onClick={handleExport}
                   className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm active:scale-95 touch-manipulation"
                 >
-                  <Download className="w-4 h-4" /> Xuất ảnh HD
+                  <Download className="w-4 h-4" /> Export HD Image
                 </button>
                 {canWrite && (
                   <button 
@@ -2424,7 +2527,7 @@ function LiveCanvas({
                     }}
                     className="col-span-2 flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-slate-700 active:scale-95 touch-manipulation"
                   >
-                    <Settings className="w-4 h-4" /> Cấu hình R2
+                    <Settings className="w-4 h-4" /> R2 Storage Config
                   </button>
                 )}
               </div>

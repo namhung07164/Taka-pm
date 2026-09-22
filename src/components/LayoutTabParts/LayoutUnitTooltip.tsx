@@ -341,7 +341,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       </div>
 
       {/* Smart Alert Notification Banner */}
-      {data.alerts?.hasAlert && (
+      {data.alerts?.hasAlert && vis?.notifications !== false && (
         <div className={cn(
           "flex items-start gap-2 p-2 rounded-lg text-xs border font-medium",
           data.alerts.level === 'critical'
@@ -354,7 +354,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           )} />
           <div className="flex-1 flex flex-col gap-0.5">
             <span className="font-bold text-[10.5px] uppercase tracking-wide">
-              {data.alerts.level === 'critical' ? 'Cảnh báo tiến độ' : 'Nhắc nhở tiến độ'}
+              {data.alerts.level === 'critical' ? 'Critical Alert' : 'Schedule Notice'}
             </span>
             <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px]">
               {data.alerts.reasons?.map((reason: string, idx: number) => (
