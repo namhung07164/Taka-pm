@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useDeferredValue } from 'react';
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
@@ -191,6 +191,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   // Clean up link cost when unmounting / leaving CostTab
 
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || costTabSearchTerm || '');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   useEffect(() => {
     if (initialSearchTerm) {
@@ -794,8 +795,8 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         ? groupCosts.filter(c => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches)
         : groupCosts;
 
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
+      if (deferredSearchTerm) {
+        const term = deferredSearchTerm.toLowerCase();
         const projectFields = [p.store, p.location, p.year, p.code, p.name];
         const projectMatches = projectFields.some(val => String(val || "").toLowerCase().includes(term));
         
@@ -815,7 +816,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
       return true;
     });
-  }, [projects, costs, globalYearFilter, effectiveStore, globalLocationFilter, searchTerm, hasActForcFilter, paidDateStart, paidDateEnd, paidStageFilter]);
+  }, [projects, costs, globalYearFilter, effectiveStore, globalLocationFilter, deferredSearchTerm, hasActForcFilter, paidDateStart, paidDateEnd, paidStageFilter]);
 
   const filteredCostsForTotals = useMemo(() => {
     const includedKeys = new Set(filteredProjectsForDisplay.map(p => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
@@ -102,6 +102,7 @@ export function DetailTab({
   const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [visibleCount, setVisibleCount] = useState(20);
   const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
@@ -2485,7 +2486,7 @@ export function DetailTab({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTime = today.getTime();
-    const lowerSearchTerm = searchTerm.toLowerCase();
+    const lowerSearchTerm = deferredSearchTerm.toLowerCase();
 
     return sortedProjects.filter(p => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -2552,7 +2553,7 @@ export function DetailTab({
       }
       return true;
     });
-  }, [sortedProjects, projectInfoMap, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, searchTerm, statusFilter, projects, tasks]);
+  }, [sortedProjects, projectInfoMap, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, deferredSearchTerm, statusFilter, projects, tasks]);
 
 
 

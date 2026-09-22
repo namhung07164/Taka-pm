@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Search, ExternalLink, Download, Upload, Printer, Link as LinkIcon, Unlink, ChevronDown, ChevronRight, Lock, X, Check, Filter, Layers, Sparkles, Move, GripHorizontal } from 'lucide-react';
@@ -180,6 +180,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   };
   
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || budgetTabSearchTerm || '');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   useEffect(() => {
     if (initialSearchTerm) {
@@ -746,7 +747,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     else if (moneyFilter === 'has_act_forc') matchesMoney = hasActForc;
     
     const baseParentMatch = matchesYear && matchesStore && matchesLocation && matchesMoney;
-    const parentMatchesSearch = !searchTerm || isParentMatchSearch(node, searchTerm);
+    const parentMatchesSearch = !deferredSearchTerm || isParentMatchSearch(node, deferredSearchTerm);
 
     if (node.children && node.children.length > 0) {
       const validChildren = node.children.filter((child: any) => {
@@ -767,14 +768,14 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
 
       const hasMultiChildren = node.children.length >= 2;
 
-      if (!searchTerm.trim()) {
+      if (!deferredSearchTerm.trim()) {
         node.filteredChildren = validChildren.map((c: any) => ({ ...c, isSearchMatch: false }));
         return baseParentMatch || validChildren.length > 0;
       }
 
       const matchingChildIds = new Set<string>();
       validChildren.forEach((child: any) => {
-        if (isChildMatchSearch(child, searchTerm)) {
+        if (isChildMatchSearch(child, deferredSearchTerm)) {
           matchingChildIds.add(child.id);
         }
       });

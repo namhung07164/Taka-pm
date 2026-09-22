@@ -6,6 +6,7 @@ import React, {
   useRef,
   useEffect,
   useCallback,
+  useDeferredValue,
 } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import {
@@ -171,6 +172,7 @@ export function GanttTab({
   const [searchTerm, setSearchTerm] = useState(() => {
     return safeGetItemSession("taka_gantt_search") || "";
   });
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   const printRangeType = useAppStore(state => state.printRangeType);
   const globalPrintStartDate = useAppStore(state => state.printStartDate);
@@ -635,9 +637,9 @@ export function GanttTab({
         }
       }
       
-      if (searchTerm) {
+      if (deferredSearchTerm) {
         return matchesAdvancedSearch(
-          searchTerm,
+          deferredSearchTerm,
           [p.code, p.name, p.store, p.location],
           [],
           (term, andTerms) => {
@@ -681,7 +683,7 @@ export function GanttTab({
     globalYearFilter,
     globalStoreFilter,
     globalLocationFilter,
-    searchTerm,
+    deferredSearchTerm,
     filterProjectStatus,
     filterStartDate,
     filterEndDate,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useDeferredValue } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Search, RefreshCw, Pin, GripVertical, CheckCircle2, ArrowUp, ArrowDown, ChevronUp, ChevronDown } from 'lucide-react';
@@ -35,6 +35,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   const setPinnedProjects = useAppStore(state => state.setPinnedProjects);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
   const wasSearchingRef = useRef<boolean>(false);
@@ -337,7 +338,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   const filteredProjects = projects.filter(p=> {
     const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
     const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, status, p.year];
-    const matchesSearch = !searchTerm || searchFields.some(val => String(val || "").toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesSearch = !deferredSearchTerm || searchFields.some(val => String(val || "").toLowerCase().includes(deferredSearchTerm.toLowerCase()));
     const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
     const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
     const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;

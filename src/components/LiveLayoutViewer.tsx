@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import Konva from 'konva';
 import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
@@ -705,6 +705,7 @@ function LiveCanvas({
   const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(false);
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [focusedUnitId, setFocusedUnitId] = useState<string | null>(null);
   const focusedTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -1218,14 +1219,14 @@ function LiveCanvas({
 
         // Performance & Clarity Optimization: Only render units that have active projects or custom group classification
         // (Unless the user is searching or this unit is currently focused/zoomed)
-        if (!searchQuery.trim() && !isFocused) {
+        if (!deferredSearchQuery.trim() && !isFocused) {
           if (!hasProject && !isMappedInGroup) {
             return false;
           }
         }
 
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
+        if (deferredSearchQuery.trim()) {
+          const q = deferredSearchQuery.toLowerCase().trim();
           const matchName = (unit.name || '').toLowerCase().includes(q);
           const matchBrand = (uData.brandName || '').toLowerCase().includes(q);
           const matchProject = (uData.projectName || '').toLowerCase().includes(q);
@@ -1283,7 +1284,7 @@ function LiveCanvas({
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, searchQuery, aggregatedData, focusedUnitId]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, focusedUnitId]);
 
   // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
   const updateTooltipPos = (clientX: number, clientY: number) => {
