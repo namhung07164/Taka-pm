@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
+import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, MapPin, Calendar } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
@@ -164,7 +165,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       });
   }, [units, activeVersion, summaryData, selectedLabels]);
 
-  const [image] = useImage(activeVersion?.backgroundUrl || '', 'anonymous');
+  const [image] = useOffscreenImage(activeVersion?.backgroundUrl || '', 'anonymous');
   const [scale, setScale] = useState(activeVersion?.backgroundScale || 1);
   const [position, setPosition] = useState(activeVersion?.backgroundPos || { x: 0, y: 0 });
   const [copiedLink, setCopiedLink] = useState(false);
@@ -1192,7 +1193,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
       });
   }, [units, version, summaryData, selectedLabels]);
 
-  const [image, status] = useImage(version.backgroundUrl || '', 'anonymous');
+  const [image, status] = useOffscreenImage(version.backgroundUrl || '', 'anonymous');
   const stageRef = useRef<any>(null);
 
   useEffect(() => {

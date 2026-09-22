@@ -6,6 +6,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff } from 'lucide-react';
 import useImage from 'use-image';
+import { useOffscreenImage } from '../hooks/useOffscreenImage';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { extractR2Key } from './PictureMapping/lib/r2Upload';
@@ -689,7 +690,7 @@ function LiveCanvas({
 
   const version = r2Version;
   const units = r2Units;
-  const [bgImage] = useImage(version?.backgroundUrl || '', 'anonymous');
+  const [bgImage] = useOffscreenImage(version?.backgroundUrl || '', 'anonymous');
   
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);

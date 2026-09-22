@@ -2,6 +2,7 @@ import { useShallow } from 'zustand/react/shallow';
 import React, { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import useImage from 'use-image';
+import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { useDataStore } from '../../DataContext';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 
@@ -62,7 +63,7 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
       });
   }, [mapUnits, version, summaryData, selectedLabels]);
 
-  const [image] = useImage(version?.backgroundUrl || '', 'anonymous');
+  const [image] = useOffscreenImage(version?.backgroundUrl || '', 'anonymous');
   
   const [scale, setScale] = useState(version?.backgroundScale || 1);
   const [position, setPosition] = useState(version?.backgroundPos || { x: 0, y: 0 });

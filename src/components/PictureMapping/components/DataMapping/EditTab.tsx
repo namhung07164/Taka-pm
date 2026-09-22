@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Text, Group } from 'react-konva';
 import useImage from 'use-image';
+import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { v4 as uuidv4 } from 'uuid';
 import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, Plus } from 'lucide-react';
 import Draggable from 'react-draggable';
@@ -260,7 +261,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVersionId, activeVersion?.backgroundUrl]);
 
-  const [image] = useImage(localImageUrl || '', 'anonymous');
+  const [image] = useOffscreenImage(localImageUrl || '', 'anonymous');
   const [activeTool, setActiveTool] = useState<ShapeType | 'select' | 'edit-bg'>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
