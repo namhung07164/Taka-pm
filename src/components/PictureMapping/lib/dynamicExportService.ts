@@ -1,12 +1,10 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { calculateSummaryData } from './summaryData';
-import { getStoredR2Credentials, uploadSingleR2File, extractR2Key } from './r2Upload';
+import { getStoredR2Credentials, uploadSingleR2File, extractR2Key, getS3Sdk } from './r2Upload';
 import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
 
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
@@ -365,6 +363,7 @@ export async function loadStoreFromCloudR2(): Promise<{ success: boolean; messag
     throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng cấu hình R2 trước.');
   }
 
+  const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
@@ -511,6 +510,7 @@ export async function saveStoreToCloudR2(
     throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" để kết nối.');
   }
 
+  const { S3Client } = await getS3Sdk();
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
@@ -519,7 +519,6 @@ export async function saveStoreToCloudR2(
       secretAccessKey: creds.secretAccessKey.trim(),
     },
   });
-
   const dataState = useDataStore.getState();
   const currentActiveKey = getPartitionKey(dataState.store || targetStore, dataState.location || 'L1');
   const baseStoreLocationData = customStoreLocationData || {

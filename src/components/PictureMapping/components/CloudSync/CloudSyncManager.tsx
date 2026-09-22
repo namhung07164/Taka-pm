@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { CloudUpload, CloudDownload, RefreshCw } from 'lucide-react';
-import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, extractR2Key } from '../../lib/r2Upload';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, extractR2Key, getS3Sdk } from '../../lib/r2Upload';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
 import { MapVersion } from '../DataMapping/types';
 import R2UploadModal from '../R2UploadModal';
@@ -68,6 +66,7 @@ export default function CloudSyncManager() {
         throw new Error('Thiếu thông tin cấu hình Cloudflare R2 trong cài đặt!');
       }
 
+      const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
       const s3 = new S3Client({
         region: 'auto',
         endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,

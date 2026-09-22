@@ -1,6 +1,20 @@
-import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { S3Client as S3ClientType } from '@aws-sdk/client-s3';
 import { useAppStore } from '../../../store/useAppStore';
+
+export async function getS3Sdk() {
+  const [s3Module, presignerModule] = await Promise.all([
+    import('@aws-sdk/client-s3'),
+    import('@aws-sdk/s3-request-presigner')
+  ]);
+  return {
+    S3Client: s3Module.S3Client,
+    PutObjectCommand: s3Module.PutObjectCommand,
+    GetObjectCommand: s3Module.GetObjectCommand,
+    ListObjectsV2Command: s3Module.ListObjectsV2Command,
+    DeleteObjectCommand: s3Module.DeleteObjectCommand,
+    getSignedUrl: presignerModule.getSignedUrl,
+  };
+}
 
 export interface R2Credentials {
   accountId: string;
@@ -122,6 +136,7 @@ export function getStoredR2Credentials(): R2Credentials | null {
  */
 export async function testR2Connection(creds: R2Credentials): Promise<{ ok: boolean; message: string }> {
   try {
+    const { S3Client, PutObjectCommand, DeleteObjectCommand, getSignedUrl } = await getS3Sdk();
     const s3 = new S3Client({
       region: 'auto',
       endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
@@ -192,10 +207,11 @@ export async function testR2Connection(creds: R2Credentials): Promise<{ ok: bool
  */
 export async function listR2Objects(
   creds: R2Credentials,
-  s3: S3Client,
+  s3: S3ClientType,
   prefix?: string
 ): Promise<string[]> {
   try {
+    const { ListObjectsV2Command, getSignedUrl } = await getS3Sdk();
     const command = new ListObjectsV2Command({
       Bucket: creds.bucketName,
       Prefix: prefix || undefined,
@@ -205,6 +221,7 @@ export async function listR2Objects(
   } catch (err: any) {
     console.warn('[R2 List] Direct list failed, trying presigned GET URL fallback:', err);
     try {
+      const { ListObjectsV2Command, getSignedUrl } = await getS3Sdk();
       const command = new ListObjectsV2Command({
         Bucket: creds.bucketName,
         Prefix: prefix || undefined,
@@ -233,9 +250,10 @@ export async function listR2Objects(
 export async function deleteR2Object(
   key: string,
   creds: R2Credentials,
-  s3: S3Client
+  s3: S3ClientType
 ): Promise<boolean> {
   try {
+    const { DeleteObjectCommand, getSignedUrl } = await getS3Sdk();
     const command = new DeleteObjectCommand({
       Bucket: creds.bucketName,
       Key: key,
@@ -245,6 +263,7 @@ export async function deleteR2Object(
   } catch (err: any) {
     console.warn(`[R2 Delete] Direct delete failed for "${key}", trying presigned DELETE:`, err);
     try {
+      const { DeleteObjectCommand, getSignedUrl } = await getS3Sdk();
       const command = new DeleteObjectCommand({
         Bucket: creds.bucketName,
         Key: key,
@@ -266,7 +285,7 @@ export async function deleteR2Object(
 export async function purgeExactR2ExportFiles(
   fileNamesToReplace: string[],
   creds: R2Credentials,
-  s3: S3Client,
+  s3: S3ClientType,
   onStatus?: (text: string) => void
 ): Promise<{ deletedCount: number; deletedFiles: string[] }> {
   try {
@@ -293,7 +312,7 @@ export async function purgeExactR2ExportFiles(
 export async function purgeOldR2BackgroundImages(
   keepImageNames: string | string[],
   creds: R2Credentials,
-  s3: S3Client,
+  s3: S3ClientType,
   onStatus?: (text: string) => void
 ): Promise<{ deletedCount: number; deletedFiles: string[] }> {
   try {
@@ -341,7 +360,7 @@ export async function uploadSingleR2File(
     secretAccessKey: string;
     bucketName: string;
   },
-  s3: S3Client,
+  s3: S3ClientType,
   maxRetries = 3
 ): Promise<R2UploadFileResult> {
   const originalName = file.name || 'Export.jpeg';
@@ -353,6 +372,7 @@ export async function uploadSingleR2File(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      const { PutObjectCommand, getSignedUrl } = await getS3Sdk();
       // 1. Try direct S3 presigned PUT URL
       const command = new PutObjectCommand({
         Bucket: creds.bucketName,
@@ -411,6 +431,7 @@ export async function uploadFilesToR2(
     throw new Error('Chưa cấu hình đầy đủ thông tin Cloudflare R2 trong cài đặt.');
   }
 
+  const { S3Client } = await getS3Sdk();
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,

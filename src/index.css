@@ -431,3 +431,10 @@ body.print-preview-active .print\:overflow-hidden {
     overflow: hidden !important;
     white-space: nowrap !important;
 }
+
+/* High-Performance Table Row Virtualization (Rendering Economy) */
+.table-row-optimized {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 42px;
+}
+

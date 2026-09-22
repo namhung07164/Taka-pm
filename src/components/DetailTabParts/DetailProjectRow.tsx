@@ -82,7 +82,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       data-project-year={p.year || ''}
       data-project-store={p.store || ''}
       className={cn(
-        "border-b-2 border-slate-200 dark:border-[#444446] transition-colors",
+        "table-row-optimized border-b-2 border-slate-200 dark:border-[#444446] transition-colors",
         item.projectIndex % 2 === 0 ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-blue-50/50 dark:bg-[#28282a]"
       )}
     >

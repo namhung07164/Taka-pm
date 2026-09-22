@@ -2,14 +2,12 @@ import React, { useEffect, useState, useRef, useMemo, useCallback, useDeferredVa
 import Konva from 'konva';
 import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff, Bell, AlertTriangle } from 'lucide-react';
 import useImage from 'use-image';
 import { useOffscreenImage } from '../hooks/useOffscreenImage';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import { extractR2Key } from './PictureMapping/lib/r2Upload';
+import { extractR2Key, getS3Sdk } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
@@ -123,6 +121,7 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
         throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
       }
 
+      const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
       const s3 = new S3Client({
         region: 'auto',
         endpoint: `https://${accountId}.r2.cloudflarestorage.com`,

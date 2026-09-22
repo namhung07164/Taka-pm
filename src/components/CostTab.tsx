@@ -1344,7 +1344,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
           return (
             <React.Fragment key={`${p.code}-${p.year}-${p.no}`}>
-              <tr className={cn("border-b-2 border-slate-200 dark:border-[#444446]", pIdx % 2 === 0 ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-blue-50/50 dark:bg-[#28282a]")}>
+              <tr className={cn("table-row-optimized border-b-2 border-slate-200 dark:border-[#444446]", pIdx % 2 === 0 ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-blue-50/50 dark:bg-[#28282a]")}>
                 {visibleColumns.includes('no') && (
                   <td className="px-4 py-3 text-center">
                     <button 
@@ -1423,7 +1423,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                       : { firstMatch: false, secondMatch: false, thirdMatch: false };
 
                     return (
-                    <tr key={c.id} className="bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50/50 dark:hover:bg-[#444446] dark:hover:bg-[#333336] transition-all text-xs">
+                    <tr key={c.id} className="table-row-optimized bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50/50 dark:hover:bg-[#444446] dark:hover:bg-[#333336] transition-all text-xs">
                       {visibleColumns.includes('no') && <td className="px-4 py-3 text-center text-slate-300 dark:text-slate-600 font-mono italic">{pIdx + 1}.${i + 1}</td>}
                       {visibleColumns.includes('year') && <td className="px-4 py-3 text-slate-400 dark:text-[#838383] font-medium">{p.year || '-'}</td>}
                       {visibleColumns.includes('store') && <td className="px-4 py-3 text-slate-400 dark:text-[#838383] font-medium">{p.store || '-'}</td>}
