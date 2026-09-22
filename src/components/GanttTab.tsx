@@ -595,6 +595,48 @@ export function GanttTab({
     return map;
   }, [tasks]);
 
+  // O(1) Pre-indexed Map for Tasks by Project Code
+  const tasksMapByCode = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      if (t.isDeleted) continue;
+      const tCode = String(t.projectCode || "").trim().toLowerCase();
+      if (!tCode) continue;
+      let list = map.get(tCode);
+      if (!list) {
+        list = [];
+        map.set(tCode, list);
+      }
+      list.push(t);
+    }
+    return map;
+  }, [tasks]);
+
+  // Helper to get matching tasks for a project in O(1) + candidate filter
+  const getGroupTasksForProject = useCallback((p: Project) => {
+    const pKey = getPKey(p.code, p.year, p.store);
+    const exactTasks = tasksByProject.get(pKey);
+    if (exactTasks && exactTasks.length > 0) return exactTasks;
+
+    const pCode = String(p.code || "").trim().toLowerCase();
+    const candidateTasks = tasksMapByCode.get(pCode) || [];
+    const pYr = String(p.year || (p.start ? String(p.start).substring(0, 4) : "")).trim();
+    const pStore = String(p.store || "").trim().toLowerCase();
+
+    return candidateTasks.filter(t => {
+      const tStore = String(t.projectStore || "").trim().toLowerCase();
+      const matchesStore = !tStore || !pStore || tStore === pStore;
+      if (!matchesStore) return false;
+
+      const tYr = String(t.projectYear || "").trim();
+      const matchesYear = !tYr || !pYr || tYr === pYr;
+      if (!matchesYear) return false;
+
+      return true;
+    });
+  }, [tasksByProject, tasksMapByCode]);
+
   // Auto-jump to matched project location(s) when searching in GanttTab
   useEffect(() => {
     const term = searchTerm.trim();
@@ -605,19 +647,7 @@ export function GanttTab({
       if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
       if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
 
-      const pKey = getPKey(p.code, p.year, p.store);
-      let projectTasks = tasksByProject.get(pKey);
-      if (!projectTasks || projectTasks.length === 0) {
-        const pCode = String(p.code || "").trim().toLowerCase();
-        projectTasks = tasks.filter(t => {
-          const tCode = String(t.projectCode || "").trim().toLowerCase();
-          if (tCode !== pCode) return false;
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          return matchesStore && matchesYear;
-        });
-      }
-      projectTasks = projectTasks || [];
+      const projectTasks = getGroupTasksForProject(p);
 
       return matchesAdvancedSearch(
         term,
@@ -665,7 +695,7 @@ export function GanttTab({
         setGlobalLocationFilter(matchedLocations);
       }
     }
-  }, [searchTerm, projects, tasks, tasksByProject, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+  }, [searchTerm, projects, getGroupTasksForProject, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
@@ -691,19 +721,7 @@ export function GanttTab({
         }
       }
 
-      const pKey = getPKey(p.code, p.year, p.store);
-      let projectTasks = tasksByProject.get(pKey);
-      if (!projectTasks || projectTasks.length === 0) {
-        const pCode = String(p.code || "").trim().toLowerCase();
-        projectTasks = tasks.filter(t => {
-          const tCode = String(t.projectCode || "").trim().toLowerCase();
-          if (tCode !== pCode) return false;
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          return matchesStore && matchesYear;
-        });
-      }
-      projectTasks = projectTasks || [];
+      let projectTasks = getGroupTasksForProject(p);
 
       if (filterStartDate || filterEndDate) {
         if (projectTasks.length > 0) {
