@@ -317,7 +317,7 @@ function DynamicHierarchyTab({
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
       const detailStr = p.detail || '';
-      const descStr = p.detail || (p as any).description || p.note || '';
+      const descStr = p.detail || (p as any).description || '';
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
 

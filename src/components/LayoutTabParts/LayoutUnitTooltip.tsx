@@ -219,7 +219,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       })();
 
   const detailText = p?.detail || data.detail || '';
-  const descriptionText = (p as any)?.description || (p as any)?.note || data.description || data.note || '';
+  const descriptionText = p?.detail || (p as any)?.description || data.appProjectDescription || data.appDescription || data.description || '';
 
   // Dates
   const computedTakStart = p?.computedTakStart || p?.start || data.startDate || '';
