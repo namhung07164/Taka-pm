@@ -12,6 +12,10 @@ export interface QuickNavTarget {
 export interface UISlice {
   isFocusMode: boolean;
   setIsFocusMode: (val: boolean) => void;
+  ribbonDisplayMode: "always_show" | "tabs_only" | "fullscreen";
+  setRibbonDisplayMode: (mode: "always_show" | "tabs_only" | "fullscreen") => void;
+  showQuickAccessToolbar: boolean;
+  setShowQuickAccessToolbar: (show: boolean) => void;
   isPrintPreview: boolean;
   setIsPrintPreview: (val: boolean) => void;
   printOrientation: "portrait" | "landscape";

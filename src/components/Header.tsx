@@ -37,6 +37,7 @@ const QRScannerModal = lazyWithRetry(() => import("./QRScannerModal").then(m => 
 import { AppUser, TabId, AppRole } from "../types";
 import { cn } from "../lib/utils";
 import { useLanguage } from "../lib/LanguageContext";
+import { RibbonDisplayMenu } from "./RibbonDisplayMenu";
 
 interface HeaderProps {
   cloudStatus: "online" | "syncing" | "offline";
@@ -79,6 +80,7 @@ export function Header({
   
   const currency = useAppStore(state => state.currency);
   const setCurrency = useAppStore(state => state.setCurrency);
+  const showQuickAccessToolbar = useAppStore(state => state.showQuickAccessToolbar);
   const canWriteImportCsv = currentUser?.role === 'admin' || !!permissionMatrix[currentUser?.role as AppRole]?.Write?.importCsv;
   const jpyRate = useAppStore(state => state.jpyRate);
   const usdRate = useAppStore(state => state.usdRate);
@@ -496,87 +498,92 @@ export function Header({
       </div>
 
       <div className="flex flex-wrap justify-end items-center gap-1 sm:gap-2 shrink-0 ml-auto">
-        <button
-          onClick={() => setIsQRScannerOpen(true)}
-          className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400"
-          title="Quét mã QR (Scan QR Code)"
-        >
-          <ScanQrCode className="w-4 h-4 sm:w-5 sm:h-5" />
-        </button>
-        {onToggleTheme && (
-          <button
-            onClick={onToggleTheme}
-            className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] text-slate-500 dark:text-[#a3a3a3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm"
-            title="Toggle Theme"
-          >
-            {theme === "dark" ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
-          </button>
+        {showQuickAccessToolbar && (
+          <>
+            <button
+              onClick={() => setIsQRScannerOpen(true)}
+              className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400"
+              title="Quét mã QR (Scan QR Code)"
+            >
+              <ScanQrCode className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            {onToggleTheme && (
+              <button
+                onClick={onToggleTheme}
+                className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] text-slate-500 dark:text-[#a3a3a3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm"
+                title="Toggle Theme"
+              >
+                {theme === "dark" ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </button>
+            )}
+            
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={handleCurrencyClick}
+                onContextMenu={handleCurrencyContextMenu}
+                className="flex items-center justify-center p-1.5 min-w-[68px] sm:min-w-[76px] bg-slate-50 hover:bg-slate-100 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-xs font-bold"
+                title={
+                  currency === 'VND'
+                    ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
+                    : (currentUser.role === 'admin'
+                        ? `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND - Right-click to set exchange rates)`
+                        : `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND)`
+                      )
+                }
+              >
+                {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
+              </button>
+              {currency === 'JPY' && (
+                <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-[#838383] px-1 hidden 2xl:inline-block whitespace-nowrap">
+                  (1 JPY = {jpyRate.toLocaleString('en-US')} VND)
+                </span>
+              )}
+              {currency === 'USD' && (
+                <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-[#838383] px-1 hidden 2xl:inline-block whitespace-nowrap">
+                  (1 USD = {usdRate.toLocaleString('en-US')} VND)
+                </span>
+              )}
+            </div>
+
+            <button onClick={() => setLanguage(language === 'en' ? 'ja' : 'en')}
+              className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm"
+              title="Toggle Language"
+            >
+              {language === 'en' ? (
+                <span className="text-base sm:text-lg leading-none" role="img" aria-label="English">🇬🇧</span>
+              ) : (
+                <span className="text-base sm:text-lg leading-none" role="img" aria-label="Japanese">🇯🇵</span>
+              )}
+            </button>
+
+            <button
+              onClick={onUndo}
+              disabled={!canUndo}
+              className="p-1.5 sm:p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-[#333336] rounded-lg transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500 relative"
+              title={undoDescription || "Nothing to undo"}
+            >
+              <Undo2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              {hasDataToUndo && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white dark:border-slate-900"></span>
+              )}
+            </button>
+
+            {currency !== 'VND' && (
+              <span 
+                title={`Converted to ${currency}. Switch to VND to edit numbers.`}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 sm:px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-sm shrink-0 cursor-default"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">Read-only</span>
+              </span>
+            )}
+            <div className="hidden xl:flex bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] px-3 sm:px-4 py-1.5 rounded-lg text-xs font-mono border border-blue-100 dark:border-[#444446] items-center gap-2 shadow-sm transition-colors shrink-0">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{formatTime(currentTime)}</span>
+            </div>
+          </>
         )}
-        
-        <div className="flex items-center gap-1">
-          <button 
-            onClick={handleCurrencyClick}
-            onContextMenu={handleCurrencyContextMenu}
-            className="flex items-center justify-center p-1.5 min-w-[68px] sm:min-w-[76px] bg-slate-50 hover:bg-slate-100 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-xs font-bold"
-            title={
-              currency === 'VND'
-                ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
-                : (currentUser.role === 'admin'
-                    ? `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND - Right-click to set exchange rates)`
-                    : `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND)`
-                  )
-            }
-          >
-            {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
-          </button>
-          {currency === 'JPY' && (
-            <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-[#838383] px-1 hidden 2xl:inline-block whitespace-nowrap">
-              (1 JPY = {jpyRate.toLocaleString('en-US')} VND)
-            </span>
-          )}
-          {currency === 'USD' && (
-            <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-[#838383] px-1 hidden 2xl:inline-block whitespace-nowrap">
-              (1 USD = {usdRate.toLocaleString('en-US')} VND)
-            </span>
-          )}
-        </div>
-
-        <button onClick={() => setLanguage(language === 'en' ? 'ja' : 'en')}
-          className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm"
-          title="Toggle Language"
-        >
-          {language === 'en' ? (
-            <span className="text-base sm:text-lg leading-none" role="img" aria-label="English">🇬🇧</span>
-          ) : (
-            <span className="text-base sm:text-lg leading-none" role="img" aria-label="Japanese">🇯🇵</span>
-          )}
-        </button>
-
-        <button
-          onClick={onUndo}
-          disabled={!canUndo}
-          className="p-1.5 sm:p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-[#333336] rounded-lg transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500 relative"
-          title={undoDescription || "Nothing to undo"}
-        >
-          <Undo2 className="w-4 h-4 sm:w-5 sm:h-5" />
-          {hasDataToUndo && (
-            <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white dark:border-slate-900"></span>
-          )}
-        </button>
-
-        {currency !== 'VND' && (
-          <span 
-            title={`Converted to ${currency}. Switch to VND to edit numbers.`}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 sm:px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-sm shrink-0 cursor-default"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline">Read-only</span>
-          </span>
-        )}
-        <div className="hidden xl:flex bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] px-3 sm:px-4 py-1.5 rounded-lg text-xs font-mono border border-blue-100 dark:border-[#444446] items-center gap-2 shadow-sm transition-colors shrink-0">
-          <Clock className="w-3.5 h-3.5" />
-          <span>{formatTime(currentTime)}</span>
-        </div>
+        <RibbonDisplayMenu variant="header" />
       </div>
       {isQRScannerOpen && (
         <Suspense fallback={null}>

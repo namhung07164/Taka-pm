@@ -12,6 +12,16 @@ const getInitialActiveTab = (): TabId => {
 export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
   isFocusMode: false,
   setIsFocusMode: (val) => set({ isFocusMode: val }),
+  ribbonDisplayMode: (safeGetItemLocal("taka_ribbon_display_mode") as "always_show" | "tabs_only" | "fullscreen") || "always_show",
+  setRibbonDisplayMode: (mode) => {
+    safeSetItemLocal("taka_ribbon_display_mode", mode);
+    set({ ribbonDisplayMode: mode });
+  },
+  showQuickAccessToolbar: safeGetItemLocal("taka_show_quick_access_toolbar") !== "false",
+  setShowQuickAccessToolbar: (show) => {
+    safeSetItemLocal("taka_show_quick_access_toolbar", String(show));
+    set({ showQuickAccessToolbar: show });
+  },
   isPrintPreview: false,
   setIsPrintPreview: (val) => set({ isPrintPreview: val }),
   printOrientation: "landscape",

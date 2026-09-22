@@ -29,6 +29,7 @@ import {
 import { X, GripHorizontal } from "lucide-react";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
+import { RibbonDisplayMenu } from "./components/RibbonDisplayMenu";
 import { lazyWithRetry } from "./lib/lazyWithRetry";
 import { TabErrorBoundary } from "./components/TabErrorBoundary";
 const GeneralTab = lazyWithRetry(() => import("./components/GeneralTab"), "GeneralTab");
@@ -313,6 +314,19 @@ export default function App() {
   const allTasksForNotifs = useAppStore(state => state.allTasksForNotifs);
   const quickNavTarget = useAppStore(state => state.quickNavTarget);
   const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
+  const ribbonDisplayMode = useAppStore(state => state.ribbonDisplayMode);
+  const setRibbonDisplayMode = useAppStore(state => state.setRibbonDisplayMode);
+
+  useEffect(() => {
+    if (ribbonDisplayMode !== 'fullscreen') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setRibbonDisplayMode('always_show');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [ribbonDisplayMode, setRibbonDisplayMode]);
 
   useEffect(() => {
     // Clear custom today line so it refreshes once on app launch
@@ -2432,37 +2446,46 @@ const handlePrintToPDF = async () => {
               ? 'p-1.5 sm:p-2.5 pb-2 sm:pb-2.5 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]' 
               : 'p-4 lg:p-6 pb-20 lg:pb-6 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]'
           } transition-colors print:p-0 print:m-0 print:border-none print:shadow-none print:rounded-none print-content-wrapper ${isPrintPreview ? 'print-preview-content-active' : ''}`}>
-          <div className="print:hidden relative z-[200]">
-            <Header
-            
-            cloudStatus={cloudStatus}
-            onLoginClick={() => setIsLoginModalOpen(true)}
-            onLogoutClick={handleLogout}
-            onPrintClick={handlePrintClick}
-            onTabChange={handleTabChange}
-            activeTab={activeTab}
-            notificationCount={unreadCount}
-            onUndo={handleDataUndo}
-            canUndo={undoStack.length > 0 || tabHistory.length > 0}
-            hasDataToUndo={undoStack.length > 0}
-            undoDescription={
-              undoStack.length > 0
-                ? `Undo: ${undoStack[undoStack.length - 1].description}`
-                : tabHistory.length > 0
-                  ? `Go back to previous page`
-                  : undefined
-            }
-            
-            onToggleTheme={toggleTheme}
-            isFocusMode={isFocusMode}
-            onToggleFocusMode={() => setIsFocusMode(!isFocusMode)}
-            isPrintPreview={isPrintPreview}
-            onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
-            onDeepLink={handleDeepLinkString}
-          />
-        </div>
+          {/* Floating Ribbon Display Options button in Full-screen mode */}
+          {ribbonDisplayMode === 'fullscreen' && (
+            <div className="fixed top-3 right-4 z-[9999] print:hidden">
+              <RibbonDisplayMenu variant="floating" />
+            </div>
+          )}
 
-        {canSee && !isFocusMode && (
+          {/* Header - Only visible when ribbonDisplayMode is 'always_show' */}
+          {ribbonDisplayMode === 'always_show' && (
+            <div className="print:hidden relative z-[200]">
+              <Header
+                cloudStatus={cloudStatus}
+                onLoginClick={() => setIsLoginModalOpen(true)}
+                onLogoutClick={handleLogout}
+                onPrintClick={handlePrintClick}
+                onTabChange={handleTabChange}
+                activeTab={activeTab}
+                notificationCount={unreadCount}
+                onUndo={handleDataUndo}
+                canUndo={undoStack.length > 0 || tabHistory.length > 0}
+                hasDataToUndo={undoStack.length > 0}
+                undoDescription={
+                  undoStack.length > 0
+                    ? `Undo: ${undoStack[undoStack.length - 1].description}`
+                    : tabHistory.length > 0
+                      ? `Go back to previous page`
+                      : undefined
+                }
+                onToggleTheme={toggleTheme}
+                isFocusMode={isFocusMode}
+                onToggleFocusMode={() => setIsFocusMode(!isFocusMode)}
+                isPrintPreview={isPrintPreview}
+                onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
+                onDeepLink={handleDeepLinkString}
+              />
+            </div>
+          )}
+
+        {/* Navigation - Visible in 'always_show' and 'tabs_only' modes */}
+        {canSee && !isFocusMode && ribbonDisplayMode !== 'fullscreen' && (
           <div className="print:hidden relative z-[150]">
             <Navigation
               activeTab={activeTab}

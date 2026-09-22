@@ -2690,29 +2690,34 @@ export function DetailTab({
             onAddColumn={handleToggleColumn} 
           />
 
-            {/* Action Controls */}
-            {hasWritePermission && (
-              <div className="flex flex-row flex-wrap gap-2 justify-end items-center print:hidden">
+            {/* Action Controls - Fixed Sticky positioning matching GanttTab */}
+            {hasWritePermission && !isEditMode && (
+              <div className="fixed top-[76px] xl:top-[84px] right-4 md:right-8 z-50 flex flex-row gap-2 justify-end items-start print:hidden">
                 <button
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  className={`flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs ${
-                    isEditMode
-                      ? "bg-blue-600 border-blue-700 text-white hover:bg-blue-700 shadow-blue-500/20"
-                      : "bg-slate-800 dark:bg-[#1e1e20] border border-slate-700 dark:border-[#444446] text-white dark:text-[#e3e3e3] hover:bg-slate-700 dark:hover:bg-[#28282a]/50"
-                  }`}
+                  onClick={() => setIsEditMode(true)}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 dark:bg-[#1e1e20] border border-slate-700 dark:border-[#444446] text-white dark:text-[#e3e3e3] hover:bg-slate-700 dark:hover:bg-[#28282a]/50 rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs cursor-pointer"
                   title="Edit Mode"
                 >
-                  <Edit3 className={`w-4 h-4 pointer-events-none ${isEditMode ? "text-white" : "text-blue-400"}`} />
+                  <Edit3 className="w-4 h-4 text-blue-400 pointer-events-none" />
                   <span className="hidden sm:inline pointer-events-none">
-                    {isEditMode ? 'Editing' : 'Edit Mode'}
+                    Edit Mode
                   </span>
                 </button>
+              </div>
+            )}
+
+            {hasWritePermission && isEditMode && (
+              <div className="fixed top-[76px] xl:top-[84px] left-1/2 -translate-x-1/2 z-[100] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-xl backdrop-blur-md bg-opacity-90 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden">
+                <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+                  <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Editing Mode</span>
+                </div>
 
                 {canWrite && (
                   <>
                     <button 
                       onClick={onAddProject}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs cursor-pointer"
                       title="Add Project"
                     >
                       <Plus className="w-4 h-4 pointer-events-none" />
@@ -2726,7 +2731,7 @@ export function DetailTab({
                         const targetProj = activeProjectInView || (filteredProjects && filteredProjects.length > 0 ? filteredProjects[0] : (projects && projects.length > 0 ? projects[0] : null));
                         onAddTask(targetProj);
                       }}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer"
                       title={activeProjectInView?.code ? `Add Task for ${activeProjectInView.code}` : "Add New Task"}
                     >
                       <Plus className="w-4 h-4 pointer-events-none" />
@@ -2738,7 +2743,7 @@ export function DetailTab({
                     <button 
                       onClick={() => handleSyncAllPredecessors(true)}
                       disabled={isSyncingPredecessors}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
                       title="Sửa và đồng bộ tất cả nội dung Predecessor theo mã Subtask code"
                     >
                       <Wand2 className={`w-4 h-4 pointer-events-none ${isSyncingPredecessors ? 'animate-spin' : ''}`} />
@@ -2748,6 +2753,15 @@ export function DetailTab({
                     </button>
                   </>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditMode(false)}
+                  className="flex items-center justify-center p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-[#e3e3e3] rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors shrink-0 ml-1 cursor-pointer"
+                  title="Done Editing"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
             )}
 
