@@ -1555,8 +1555,8 @@ function LiveCanvas({
     const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
     const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
 
-    // Set zoom level to standard 100% (scale 1.0) without excessive zooming
-    const targetScale = 1.0;
+    // Set zoom level to 70% (scale 0.7) on search
+    const targetScale = 0.7;
 
     const posX = containerW / 2 - cx * targetScale;
     const posY = containerH / 2 - cy * targetScale;
