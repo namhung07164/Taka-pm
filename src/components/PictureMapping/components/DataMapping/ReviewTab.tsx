@@ -1226,8 +1226,8 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
     const angle = (version?.backgroundRotation || 0) * Math.PI / 180;
     const s = Math.sin(angle);
     const c = Math.cos(angle);
-    const w = (image.naturalWidth || image.width) * (version?.imageScale || 1);
-    const h = (image.naturalHeight || image.height) * (version?.imageScale || 1);
+    const w = ((image as HTMLImageElement).naturalWidth || image.width) * (version?.imageScale || 1);
+    const h = ((image as HTMLImageElement).naturalHeight || image.height) * (version?.imageScale || 1);
     const px = version?.imagePos?.x || 0;
     const py = version?.imagePos?.y || 0;
     

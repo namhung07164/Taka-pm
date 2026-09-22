@@ -799,8 +799,8 @@ function LiveCanvas({
     let contentY = 0;
 
     if (bgImage) {
-      const imgNaturalW = bgImage.naturalWidth || bgImage.width || 1000;
-      const imgNaturalH = bgImage.naturalHeight || bgImage.height || 800;
+      const imgNaturalW = (bgImage as HTMLImageElement).naturalWidth || bgImage.width || 1000;
+      const imgNaturalH = (bgImage as HTMLImageElement).naturalHeight || bgImage.height || 800;
       const imgScale = version?.imageScale || 1;
       contentW = imgNaturalW * imgScale;
       contentH = imgNaturalH * imgScale;

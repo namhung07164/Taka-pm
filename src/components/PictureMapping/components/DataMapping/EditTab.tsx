@@ -261,6 +261,15 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVersionId, activeVersion?.backgroundUrl]);
 
+  // Auto Garbage Collection: revoke Blob URLs when localImageUrl changes or unmounts
+  useEffect(() => {
+    return () => {
+      if (localImageUrl && localImageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(localImageUrl);
+      }
+    };
+  }, [localImageUrl]);
+
   const [image] = useOffscreenImage(localImageUrl || '', 'anonymous');
   const [activeTool, setActiveTool] = useState<ShapeType | 'select' | 'edit-bg'>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);

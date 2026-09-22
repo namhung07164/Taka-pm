@@ -1,12 +1,28 @@
 import { useState, useEffect } from 'react';
+import {
+  getMemoryCachedImage,
+  setMemoryCachedImage,
+  getCachedBlobFromIDB,
+  setCachedBlobToIDB,
+} from '../lib/imageDBCache';
 
 /**
  * Custom hook to load & decode images off the Main Thread using createImageBitmap() or img.decode().
- * Prevents Main Thread jank/freeze (50ms-200ms) when loading large CAD floorplan images.
+ * Features IndexedDB & In-Memory LRU Caching for 0ms floor switching and zero network delay.
  */
 export function useOffscreenImage(url: string | undefined | null, crossOrigin?: string) {
-  const [image, setImage] = useState<HTMLImageElement | ImageBitmap | null>(null);
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [image, setImage] = useState<HTMLImageElement | ImageBitmap | null>(() => {
+    if (url) {
+      const cached = getMemoryCachedImage(url);
+      if (cached) return cached;
+    }
+    return null;
+  });
+
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>(() => {
+    if (url && getMemoryCachedImage(url)) return 'loaded';
+    return url ? 'loading' : 'failed';
+  });
 
   useEffect(() => {
     if (!url) {
@@ -15,55 +31,65 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin?: 
       return;
     }
 
+    // 1. Instant Memory Cache Hit
+    const memCached = getMemoryCachedImage(url);
+    if (memCached) {
+      setImage(memCached);
+      setStatus('loaded');
+      return;
+    }
+
     let isMounted = true;
     setStatus('loading');
 
-    // Strategy 1: Fetch blob and decode to ImageBitmap on C++ background thread
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        return res.blob();
-      })
-      .then((blob) => createImageBitmap(blob))
-      .then((bitmap) => {
+    // 2. IndexedDB & Network Strategy
+    async function loadWithCache() {
+      try {
+        // Step A: Check IndexedDB
+        let blob = await getCachedBlobFromIDB(url!);
+
+        // Step B: If missing from IDB, fetch from network and save to IDB
+        if (!blob) {
+          const res = await fetch(url!);
+          if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+          blob = await res.blob();
+          setCachedBlobToIDB(url!, blob); // Save in background
+        }
+
+        // Step C: Decode Blob off Main Thread
+        const bitmap = await createImageBitmap(blob);
         if (isMounted) {
-          setImage(bitmap as any);
+          setMemoryCachedImage(url!, bitmap);
+          setImage(bitmap);
           setStatus('loaded');
         }
-      })
-      .catch((_err) => {
-        // Strategy 2: Fallback to HTMLImageElement with img.decode()
+      } catch (_err) {
+        // Step D: Fallback to HTMLImageElement
         if (!isMounted) return;
-        const img = new window.Image();
+        const img: HTMLImageElement = new Image();
         if (crossOrigin) img.crossOrigin = crossOrigin;
-        img.src = url;
+        img.src = url!;
 
-        if ('decode' in img) {
-          img.decode()
-            .then(() => {
-              if (isMounted) {
-                setImage(img);
-                setStatus('loaded');
-              }
-            })
-            .catch(() => {
-              if (isMounted) {
-                setImage(img);
-                setStatus('loaded');
-              }
-            });
+        const onDone = () => {
+          if (isMounted) {
+            setMemoryCachedImage(url!, img);
+            setImage(img);
+            setStatus('loaded');
+          }
+        };
+
+        if (typeof img.decode === 'function') {
+          img.decode().then(onDone).catch(onDone);
         } else {
-          img.onload = () => {
-            if (isMounted) {
-              setImage(img);
-              setStatus('loaded');
-            }
-          };
+          img.onload = onDone;
           img.onerror = () => {
             if (isMounted) setStatus('failed');
           };
         }
-      });
+      }
+    }
+
+    loadWithCache();
 
     return () => {
       isMounted = false;
