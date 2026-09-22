@@ -723,6 +723,7 @@ function LiveCanvas({
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [focusedUnitId, setFocusedUnitId] = useState<string | null>(null);
   const focusedTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastHandledSearchRef = useRef<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
 
@@ -888,10 +889,12 @@ function LiveCanvas({
     }
   }, [bgImage, version, units, dimensions]);
 
-  // Trigger fitToScreen when background image or partition version changes
+  // Trigger fitToScreen when background image or partition version changes (only if no unit is currently searched/focused)
   useEffect(() => {
-    fitToScreen();
-  }, [fitToScreen]);
+    if (!targetUnitSearch && !focusedUnitId) {
+      fitToScreen();
+    }
+  }, [fitToScreen, targetUnitSearch, focusedUnitId]);
 
   // 1. Get real-time projects and Excel summary data (Filtered strictly by Account Control RBAC permissions)
   const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
@@ -1640,8 +1643,14 @@ function LiveCanvas({
   useEffect(() => {
     if (targetUnitSearch && String(targetUnitSearch).trim()) {
       const q = String(targetUnitSearch).trim();
+      if (lastHandledSearchRef.current === q && focusedUnitId) {
+        return; // Already focused and zoomed for this search
+      }
+
       const success = zoomAndPanToUnit(q);
-      if (!success) {
+      if (success) {
+        lastHandledSearchRef.current = q;
+      } else {
         // Check other floor versions in availableStoreVersions
         const foundInOther = availableStoreVersions.find((v: any) => {
           if (v?.groupMappings) {
@@ -1668,25 +1677,24 @@ function LiveCanvas({
           }
           if (foundInOther.id !== selectedVersionId) {
             setSelectedVersionId(foundInOther.id);
-            setTimeout(() => {
-              zoomAndPanToUnit(q);
-            }, 400);
           }
         }
       }
     } else if (targetUnitSearch === null || targetUnitSearch === '') {
       // Exit focus mode and reset zoom when user clears search or clicks cancel
+      lastHandledSearchRef.current = null;
       setFocusedUnitId(null);
       setHoverInfo(null);
       if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
       fitToScreen(true);
     }
-  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, fitToScreen]);
+  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, fitToScreen, focusedUnitId]);
 
   // Keyboard listener: Escape key to exit zoom focus
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && (focusedUnitId || targetUnitSearch)) {
+        lastHandledSearchRef.current = null;
         setFocusedUnitId(null);
         setHoverInfo(null);
         if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
@@ -1698,13 +1706,16 @@ function LiveCanvas({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [focusedUnitId, targetUnitSearch, fitToScreen, onClearFocus]);
 
-  // If units reload after floor switch and targetUnitSearch is active, trigger zoom
+  // If units reload after floor switch and targetUnitSearch is waiting to be zoomed, zoom once cleanly
   useEffect(() => {
     if (targetUnitSearch && String(targetUnitSearch).trim() && units.length > 0) {
-      const t = setTimeout(() => {
-        zoomAndPanToUnit(targetUnitSearch);
-      }, 250);
-      return () => clearTimeout(t);
+      const q = String(targetUnitSearch).trim();
+      if (lastHandledSearchRef.current !== q) {
+        const success = zoomAndPanToUnit(q);
+        if (success) {
+          lastHandledSearchRef.current = q;
+        }
+      }
     }
   }, [units, targetUnitSearch, zoomAndPanToUnit]);
 
