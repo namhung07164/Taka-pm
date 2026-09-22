@@ -4,7 +4,7 @@ import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text,
 import { useAppStore } from '../store/useAppStore';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff, Bell, AlertTriangle } from 'lucide-react';
 import useImage from 'use-image';
 import { useOffscreenImage } from '../hooks/useOffscreenImage';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
@@ -432,6 +432,7 @@ function LiveCanvas({
   const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
   const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
 
   // 1. Gather all store versions across all sources (Zustand helper, local partitions, cloud partitions, and root config)
@@ -1086,6 +1087,62 @@ function LiveCanvas({
             dataMap[code].subTasks = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
             dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
             dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
+
+            // Compute Smart Alert for this unit
+            const todayStr = now.toISOString().split('T')[0];
+            const alertReasons: string[] = [];
+            let alertLevel: 'critical' | 'warning' | null = null;
+
+            // 1. Overdue tasks check
+            const subTasksList = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
+            let overdueCount = 0;
+            subTasksList.forEach((st: any) => {
+              if (st.finish && st.finish < todayStr) {
+                const prog = st.progress ?? st.computedActProgress ?? 0;
+                if (prog < 100 && st.status !== 'Completed' && st.status !== 'Done') {
+                  overdueCount++;
+                }
+              }
+            });
+            if (overdueCount > 0) {
+              alertReasons.push(`${overdueCount} task quá hạn`);
+              alertLevel = 'critical';
+            }
+
+            // 2. Project status delayed / late
+            const lowerStat = String(status).toLowerCase();
+            const lowerAct = String(actStatus).toLowerCase();
+            if (lowerStat.includes('delay') || lowerStat.includes('late') || lowerAct.includes('delay') || lowerAct.includes('late')) {
+              alertReasons.push('Tiến độ dự án bị trễ');
+              alertLevel = 'critical';
+            }
+
+            // 3. Upcoming handover within 3 days (if not completed)
+            const hDate = p.handover || p.computedTakCompl;
+            if (hDate && hDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
+              const diffDays = Math.ceil((new Date(hDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+              if (diffDays >= 0 && diffDays <= 3) {
+                alertReasons.push(`Bàn giao ${diffDays === 0 ? 'hôm nay' : 'trong ' + diffDays + ' ngày'}`);
+                if (!alertLevel) alertLevel = 'warning';
+              }
+            }
+
+            // 4. Upcoming opening within 3 days (if not completed)
+            const oDate = p.opening || p.computedOpening;
+            if (oDate && oDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
+              const diffDays = Math.ceil((new Date(oDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+              if (diffDays >= 0 && diffDays <= 3) {
+                alertReasons.push(`Khai trương ${diffDays === 0 ? 'hôm nay' : 'trong ' + diffDays + ' ngày'}`);
+                if (!alertLevel) alertLevel = 'warning';
+              }
+            }
+
+            dataMap[code].alerts = {
+              hasAlert: alertReasons.length > 0,
+              level: alertLevel,
+              count: alertReasons.length,
+              reasons: alertReasons
+            };
          }
       });
     });
@@ -1199,6 +1256,18 @@ function LiveCanvas({
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
   }, [version?.groups, version?.groupMappings, version?.isDynamicActive, units, aggregatedData, restrictedProjectCodes]);
 
+  // Total count of units with alerts on this floor
+  const totalFloorAlerts = useMemo(() => {
+    let count = 0;
+    units.forEach((u: any) => {
+      const uName = (u?.name || '').toLowerCase().trim();
+      if (uName && aggregatedData[uName]?.alerts?.hasAlert) {
+        count++;
+      }
+    });
+    return count;
+  }, [units, aggregatedData]);
+
   // 4. Filter only units and precalculate bounds
   const displayedUnits = useMemo(() => {
     return units
@@ -1217,9 +1286,16 @@ function LiveCanvas({
         const isMappedInGroup = Boolean(unitColorMap[unit.id]);
         const isFocused = focusedUnitId === unit.id;
 
+        // Filter by Alerts toggle
+        if (filterOnlyAlerts && !isFocused) {
+          if (!uData?.alerts?.hasAlert) {
+            return false;
+          }
+        }
+
         // Performance & Clarity Optimization: Only render units that have active projects or custom group classification
         // (Unless the user is searching or this unit is currently focused/zoomed)
-        if (!deferredSearchQuery.trim() && !isFocused) {
+        if (!deferredSearchQuery.trim() && !isFocused && !filterOnlyAlerts) {
           if (!hasProject && !isMappedInGroup) {
             return false;
           }
@@ -1284,7 +1360,7 @@ function LiveCanvas({
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, focusedUnitId]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, focusedUnitId, filterOnlyAlerts]);
 
   // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
   const updateTooltipPos = (clientX: number, clientY: number) => {
@@ -1804,6 +1880,22 @@ function LiveCanvas({
 
       {/* Floating Top-Right Controls */}
       <div className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 z-20 flex items-center gap-0.5 sm:gap-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl hide-on-actual-print print:hidden">
+        {totalFloorAlerts > 0 && (
+          <button
+            type="button"
+            onClick={() => setFilterOnlyAlerts(prev => !prev)}
+            className={cn(
+              "flex items-center gap-1 px-1.5 py-1 sm:px-2 sm:py-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all active:scale-95 touch-manipulation border mr-0.5",
+              filterOnlyAlerts
+                ? "bg-red-500 text-white border-red-600 shadow-sm"
+                : "bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:hover:bg-red-900/60 dark:text-red-300 border-red-200 dark:border-red-900/60"
+            )}
+            title={filterOnlyAlerts ? "Đang lọc gian hàng có cảnh báo (Nhấn để xem tất cả)" : `Lọc ${totalFloorAlerts} gian hàng có cảnh báo`}
+          >
+            <Bell className={cn("w-3.5 h-3.5", filterOnlyAlerts ? "text-white animate-bounce" : "text-red-500")} />
+            <span className="font-bold font-mono">{totalFloorAlerts}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -2703,6 +2795,20 @@ function LiveCanvas({
                const currentZoom = stageScale || 1;
                const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
 
+               // Badge placement coordinates
+               let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 2;
+               let badgeY = (unit.textY || unit.y || 0) + 2;
+               if (unit.type === 'circle') {
+                 const r = unit.radius || 20;
+                 badgeX = (unit.x || 0) + r * 0.7;
+                 badgeY = (unit.y || 0) - r * 0.7;
+               }
+               const uName = (unit.name || '').toLowerCase();
+               const unitData = (uName && aggregatedData[uName]) ? aggregatedData[uName] : null;
+               const hasAlert = Boolean(unitData?.alerts?.hasAlert);
+               const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+               const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+
                return (
                  <React.Fragment key={unit.id}>
                     {unit.type === 'rect' && (
@@ -2751,6 +2857,38 @@ function LiveCanvas({
                           ellipsis={true}
                           listening={false}
                        />
+                    )}
+
+                    {/* Smart Alert Badge (Rendered ONLY when unit has real critical/warning alerts) */}
+                    {hasAlert && unitData?.alerts && (stageScale || 1) > 0.08 && (
+                       <Group x={badgeX} y={badgeY} listening={false}>
+                          <Circle
+                             radius={badgeRadius}
+                             fill={unitData.alerts.level === 'critical' ? '#ef4444' : '#f59e0b'}
+                             stroke="#ffffff"
+                             strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                             strokeScaleEnabled={false}
+                             perfectDrawEnabled={false}
+                             shadowColor="#000000"
+                             shadowBlur={3}
+                             shadowOpacity={0.35}
+                          />
+                          <Text
+                             text={unitData.alerts.count > 1 ? String(unitData.alerts.count) : '!'}
+                             x={-badgeRadius}
+                             y={-badgeRadius + 0.5}
+                             width={badgeRadius * 2}
+                             height={badgeRadius * 2}
+                             align="center"
+                             verticalAlign="middle"
+                             fontSize={badgeFontSize}
+                             fontStyle="bold"
+                             fill="#ffffff"
+                             fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                             strokeScaleEnabled={false}
+                             perfectDrawEnabled={false}
+                          />
+                       </Group>
                     )}
                  </React.Fragment>
                );

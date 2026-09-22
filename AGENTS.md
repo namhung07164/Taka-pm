@@ -40,3 +40,19 @@ Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file
   - Sử dụng class `hidden lg:inline-flex` để ẩn các nút Ribbon/Toolbar phức tạp trên mobile và gom gọn vào đúng 1 vị trí trực quan duy nhất trong Slide-out Navigation Drawer.
 - **Sticky Controls & Reflow Prevention**: Các thanh công cụ/nút bấm quan trọng (vd: nút Edit Mode trong Task Detail, thanh Gantt Controls) phải dùng `sticky top-0 z-[100]` với `backdrop-blur-md` để theo dõi vị trí cuộn mượt mà mà không gây giật lag hay tính toán lại vị trí DOM (layout reflow).
 - **Keyboard Shortcuts & Clean Listeners**: Các chế độ hiển thị toàn màn hình (Full-screen/Focus mode) phải gắn listener phím `Escape` trên `window` và bắt buộc cleanup listener khi unmount để chống rò rỉ bộ nhớ (memory leak).
+
+## 7. Canvas & Graphics Performance Guards (Konva & SVG)
+- **Hit-Graph Overhead Elimination**: Mọi Konva element không nhận sự kiện click/tap (Text labels, Alert Badges, Golden Focus Rings, Grid Lines, Background Map shapes) **BẮT BUỘC** gắn `listening={false}` và `perfectDrawEnabled={false}` để Konva không tốn CPU vẽ Hit Canvas ngầm.
+- **High-Frequency Event Throttling**: Các thao tác Wheel, Pan, Pinch-to-zoom và Dragging phải bọc trong `requestAnimationFrame` và huỷ bằng `cancelAnimationFrame` khi unmount, ngăn chặn đơ UI trên trackpad và màn hình 120Hz/ProMotion.
+- **Offscreen Canvas & Image Caching**: Bản vẽ mặt bằng nặng (PNG/SVG HD) phải decode qua `useOffscreenImage` hoặc memoized HTMLImage, cấm reload lại ảnh khi chuyển tầng hoặc thay đổi bộ lọc màu.
+- **O(1) Data Pre-Indexing**: Tuyệt đối không dùng `.filter()` lồng trong `.map()` khi render canvas hoặc bảng tính lớn. Luôn index dữ liệu qua `Map<string, T[]>` trong `useMemo` trước khi render (chuyển đổi từ O(N*M) sang O(N)).
+
+## 8. Realtime Chat, Comments & Inline Mutation Economy (Firestore Protection)
+- **Zero-Query Read for Modals**: Mọi modal chi tiết (Task Detail, Quick Navigator, Project Comments) phải đọc thẳng từ state Zustand đã được sync, cấm gọi `getDoc` hoặc `query` độc lập từ Firestore.
+- **Targeted ArrayUnion for Comments**: Thao tác thêm bình luận (`project.comments`), activity logs hoặc chat nội bộ phải dùng `arrayUnion()` trên doc dự án, tránh ghi đè toàn bộ doc gây race condition và xung đột dữ liệu.
+- **Debounced Sync Queue (Auto-Save)**: Các ô nhập liệu nhanh trong Gantt, Detail, Review phải cập nhật tức thời vào Zustand state (0ms) và debounce 400ms trước khi đưa vào hàng đợi `syncQueue` (Firestore Batch Write), cấm phát sinh 1 write/mỗi ký tự gõ.
+
+## 9. Task Hierarchy & Parent-Child Rollup Engine
+- **Pure In-Memory Computed Rollup**: Mọi ngày bắt đầu (start), kết thúc (finish), thời lượng (duration) và tiến độ (%) của Task mẹ phải được tính tự động từ danh sách Task con **hoàn toàn trong bộ nhớ client** (Pure Function).
+- **Zero Cascading Database Triggers**: Không tạo Cloud Function trigger hoặc vòng lặp write ngược lại Firestore để cập nhật Task mẹ, bảo toàn ngân sách Firestore và ngăn chặn lag mạng.
+- **Circular Dependency Guard**: Luôn kiểm tra `visited` Set trong các hàm duyệt cây task để chống treo trình duyệt do vòng lặp cha - con vô tận.

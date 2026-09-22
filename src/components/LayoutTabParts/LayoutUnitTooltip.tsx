@@ -1,7 +1,9 @@
 import React, { useMemo, useCallback, useLayoutEffect, useEffect } from 'react';
 import { 
   MessageSquare, 
-  X
+  X,
+  AlertTriangle,
+  Bell
 } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
 import { cn, parseDateTime } from '../../lib/utils';
@@ -337,6 +339,34 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Smart Alert Notification Banner */}
+      {data.alerts?.hasAlert && (
+        <div className={cn(
+          "flex items-start gap-2 p-2 rounded-lg text-xs border font-medium",
+          data.alerts.level === 'critical'
+            ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/50"
+            : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/50"
+        )}>
+          <AlertTriangle className={cn(
+            "w-3.5 h-3.5 shrink-0 mt-0.5",
+            data.alerts.level === 'critical' ? "text-red-500" : "text-amber-500"
+          )} />
+          <div className="flex-1 flex flex-col gap-0.5">
+            <span className="font-bold text-[10.5px] uppercase tracking-wide">
+              {data.alerts.level === 'critical' ? 'Cảnh báo tiến độ' : 'Nhắc nhở tiến độ'}
+            </span>
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px]">
+              {data.alerts.reasons?.map((reason: string, idx: number) => (
+                <span key={idx} className="flex items-center gap-1">
+                  <span className="w-1 h-1 rounded-full bg-current opacity-60" />
+                  {reason}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. Middle Section: Progress Bars */}
       {v.progressBars && (
