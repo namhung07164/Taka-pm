@@ -29,6 +29,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
   const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
   const pinnedProjects = useAppStore(state => state.pinnedProjects);
@@ -38,6 +39,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -47,13 +49,68 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
         lastSelectedStatusFilterRef.current = statusFilter;
         safeSetItemSession("taka_general_status_filter", statusFilter);
       }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
       setStatusFilter('all');
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days';
       setStatusFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
+  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, statusFilter]);
+
+  // Auto-jump to matched project location(s) when searching
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+
+    const matchedProjects = projects.filter(p => {
+      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, status, p.year];
+      const matchesSearch = matchesAdvancedSearch(term, searchFields);
+      const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
+      const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
+      const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
+      return matchesSearch && matchesYear && matchesStore;
+    });
+
+    const matchedLocations = Array.from(
+      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+    );
+
+    if (matchedLocations.length > 0) {
+      const currentLocs = globalLocationFilter || [];
+      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+      if (!isSame) {
+        setGlobalLocationFilter(matchedLocations);
+      }
+    }
+  }, [searchTerm, projects, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  // Handle Escape key globally to clear search when not in modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && searchTerm) {
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+
+        e.preventDefault();
+        const activeElement = document.activeElement;
+        if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+          (activeElement as HTMLElement).blur();
+        }
+        setSearchTerm("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [searchTerm]);
   const [flashToggle, setFlashToggle] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
@@ -321,7 +378,6 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   }).filter(Boolean), '2026', '2027'])].sort();
 
   const allowedStores = React.useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
-  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const stores = allowedStores;
   const locationOptions = useLocationOptions();
 

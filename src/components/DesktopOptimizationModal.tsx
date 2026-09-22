@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Draggable from 'react-draggable';
 import { useLanguage } from "../lib/LanguageContext";
 import { Portal } from './Portal';
-import { X, Monitor, Copy, Check, ExternalLink, ShieldCheck, Zap, Info } from 'lucide-react';
+import { X, Monitor, Copy, Check, ExternalLink, ShieldCheck, Zap, Info, GripHorizontal } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
 interface DesktopOptimizationModalProps {
@@ -11,6 +12,7 @@ interface DesktopOptimizationModalProps {
 
 export function DesktopOptimizationModal({ isOpen, onClose }: DesktopOptimizationModalProps) {
   const { t } = useLanguage();
+  const nodeRef = useRef<HTMLDivElement>(null);
   const [activeBrowser, setActiveBrowser] = useState<'chrome' | 'edge'>('chrome');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedSettingsPath, setCopiedSettingsPath] = useState(false);
@@ -77,32 +79,35 @@ export function DesktopOptimizationModal({ isOpen, onClose }: DesktopOptimizatio
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150" 
         onClick={onClose}
       >
-        <div 
-          className="bg-white dark:bg-[#1e1e20] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-[#333336] max-h-[90vh]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-[#333336] bg-slate-50/50 dark:bg-[#252528]/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
-                <Monitor className="w-5 h-5" />
+        <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, textarea">
+          <div 
+            ref={nodeRef}
+            className="bg-white dark:bg-[#1e1e20] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-[#333336] max-h-[90vh] pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-handle cursor-grab active:cursor-grabbing flex items-center justify-between p-5 border-b border-slate-100 dark:border-[#333336] bg-slate-50/50 dark:bg-[#252528]/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
+                  <Monitor className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base flex items-center gap-2">
+                    Cấu Hình Tối Ưu Desktop & Chống Ngủ Tab
+                    <GripHorizontal className="w-4 h-4 text-slate-400" />
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-[#a3a3a3] mt-0.5">
+                    Ngăn Chrome / Edge đóng băng bộ nhớ (Memory Saver) khi bạn làm việc đa nhiệm
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base">
-                  Cấu Hình Tối Ưu Desktop & Chống Ngủ Tab
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-[#a3a3a3] mt-0.5">
-                  Ngăn Chrome / Edge đóng băng bộ nhớ (Memory Saver) khi bạn làm việc đa nhiệm
-                </p>
-              </div>
+              <button 
+                onClick={onClose} 
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-[#2e2e32] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <button 
-              onClick={onClose} 
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-[#2e2e32] transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
 
           {/* Body */}
           <div className="p-5 overflow-y-auto space-y-5">
@@ -309,6 +314,7 @@ export function DesktopOptimizationModal({ isOpen, onClose }: DesktopOptimizatio
             </button>
           </div>
         </div>
+        </Draggable>
       </div>
     </Portal>
   );

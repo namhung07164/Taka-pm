@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Loader2, Camera, AlertTriangle, RefreshCw, Upload, ExternalLink, SwitchCamera, Image as ImageIcon } from 'lucide-react';
+import Draggable from 'react-draggable';
+import { X, Loader2, Camera, AlertTriangle, RefreshCw, Upload, ExternalLink, SwitchCamera, Image as ImageIcon, GripHorizontal } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode';
 import { Portal } from './Portal';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -24,6 +25,7 @@ const ScannerInner: React.FC<QRScannerModalProps> = ({ isOpen, onClose, onScan }
   const isComponentUnmounted = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startAttemptRef = useRef(0);
+  const nodeRef = useRef<HTMLDivElement>(null);
 
   const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
 
@@ -286,31 +288,37 @@ const ScannerInner: React.FC<QRScannerModalProps> = ({ isOpen, onClose, onScan }
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative border border-slate-200 dark:border-[#333336] flex flex-col">
-          {/* Header */}
-          <div className="px-5 py-4 flex justify-between items-center bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#333336]">
-            <h3 className="text-base font-bold text-slate-800 dark:text-[#f3f3f3] flex items-center gap-2">
-              <Camera className="w-5 h-5 text-blue-500" /> Quét mã QR (QR Scanner)
-            </h3>
-            <div className="flex items-center gap-2">
-              {cameras.length > 1 && hasCamera && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+        <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, select">
+          <div 
+            ref={nodeRef}
+            className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative border border-slate-200 dark:border-[#333336] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-handle cursor-grab active:cursor-grabbing px-5 py-4 flex justify-between items-center bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#333336] select-none">
+              <h3 className="text-base font-bold text-slate-800 dark:text-[#f3f3f3] flex items-center gap-2">
+                <GripHorizontal className="w-4 h-4 text-slate-400" />
+                <Camera className="w-5 h-5 text-blue-500" /> QR Scanner
+              </h3>
+              <div className="flex items-center gap-2">
+                {cameras.length > 1 && hasCamera && (
+                  <button 
+                    onClick={handleSwitchCamera}
+                    title="Switch camera"
+                    className="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
+                  >
+                    <SwitchCamera className="w-4 h-4" />
+                  </button>
+                )}
                 <button 
-                  onClick={handleSwitchCamera}
-                  title="Đổi camera"
-                  className="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
+                  onClick={onClose} 
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-[#c3c3c3] p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
                 >
-                  <SwitchCamera className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
-              )}
-              <button 
-                onClick={onClose} 
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-[#c3c3c3] p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#333336] transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              </div>
             </div>
-          </div>
           
           {/* Viewfinder / Camera View */}
           <div className="bg-black relative flex flex-col items-center justify-center min-h-[320px] max-h-[420px] overflow-hidden">
@@ -382,36 +390,37 @@ const ScannerInner: React.FC<QRScannerModalProps> = ({ isOpen, onClose, onScan }
             </div>
           )}
 
-          {/* Footer - File Upload Option & Guide */}
-          <div className="p-4 bg-slate-50 dark:bg-[#1e1e20] border-t border-slate-200 dark:border-[#333336] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            {/* Footer - File Upload Option & Guide */}
+            <div className="p-4 bg-slate-50 dark:bg-[#1e1e20] border-t border-slate-200 dark:border-[#333336] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isProcessingFile}
+                  className="px-3.5 py-2 bg-white dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-slate-700 dark:text-[#e0e0e0] border border-slate-300 dark:border-[#444446] rounded-lg text-xs font-medium flex items-center gap-2 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                >
+                  {isProcessingFile ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-blue-500" />
+                  )}
+                  <span>Upload QR Image</span>
+                </button>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                  (Scan directly from photo)
+                </span>
+              </div>
+
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessingFile}
-                className="px-3.5 py-2 bg-white dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-slate-700 dark:text-[#e0e0e0] border border-slate-300 dark:border-[#444446] rounded-lg text-xs font-medium flex items-center gap-2 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                onClick={onClose}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-[#2d2d30] dark:hover:bg-[#38383c] text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition-colors"
               >
-                {isProcessingFile ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-                ) : (
-                  <Upload className="w-3.5 h-3.5 text-blue-500" />
-                )}
-                <span>Tải ảnh mã QR</span>
+                Close
               </button>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-                (Quét trực tiếp từ ảnh chụp)
-              </span>
             </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-[#2d2d30] dark:hover:bg-[#38383c] text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition-colors"
-            >
-              Đóng
-            </button>
           </div>
-        </div>
+        </Draggable>
       </div>
     </Portal>
   );

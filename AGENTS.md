@@ -59,3 +59,6 @@ Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file
 
 ## 10. Language & Terminology Standard (English UI Mandate)
 - **English UI & Titles**: Toàn bộ tiêu đề (Titles), nhãn điều khiển (Labels), chú thích (Tooltips), diễn giải chức năng (Descriptions), cảnh báo (Notifications & Alerts), và trạng thái (Badges) trên giao diện ứng dụng **BẮT BUỘC** viết bằng tiếng Anh ngắn gọn, súc tích và chuẩn chuyên nghiệp (Enterprise-grade English).
+
+## 11. Draggable Modals & Tooltips Mandate
+- **Universal Draggability**: Mọi modal, hộp thoại (ProjectModal, TaskModal, UserModal, ConfirmModal, CalendarSync, DesktopOptimization, QuickNav) và các bảng modular, floating tooltips (LayoutUnitTooltip, v.v.) hiện tại và tạo mới trong tương lai **BẮT BUỘC** hỗ trợ tính năng kéo thả di chuyển (Draggable / Pointer Drag) với tay cầm (`.modal-handle`, `cursor-grab active:cursor-grabbing` hoặc icon `GripHorizontal`) để người dùng linh hoạt dịch chuyển vị trí, không bị che khuất dữ liệu bên dưới.

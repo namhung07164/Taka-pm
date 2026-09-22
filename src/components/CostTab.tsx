@@ -152,12 +152,20 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
   const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
   const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
   const setDetailTabStoreFilter = useAppStore(state => state.setDetailTabStoreFilter);
   const setActiveTab = useAppStore(state => state.setActiveTab);
   const costTabSearchTerm = useAppStore(state => state.costTabSearchTerm);
+
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void}>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   const handleProjectLinkClick = (p: Project) => {
     if (!p) return;
@@ -208,6 +216,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   const lastSelectedActForcFilterRef = useRef<string>(
     safeGetItemSession("taka_cost_act_forc_filter") || 'has_value'
   );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
 
   useEffect(() => {
@@ -217,22 +226,100 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         lastSelectedActForcFilterRef.current = hasActForcFilter;
         safeSetItemSession("taka_cost_act_forc_filter", hasActForcFilter);
       }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
       setHasActForcFilter('all');
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedActForcFilterRef.current || safeGetItemSession("taka_cost_act_forc_filter") || 'has_value';
       setHasActForcFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm]);
+  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, hasActForcFilter]);
+
+  // Auto-jump to matched project location(s) when searching in CostTab
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+
+    const matchedProjects = projects.filter(p => {
+      const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : null);
+      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+
+      const groupCosts = costs.filter(c => {
+        const costCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
+        const pCode = String(p.code || '').trim().toLowerCase();
+        if (costCode !== pCode) return false;
+
+        const costYear = String(c.projectYear || (c as any).year || '').trim();
+        const pYr = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+        const matchesYear = !costYear || !pYr || costYear === pYr;
+        if (!matchesYear) return false;
+
+        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
+        const pStore = String(p.store || '').trim().toLowerCase();
+        const matchesStore = !costStore || !pStore || costStore === pStore;
+        if (!matchesStore) return false;
+
+        return true;
+      });
+
+      const isMatch = matchesAdvancedSearch(
+        term,
+        [p.store, p.location, p.year, p.code, p.name],
+        [],
+        (tLower) => {
+          return groupCosts.some(c => {
+            const cBalance = (c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0);
+            const costFields = [c.description, c.vendor, c.actual, c.firstPaid, c.secondPaid, c.thirdPaid, c.supportingFee, cBalance];
+            return costFields.some(val => String(val || "").toLowerCase().includes(tLower));
+          });
+        }
+      );
+      return isMatch;
+    });
+
+    const matchedLocations = Array.from(
+      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+    );
+
+    if (matchedLocations.length > 0) {
+      const currentLocs = globalLocationFilter || [];
+      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+      if (!isSame) {
+        setGlobalLocationFilter(matchedLocations);
+      }
+    }
+  }, [searchTerm, projects, costs, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  // Handle Escape key globally to clear search when not in modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && searchTerm) {
+        if (confirmModal.isOpen) return;
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+
+        e.preventDefault();
+        const activeElement = document.activeElement;
+        if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+          (activeElement as HTMLElement).blur();
+        }
+        setSearchTerm("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [searchTerm, confirmModal.isOpen]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
   const [expandedCodes, setExpandedCodes] = useState<string[]>([]);
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void}>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {}
-  });
 
   const [isPaidDateFilterOpen, setIsPaidDateFilterOpen] = useState<boolean>(false);
   const [paidDateStart, setPaidDateStart] = useState<string>('');
@@ -395,7 +482,6 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   }).filter(Boolean), '2026', '2027'])].sort();
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
-  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const stores = allowedStores;
   const locationOptions = useLocationOptions();
   

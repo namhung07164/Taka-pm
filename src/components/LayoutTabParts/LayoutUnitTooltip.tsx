@@ -1,9 +1,10 @@
-import React, { useMemo, useCallback, useLayoutEffect, useEffect } from 'react';
+import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef } from 'react';
 import { 
   MessageSquare, 
   X,
   AlertTriangle,
-  Bell
+  Bell,
+  GripHorizontal
 } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
 import { cn, parseDateTime } from '../../lib/utils';
@@ -18,6 +19,14 @@ interface LayoutUnitTooltipProps {
     unitName: string;
     clientX?: number;
     clientY?: number;
+    unitScreenBounds?: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+      centerX: number;
+      centerY: number;
+    };
   };
   tooltipRef: React.RefObject<HTMLDivElement>;
   containerRef?: React.RefObject<HTMLDivElement>;
@@ -42,13 +51,74 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const initialP: Project | undefined = data.matchedProject;
   const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
 
+  // Draggable State Handling
+  const isDraggingRef = useRef(false);
+  const hasUserDraggedRef = useRef(false);
+  const dragStartRef = useRef<{ startX: number; startY: number; initialLeft: number; initialTop: number }>({
+    startX: 0,
+    startY: 0,
+    initialLeft: 0,
+    initialTop: 0
+  });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a') || (e.target as HTMLElement).closest('input')) {
+      return;
+    }
+    const el = tooltipRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    isDraggingRef.current = true;
+    hasUserDraggedRef.current = true;
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialLeft: rect.left,
+      initialTop: rect.top
+    };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const el = tooltipRef.current;
+    if (!el) return;
+    const dx = e.clientX - dragStartRef.current.startX;
+    const dy = e.clientY - dragStartRef.current.startY;
+    const newLeft = Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, dragStartRef.current.initialLeft + dx));
+    const newTop = Math.max(60, Math.min(window.innerHeight - el.offsetHeight - 8, dragStartRef.current.initialTop + dy));
+    el.style.left = `${newLeft}px`;
+    el.style.top = `${newTop}px`;
+    el.style.right = 'auto';
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Reset user dragged flag whenever a new unit is searched/focused
+  useEffect(() => {
+    hasUserDraggedRef.current = false;
+  }, [hoverInfo.unitName, hoverInfo.clientX, hoverInfo.clientY]);
+
   // Auto Anti-Collision & Obstruction-Proof Positioning Engine
   const positionTooltip = useCallback(() => {
-    if (!tooltipRef.current) return;
+    if (!tooltipRef.current || hasUserDraggedRef.current) return;
     const el = tooltipRef.current;
     const rect = el.getBoundingClientRect();
-    const tooltipWidth = rect.width > 0 ? rect.width : 340;
-    const tooltipHeight = rect.height > 0 ? rect.height : 140;
+    const tooltipWidth = rect.width > 0 ? rect.width : 350;
+    const tooltipHeight = rect.height > 0 ? rect.height : 220;
 
     const viewportWidth = window.innerWidth;
     const visualVp = typeof window !== 'undefined' ? window.visualViewport : null;
@@ -83,22 +153,30 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       }
     }
 
-    const clientX = hoverInfo.clientX !== undefined ? hoverInfo.clientX : viewportWidth / 2;
-    const clientY = hoverInfo.clientY !== undefined ? hoverInfo.clientY : viewportHeight / 2;
+    const bounds = hoverInfo.unitScreenBounds;
 
     if (isMobile) {
       // Mobile: Horizontal Auto-Centering with 12px margin
       const left = pad;
       const right = pad;
       
-      // Vertical placement:
-      // If tapped in lower half of screen (clientY > viewportHeight * 0.52),
-      // place tooltip in UPPER half below header (safeTop) so tapped unit remains visible and tooltip never gets covered by Menu!
+      // Vertical placement: Smart non-obstruction calculation
       let top: number;
-      if (clientY > viewportHeight * 0.52) {
-        top = safeTop;
+      if (bounds) {
+        // If unit is in lower half of screen, place tooltip at safeTop (upper half)
+        if (bounds.centerY > viewportHeight * 0.48) {
+          top = safeTop;
+        } else {
+          // Unit is in upper half of screen, place tooltip at lower half
+          top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
+        }
       } else {
-        top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
+        const clientY = hoverInfo.clientY !== undefined ? hoverInfo.clientY : viewportHeight / 2;
+        if (clientY > viewportHeight * 0.52) {
+          top = safeTop;
+        } else {
+          top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
+        }
       }
 
       el.style.position = 'fixed';
@@ -111,18 +189,40 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.margin = '0 auto';
       el.style.transform = 'none';
     } else {
-      // Desktop / Tablet: Smart 4-Way Collision Clamping
-      let left = clientX + 16;
-      if (left + tooltipWidth > viewportWidth - pad) {
-        left = clientX - tooltipWidth - 16;
-      }
-      left = Math.max(pad, Math.min(left, viewportWidth - tooltipWidth - pad));
+      // Desktop / Tablet: Smart 4-Way Anti-Obstruction Clamping
+      let left: number;
+      let top: number;
 
-      let top = clientY + 16;
-      if (top + tooltipHeight > viewportHeight - bottomMargin) {
-        top = clientY - tooltipHeight - 16;
+      if (bounds) {
+        const spaceRight = viewportWidth - bounds.right;
+        const spaceLeft = bounds.left;
+
+        if (spaceRight >= tooltipWidth + pad + 20) {
+          // Place cleanly to the right of the unit
+          left = bounds.right + 24;
+        } else if (spaceLeft >= tooltipWidth + pad + 20) {
+          // Place cleanly to the left of the unit
+          left = bounds.left - tooltipWidth - 24;
+        } else {
+          left = Math.max(pad, viewportWidth - tooltipWidth - pad);
+        }
+        top = Math.max(safeTop, Math.min(bounds.top, viewportHeight - tooltipHeight - bottomMargin));
+      } else {
+        const clientX = hoverInfo.clientX !== undefined ? hoverInfo.clientX : viewportWidth / 2;
+        const clientY = hoverInfo.clientY !== undefined ? hoverInfo.clientY : viewportHeight / 2;
+
+        left = clientX + 16;
+        if (left + tooltipWidth > viewportWidth - pad) {
+          left = clientX - tooltipWidth - 16;
+        }
+        left = Math.max(pad, Math.min(left, viewportWidth - tooltipWidth - pad));
+
+        top = clientY + 16;
+        if (top + tooltipHeight > viewportHeight - bottomMargin) {
+          top = clientY - tooltipHeight - 16;
+        }
+        top = Math.max(safeTop, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
       }
-      top = Math.max(safeTop, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
 
       el.style.position = 'fixed';
       el.style.left = `${left}px`;
@@ -134,7 +234,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.margin = '0';
       el.style.transform = 'none';
     }
-  }, [hoverInfo.clientX, hoverInfo.clientY, tooltipRef, containerRef]);
+  }, [hoverInfo.clientX, hoverInfo.clientY, hoverInfo.unitScreenBounds, tooltipRef, containerRef]);
 
   useLayoutEffect(() => {
     positionTooltip();
@@ -148,17 +248,18 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       positionTooltip();
     });
     ro.observe(el);
-
-    const onResize = () => positionTooltip();
-    window.addEventListener('resize', onResize);
-    window.visualViewport?.addEventListener('resize', onResize);
-    window.visualViewport?.addEventListener('scroll', onResize);
-
+    window.addEventListener('resize', positionTooltip);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', positionTooltip);
+      window.visualViewport.addEventListener('scroll', positionTooltip);
+    }
     return () => {
       ro.disconnect();
-      window.removeEventListener('resize', onResize);
-      window.visualViewport?.removeEventListener('resize', onResize);
-      window.visualViewport?.removeEventListener('scroll', onResize);
+      window.removeEventListener('resize', positionTooltip);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', positionTooltip);
+        window.visualViewport.removeEventListener('scroll', positionTooltip);
+      }
     };
   }, [positionTooltip, tooltipRef]);
 
@@ -274,8 +375,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 1. Header Row */}
-      <div className="flex items-start justify-between gap-2 pr-16">
+      {/* 1. Header Row (Draggable Handle) */}
+      <div 
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className="flex items-start justify-between gap-2 pr-24 cursor-grab active:cursor-grabbing select-none"
+      >
         <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-sm leading-snug flex items-start gap-1.5 flex-1 min-w-0">
           {/* Store - Code - Name (Clickable to open Project Modal) */}
           <span 
@@ -284,7 +391,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               "break-words leading-tight",
               p ? "cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors" : ""
             )}
-            title={p ? "Nhấp để xem chi tiết dự án" : undefined}
+            title={p ? "Click to view project details" : undefined}
           >
             {v.floor && (
               <span className={storeDisplay.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : storeDisplay.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>
@@ -322,8 +429,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           )}
         </div>
 
-        {/* Actions: Quick Navigator + Close Button */}
-        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+        {/* Actions: Drag Handle + Quick Navigator + Close Button */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10">
+          <div
+            title="Drag to move tooltip"
+            className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <GripHorizontal className="w-4 h-4" />
+          </div>
           <QuickNavButton 
             project={targetProject} 
             title={`Quick Navigator (${unitCode})`}
@@ -333,7 +446,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             type="button"
             onClick={onClose}
             className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Đóng tooltip"
+            title="Close tooltip"
           >
             <X className="w-4 h-4" />
           </button>

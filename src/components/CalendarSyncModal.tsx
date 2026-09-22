@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import Draggable from 'react-draggable';
 import { 
   X, 
   Calendar as CalendarIcon, 
@@ -14,7 +15,8 @@ import {
   Sparkles,
   ChevronRight,
   ShieldCheck,
-  Globe
+  Globe,
+  GripHorizontal
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -31,6 +33,7 @@ export const CalendarSyncModal: React.FC = () => {
   const { enrichedProjects: projects, filteredTasks: tasks } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser);
   const { t } = useLanguage();
+  const nodeRef = useRef<HTMLDivElement>(null);
 
   // Filters
   const [storeFilter, setStoreFilter] = useState<string>('all');
@@ -175,36 +178,38 @@ export const CalendarSyncModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div 
-        className="bg-white dark:bg-[#1e1e20] w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col max-h-[92vh]"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] flex items-center justify-between bg-slate-50/80 dark:bg-[#28282a]/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center shadow-xs">
-              <CalendarIcon className="w-5 h-5" />
+      <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, select">
+        <div 
+          ref={nodeRef}
+          className="bg-white dark:bg-[#1e1e20] w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col max-h-[92vh] pointer-events-auto"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="modal-handle cursor-grab active:cursor-grabbing px-5 py-4 border-b border-slate-100 dark:border-[#333336] flex items-center justify-between bg-slate-50/80 dark:bg-[#28282a]/50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center shadow-xs">
+                <CalendarIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base sm:text-lg text-slate-800 dark:text-[#f0f0f0] flex items-center gap-2">
+                  Đồng bộ Apple Calendar (iOS)
+                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                    {eventCount} sự kiện
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-[#a3a3a3]">
+                  Tự động hiển thị và cập nhật lịch trình dự án vào app Lịch của iPhone/iPad
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-base sm:text-lg text-slate-800 dark:text-[#f0f0f0] flex items-center gap-2">
-                Đồng bộ Apple Calendar (iOS)
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                  {eventCount} sự kiện
-                </span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-[#a3a3a3]">
-                Tự động hiển thị và cập nhật lịch trình dự án vào app Lịch của iPhone/iPad
-              </p>
-            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-[#e3e3e3] rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors"
+              title="Đóng (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-[#e3e3e3] rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors"
-            title="Đóng (Esc)"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
         {/* Filter Toolbar */}
         <div className="px-5 py-3 bg-slate-50/40 dark:bg-[#232326]/40 border-b border-slate-100 dark:border-[#333336] flex flex-wrap items-center gap-2.5 text-xs">
@@ -556,6 +561,7 @@ export const CalendarSyncModal: React.FC = () => {
           </button>
         </div>
       </div>
+      </Draggable>
     </div>
   );
 };

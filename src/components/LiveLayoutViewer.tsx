@@ -697,7 +697,21 @@ function LiveCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [hoverInfo, setHoverInfo] = useState<{ visible: boolean; data: any; unitName: string; clientX?: number; clientY?: number } | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<{ 
+    visible: boolean; 
+    data: any; 
+    unitName: string; 
+    clientX?: number; 
+    clientY?: number;
+    unitScreenBounds?: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+      centerX: number;
+      centerY: number;
+    };
+  } | null>(null);
   const isPinnedRef = useRef(false);
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
@@ -1554,12 +1568,17 @@ function LiveCanvas({
 
     const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
     const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
+    const isDesktop = containerW >= 768;
 
     // Set zoom level to 70% (scale 0.7) on search
     const targetScale = 0.7;
 
-    const posX = containerW / 2 - cx * targetScale;
-    const posY = containerH / 2 - cy * targetScale;
+    // Smart focal point calculation to guarantee the unit is centered in the unobstructed view area
+    const targetScreenCenterX = isDesktop ? containerW * 0.38 : containerW * 0.50;
+    const targetScreenCenterY = isDesktop ? containerH * 0.50 : containerH * 0.35;
+
+    const posX = targetScreenCenterX - cx * targetScale;
+    const posY = targetScreenCenterY - cy * targetScale;
     const newPos = { x: posX, y: posY };
 
     const stage = stageRef.current;
@@ -1588,20 +1607,30 @@ function LiveCanvas({
       setFocusedUnitId(null);
     }, 10000);
 
-    // Open detailed info tooltip for unit
+    // Calculate precise screen bounding box for the unit in viewport coordinates
+    const unitScreenLeft = targetScreenCenterX - (uW / 2) * targetScale;
+    const unitScreenRight = targetScreenCenterX + (uW / 2) * targetScale;
+    const unitScreenTop = targetScreenCenterY - (uH / 2) * targetScale;
+    const unitScreenBottom = targetScreenCenterY + (uH / 2) * targetScale;
+
+    // Open detailed info tooltip for unit positioned intelligently to never cover the unit
     const uName = (targetUnit.name || '').toLowerCase();
     isPinnedRef.current = true;
     setHoverInfo({
       visible: true,
       data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
       unitName: targetUnit.name || 'Unknown',
-      clientX: containerW / 2,
-      clientY: Math.max(90, containerH * 0.25)
+      clientX: isDesktop ? Math.min(containerW - 360, unitScreenRight + 24) : containerW / 2,
+      clientY: isDesktop ? Math.max(115, Math.min(unitScreenTop, containerH - 320)) : containerH * 0.65,
+      unitScreenBounds: {
+        left: unitScreenLeft,
+        right: unitScreenRight,
+        top: unitScreenTop,
+        bottom: unitScreenBottom,
+        centerX: targetScreenCenterX,
+        centerY: targetScreenCenterY,
+      }
     });
-
-    setTimeout(() => {
-      updateTooltipPos(containerW / 2, Math.max(90, containerH * 0.25));
-    }, 150);
 
     onUnitSelected?.(targetUnit);
     return true;

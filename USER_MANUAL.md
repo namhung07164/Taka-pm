@@ -76,7 +76,11 @@ Nơi hiển thị toàn bộ danh sách các dự án thi công, cải tạo c�
 1. **Lọc theo Chi nhánh**: Chọn ô chọn Store (`HCM`, `HN`, hoặc `All Stores`).
 2. **Lọc theo Năm**: Chọn ô chọn Year (`2026`, `2027`, hoặc `All Years`).
 3. **Lọc theo Trạng thái**: Chọn Trạng thái (`On process`, `Upcoming`, `Completed`, `Handover`, `Canceled`).
-4. **Tìm kiếm nhanh**: Gõ tên dự án, mã dự án hoặc vị trí gian hàng vào ô Search (hoặc bấm phím tắt `/`).
+4. **Tìm kiếm nhanh & Tự động nhảy vị trí (Smart Search & Location Auto-Jump)**:
+   - Gõ tên dự án, mã dự án, mã công việc, nhà thầu hoặc vị trí gian hàng vào ô Search (hoặc bấm phím tắt `/`).
+   - **Tự động chuyển Location**: Trên các tab **General**, **Task detail**, **Cost**, **Budget**, **Gantt**, khi nhập nội dung tìm kiếm, hệ thống sẽ tự động quét và chuyển bộ lọc `Location` sang đúng tầng/vị trí tương ứng chứa kết quả tìm kiếm đó.
+   - **Hoàn trả bộ lọc khi xóa/hủy tìm kiếm**: Khi bấm nút xóa ô tìm kiếm (X) hoặc xóa hết nội dung, hệ thống sẽ tự động khôi phục lại chính xác bộ lọc `Location` và bộ lọc `Status` toàn cục đã chọn trước khi tìm kiếm.
+   - **Phím tắt `Esc` xóa nhanh tìm kiếm**: Khi ô search đang có nội dung, người dùng chỉ cần bấm phím `Esc` (ngay cả khi con trỏ không nằm trong ô search) để tự động xóa sạch ô tìm kiếm và hoàn trả lại trạng thái bộ lọc toàn cục trước đó.
 
 #### 🔹 Hướng dẫn Tạo Mới / Chỉnh Sửa Dự Án:
 * **Tạo mới**: Nhấp nút **"+ New Project"** (hoặc bấm phím tắt `P`):
@@ -554,8 +558,11 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
      * Tích hợp Store, Location và Year vào một thanh kính mờ bo tròn nhỏ gọn (`Unified Filter Pill`), giảm thiểu chiều cao thanh công cụ.
      * **Tích hợp Cụm Nút Hành Động lên cùng hàng Nút Gantt**: Các nút `[ ← Gantt ]`, `[ Live Map / Exit Live ]`, `[ Refresh ]`, `[ Export ]` (và `[ Edit URL ]` cho Quản trị viên) được gom lên cùng một cụm điều khiển liền kề nhau. Trên điện thoại di động, các nút nằm trọn vẹn trong một hàng ngang nhỏ gọn, loại bỏ hoàn toàn 1 dòng công cụ thừa, giúp giảm đáng kể kích thước chiếm dụng dọc và mở rộng tối đa vùng hiển thị cho mặt bằng.
      * Trạng thái xuất file (`Export Status`) chỉ hiển thị khi đang trong tiến trình xuất (kèm biểu tượng xoay linh hoạt), loại bỏ hoàn toàn các thông báo trạng thái dư thừa gây chật chội màn hình.
-   - **Hàng Tìm Kiếm Toàn Chiều Rộng (Full-Width Search Box)**:
+   - **Hàng Tìm Kiếm Toàn Chiều Rộng, Độ Zoom 70% & Chống Che Gian Hàng (Smart Search Zoom 70% & Obstruction-Proof Positioning)**:
      * Ô tìm kiếm `Tìm ô unit, brand hoặc dự án...` chiếm trọn vẹn toàn bộ chiều rộng, mang lại không gian rộng rãi, thoáng đãng, văn bản gợi ý không bị chèn ép hay cắt ngắn.
+     * **Độ Zoom Chuẩn 70%**: Khi tìm kiếm ô unit hoặc dự án, hệ thống tự động pan và phóng to bản đồ về tỷ lệ chuẩn **70% (Zoom 70%)**, giúp người dùng nhìn rõ đồng thời cả chi tiết gian hàng và bối cảnh vị trí các gian hàng lân cận trên cùng một tầng.
+     * **Tự Động Tính Toán Thông Minh Không Che Unit (Smart Obstruction-Proof Placement)**: Bảng thông tin chi tiết (Tooltip) tự động nhận diện tọa độ màn hình của gian hàng mục tiêu để tính toán vị trí đặt tooltip sang bên phải, bên trái hoặc phía trên/dưới, đảm bảo **100% không bao giờ che khuất ô unit đang tìm kiếm**.
+     * **Hỗ Trợ Kéo Thả Di Chuyển Tự Do (Universal Draggability)**: Tất cả các bảng modular, hộp thoại và tooltip nổi (`LayoutUnitTooltip`, `TaskModularModal`, `ProjectModal`...) đều hỗ trợ tính năng kéo thả di chuyển linh hoạt (Pointer Drag với biểu tượng tay nắm `GripHorizontal`) giúp người dùng thoải mái kéo dịch chuyển bảng sang vị trí khác để quan sát các vùng bản vẽ hoặc dữ liệu bên dưới.
    - **Chống Va Chạm & Chồng Lấn Trên Bản Đồ (Anti-Collision Floating Controls)**:
      * Cụm góc trên bên trái (`Store • Location • Version`) và cụm góc trên bên phải (`Zoom In/Out/Percentage/Fit`) được điều chỉnh kích thước và khoảng cách an toàn (`top-2.5`, font chữ và padding tối ưu theo màn hình), đảm bảo khoảng cách thông thoáng > 100px ở giữa, tuyệt đối không bị đè hay chạm vào nhau trên bất kỳ kích cỡ điện thoại nào.
      * Chiều cao bản đồ sử dụng đơn vị `100dvh` (Dynamic Viewport Height) chuẩn xác cho Safari/Chrome Mobile, loại bỏ tình trạng thanh công cụ đẩy bản đồ xuống quá dài gây hiện tượng cuộn trang không mong muốn.

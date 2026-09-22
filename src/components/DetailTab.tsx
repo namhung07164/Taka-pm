@@ -125,6 +125,7 @@ export function DetailTab({
 
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,6 +133,7 @@ export function DetailTab({
   const [visibleCount, setVisibleCount] = useState(20);
   const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -141,14 +143,17 @@ export function DetailTab({
         lastSelectedStatusFilterRef.current = statusFilter;
         safeSetItemSession("taka_detail_status_filter", statusFilter);
       }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
       setStatusFilter('all');
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days';
       setStatusFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm]);
+  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, statusFilter]);
+
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   
   const expandedCodes = useAppStore(state => state.expandedProjectIds);
@@ -366,7 +371,7 @@ export function DetailTab({
     return () => clearTimeout(timer);
   }, [tasks, projects, handleSyncAllPredecessors]);
 
-  // Escape key triggers Clear Focus when not in modals
+  // Escape key triggers Clear Search / Clear Focus when not in modals
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -375,10 +380,20 @@ export function DetailTab({
           state.isProjectModalOpen ||
           state.isTaskModalOpen ||
           state.isUserModalOpen ||
-          state.isLoginModalOpen;
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
         if (hasOpenModal) return;
 
-        if (initialFocusTaskId) {
+        if (searchTerm) {
+          e.preventDefault();
+          const activeElement = document.activeElement;
+          if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+            (activeElement as HTMLElement).blur();
+          }
+          setSearchTerm("");
+          setDetailTabFilterCode("");
+          onClearFocus?.();
+        } else if (initialFocusTaskId) {
           e.preventDefault();
           const activeElement = document.activeElement;
           if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
@@ -390,7 +405,7 @@ export function DetailTab({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [initialFocusTaskId, handleClearFocus]);
+  }, [searchTerm, initialFocusTaskId, handleClearFocus, setDetailTabFilterCode, onClearFocus]);
 
   const handleBackToGantt = () => {
     if (onBackToGantt) {
@@ -899,7 +914,6 @@ export function DetailTab({
   }).filter(Boolean), '2026', '2027'])].sort();
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
-  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const stores = allowedStores;
 
   const toggleGroup = (id: string | number) => {
@@ -2365,6 +2379,66 @@ export function DetailTab({
     });
     return { tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
   }, [tasks]);
+
+  // Auto-jump to matched project location(s) when searching
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+
+    const matchedProjects = projects.filter(p => {
+      const pYear = p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null);
+      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+
+      const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+
+      const isMatch = matchesAdvancedSearch(
+        term,
+        [p.store, p.location, p.year, p.code, p.name],
+        [],
+        (tLower) => {
+          const summariesMatch = p.taskSummaries?.some(ts =>
+            String(ts.name || "").toLowerCase().includes(tLower)
+          ) || false;
+
+          const taskMatches = groupTasks.some((t, idx) => {
+            const taskFields = [
+              t.taskCodePhu,
+              `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+              t.name,
+              t.duration,
+              t.start,
+              t.finish,
+              t.party,
+              formatDisplayDateMain(t.start),
+              formatDisplayDateTime(t.start),
+              formatDisplayDateMain(t.finish),
+              formatDisplayDateTime(t.finish)
+            ];
+            const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
+            const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
+            return fieldMatch || notesMatch;
+          });
+
+          return summariesMatch || taskMatches;
+        }
+      );
+
+      return isMatch;
+    });
+
+    const matchedLocations = Array.from(
+      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+    );
+
+    if (matchedLocations.length > 0) {
+      const currentLocs = globalLocationFilter || [];
+      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+      if (!isSame) {
+        setGlobalLocationFilter(matchedLocations);
+      }
+    }
+  }, [searchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const delegationGroupByParentKey = useMemo(() => {
     const map = new Map<string, DelegationGroup>();

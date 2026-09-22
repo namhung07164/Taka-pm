@@ -151,6 +151,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
   const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
   const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
@@ -198,6 +199,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   const lastSelectedMoneyFilterRef = useRef<string>(
     safeGetItemSession("taka_budget_money_filter") || 'has_money'
   );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
 
   useEffect(() => {
@@ -207,14 +209,17 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
         lastSelectedMoneyFilterRef.current = moneyFilter;
         safeSetItemSession("taka_budget_money_filter", moneyFilter);
       }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
       setMoneyFilter('all');
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedMoneyFilterRef.current || safeGetItemSession("taka_budget_money_filter") || 'has_money';
       setMoneyFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm]);
+  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, moneyFilter]);
+
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
   const [colWidths, setColWidths] = useState<Record<string, number>>({
@@ -326,19 +331,40 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     if (initialSearchTerm) setSearchTerm(initialSearchTerm);
   }, [initialSearchTerm]);
 
+  // Handle Escape key to close modal or clear search
   useEffect(() => {
-    if (!isLinkModalOpen && !selectedParentProject) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsLinkModalOpen(false);
-        setSelectedParentProject(null);
+        if (isLinkModalOpen || selectedParentProject) {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsLinkModalOpen(false);
+          setSelectedParentProject(null);
+          return;
+        }
+
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+
+        if (searchTerm) {
+          e.preventDefault();
+          const activeElement = document.activeElement;
+          if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+            (activeElement as HTMLElement).blur();
+          }
+          setSearchTerm("");
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLinkModalOpen, selectedParentProject]);
+  }, [isLinkModalOpen, selectedParentProject, searchTerm]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`taka_budget_col_widths_${currentUser.id}`);
@@ -689,7 +715,6 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   }).filter(Boolean), '2026', '2027'])].sort();
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
-  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const stores = allowedStores;
 
   const locationOptions = useLocationOptions();
@@ -728,6 +753,49 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     ];
     return matchesAdvancedSearch(term, searchFields);
   };
+
+  // Auto-jump to matched budget node / project location(s) when searching
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term || !treeData || treeData.length === 0) return;
+
+    const matchedLocationsList: string[] = [];
+    treeData.forEach((node: any) => {
+      const pYear = node.year ? String(node.year) : (node.start ? String(node.start).substring(0, 4) : null);
+      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return;
+      if (effectiveStore !== 'all' && node.store !== effectiveStore) return;
+
+      const parentMatch = isParentMatchSearch(node, term);
+      if (parentMatch && node.location) {
+        matchedLocationsList.push(node.location);
+      }
+
+      if (node.children && node.children.length > 0) {
+        node.children.forEach((child: any) => {
+          const cYear = child.year ? String(child.year) : null;
+          if (globalYearFilter !== 'all' && cYear && cYear !== globalYearFilter) return;
+          if (effectiveStore !== 'all' && child.store && child.store !== effectiveStore) return;
+
+          if (isChildMatchSearch(child, term) || parentMatch) {
+            if (child.location) matchedLocationsList.push(child.location);
+            else if (node.location) matchedLocationsList.push(node.location);
+          }
+        });
+      }
+    });
+
+    const matchedLocations = Array.from(
+      new Set(matchedLocationsList.filter((loc): loc is string => !!loc && loc.trim() !== ''))
+    );
+
+    if (matchedLocations.length > 0) {
+      const currentLocs = globalLocationFilter || [];
+      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+      if (!isSame) {
+        setGlobalLocationFilter(matchedLocations);
+      }
+    }
+  }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const [visibleCount, setVisibleCount] = useState(20);
 

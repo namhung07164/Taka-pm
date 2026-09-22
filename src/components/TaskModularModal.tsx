@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import Draggable from "react-draggable";
 import {
   Layers,
   X,
@@ -10,6 +11,7 @@ import {
   Clock,
   Briefcase,
   Info,
+  GripHorizontal,
 } from "lucide-react";
 import { Task, Project } from "../types";
 import { cn, matchesAdvancedSearch } from "../lib/utils";
@@ -37,6 +39,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   const [selectedParentTaskId, setSelectedParentTaskId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterScope, setFilterScope] = useState<"same_project" | "all_projects">("same_project");
+  const nodeRef = useRef<HTMLDivElement>(null);
 
   // Reset state when opened
   useEffect(() => {
@@ -159,35 +162,41 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl w-[96vw] max-w-4xl max-h-[88vh] flex flex-col border border-slate-200 dark:border-[#333336] overflow-hidden">
-        {/* Header */}
-        <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-[#333336] flex items-center justify-between bg-slate-50/90 dark:bg-[#18181a] select-none shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-              <Layers className="w-5 h-5" />
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150" onClick={onClose}>
+      <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, select">
+        <div 
+          ref={nodeRef}
+          className="bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl w-[96vw] max-w-4xl max-h-[88vh] flex flex-col border border-slate-200 dark:border-[#333336] overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="modal-handle cursor-grab active:cursor-grabbing p-3.5 sm:p-4 border-b border-slate-200 dark:border-[#333336] flex items-center justify-between bg-slate-50/90 dark:bg-[#18181a] select-none shrink-0">
+            <div className="flex items-center gap-2.5">
+              <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+              <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base md:text-lg text-slate-900 dark:text-[#e3e3e3] flex items-center gap-2">
+                  Task Modular
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    Gantt Only
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Group selected child tasks into a parent task (toggle collapse/expand on Gantt)
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-base md:text-lg text-slate-900 dark:text-[#e3e3e3] flex items-center gap-2">
-                Task Modular
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                  Gantt Only
-                </span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Gom các nhiệm vụ con đã chọn vào 1 nhiệm vụ mẹ (hiển thị nút thu gọn / mở rộng trên Gantt)
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors active:scale-95"
+              title="Close (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors active:scale-95"
-            title="Đóng (Esc)"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
         {/* Content: 2 Columns on desktop, stacked on mobile */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 p-3 sm:p-4 flex-1 min-h-0 overflow-y-auto bg-slate-100/40 dark:bg-[#121214]">
@@ -442,7 +451,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
               onClick={onClose}
               className="px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-[#c3c3c3] hover:bg-slate-200 dark:hover:bg-[#28282a] rounded-lg transition-colors active:scale-95"
             >
-              Hủy
+              Cancel
             </button>
             <button
               type="button"
@@ -452,7 +461,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
             >
               <Layers className="w-4 h-4" />
               <span>
-                Gom vào Task Mẹ ({allTargetTaskIds.length})
+                Group into Parent Task ({allTargetTaskIds.length})
                 {allTargetTaskIds.length > selectedTaskIds.length && (
                   <span className="ml-1 text-[10px] font-normal opacity-90">
                     (+{allTargetTaskIds.length - selectedTaskIds.length} sub kèm theo)
@@ -463,6 +472,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
           </div>
         </div>
       </div>
+      </Draggable>
     </div>
   );
 };

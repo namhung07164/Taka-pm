@@ -190,6 +190,7 @@ export function GanttTab({
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
   const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
   const isTasksLoading = useAppStore(state => state.isTasksLoading);
@@ -217,6 +218,7 @@ export function GanttTab({
   const lastSelectedStatusFilterRef = useRef<string>(
     safeGetItemSession("taka_gantt_filter_project_status") || "active"
   );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
 
   useEffect(() => {
@@ -226,14 +228,16 @@ export function GanttTab({
         lastSelectedStatusFilterRef.current = filterProjectStatus;
         safeSetItemSession("taka_gantt_filter_project_status", filterProjectStatus);
       }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
       setFilterProjectStatus('all');
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_gantt_filter_project_status") || "active";
       setFilterProjectStatus(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm]);
+  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, filterProjectStatus]);
 
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
@@ -575,7 +579,6 @@ export function GanttTab({
   }, [projects]);
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
-  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const uniqueStores = allowedStores;
 
 
@@ -591,6 +594,78 @@ export function GanttTab({
     });
     return map;
   }, [tasks]);
+
+  // Auto-jump to matched project location(s) when searching in GanttTab
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+
+    const matchedProjects = projects.filter(p => {
+      const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+
+      const pKey = getPKey(p.code, p.year, p.store);
+      let projectTasks = tasksByProject.get(pKey);
+      if (!projectTasks || projectTasks.length === 0) {
+        const pCode = String(p.code || "").trim().toLowerCase();
+        projectTasks = tasks.filter(t => {
+          const tCode = String(t.projectCode || "").trim().toLowerCase();
+          if (tCode !== pCode) return false;
+          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+          return matchesStore && matchesYear;
+        });
+      }
+      projectTasks = projectTasks || [];
+
+      return matchesAdvancedSearch(
+        term,
+        [p.code, p.name, p.store, p.location],
+        [],
+        (tTerm, andTerms) => {
+          const taskSource = projectTasks.length > 0 ? projectTasks : (p.taskSummaries || []);
+          if (taskSource.length === 0) {
+            return andTerms.every((andT) =>
+              [p.code, p.name, p.store, p.location].some((v) =>
+                String(v || "")
+                  .toLowerCase()
+                  .includes(andT)
+              )
+            );
+          }
+          return taskSource.some((t: any) => {
+            return andTerms.every((andT) => {
+              const inProject = [p.code, p.name, p.store, p.location].some(
+                (v) =>
+                  String(v || "")
+                    .toLowerCase()
+                    .includes(andT),
+              );
+              if (inProject) return true;
+              return [t.name, t.party].some((v) =>
+                String(v || "")
+                  .toLowerCase()
+                  .includes(andT),
+              );
+            });
+          });
+        }
+      );
+    });
+
+    const matchedLocations = Array.from(
+      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+    );
+
+    if (matchedLocations.length > 0) {
+      const currentLocs = globalLocationFilter || [];
+      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+      if (!isSame) {
+        setGlobalLocationFilter(matchedLocations);
+      }
+    }
+  }, [searchTerm, projects, tasks, tasksByProject, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
@@ -1380,10 +1455,19 @@ export function GanttTab({
           state.isProjectModalOpen ||
           state.isTaskModalOpen ||
           state.isUserModalOpen ||
-          state.isLoginModalOpen;
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
         if (hasOpenModal) return;
 
-        if (initialFocusTaskId || ganttTabFocusTaskId) {
+        if (searchTerm) {
+          e.preventDefault();
+          const activeElement = document.activeElement;
+          if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+            (activeElement as HTMLElement).blur();
+          }
+          setSearchTerm("");
+          handleClearFocus();
+        } else if (initialFocusTaskId || ganttTabFocusTaskId) {
           e.preventDefault();
           const activeElement = document.activeElement;
           if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
@@ -1395,7 +1479,7 @@ export function GanttTab({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [initialFocusTaskId, ganttTabFocusTaskId, handleClearFocus]);
+  }, [searchTerm, isTaskModularModalOpen, initialFocusTaskId, ganttTabFocusTaskId, handleClearFocus]);
 
   const prevSearchTermRef = useRef(searchTerm);
   useEffect(() => {
