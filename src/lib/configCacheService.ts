@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { useAppStore } from "../store/useAppStore";
 import { usePerformanceStore } from "../store/usePerformanceStore";
 import { safeGetItemLocal, safeSetItemLocal } from "./storage";
-import { NotificationRule, PermissionMatrix } from "../types";
+import { NotificationRule, PermissionMatrix, AppUser } from "../types";
 
 export interface ConfigVersions {
   locationsVersion?: number;
@@ -13,6 +13,7 @@ export interface ConfigVersions {
   r2Version?: number;
   permissionsVersion?: number;
   subAppUsersVersion?: number;
+  appUsersVersion?: number;
   updatedAt?: string;
 }
 
@@ -27,6 +28,7 @@ const CACHE_KEYS = {
   R2_CONFIG: "taka_cache_r2_config_v1",
   PERMISSIONS: "taka_cache_permissions_v1",
   SUB_APP_USERS: "taka_cache_sub_app_users_v1",
+  APP_USERS: "taka_cache_app_users_v2",
 };
 
 /**
@@ -62,6 +64,7 @@ export function loadCachedStaticConfig(): {
   r2Config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null;
   permissions: PermissionMatrix;
   subAppUsers: any[];
+  appUsers: AppUser[];
 } {
   let locations: string[] = [];
   let locationVisibility: Record<string, boolean> = {};
@@ -72,6 +75,7 @@ export function loadCachedStaticConfig(): {
   let r2Config = null;
   let permissions: PermissionMatrix = {} as PermissionMatrix;
   let subAppUsers: any[] = [];
+  let appUsers: AppUser[] = [];
 
   try {
     const rawLocs = safeGetItemLocal(CACHE_KEYS.LOCATIONS);
@@ -106,11 +110,14 @@ export function loadCachedStaticConfig(): {
 
     const rawSubUsers = safeGetItemLocal(CACHE_KEYS.SUB_APP_USERS);
     if (rawSubUsers) subAppUsers = JSON.parse(rawSubUsers);
+
+    const rawAppUsers = safeGetItemLocal(CACHE_KEYS.APP_USERS);
+    if (rawAppUsers) appUsers = JSON.parse(rawAppUsers);
   } catch (e) {
     console.warn("Failed to parse cached static config:", e);
   }
 
-  return { locations, locationVisibility, parties, jpyRate, usdRate, rules, r2Config, permissions, subAppUsers };
+  return { locations, locationVisibility, parties, jpyRate, usdRate, rules, r2Config, permissions, subAppUsers, appUsers };
 }
 
 /**
@@ -185,11 +192,20 @@ export function cacheSubAppUsers(subAppUsers: any[]): void {
 }
 
 /**
+ * Lưu App Users vào LocalStorage
+ */
+export function cacheAppUsers(appUsers: AppUser[]): void {
+  try {
+    safeSetItemLocal(CACHE_KEYS.APP_USERS, JSON.stringify(appUsers));
+  } catch (e) {}
+}
+
+/**
  * Gửi tín hiệu tăng số phiên bản của một danh mục cấu hình khi Admin chỉnh sửa.
  * Giúp các client khác tự động kích hoạt tải lại chỉ 1 document tương ứng.
  */
 export async function bumpConfigVersion(
-  type: "locations" | "parties" | "rates" | "rules" | "permissions" | "sub_app_users"
+  type: "locations" | "parties" | "rates" | "rules" | "permissions" | "sub_app_users" | "app_users"
 ): Promise<void> {
   const versionRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions");
   const now = Date.now();
@@ -203,6 +219,7 @@ export async function bumpConfigVersion(
   if (type === "rules") updatePayload.rulesVersion = now;
   if (type === "permissions") updatePayload.permissionsVersion = now;
   if (type === "sub_app_users") updatePayload.subAppUsersVersion = now;
+  if (type === "app_users") updatePayload.appUsersVersion = now;
 
   try {
     await setDoc(versionRef, updatePayload, { merge: true });
@@ -364,6 +381,24 @@ export function setupStaticConfigSync(): Unsubscribe {
         }
       }
 
+      // 8. App Users (taka_users versioning)
+      const remoteAppUsersVer = remoteData.appUsersVersion || 1;
+      if (localVersions.appUsersVersion !== remoteAppUsersVer || store.appUsers.length === 0 || needsInit) {
+        try {
+          const usersSnap = await getDocs(
+            collection(db, "artifacts", APP_ID, "public", "data", "taka_users")
+          );
+          const loaded: AppUser[] = [];
+          usersSnap.forEach((docSnap) => {
+            loaded.push({ id: docSnap.id, ...docSnap.data() } as AppUser);
+          });
+          store.setAppUsers(loaded);
+          cacheAppUsers(loaded);
+        } catch (err) {
+          console.error("Error fetching taka_users config:", err);
+        }
+      }
+
       // Cập nhật lại versions vào local cache
       setLocalConfigVersions({
         locationsVersion: remoteLocVer,
@@ -373,6 +408,7 @@ export function setupStaticConfigSync(): Unsubscribe {
         r2Version: remoteR2Ver,
         permissionsVersion: remotePermsVer,
         subAppUsersVersion: remoteSubUsersVer,
+        appUsersVersion: remoteAppUsersVer,
         updatedAt: remoteData.updatedAt || new Date().toISOString(),
       });
     },

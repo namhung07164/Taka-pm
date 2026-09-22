@@ -42,7 +42,7 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
   setIsCostsRequested: (isCostsRequested) => set({ isCostsRequested }),
   isCostsLoading: false,
   setIsCostsLoading: (isCostsLoading) => set({ isCostsLoading }),
-  appUsers: [],
+  appUsers: initialStaticConfig.appUsers || [],
   setAppUsers: (appUsers) => set({ appUsers }),
   subAppUsers: initialStaticConfig.subAppUsers || [],
   setSubAppUsers: (subAppUsers) => set({ subAppUsers }),

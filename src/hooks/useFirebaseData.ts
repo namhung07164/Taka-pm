@@ -233,110 +233,93 @@ export function useFirebaseData() {
     testConnection();
     window.addEventListener('online', testConnection);
 
-    // Global queries (Realtime listeners for config & users)
-    usePerformanceStore.getState().registerListener("taka_users");
-    const unsubUsers = onSnapshot(
-      collection(db, "artifacts", APP_ID, "public", "data", "taka_users"),
-      (snapshot) => {
-        usePerformanceStore.getState().trackSnapshot("taka_users", snapshot);
-        const loaded: AppUser[] = [];
-        snapshot.forEach((docSnap) =>
-          loaded.push({ id: docSnap.id, ...docSnap.data() } as AppUser),
-        );
-        const currentUsers = useAppStore.getState().appUsers;
-        if (JSON.stringify(currentUsers) !== JSON.stringify(loaded)) {
-          setAppUsers(loaded);
-        }
-
-        const cur = useAppStore.getState().currentUser;
-        if (cur && cur.id !== "guest") {
-          const found = loaded.find((u) => u.id === cur.id);
-          if (found) {
-            const localReadNotifsStr = safeGetItemLocal(
-              `taka_read_notifs_${cur.id}`,
-            );
-            let localReadNotifs: string[] = [];
-            if (localReadNotifsStr) {
-              try {
-                localReadNotifs = JSON.parse(localReadNotifsStr);
-              } catch (e) {}
-            }
-            const mergedReadNotifs = Array.from(
-              new Set([
-                ...(found.readNotifs || []),
-                ...(cur.readNotifs || []),
-                ...localReadNotifs,
-              ]),
-            );
-
-            // Only update currentUser if relevant profile or permission data actually changed
-            const hasChanged =
-              cur.role !== found.role ||
-              cur.username !== found.username ||
-              cur.canSee !== found.canSee ||
-              cur.canWrite !== found.canWrite ||
-              cur.byPartyAccess !== found.byPartyAccess ||
-              JSON.stringify(cur.storePermissions) !==
-                JSON.stringify(found.storePermissions) ||
-              JSON.stringify(cur.locationPermissions) !==
-                JSON.stringify(found.locationPermissions) ||
-              JSON.stringify(cur.partyPermissions) !==
-                JSON.stringify(found.partyPermissions) ||
-              JSON.stringify(cur.preferences) !==
-                JSON.stringify(found.preferences);
-
-            if (hasChanged) {
-              const updated: AppUser = {
-                ...cur,
-                ...found,
-                readNotifs: mergedReadNotifs,
-              };
-              setCurrentUser(updated);
-              safeSetItemLocal("taka_auth_v1", JSON.stringify(updated));
-
-              // Sync hybrid UI state if it changed from remote
-              if (
-                found.preferences?.defaultStore &&
-                cur.preferences?.defaultStore !== found.preferences.defaultStore
-              ) {
-                useAppStore
-                  .getState()
-                  .setGlobalStoreFilter(found.preferences.defaultStore);
-              }
-              if (
-                found.preferences?.defaultYear &&
-                cur.preferences?.defaultYear !== found.preferences.defaultYear
-              ) {
-                useAppStore
-                  .getState()
-                  .setGlobalYearFilter(String(found.preferences.defaultYear));
-              }
-              if (
-                found.preferences?.currency &&
-                cur.preferences?.currency !== found.preferences.currency
-              ) {
-                useAppStore.getState().setCurrency(found.preferences.currency);
-              }
-            }
-          }
-        }
-      },
-      (e) => handleFetchError("users", e),
-    );
-
-    // Enterprise Cache + Versioning for static configs (locations, parties, exchange rates, notification rules, permissions, sub_app_users)
+    // Enterprise Cache + Versioning for static configs & users (locations, parties, rates, rules, permissions, sub_app_users, app_users)
     // Replaces multiple continuous listeners with 1 lightweight version watcher (Zero-Read on unchanged sessions)
     const unsubStaticConfig = setupStaticConfigSync();
 
-    // Delegation groups are now fetched in a separate useEffect
-    
     return () => {
       window.removeEventListener('online', testConnection);
-      unsubUsers();
       unsubStaticConfig();
-      usePerformanceStore.getState().unregisterListener("taka_users");
     };
   }, [user?.uid]);
+
+  // Sync currentUser profile whenever appUsers is updated via versioning cache
+  const appUsers = useAppStore((state) => state.appUsers);
+
+  useEffect(() => {
+    if (!appUsers || appUsers.length === 0) return;
+    const cur = useAppStore.getState().currentUser;
+    if (cur && cur.id !== "guest") {
+      const found = appUsers.find((u) => u.id === cur.id);
+      if (found) {
+        const localReadNotifsStr = safeGetItemLocal(
+          `taka_read_notifs_${cur.id}`,
+        );
+        let localReadNotifs: string[] = [];
+        if (localReadNotifsStr) {
+          try {
+            localReadNotifs = JSON.parse(localReadNotifsStr);
+          } catch (e) {}
+        }
+        const mergedReadNotifs = Array.from(
+          new Set([
+            ...(found.readNotifs || []),
+            ...(cur.readNotifs || []),
+            ...localReadNotifs,
+          ]),
+        );
+
+        // Only update currentUser if relevant profile or permission data actually changed
+        const hasChanged =
+          cur.role !== found.role ||
+          cur.username !== found.username ||
+          cur.canSee !== found.canSee ||
+          cur.canWrite !== found.canWrite ||
+          cur.byPartyAccess !== found.byPartyAccess ||
+          JSON.stringify(cur.storePermissions) !==
+            JSON.stringify(found.storePermissions) ||
+          JSON.stringify(cur.locationPermissions) !==
+            JSON.stringify(found.locationPermissions) ||
+          JSON.stringify(cur.partyPermissions) !==
+            JSON.stringify(found.partyPermissions) ||
+          JSON.stringify(cur.preferences) !==
+            JSON.stringify(found.preferences);
+
+        if (hasChanged) {
+          const updated: AppUser = {
+            ...cur,
+            ...found,
+            readNotifs: mergedReadNotifs,
+          };
+          setCurrentUser(updated);
+          safeSetItemLocal("taka_auth_v1", JSON.stringify(updated));
+
+          if (
+            found.preferences?.defaultStore &&
+            cur.preferences?.defaultStore !== found.preferences.defaultStore
+          ) {
+            useAppStore
+              .getState()
+              .setGlobalStoreFilter(found.preferences.defaultStore);
+          }
+          if (
+            found.preferences?.defaultYear &&
+            cur.preferences?.defaultYear !== found.preferences.defaultYear
+          ) {
+            useAppStore
+              .getState()
+              .setGlobalYearFilter(String(found.preferences.defaultYear));
+          }
+          if (
+            found.preferences?.currency &&
+            cur.preferences?.currency !== found.preferences.currency
+          ) {
+            useAppStore.getState().setCurrency(found.preferences.currency);
+          }
+        }
+      }
+    }
+  }, [appUsers, setCurrentUser]);
 
   // Stable permission indicators to prevent re-querying Firestore on every profile/readNotifs change
   const userCanSee = currentUser?.role === "admin" || !!currentUser?.canSee;

@@ -7,6 +7,7 @@ import { AppUser } from '../types';
 import { doc } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
 import { generateId } from '../lib/utils';
+import { bumpConfigVersion } from "../lib/configCacheService";
 
 interface UserModalProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export function UserModal({ isOpen, onClose, user}: UserModalProps) {
     }
 
     try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', id), {
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', id), {
         id,
         username,
         password: finalPassword,
@@ -72,6 +73,7 @@ export function UserModal({ isOpen, onClose, user}: UserModalProps) {
         canSee: user ? user.canSee : true,
         canWrite: user ? user.canWrite : true
       }, { merge: true });
+      bumpConfigVersion("app_users");
       onClose();
     } catch (e) { console.error(e); }
   };
