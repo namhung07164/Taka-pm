@@ -173,6 +173,39 @@ function writeAuditLogAsync(action: 'CREATE' | 'UPDATE' | 'DELETE', docRef: any,
     else if (path.includes('taka_users')) entityType = 'user';
     else if (path.includes('taka_rules')) entityType = 'rule';
 
+    // Capture previous state snapshot for Visual Diff Viewer
+    let previousData: any = null;
+    try {
+      const storeGetter = typeof window !== 'undefined' ? (window as any).__TAKA_APP_STORE__?.getState : null;
+      if (storeGetter) {
+        const storeState = storeGetter();
+        let existingDoc: any = null;
+        if (entityType === 'project') existingDoc = storeState.projects?.find((p: any) => p.id === docRef.id);
+        else if (entityType === 'task') existingDoc = storeState.tasks?.find((t: any) => t.id === docRef.id);
+        else if (entityType === 'cost') existingDoc = storeState.costs?.find((c: any) => c.id === docRef.id);
+        else if (entityType === 'delegation') existingDoc = storeState.delegationGroups?.find((d: any) => d.id === docRef.id);
+
+        if (action === 'UPDATE' && data && typeof data === 'object' && existingDoc) {
+          const prevSlice: Record<string, any> = {};
+          Object.keys(data).forEach(k => {
+            if (k.includes('.')) {
+              const parts = k.split('.');
+              let curr = existingDoc;
+              for (let i = 0; i < parts.length && curr != null; i++) {
+                curr = curr[parts[i]];
+              }
+              prevSlice[k] = curr !== undefined ? curr : null;
+            } else {
+              prevSlice[k] = existingDoc[k] !== undefined ? existingDoc[k] : null;
+            }
+          });
+          previousData = cleanDataForAudit(prevSlice);
+        } else if (action === 'DELETE' && existingDoc) {
+          previousData = cleanDataForAudit(existingDoc);
+        }
+      }
+    } catch {}
+
     const logData = {
       timestamp: Date.now(),
       userId,
@@ -181,7 +214,8 @@ function writeAuditLogAsync(action: 'CREATE' | 'UPDATE' | 'DELETE', docRef: any,
       entityType,
       docPath: path,
       docId: docRef.id,
-      data: cleanDataForAudit(data)
+      data: cleanDataForAudit(data),
+      ...(previousData ? { previousData } : {})
     };
     
     // Fire and forget (Optimistic UI unaffected)

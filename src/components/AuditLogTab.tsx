@@ -1,10 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { collection, query, orderBy, limit, startAfter, getDocs, where, QueryConstraint } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { AuditLog } from '../types';
 import { formatDisplayDateTime } from '../lib/utils';
-import { Loader2, Search, Filter, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Loader2, Search, Filter, ArrowRight, ArrowLeft, Eye, Sparkles, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../lib/LanguageContext';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const AuditDiffViewerModal = lazyWithRetry(
+  () => import('./AuditDiffViewerModal'),
+  'AuditDiffViewerModal'
+);
 
 const PAGE_SIZE = 20;
 
@@ -13,6 +19,7 @@ export function AuditLogTab() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   
   // Pagination state
   const [lastVisible, setLastVisible] = useState<any>(null);
@@ -143,8 +150,15 @@ export function AuditLogTab() {
       <div className="max-w-7xl mx-auto w-full space-y-6">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Audit Logs</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">System activity history</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Audit Logs</h1>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                <Sparkles className="w-3 h-3" /> Diff Visualizer Active
+              </span>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Enterprise activity history & immutable audit trail. Click any row to inspect visual Before & After changes.
+            </p>
           </div>
           
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
@@ -203,12 +217,13 @@ export function AuditLogTab() {
                   <th className="px-4 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Action</th>
                   <th className="px-4 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Document</th>
                   <th className="px-4 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data Snippet</th>
+                  <th className="px-4 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Inspect</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-[#28282a]">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center">
+                    <td colSpan={7} className="px-4 py-8 text-center">
                       <div className="flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400">
                         <Loader2 className="w-5 h-5 animate-spin" />
                         <span>Loading logs...</span>
@@ -217,14 +232,19 @@ export function AuditLogTab() {
                   </tr>
                 ) : logs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
                       <Search className="w-8 h-8 mx-auto mb-3 opacity-20" />
                       <p>No audit logs found matching your filters.</p>
                     </td>
                   </tr>
                 ) : (
                   logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-[#202022]/50 transition-colors">
+                    <tr 
+                      key={log.id} 
+                      onClick={() => setSelectedLog(log)}
+                      className="cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors group"
+                      title="Click to view Visual Diff"
+                    >
                       <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-[#d3d3d3] whitespace-nowrap">
                         {formatDisplayDateTime(new Date(log.timestamp).toISOString())}
                       </td>
@@ -243,12 +263,25 @@ export function AuditLogTab() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="text-xs font-mono text-slate-600 dark:text-[#a3a3a3] max-w-[200px] truncate" title={log.docPath}>
+                        <div className="text-xs font-mono text-slate-600 dark:text-[#a3a3a3] max-w-[180px] truncate" title={log.docPath}>
                           {log.docPath}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs font-mono">
                         {renderDataPreview(log.data)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLog(log);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-[#252528] text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 border border-slate-200 dark:border-[#38383c] group-hover:border-indigo-300 dark:group-hover:border-indigo-700 shadow-xs transition-all active:scale-95 touch-manipulation"
+                          title="Inspect Visual Changes"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Diff</span>
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -280,6 +313,16 @@ export function AuditLogTab() {
           </div>
         </div>
       </div>
+
+      {selectedLog && (
+        <Suspense fallback={null}>
+          <AuditDiffViewerModal
+            isOpen={!!selectedLog}
+            log={selectedLog}
+            onClose={() => setSelectedLog(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

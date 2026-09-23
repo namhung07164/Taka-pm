@@ -1205,3 +1205,20 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Lập Bản Đồ Dữ Liệu Tối Ưu (Pre-computed Lookup Maps)**:
      + Các phép tính nặng như sinh mã nhiệm vụ phụ (`taskCodeMap`) và giải mã trạng thái ủy quyền thực tế (`taskActualStatusMap`) được tiền tính toán một lần thông qua `useMemo`, chuyển độ phức tạp từ O(N) trong vòng lặp hiển thị về truy xuất tức thì O(1).
 
+12. **Bộ So Sánh Biến Động Trực Quan & Kiểm Toán Bất Biến (Visual Diff Viewer - Chuẩn GitHub, Linear & Jira)**:
+   - **Mục Đích**: Giúp cấp Quản lý và Kiểm toán viên xem chính xác từng trường thông tin bị thay đổi (Trước & Sau khi sửa) một cách trực quan, không cần phải đọc mã JSON thô.
+   - **Cách Kích Hoạt**:
+     + Vào tab **Audit Log** (biểu tượng chiếc khiên 🛡️ tại Header hoặc mục Phân quyền).
+     + Nhấp trực tiếp vào bất kỳ dòng nhật ký nào trong bảng danh sách, hoặc bấm nút **Diff** ở cột bên phải.
+   - **Các Tính Năng Của Hộp Thoại Diff Viewer**:
+     + **Draggable Modal (Kéo thả di chuyển)**: Người dùng có thể giữ tay cầm (`GripHorizontal`) để di chuyển hộp thoại quanh màn hình, không bị che dữ liệu bên dưới. Nhấn phím `Esc` để đóng nhanh.
+     + **Visual Changes (So sánh trực quan Before & After)**:
+       * Ô màu Đỏ (Before / Cũ) hiển thị giá trị trước khi sửa kèm dấu trừ `- OLD`.
+       * Ô màu Xanh (After / Mới) hiển thị giá trị sau khi sửa kèm dấu cộng `+ NEW`.
+       * Tự động nhận diện và định dạng tiền tệ Việt Nam Đồng (`₫`), ngày tháng (ISO Date), nhãn trạng thái (Completed, In Progress, Delayed) và cờ Boolean.
+       * Gắn huy hiệu rõ ràng: `ADDED` (Thêm mới), `MODIFIED` (Chỉnh sửa), `REMOVED` (Xóa bỏ).
+     + **Side-by-Side JSON**: Hiển thị bảng so sánh 2 cột song song giữa trạng thái cũ và trạng thái mới.
+     + **Raw Event Inspector**: Xem toàn bộ đối tượng sự kiện kiểm toán và hỗ trợ 1-click **Copy JSON** vào bộ nhớ tạm.
+     + **Bộ Lọc Nhanh (Field Filter)**: Cho phép gõ tên trường (như `budget`, `status`, `finish`, v.v.) để tìm nhanh biến động khi tài liệu có nhiều thông tin.
+
+

@@ -279,4 +279,5 @@ export interface AuditLog {
   docPath: string;
   docId: string;
   data: any;
+  previousData?: any;
 }

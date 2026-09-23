@@ -10,6 +10,10 @@ export const useAppStore = create<AppState>((...a) => ({
   ...createOptimisticSlice(...a),
 }));
 
+if (typeof window !== 'undefined') {
+  (window as any).__TAKA_APP_STORE__ = useAppStore;
+}
+
 export type { AppState };
 export { useUISlice, useDataSlice, useOptimisticSlice, useStoreShallow } from "./storeSelectors";
 
