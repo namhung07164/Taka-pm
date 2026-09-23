@@ -1212,7 +1212,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
         })}
       </div>
 
-      <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-4 p-4 relative">
+      <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-2.5 p-2.5 sm:p-4 relative">
         {paginatedProjects.map((p, idx) => {
           const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
           
@@ -1290,7 +1290,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
               )}
 
               <div 
-                className={`${bgCardTint} ${borderAccentClass} rounded-2xl border border-slate-200/90 dark:border-[#38383b] shadow-md hover:shadow-lg p-4 flex flex-col gap-2.5 cursor-pointer relative transition-all active:scale-[0.99] touch-manipulation ${
+                className={`${bgCardTint} ${borderAccentClass} rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3 flex flex-col gap-2 cursor-pointer relative transition-all active:scale-[0.99] touch-manipulation ${
                   isSource ? 'opacity-40 ring-2 ring-dashed ring-blue-400' : ''
                 } ${isTarget ? 'bg-blue-50/60 dark:bg-blue-950/30' : ''} ${
                   isJustDropped ? 'ring-2 ring-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40' : isPinned ? 'ring-2 ring-blue-500/50' : ''
@@ -1310,79 +1310,72 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                   </div>
                 )}
 
-                {/* Top controls: Pin + Status Badge */}
-                <div className="flex items-center justify-between gap-2 w-full">
+                {/* Top controls: Badges on left, Status Badge on top-right, Pin Controls below Status Badge */}
+                <div className="flex items-start justify-between gap-2 w-full">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {p.year && (
-                      <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                         {p.year}
                       </span>
                     )}
                     {p.store && (
-                      <span className={`px-2 py-0.5 text-[11px] rounded-md border ${storeBadgeClass}`}>
+                      <span className={`px-1.5 py-0.5 text-[10px] rounded border font-bold ${storeBadgeClass}`}>
                         {p.store}
                       </span>
                     )}
-                    <span className="px-2 py-0.5 text-[11px] font-bold font-mono rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
                       {p.code}
                     </span>
                     {p.location && (
-                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                         • {p.location}
                       </span>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div className={`text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg border whitespace-nowrap ${statusBadgeClass}`}>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-md border whitespace-nowrap ${statusBadgeClass}`}>
                       {status}
                     </div>
                     {p.id && (
-                      <button
-                        type="button"
-                        onClick={(e) => handlePinToggle(e, p.id as string)}
-                        className={`p-1.5 rounded-lg transition-colors active:scale-95 touch-manipulation ${isPinned ? 'text-blue-600 bg-blue-100/80 dark:bg-blue-900/40' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                        title={isPinned ? "Unpin" : "Pin to top"}
-                      >
-                        <Pin className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />
-                      </button>
+                      <div className="flex items-center bg-slate-100/90 dark:bg-slate-800/90 rounded-md p-0.5 border border-slate-200/80 dark:border-slate-700/80">
+                        <button
+                          type="button"
+                          onClick={(e) => handlePinToggle(e, p.id as string)}
+                          className={`p-1 rounded transition-colors active:scale-95 touch-manipulation ${isPinned ? 'text-blue-600 bg-white dark:bg-slate-700 shadow-2xs' : 'text-slate-400 hover:text-blue-600'}`}
+                          title={isPinned ? "Unpin" : "Pin to top"}
+                        >
+                          <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
+                        </button>
+                        {isPinned && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={pinnedIndex === 0}
+                              onClick={(e) => handleMovePinned(e, p.id as string, 'up')}
+                              className={`p-0.5 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === 0 ? 'opacity-30 pointer-events-none' : 'active:scale-95'}`}
+                              title={t('Move up')}
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pinnedIndex === pinnedProjects.length - 1}
+                              onClick={(e) => handleMovePinned(e, p.id as string, 'down')}
+                              className={`p-0.5 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === pinnedProjects.length - 1 ? 'opacity-30 pointer-events-none' : 'active:scale-95'}`}
+                              title={t('Move down')}
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
 
-                {/* Pinned ordering buttons */}
-                {p.id && isPinned && (
-                  <div className="flex items-center justify-end gap-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg p-1 border border-slate-200 dark:border-slate-700 self-end">
-                    <button
-                      type="button"
-                      disabled={pinnedIndex === 0}
-                      onClick={(e) => handleMovePinned(e, p.id as string, 'up')}
-                      className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === 0 ? 'opacity-30 pointer-events-none' : ''}`}
-                      title={t('Move up')}
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={pinnedIndex === pinnedProjects.length - 1}
-                      onClick={(e) => handleMovePinned(e, p.id as string, 'down')}
-                      className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === pinnedProjects.length - 1 ? 'opacity-30 pointer-events-none' : ''}`}
-                      title={t('Move down')}
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </button>
-                    <div 
-                      className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-blue-600 transition-colors flex items-center justify-center rounded" 
-                      title={t('Drag to reorder pinned project')}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <GripVertical className="w-4 h-4" />
-                    </div>
-                  </div>
-                )}
-
                 {/* Project Title */}
-                <div className="font-bold text-slate-900 dark:text-[#ffffff] text-base leading-snug">
+                <div className="font-bold text-slate-900 dark:text-[#ffffff] text-sm sm:text-base leading-snug">
                   {p.name}
                   {p.linkCodes && p.linkCodes !== p.code && (
                     <span className="text-xs text-slate-500 dark:text-slate-400 font-normal ml-1.5">
@@ -1391,57 +1384,105 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                   )}
                 </div>
 
-                {/* Dates Grid Box */}
-                <div className="grid grid-cols-3 gap-2 my-0.5 p-2.5 rounded-xl bg-slate-50/90 dark:bg-[#141416]/80 border border-slate-200/60 dark:border-[#333336] text-xs">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{t('Start')}</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatDisplayDateMain(p.computedTakStart || p.start)}</span>
+                {/* Dates Section: Start in Blue, Finish in Pink, Opening in Emerald (matching Task Detail) */}
+                <div className="grid grid-cols-3 gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50/90 dark:bg-[#161618] border border-slate-200/60 dark:border-[#2e2e32] text-xs">
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight leading-none mb-1">{t('Start')}</span>
+                    {(() => {
+                      const formatted = formatDisplayDateMain(p.computedTakStart || p.start);
+                      const commaIdx = formatted.indexOf(',');
+                      if (commaIdx !== -1) {
+                        return (
+                          <span className="font-mono text-xs font-bold text-blue-600 dark:text-[#8ab4f8] leading-tight block">
+                            <span className="block">{formatted.slice(0, commaIdx + 1)}</span>
+                            <span className="block">{formatted.slice(commaIdx + 1).trim()}</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="font-mono text-xs font-bold text-blue-600 dark:text-[#8ab4f8] leading-tight break-words whitespace-normal">
+                          {formatted || '-'}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{t('Finish')}</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatDisplayDateMain(p.computedTakCompl || p.handover || (p as any).takCompl)}</span>
+                  <div className="flex flex-col min-w-0 border-x border-slate-200/60 dark:border-[#2e2e32] px-2">
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight leading-none mb-1">{t('Finish')}</span>
+                    {(() => {
+                      const formatted = formatDisplayDateMain(p.computedTakCompl || p.handover || (p as any).takCompl);
+                      const commaIdx = formatted.indexOf(',');
+                      if (commaIdx !== -1) {
+                        return (
+                          <span className="font-mono text-xs font-bold text-pink-600 dark:text-pink-400 leading-tight block">
+                            <span className="block">{formatted.slice(0, commaIdx + 1)}</span>
+                            <span className="block">{formatted.slice(commaIdx + 1).trim()}</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="font-mono text-xs font-bold text-pink-600 dark:text-pink-400 leading-tight break-words whitespace-normal">
+                          {formatted || '-'}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{t('Opening')}</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatDisplayDateMain(p.computedOpening || p.opening)}</span>
+                  <div className="flex flex-col min-w-0 pl-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight leading-none mb-1">{t('Opening')}</span>
+                    {(() => {
+                      const formatted = formatDisplayDateMain(p.computedOpening || p.opening);
+                      const commaIdx = formatted.indexOf(',');
+                      if (commaIdx !== -1) {
+                        return (
+                          <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-tight block">
+                            <span className="block">{formatted.slice(0, commaIdx + 1)}</span>
+                            <span className="block">{formatted.slice(commaIdx + 1).trim()}</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 leading-tight break-words whitespace-normal">
+                          {formatted || '-'}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                {/* Progress Bars */}
-                <div className="flex flex-col gap-1.5 mt-1">
+                {/* Progress Bars: Plan bar stacked directly on top of Act bar for easy direct visual comparison */}
+                <div className="flex flex-col gap-1.5 py-0.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase w-[60px] shrink-0">Plan Prg:</span>
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight w-11 shrink-0">Plan:</span>
                     <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
                       <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${progressPercent}%` }}></div>
                     </div>
-                    <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 w-9 text-right">{progressPercent}%</span>
+                    <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 w-9 text-right shrink-0">{progressPercent}%</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase w-[60px] shrink-0">Act Prg:</span>
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight w-11 shrink-0">Act:</span>
                     <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
                       <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${actProgressPercent}%` }}></div>
                     </div>
-                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-9 text-right">{actProgressPercent}%</span>
+                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-9 text-right shrink-0">{actProgressPercent}%</span>
                   </div>
                 </div>
                 
                 {/* Active Subtasks / Description Detail Box */}
                 {(taskLines.length > 0 || p.detail) && (
-                  <div className="mt-1 bg-slate-50/90 dark:bg-[#141416]/80 rounded-xl p-3 border border-slate-200/60 dark:border-[#333336] text-sm shadow-2xs flex flex-col gap-2">
+                  <div className="bg-slate-50/90 dark:bg-[#161618] rounded-lg p-2 border border-slate-200/60 dark:border-[#2e2e32] text-xs shadow-2xs flex flex-col gap-1">
                     {taskLines.length > 0 && (
-                      <div className="flex flex-col gap-1">
-                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('Detail')}</div>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('Detail')}</div>
                         {taskLines.map((line, idx) => (
-                          <div key={idx} className={`font-medium text-xs ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
+                          <div key={idx} className={`font-medium text-xs leading-tight ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
                             • {line}
                           </div>
                         ))}
                       </div>
                     )}
                     {p.detail && (
-                      <div className="flex flex-col gap-1">
-                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('Description')}</div>
-                        <div className="text-slate-600 dark:text-slate-300 text-xs whitespace-pre-wrap">{p.detail}</div>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('Description')}</div>
+                        <div className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">{p.detail}</div>
                       </div>
                     )}
                   </div>

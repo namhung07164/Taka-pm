@@ -140,7 +140,36 @@ const ScannerInner: React.FC<QRScannerModalProps> = ({ isOpen, onClose, onScan }
             targetCameraConfig = availableDevices[chosenIdx].id;
           }
         } catch (camErr) {
-          console.warn("Could not enumerate cameras directly, will try facingMode fallbacks", camErr);
+          console.warn("Could not enumerate cameras directly, will try permission prompt or facingMode fallbacks", camErr);
+        }
+
+        // Active permission request if no camera device ID found yet
+        if (!targetCameraConfig && navigator?.mediaDevices?.getUserMedia) {
+          try {
+            const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            tempStream.getTracks().forEach((track) => {
+              try { track.stop(); } catch (e) {}
+            });
+            if (startAttemptRef.current !== attemptId || isComponentUnmounted.current) {
+              await stopActiveScanner();
+              return;
+            }
+            const recheckedDevices = await Html5Qrcode.getCameras().catch(() => []);
+            if (recheckedDevices && recheckedDevices.length > 0) {
+              setCameras(recheckedDevices);
+              const backIndex = recheckedDevices.findIndex(d => 
+                d.label.toLowerCase().includes('back') || 
+                d.label.toLowerCase().includes('rear') || 
+                d.label.toLowerCase().includes('sau') ||
+                d.label.toLowerCase().includes('environment')
+              );
+              const chosenIdx = backIndex >= 0 ? backIndex : 0;
+              setCurrentCameraIndex(chosenIdx);
+              targetCameraConfig = recheckedDevices[chosenIdx].id;
+            }
+          } catch (permErr) {
+            console.warn("Active getUserMedia pre-check notice:", permErr);
+          }
         }
       }
 
@@ -195,8 +224,15 @@ const ScannerInner: React.FC<QRScannerModalProps> = ({ isOpen, onClose, onScan }
               await stopActiveScanner();
               return;
             }
-            // Fallback 3: Generic camera constraint
-            await html5QrCode.start({ facingMode: undefined } as any, scanConfig, onScanSuccess, () => {});
+            // Fallback 3: Re-query getCameras() in case permission was just granted
+            const devs = await Html5Qrcode.getCameras().catch(() => []);
+            if (devs && devs.length > 0) {
+              setCameras(devs);
+              setCurrentCameraIndex(0);
+              await html5QrCode.start(devs[0].id, scanConfig, onScanSuccess, () => {});
+            } else {
+              throw userErr;
+            }
           }
         }
       }
@@ -218,8 +254,8 @@ const ScannerInner: React.FC<QRScannerModalProps> = ({ isOpen, onClose, onScan }
       const msg = err?.message || String(err || "");
       if (msg.includes("NotAllowedError") || msg.includes("Permission denied") || msg.includes("denied")) {
         setError("Quyền truy cập Camera bị từ chối trong trình duyệt. Vui lòng cấp quyền Camera.");
-      } else if (msg.includes("NotFoundError") || msg.includes("DevicesNotFoundError")) {
-        setError("Không tìm thấy thiết bị Camera/Webcam nào trên máy tính.");
+      } else if (msg.includes("NotFoundError") || msg.includes("DevicesNotFoundError") || msg.includes("OverconstrainedError")) {
+        setError("Không tìm thấy thiết bị Camera/Webcam phù hợp trên thiết bị này.");
       } else if (msg.includes("NotReadableError") || msg.includes("TrackStartError")) {
         setError("Camera đang được ứng dụng khác (Zoom, Teams...) sử dụng.");
       } else if (msg.includes("clientWidth") || msg.includes("null")) {
