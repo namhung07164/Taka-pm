@@ -107,7 +107,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       {visibleColumns.includes('no') && (
         <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-xs font-bold text-slate-700 dark:text-[#c3c3c3]">{p.no}</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
