@@ -32,6 +32,7 @@ export function AuditLogTab() {
   const [actionFilter, setActionFilter] = useState<string>('ALL');
   const [entityFilter, setEntityFilter] = useState<string>('ALL');
   const [userEmailFilter, setUserEmailFilter] = useState<string>('');
+  const [indexWarningUrl, setIndexWarningUrl] = useState<string | null>(null);
 
   const fetchLogs = async (direction: 'next' | 'prev' | 'initial' = 'initial') => {
     try {
@@ -65,8 +66,54 @@ export function AuditLogTab() {
         }
       }
 
-      const q = query(collection(db, 'audit_logs'), ...qConstraints);
-      const snapshot = await getDocs(q);
+      let snapshot;
+      try {
+        const q = query(collection(db, 'audit_logs'), ...qConstraints);
+        snapshot = await getDocs(q);
+      } catch (queryErr: any) {
+        const msg = queryErr?.message || '';
+        // If Firestore complains about missing composite index, fallback gracefully to in-memory filter
+        if (msg.includes('requires an index') || msg.includes('indexes?create_composite') || queryErr?.code === 'failed-precondition') {
+          console.warn('Firestore composite index not found, falling back to in-memory filtering:', msg);
+          
+          const matchUrl = msg.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
+          if (matchUrl && matchUrl[0]) {
+            setIndexWarningUrl(matchUrl[0]);
+          }
+
+          // Fetch recent records by timestamp only (single-field index, always works natively without index errors)
+          const fallbackQ = query(collection(db, 'audit_logs'), orderBy('timestamp', 'desc'), limit(200));
+          const fallbackSnap = await getDocs(fallbackQ);
+          
+          let filteredLogs: AuditLog[] = [];
+          fallbackSnap.forEach(doc => {
+            const data = doc.data();
+            let keep = true;
+            if (actionFilter !== 'ALL' && data.action !== actionFilter) keep = false;
+            if (entityFilter !== 'ALL' && data.entityType !== entityFilter) keep = false;
+            if (userEmailFilter.trim()) {
+              const term = userEmailFilter.trim().toLowerCase();
+              const email = (data.userEmail || '').toLowerCase();
+              const uid = (data.userId || '').toLowerCase();
+              if (!email.includes(term) && !uid.includes(term)) keep = false;
+            }
+            if (keep) {
+              filteredLogs.push({ id: doc.id, ...data } as AuditLog);
+            }
+          });
+
+          setLogs(filteredLogs.slice(0, PAGE_SIZE));
+          setHasMore(filteredLogs.length > PAGE_SIZE);
+          setFirstVisible(filteredLogs.length > 0 ? filteredLogs[0] : null);
+          setLastVisible(filteredLogs.length > 0 ? filteredLogs[Math.min(PAGE_SIZE - 1, filteredLogs.length - 1)] : null);
+          setCurrentPage(1);
+          setPageHistory([]);
+          setLoading(false);
+          setError(null);
+          return;
+        }
+        throw queryErr;
+      }
 
       const newLogs: AuditLog[] = [];
       snapshot.forEach(doc => {
@@ -205,6 +252,35 @@ export function AuditLogTab() {
             </div>
           </div>
         </div>
+
+        {indexWarningUrl && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
+            <div className="flex items-center gap-2">
+              <span className="font-bold">⚡ In-Memory Filtering Active:</span>
+              <span>Firestore composite index is being synced. Logs are automatically filtered in memory without interruption.</span>
+            </div>
+            <a
+              href={indexWarningUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+            >
+              Build Index in Firebase Console ↗
+            </a>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-xl p-3 text-xs text-rose-800 dark:text-rose-200 flex items-center justify-between">
+            <span>{error}</span>
+            <button
+              onClick={() => fetchLogs('initial')}
+              className="font-bold underline hover:no-underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         <div className="bg-white dark:bg-[#18181a] rounded-2xl shadow-sm border border-slate-200 dark:border-[#333336] overflow-hidden flex flex-col">
           <div className="overflow-x-auto">
