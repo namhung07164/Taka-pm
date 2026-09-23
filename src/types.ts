@@ -275,6 +275,7 @@ export interface AuditLog {
   userId: string;
   userEmail: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
+  entityType?: string;
   docPath: string;
   docId: string;
   data: any;

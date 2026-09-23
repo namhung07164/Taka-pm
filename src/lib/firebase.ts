@@ -142,23 +142,49 @@ function writeAuditLogAsync(action: 'CREATE' | 'UPDATE' | 'DELETE', docRef: any,
     if (path.includes('audit_logs') || path.includes('device_telemetry') || path.includes('taka_config')) return;
     
     const user = auth.currentUser;
-    const userId = user?.uid || 'anonymous';
-    const userEmail = user?.email || 'unknown';
+    let userId = user?.uid;
+    let userEmail = user?.email;
+
+    if (!userId || !userEmail) {
+      try {
+        const storedAuth = typeof window !== 'undefined' ? localStorage.getItem('taka_auth_v1') : null;
+        if (storedAuth) {
+          const parsed = JSON.parse(storedAuth);
+          if (parsed && typeof parsed === 'object') {
+            userId = userId || parsed.id || parsed.username;
+            userEmail = userEmail || parsed.email || parsed.username;
+          }
+        }
+      } catch {}
+    }
+
+    userId = userId || 'system';
+    userEmail = userEmail || 'anonymous';
     
     const dbInstance = docRef.firestore;
     const logRef = doc(collection(dbInstance, 'audit_logs'));
     
+    // Determine entity type from path
+    let entityType = 'other';
+    if (path.includes('taka_projects')) entityType = 'project';
+    else if (path.includes('taka_tasks')) entityType = 'task';
+    else if (path.includes('taka_costs')) entityType = 'cost';
+    else if (path.includes('taka_delegation_groups')) entityType = 'delegation';
+    else if (path.includes('taka_users')) entityType = 'user';
+    else if (path.includes('taka_rules')) entityType = 'rule';
+
     const logData = {
       timestamp: Date.now(),
       userId,
       userEmail,
       action,
+      entityType,
       docPath: path,
       docId: docRef.id,
       data: cleanDataForAudit(data)
     };
     
-    // Fire and forget
+    // Fire and forget (Optimistic UI unaffected)
     firestoreSetDoc(logRef, logData).catch(err => {
       console.warn("Audit log failed:", err);
     });

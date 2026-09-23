@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable audit log event capturing all data mutations for enterprise compliance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique log document ID" },
+        "timestamp": { "type": "number", "description": "Epoch timestamp in milliseconds" },
+        "userId": { "type": "string", "description": "User identifier who performed the mutation" },
+        "userEmail": { "type": "string", "description": "Email or display name of the user" },
+        "action": { "type": "string", "enum": ["CREATE", "UPDATE", "DELETE"], "description": "Type of mutation" },
+        "docPath": { "type": "string", "description": "Target document Firestore path" },
+        "docId": { "type": "string", "description": "Target document identifier" },
+        "data": { "type": "string", "description": "Sanitized snapshot or payload snippet of the mutation" }
+      },
+      "required": ["timestamp", "userId", "userEmail", "action", "docPath", "docId"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Takashimaya store project management document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique project identifier" },
+        "name": { "type": "string", "description": "Project title" },
+        "code": { "type": "string", "description": "Project unique code" },
+        "store": { "type": "string", "description": "Takashimaya store name" },
+        "year": { "type": "number", "description": "Fiscal year" },
+        "status": { "type": "string", "description": "Project completion status" },
+        "budget": { "type": "number", "description": "Total allocated budget" },
+        "supportingFee": { "type": "number", "description": "Tenant supporting fee" }
+      },
+      "required": ["name", "code", "store"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Schedule task under a project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique task identifier" },
+        "projectId": { "type": "string", "description": "Parent project ID" },
+        "task": { "type": "string", "description": "Task name" },
+        "status": { "type": "string", "description": "Task status" },
+        "start": { "type": "string", "description": "Planned start date" },
+        "finish": { "type": "string", "description": "Planned finish date" }
+      },
+      "required": ["projectId", "task"]
+    },
+    "Cost": {
+      "title": "Cost",
+      "description": "Financial cost item linked to a project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Cost identifier" },
+        "projectId": { "type": "string", "description": "Associated project ID" },
+        "amount": { "type": "number", "description": "Cost numerical amount" },
+        "category": { "type": "string", "description": "Cost item category" }
+      },
+      "required": ["projectId", "amount"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "User profile with role-based access control",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User account ID" },
+        "username": { "type": "string", "description": "Username or email" },
+        "role": { "type": "string", "enum": ["admin", "manager", "staff", "guest", "viewer"], "description": "RBAC Role" }
+      },
+      "required": ["id", "username", "role"]
+    }
+  },
+  "firestore": {
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Immutable append-only system audit log collection"
+    },
+    "/artifacts/{appId}/public/data/taka_projects/{projectId}": {
+      "schema": "Project",
+      "description": "Projects collection for Takashimaya Project Management"
+    },
+    "/artifacts/{appId}/public/data/taka_tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks sub-collection"
+    },
+    "/artifacts/{appId}/public/data/taka_costs/{costId}": {
+      "schema": "Cost",
+      "description": "Financial costs collection"
+    },
+    "/artifacts/{appId}/public/data/taka_users/{userId}": {
+      "schema": "AppUser",
+      "description": "User directory and role mappings"
+    }
+  }
+}
