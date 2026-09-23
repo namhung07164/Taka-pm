@@ -1216,11 +1216,41 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
         {paginatedProjects.map((p, idx) => {
           const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
           
-          let statusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
-          if (status === 'Completed') statusColorClass = 'bg-green-50 dark:bg-emerald-950/40 text-green-600 dark:text-emerald-400 border-green-200 dark:border-emerald-800/60';
-          else if (status === 'Handover') statusColorClass = 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-800/60';
-          else if (status === 'On process') statusColorClass = 'bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800/60';
-          else if (status === 'Canceled') statusColorClass = 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/60';
+          let statusBadgeClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+          let borderAccentClass = 'border-l-4 border-l-slate-400';
+          let bgCardTint = 'bg-white dark:bg-[#1e1e20]';
+
+          if (status === 'Completed') {
+            statusBadgeClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white shadow-2xs font-extrabold border-emerald-500';
+            borderAccentClass = 'border-l-[5px] border-l-emerald-500';
+            bgCardTint = 'bg-emerald-50/25 dark:bg-emerald-950/15';
+          } else if (status === 'Handover') {
+            statusBadgeClass = 'bg-blue-600 text-white dark:bg-blue-600 dark:text-white shadow-2xs font-extrabold border-blue-500';
+            borderAccentClass = 'border-l-[5px] border-l-blue-500';
+            bgCardTint = 'bg-blue-50/25 dark:bg-blue-950/15';
+          } else if (status === 'On process') {
+            statusBadgeClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white shadow-2xs font-extrabold border-amber-400';
+            borderAccentClass = 'border-l-[5px] border-l-amber-500';
+            bgCardTint = 'bg-amber-50/30 dark:bg-amber-950/20';
+          } else if (status === 'Canceled') {
+            statusBadgeClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white shadow-2xs font-extrabold border-rose-500';
+            borderAccentClass = 'border-l-[5px] border-l-rose-500';
+            bgCardTint = 'bg-rose-50/25 dark:bg-rose-950/15';
+          } else {
+            statusBadgeClass = 'bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white shadow-2xs font-extrabold border-indigo-500';
+            borderAccentClass = 'border-l-[5px] border-l-indigo-500';
+            bgCardTint = 'bg-indigo-50/25 dark:bg-indigo-950/15';
+          }
+
+          const storeUpper = (p.store || '').toUpperCase();
+          let storeBadgeClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+          if (storeUpper === 'HCM') {
+            storeBadgeClass = 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200/80 dark:border-blue-800 font-bold';
+          } else if (storeUpper === 'HN') {
+            storeBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800 font-bold';
+          } else if (storeUpper) {
+            storeBadgeClass = 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-200/80 dark:border-amber-800 font-bold';
+          }
 
           const progressPercent = p.computedPlanProgress ?? 0;
           const actProgressPercent = p.computedActProgress ?? 0;
@@ -1253,17 +1283,17 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
               {/* Insertion line indicator on mobile when dragging above */}
               {draggedPinnedId && isTarget && dragOverTarget.position === 'above' && (
                 <div className="w-full h-1 bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-600 rounded-full shadow-[0_0_8px_rgba(37,99,235,0.8)] -my-1 flex items-center justify-center">
-                  <span className="bg-blue-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow">
+                  <span className="bg-blue-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
                     ▲ {t('Insert above')}: {p.code}
                   </span>
                 </div>
               )}
 
               <div 
-                className={`bg-white dark:bg-[#1e1e20] rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm p-4 flex flex-col gap-2 cursor-pointer relative transition-all ${
+                className={`${bgCardTint} ${borderAccentClass} rounded-2xl border border-slate-200/90 dark:border-[#38383b] shadow-md hover:shadow-lg p-4 flex flex-col gap-2.5 cursor-pointer relative transition-all active:scale-[0.99] touch-manipulation ${
                   isSource ? 'opacity-40 ring-2 ring-dashed ring-blue-400' : ''
-                } ${isTarget ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''} ${
-                  isJustDropped ? 'ring-2 ring-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30' : isPinned ? 'ring-2 ring-blue-500/50' : ''
+                } ${isTarget ? 'bg-blue-50/60 dark:bg-blue-950/30' : ''} ${
+                  isJustDropped ? 'ring-2 ring-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40' : isPinned ? 'ring-2 ring-blue-500/50' : ''
                 }`}
                 onClick={() => onProjectClick(p)}
                 draggable={isPinned}
@@ -1274,99 +1304,144 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
               >
                 {/* Success badge for mobile */}
                 {isJustDropped && (
-                  <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">
+                  <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>{t('Position updated!')}</span>
                   </div>
                 )}
 
-                <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 z-10">
-                  <div className="flex items-center gap-1.5">
+                {/* Top controls: Pin + Status Badge */}
+                <div className="flex items-center justify-between gap-2 w-full">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {p.year && (
+                      <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                        {p.year}
+                      </span>
+                    )}
+                    {p.store && (
+                      <span className={`px-2 py-0.5 text-[11px] rounded-md border ${storeBadgeClass}`}>
+                        {p.store}
+                      </span>
+                    )}
+                    <span className="px-2 py-0.5 text-[11px] font-bold font-mono rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
+                      {p.code}
+                    </span>
+                    {p.location && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        • {p.location}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className={`text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg border whitespace-nowrap ${statusBadgeClass}`}>
+                      {status}
+                    </div>
                     {p.id && (
                       <button
                         type="button"
                         onClick={(e) => handlePinToggle(e, p.id as string)}
-                        className={`p-1 rounded-md transition-colors ${isPinned ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                        className={`p-1.5 rounded-lg transition-colors active:scale-95 touch-manipulation ${isPinned ? 'text-blue-600 bg-blue-100/80 dark:bg-blue-900/40' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                         title={isPinned ? "Unpin" : "Pin to top"}
                       >
                         <Pin className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />
                       </button>
                     )}
-                    <div className={`text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap ${statusColorClass}`}>
-                      {status}
+                  </div>
+                </div>
+
+                {/* Pinned ordering buttons */}
+                {p.id && isPinned && (
+                  <div className="flex items-center justify-end gap-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg p-1 border border-slate-200 dark:border-slate-700 self-end">
+                    <button
+                      type="button"
+                      disabled={pinnedIndex === 0}
+                      onClick={(e) => handleMovePinned(e, p.id as string, 'up')}
+                      className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === 0 ? 'opacity-30 pointer-events-none' : ''}`}
+                      title={t('Move up')}
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pinnedIndex === pinnedProjects.length - 1}
+                      onClick={(e) => handleMovePinned(e, p.id as string, 'down')}
+                      className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === pinnedProjects.length - 1 ? 'opacity-30 pointer-events-none' : ''}`}
+                      title={t('Move down')}
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                    <div 
+                      className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-blue-600 transition-colors flex items-center justify-center rounded" 
+                      title={t('Drag to reorder pinned project')}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <GripVertical className="w-4 h-4" />
                     </div>
                   </div>
-                  {p.id && isPinned && (
-                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700">
-                      <button
-                        type="button"
-                        disabled={pinnedIndex === 0}
-                        onClick={(e) => handleMovePinned(e, p.id as string, 'up')}
-                        className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === 0 ? 'opacity-30 pointer-events-none' : ''}`}
-                        title={t('Move up')}
-                      >
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={pinnedIndex === pinnedProjects.length - 1}
-                        onClick={(e) => handleMovePinned(e, p.id as string, 'down')}
-                        className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${pinnedIndex === pinnedProjects.length - 1 ? 'opacity-30 pointer-events-none' : ''}`}
-                        title={t('Move down')}
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <div 
-                        className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-blue-600 transition-colors flex items-center justify-center rounded" 
-                        title={t('Drag to reorder pinned project')}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <GripVertical className="w-4 h-4" />
-                      </div>
-                    </div>
+                )}
+
+                {/* Project Title */}
+                <div className="font-bold text-slate-900 dark:text-[#ffffff] text-base leading-snug">
+                  {p.name}
+                  {p.linkCodes && p.linkCodes !== p.code && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-normal ml-1.5">
+                      ({p.linkCodes})
+                    </span>
                   )}
                 </div>
-                <div className="font-bold text-slate-900 dark:text-[#ffffff] text-base leading-snug pr-32">
-                  <span className="text-slate-500 dark:text-[#cbd5e1] font-semibold">{p.year}</span> - <span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#60a5fa] font-bold' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-[#f87171] font-bold' : ''}>{p.store}</span> - <span className="text-slate-500 dark:text-[#cbd5e1] font-semibold">{p.location}</span> - <span className="text-blue-600 dark:text-[#93c5fd] font-bold font-mono">{p.code}</span>{p.linkCodes && p.linkCodes !== p.code && <span className="text-xs text-slate-500 dark:text-[#cbd5e1] font-normal ml-1">({p.linkCodes})</span>} - {p.name}
+
+                {/* Dates Grid Box */}
+                <div className="grid grid-cols-3 gap-2 my-0.5 p-2.5 rounded-xl bg-slate-50/90 dark:bg-[#141416]/80 border border-slate-200/60 dark:border-[#333336] text-xs">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{t('Start')}</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatDisplayDateMain(p.computedTakStart || p.start)}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{t('Finish')}</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatDisplayDateMain(p.computedTakCompl || p.handover || (p as any).takCompl)}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">{t('Opening')}</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{formatDisplayDateMain(p.computedOpening || p.opening)}</span>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-700 dark:text-[#f1f5f9] font-mono flex flex-wrap gap-x-3 gap-y-1 mt-1">
-                  <span><span className="font-semibold text-slate-500 dark:text-[#cbd5e1] font-sans">{t('Start')}:</span> {formatDisplayDateMain(p.computedTakStart || p.start)}</span>
-                  <span><span className="font-semibold text-slate-500 dark:text-[#cbd5e1] font-sans">{t('Finish')}:</span> {formatDisplayDateMain(p.computedTakCompl || p.handover || (p as any).takCompl)}</span>
-                  <span><span className="font-semibold text-slate-500 dark:text-[#cbd5e1] font-sans">{t('Opening')}:</span> {formatDisplayDateMain(p.computedOpening || p.opening)}</span>
-                </div>
-                <div className="flex flex-col gap-1 mt-2">
+
+                {/* Progress Bars */}
+                <div className="flex flex-col gap-1.5 mt-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[60px]">Plan Prg:</span>
-                    <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                      <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase w-[60px] shrink-0">Plan Prg:</span>
+                    <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+                      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${progressPercent}%` }}></div>
                     </div>
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right">{progressPercent}%</span>
+                    <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 w-9 text-right">{progressPercent}%</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[60px]">Act Prg:</span>
-                    <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                      <div className="bg-emerald-500 h-2 rounded-full transition-all duration-300" style={{ width: `${actProgressPercent}%` }}></div>
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase w-[60px] shrink-0">Act Prg:</span>
+                    <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+                      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${actProgressPercent}%` }}></div>
                     </div>
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right">{actProgressPercent}%</span>
+                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-9 text-right">{actProgressPercent}%</span>
                   </div>
                 </div>
                 
+                {/* Active Subtasks / Description Detail Box */}
                 {(taskLines.length > 0 || p.detail) && (
-                  <div className="mt-2 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-lg p-3 border border-slate-200 dark:border-[#444446] text-sm shadow-sm flex flex-col gap-2">
+                  <div className="mt-1 bg-slate-50/90 dark:bg-[#141416]/80 rounded-xl p-3 border border-slate-200/60 dark:border-[#333336] text-sm shadow-2xs flex flex-col gap-2">
                     {taskLines.length > 0 && (
                       <div className="flex flex-col gap-1">
-                        <div className="text-xs font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">{t('Detail')}</div>
+                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('Detail')}</div>
                         {taskLines.map((line, idx) => (
-                          <div key={idx} className={`font-medium ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600'}`}>
-                            {line}
+                          <div key={idx} className={`font-medium text-xs ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}>
+                            • {line}
                           </div>
                         ))}
                       </div>
                     )}
                     {p.detail && (
                       <div className="flex flex-col gap-1">
-                        <div className="text-xs font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">{t('Description')}</div>
-                        <div className="text-slate-600 dark:text-[#a3a3a3] whitespace-pre-wrap">{p.detail}</div>
+                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t('Description')}</div>
+                        <div className="text-slate-600 dark:text-slate-300 text-xs whitespace-pre-wrap">{p.detail}</div>
                       </div>
                     )}
                   </div>
@@ -1376,7 +1451,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
               {/* Insertion line indicator on mobile when dragging below */}
               {draggedPinnedId && isTarget && dragOverTarget.position === 'below' && (
                 <div className="w-full h-1 bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-600 rounded-full shadow-[0_0_8px_rgba(37,99,235,0.8)] -my-1 flex items-center justify-center">
-                  <span className="bg-blue-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow">
+                  <span className="bg-blue-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
                     ▼ {t('Insert below')}: {p.code}
                   </span>
                 </div>
