@@ -10,10 +10,12 @@ import { ResizableHeader } from './ResizableHeader';
 import { ColumnAdder } from './ColumnAdder';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { scheduleDependentTasks } from '../lib/ganttUtils';
-import { ConfirmModal } from './ConfirmModal';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 
 interface TaskDelegationTabProps {
   onBackFromFocus?: () => void;
@@ -1786,13 +1788,17 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
 
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
+      <React.Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </React.Suspense>
       {focusTarget && (
         <>
           <div className="bg-yellow-50 dark:bg-yellow-900/40 border-b border-yellow-200 dark:border-yellow-700/50 px-4 py-2 flex items-center justify-between sticky top-0 z-50 shadow-sm print:hidden">

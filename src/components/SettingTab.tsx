@@ -1,20 +1,22 @@
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import { useState } from "react";
+import React, { useState, Suspense } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { Plus, Trash2, Smartphone, RefreshCw, Bell, Database, Sparkles, Activity, ChevronDown, ChevronUp, Calendar, FolderOutput, Monitor } from "lucide-react";
 import { NotificationRule, AppUser } from "../types";
 import { cn, generateId } from "../lib/utils";
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
-import {    db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
-import { ConfirmModal } from "./ConfirmModal";
+import { db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
 import { requestNotificationPermission } from "../lib/notifications";
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { clearAllIDB } from "../lib/idb";
 import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
-import { DesktopOptimizationModal } from "./DesktopOptimizationModal";
 import { syncAllProjectsTaskCountsToFirestore } from "../lib/projectDatesService";
 import { bumpConfigVersion } from "../lib/configCacheService";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
+const DesktopOptimizationModal = lazyWithRetry(() => import('./DesktopOptimizationModal').then(m => ({ default: m.DesktopOptimizationModal })), 'DesktopOptimizationModal');
 
 interface SettingTabProps {
   rules: NotificationRule[];
@@ -773,13 +775,17 @@ export function SettingTab({ rules}: SettingTabProps) {
 
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm overflow-hidden overflow-y-auto">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
+      <Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </Suspense>
       <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0">
         <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{t("Settings")}</h2>
       </div>
@@ -1144,10 +1150,14 @@ export function SettingTab({ rules}: SettingTabProps) {
       </>
     )}
 
-    <DesktopOptimizationModal 
-      isOpen={showDesktopOptModal} 
-      onClose={() => setShowDesktopOptModal(false)} 
-    />
+    <Suspense fallback={null}>
+      {showDesktopOptModal && (
+        <DesktopOptimizationModal 
+          isOpen={showDesktopOptModal} 
+          onClose={() => setShowDesktopOptModal(false)} 
+        />
+      )}
+    </Suspense>
   </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useDeferredValue, useCallback } from 'react';
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
@@ -10,7 +10,10 @@ import { doc } from 'firebase/firestore';
 import {    db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
 import { undoManager } from '../lib/undoManager';
 import { downloadCSV, parseCSV, generateCSV } from '../lib/csvUtils';
-import { ConfirmModal } from './ConfirmModal';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
+
 import { ResizableHeader } from './ResizableHeader';
 import { ColumnAdder } from './ColumnAdder';
 import { FullReplaceImport } from './FullReplaceImport';
@@ -960,7 +963,20 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
   const sortedProjects = projects;
 
-  const [visibleCount, setVisibleCount] = useState(20);
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  const handleCostScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const st = target.scrollTop;
+    const sh = target.scrollHeight;
+    const ch = target.clientHeight;
+
+    if (sh - (st + ch) < 350) {
+      if (visibleCount < filteredProjectsForDisplay.length) {
+        setVisibleCount(prev => Math.min(prev + 30, filteredProjectsForDisplay.length));
+      }
+    }
+  }, [visibleCount, filteredProjectsForDisplay.length]);
 
   useEffect(() => {
     if (paidDateStart || paidDateEnd) {
@@ -978,12 +994,16 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
+      <React.Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </React.Suspense>
       <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full xl:w-auto flex-grow min-w-0">
           <select 
@@ -1256,7 +1276,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         </button>
       </div>
 
-      <div className="hidden xl:block overflow-x-auto flex-grow pb-16">
+      <div className="hidden xl:block overflow-x-auto flex-grow pb-16" onScroll={handleCostScroll}>
         <table className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full" style={{ width: `${visibleColumns.reduce((acc, col) => acc + (colWidths[col as keyof typeof colWidths] || 100), 0)}px` }}>
           <thead className="text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20]/50 sticky top-0 border-b border-slate-200 dark:border-[#444446] z-10 shadow-sm">
             <tr>
@@ -1525,7 +1545,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
               <tr>
                 <td colSpan={visibleColumns.length} className="py-4 text-center">
                   <button
-                    onClick={() => setVisibleCount(prev => prev + 20)}
+                    onClick={() => setVisibleCount(prev => prev + 30)}
                     className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm"
                   >
                     Load More Projects ({filteredProjectsForDisplay.length - visibleCount} remaining)
@@ -1694,7 +1714,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         </button>
       </div>
 
-      <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-4 pb-4 px-2">
+      <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-4 pb-4 px-2" onScroll={handleCostScroll}>
         {filteredProjectsForDisplay.slice(0, visibleCount).map((p, pIdx) => {
           const pDerivedYear = p.year ? p.year : (p.start ? Number(String(p.start).substring(0, 4)) : undefined);
           const allGroupCosts = costs.filter(c=> 
@@ -1859,7 +1879,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         {visibleCount < filteredProjectsForDisplay.length && (
           <div className="flex justify-center mt-4">
             <button
-              onClick={() => setVisibleCount(prev => prev + 20)}
+              onClick={() => setVisibleCount(prev => prev + 30)}
               className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm"
             >
               Load More Projects ({filteredProjectsForDisplay.length - visibleCount} remaining)

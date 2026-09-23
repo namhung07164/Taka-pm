@@ -7,11 +7,14 @@ import { Search, Plus, Trash2, ChevronRight, ChevronDown, ChevronUp, FolderOutpu
 import { Project, Task, AppUser, TaskNote, PermissionMatrix, AppRole, DelegationGroup } from '../types';
 import { cn, formatDisplayDateMain, formatDisplayDateTime, calculateDays, parseDateTime, formatToDatetimeLocal, getStatus, getTaskStatus, getDefaultDatetimeLocal, resolveActualStatus, getDefaultStoreFilter, computeActProgressPercent, computePlanProgressPercent, generateId, getUserAllowedStores, getEffectiveStoreFilter, scrollToElement, matchesAdvancedSearch } from '../lib/utils';
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
-import {    db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
+import { db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
 import { undoManager } from '../lib/undoManager';
 import { downloadCSV, parseCSV, generateCSV } from '../lib/csvUtils';
-import { ConfirmModal } from './ConfirmModal';
-import { TaskNoteModal } from './TaskNoteModal';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
+const TaskNoteModal = lazyWithRetry(() => import('./TaskNoteModal').then(m => ({ default: m.TaskNoteModal })), 'TaskNoteModal');
+
 import { ResizableHeader } from './ResizableHeader';
 import { ColumnAdder } from './ColumnAdder';
 import { FullReplaceImport } from './FullReplaceImport';
@@ -135,7 +138,7 @@ export function DetailTab({
 
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
-  const [visibleCount, setVisibleCount] = useState(20);
+  const [visibleCount, setVisibleCount] = useState(30);
   const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
@@ -2842,7 +2845,7 @@ export function DetailTab({
     return { totalHeight: sum, rowOffsets: offsets };
   }, [flatTableRows]);
 
-  const OVERSCAN = 20;
+  const OVERSCAN = 10;
   const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
     const totalRows = flatTableRows.length;
     if (totalRows === 0) {
@@ -2906,7 +2909,7 @@ export function DetailTab({
 
     if (sh - (st + ch) < 400) {
       if (visibleCount < filteredProjects.length) {
-        setVisibleCount(prev => Math.min(prev + 20, filteredProjects.length));
+        setVisibleCount(prev => Math.min(prev + 30, filteredProjects.length));
       }
     }
   }, [visibleCount, filteredProjects.length]);
@@ -3005,19 +3008,25 @@ export function DetailTab({
 
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
-      <TaskNoteModal
-        isOpen={!!noteModalTask}
-        onClose={() => setNoteModalTask(null)}
-        task={noteModalTask}
-        onSave={handleSaveNotes}
-        canWrite={canWrite}
-      />
+      <React.Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+        {!!noteModalTask && (
+          <TaskNoteModal
+            isOpen={!!noteModalTask}
+            onClose={() => setNoteModalTask(null)}
+            task={noteModalTask}
+            onSave={handleSaveNotes}
+            canWrite={canWrite}
+          />
+        )}
+      </React.Suspense>
       <DetailFilterToolbar
         globalYearFilter={globalYearFilter}
         setGlobalYearFilter={setGlobalYearFilter}
@@ -3173,7 +3182,7 @@ export function DetailTab({
                 <tr>
                   <td colSpan={visibleColumns.length} className="py-4 text-center bg-white/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm border-t border-slate-200 dark:border-[#444446]">
                     <button
-                      onClick={() => setVisibleCount(prev => Math.min(prev + 20, filteredProjects.length))}
+                      onClick={() => setVisibleCount(prev => Math.min(prev + 30, filteredProjects.length))}
                       className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-xs transition-colors text-sm cursor-pointer active:scale-95 touch-manipulation"
                     >
                       Load More Projects ({filteredProjects.length - visibleCount} remaining)

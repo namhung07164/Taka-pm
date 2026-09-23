@@ -12,7 +12,9 @@ import {    db, APP_ID, storage , writeBatch , setDoc , deleteDoc } from "../lib
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { googleSignIn, getAccessToken } from '../lib/firebase';
 import { undoManager } from '../lib/undoManager';
-import { ConfirmModal } from './ConfirmModal';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 import { MultiSelect } from './MultiSelect';
 import { LazyImage } from './LazyImage';
 import { ProjectDelegationTab } from "./ProjectDelegationTab";
@@ -651,13 +653,17 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
   return (
 <Portal>
     <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
+      <React.Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </React.Suspense>
       <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
         <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-2xl overflow-hidden relative flex flex-col pointer-events-auto">
           <div className="modal-handle cursor-move px-4 md:px-6 py-4 border-b border-slate-100 dark:border-[#333336] flex justify-between items-center bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0 pt-[env(safe-area-inset-top)] md:pt-4">

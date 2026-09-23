@@ -5,11 +5,13 @@ import { useLanguage } from "../lib/LanguageContext";
 import { Plus, Trash2, Check, Search, X } from 'lucide-react';
 import { doc } from 'firebase/firestore';
 import {   db, APP_ID , setDoc , deleteDoc } from "../lib/firebase";
-import { ConfirmModal } from './ConfirmModal';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import { cn, matchesAdvancedSearch } from '../lib/utils';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { bumpConfigVersion } from '../lib/configCacheService';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 
 interface AccControlTabProps {
   users: AppUser[];
@@ -216,13 +218,17 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
 
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm overflow-hidden">
-      <ConfirmModal 
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-      />
+      <Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </Suspense>
       <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{isAdmin ? 'User Account Control' : 'My Account'}</h2>
         <div className="flex items-center gap-3">

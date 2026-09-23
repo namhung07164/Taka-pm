@@ -74,7 +74,6 @@ import {
   Unlink,
   CornerDownRight,
 } from "lucide-react";
-import { TaskModularModal } from "./TaskModularModal";
 import {
   startOfMonth,
   endOfMonth,
@@ -93,12 +92,15 @@ import {
   isToday,
 } from "date-fns";
 import { doc, collection, getDocs, query, where, deleteField } from 'firebase/firestore';
-import {   db, APP_ID , writeBatch , updateDoc } from "../lib/firebase";
+import { db, APP_ID , writeBatch , updateDoc } from "../lib/firebase";
 import { useSyncScroll } from "./Gantt/GanttHooks";
 import { formatGanttDate, positionTooltip, filterTaskByDate, getPKey } from "./Gantt/GanttUtils";
-import { ConfirmModal } from "./ConfirmModal";
 import { MultiCheckboxSelect } from "./MultiCheckboxSelect";
 import { useLocationOptions } from "../hooks/useLocationOptions";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
+
+const TaskModularModal = lazyWithRetry(() => import('./TaskModularModal').then(m => ({ default: m.TaskModularModal })), 'TaskModularModal');
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 
 interface GanttTabProps {
   onNavigateToTaskDetail?: (taskId: string) => void;
@@ -3251,25 +3253,31 @@ export function GanttTab({
         </div>
       )}
 
-      <TaskModularModal
-        isOpen={isTaskModularModalOpen}
-        onClose={() => setIsTaskModularModalOpen(false)}
-        selectedTaskIds={selectedTaskIds}
-        tasks={tasks}
-        projects={projects}
-        onGroupTasks={handleGroupModularTasks}
-        onUnlinkTasks={handleUnlinkModularTasks}
-      />
+      <React.Suspense fallback={null}>
+        {isTaskModularModalOpen && (
+          <TaskModularModal
+            isOpen={isTaskModularModalOpen}
+            onClose={() => setIsTaskModularModalOpen(false)}
+            selectedTaskIds={selectedTaskIds}
+            tasks={tasks}
+            projects={projects}
+            onGroupTasks={handleGroupModularTasks}
+            onUnlinkTasks={handleUnlinkModularTasks}
+          />
+        )}
 
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        confirmText={confirmModal.confirmText}
-        confirmStyle={confirmModal.confirmStyle}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
-      />
+        {confirmModal.isOpen && (
+          <ConfirmModal
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            confirmText={confirmModal.confirmText}
+            confirmStyle={confirmModal.confirmStyle}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </React.Suspense>
 
       {/* Sum Tooltip */}
       {isEditMode && sumMode !== "none" && (selectedTaskIds.length > 0 || selectedProjectIds.length > 0) && (

@@ -17,8 +17,10 @@ import { undoManager } from '../lib/undoManager';
 import { scheduleDependentTasks, computeTaskCode, sortGroupTasks, parsePredecessors, buildTaskNoMap, getPredecessorCodeUpdates, updatePredecessorsStrings, addDays, calculateTaskDatesFromPredecessors } from '../lib/ganttUtils';
 import { generateId } from '../lib/utils';
 import { MultiSelect } from './MultiSelect';
-import { ConfirmModal } from './ConfirmModal';
 import { LazyImage } from './LazyImage';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 import { useAppStore } from "../store/useAppStore";
 import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 
@@ -94,13 +96,17 @@ export function TaskModal(props: TaskModalProps) {
   return (
     <Portal>
       <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4">
-        <ConfirmModal 
-          isOpen={confirmModal.isOpen}
-          title={confirmModal.title}
-          message={confirmModal.message}
-          onConfirm={confirmModal.onConfirm}
-          onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-        />
+      <React.Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </React.Suspense>
         <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
           <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-md overflow-hidden relative flex flex-col pointer-events-auto">
             <TaskModalHeader 

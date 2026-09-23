@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Search, ExternalLink, Download, Upload, Printer, Link as LinkIcon, Unlink, ChevronDown, ChevronRight, Lock, X, Check, Filter, Layers, Sparkles, Move, GripHorizontal } from 'lucide-react';
@@ -797,7 +797,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     }
   }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
-  const [visibleCount, setVisibleCount] = useState(20);
+  const [visibleCount, setVisibleCount] = useState(30);
 
   const filterNode = (node: any): boolean => {
     const pYear = node.year ? String(node.year) : (node.start ? String(node.start).substring(0, 4) : null);
@@ -896,6 +896,19 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     };
     filteredRoots = filteredRoots.sort(sortFn);
   }
+
+  const handleBudgetScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const st = target.scrollTop;
+    const sh = target.scrollHeight;
+    const ch = target.clientHeight;
+
+    if (sh - (st + ch) < 350) {
+      if (visibleCount < filteredRoots.length) {
+        setVisibleCount(prev => Math.min(prev + 30, filteredRoots.length));
+      }
+    }
+  }, [visibleCount, filteredRoots.length]);
 
   const handleSort = (key: string) => {
     setSortConfig(prev => {
@@ -1563,7 +1576,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
         </div>
       </div>
 
-      <div className="hidden xl:block overflow-x-auto flex-grow pb-16">
+      <div className="hidden xl:block overflow-x-auto flex-grow pb-16" onScroll={handleBudgetScroll}>
         <table className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full" style={{ width: `${visibleColumns.reduce((acc, col) => acc + (colWidths[col as keyof typeof colWidths] || 100), 0)}px` }}>
           <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-[#1e1e20]/50 sticky top-0 border-b border-slate-200 dark:border-[#444446] z-10 shadow-sm">
             <tr>
@@ -1660,7 +1673,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
               <tr>
                 <td colSpan={visibleColumns.length} className="py-4 text-center">
                   <button
-                    onClick={() => setVisibleCount(prev => prev + 20)}
+                    onClick={() => setVisibleCount(prev => prev + 30)}
                     className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm"
                   >
                     Load More Projects ({filteredRoots.length - visibleCount} remaining)
@@ -1673,7 +1686,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
       </div>
 
       {/* Mobile Card View (iOS / Tablet / Small screens) */}
-      <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-3 pb-6 px-3">
+      <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-3 pb-6 px-3" onScroll={handleBudgetScroll}>
         {/* Total Budget Summary Card */}
         <div className="bg-blue-50 dark:bg-[#28282a] border border-blue-200 dark:border-[#38383a] rounded-xl p-4 shadow-sm flex flex-col gap-3 mt-2">
           <div className="text-blue-900 dark:text-[#8ab4f8] font-bold uppercase text-sm tracking-wide">Total Budget Summary</div>
@@ -1721,7 +1734,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
         {visibleCount < filteredRoots.length && (
           <div className="py-2 text-center">
             <button
-              onClick={() => setVisibleCount(prev => prev + 20)}
+              onClick={() => setVisibleCount(prev => prev + 30)}
               className="px-6 py-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-xs w-full max-w-xs"
             >
               Load More Projects ({filteredRoots.length - visibleCount} remaining)
