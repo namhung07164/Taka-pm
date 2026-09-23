@@ -145,7 +145,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
           (t.projectStore || p.store)?.toLowerCase() === 'hcm'
             ? "text-blue-600 dark:text-[#8ab4f8]"
             : (t.projectStore || p.store)?.toLowerCase() === 'hn'
-            ? "text-red-600 dark:text-red-400"
+            ? "text-rose-600 dark:text-rose-400"
             : "text-slate-600 dark:text-[#a3a3a3]"
         )}>
           {t.projectStore || p.store}
@@ -157,8 +157,10 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('code') && (
-        <td className="px-3 py-2 text-blue-600 dark:text-[#8ab4f8] font-mono text-xs font-semibold">
-          {taskCode || p.code}
+        <td className="px-3 py-2 font-mono text-xs">
+          <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[11px] bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
+            {taskCode || p.code}
+          </span>
         </td>
       )}
       {visibleColumns.includes('projectName') && (

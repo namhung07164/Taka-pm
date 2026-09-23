@@ -1221,4 +1221,34 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Raw Event Inspector**: Xem toàn bộ đối tượng sự kiện kiểm toán và hỗ trợ 1-click **Copy JSON** vào bộ nhớ tạm.
      + **Bộ Lọc Nhanh (Field Filter)**: Cho phép gõ tên trường (như `budget`, `status`, `finish`, v.v.) để tìm nhanh biến động khi tài liệu có nhiều thông tin.
 
+13. **Hệ Thống Thiết Kế Thống Nhất Trên Thiết Bị Di Động & iOS (Unified Mobile Design Language)**:
+   - **Đồng Bộ Màu Sắc & Thành Phần Dữ Liệu Tương Đồng**:
+     + **Huy hiệu Thông tin (Badges)**:
+       * **Niên độ (Year)**: Nền xám bo góc chuẩn mực `bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700`.
+       * **Chi nhánh (Store)**: Phân biệt rõ ràng theo nhận diện thương hiệu (`HCM`: Xanh dương đậm `bg-blue-100 text-blue-800`, `HN`: Đỏ hồng `bg-rose-100 text-rose-800`).
+       * **Mã dự án & Mã Task con (Code & Task Code)**: Kiểu chữ monospace in đậm trong khung viền bo sắc nét `bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300`.
+       * **Vị trí (Location)**: Phân cách bằng dấu chấm giữa `• L1` hiển thị màu trung tính dễ đọc.
+     + **Màu Sắc Mốc Thời Gian (Dates)**:
+       * **Start Date**: Màu xanh dương đậm chuẩn mực `text-blue-700 dark:text-[#8ab4f8] font-bold font-mono`.
+       * **Finish Date**: Màu hồng đậm `text-pink-700 dark:text-pink-400 font-bold font-mono`.
+       * **Opening Date**: Màu xanh lục bảo `text-emerald-600 dark:text-emerald-400 font-bold font-mono`.
+     + **Trạng Thái Dự Án & Task Con (Status Badges)**:
+       * `COMPLETED`: Nền xanh lục bảo `bg-emerald-600 text-white`.
+       * `ON PROCESS`: Nền hổ phách `bg-amber-500 text-white`.
+       * `HANDOVER`: Nền xanh dương `bg-blue-600 text-white`.
+       * `CANCELED`: Nền đỏ hồng `bg-rose-600 text-white`.
+     + **Viền Nhấn Trạng Thái Thẻ (Status Accent Border)**: Các thẻ dự án và task con trên các tab Task Detail, Cost, Budget đều có viền nhấn bên trái (`border-l-[4px]` hoặc `border-l-[5px]`) tương ứng với trạng thái tiến độ hoặc số dư tài chính.
+   - **Đồng Bộ Giữa Phân Hệ Tài Chính Tab Cost & Tab Budget**:
+     + Các thẻ dự án trong tab Cost có thiết kế hàng thông tin trên cùng (Year, Store, Code, Location, QuickNav) và tiêu đề đồng nhất với tab Budget.
+     + **Huy Hiệu Tài Chính Góc Phải**:
+       * Tab Budget: `Rem: ...` (Màu xanh khi còn dư >= 0, Màu đỏ khi âm ngân sách < 0).
+       * Tab Cost: `Bal: ...` (Màu xanh khi Balance >= 0, Màu đỏ khi âm) kèm nhãn `ACT:` (Xanh dương) hoặc `FORC:` (Hổ phách) phản ánh trực quan trạng thái quyết toán.
+     + **Bảng 3 Đợt Thanh Toán (1st Paid, 2nd Paid, 3rd Paid)**: Trình bày dạng lưới 3 cột nền trắng mờ viền bo cong sắc sảo, ngày thanh toán hiển thị màu xanh lá đậm in đậm monospace tương ứng với thiết kế lưới tài chính của tab Budget.
+   - **Vị Trí Nút Điều Hướng Nhanh Trên Mobile (Quick Navigator Placement) & Tối Ưu Bố Cục Tên Công Việc**:
+     + Được chuẩn hóa đặt tại **góc trên bên phải** của thẻ dự án, nằm trên **cùng một dòng ngang với Tên Dự Án / Tên Công Việc (Task Name)**:
+       * **Tab Task detail**: Huy hiệu trạng thái dự án (**Project Status**) nằm ở góc trên cùng bên phải; ngay dòng tiếp theo là **Tên Dự Án** (kèm nút thu gọn/mở rộng Expand `(X)`) đi cùng dòng với nút **Quick Navigator** ở góc phải.
+       * **Tab Budget**: Huy hiệu ngân sách còn lại (**Rem**) nằm ở góc trên cùng bên phải; ngay dòng tiếp theo là **Tên Hạng Mục / Dự Án** đi cùng dòng với nút **Quick Navigator** ở góc phải.
+       * **Tab Cost**: Cột bên phải được tổ chức theo trục dọc chuẩn chỉnh: Huy hiệu dòng tiền (**ACT / FORC**) đặt ở trên cùng bên phải, ngay bên dưới là ô số dư (Balance / Bal), và ngay phía dưới ô Balance là nút Quick Navigator. Cột bên trái gồm hàng huy hiệu (Year, Store, Code, Location) và ngay bên dưới là Tên Dự Án (kèm nút Expand).
+     + **Triệt Tiêu Hoàn Toàn Khoảng Trống Lãng Phí (Zero Wasted Space)**: Bố cục 2 dòng gọn gàng, chặt chẽ chuẩn Human Interface Guidelines giúp toàn bộ thẻ hiển thị đầy đủ thông tin mà không tạo ra khoảng trống thừa thãi giữa các trường dữ liệu trên màn hình di động/iOS.
+
 

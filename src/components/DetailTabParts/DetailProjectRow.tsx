@@ -147,7 +147,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               p.store?.toLowerCase() === 'hcm' 
                 ? "text-blue-600 dark:text-[#8ab4f8]" 
                 : p.store?.toLowerCase() === 'hn' 
-                ? "text-red-600 dark:text-red-400" 
+                ? "text-rose-600 dark:text-rose-400" 
                 : "text-slate-700 dark:text-[#e3e3e3]"
             )}
             onSave={(val) => onUpdateProject(p, 'store', val)}

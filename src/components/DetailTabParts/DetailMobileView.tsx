@@ -118,11 +118,39 @@ export const DetailMobileView = memo(function DetailMobileView({
           const computedTakCompl = pInfo.computedTakCompl;
           const status = pInfo.status;
           
-          let statusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
-          if (status === 'Completed') statusColorClass = 'bg-green-50 text-green-600 dark:text-emerald-400 border-green-200';
-          else if (status === 'Handover') statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
-          else if (status === 'On process') statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
-          else if (status === 'Canceled') statusColorClass = 'bg-red-50 text-red-600 dark:text-red-400 border-red-200';
+          let statusBadgeClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+          let borderAccentClass = 'border-l-4 border-l-slate-400';
+          let bgCardTint = 'bg-white dark:bg-[#1e1e20]';
+
+          if (status === 'Completed') {
+            statusBadgeClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white shadow-2xs font-extrabold border-emerald-500';
+            borderAccentClass = 'border-l-[5px] border-l-emerald-500';
+            bgCardTint = 'bg-emerald-50/25 dark:bg-emerald-950/15';
+          } else if (status === 'Handover') {
+            statusBadgeClass = 'bg-blue-600 text-white dark:bg-blue-600 dark:text-white shadow-2xs font-extrabold border-blue-500';
+            borderAccentClass = 'border-l-[5px] border-l-blue-500';
+            bgCardTint = 'bg-blue-50/25 dark:bg-blue-950/15';
+          } else if (status === 'On process') {
+            statusBadgeClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white shadow-2xs font-extrabold border-amber-400';
+            borderAccentClass = 'border-l-[5px] border-l-amber-500';
+            bgCardTint = 'bg-amber-50/30 dark:bg-amber-950/20';
+          } else if (status === 'Canceled') {
+            statusBadgeClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white shadow-2xs font-extrabold border-rose-500';
+            borderAccentClass = 'border-l-[5px] border-l-rose-500';
+            bgCardTint = 'bg-rose-50/25 dark:bg-rose-950/15';
+          } else {
+            statusBadgeClass = 'bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white shadow-2xs font-extrabold border-indigo-500';
+            borderAccentClass = 'border-l-[5px] border-l-indigo-500';
+            bgCardTint = 'bg-indigo-50/25 dark:bg-indigo-950/15';
+          }
+
+          const storeUpper = (p.store || '').toUpperCase();
+          let storeBadgeClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+          if (storeUpper === 'HCM') {
+            storeBadgeClass = 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200/80 dark:border-blue-800 font-bold';
+          } else if (storeUpper === 'HN') {
+            storeBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800 font-bold';
+          }
 
           const effectiveTaskCount = groupTasks.length > 0 
             ? groupTasks.length 
@@ -164,44 +192,94 @@ export const DetailMobileView = memo(function DetailMobileView({
               data-project-code={p.code}
               data-project-year={p.year || ''}
               data-project-store={p.store || ''}
-              className={cn("table-row-optimized rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm p-4 flex flex-col gap-3 relative transition-colors", pIdx % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-blue-50/30 dark:bg-[#1e1e20]")}
+              className={cn(
+                "table-row-optimized rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3 flex flex-col gap-2.5 relative transition-all",
+                bgCardTint,
+                borderAccentClass
+              )}
             >
-              <div className={`absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-md border ${statusColorClass}`}>
-                {status}
-              </div>
-              <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base leading-snug pr-20 flex items-start gap-2">
-                <button 
-                  onClick={() => toggleGroup(p.id!)} 
-                  className={cn(
-                    "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                    effectiveTaskCount >= 2
-                      ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
-                      : effectiveTaskCount === 1
-                      ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
-                      : "bg-slate-200 hover:bg-slate-300 dark:bg-[#333336] dark:hover:bg-[#444446] text-slate-600 dark:text-slate-300"
+              {/* Top controls: Badges & Link Codes on left, Program Status on right */}
+              <div className="flex items-center justify-between gap-2 w-full">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
+                  {p.year && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      {p.year}
+                    </span>
                   )}
-                  title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
-                >
-                  {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  <span className="text-[10px]">({effectiveTaskCount})</span>
-                </button>
-                <span><span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store}</span> - {p.code} - {p.name}</span>
+                  {p.store && (
+                    <span className={`px-1.5 py-0.5 text-[10px] rounded border font-bold ${storeBadgeClass}`}>
+                      {p.store}
+                    </span>
+                  )}
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
+                    {p.code}
+                  </span>
+                  {p.linkCodes && p.linkCodes !== p.code && (
+                    <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 font-normal">
+                      ({p.linkCodes})
+                    </span>
+                  )}
+                  {p.location && (
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                      • {p.location}
+                    </span>
+                  )}
+                </div>
+
+                <div className="shrink-0">
+                  <div className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-md border whitespace-nowrap ${statusBadgeClass}`}>
+                    {status}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1 px-1 mt-1 mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[60px]">Plan Prg:</span>
-                  <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${planProgressPercent}%` }}></div>
+              {/* Project Title with Expand button on left & Quick Navigation on right (elevated on same line) */}
+              <div className="flex items-start justify-between gap-2 w-full">
+                <div className="flex items-start gap-2 flex-1 min-w-0">
+                  <button 
+                    onClick={() => toggleGroup(p.id!)} 
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
+                      effectiveTaskCount >= 2
+                        ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white"
+                        : effectiveTaskCount === 1
+                        ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white"
+                        : "bg-slate-200 hover:bg-slate-300 dark:bg-[#333336] dark:hover:bg-[#444446] text-slate-600 dark:text-slate-300"
+                    )}
+                    title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
+                  >
+                    {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    <span className="text-[10px]">({effectiveTaskCount})</span>
+                  </button>
+                  <div className="font-bold text-slate-900 dark:text-[#ffffff] text-sm sm:text-base leading-snug break-words">
+                    {p.name}
                   </div>
-                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right">{planProgressPercent}%</span>
+                </div>
+
+                <div className="shrink-0 pt-0.5">
+                  <QuickNavButton 
+                    project={p} 
+                    title={`Quick Navigator (${p.code})`} 
+                    className="p-1! rounded!"
+                  />
+                </div>
+              </div>
+
+              {/* Progress Bars: Plan bar stacked directly on top of Act bar for easy direct visual comparison */}
+              <div className="flex flex-col gap-1.5 py-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight w-14 shrink-0">Plan Prg:</span>
+                  <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+                    <div className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${planProgressPercent}%` }}></div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 w-9 text-right shrink-0">{planProgressPercent}%</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[60px]">Act Prg:</span>
-                  <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                    <div className="bg-emerald-500 h-2 rounded-full transition-all duration-300" style={{ width: `${actProgressPercent}%` }}></div>
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight w-14 shrink-0">Act Prg:</span>
+                  <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+                    <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${actProgressPercent}%` }}></div>
                   </div>
-                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400 w-8 text-right">{actProgressPercent}%</span>
+                  <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-9 text-right shrink-0">{actProgressPercent}%</span>
                 </div>
               </div>
 
@@ -224,11 +302,6 @@ export const DetailMobileView = memo(function DetailMobileView({
                       </span>
                     )}
                     <FastToggle value={Boolean(isProjDelegationOn)} canWrite={canWrite} onToggle={(val) => handleUpdateProject(p, 'delegation', val)} isSmall={true} />
-                    <QuickNavButton 
-                      project={p} 
-                      title={`Quick Navigator (${p.code})`} 
-                      className="p-1! rounded!"
-                    />
                     {canWrite && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onAddTask(p); }}
@@ -275,17 +348,32 @@ export const DetailMobileView = memo(function DetailMobileView({
                   const originalIndex = groupTasks.findIndex(gt => gt.id === t.id);
                   const i = originalIndex !== -1 ? originalIndex : 0;
                   const taskStatus = getTaskStatus(t.start, t.finish);
-                  let taskStatusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
-                  if (taskStatus === 'Completed') taskStatusColorClass = 'bg-green-50 text-green-600 dark:text-emerald-400 border-green-200';
-                  else if (taskStatus === 'On process') taskStatusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200';
+                  let taskStatusColorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-bold';
+                  if (taskStatus === 'Completed') taskStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold shadow-2xs';
+                  else if (taskStatus === 'On process') taskStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold shadow-2xs';
 
                   const delegationGroup = delegationGroupByParentKey.get(t.id);
                   const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || []);
                   let delStatusText = actStatus.label;
                   let delStatusColorClass = actStatus.color;
 
+                  const taskBorderAccent = taskStatus === 'Completed' 
+                    ? 'border-l-[4px] border-l-emerald-500' 
+                    : taskStatus === 'On process' 
+                    ? 'border-l-[4px] border-l-amber-500' 
+                    : 'border-l-[4px] border-l-slate-400';
+
                   return (
-                    <div id={`detail-task-${t.id}`} key={t.id} className={cn("bg-slate-50 dark:bg-[#1e1e20]/50 rounded-lg p-3 border border-slate-200 dark:border-[#444446] text-sm shadow-sm flex flex-col gap-2", initialFocusTaskId === t.id ? "ring-2 ring-inset ring-yellow-400 !bg-yellow-50 dark:!bg-yellow-900/20" : "")} onClick={() => canWrite && onEditTask(t, false, "chat")}>
+                    <div 
+                      id={`detail-task-${t.id}`} 
+                      key={t.id} 
+                      className={cn(
+                        "bg-slate-50/80 dark:bg-[#1e1e20]/60 rounded-xl p-3 border border-slate-200/90 dark:border-[#444446] text-sm shadow-xs flex flex-col gap-2.5 transition-all", 
+                        taskBorderAccent,
+                        initialFocusTaskId === t.id ? "ring-2 ring-inset ring-yellow-400 !bg-yellow-50 dark:!bg-yellow-900/20" : ""
+                      )} 
+                      onClick={() => canWrite && onEditTask(t, false, "chat")}
+                    >
                       <div className="flex gap-3">
                         {canWrite && (
                           <div className="shrink-0 flex flex-col items-center justify-center -mr-1">
@@ -307,13 +395,17 @@ export const DetailMobileView = memo(function DetailMobileView({
                         )}
                         <div className="flex flex-col w-20 shrink-0 text-xs text-slate-500 dark:text-[#a3a3a3] gap-1 border-r border-slate-200 dark:border-[#444446] pr-2">
                           <div className="font-mono text-blue-700 dark:text-[#8ab4f8] font-bold">{formatDisplayDateMain(t.start)}</div>
-                          <div className="font-mono text-pink-700 font-bold">{formatDisplayDateMain(t.finish)}</div>
+                          <div className="font-mono text-pink-700 dark:text-pink-400 font-bold">{formatDisplayDateMain(t.finish)}</div>
                           <div className="text-[10px] italic mt-1">{calculateDays(t.start, t.finish)}</div>
                         </div>
-                        <div className="flex-grow flex flex-col gap-1">
-                          <div className="font-bold text-slate-800 dark:text-[#e3e3e3]">
-                            <span className="text-blue-600 dark:text-[#8ab4f8] mr-1">{computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`}</span>
-                            {t.name}
+                        <div className="flex-grow flex flex-col gap-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0 inline-block">
+                              {computeTaskCode(projects, tasks, t) || t.taskCodePhu || `${p.code}-${i + 1}`}
+                            </span>
+                            <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug">
+                              {t.name}
+                            </span>
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -343,10 +435,10 @@ export const DetailMobileView = memo(function DetailMobileView({
                           )}
                         </div>
                         <div className="flex flex-col gap-1 items-end">
-                          <div className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${taskStatusColorClass}`}>
+                          <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${taskStatusColorClass}`}>
                             Pl: {taskStatus}
                           </div>
-                          <div className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${delStatusColorClass}`}>
+                          <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
                             Act: {delStatusText}
                           </div>
                         </div>

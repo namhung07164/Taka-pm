@@ -1310,26 +1310,34 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                   </div>
                 )}
 
-                {/* Top controls: Badges on left, Status Badge on top-right, Pin Controls below Status Badge */}
+                {/* Top controls: Badges & Link Codes on left, Status Badge & Pin Controls on right */}
                 <div className="flex items-start justify-between gap-2 w-full">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {p.year && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                        {p.year}
+                  <div className="flex flex-col gap-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {p.year && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          {p.year}
+                        </span>
+                      )}
+                      {p.store && (
+                        <span className={`px-1.5 py-0.5 text-[10px] rounded border font-bold ${storeBadgeClass}`}>
+                          {p.store}
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
+                        {p.code}
                       </span>
-                    )}
-                    {p.store && (
-                      <span className={`px-1.5 py-0.5 text-[10px] rounded border font-bold ${storeBadgeClass}`}>
-                        {p.store}
-                      </span>
-                    )}
-                    <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800">
-                      {p.code}
-                    </span>
-                    {p.location && (
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                        • {p.location}
-                      </span>
+                      {p.location && (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                          • {p.location}
+                        </span>
+                      )}
+                    </div>
+                    {/* Project code link under year box in the blank space on the left */}
+                    {p.linkCodes && p.linkCodes !== p.code && (
+                      <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 font-normal leading-tight break-words">
+                        ({p.linkCodes})
+                      </div>
                     )}
                   </div>
 
@@ -1377,11 +1385,6 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
                 {/* Project Title */}
                 <div className="font-bold text-slate-900 dark:text-[#ffffff] text-sm sm:text-base leading-snug">
                   {p.name}
-                  {p.linkCodes && p.linkCodes !== p.code && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-normal ml-1.5">
-                      ({p.linkCodes})
-                    </span>
-                  )}
                 </div>
 
                 {/* Dates Section: Start in Blue, Finish in Pink, Opening in Emerald (matching Task Detail) */}

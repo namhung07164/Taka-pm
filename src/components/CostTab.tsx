@@ -1734,39 +1734,91 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
           const totalThirdPaid = groupCosts.reduce((sum, c) => sum + (c.thirdPaid || 0), 0);
           const totalBalance = groupCosts.reduce((sum, c) => sum + ((c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0)), 0);
 
+          const pCleanName = p.name ? p.name.replace(new RegExp(`^${p.store}\\s*-\\s*${p.code}\\s*-\\s*`, 'i'), '') : '-';
+
           return (
-            <div key={`${p.code}-${p.year}-${p.no}`} className={cn("rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm p-4 flex flex-col gap-3 relative", pIdx % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-blue-50/30 dark:bg-[#1e1e20]")}>
-              <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
-                 <div className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded border font-mono flex items-center gap-1", groupCosts.some(c => c.costType === 'forc') ? "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" : "text-blue-600 dark:text-[#8ab4f8] bg-blue-50 dark:bg-[#28282a] border-blue-200")}>
-                  {groupCosts.length > 0 ? (groupCosts.some(c => c.costType === 'forc') ? 'FORC:' : 'ACT:') : 'ACT:'} <span className="text-emerald-600 dark:text-emerald-400">{formatCurrency(totalAct)}</span>
+            <div 
+              key={`${p.code}-${p.year}-${p.no}`} 
+              className={cn(
+                "rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3.5 flex flex-col gap-2.5 transition-all bg-white dark:bg-[#1e1e20]",
+                totalBalance >= 0 ? "border-l-[5px] border-l-emerald-500" : "border-l-[5px] border-l-rose-500"
+              )}
+            >
+              {/* Header: Left column (Badges & Project Title) & Right column (ACT/FORC on top, Balance below it, QuickNav below Balance) */}
+              <div className="flex items-start justify-between gap-2 w-full">
+                {/* Left Column */}
+                <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
+                      {pDerivedYear || p.year || '-'}
+                    </span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 text-[10px] font-bold rounded border uppercase shrink-0",
+                      p.store?.toLowerCase() === 'hcm' 
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200/80 dark:border-blue-800' 
+                        : p.store?.toLowerCase() === 'hn' 
+                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800' 
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    )}>
+                      {p.store || '-'}
+                    </span>
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0">
+                      {p.code}
+                    </span>
+                    {p.location && (
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                        • {p.location}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Title row with expand toggle */}
+                  <div className="flex items-start gap-2 pt-0.5">
+                    <button 
+                      onClick={() => toggleGroup(groupKey)} 
+                      className={cn(
+                        "flex items-center gap-1 px-2 py-0.5 mt-0.5 shrink-0 rounded text-white font-extrabold text-[10px] shadow-2xs transition-all active:scale-95 touch-manipulation cursor-pointer",
+                        groupCosts.length >= 2
+                          ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                          : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
+                      )}
+                      title={isExpanded ? "Collapse" : `Expand (${groupCosts.length})`}
+                    >
+                      {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      <span>({groupCosts.length})</span>
+                    </button>
+                    <div className="font-bold text-slate-900 dark:text-[#ffffff] text-sm sm:text-base leading-snug flex-1 min-w-0 break-words">
+                      {pCleanName}
+                    </div>
+                  </div>
                 </div>
-                <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border font-mono ${totalBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-[#1a3821] border-emerald-200 dark:border-[#265330]' : 'text-red-500 dark:text-red-400 bg-red-50 dark:bg-[#3b1a1a] border-red-200 dark:border-[#5c2424]'}`}>
-                  Balance: {formatCurrency(totalBalance)}
-                </div>
-              </div>
-              
-              <div className="font-bold text-slate-800 dark:text-[#e3e3e3] text-base leading-snug pr-28 flex items-start gap-2">
-                <button 
-                  onClick={() => toggleGroup(groupKey)} 
-                  className={cn(
-                    "flex items-center gap-1 px-1.5 py-0.5 mt-0.5 shrink-0 rounded text-white font-bold text-xs shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer",
-                    groupCosts.length >= 2
-                      ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-                      : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
-                  )}
-                  title={isExpanded ? "Collapse" : `Expand (${groupCosts.length})`}
-                >
-                  {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  <span className="text-[10px]">({groupCosts.length})</span>
-                </button>
-                <div className="flex-1 flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span><span className={p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8]' : p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400' : ''}>{p.store || '-'}</span> - {p.code} - {p.name} ({p.year || '-'})</span>
-                  <QuickNavButton project={p} title={`Quick Navigator (${p.code})`} />
+
+                {/* Right Column: ACT/FORC on top, Balance below it, Quick Navigation below Balance */}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <div className={cn(
+                    "text-[10px] font-bold px-1.5 py-0.5 rounded-md border font-mono flex items-center gap-0.5 shrink-0",
+                    groupCosts.some(c => c.costType === 'forc') 
+                      ? "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" 
+                      : "text-blue-600 dark:text-[#8ab4f8] bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                  )}>
+                    {groupCosts.length > 0 ? (groupCosts.some(c => c.costType === 'forc') ? 'FORC:' : 'ACT:') : 'ACT:'} <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(totalAct)}</span>
+                  </div>
+
+                  <div className={cn(
+                    "text-[10px] font-bold px-1.5 py-0.5 rounded-md border font-mono shrink-0",
+                    totalBalance >= 0 
+                      ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-[#1a3821] border-emerald-200 dark:border-[#265330]' 
+                      : 'text-red-500 dark:text-red-400 bg-red-50 dark:bg-[#3b1a1a] border-red-200 dark:border-[#5c2424]'
+                  )}>
+                    Bal: {formatCurrency(totalBalance)}
+                  </div>
+
+                  <QuickNavButton project={p} title={`Quick Navigator (${p.code})`} className="p-1! rounded!" />
                 </div>
               </div>
               
               {isExpanded && (
-                <div className="flex flex-col gap-3 mt-2">
+                <div className="flex flex-col gap-2.5 mt-1">
                   {groupCosts.map(c => {
                     const cBalance = (c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0);
                     const { firstMatch: isFirstPaidMatch, secondMatch: isSecondPaidMatch, thirdMatch: isThirdPaidMatch } = (paidDateStart || paidDateEnd)
@@ -1774,22 +1826,22 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                       : { firstMatch: false, secondMatch: false, thirdMatch: false };
 
                     return (
-                      <div key={c.id} className="w-full flex flex-col gap-2 bg-slate-50 dark:bg-[#1e1e20]/60 rounded-xl p-3 border border-slate-200 dark:border-[#444446] shadow-sm">
+                      <div key={c.id} className="w-full flex flex-col gap-2 bg-slate-50/80 dark:bg-[#1e1e20]/60 rounded-xl p-3 border border-slate-200/90 dark:border-[#444446] shadow-xs">
                         {/* Header Row: Vendor & Description on Left, ACT/FORC + Actual on Right */}
                         <div className="flex justify-between items-start gap-2">
                           <div className="flex flex-col gap-1 min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-bold text-slate-700 dark:text-[#c3c3c3] px-1.5 py-0.5 bg-slate-200/70 dark:bg-[#28282a] rounded">
-                                {p.year || '-'}
+                              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
+                                {pDerivedYear || p.year || '-'}
                               </span>
-                              <div className="text-[11px] italic bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/40 inline-flex items-center gap-1 max-w-full">
+                              <div className="text-[11px] bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-[#8ab4f8] px-1.5 py-0.5 rounded border border-blue-200/80 dark:border-blue-800/60 inline-flex items-center gap-1 max-w-full">
                                 <span className="text-blue-400 shrink-0 font-normal">by</span>
                                 <div className="min-w-0 truncate font-semibold">
                                   <EditableCell value={c.vendor} onSave={(val) => handleUpdateCost(c, 'vendor', val)} canWrite={canWrite} wrap />
                                 </div>
                               </div>
                             </div>
-                            <div className="text-xs text-slate-600 dark:text-[#a3a3a3] mt-0.5 break-words">
+                            <div className="text-xs text-slate-600 dark:text-[#a3a3a3] mt-0.5 break-words font-medium">
                               <EditableCell value={c.description} onSave={(val) => handleUpdateCost(c, 'description', val)} canWrite={canWrite} wrap />
                             </div>
                           </div>
@@ -1798,11 +1850,11 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                             <div className="flex items-center gap-1.5">
                               {canWrite ? (
                                 <div className="flex bg-slate-200/80 dark:bg-[#28282a] rounded-md p-0.5 shadow-inner border border-slate-200 dark:border-[#444446]">
-                                  <button onClick={() => handleUpdateCost(c, 'costType', 'act')} className={cn("px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors", c.costType !== 'forc' ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-300 dark:hover:bg-[#333336]")}>ACT</button>
-                                  <button onClick={() => handleUpdateCost(c, 'costType', 'forc')} className={cn("px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors", c.costType === 'forc' ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-300 dark:hover:bg-[#333336]")}>FORC</button>
+                                  <button onClick={() => handleUpdateCost(c, 'costType', 'act')} className={cn("px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors", c.costType !== 'forc' ? "bg-blue-600 text-white shadow-2xs" : "text-slate-500 hover:bg-slate-300 dark:hover:bg-[#333336]")}>ACT</button>
+                                  <button onClick={() => handleUpdateCost(c, 'costType', 'forc')} className={cn("px-2 py-0.5 text-[9px] font-bold uppercase rounded transition-colors", c.costType === 'forc' ? "bg-amber-500 text-white shadow-2xs" : "text-slate-500 hover:bg-slate-300 dark:hover:bg-[#333336]")}>FORC</button>
                                 </div>
                               ) : (
-                                <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase", c.costType === 'forc' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800" : "bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-800")}>{c.costType === 'forc' ? 'FORC' : 'ACT'}</span>
+                                <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-md border uppercase", c.costType === 'forc' ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800" : "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-800")}>{c.costType === 'forc' ? 'FORC' : 'ACT'}</span>
                               )}
                             </div>
                             <div className="font-mono font-bold text-sm text-blue-700 dark:text-[#8ab4f8]">
@@ -1815,24 +1867,24 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                         <div className="grid grid-cols-3 gap-1.5 py-2 px-1 bg-white/80 dark:bg-[#18181a]/60 rounded-lg border border-slate-200/70 dark:border-[#38383a] mt-1">
                           <div className={cn("flex flex-col items-center text-center min-w-0 p-1 rounded transition-all", isFirstPaidMatch && "bg-emerald-100/70 dark:bg-emerald-950/60 ring-2 ring-emerald-500")}>
                             <span className="text-[9px] font-medium text-slate-400 dark:text-[#838383] uppercase mb-0.5">1st Paid</span>
-                            <span className="font-mono font-bold text-slate-700 dark:text-[#c3c3c3] text-xs min-w-0 truncate max-w-full">
+                            <span className="font-mono font-bold text-blue-700 dark:text-[#8ab4f8] text-xs min-w-0 truncate max-w-full">
                               <EditableCell value={c.firstPaid || 0} type="number" isCurrency currency={currency} jpyRate={jpyRate} usdRate={usdRate} onSave={(val) => handleUpdateCost(c, 'firstPaid', val)} canWrite={canWrite} />
                             </span>
-                            {c.firstPaidAt && <span className={cn("text-[8px] font-normal truncate mt-0.5", isFirstPaidMatch ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-slate-400")}>{formatDisplayDateMain(c.firstPaidAt)}</span>}
+                            {c.firstPaidAt && <span className={cn("text-[8px] font-mono truncate mt-0.5", isFirstPaidMatch ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-emerald-600 dark:text-emerald-400 font-bold")}>{formatDisplayDateMain(c.firstPaidAt)}</span>}
                           </div>
                           <div className={cn("flex flex-col items-center text-center border-l border-slate-200 dark:border-[#38383a] min-w-0 p-1 rounded transition-all", isSecondPaidMatch && "bg-emerald-100/70 dark:bg-emerald-950/60 ring-2 ring-emerald-500")}>
                             <span className="text-[9px] font-medium text-slate-400 dark:text-[#838383] uppercase mb-0.5">2nd Paid</span>
-                            <span className="font-mono font-bold text-slate-700 dark:text-[#c3c3c3] text-xs min-w-0 truncate max-w-full">
+                            <span className="font-mono font-bold text-blue-700 dark:text-[#8ab4f8] text-xs min-w-0 truncate max-w-full">
                               <EditableCell value={c.secondPaid || 0} type="number" isCurrency currency={currency} jpyRate={jpyRate} usdRate={usdRate} onSave={(val) => handleUpdateCost(c, 'secondPaid', val)} canWrite={canWrite} />
                             </span>
-                            {c.secondPaidAt && <span className={cn("text-[8px] font-normal truncate mt-0.5", isSecondPaidMatch ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-slate-400")}>{formatDisplayDateMain(c.secondPaidAt)}</span>}
+                            {c.secondPaidAt && <span className={cn("text-[8px] font-mono truncate mt-0.5", isSecondPaidMatch ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-emerald-600 dark:text-emerald-400 font-bold")}>{formatDisplayDateMain(c.secondPaidAt)}</span>}
                           </div>
                           <div className={cn("flex flex-col items-center text-center border-l border-slate-200 dark:border-[#38383a] min-w-0 p-1 rounded transition-all", isThirdPaidMatch && "bg-emerald-100/70 dark:bg-emerald-950/60 ring-2 ring-emerald-500")}>
                             <span className="text-[9px] font-medium text-slate-400 dark:text-[#838383] uppercase mb-0.5">3rd Paid</span>
-                            <span className="font-mono font-bold text-slate-700 dark:text-[#c3c3c3] text-xs min-w-0 truncate max-w-full">
+                            <span className="font-mono font-bold text-blue-700 dark:text-[#8ab4f8] text-xs min-w-0 truncate max-w-full">
                               <EditableCell value={c.thirdPaid || 0} type="number" isCurrency currency={currency} jpyRate={jpyRate} usdRate={usdRate} onSave={(val) => handleUpdateCost(c, 'thirdPaid', val)} canWrite={canWrite} />
                             </span>
-                            {c.thirdPaidAt && <span className={cn("text-[8px] font-normal truncate mt-0.5", isThirdPaidMatch ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-slate-400")}>{formatDisplayDateMain(c.thirdPaidAt)}</span>}
+                            {c.thirdPaidAt && <span className={cn("text-[8px] font-mono truncate mt-0.5", isThirdPaidMatch ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-emerald-600 dark:text-emerald-400 font-bold")}>{formatDisplayDateMain(c.thirdPaidAt)}</span>}
                           </div>
                         </div>
 
@@ -1846,13 +1898,13 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                           <div className="flex items-center gap-3 flex-wrap justify-end">
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-400 dark:text-[#838383] uppercase font-medium">supp fee:</span>
-                              <span className="font-mono font-bold text-xs text-teal-600 dark:text-teal-400">
+                              <span className="font-mono font-bold text-xs text-indigo-700 dark:text-indigo-400">
                                 <EditableCell value={c.supportingFee} type="number" isCurrency currency={currency} jpyRate={jpyRate} usdRate={usdRate} onSave={(val) => handleUpdateCost(c, 'supportingFee', val)} canWrite={canWrite} />
                               </span>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-400 dark:text-[#838383] uppercase font-medium">Balance:</span>
-                              <span className={`font-mono font-bold text-xs ${cBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+                              <span className={`font-mono font-bold text-xs ${cBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                                 {formatCurrency(cBalance)}
                               </span>
                             </div>

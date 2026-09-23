@@ -243,16 +243,16 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               >
                 {p.name}
               </span>
-              <span className="text-[10px] text-slate-500 dark:text-[#838383] truncate font-mono flex items-center gap-1 flex-wrap">
-                <span>{p.code}</span>
-                <span>•</span>
+              <span className="text-[10px] text-slate-500 dark:text-[#838383] truncate font-mono flex items-center gap-1.5 flex-wrap">
+                <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0">{p.code}</span>
                 <span className={cn(
-                  p.store?.toLowerCase() === 'hcm' ? 'text-blue-600 dark:text-[#8ab4f8] font-semibold' :
-                  p.store?.toLowerCase() === 'hn' ? 'text-red-600 dark:text-red-400 font-semibold' : ''
+                  "px-1.5 py-0.2 text-[9px] font-bold rounded border uppercase shrink-0",
+                  p.store?.toLowerCase() === 'hcm' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200/80 dark:border-blue-800' :
+                  p.store?.toLowerCase() === 'hn' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800' : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
                 )}>{p.store}</span>
                 {p.location && (
                   <>
-                    <span>•</span>
+                    <span className="text-slate-400">•</span>
                     <span className="font-semibold text-slate-600 dark:text-slate-300">{p.location}</span>
                   </>
                 )}
@@ -271,7 +271,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
       {showStart && (
         <td
           className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
+            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-blue-700 dark:text-[#8ab4f8] font-bold border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
             "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
           )}
           style={{ position: "sticky", left: sideWidth, zIndex: 30, width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
@@ -282,7 +282,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
       {showFinish && (
         <td
           className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
+            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-pink-700 dark:text-pink-400 font-bold border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
             "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
           )}
           style={{ position: "sticky", left: sideWidth + (showStart ? startColWidth : 0), zIndex: 30, width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}

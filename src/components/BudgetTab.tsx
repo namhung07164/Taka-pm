@@ -1262,17 +1262,19 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
       let cardStyle = "";
       if (node.isParentNode) {
         cardStyle = isParent
-          ? "border-2 border-blue-500/80 dark:border-blue-500/60 shadow-md bg-gradient-to-r from-blue-50/60 to-indigo-50/40 dark:from-[#1b2030] dark:to-[#1e1e24]"
-          : "border border-slate-300 dark:border-[#48484c] shadow-xs bg-white dark:bg-[#1e1e20]";
+          ? "border-2 border-blue-500/80 dark:border-blue-500/60 shadow-md bg-gradient-to-r from-blue-50/60 to-indigo-50/40 dark:from-[#1b2030] dark:to-[#1e1e24] border-l-[5px] border-l-blue-600"
+          : cn("border border-slate-200/90 dark:border-[#38383b] shadow-xs bg-white dark:bg-[#1e1e20]", (node.remaining || 0) >= 0 ? "border-l-[5px] border-l-emerald-500" : "border-l-[5px] border-l-rose-500");
       } else if (isHighlightedChild) {
         cardStyle = isSelfRow
-          ? "ml-4 border-2 border-blue-500 ring-2 ring-blue-500/50 bg-blue-100/60 dark:bg-blue-950/70 shadow-md"
-          : "ml-4 border-2 border-amber-500 ring-2 ring-amber-500/50 bg-amber-100/60 dark:bg-amber-950/70 shadow-md";
+          ? "ml-4 border-2 border-blue-500 ring-2 ring-blue-500/50 bg-blue-100/60 dark:bg-blue-950/70 shadow-md border-l-[5px] border-l-blue-600"
+          : "ml-4 border-2 border-amber-500 ring-2 ring-amber-500/50 bg-amber-100/60 dark:bg-amber-950/70 shadow-md border-l-[5px] border-l-amber-600";
       } else if (isSelfRow) {
-        cardStyle = "ml-4 border-l-4 border-l-blue-500 border-t border-r border-b border-blue-200/80 dark:border-blue-900/50 bg-blue-50/30 dark:bg-[#151926]/70 shadow-xs";
+        cardStyle = "ml-4 border-l-[5px] border-l-blue-500 border-t border-r border-b border-blue-200/80 dark:border-blue-900/50 bg-blue-50/30 dark:bg-[#151926]/70 shadow-xs";
       } else {
-        cardStyle = "ml-4 border-l-4 border-l-amber-500 border-t border-r border-b border-amber-300/80 dark:border-amber-800/60 bg-amber-50/35 dark:bg-[#231b12]/70 shadow-xs";
+        cardStyle = "ml-4 border-l-[5px] border-l-amber-500 border-t border-r border-b border-amber-300/80 dark:border-amber-800/60 bg-amber-50/35 dark:bg-[#231b12]/70 shadow-xs";
       }
+
+      const cleanNodeName = node.name ? node.name.replace(new RegExp(`^${node.store}\\s*-\\s*${node.code}\\s*-\\s*`, 'i'), '') : '-';
 
       cards.push(
         <div 
@@ -1282,7 +1284,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
             cardStyle
           )}
         >
-          {/* Top row: Badges (Parent/Self/Sub, Year, Store) & Remaining Badge */}
+          {/* Top row: Badges (Parent/Self/Sub, Year, Store, Code, Location) & Remaining Badge */}
           <div className="flex justify-between items-start gap-2">
             <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
               {node.isParentNode && isParent && (
@@ -1314,34 +1316,52 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
                   MATCH
                 </span>
               )}
-              <span className="text-[10px] font-bold text-slate-700 dark:text-[#c3c3c3] px-1.5 py-0.5 bg-slate-200/70 dark:bg-[#28282a] rounded">
+              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
                 {node.year || '-'}
               </span>
-              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded uppercase", node.store?.toLowerCase() === 'hcm' ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800' : node.store?.toLowerCase() === 'hn' ? 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800' : 'bg-slate-100 text-slate-700 dark:bg-[#28282a] dark:text-[#c3c3c3]')}>
+              <span className={cn(
+                "px-1.5 py-0.5 text-[10px] font-bold rounded border uppercase shrink-0", 
+                node.store?.toLowerCase() === 'hcm' 
+                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200/80 dark:border-blue-800' 
+                  : node.store?.toLowerCase() === 'hn' 
+                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800' 
+                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              )}>
                 {node.store || '-'}
               </span>
+              <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0">
+                {node.code}
+              </span>
+              {(node.location || node.project?.location) && (
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                  • {node.location || node.project?.location}
+                </span>
+              )}
             </div>
 
-            <div className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md border font-mono shrink-0", vBg, vColor)}>
-              Rem: {formatCurrency(node.remaining)}
+            <div className="shrink-0">
+              <div className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md border font-mono shrink-0", vBg, vColor)}>
+                Rem: {formatCurrency(node.remaining)}
+              </div>
             </div>
           </div>
 
-          {/* Task Code + Task Name (placed side-by-side with highlight color for easy recognition) */}
-          <div className="flex items-start gap-1.5 flex-wrap leading-snug">
+          {/* Clean Project/Task Name with Quick Navigation on the right (elevated on same line) */}
+          <div className="flex items-start justify-between gap-2 w-full">
             <span className={cn(
-              "font-mono font-extrabold text-xs shrink-0",
-              node.isParentNode ? "text-blue-900 dark:text-[#a0c4ff] text-sm" : (isSubRow ? "text-amber-900 dark:text-amber-300" : "text-slate-900 dark:text-[#e3e3e3]")
+              "leading-snug flex-1 min-w-0 font-bold break-words",
+              node.isParentNode ? "text-slate-900 dark:text-white text-sm" : (isSubRow ? "text-amber-950 dark:text-amber-200 text-xs" : "text-slate-800 dark:text-slate-200 text-xs")
             )}>
-              {node.code}
+              {cleanNodeName}
             </span>
-            <span className="text-slate-300 dark:text-[#555558] shrink-0 select-none">-</span>
-            <span className={cn(
-              "text-xs leading-snug flex-1 min-w-0 font-bold",
-              node.isParentNode ? "text-blue-700 dark:text-[#8ab4f8] text-sm" : (isSubRow ? "text-amber-950 dark:text-amber-200" : "text-slate-800 dark:text-slate-200")
-            )}>
-              {node.name || '-'}
-            </span>
+
+            <div className="shrink-0 pt-0.5">
+              <QuickNavButton 
+                project={node.project || { code: node.code, year: node.year, store: node.store, name: node.name }} 
+                title={`Quick Navigator (${node.code})`} 
+                className="p-1! rounded!" 
+              />
+            </div>
           </div>
 
           {/* Metrics Grid */}
@@ -1417,7 +1437,6 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
             </div>
 
             <div className="flex items-center gap-1.5 ml-auto">
-              <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
               {canWrite && (
                 <>
                   {node.isParentNode ? (

@@ -299,7 +299,7 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
                               <td
                                 className={cn(
                                   "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center",
-                                  "text-slate-500 dark:text-[#838383] bg-slate-50 dark:bg-[#232325] group-hover:bg-slate-100 dark:hover:bg-[#2d2d30]",
+                                  "text-blue-700 dark:text-[#8ab4f8] font-bold bg-slate-50 dark:bg-[#232325] group-hover:bg-slate-100 dark:hover:bg-[#2d2d30]",
                                   dragOverTaskId === t.id
                                     ? (dropPosition === 'before' ? "!border-t-2 !border-t-blue-500 bg-blue-50/70 dark:bg-blue-950/40" : "!border-b-2 !border-b-blue-500 bg-blue-50/70 dark:bg-blue-950/40")
                                     : ""
@@ -320,7 +320,7 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
                               <td
                                 className={cn(
                                   "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
-                                  "text-slate-500 dark:text-[#838383] bg-slate-50 dark:bg-[#232325] group-hover:bg-slate-100 dark:hover:bg-[#2d2d30]",
+                                  "text-pink-700 dark:text-pink-400 font-bold bg-slate-50 dark:bg-[#232325] group-hover:bg-slate-100 dark:hover:bg-[#2d2d30]",
                                   dragOverTaskId === t.id
                                     ? (dropPosition === 'before' ? "!border-t-2 !border-t-blue-500 bg-blue-50/70 dark:bg-blue-950/40" : "!border-b-2 !border-b-blue-500 bg-blue-50/70 dark:bg-blue-950/40")
                                     : ""
