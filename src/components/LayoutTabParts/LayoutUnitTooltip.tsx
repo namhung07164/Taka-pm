@@ -36,6 +36,55 @@ interface LayoutUnitTooltipProps {
   storeFilter?: string;
 }
 
+export function getMdStatusColorClass(mdStatus: string): string {
+  if (!mdStatus) return 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+  
+  const s = mdStatus.trim().toLowerCase();
+
+  // 1. Signed Agreement / Contract Signed / Fully Executed / Finalized (Emerald Green)
+  if (s.includes('signed agreement') || s.includes('contract signed') || s.includes('executed') || s.includes('fully signed') || s.includes('finalized') || s.includes('agreement signed')) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800/80';
+  }
+
+  // 2. T&C Agreed / Terms Agreed / Commercial Agreed (Amethyst Purple / Indigo)
+  if (s.includes('t&c') || s.includes('tc agreed') || s.includes('terms agreed') || s.includes('commercial agreed')) {
+    return 'bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-950/70 dark:text-purple-300 dark:border-purple-800/80';
+  }
+
+  // 3. LOI Signed / LOA Signed / MOU / Pre-Agreed (Teal / Cyan)
+  if (s.includes('loi') || s.includes('loa') || s.includes('mou') || s.includes('pre-agreed') || s.includes('intent')) {
+    return 'bg-teal-50 text-teal-700 border-teal-300 dark:bg-teal-950/70 dark:text-teal-300 dark:border-teal-800/80';
+  }
+
+  // 4. Verbally Agreed / Verbal / Initial Talk (Warm Amber / Gold)
+  if (s.includes('verbal') || s.includes('initial agreement') || s.includes('talks agreed')) {
+    return 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/80';
+  }
+
+  // 5. Renewal / Replacement / Relocation / Extension (Royal Blue)
+  if (s.includes('renew') || s.includes('replace') || s.includes('relocat') || s.includes('exten')) {
+    return 'bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/70 dark:text-blue-300 dark:border-blue-800/80';
+  }
+
+  // 6. Negotiating / Discussion / Proposal Sent / Offer / Under Review / Draft (Sky Blue)
+  if (s.includes('negotiat') || s.includes('discuss') || s.includes('proposal') || s.includes('offer') || s.includes('review') || s.includes('draft') || s.includes('pending')) {
+    return 'bg-sky-50 text-sky-700 border-sky-300 dark:bg-sky-950/70 dark:text-sky-300 dark:border-sky-800/80';
+  }
+
+  // 7. Rejected / Cancelled / Terminated / Dropped / Vacant / Refused (Rose / Red)
+  if (s.includes('reject') || s.includes('cancel') || s.includes('terminat') || s.includes('drop') || s.includes('vacant') || s.includes('hold') || s.includes('fail') || s.includes('refus')) {
+    return 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800/80';
+  }
+
+  // 8. Generic "Agreed" or "Signed" fallback (Emerald Green)
+  if (s.includes('agree') || s.includes('sign') || s.includes('approved') || s.includes('confirm')) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800/80';
+  }
+
+  // Default Fallback: Cool Violet / Indigo
+  return 'bg-violet-50 text-violet-700 border-violet-300 dark:bg-violet-950/70 dark:text-violet-300 dark:border-violet-800/80';
+}
+
 export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   hoverInfo,
   tooltipRef,
@@ -290,13 +339,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     ? String(rawMdStatus).trim() 
     : '';
 
-  let mdStatusColorClass = 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800/60';
-  const lowerMdStatus = mdStatus.toLowerCase();
-  if (lowerMdStatus.includes('signed') || lowerMdStatus.includes('agreement')) {
-    mdStatusColorClass = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60';
-  } else if (lowerMdStatus.includes('reject')) {
-    mdStatusColorClass = 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/60';
-  }
+  // MD Status color class
+  const mdStatusColorClass = getMdStatusColorClass(mdStatus);
 
   // Task lines & Details (Strictly matching General Tab logic)
   const taskLines: string[] = (data.taskLines && Array.isArray(data.taskLines) && data.taskLines.length > 0)
