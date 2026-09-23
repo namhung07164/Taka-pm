@@ -107,13 +107,23 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       {visibleColumns.includes('no') && (
         <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
           <div className="flex items-center gap-1.5">
+            <span className="font-mono text-xs font-bold text-slate-700 dark:text-[#c3c3c3]">{p.no}</span>
             <button
-              onClick={() => onToggleGroup(p.id!)}
-              className="p-0.5 hover:bg-slate-200 dark:hover:bg-[#333336] rounded text-slate-500 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleGroup(p.id!);
+              }}
+              className={cn(
+                "px-1.5 py-0.5 rounded text-white transition-all shadow-2xs flex items-center gap-1 cursor-pointer font-semibold active:scale-95 touch-manipulation text-xs",
+                isExpanded
+                  ? "bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600"
+                  : "bg-blue-600 hover:bg-blue-700"
+              )}
+              title={isExpanded ? "Collapse tasks" : `Expand tasks (${effectiveTaskCount})`}
             >
-              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              <span className="text-[10px]">({effectiveTaskCount})</span>
             </button>
-            <span className="truncate">{p.no}</span>
           </div>
         </td>
       )}

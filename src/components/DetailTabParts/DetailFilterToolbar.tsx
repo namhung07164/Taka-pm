@@ -142,25 +142,26 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
           visibleColumns={visibleColumns} 
           onAddColumn={onToggleColumn} 
         />
+      </div>
 
-        {/* Action Controls - Fixed Sticky positioning */}
-        {hasWritePermission && !isEditMode && (
-          <div className="fixed top-[76px] xl:top-[84px] right-4 md:right-8 z-50 flex flex-row gap-2 justify-end items-start print:hidden">
-            <button
-              onClick={() => setIsEditMode(true)}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 dark:bg-[#1e1e20] border border-slate-700 dark:border-[#444446] text-white dark:text-[#e3e3e3] hover:bg-slate-700 dark:hover:bg-[#28282a]/50 rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs cursor-pointer"
-              title="Edit Mode"
-            >
-              <Edit3 className="w-4 h-4 text-blue-400 pointer-events-none" />
-              <span className="hidden sm:inline pointer-events-none">
-                Edit Mode
-              </span>
-            </button>
-          </div>
-        )}
+      {/* Floating Edit Mode Button - z-[9999] top layer */}
+      {hasWritePermission && !isEditMode && (
+        <div className="fixed top-[108px] sm:top-[112px] right-4 md:right-8 z-[9999] flex flex-row gap-2 justify-end items-start print:hidden">
+          <button
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-slate-900 dark:bg-blue-600 border border-slate-700 dark:border-blue-500 text-white hover:bg-slate-800 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer"
+            title="Edit Mode"
+          >
+            <Edit3 className="w-4 h-4 text-blue-400 dark:text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
 
-        {hasWritePermission && isEditMode && (
-          <div className="fixed top-[76px] xl:top-[84px] left-1/2 -translate-x-1/2 z-[100] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-xl backdrop-blur-md bg-opacity-90 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden">
+      {hasWritePermission && isEditMode && (
+        <div className="fixed top-[108px] sm:top-[112px] left-1/2 -translate-x-1/2 z-[9999] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden">
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
               <Edit3 className="w-3.5 h-3.5 text-blue-500" />
               <span>Editing Mode</span>
@@ -324,7 +325,6 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
             </div>
           </>
         )}
-      </div>
     </div>
   );
 });

@@ -66,6 +66,11 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   const i = item.taskIndex;
   const isChildTask = Boolean(t.parentTaskId);
 
+  const childTasksCount = React.useMemo(() => {
+    if (!tasks || tasks.length === 0) return 0;
+    return tasks.filter(child => child.parentTaskId === t.id || (t.taskCodePhu && child.parentTaskId === t.taskCodePhu)).length;
+  }, [tasks, t.id, t.taskCodePhu]);
+
   return (
     <tr
       id={`detail-task-${t.id}`}
@@ -109,17 +114,21 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('no') && (
-        <td className="px-3 py-2 text-slate-500 text-xs font-mono">
-          <div className="flex items-center gap-1.5 pl-2">
+        <td className="px-3 py-2 text-slate-600 dark:text-[#c3c3c3] text-xs font-mono">
+          <div className="flex items-center gap-1.5 pl-1">
             {canWrite && (
               <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <GripVertical size={13} />
               </div>
             )}
-            <span className="text-slate-400">{item.taskIndex + 1}</span>
+            {childTasksCount > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-2xs flex items-center gap-0.5 leading-none" title={`${childTasksCount} task con`}>
+                ({childTasksCount})
+              </span>
+            )}
             {isChildTask && (
-              <span className="text-[10px] text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-1 rounded">
-                sub
+              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
+                ↳ SUB
               </span>
             )}
           </div>
