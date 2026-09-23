@@ -16,6 +16,16 @@ html, body {
   overscroll-behavior-x: none;
 }
 
+html.dark, html.dark body {
+  background-color: #131314;
+  color: #f3f3f3;
+}
+
+html:not(.dark), html:not(.dark) body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
 #root {
   width: 100%;
   overflow-x: hidden;

@@ -3219,6 +3219,8 @@ export function DetailTab({
         handleMoveTask={handleMoveTask}
         handleUpdateTask={handleUpdateTask}
         handleDeleteTask={handleDeleteTask}
+        taskCodeMap={taskCodeMap}
+        taskActualStatusMap={taskActualStatusMap}
       />
 
       <DetailFocusControls 
