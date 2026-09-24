@@ -56,17 +56,26 @@ export function useTaskModalLogic({
   const [dateErrors, setDateErrors] = useState<any>({});
   const [formData, setFormData] = useState<Partial<Task>>(() => {
     if (task) return task;
+    const defaultDate = getDefaultDatetimeLocal();
+    const targetProj = projects?.find(p => 
+      p.code === prefillProjectCode &&
+      (prefillProjectStore ? p.store === prefillProjectStore : true) &&
+      (prefillProjectYear ? String(p.year) === String(prefillProjectYear) : true)
+    ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
+
     return {
-      projectCode: prefillProjectCode || (projects && projects.length > 0 ? projects[0]?.code : ''),
-      projectYear: prefillProjectYear || (projects && projects.length > 0 ? projects[0]?.year : undefined),
-      projectStore: prefillProjectStore || (projects && projects.length > 0 ? projects[0]?.store : undefined),
+      projectCode: prefillProjectCode || targetProj?.code || '',
+      projectYear: prefillProjectYear || targetProj?.year || undefined,
+      projectStore: prefillProjectStore || targetProj?.store || undefined,
       name: '',
-      start: getDefaultDatetimeLocal(),
-      finish: getDefaultDatetimeLocal(),
+      start: defaultDate,
+      finish: defaultDate,
+      baselineStart: defaultDate,
+      baselineFinish: defaultDate,
       duration: '0',
       durationManual: true,
       finishManual: false,
-      party: ''
+      party: targetProj?.party || ''
     };
   });
   const nameRef = useRef<HTMLInputElement>(null);
@@ -126,17 +135,26 @@ export function useTaskModalLogic({
         predecessor: healedPred !== undefined ? healedPred : (task.predecessor || '')
       });
     } else {
+      const defaultDate = getDefaultDatetimeLocal();
+      const targetProj = projects?.find(p => 
+        p.code === prefillProjectCode &&
+        (prefillProjectStore ? p.store === prefillProjectStore : true) &&
+        (prefillProjectYear ? String(p.year) === String(prefillProjectYear) : true)
+      ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
+
       setFormData({
-        projectCode: prefillProjectCode || (projects && projects.length > 0 ? projects[0]?.code : ''),
-        projectYear: prefillProjectYear || (projects && projects.length > 0 ? projects[0]?.year : undefined),
-        projectStore: prefillProjectStore || (projects && projects.length > 0 ? projects[0]?.store : undefined),
+        projectCode: prefillProjectCode || targetProj?.code || '',
+        projectYear: prefillProjectYear || targetProj?.year || undefined,
+        projectStore: prefillProjectStore || targetProj?.store || undefined,
         name: '',
-        start: getDefaultDatetimeLocal(),
-        finish: getDefaultDatetimeLocal(),
+        start: defaultDate,
+        finish: defaultDate,
+        baselineStart: defaultDate,
+        baselineFinish: defaultDate,
         duration: '0',
         durationManual: true,
         finishManual: false,
-        party: ''
+        party: targetProj?.party || ''
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -354,13 +372,30 @@ export function useTaskModalLogic({
     }
 
     try {
-      
+      const todayDate = getDefaultDatetimeLocal();
+      let finalFormData = { ...formData };
+      if (!finalFormData.start) finalFormData.start = todayDate;
+      if (!finalFormData.finish) finalFormData.finish = finalFormData.start || todayDate;
+      if (!finalFormData.baselineStart) finalFormData.baselineStart = finalFormData.start || todayDate;
+      if (!finalFormData.baselineFinish) finalFormData.baselineFinish = finalFormData.finish || todayDate;
+      if (finalFormData.duration === undefined || finalFormData.duration === null || String(finalFormData.duration).trim() === '') {
+        finalFormData.duration = "0";
+      }
+      let durationVal = parseFloat(String(finalFormData.duration || "0"));
+      if (durationVal < 0) {
+        finalFormData.duration = "0";
+        finalFormData.finish = finalFormData.start;
+      }
+      if (!finalFormData.party && currentProject?.party) {
+        finalFormData.party = currentProject.party;
+      }
+
       if (cloudStatus === 'offline') {
         let payload = {
-          ...formData,
+          ...finalFormData,
           id,
           projectYear: Number(currentYear) || new Date().getFullYear(),
-          comments: task?.comments || formData.comments || [],
+          comments: task?.comments || finalFormData.comments || [],
           updatedAt: new Date().toISOString(),
           orderIndex: newOrderIndex
         };
@@ -370,17 +405,11 @@ export function useTaskModalLogic({
         setIsSubmitting(false); return;
       }
       
-      let finalFormData = { ...formData };
-      let durationVal = parseFloat(String(finalFormData.duration || "0"));
-      if (durationVal < 0) {
-        finalFormData.duration = "0";
-        finalFormData.finish = finalFormData.start;
-      }
       let dataToSave = {
         ...finalFormData,
         id,
         projectYear: Number(currentYear) || new Date().getFullYear(),
-        comments: task?.comments || formData.comments || [],
+        comments: task?.comments || finalFormData.comments || [],
         updatedAt: new Date().toISOString(),
         orderIndex: newOrderIndex
       };

@@ -2154,6 +2154,17 @@ export function DetailTab({
           }
           delete t.importComment;
 
+          if (!existing) {
+            const defaultToday = getDefaultDatetimeLocal();
+            if (!t.start) t.start = defaultToday;
+            if (!t.finish) t.finish = t.start || defaultToday;
+            if (!t.baselineStart) t.baselineStart = t.start || defaultToday;
+            if (!t.baselineFinish) t.baselineFinish = t.finish || defaultToday;
+            if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') {
+              t.duration = "0";
+            }
+          }
+
           const finalTask = existing 
             ? { ...existing, ...t, comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu, updatedAt: new Date().toISOString() } 
             : { ...t, id, comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu, durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString() };

@@ -33,7 +33,14 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
             onChange={(e) => {
               try {
                 const val = JSON.parse(e.target.value);
-                setFormData({ ...formData, projectCode: val.code, projectYear: val.year, projectStore: val.store });
+                const matchedProj = projects.find(p => p.code === val.code && String(p.year) === String(val.year) && p.store === val.store) || projects.find(p => p.code === val.code);
+                setFormData({ 
+                  ...formData, 
+                  projectCode: val.code, 
+                  projectYear: val.year, 
+                  projectStore: val.store,
+                  ...(!task && !formData.party && matchedProj?.party ? { party: matchedProj.party } : {})
+                });
               } catch (err) {}
             }}
             required 

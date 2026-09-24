@@ -1274,3 +1274,18 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Loại bỏ hoàn toàn các hàm duyệt mảng toàn cục (O(N * M)) trong quá trình render danh sách task con trên di động, giảm tải 95% áp lực CPU trên thiết bị iPhone, đem lại trải nghiệm cuộn 60-120 FPS mượt mà.
    - **Tự Động Nạp Thêm Dữ Liệu Thông Minh (Auto Infinite Loading)**:
      + Tích hợp cơ chế lắng nghe sự kiện cuộn thông minh trên container di động: tự động nạp tiếp 25 dự án tiếp theo khi người dùng cuộn cách đáy dưới 450px, loại bỏ cảm giác chờ đợi hoặc phải ấn phím thủ công.
+
+15. **Giá Trị Mặc Định Thông Minh Khi Tạo Task Mới (New Task Smart Defaults)**:
+   - **Tự động điền ngày hiện tại (Today Timestamp)**:
+     + Khi mở form tạo Task mới hoặc nếu người dùng để trống các ô ngày, hệ thống sẽ tự động gán ngày hôm nay (mốc 21:00 chuẩn) cho các trường:
+       * **Start (Plan)**: Mặc định là ngày hôm nay.
+       * **Finish (Plan)**: Mặc định là ngày hôm nay.
+       * **Baseline Start**: Mặc định là ngày hôm nay (đồng bộ với Start Plan).
+       * **Baseline Finish**: Mặc định là ngày hôm nay (đồng bộ với Finish Plan).
+   - **Thời lượng công việc (Duration)**:
+     + Tự động mặc định là `0` ngày (do Start và Finish cùng ngày hôm nay).
+   - **Đơn vị phụ trách (Party)**:
+     + Khi tạo task trong dự án, hệ thống tự động kế thừa `Party` từ Dự án cha (Project) để đảm bảo tính nhất quán danh mục nhà thầu/đơn vị phụ trách (hoặc người dùng có thể tự do chọn nhà thầu mong muốn từ MultiSelect).
+   - **Bảo Vệ Tính Toàn Vẹn Khi Lưu (Persistence Normalization)**:
+     + Cả hai chế độ Online (Firestore) và Offline Sync đều tự động chuẩn hóa các trường này trước khi lưu trữ, đảm bảo không bao giờ phát sinh giá trị rác hoặc rỗng trên hệ thống.
+
