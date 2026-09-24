@@ -1443,9 +1443,15 @@ export function GanttTab({
   ]);
 
   useEffect(() => {
-    const handleClickOutside = () => setActiveTooltip(null);
+    const handleClickOutside = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest && target.closest(".gantt-tooltip-global")) {
+        return;
+      }
+      setActiveTooltip(null);
+    };
     document.addEventListener("click", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside, { passive: true });
     return () => {
       document.removeEventListener("click", handleClickOutside);
       document.removeEventListener("touchstart", handleClickOutside);

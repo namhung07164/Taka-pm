@@ -133,7 +133,10 @@ export const GanttBar = React.memo(function GanttBar({
           <div
             ref={tooltipRef}
             style={{ top: -9999, left: -9999 }}
-          className="fixed gantt-tooltip-global z-[99999] flex w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600 flex-col gap-1 pointer-events-none"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            onClick={(e) => e.stopPropagation()}
+            className="fixed gantt-tooltip-global z-[99999] flex w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600 flex-col gap-1 pointer-events-auto select-text"
           >
             <div className="font-bold border-b border-slate-600 pb-1 mb-0.5 flex items-start flex-wrap gap-1.5">
               {label}{" "}
@@ -204,7 +207,13 @@ export const GanttBar = React.memo(function GanttBar({
                   </span>
                 </div>
                 {extraVars.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 ? (
-                  <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                  <div
+                    className="flex flex-col gap-1 max-h-48 md:max-h-56 overflow-y-auto pr-1 custom-scrollbar touch-pan-y overscroll-contain pointer-events-auto select-text"
+                    style={{ WebkitOverflowScrolling: 'touch' }}
+                    onWheel={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
+                  >
                     {extraVars.onProcessChildTasks.map((ct) => (
                       <div
                         key={ct.id}
@@ -290,7 +299,10 @@ export const GanttBar = React.memo(function GanttBar({
         <div
           ref={tooltipRef}
           style={{ top: -9999, left: -9999 }}
-          className="fixed gantt-tooltip-global z-[99999] flex w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600 flex-col gap-1 pointer-events-none"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed gantt-tooltip-global z-[99999] flex w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600 flex-col gap-1 pointer-events-auto select-text"
         >
           <div className="font-bold border-b border-slate-600 pb-1 mb-0.5 flex items-start flex-wrap gap-1.5">
             <span className="whitespace-normal break-words">{label}</span>
@@ -377,7 +389,13 @@ export const GanttBar = React.memo(function GanttBar({
                 </span>
               </div>
               {extraVars.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 ? (
-                <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                <div
+                  className="flex flex-col gap-1 max-h-48 md:max-h-56 overflow-y-auto pr-1 custom-scrollbar touch-pan-y overscroll-contain pointer-events-auto select-text"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
+                  onWheel={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
                   {extraVars.onProcessChildTasks.map((ct) => (
                     <div
                       key={ct.id}
