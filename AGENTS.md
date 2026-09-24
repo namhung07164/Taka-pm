@@ -68,3 +68,14 @@ Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file
 - **Form Sub-Component Modularization**: Mọi modal form phức tạp BẮT BUỘC tách thành các sub-components độc lập bọc `React.memo` (vd: `TaskDatesSection`, `TaskPredecessorSection`, `TaskModalHeader`). Thao tác gõ văn bản hoặc thay đổi input ở 1 phần không được gây re-render các phần còn lại.
 - **Unified Shallow Subscriptions**: Tận dụng triệt để các shallow selector hooks (`useUISlice`, `useDataSlice`, `useStoreShallow` trong `src/store/useAppStore.ts`) để đảm bảo component chỉ re-render khi đúng thuộc tính được lắng nghe thay đổi.
 
+## 13. Unified UI/UX Design System & Element Consistency (Quy chuẩn Thiết kế Đồng nhất)
+- **Universal Design Consistency Mandate**: Các thành phần giao diện (UI elements) và ngôn ngữ thiết kế (Design Language) trên toàn bộ ứng dụng (General, Detail, Gantt, Cost, Budget, Layout, Summary, Notification, Settings, Modals, v.v.) **BẮT BUỘC** phải được thiết kế đồng nhất $100\%$ về kiểu dáng, font chữ, màu sắc, khoảng cách, icon và trải nghiệm tương tác.
+- **Data Field & Typography Uniformity**:
+  - **Year (Năm)**: Quy cách hiển thị, badge hoặc nhãn lọc năm (`font-bold`, palette màu neutral/theme chuẩn) phải đồng nhất trên mọi bảng tính, biểu đồ Gantt, thẻ tổng hợp và bộ lọc.
+  - **Project Code & Task Code**: Luôn dùng font monospace (`font-mono font-extrabold uppercase`), màu xanh thương hiệu (`text-blue-700 dark:text-[#8ab4f8]`), kèm hover state nhất quán.
+  - **Task Name & Descriptions**: Sử dụng thống nhất hệ thống Typography chuẩn (cùng `font-medium`/`font-semibold`, line-height, text truncation `truncate` hoặc `line-clamp` đồng bộ giữa Task Detail, Gantt, Modal và Calendar).
+  - **Store Identifier (Chi nhánh HCM / HN)**: Áp dụng màu sắc nhận diện bất biến trên toàn hệ thống (HCM: Blue `text-blue-600 dark:text-[#8ab4f8]`, HN: Red `text-red-600 dark:text-red-400`).
+  - **Status & Progress Badges**: Các trạng thái tiến độ (Completed, On Process, Upcoming, Delay, Overdue) phải dùng chung chuẩn màu Tailwind (Emerald, Blue, Amber, Rose) và cùng cấu trúc bo góc, padding badge trên mọi component.
+- **Interactive Controls & Tokens Reuse**: Mọi nút bấm (Buttons), thanh tìm kiếm (`DebouncedSearchInput`), dropdown lọc (`MultiCheckboxSelect`), ô nhập liệu nhanh (`FastInput`), date picker và các action buttons phải dùng chung quy chuẩn Token Tailwind (`rounded-lg`/`rounded-xl`, `active:scale-95 touch-manipulation`, border transition và focus ring).
+
+
