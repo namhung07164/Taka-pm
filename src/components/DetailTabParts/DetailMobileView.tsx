@@ -307,7 +307,7 @@ export const DetailMobileView = memo(function DetailMobileView({
               {isExpanded && (
                 <div className="flex flex-col gap-2 mt-2">
                   {tasksToRender.map((t, idx) => {
-                    const taskCode = taskCodeMap?.get(t.id) || t.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : '');
+                    const taskCode = taskCodeMap?.get(t.id) || t.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : '');
                     const actStatus = taskActualStatusMap?.get(t.id) || { label: 'Pending', color: 'bg-slate-50 text-slate-600' };
 
                     return (

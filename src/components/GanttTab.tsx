@@ -1052,7 +1052,7 @@ export function GanttTab({
       ));
       groupTasks.forEach((t, i) => {
         if (!t) return;
-        codeMap.set(t.id, t.taskCodePhu || `${p.code || ''}-${i + 1}`);
+        codeMap.set(t.id, t.taskCodePhu || `${p.code || ''}#${i + 1}`);
       });
     });
 

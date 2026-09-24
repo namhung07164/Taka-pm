@@ -217,13 +217,21 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
 4. **Tự Động Cập Nhật Predecessor Của Task Con Khi Đổi Task Code Mẹ (Hỗ Trợ Task Code Chứa Dấu Phẩy ",")**:
    - Khi chỉnh sửa mã công việc mẹ (`Task Code` / `taskCodePhu`), hệ thống tự động quét và cập nhật lại mã tương ứng trong chuỗi `Predecessor` của tất cả các Task con phụ thuộc mà không làm gián đoạn chuỗi liên kết tiến độ.
    - **Xử lý đặc biệt cho Task Code có chứa dấu phẩy `","`** (ví dụ mã công việc dạng `L1,L2-01`): Thuật toán nhận diện thông minh bảo vệ toàn vẹn chuỗi ký tự của Task Code, phân biệt chính xác dấu phẩy nằm bên trong mã với dấu phẩy dùng để ngăn cách giữa các Predecessor khác nhau, tuyệt đối không bị tách nhầm thành nhiều tiền nhiệm rời rạc hay làm mất dữ liệu.
-5. **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án & Cơ Chế Chữa Lành (Project Code Cascade & Auto-Healing)**:
-   - Khi chỉnh sửa mã dự án (`Project Code` - ví dụ từ `PRJ-01` sang `PRJ-02`, hoặc mã ghép nhiều gian hàng dùng dấu chấm phẩy `;` như `L1-115` sang `L1-115; L1-113`) trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
-     + Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01-1` ➜ `PRJ-02-1`, hoặc `L1-115-13` ➜ `L1-115; L1-113-13`).
-     + Đồng thời, hệ thống tự động quét và viết lại toàn bộ các chuỗi tiền nhiệm (`Predecessor`) tham chiếu đến các công việc của dự án này trên toàn bộ hệ thống (bao gồm cả các công việc trong cùng dự án và các công việc thuộc các dự án khác có phụ thuộc chéo).
-     + Toàn bộ hậu tố kiểu ràng buộc tiến độ (như `FS+2`, `SS`, `FF`, `SF-1`) được bảo toàn chính xác 100%.
-     + **Cơ Chế Tự Động Chữa Lành Tiền Nhiệm (Smart Predecessor Auto-Healing Engine)**: Ngay khi nạp giao diện, sắp xếp (Sort), di chuyển task, hoặc mở hộp thoại Task Modal, hệ thống tự động nhận diện các tiền nhiệm còn lưu mã cũ/mã ghép phân đoạn và tự động chuẩn hóa, điền lại ngay lập tức theo Task Code mới nhất (`0ms Optimistic UI`) và lưu đồng bộ ngầm vào cơ sở dữ liệu.
-     + Hỗ trợ cơ chế Optimistic UI (cập nhật tức thì 0ms trên giao diện) và hỗ trợ hoàn tác (`Undo`) trọn vẹn.
+5. **Chuẩn Định Dạng Mã Task Phụ Dạng "#" & Cơ Chế Chữa Lành Tự Động (Subtask Code Standard "#" & Auto-Healing)**:
+   - **Định dạng chuẩn `#` (vd: `B2-B208#1`, `CP-01#2`)**:
+     + Nhằm phân biệt rõ ràng giữa dấu gạch ngang trong mã dự án (ví dụ `B2-B208`, `HN-TKV-SMZ2`) và số thứ tự công việc con, hệ thống sử dụng dấu `#` làm dấu phân tách chính thức (`ProjectCode#Index`, ví dụ `B2-B208#1`, `B2-B208#2`).
+     + Dấu `#` giúp tránh hoàn toàn nhầm lẫn với dấu trừ toán học hoặc độ trễ âm (Lag) trong chuỗi tiền nhiệm (`FS-1`).
+   - **Tự động chuyển đổi toàn bộ mã phụ và tiền nhiệm cũ sang `#` (Seamless Migration)**:
+     + Khi người dùng truy cập bảng chi tiết, hệ thống tự động quét và nâng cấp tất cả các mã phụ `taskCodePhu` và chuỗi tiền nhiệm `Predecessor` từ chuẩn cũ `-` sang chuẩn `#` (vd: `B2-B208-1` ➜ `B2-B208#1`, `smz2-85` ➜ `HN-TKV-SMZ2#85`).
+     + Tiến trình chạy ngầm qua từng đợt (chunks) không làm gián đoạn hay đơ giao diện (`0ms Optimistic UI`).
+   - **Bảo Vệ Xung Đột Số (Numerical Conflict Guard)**:
+     + Khi người dùng gõ tìm kiếm tiền nhiệm có số thứ tự cụ thể (ví dụ nhập `B2-B208-2` hoặc `#2` hoặc `2`), hệ thống chặn tuyệt đối việc ép gợi ý về các task khác số (như `B2-B208#1`).
+     + Nếu gõ theo định dạng cũ có dấu `-` (ví dụ `B2-B208-2`), hệ thống tự động hiểu và chuẩn hóa chính xác sang `B2-B208#2`.
+   - **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án (Project Code Cascade)**:
+     + Khi chỉnh sửa mã dự án trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
+       * Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01#1` ➜ `PRJ-02#1`).
+       * Đồng thời, tự động quét và viết lại toàn bộ các chuỗi tiền nhiệm (`Predecessor`) tham chiếu đến các công việc của dự án này trên toàn bộ hệ thống.
+       * Toàn bộ hậu tố kiểu ràng buộc tiến độ (như `FS+2`, `SS`, `FF`, `SF-1`) được bảo toàn chính xác 100%.
 
 6. **Đồng Bộ Ngày Bắt Đầu & Kết Thúc Tức Thì Sang Tab General (Real-Time Pre-computed Dates Sync)**:
    - Mọi thao tác thêm mới, chỉnh sửa ngày (`Start`/`Finish`), xóa hoặc cập nhật tiến độ công việc trên tab **Task detail** đều tự động tính toán lại ngày bắt đầu sớm nhất (`computedTakStart`), ngày kết thúc muộn nhất (`computedTakCompl`) và ngày khai trương (`computedOpening`) của dự án.

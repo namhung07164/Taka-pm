@@ -349,13 +349,19 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     groupTasks.forEach((t, i) => {
       if (!t) return;
       // 1. Task secondary code (taskCodePhu) if any
-      if (t.taskCodePhu) addKey(t, t.taskCodePhu);
+      if (t.taskCodePhu) {
+        addKey(t, t.taskCodePhu);
+        if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
+        if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+      }
 
-      // 2. Sequential code within project: ${p.code}-${i + 1}
+      // 2. Sequential code within project: ${p.code}#${i + 1} and legacy ${p.code}-${i + 1}
+      addKey(t, `${p.code || ''}#${i + 1}`);
       addKey(t, `${p.code || ''}-${i + 1}`);
 
       // 3. OrderIndex-based code if defined
       if (t.orderIndex !== undefined && t.orderIndex !== null) {
+        addKey(t, `${p.code || ''}#${Number(t.orderIndex) + 1}`);
         addKey(t, `${p.code || ''}-${Number(t.orderIndex) + 1}`);
       }
 
@@ -367,9 +373,14 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
   // Also index all tasks directly to ensure unparented or cross-project tasks are reachable
   safeTasks.forEach(t => {
     if (!t) return;
-    if (t.taskCodePhu) addKey(t, t.taskCodePhu);
+    if (t.taskCodePhu) {
+      addKey(t, t.taskCodePhu);
+      if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
+      if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+    }
     if (t.projectCode) {
       if (t.orderIndex !== undefined && t.orderIndex !== null) {
+        addKey(t, `${t.projectCode}#${Number(t.orderIndex) + 1}`);
         addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
       }
     }
@@ -407,7 +418,7 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
 
   const i = groupTasks.findIndex(t => t.id === task.id);
   const orderNum = i !== -1 ? i + 1 : ((task.orderIndex !== undefined ? task.orderIndex : 0) + 1);
-  const defaultCode = currentPCode ? `${currentPCode}-${orderNum}` : '';
+  const defaultCode = currentPCode ? `${currentPCode}#${orderNum}` : '';
 
   if (!task.taskCodePhu || !task.taskCodePhu.trim()) {
     return defaultCode;
@@ -417,16 +428,23 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   const lowerPhu = trimmedPhu.toLowerCase();
   const lowerPCode = currentPCode.toLowerCase();
 
-  if (lowerPCode && lowerPhu.startsWith(lowerPCode + '-')) {
+  // If already formatted with '#', e.g. "B2-B208#1"
+  if (lowerPCode && lowerPhu.startsWith(lowerPCode + '#')) {
     return trimmedPhu;
+  }
+
+  // If using legacy '-' format e.g. "B2-B208-1", convert to '#'
+  if (lowerPCode && lowerPhu.startsWith(lowerPCode + '-')) {
+    const suffix = trimmedPhu.substring(lowerPCode.length + 1);
+    return `${currentPCode}#${suffix}`;
   }
 
   if (lowerPCode) {
     const pCodeParts = lowerPCode.split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
-    const matchedPart = pCodeParts.find(part => lowerPhu.startsWith(part + '-'));
+    const matchedPart = pCodeParts.find(part => lowerPhu.startsWith(part + '#') || lowerPhu.startsWith(part + '-'));
     if (matchedPart) {
-      const suffix = trimmedPhu.substring(matchedPart.length);
-      return `${currentPCode}${suffix}`;
+      const suffix = trimmedPhu.substring(matchedPart.length + 1);
+      return `${currentPCode}#${suffix}`;
     }
   }
 
@@ -470,16 +488,19 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
       const shortMatch = lowerMatches.match(/^[-#\s]*(\d+)(.*)$/);
       if (shortMatch) {
         const subIndex = shortMatch[1];
-        const candidateCode = `${String(contextTask.projectCode).trim().toLowerCase()}-${subIndex}`;
-        if (taskNoMap.has(candidateCode)) {
-          longestMatch = candidateCode;
+        const candidateHash = `${String(contextTask.projectCode).trim().toLowerCase()}#${subIndex}`;
+        const candidateDash = `${String(contextTask.projectCode).trim().toLowerCase()}-${subIndex}`;
+        if (taskNoMap.has(candidateHash)) {
+          longestMatch = candidateHash;
+        } else if (taskNoMap.has(candidateDash)) {
+          longestMatch = candidateDash;
         }
       }
     }
 
-    // Smart fallback 3: legacy project code prefix or partial project code (e.g. "l1-115-13" when project is "L1-115, L1-113")
+    // Smart fallback 3: legacy project code prefix or partial project code (e.g. "l1-115#13" or "l1-115-13")
     if (!longestMatch && contextTask && contextTask.projectCode) {
-      const matchPrefixAndIndex = lowerMatches.match(/^(.+?)[-_\s]+(\d+)(.*)$/);
+      const matchPrefixAndIndex = lowerMatches.match(/^(.+?)[-#_\s]+(\d+)(.*)$/);
       if (matchPrefixAndIndex) {
         const candidatePrefix = matchPrefixAndIndex[1].trim();
         const subIndex = matchPrefixAndIndex[2];
@@ -490,9 +511,12 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
         const matchesPart = pCodeParts.some(part => part === candidatePrefix || part.startsWith(candidatePrefix) || candidatePrefix.startsWith(part));
         
         if (matchesPart) {
-          const candidateCode = `${currentPCode}-${subIndex}`;
-          if (taskNoMap.has(candidateCode)) {
-            longestMatch = candidateCode;
+          const candidateHash = `${currentPCode}#${subIndex}`;
+          const candidateDash = `${currentPCode}-${subIndex}`;
+          if (taskNoMap.has(candidateHash)) {
+            longestMatch = candidateHash;
+          } else if (taskNoMap.has(candidateDash)) {
+            longestMatch = candidateDash;
           }
         }
       }
@@ -1029,12 +1053,12 @@ export function normalizeAndHealTaskPredecessors(
         if (!targetTask) {
           targetTask = sameProjectTasks.find(t => {
             const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
-            return code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
+            return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
           });
         }
 
         if (targetTask) {
-          const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}-${subIndexNum}`).trim();
+          const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}#${subIndexNum}`).trim();
           if (newCode) {
             changed = true;
             return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -1069,18 +1093,36 @@ export function normalizeAndHealTaskPredecessors(
           if (!targetTask) {
             targetTask = targetTasks.find(t => {
               const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
-              return code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
+              return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
             });
           }
 
           if (targetTask) {
-            const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}-${subIndexNum}`).trim();
+            const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}#${subIndexNum}`).trim();
             if (newCode) {
               changed = true;
               return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
             }
           }
         }
+      }
+    }
+
+    // Direct regex migration fallback if token is in legacy format "PROJ-1" -> "PROJ#1"
+    const legacyDashMatch = baseToken.match(/^(.+)-(\d+)$/);
+    if (legacyDashMatch) {
+      const pCandidate = legacyDashMatch[1].trim();
+      const numCandidate = legacyDashMatch[2];
+      const pLower = pCandidate.toLowerCase();
+      const isKnownProject = projects.some(p => {
+        if (!p || !p.code) return false;
+        const code = p.code.toLowerCase();
+        return code === pLower || code.includes(pLower) || pLower.includes(code);
+      });
+      if (isKnownProject || pLower === String(task.projectCode || '').trim().toLowerCase()) {
+        changed = true;
+        const migratedToken = `${pCandidate}#${numCandidate}`;
+        return `${migratedToken}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
       }
     }
 

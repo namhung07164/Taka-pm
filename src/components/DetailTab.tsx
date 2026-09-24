@@ -331,21 +331,28 @@ export function DetailTab({
         // Zero-delay optimistic UI update (0ms)
         useAppStore.getState().setTasks(healed.updatedTasks);
 
-        // Batch update to Firestore in background (non-blocking)
-        const batch = writeBatch(db);
-        healed.updatesToSave.forEach(u => {
-          const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
-          const updatePayload: any = { updatedAt: u.updatedAt };
-          if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
-          if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
-          batch.update(tRef, updatePayload);
-        });
-        batch.commit().catch(e => console.error("Background sync predecessors error:", e));
+        // Batch update to Firestore in background (non-blocking) in chunks of 400
+        const CHUNK_SIZE = 400;
+        const commitChunks = async () => {
+          for (let i = 0; i < healed.updatesToSave.length; i += CHUNK_SIZE) {
+            const chunk = healed.updatesToSave.slice(i, i + CHUNK_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(u => {
+              const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
+              const updatePayload: any = { updatedAt: u.updatedAt };
+              if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
+              if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
+              batch.update(tRef, updatePayload);
+            });
+            await batch.commit();
+          }
+        };
+        commitChunks().catch(e => console.error("Background sync predecessors error:", e));
 
         if (showToast) {
           useAppStore.getState().setToast({
             title: "Đồng bộ thành công",
-            message: `Đã chuẩn hóa và cập nhật ${healed.changedCount} mã tiền nhiệm (Predecessor) theo mã Subtask mới!`,
+            message: `Đã chuẩn hóa và cập nhật ${healed.changedCount} mã tiền nhiệm (Predecessor) theo mã Subtask mới dạng #!`,
             type: "success"
           });
         }
@@ -370,6 +377,21 @@ export function DetailTab({
       setIsSyncingPredecessors(false);
     }
   }, [tasks, projects]);
+
+  // Automatic silent migration from legacy '-' to '#' format for existing subtask codes and predecessors
+  const hasAutoHealedRef = useRef(false);
+  useEffect(() => {
+    if (tasks.length > 0 && projects.length > 0 && !hasAutoHealedRef.current && canWrite) {
+      const needsMigration = tasks.some(t => 
+        (t.taskCodePhu && /-\d+$/.test(t.taskCodePhu)) ||
+        (t.predecessor && /-\d+(?:fs|ss|ff|sf|[+-]|\s|$)/i.test(t.predecessor))
+      );
+      if (needsMigration) {
+        hasAutoHealedRef.current = true;
+        handleSyncAllPredecessors(false);
+      }
+    }
+  }, [tasks, projects, canWrite, handleSyncAllPredecessors]);
 
   // Auto-heal on data change if needed in background (debounced to avoid mount lag)
   useEffect(() => {
@@ -439,7 +461,7 @@ export function DetailTab({
         );
 
         lastFocusedTaskIdRef.current = initialFocusTaskId;
-        const subTaskCode = task.taskCodePhu || (p ? `${p.code}-${(task.orderIndex !== undefined ? task.orderIndex : 0) + 1}` : '') || task.projectCode;
+        const subTaskCode = task.taskCodePhu || (p ? `${p.code}#${(task.orderIndex !== undefined ? task.orderIndex : 0) + 1}` : '') || task.projectCode;
         if (subTaskCode) {
           setSearchTerm(subTaskCode);
           setDetailTabFilterCode(subTaskCode);
@@ -561,16 +583,19 @@ export function DetailTab({
       groupTasks.forEach((t, i) => {
         const oldIndex = i;
         const newIndex = sorted.findIndex(st => st.id === t.id);
-        const newCode = `${p.code}-${newIndex + 1}`;
+        const newCode = `${p.code}#${newIndex + 1}`;
         
         if (t.taskCodePhu) {
           oldCodeToNewCode.set(t.taskCodePhu.trim().toLowerCase(), newCode);
         }
+        oldCodeToNewCode.set(`${p.code}#${oldIndex + 1}`.toLowerCase(), newCode);
         oldCodeToNewCode.set(`${p.code}-${oldIndex + 1}`.toLowerCase(), newCode);
 
-        // Map any sub-parts of project code (e.g. "l1-115-13" -> "L1-115, L1-113-13")
+        // Map any sub-parts of project code (e.g. "l1-115-13" -> "L1-115, L1-113#13")
         pCodeParts.forEach(part => {
+          oldCodeToNewCode.set(`${part}#${oldIndex + 1}`.toLowerCase(), newCode);
           oldCodeToNewCode.set(`${part}-${oldIndex + 1}`.toLowerCase(), newCode);
+          oldCodeToNewCode.set(`${part}#${newIndex + 1}`.toLowerCase(), newCode);
           oldCodeToNewCode.set(`${part}-${newIndex + 1}`.toLowerCase(), newCode);
         });
       });
@@ -579,7 +604,7 @@ export function DetailTab({
       const updatesPerTask = new Map<string, any>();
 
       sorted.forEach((t, index) => {
-        const newCode = `${p.code}-${index + 1}`;
+        const newCode = `${p.code}#${index + 1}`;
         if (t.orderIndex !== index || t.taskCodePhu !== newCode) {
           updatesPerTask.set(t.id, { 
             orderIndex: index, 
@@ -652,15 +677,18 @@ export function DetailTab({
       groupTasks.forEach((t, i) => {
         const oldIndex = i;
         const newIndex = sorted.findIndex(st => st.id === t.id);
-        const newCode = `${p.code}-${newIndex + 1}`;
+        const newCode = `${p.code}#${newIndex + 1}`;
         
         if (t.taskCodePhu) {
           oldCodeToNewCode.set(t.taskCodePhu.trim().toLowerCase(), newCode);
         }
+        oldCodeToNewCode.set(`${p.code}#${oldIndex + 1}`.toLowerCase(), newCode);
         oldCodeToNewCode.set(`${p.code}-${oldIndex + 1}`.toLowerCase(), newCode);
 
         pCodeParts.forEach(part => {
+          oldCodeToNewCode.set(`${part}#${oldIndex + 1}`.toLowerCase(), newCode);
           oldCodeToNewCode.set(`${part}-${oldIndex + 1}`.toLowerCase(), newCode);
+          oldCodeToNewCode.set(`${part}#${newIndex + 1}`.toLowerCase(), newCode);
           oldCodeToNewCode.set(`${part}-${newIndex + 1}`.toLowerCase(), newCode);
         });
       });
@@ -669,7 +697,7 @@ export function DetailTab({
       const updatesPerTask = new Map<string, any>();
 
       sorted.forEach((t, newIdx) => {
-        const newCode = `${p.code}-${newIdx + 1}`;
+        const newCode = `${p.code}#${newIdx + 1}`;
         if (t.orderIndex !== newIdx || t.taskCodePhu !== newCode) {
           updatesPerTask.set(t.id, { 
             orderIndex: newIdx, 
@@ -1801,7 +1829,7 @@ export function DetailTab({
         (t.projectYear == proj.year || (!t.projectYear && !proj.year)) &&
         (t.projectStore == proj.store || (!t.projectStore && !proj.store))
       );
-      const subTaskCode = t.taskCodePhu || (p ? `${p.code}-${t.orderIndex !== undefined ? t.orderIndex + 1 : idx + 1}` : '');
+      const subTaskCode = t.taskCodePhu || (p ? `${p.code}#${t.orderIndex !== undefined ? t.orderIndex + 1 : idx + 1}` : '');
 
       const commentsText = t.comments && t.comments.length > 0 
         ? t.comments.map(c => {
@@ -2084,7 +2112,7 @@ export function DetailTab({
         sortedItems.forEach((item, index) => {
           const t = item.rowData;
           const taskOrderIndex = index;
-          const taskCodePhu = t.taskCodePhu ? String(t.taskCodePhu).trim() : `${String(t.projectCode).trim()}-${taskOrderIndex + 1}`;
+          const taskCodePhu = t.taskCodePhu ? String(t.taskCodePhu).trim() : `${String(t.projectCode).trim()}#${taskOrderIndex + 1}`;
 
           const key = `${prjKey}_${String(t.name).trim().toLowerCase()}`;
           const existing = processedTasks.get(key);

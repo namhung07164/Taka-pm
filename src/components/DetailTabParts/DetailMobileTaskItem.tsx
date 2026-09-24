@@ -91,7 +91,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
         <div className="flex-grow flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0 inline-block">
-              {taskCode || t.taskCodePhu || `${p.code}-${i + 1}`}
+              {taskCode || t.taskCodePhu || `${p.code}#${i + 1}`}
             </span>
             <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug">
               {t.name}

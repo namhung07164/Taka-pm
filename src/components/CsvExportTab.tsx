@@ -439,7 +439,7 @@ export default function CsvExportTab() {
           });
           let taskCodePhu = tcKey ? taskDef[tcKey] : '';
           if (!keepOriginal['Task code phụ'] && taskCodePhu !== undefined && taskCodePhu !== null && String(taskCodePhu).trim() !== '') {
-             taskCodePhu = projCode ? `${projCode}-${String(taskCodePhu).trim()}` : String(taskCodePhu).trim();
+             taskCodePhu = projCode ? `${projCode}#${String(taskCodePhu).trim()}` : String(taskCodePhu).trim();
           }
           let start = taskDef['start'] || '';
           let finish = taskDef['finish'] || '';
@@ -552,7 +552,7 @@ export default function CsvExportTab() {
           });
           let taskCodePhu = tcKey ? taskDef[tcKey] : '';
           if (!keepOriginal['Task code phụ'] && taskCodePhu !== undefined && taskCodePhu !== null && String(taskCodePhu).trim() !== '') {
-             taskCodePhu = projCode ? `${projCode}-${String(taskCodePhu).trim()}` : String(taskCodePhu).trim();
+             taskCodePhu = projCode ? `${projCode}#${String(taskCodePhu).trim()}` : String(taskCodePhu).trim();
           }
           let start = taskDef['start'] || '';
           let finish = taskDef['finish'] || '';

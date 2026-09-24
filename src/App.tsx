@@ -967,7 +967,7 @@ export default function App() {
           (p) => String(p.code || "").trim().toLowerCase() === String(targetTask.projectCode || "").trim().toLowerCase()
         );
 
-        const subTaskCode = computeTaskCode(projects, tasks, targetTask) || targetTask.taskCodePhu || (targetProject ? `${targetProject.code}-1` : targetTask.projectCode || "");
+        const subTaskCode = computeTaskCode(projects, tasks, targetTask) || targetTask.taskCodePhu || (targetProject ? `${targetProject.code}#1` : targetTask.projectCode || "");
 
         if (targetProject) {
           setDetailTabFilterCode(subTaskCode);

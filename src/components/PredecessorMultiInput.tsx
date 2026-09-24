@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { useLanguage } from '../lib/LanguageContext';
 import { computeTaskCode, splitPredecessors } from '../lib/ganttUtils';
 import { ensureProjectTasksLoaded } from '../lib/taskStateService';
+import { useAppStore } from '../store/useAppStore';
 import { ConfirmModal } from './ConfirmModal';
 import {
   parsePredecessorToken,

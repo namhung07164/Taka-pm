@@ -141,8 +141,8 @@ export function scoreTaskPredecessorMatch(
   const digitMatch = q.match(/^[-#\s]*(\d+)$/);
   if (digitMatch) {
     const num = parseInt(digitMatch[1], 10);
-    // Matches the trailing task number (e.g. "CP-01-2" ends with "-2" or "-02")
-    const codeNumMatch = fullCode.match(/-0*(\d+)$/);
+    // Matches the trailing task number (e.g. "CP-01#2" or legacy "CP-01-2")
+    const codeNumMatch = fullCode.match(/[-#]0*(\d+)$/);
     if (codeNumMatch && parseInt(codeNumMatch[1], 10) === num) {
       score = isSameProject ? 920 : 780;
     } else if (task.orderIndex !== undefined && (task.orderIndex + 1) === num) {
@@ -185,11 +185,11 @@ export function scoreTaskPredecessorMatch(
 
   // 8. Task Name matching
   if (name === q) {
-    score = Math.max(score, 700);
+    score = Math.max(score, 820);
   } else if (name.startsWith(q)) {
-    score = Math.max(score, 650);
+    score = Math.max(score, 760);
   } else if (name.includes(q)) {
-    score = Math.max(score, 600);
+    score = Math.max(score, 680);
   }
 
   // 9. Fuzzy string similarity (Bigram Sorensen-Dice)

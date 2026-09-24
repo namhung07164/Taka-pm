@@ -34,8 +34,8 @@ describe('predecessorMatchUtils', () => {
 
   describe('scoreTaskPredecessorMatch & findClosestTaskMatch', () => {
     const projects: Project[] = [
-      { id: 'p1', code: 'CP-01', year: 2026, store: 'HCM', name: 'Canopy Project' },
-      { id: 'p2', code: 'HN-TKV-SMZ2', year: 2026, store: 'HN', name: 'Shimizu Project' }
+      { id: 'p1', no: '1', code: 'CP-01', year: 2026, store: 'HCM', name: 'Canopy Project' } as unknown as Project,
+      { id: 'p2', no: '2', code: 'HN-TKV-SMZ2', year: 2026, store: 'HN', name: 'Shimizu Project' } as unknown as Project
     ];
 
     const tasks: Task[] = [
@@ -49,7 +49,7 @@ describe('predecessorMatchUtils', () => {
         name: 'Design review',
         finishManual: false,
         party: 'Takashimaya'
-      },
+      } as unknown as Task,
       {
         id: 't2',
         projectCode: 'CP-01',
@@ -60,7 +60,7 @@ describe('predecessorMatchUtils', () => {
         name: 'Civil structure work',
         finishManual: false,
         party: 'Takashimaya'
-      },
+      } as unknown as Task,
       {
         id: 't3',
         projectCode: 'HN-TKV-SMZ2',
@@ -71,7 +71,7 @@ describe('predecessorMatchUtils', () => {
         name: 'Final inspection Shimizu',
         finishManual: false,
         party: 'Shimizu'
-      }
+      } as unknown as Task
     ];
 
     it('finds exact code match with highest score', () => {
@@ -85,22 +85,22 @@ describe('predecessorMatchUtils', () => {
       const match = findClosestTaskMatch('2', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t2');
-      expect(match?.exactTaskCode).toBe('CP-01-2');
+      expect(match?.exactTaskCode).toBe('CP-01#2');
     });
 
-    it('matches partial cross-project code: smz2-85 -> HN-TKV-SMZ2-85', () => {
+    it('matches partial cross-project code: smz2-85 -> HN-TKV-SMZ2#85', () => {
       const match = findClosestTaskMatch('smz2-85', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t3');
-      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2-85');
+      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2#85');
       expect(match?.isExternal).toBe(true);
     });
 
-    it('matches task number 85 to task with -85', () => {
+    it('matches task number 85 to task with -85 or #85', () => {
       const match = findClosestTaskMatch('85', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t3');
-      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2-85');
+      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2#85');
     });
 
     it('matches task by name', () => {
@@ -112,55 +112,55 @@ describe('predecessorMatchUtils', () => {
 
   describe('resolvePredecessorString', () => {
     const projects: Project[] = [
-      { id: 'p1', code: 'CP-01', year: 2026, store: 'HCM', name: 'Canopy Project' },
-      { id: 'p2', code: 'HN-TKV-SMZ2', year: 2026, store: 'HN', name: 'Shimizu Project' }
+      { id: 'p1', no: '1', code: 'CP-01', year: 2026, store: 'HCM', name: 'Canopy Project' } as unknown as Project,
+      { id: 'p2', no: '2', code: 'HN-TKV-SMZ2', year: 2026, store: 'HN', name: 'Shimizu Project' } as unknown as Project
     ];
 
     const tasks: Task[] = [
       {
         id: 't1',
         projectCode: 'CP-01',
-        taskCodePhu: 'CP-01-1',
+        taskCodePhu: 'CP-01#1',
         orderIndex: 0,
         name: 'Task 1',
         finishManual: false
-      },
+      } as unknown as Task,
       {
         id: 't2',
         projectCode: 'CP-01',
-        taskCodePhu: 'CP-01-2',
+        taskCodePhu: 'CP-01#2',
         orderIndex: 1,
         name: 'Task 2',
         finishManual: false
-      },
+      } as unknown as Task,
       {
         id: 't3',
         projectCode: 'HN-TKV-SMZ2',
-        taskCodePhu: 'HN-TKV-SMZ2-85',
+        taskCodePhu: 'HN-TKV-SMZ2#85',
         orderIndex: 84,
         name: 'Shimizu Inspection',
         finishManual: false
-      }
+      } as unknown as Task
     ];
 
-    it('auto-resolves single predecessor closest match: "smz2-85" -> "HN-TKV-SMZ2-85"', () => {
+    it('auto-resolves single predecessor closest match: "smz2-85" -> "HN-TKV-SMZ2#85"', () => {
       const res = resolvePredecessorString('smz2-85', tasks, projects, 'CP-01');
-      expect(res).toBe('HN-TKV-SMZ2-85');
+      expect(res).toBe('HN-TKV-SMZ2#85');
     });
 
-    it('auto-resolves with relationship suffix preserved: "smz2-85SS" -> "HN-TKV-SMZ2-85SS"', () => {
+    it('auto-resolves with relationship suffix preserved: "smz2-85SS" -> "HN-TKV-SMZ2#85SS"', () => {
       const res = resolvePredecessorString('smz2-85SS', tasks, projects, 'CP-01');
-      expect(res).toBe('HN-TKV-SMZ2-85SS');
+      expect(res).toBe('HN-TKV-SMZ2#85SS');
     });
 
-    it('auto-resolves task number within project: "1" -> "CP-01-1"', () => {
+    it('auto-resolves task number within project: "1" -> "CP-01#1"', () => {
       const res = resolvePredecessorString('1', tasks, projects, 'CP-01');
-      expect(res).toBe('CP-01-1');
+      expect(res).toBe('CP-01#1');
     });
 
-    it('auto-resolves two predecessors and applies Gantt rule on second: "1, 2" -> "CP-01-1, CP-01-2FF"', () => {
+    it('auto-resolves two predecessors and applies Gantt rule on second: "1, 2" -> "CP-01#1, CP-01#2FF"', () => {
       const res = resolvePredecessorString('1, 2', tasks, projects, 'CP-01');
-      expect(res).toBe('CP-01-1, CP-01-2FF');
+      expect(res).toBe('CP-01#1, CP-01#2FF');
     });
   });
 });
