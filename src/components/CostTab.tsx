@@ -902,7 +902,9 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         if (!isMatch) return false;
       }
 
-      const totalAct = matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0);
+      const totalAct = matchingGroupCosts.length > 0
+        ? matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0)
+        : (p.financial?.totalActualPaid || p.actual || 0);
       if (hasActForcFilter === 'has_value' && totalAct === 0 && (!paidDateStart && !paidDateEnd)) return false;
 
       return true;
@@ -949,7 +951,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     if (pGroupCosts.length > 0) {
       return sum + pGroupCosts.reduce((s, c) => s + (c.firstPaid || 0), 0);
     }
-    return sum + (p.financial?.totalActualPaid || p.actual || 0);
+    return sum;
   }, 0);
 
   const totalSecondPaidAll = filteredProjectsForDisplay.reduce((sum, p) => {
@@ -973,11 +975,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     if (pGroupCosts.length > 0) {
       return sum + pGroupCosts.reduce((s, c) => s + ((c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0)), 0);
     }
-    const fin = p.financial;
-    if (fin) {
-      return sum + (fin.totalBalance ?? ((fin.totalApproved || p.budget || 0) - (fin.totalActualPaid || p.actual || 0)));
-    }
-    return sum + ((p.budget || 0) - (p.actual || 0));
+    return sum;
   }, 0);
 
   const totalSupAll = filteredProjectsForDisplay.reduce((sum, p) => {
