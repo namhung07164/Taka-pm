@@ -144,7 +144,7 @@ export function PredecessorMultiInput({
   };
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         if (isOpen) {
           handleResolveAndClose();
@@ -152,7 +152,11 @@ export function PredecessorMultiInput({
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
   }, [isOpen, value, onChange, knownCodes, tasks, projects, currentProjectCode, currentContext]);
 
   const segments = useMemo(() => {
@@ -252,12 +256,10 @@ export function PredecessorMultiInput({
     
     onChange(merged);
     setIsOpen(false);
+    setHighlightedIndex(-1);
 
     if (inputRef.current) {
-      inputRef.current.focus();
-      const len = merged.length;
-      selectionRef.current = { start: len, end: len };
-      inputRef.current.setSelectionRange(len, len);
+      inputRef.current.blur();
     }
   };
 
