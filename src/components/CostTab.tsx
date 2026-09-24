@@ -191,9 +191,12 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     setActiveTab("detail");
   };
 
-  // Use global costs from Zustand store (Zero Redundant Reads)
+  // Use global costs and expanded states from Zustand store (Zero Redundant Reads)
   const costs = useAppStore(state => state.costs);
   const setIsCostsRequested = useAppStore(state => state.setIsCostsRequested);
+  const expandedCodes = useAppStore(state => state.expandedProjectIds);
+  const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
+  const setExpandedCodes = useAppStore(state => state.setExpandedProjectIds);
 
   // O(1) Pre-indexed Map for Costs by Project Code
   const costsMapByCode = useMemo(() => {
@@ -344,7 +347,6 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [searchTerm, confirmModal.isOpen]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
-  const [expandedCodes, setExpandedCodes] = useState<string[]>([]);
 
   const [isPaidDateFilterOpen, setIsPaidDateFilterOpen] = useState<boolean>(false);
   const [paidDateStart, setPaidDateStart] = useState<string>('');
@@ -512,10 +514,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   
 
   const toggleGroup = (id: string | number) => {
-    const code = String(id);
-    setExpandedCodes(prev => 
-      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
-    );
+    toggleProjectExpansion(String(id));
   };
 
   const handleAddCost = async (project: Project) => {
@@ -552,12 +551,9 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     try {
       setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id), newCost);
       const groupKey = `${project.code}-${derivedYear}-${project.store}-${project.no}`;
-      setExpandedCodes(prev => {
-        const next = [...prev];
-        if (!next.includes(groupKey)) next.push(groupKey);
-        if (!next.includes(String(project.no))) next.push(String(project.no));
-        return next;
-      });
+      if (!expandedCodes.includes(groupKey) && !expandedCodes.includes(String(project.id))) {
+        toggleProjectExpansion(groupKey);
+      }
       
       undoManager.push({
         description: `Add Cost to ${project.code} (${derivedYear})`,
@@ -940,12 +936,58 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     });
   }, [costs, projects, filteredProjectsForDisplay, paidDateStart, paidDateEnd, paidStageFilter]);
 
-  const totalActAll = filteredCostsForTotals.reduce((sum, c) => sum + (c.actual || 0), 0);
-  const totalFirstPaidAll = filteredCostsForTotals.reduce((sum, c) => sum + (c.firstPaid || 0), 0);
-  const totalSecondPaidAll = filteredCostsForTotals.reduce((sum, c) => sum + (c.secondPaid || 0), 0);
-  const totalThirdPaidAll = filteredCostsForTotals.reduce((sum, c) => sum + (c.thirdPaid || 0), 0);
-  const totalBalanceAll = filteredCostsForTotals.reduce((sum, c) => sum + ((c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0)), 0);
-  const totalSupAll = filteredCostsForTotals.reduce((sum, c) => sum + (c.supportingFee || 0), 0);
+  const totalActAll = filteredProjectsForDisplay.reduce((sum, p) => {
+    const pGroupCosts = getGroupCostsForProject(p);
+    if (pGroupCosts.length > 0) {
+      return sum + pGroupCosts.reduce((s, c) => s + (c.actual || 0), 0);
+    }
+    return sum + (p.financial?.totalActualPaid || p.actual || 0);
+  }, 0);
+
+  const totalFirstPaidAll = filteredProjectsForDisplay.reduce((sum, p) => {
+    const pGroupCosts = getGroupCostsForProject(p);
+    if (pGroupCosts.length > 0) {
+      return sum + pGroupCosts.reduce((s, c) => s + (c.firstPaid || 0), 0);
+    }
+    return sum + (p.financial?.totalActualPaid || p.actual || 0);
+  }, 0);
+
+  const totalSecondPaidAll = filteredProjectsForDisplay.reduce((sum, p) => {
+    const pGroupCosts = getGroupCostsForProject(p);
+    if (pGroupCosts.length > 0) {
+      return sum + pGroupCosts.reduce((s, c) => s + (c.secondPaid || 0), 0);
+    }
+    return sum;
+  }, 0);
+
+  const totalThirdPaidAll = filteredProjectsForDisplay.reduce((sum, p) => {
+    const pGroupCosts = getGroupCostsForProject(p);
+    if (pGroupCosts.length > 0) {
+      return sum + pGroupCosts.reduce((s, c) => s + (c.thirdPaid || 0), 0);
+    }
+    return sum;
+  }, 0);
+
+  const totalBalanceAll = filteredProjectsForDisplay.reduce((sum, p) => {
+    const pGroupCosts = getGroupCostsForProject(p);
+    if (pGroupCosts.length > 0) {
+      return sum + pGroupCosts.reduce((s, c) => s + ((c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0)), 0);
+    }
+    const fin = p.financial;
+    if (fin) {
+      return sum + (fin.totalBalance ?? ((fin.totalApproved || p.budget || 0) - (fin.totalActualPaid || p.actual || 0)));
+    }
+    return sum + ((p.budget || 0) - (p.actual || 0));
+  }, 0);
+
+  const totalSupAll = filteredProjectsForDisplay.reduce((sum, p) => {
+    const pGroupCosts = getGroupCostsForProject(p);
+    if (pGroupCosts.length > 0) {
+      return sum + pGroupCosts.reduce((s, c) => s + (c.supportingFee || 0), 0);
+    }
+    return sum + (p.supportingFee || 0);
+  }, 0);
+
   const totalBudgetAll = filteredProjectsForDisplay.reduce((sum, p) => sum + (Number(p.financial?.totalApproved || p.budget) || 0), 0);
   const totalRemainingAll = filteredProjectsForDisplay.reduce((sum, p) => {
     const projectCosts = getGroupCostsForProject(p);
@@ -1345,7 +1387,10 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
                 ? allGroupCosts.filter(c => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches)
                 : allGroupCosts;
               const groupKey = `${p.code}-${pDerivedYear}-${p.store}-${p.no}`;
-              const isExpanded = expandedCodes.includes(groupKey) || expandedCodes.includes(String(p.no));
+              const isExpanded = expandedCodes.includes(groupKey) || 
+                expandedCodes.includes(String(p.no)) || 
+                (p.id ? expandedCodes.includes(String(p.id)) : false) || 
+                (p.code ? expandedCodes.includes(String(p.code)) : false);
 
               const totalAct = groupCosts.reduce((sum, c) => sum + (c.actual || 0), 0);
               const totalFirstPaid = groupCosts.reduce((sum, c) => sum + (c.firstPaid || 0), 0);

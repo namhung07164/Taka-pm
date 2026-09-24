@@ -39,23 +39,14 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
     set({ printDate: val });
   },
 
-  expandedProjectIds: (() => {
-    try {
-      const saved = safeGetItemLocal("taka_expanded_projects");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  })(),
+  expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
     const next = state.expandedProjectIds.includes(projectId)
       ? state.expandedProjectIds.filter(id => id !== projectId)
       : [...state.expandedProjectIds, projectId];
-    safeSetItemLocal("taka_expanded_projects", JSON.stringify(next));
     return { expandedProjectIds: next };
   }),
   setExpandedProjectIds: (ids) => {
-    safeSetItemLocal("taka_expanded_projects", JSON.stringify(ids));
     set({ expandedProjectIds: ids });
   },
 
