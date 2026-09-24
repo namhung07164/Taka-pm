@@ -44,11 +44,22 @@ export function PredecessorMultiInput({
 }) {
   const { t: translate } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const initialValueOnFocus = useRef<string>('');
+  const selectionRef = useRef<{ start: number; end: number } | null>(null);
+
+  React.useLayoutEffect(() => {
+    if (selectionRef.current && inputRef.current && document.activeElement === inputRef.current) {
+      const { start, end } = selectionRef.current;
+      inputRef.current.setSelectionRange(start, end);
+      selectionRef.current = null;
+    }
+  });
+
   const [confirmExternalModal, setConfirmExternalModal] = useState<{
     isOpen: boolean;
     task?: Task;
@@ -233,16 +244,18 @@ export function PredecessorMultiInput({
       newSegments[newSegments.length - 1] = itemToAdd;
     }
     
-    const merged = enforceRules(newSegments.join(', '), false);
+    // Cleanly merge without forcing unwanted trailing commas or spaces
+    const merged = newSegments.slice(0, 2).join(', ');
     
-    if (newSegments.length >= 2) {
-      onChange(merged);
-      setIsOpen(false);
-    } else {
-      onChange(merged + ', ');
-      setIsOpen(true);
+    onChange(merged);
+    setIsOpen(false);
+
+    if (inputRef.current) {
+      inputRef.current.focus();
+      const len = merged.length;
+      selectionRef.current = { start: len, end: len };
+      inputRef.current.setSelectionRange(len, len);
     }
-    inputRef.current?.focus();
   };
 
   const handleSelect = (task: Task, relationship?: string, forceConfirmed: boolean = false) => {
@@ -268,13 +281,13 @@ export function PredecessorMultiInput({
     if (parts.length === 1) {
       const p0 = parts[0];
       const idx0 = val.indexOf(p0);
-      if (idx0 === -1) return <span className="text-blue-600 dark:text-blue-400">{val}</span>;
+      if (idx0 === -1) return <span className="text-blue-600 dark:text-[#8ab4f8]">{val}</span>;
       const before0 = val.substring(0, idx0);
       const after0 = val.substring(idx0 + p0.length);
       return (
         <>
           {before0}
-          <span className="text-blue-600 dark:text-blue-400">{p0}</span>
+          <span className="text-blue-600 dark:text-[#8ab4f8]">{p0}</span>
           <span className="text-slate-800 dark:text-slate-200">{after0}</span>
         </>
       );
@@ -284,7 +297,7 @@ export function PredecessorMultiInput({
     const p1 = parts[1];
     const idx0 = val.indexOf(p0);
     if (idx0 === -1) {
-      return <span className="text-blue-600 dark:text-blue-400">{val}</span>;
+      return <span className="text-blue-600 dark:text-[#8ab4f8]">{val}</span>;
     }
     const before0 = val.substring(0, idx0);
     const after0 = val.substring(idx0 + p0.length);
@@ -294,7 +307,7 @@ export function PredecessorMultiInput({
       return (
         <>
           {before0}
-          <span className="text-blue-600 dark:text-blue-400">{p0}</span>
+          <span className="text-blue-600 dark:text-[#8ab4f8]">{p0}</span>
           <span className="text-slate-800 dark:text-slate-200">{after0}</span>
         </>
       );
@@ -306,7 +319,7 @@ export function PredecessorMultiInput({
     return (
       <>
         {before0}
-        <span className="text-blue-600 dark:text-blue-400">{p0}</span>
+        <span className="text-blue-600 dark:text-[#8ab4f8]">{p0}</span>
         <span className="text-slate-800 dark:text-slate-200">{delimiter}</span>
         <span className="text-rose-600 dark:text-rose-400">{p1}</span>
         <span className="text-slate-800 dark:text-slate-200">{remainder}</span>
@@ -315,25 +328,39 @@ export function PredecessorMultiInput({
   };
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = e.target.value.toUpperCase();
-    val = val.replace(/[^A-Z0-9\-\+\.,\s#]/g, '');
-    
-    // Auto-resolve preceding token when typing comma
-    if (val.endsWith(',')) {
-      const beforeComma = val.slice(0, -1).trim();
-      const resolvedBefore = resolvePredecessorString(beforeComma, tasks, projects, currentProjectCode, currentContext);
-      const merged = enforceRules(resolvedBefore, false);
-      onChange(merged + ', ');
-      setIsOpen(true);
-      return;
+    const rawVal = e.target.value;
+    const rawStart = e.target.selectionStart ?? rawVal.length;
+    const rawEnd = e.target.selectionEnd ?? rawVal.length;
+
+    let upper = rawVal.toUpperCase();
+    let cleaned = '';
+    let newStart = rawStart;
+    let newEnd = rawEnd;
+
+    for (let i = 0; i < upper.length; i++) {
+      const char = upper[i];
+      if (/[A-Z0-9\-\+\.,\s#]/.test(char)) {
+        cleaned += char;
+      } else {
+        if (i < rawStart) newStart--;
+        if (i < rawEnd) newEnd--;
+      }
     }
 
-    const parts = splitPredecessors(val, knownCodes);
-    if (parts.length > 2) {
-      val = parts.slice(0, 2).join(', '); // Prevent typing a third predecessor
+    // Limit to max 2 predecessors (at most 1 comma separating tokens)
+    let finalVal = cleaned;
+    const firstCommaIdx = cleaned.indexOf(',');
+    if (firstCommaIdx !== -1) {
+      const secondCommaIdx = cleaned.indexOf(',', firstCommaIdx + 1);
+      if (secondCommaIdx !== -1) {
+        finalVal = cleaned.substring(0, secondCommaIdx) + cleaned.substring(secondCommaIdx + 1);
+        if (newStart > secondCommaIdx) newStart--;
+        if (newEnd > secondCommaIdx) newEnd--;
+      }
     }
-    
-    onChange(val);
+
+    selectionRef.current = { start: Math.max(0, newStart), end: Math.max(0, newEnd) };
+    onChange(finalVal);
     setIsOpen(true);
   };
 
@@ -379,8 +406,8 @@ export function PredecessorMultiInput({
     }
   };
 
-  // Exact same text formatting to ensure perfect 1:1 overlay alignment
-  const commonTextClasses = "text-sm font-sans leading-normal tracking-normal whitespace-pre";
+  // Exact monospace font formatting to guarantee pixel-perfect caret and character alignment across all devices/OS
+  const commonTextClasses = "text-sm font-mono leading-normal tracking-normal whitespace-pre";
 
   const getBadgeLabel = (item: RankedPredecessorMatch) => {
     const diff = item.diffDetails;
@@ -407,15 +434,16 @@ export function PredecessorMultiInput({
     <div className="relative w-full" ref={containerRef}>
       <div 
         className={cn(
-          "w-full relative rounded-lg bg-white dark:bg-[#18181a] border overflow-hidden",
+          "w-full relative rounded-lg bg-white dark:bg-[#18181a] border overflow-hidden flex items-center",
           disabled ? "bg-slate-50 dark:bg-[#18181a] border-slate-200 dark:border-[#444446] opacity-60" : "border-slate-200 dark:border-[#444446] focus-within:ring-2 focus-within:ring-purple-500"
         )}
       >
         <div 
           ref={overlayRef} 
           className={cn(
-            "absolute inset-0 px-3 py-2 pointer-events-none overflow-hidden z-10 flex items-center",
-            commonTextClasses
+            "absolute inset-0 px-3 py-2 pointer-events-none overflow-hidden z-10 flex items-center font-mono font-medium transition-opacity",
+            commonTextClasses,
+            isFocused ? "opacity-0" : "opacity-100"
           )} 
           aria-hidden="true"
         >
@@ -431,20 +459,43 @@ export function PredecessorMultiInput({
           onKeyDown={handleKeyDown}
           onScroll={(e) => { if (overlayRef.current) overlayRef.current.scrollLeft = e.currentTarget.scrollLeft; }}
           onFocus={() => {
+            setIsFocused(true);
             initialValueOnFocus.current = value || '';
             setIsOpen(true);
+          }}
+          onBlur={() => {
+            setIsFocused(false);
           }}
           disabled={disabled}
           placeholder={value ? "" : "e.g. A01-1SS, A02-2FF"}
           className={cn(
-            "w-full px-3 py-2 relative z-20 bg-transparent outline-none border-none focus:ring-0 shadow-none m-0 caret-slate-800 dark:caret-slate-200",
-            commonTextClasses
+            "w-full px-3 py-2 relative z-20 bg-transparent outline-none border-none focus:ring-0 shadow-none m-0 caret-blue-600 dark:caret-[#8ab4f8] font-mono font-medium",
+            commonTextClasses,
+            value && !disabled ? "pr-8" : "",
+            isFocused ? "text-slate-900 dark:text-slate-100" : "text-transparent"
           )}
-          style={{ 
-            color: value ? "transparent" : "inherit",
-            WebkitTextFillColor: value ? "transparent" : "inherit"
-          }}
         />
+
+        {value && !disabled && (
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onChange('');
+              setIsOpen(false);
+              if (inputRef.current) {
+                inputRef.current.focus();
+                selectionRef.current = { start: 0, end: 0 };
+              }
+            }}
+            className="absolute right-2 z-30 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title={translate("Clear") || "Clear"}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
       
       {isOpen && activeSegment && rankedCandidateList.length > 0 && !disabled && (

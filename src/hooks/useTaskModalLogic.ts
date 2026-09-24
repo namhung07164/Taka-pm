@@ -207,9 +207,6 @@ export function useTaskModalLogic({
     const parts = val.split(',').map(s => s.trim()).filter(Boolean);
     if (parts.length >= 2) {
       updated.durationManual = false;
-      val = parts.join(", ");
-      updated.predecessor = val;
-      updated.realtimeUpdate = Boolean(val.trim());
     }
     if (isFilled) {
       try {
