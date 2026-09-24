@@ -378,21 +378,6 @@ export function DetailTab({
     }
   }, [tasks, projects]);
 
-  // Automatic silent migration from legacy '-' to '#' format for existing subtask codes and predecessors
-  const hasAutoHealedRef = useRef(false);
-  useEffect(() => {
-    if (tasks.length > 0 && projects.length > 0 && !hasAutoHealedRef.current && canWrite) {
-      const needsMigration = tasks.some(t => 
-        (t.taskCodePhu && /-\d+$/.test(t.taskCodePhu)) ||
-        (t.predecessor && /-\d+(?:fs|ss|ff|sf|[+-]|\s|$)/i.test(t.predecessor))
-      );
-      if (needsMigration) {
-        hasAutoHealedRef.current = true;
-        handleSyncAllPredecessors(false);
-      }
-    }
-  }, [tasks, projects, canWrite, handleSyncAllPredecessors]);
-
   // Auto-heal on data change if needed in background (debounced to avoid mount lag)
   useEffect(() => {
     if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
@@ -504,6 +489,7 @@ export function DetailTab({
   const [visibleColumns, setVisibleColumns] = useState<string[]>(availableColumnsForUser.map(c => c.id));
 
   const [colWidths, setColWidths] = useState<Record<string, number>>({
+    checkbox: 44,
     no: 90,
     year: 80,
     store: 80,
@@ -943,6 +929,21 @@ export function DetailTab({
   const hasWritePermission = (isAdmin || !!permissionMatrix[role]?.Write?.detail) && !isArchiveYear;
   const [isEditMode, setIsEditMode] = useState(false);
   const canWrite = hasWritePermission && isEditMode;
+
+  // Automatic silent migration from legacy '-' to '#' format for existing subtask codes and predecessors
+  const hasAutoHealedRef = useRef(false);
+  useEffect(() => {
+    if (tasks.length > 0 && projects.length > 0 && !hasAutoHealedRef.current && hasWritePermission) {
+      const needsMigration = tasks.some(t => 
+        (t.taskCodePhu && /-\d+$/.test(t.taskCodePhu)) ||
+        (t.predecessor && /-\d+(?:fs|ss|ff|sf|[+-]|\s|$)/i.test(t.predecessor))
+      );
+      if (needsMigration) {
+        hasAutoHealedRef.current = true;
+        handleSyncAllPredecessors(false);
+      }
+    }
+  }, [tasks, projects, hasWritePermission, handleSyncAllPredecessors]);
 
   const years = [...new Set([...projects.map(p=> {
     if (p.year) return String(p.year);
@@ -2778,9 +2779,16 @@ export function DetailTab({
   const [containerHeight, setContainerHeight] = useState(650);
   const scrollRafIdRef = useRef<number | null>(null);
 
+  const effectiveVisibleColumns = useMemo(() => {
+    if (canWrite) {
+      return ['checkbox', ...visibleColumns.filter(c => c !== 'checkbox')];
+    }
+    return visibleColumns.filter(c => c !== 'checkbox');
+  }, [canWrite, visibleColumns]);
+
   const totalTableWidth = useMemo(() => {
-    return visibleColumns.reduce((acc, col) => acc + (colWidths[col] || 100), 0);
-  }, [visibleColumns, colWidths]);
+    return effectiveVisibleColumns.reduce((acc, col) => acc + (colWidths[col] || (col === 'checkbox' ? 44 : 100)), 0);
+  }, [effectiveVisibleColumns, colWidths]);
 
   const flatTableRows = useMemo<DetailTableRow[]>(() => {
     const rows: DetailTableRow[] = [];
@@ -3147,7 +3155,7 @@ export function DetailTab({
           >
             <thead className="sticky top-0 z-20 text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446] shadow-xs">
               <DetailTableHeader
-                visibleColumns={visibleColumns}
+                visibleColumns={effectiveVisibleColumns}
                 colWidths={colWidths}
                 canWrite={canWrite}
                 selectedTaskIds={selectedTaskIds}
@@ -3172,7 +3180,7 @@ export function DetailTab({
             <tbody>
               {paddingTop > 0 && (
                 <tr style={{ height: `${paddingTop}px` }}>
-                  <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none' }} />
+                  <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none' }} />
                 </tr>
               )}
               {flatTableRows.slice(startIndex, endIndex).map((item) => {
@@ -3183,7 +3191,7 @@ export function DetailTab({
                     <DetailProjectRow
                       key={item.key}
                       item={item}
-                      visibleColumns={visibleColumns}
+                      visibleColumns={effectiveVisibleColumns}
                       canWrite={canWrite}
                       isAllTasksSelected={isAllTasksSelected}
                       allowedStoreOptions={allowedStoreOptions}
@@ -3206,7 +3214,7 @@ export function DetailTab({
                   <DetailTaskRow
                     key={item.key}
                     item={item}
-                    visibleColumns={visibleColumns}
+                    visibleColumns={effectiveVisibleColumns}
                     canWrite={canWrite}
                     isSelected={selectedTaskIds.has(t.id)}
                     isDragging={draggingTaskIds.includes(t.id)}
@@ -3234,12 +3242,12 @@ export function DetailTab({
               })}
               {paddingBottom > 0 && (
                 <tr style={{ height: `${paddingBottom}px` }}>
-                  <td colSpan={visibleColumns.length} style={{ padding: 0, border: 'none' }} />
+                  <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none' }} />
                 </tr>
               )}
               {visibleCount < filteredProjects.length && (
                 <tr>
-                  <td colSpan={visibleColumns.length} className="py-4 text-center bg-white/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm border-t border-slate-200 dark:border-[#444446]">
+                  <td colSpan={effectiveVisibleColumns.length} className="py-4 text-center bg-white/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm border-t border-slate-200 dark:border-[#444446]">
                     <button
                       onClick={() => setVisibleCount(prev => Math.min(prev + 30, filteredProjects.length))}
                       className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-xs transition-colors text-sm cursor-pointer active:scale-95 touch-manipulation"

@@ -38,6 +38,17 @@ export const DetailTableHeader = memo(function DetailTableHeader({
 }: DetailTableHeaderProps) {
   return (
     <tr>
+      {visibleColumns.includes('checkbox') && (
+        <th className="px-2 py-3 w-10 text-center select-none bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446]">
+          <input 
+            type="checkbox" 
+            title="Select All Visible Tasks"
+            onChange={(e) => onSelectAllChange(e.target.checked)}
+            checked={selectedTaskIds.size > 0 && selectedTaskIds.size === allVisibleTaskIds.length}
+            className="cursor-pointer rounded border-slate-300 dark:border-slate-600 h-4 w-4 text-blue-600 focus:ring-blue-500"
+          />
+        </th>
+      )}
       {visibleColumns.includes('no') && (
         <ResizableHeader 
           width={colWidths.no} 
@@ -47,7 +58,7 @@ export const DetailTableHeader = memo(function DetailTableHeader({
           onHide={() => onToggleColumn('no')}
         >
           <div className="flex items-center justify-center gap-1">
-            {canWrite && (
+            {canWrite && !visibleColumns.includes('checkbox') && (
               <input 
                 type="checkbox" 
                 title="Select All Visible Tasks"
