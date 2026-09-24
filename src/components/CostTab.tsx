@@ -1378,11 +1378,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
             </tr>
             {filteredProjectsForDisplay.slice(0, visibleCount).map((p, pIdx) => {
               const pDerivedYear = p.year ? p.year : (p.start ? Number(String(p.start).substring(0, 4)) : undefined);
-              const allGroupCosts = costs.filter(c=> 
-                String(c.projectCode).trim().toLowerCase() === String(p.code).trim().toLowerCase() &&
-                (String(c.projectYear || '') === String(pDerivedYear || '') || (!c.projectYear && !pDerivedYear)) &&
-                (String(c.projectStore || '') === String(p.store || '') || (!c.projectStore && !p.store))
-              );
+              const allGroupCosts = getGroupCostsForProject(p);
               const groupCosts = (paidDateStart || paidDateEnd)
                 ? allGroupCosts.filter(c => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches)
                 : allGroupCosts;
@@ -1762,11 +1758,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
       <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-4 pb-4 px-2" onScroll={handleCostScroll}>
         {filteredProjectsForDisplay.slice(0, visibleCount).map((p, pIdx) => {
           const pDerivedYear = p.year ? p.year : (p.start ? Number(String(p.start).substring(0, 4)) : undefined);
-          const allGroupCosts = costs.filter(c=> 
-            String(c.projectCode).trim().toLowerCase() === String(p.code).trim().toLowerCase() &&
-            (String(c.projectYear || '') === String(pDerivedYear || '') || (!c.projectYear && !pDerivedYear)) &&
-            (String(c.projectStore || '') === String(p.store || '') || (!c.projectStore && !p.store))
-          );
+          const allGroupCosts = getGroupCostsForProject(p);
           const groupCosts = (paidDateStart || paidDateEnd)
             ? allGroupCosts.filter(c => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches)
             : allGroupCosts;

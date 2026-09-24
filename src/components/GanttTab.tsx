@@ -650,6 +650,8 @@ export function GanttTab({
       if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
 
       const projectTasks = getGroupTasksForProject(p);
+      const hasChildTasks = projectTasks.length > 0 || (p.taskCount !== undefined && p.taskCount > 0) || ((p.taskSummaries?.length ?? 0) > 0);
+      if (!hasChildTasks) return false;
 
       return matchesAdvancedSearch(
         term,
@@ -724,6 +726,10 @@ export function GanttTab({
       }
 
       let projectTasks = getGroupTasksForProject(p);
+
+      // Only load and render if the project has child tasks in Task Detail (Zero-Waste Gantt Read & Render)
+      const hasChildTasks = projectTasks.length > 0 || (p.taskCount !== undefined && p.taskCount > 0) || ((p.taskSummaries?.length ?? 0) > 0);
+      if (!hasChildTasks) return false;
 
       if (filterStartDate || filterEndDate) {
         if (projectTasks.length > 0) {
@@ -1127,14 +1133,7 @@ export function GanttTab({
       const pKey = getPKey(p.code, p.year, p.store);
       let projectTasks = tasksByProject.get(pKey);
       if (!projectTasks || projectTasks.length === 0) {
-        const pCode = String(p.code || "").trim().toLowerCase();
-        projectTasks = tasks.filter(t => {
-          const tCode = String(t.projectCode || "").trim().toLowerCase();
-          if (tCode !== pCode) return false;
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          return matchesStore && matchesYear;
-        });
+        projectTasks = getGroupTasksForProject(p);
       }
       projectTasks = projectTasks || [];
       if (filterStartDate || filterEndDate) {
