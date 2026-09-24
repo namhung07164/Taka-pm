@@ -168,29 +168,34 @@ export function PredecessorMultiInput({
 
   // Dynamic loading of external project tasks when typing external project code
   useEffect(() => {
-    if (!activeQuery || activeQuery.trim().length < 2) return;
+    if (!activeQuery || activeQuery.trim().length < 3) return;
     const clean = activeQuery.toLowerCase().trim();
     if (!clean) return;
 
-    const cleanAlpha = clean.replace(/[^a-z0-9]/g, '');
+    const currentPCodeLower = (currentProjectCode || '').toLowerCase().trim();
     const cleanPrefix = clean.split(/[-_#\s]+/)[0] || clean;
 
-    const matchedProjects = (projects || []).filter(p => {
-      if (!p.code || p.code === currentProjectCode) return false;
-      const pCodeLower = p.code.toLowerCase();
-      const pCodeAlpha = pCodeLower.replace(/[^a-z0-9]/g, '');
-      return (
-        pCodeLower.includes(clean) ||
-        clean.includes(pCodeLower) ||
-        pCodeAlpha.includes(cleanAlpha) ||
-        cleanAlpha.includes(pCodeAlpha) ||
-        (cleanPrefix.length >= 2 && pCodeLower.includes(cleanPrefix))
-      );
-    });
+    const timer = setTimeout(() => {
+      const matchedProjects = (projects || []).filter(p => {
+        if (!p.code) return false;
+        const pCodeLower = p.code.toLowerCase().trim();
+        if (pCodeLower === currentPCodeLower) return false;
 
-    matchedProjects.forEach(p => {
-      ensureProjectTasksLoaded(p.code);
-    });
+        // Exact match or project code followed by subtask separator (# or -)
+        return (
+          pCodeLower === clean ||
+          pCodeLower === cleanPrefix ||
+          clean.startsWith(pCodeLower + '#') ||
+          clean.startsWith(pCodeLower + '-')
+        );
+      });
+
+      matchedProjects.forEach(p => {
+        ensureProjectTasksLoaded(p.code);
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [activeQuery, projects, currentProjectCode]);
 
   // Ranked candidate tasks: closest match first, strongly scoped to current project/year/store/location

@@ -198,15 +198,16 @@ export function useTaskModalLogic({
 
 
 
-  const handlePredecessorChange = async (val: string) => {
-    
+  const handlePredecessorChange = (val: string) => {
     const isFilled = Boolean(val.trim());
-    let updated = { ...formData, predecessor: val, realtimeUpdate: isFilled };
-
     const parts = val.split(',').map(s => s.trim()).filter(Boolean);
-    if (parts.length >= 2) {
-      updated.durationManual = false;
-    }
+    const updated = { 
+      ...formData, 
+      predecessor: val, 
+      realtimeUpdate: isFilled,
+      ...(parts.length >= 2 ? { durationManual: false } : {})
+    };
+
     if (isFilled) {
       try {
         let currentTasks = useAppStore.getState().tasks || tasks || [];
@@ -226,22 +227,6 @@ export function useTaskModalLogic({
           finishManual: updated.finishManual ?? false
         };
         let parsed = parsePredecessors(val, taskNoMap, dummyTask);
-
-        if (val.trim() && (!parsed.length || parsed.some(p => !p.task))) {
-          const splitParts = splitPredecessors(val, taskNoMap);
-          for (const token of splitParts) {
-            const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-            const matchedProj = (projects || []).find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
-            if (matchedProj && matchedProj.code !== dummyTask.projectCode) {
-              const loaded = await ensureProjectTasksLoaded(matchedProj.code);
-              if (loaded.length > 0) {
-                currentTasks = useAppStore.getState().tasks || currentTasks;
-                taskNoMap = buildTaskNoMap(projects || [], currentTasks);
-                parsed = parsePredecessors(val, taskNoMap, dummyTask);
-              }
-            }
-          }
-        }
 
         if (parsed.length > 0) {
           const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);
@@ -263,6 +248,7 @@ export function useTaskModalLogic({
         console.warn("Predecessor auto-calc err:", err);
       }
     }
+
     setFormData(updated);
   };
 
