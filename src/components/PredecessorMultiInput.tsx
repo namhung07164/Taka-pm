@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Task, Project } from '../types';
-import { Search, X, Check } from 'lucide-react';
+import { Search, X, Check, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useLanguage } from '../lib/LanguageContext';
 import { computeTaskCode, splitPredecessors } from '../lib/ganttUtils';
+import { ensureProjectTasksLoaded } from '../lib/taskStateService';
+import { ConfirmModal } from './ConfirmModal';
 
 export function PredecessorMultiInput({
   value,
@@ -24,11 +26,16 @@ export function PredecessorMultiInput({
   currentProjectStore?: string;
   disabled?: boolean;
 }) {
-  const { t } = useLanguage();
+  const { t: translate } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [confirmExternalModal, setConfirmExternalModal] = useState<{
+    isOpen: boolean;
+    task?: Task;
+    relationship?: string;
+  }>({ isOpen: false });
 
   const knownCodes = useMemo(() => {
     const codes = new Set<string>();
@@ -61,25 +68,52 @@ export function PredecessorMultiInput({
   const isTrailingDelimiter = /,\s*$/.test(value || '');
   const activeSegment = isTrailingDelimiter ? '' : (segments.length > 0 ? segments[segments.length - 1] : '');
 
+  // Dynamic loading of external project tasks when typing external project code
+  useEffect(() => {
+    if (!activeSegment || activeSegment.trim().length < 2) return;
+    const clean = activeSegment.toLowerCase().replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+    if (!clean) return;
+
+    const matchedProjects = (projects || []).filter(p => 
+      p.code && p.code !== currentProjectCode &&
+      (p.code.toLowerCase().includes(clean) || clean.includes(p.code.toLowerCase()))
+    );
+
+    matchedProjects.forEach(p => {
+      ensureProjectTasksLoaded(p.code);
+    });
+  }, [activeSegment, projects, currentProjectCode]);
+
   const candidateTasks = useMemo(() => {
-    const searchLower = activeSegment ? activeSegment.toLowerCase().replace(/^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i, '').trim() : '';
+    const searchLower = activeSegment ? activeSegment.toLowerCase().replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim() : '';
     
-    // Filter tasks based on current project scope first
-    let scopeTasks = tasks.filter(t => 
+    // In-scope tasks (same project, year, store)
+    const inScopeTasks = tasks.filter(t => 
       t.projectCode === currentProjectCode &&
       (!currentProjectYear || String(t.projectYear) === String(currentProjectYear)) &&
       (!currentProjectStore || String(t.projectStore) === String(currentProjectStore))
     );
-    
-    if (scopeTasks.length === 0) scopeTasks = tasks; // Fallback to all tasks if none in scope
 
-    const matches = searchLower ? scopeTasks.filter(t => {
+    // External tasks (other projects)
+    const externalTasks = tasks.filter(t => 
+      t.projectCode && t.projectCode !== currentProjectCode
+    );
+
+    if (!searchLower) {
+      return (inScopeTasks.length > 0 ? inScopeTasks : tasks).slice(0, 15);
+    }
+
+    const matchTask = (t: Task) => {
       const codeStr = (t.taskCodePhu || computeTaskCode(projects, tasks, t) || t.id).toLowerCase();
       const nameStr = (t.name || '').toLowerCase();
-      return codeStr.includes(searchLower) || nameStr.includes(searchLower);
-    }) : scopeTasks;
+      const pCodeStr = (t.projectCode || '').toLowerCase();
+      return codeStr.includes(searchLower) || nameStr.includes(searchLower) || pCodeStr.includes(searchLower);
+    };
 
-    return matches.slice(0, 15);
+    const inScopeMatches = inScopeTasks.filter(matchTask);
+    const externalMatches = externalTasks.filter(matchTask);
+
+    return [...inScopeMatches, ...externalMatches].slice(0, 25);
   }, [activeSegment, tasks, projects, currentProjectCode, currentProjectYear, currentProjectStore]);
 
   const enforceRules = (val: string, isFinal: boolean = false) => {
@@ -101,7 +135,7 @@ export function PredecessorMultiInput({
     return parts.join(', ');
   };
 
-  const handleSelect = (task: Task, relationship?: string) => {
+  const executeSelect = (task: Task, relationship?: string) => {
     const code = computeTaskCode(projects, tasks, task) || task.taskCodePhu || task.id;
     const itemToAdd = code + (relationship || '');
     let newSegments = [...segments];
@@ -124,6 +158,19 @@ export function PredecessorMultiInput({
       setIsOpen(true);
     }
     inputRef.current?.focus();
+  };
+
+  const handleSelect = (task: Task, relationship?: string, forceConfirmed: boolean = false) => {
+    const isExternal = task.projectCode && task.projectCode !== currentProjectCode;
+    if (isExternal && !forceConfirmed) {
+      setConfirmExternalModal({
+        isOpen: true,
+        task,
+        relationship
+      });
+      return;
+    }
+    executeSelect(task, relationship);
   };
 
   const renderColoredText = (val: string) => {
@@ -241,21 +288,31 @@ export function PredecessorMultiInput({
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#1c1c1f] border border-slate-200 dark:border-[#333336] rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto">
           {candidateTasks.map((t) => {
             const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
+            const isExternal = t.projectCode && t.projectCode !== currentProjectCode;
+            const taskCode = computeTaskCode(projects, tasks, t) || t.taskCodePhu || t.id;
             return (
               <div
                 key={t.id}
                 onClick={() => !isSecondPredecessor && handleSelect(t)}
                 className={cn(
-                  "p-2 border-b border-slate-100 dark:border-[#28282a] last:border-0 transition-colors",
+                  "p-2.5 border-b border-slate-100 dark:border-[#28282a] last:border-0 transition-colors",
                   !isSecondPredecessor ? "hover:bg-purple-50 dark:hover:bg-purple-900/20 cursor-pointer flex flex-col" : "flex flex-col bg-slate-50/50 dark:bg-[#18181a]/50"
                 )}
               >
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                    {t.name}
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {t.taskCodePhu || computeTaskCode(projects, tasks, t) || t.id}
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                      {t.name}
+                    </span>
+                    {isExternal && (
+                      <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 inline-flex items-center gap-1">
+                        <ExternalLink className="w-2.5 h-2.5" />
+                        {translate("External Link") || "External Link"}: {t.projectCode}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-blue-600 dark:text-[#8ab4f8] font-mono font-medium">
+                    {taskCode}
                   </span>
                 </div>
                 
@@ -282,6 +339,27 @@ export function PredecessorMultiInput({
           })}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmExternalModal.isOpen}
+        title={translate("Confirm External Predecessor") || "Confirm External Predecessor"}
+        message={
+          confirmExternalModal.task 
+            ? `Công việc "${confirmExternalModal.task.name}" (${computeTaskCode(projects, tasks, confirmExternalModal.task) || confirmExternalModal.task.taskCodePhu || confirmExternalModal.task.id}) thuộc dự án khác [${confirmExternalModal.task.projectCode}]. Bạn có chắc chắn muốn liên kết phụ thuộc (Predecessor) ngoài dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor.`
+            : "Bạn có chắc chắn muốn tạo liên kết phụ thuộc ngoài dự án này không?"
+        }
+        confirmText={translate("Link Predecessor") || "Link Predecessor"}
+        confirmStyle="primary"
+        onConfirm={() => {
+          if (confirmExternalModal.task) {
+            handleSelect(confirmExternalModal.task, confirmExternalModal.relationship, true);
+          }
+          setConfirmExternalModal({ isOpen: false });
+        }}
+        onCancel={() => {
+          setConfirmExternalModal({ isOpen: false });
+        }}
+      />
     </div>
   );
 }

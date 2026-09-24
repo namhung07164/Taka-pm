@@ -26,7 +26,8 @@ import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/proj
 import { 
   saveTaskStateUnified, 
   deleteTaskStateUnified, 
-  reorderTasksStateUnified 
+  reorderTasksStateUnified,
+  ensureProjectTasksLoaded
 } from '../lib/taskStateService';
 import { QRCodeButton } from './QRCodeButton';
 import { QuickNavButton } from './QuickNavButton';
@@ -1359,13 +1360,31 @@ export function DetailTab({
       let newT = { ...t, ...updates, updatedAt: new Date().toISOString() };
 
       if (updates.predecessor !== undefined) {
-        const taskNoMap = buildTaskNoMap(projects, tasks);
-        const parts = splitPredecessors(updates.predecessor, taskNoMap);
+        let currentTasks = useAppStore.getState().tasks || tasks;
+        let taskNoMap = buildTaskNoMap(projects, currentTasks);
+        let parts = splitPredecessors(updates.predecessor, taskNoMap);
         if (parts.length >= 2) {
           newT.durationManual = false;
         }
         newT.realtimeUpdate = Boolean(updates.predecessor.trim());
-        const parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+        let parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+
+        // If any predecessor could not be resolved, attempt to load external project tasks
+        if (updates.predecessor.trim() && (!parsed.length || parsed.some(p => !p.task))) {
+          for (const token of parts) {
+            const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+            const matchedProj = projects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            if (matchedProj && matchedProj.code !== t.projectCode) {
+              const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+              if (loaded.length > 0) {
+                currentTasks = useAppStore.getState().tasks || currentTasks;
+                taskNoMap = buildTaskNoMap(projects, currentTasks);
+                parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+              }
+            }
+          }
+        }
+
         const calcResult = calculateTaskDatesFromPredecessors(newT, parsed);
         if (calcResult) {
           newT.start = calcResult.start;

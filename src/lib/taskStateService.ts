@@ -1,11 +1,70 @@
 import { Task, Project } from "../types";
 import { useAppStore } from "../store/useAppStore";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db, APP_ID } from "./firebase";
 import { 
   getTasksForProject, 
   calculateProjectComputedDates, 
   syncProjectDatesToFirestore,
   matchProjectCode 
 } from "./projectDatesService";
+
+// Cache in-flight requests to avoid duplicate fetches
+const pendingProjectFetches = new Map<string, Promise<Task[]>>();
+
+/**
+ * Ensures tasks for a specific projectCode are loaded into Zustand store.
+ * Useful when resolving cross-project predecessors dynamically.
+ */
+export async function ensureProjectTasksLoaded(projectCode: string): Promise<Task[]> {
+  if (!projectCode) return [];
+  const cleanCode = projectCode.trim();
+  const currentTasks = useAppStore.getState().tasks || [];
+  
+  // If we already have tasks for this project in memory, return them
+  const existing = currentTasks.filter(t => 
+    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase()
+  );
+  if (existing.length > 0) return existing;
+
+  // If already fetching, return existing promise
+  if (pendingProjectFetches.has(cleanCode.toLowerCase())) {
+    return pendingProjectFetches.get(cleanCode.toLowerCase())!;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const q = query(
+        collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+        where("projectCode", "==", cleanCode)
+      );
+      const snap = await getDocs(q);
+      const loaded: Task[] = [];
+      snap.forEach(docSnap => {
+        const d = { id: docSnap.id, ...docSnap.data() } as Task;
+        if (!d.isDeleted) loaded.push(d);
+      });
+
+      if (loaded.length > 0) {
+        const latestTasks = useAppStore.getState().tasks || [];
+        const currentIds = new Set(latestTasks.map(t => t.id));
+        const toAdd = loaded.filter(t => !currentIds.has(t.id));
+        if (toAdd.length > 0) {
+          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
+        }
+      }
+      return loaded;
+    } catch (err) {
+      console.warn("Failed to fetch tasks for external project:", cleanCode, err);
+      return [];
+    } finally {
+      pendingProjectFetches.delete(cleanCode.toLowerCase());
+    }
+  })();
+
+  pendingProjectFetches.set(cleanCode.toLowerCase(), fetchPromise);
+  return fetchPromise;
+}
 
 /**
  * Tìm toàn bộ danh sách Projects bị ảnh hưởng bởi danh sách Tasks đưa vào

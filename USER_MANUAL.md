@@ -187,9 +187,16 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
 1. **Nhập & Chọn Mã Tiền Nhiệm (Predecessor)**:
    - Trong cửa sổ Task Modal hoặc bảng Task Detail, nhập mã công việc tiền nhiệm vào ô **Predecessor** (ví dụ: `L1-113-3-2` hoặc gõ tắt `2`, `-2` đối với các task cùng dự án).
    - Hệ thống cung cấp danh sách gợi ý thông minh hiển thị đầy đủ: Mã công việc, Tên công việc, Ngày bắt đầu/kết thúc và Dự án để dễ dàng lựa chọn.
-   - **Hỗ trợ Đa Tiền Nhiệm (Multi-Predecessor)**: Hỗ trợ nhập đồng thời nhiều tiền nhiệm phân cách bởi dấu phẩy `,` (ví dụ: `CP-01-1, CP-01-2FF` hoặc `CP-01-1, CP-01-2SF`).
+   - **Tìm kiếm gợi ý xuyên dự án (Cross-Project Search & Suggestions)**: Khi gõ mã dự án ngoài (ví dụ: `HN-TKV-SMZ2`, `SMZ2`, `85`...) hoặc tên công việc của dự án khác, hệ thống tự động tìm kiếm và nạp dữ liệu tức thời, hiển thị các công việc ngoài dự án trong danh sách gợi ý kèm nhãn huy hiệu tím nổi bật `External Link: [Mã dự án]`.
+   - **Hộp thoại xác nhận liên kết ngoài (External Link Confirmation Dialog)**: Khi chọn công việc thuộc dự án khác từ danh sách gợi ý, hệ thống tự động bật hộp thoại xác nhận chuyên nghiệp hỏi người dùng: *"Công việc '[Tên task]' thuộc dự án khác [Mã dự án]. Bạn có chắc chắn muốn liên kết phụ thuộc (Predecessor) ngoài dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor"*. Người dùng bấm **Link Predecessor** để hoàn tất liên kết hoặc **Cancel** để hủy bỏ.
+   - **Hỗ trợ Đa Tiền Nhiệm (Multi-Predecessor)**: Hỗ trợ nhập đồng thời nhiều tiền nhiệm phân cách bởi dấu phẩy `,` (ví dụ: `CP-01-1, CP-01-2FF` hoặc `HN-TKV-SMZ2-85SS, HN-TKV-IT-1FF`).
    - **Áp dụng đuôi FF hoặc SF cho Tiền nhiệm thứ 2**: Tiền nhiệm thứ 2 hỗ trợ cả 2 chuẩn liên kết ràng buộc mốc kết thúc: `FF` (Finish-to-Finish) và `SF` (Start-to-Finish). Khi người dùng chọn tiền nhiệm thứ 2 từ danh sách gợi ý, hệ thống mặc định gắn `FF` và cho phép tùy chỉnh sang `SF` (hoặc kèm Lag như `+2`, `-1`).
-   - **Cảnh báo Task ngoài dự án (Cross-Project Warning)**: Cả tiền nhiệm thứ nhất và thứ hai (hoặc bất kỳ tiền nhiệm nào) nếu trỏ tới task thuộc dự án khác đều được hệ thống hiển thị huy hiệu cảnh báo màu hổ phách/vàng rõ ràng kèm tên dự án nguồn để người dùng nhận diện ngay.
+   - **Cảnh báo Task ngoài dự án (Cross-Project Warning)**: Cả tiền nhiệm thứ nhất và thứ hai (hoặc bất kỳ tiền nhiệm nào) nếu trỏ tới task thuộc dự án khác đều được hệ thống hiển thị huy hiệu nhận diện màu tím kèm tên dự án nguồn để người dùng nhận biết ngay.
+   - **Tự động đổi ngày theo đúng logic Predecessor**: Ngay khi nhập hoặc chọn liên kết (cả trong Task Detail bảng tính lẫn trong Task Modal), hệ thống phân giải chính xác ngày bắt đầu/kết thúc của task ngoài dự án và tự động cập nhật ngày của task hiện tại:
+     + `SS`: Ngày `Start` của task được gán bằng đúng ngày `Start` của task tiền nhiệm ngoài dự án (cộng/trừ Lag nếu có); ngày `Finish = Start + Duration`.
+     + `FS`: Ngày `Start` được gán bằng ngày `Finish` của task tiền nhiệm ngoài dự án; ngày `Finish = Start + Duration`.
+     + `FF`: Ngày `Finish` được gán bằng ngày `Finish` của task tiền nhiệm ngoài dự án.
+     + `SF`: Ngày `Finish` được gán bằng ngày `Start` của task tiền nhiệm ngoài dự án.
 2. **Quy Tắc Tính Toán Ngày Bắt Đầu (Start), Kết Thúc (Finish) & Thời Lượng (Duration)**:
    - **Trường hợp 1 Tiền nhiệm (Single Predecessor)**:
      + `FS` (Finish-to-Start): `Start = Finish (Tiền nhiệm) + Lag`, `Finish = Start + Duration`.

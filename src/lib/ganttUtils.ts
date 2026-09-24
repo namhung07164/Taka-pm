@@ -326,6 +326,17 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     arr.push(t);
   }
 
+  const addKey = (t: Task, rawKey?: string | number | null) => {
+    if (rawKey === undefined || rawKey === null) return;
+    const k = String(rawKey).trim().toLowerCase();
+    if (!k) return;
+    const existing = map.get(k) || [];
+    if (!existing.some(item => item.id === t.id)) {
+      existing.push(t);
+      map.set(k, existing);
+    }
+  };
+
   safeProjects.forEach((p) => {
     if (!p) return;
     const pCode = String(p.code || '').trim().toLowerCase();
@@ -337,12 +348,34 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     ));
     groupTasks.forEach((t, i) => {
       if (!t) return;
-      const code = String(t.taskCodePhu || `${p.code || ''}-${i + 1}`).toLowerCase();
-      const existing = map.get(code) || [];
-      existing.push(t);
-      map.set(code, existing);
+      // 1. Task secondary code (taskCodePhu) if any
+      if (t.taskCodePhu) addKey(t, t.taskCodePhu);
+
+      // 2. Sequential code within project: ${p.code}-${i + 1}
+      addKey(t, `${p.code || ''}-${i + 1}`);
+
+      // 3. OrderIndex-based code if defined
+      if (t.orderIndex !== undefined && t.orderIndex !== null) {
+        addKey(t, `${p.code || ''}-${Number(t.orderIndex) + 1}`);
+      }
+
+      // 4. Raw task ID
+      if (t.id) addKey(t, t.id);
     });
   });
+
+  // Also index all tasks directly to ensure unparented or cross-project tasks are reachable
+  safeTasks.forEach(t => {
+    if (!t) return;
+    if (t.taskCodePhu) addKey(t, t.taskCodePhu);
+    if (t.projectCode) {
+      if (t.orderIndex !== undefined && t.orderIndex !== null) {
+        addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
+      }
+    }
+    if (t.id) addKey(t, t.id);
+  });
+
   return map;
 }
 

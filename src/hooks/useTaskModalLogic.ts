@@ -11,7 +11,7 @@ import { undoManager } from '../lib/undoManager';
 import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors, normalizeAndHealTaskPredecessors } from '../lib/ganttUtils';
 import { generateId } from '../lib/utils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
-import { saveTaskStateUnified } from '../lib/taskStateService';
+import { saveTaskStateUnified, ensureProjectTasksLoaded } from '../lib/taskStateService';
 
 export interface UseTaskModalLogicProps {
   task: Task | null;
@@ -174,7 +174,7 @@ export function useTaskModalLogic({
 
 
 
-  const handlePredecessorChange = (val: string) => {
+  const handlePredecessorChange = async (val: string) => {
     
     const isFilled = Boolean(val.trim());
     let updated = { ...formData, predecessor: val, realtimeUpdate: isFilled };
@@ -188,7 +188,8 @@ export function useTaskModalLogic({
     }
     if (isFilled) {
       try {
-        const taskNoMap = buildTaskNoMap(projects || [], tasks || []);
+        let currentTasks = useAppStore.getState().tasks || tasks || [];
+        let taskNoMap = buildTaskNoMap(projects || [], currentTasks);
         const dummyTask: Task = {
           id: task?.id || 'temp',
           projectCode: updated.projectCode || '',
@@ -201,7 +202,24 @@ export function useTaskModalLogic({
           durationManual: updated.durationManual ?? (parts.length >= 2 ? false : true),
           finishManual: updated.finishManual ?? false
         };
-        const parsed = parsePredecessors(val, taskNoMap, dummyTask);
+        let parsed = parsePredecessors(val, taskNoMap, dummyTask);
+
+        if (val.trim() && (!parsed.length || parsed.some(p => !p.task))) {
+          const splitParts = splitPredecessors(val, taskNoMap);
+          for (const token of splitParts) {
+            const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+            const matchedProj = (projects || []).find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            if (matchedProj && matchedProj.code !== dummyTask.projectCode) {
+              const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+              if (loaded.length > 0) {
+                currentTasks = useAppStore.getState().tasks || currentTasks;
+                taskNoMap = buildTaskNoMap(projects || [], currentTasks);
+                parsed = parsePredecessors(val, taskNoMap, dummyTask);
+              }
+            }
+          }
+        }
+
         if (parsed.length > 0) {
           const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);
           if (calcResult) {
