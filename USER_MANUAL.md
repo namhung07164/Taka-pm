@@ -228,6 +228,8 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
      + Khi người dùng truy cập bảng chi tiết, hệ thống tự động quét và nâng cấp tất cả các mã phụ `taskCodePhu` và chuỗi tiền nhiệm `Predecessor` từ chuẩn cũ `-` sang chuẩn `#` (vd: `B2-B208-1` ➜ `B2-B208#1`, `smz2-85` ➜ `HN-TKV-SMZ2#85`).
      + Tiến trình chạy ngầm qua từng đợt (chunks) không làm gián đoạn hay đơ giao diện (`0ms Optimistic UI`).
    - **Bảo Vệ Xung Đột Số (Numerical Conflict Guard)**:
+      + **Bảo đảm chuẩn xác Subtask Index**: Khi nhập hoặc chọn mã công việc (như B2-B208#2), hệ thống áp dụng cơ chế bảo vệ số thứ tự, đảm bảo 100% liên kết chính xác Subtask #2 (Re-instatement) và không bao giờ bị lệch sang Subtask #1 (Hoarding up).
+      + **Hiệu năng lưu tức thời (Zero-Lag Save Engine)**: Lưu công việc và tính toán mốc ngày trong 0ms, loại bỏ hoàn toàn các vòng lặp quét nền ngầm gây đơ hoặc giật lag ứng dụng.
      + Khi người dùng gõ tìm kiếm tiền nhiệm có số thứ tự cụ thể (ví dụ nhập `B2-B208-2` hoặc `#2` hoặc `2`), hệ thống chặn tuyệt đối việc ép gợi ý về các task khác số (như `B2-B208#1`).
      + Nếu gõ theo định dạng cũ có dấu `-` (ví dụ `B2-B208-2`), hệ thống tự động hiểu và chuẩn hóa chính xác sang `B2-B208#2`.
    - **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án (Project Code Cascade)**:
@@ -1319,7 +1321,11 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Khi nhấn Enter trực tiếp hoặc nhấp chuột ra ngoài (Blur / Click Outside)**: Nếu người dùng nhập mã cụ thể (như `B2-B208-2`), hệ thống luôn ưu tiên lưu mã chính xác đó. Nếu gõ ký tự viết tắt hợp lệ (như `smz2-85SS` hoặc `2`), hệ thống sẽ chuyển đổi thành mã chuẩn (`HN-TKV-SMZ2-85SS` hoặc `B2-B208-2`), bảo toàn nguyên vẹn mối quan hệ (`SS`, `FF`, `SF`, `FS`) và độ trễ (`Lag`).
      + **Khi gõ dấu phẩy (`,`)**: Tự động chuẩn hóa phân đoạn tiền nhiệm thứ nhất thành mã đúng trước khi chuyển sang nhập phân đoạn tiền nhiệm thứ hai.
    - **Cơ Chế Bảo Vệ Toàn Vẹn Mã Nhập & Chống Xung Đột Số Thứ Tự (Numerical Conflict Guard & Precision Protection)**:
+      + **Bảo đảm chuẩn xác Subtask Index**: Khi nhập hoặc chọn mã công việc (như B2-B208#2), hệ thống áp dụng cơ chế bảo vệ số thứ tự, đảm bảo 100% liên kết chính xác Subtask #2 (Re-instatement) và không bao giờ bị lệch sang Subtask #1 (Hoarding up).
+      + **Hiệu năng lưu tức thời (Zero-Lag Save Engine)**: Lưu công việc và tính toán mốc ngày trong 0ms, loại bỏ hoàn toàn các vòng lặp quét nền ngầm gây đơ hoặc giật lag ứng dụng.
      + **Bảo vệ mã người dùng gõ**: Khi người dùng nhập một mã cụ thể (ví dụ `B2-B208-2` có đuôi `-2`), hệ thống áp dụng cơ chế *Numerical Conflict Guard* chặt chẽ: các công việc có số thứ tự khác (như `B2-B208-1` mang đuôi `-1` hay `B2-B208-3` mang đuôi `-3`) bị gán điểm trùng khớp bằng 0, tuyệt đối không bao giờ được tự động ép hay thay thế đè lên mã người dùng đã gõ.
+      + **Bảo đảm chuẩn xác Subtask Index**: Khi nhập hoặc chọn mã công việc (như B2-B208#2), hệ thống áp dụng cơ chế bảo vệ số thứ tự, đảm bảo 100% liên kết chính xác Subtask #2 (Re-instatement) và không bao giờ bị lệch sang Subtask #1 (Hoarding up).
+      + **Hiệu năng lưu tức thời (Zero-Lag Save Engine)**: Lưu công việc và tính toán mốc ngày trong 0ms, loại bỏ hoàn toàn các vòng lặp quét nền ngầm gây đơ hoặc giật lag ứng dụng.
      + **Nhận diện toàn vẹn qua bộ lọc (Global Task Visibility Pool)**: Cơ chế phân giải quét toàn bộ kho dữ liệu công việc trong bộ nhớ ứng dụng (`Global Task Store`), đảm bảo nhận diện chính xác các mã công việc ngay cả khi công việc đó đang bị ẩn bởi bộ lọc tìm kiếm hoặc phân quyền phụ trách (Party RBAC).
    - **Hỗ Trợ Ký Tự `#` (Shift + 3) & Định Dạng Subtask Chuẩn Mới**:
      + Ô nhập Predecessor cho phép gõ trực tiếp ký tự `#` (thao tác `Shift + 3` trên bàn phím) một cách trơn tru, không bị lọc hay xóa tự động.

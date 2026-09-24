@@ -9,7 +9,7 @@ import { db, APP_ID, writeBatch } from "../lib/firebase";
 import { addPendingUpdate } from '../lib/syncQueue';
 import { undoManager } from '../lib/undoManager';
 import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors, normalizeAndHealTaskPredecessors } from '../lib/ganttUtils';
-import { resolvePredecessorString } from '../lib/predecessorMatchUtils';
+import { resolvePredecessorString, PredecessorContext } from '../lib/predecessorMatchUtils';
 import { generateId } from '../lib/utils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 import { saveTaskStateUnified, ensureProjectTasksLoaded } from '../lib/taskStateService';
@@ -179,11 +179,11 @@ export function useTaskModalLogic({
       const taskNoMap = buildTaskNoMap(projects || [], tasks || []);
       const dummyTask: Task = {
         id: task?.id || 'temp',
-        projectId: formData.projectId || task?.projectId,
-        projectCode: formData.projectCode || '',
-        projectYear: formData.projectYear,
-        projectStore: formData.projectStore,
-        location: formData.location || task?.location,
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code || '',
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        location: formData.location || task?.location || currentProject?.location,
         name: formData.name || '',
         start: formData.start,
         finish: formData.finish,
@@ -195,7 +195,7 @@ export function useTaskModalLogic({
     } catch {
       return [];
     }
-  }, [formData.predecessor, formData.projectId, formData.projectCode, formData.projectYear, formData.projectStore, formData.location, projects, tasks, task?.id, task?.projectId, task?.location]);
+  }, [formData.predecessor, formData.projectId, formData.projectCode, formData.projectYear, formData.projectStore, formData.location, currentProject, projects, tasks, task?.id, task?.projectId, task?.projectCode, task?.projectYear, task?.projectStore, task?.location]);
 
 
 
@@ -217,11 +217,11 @@ export function useTaskModalLogic({
         let taskNoMap = buildTaskNoMap(projects || [], currentTasks);
         const dummyTask: Task = {
           id: task?.id || 'temp',
-          projectId: updated.projectId || task?.projectId,
-          projectCode: updated.projectCode || '',
-          projectYear: updated.projectYear,
-          projectStore: updated.projectStore,
-          location: updated.location || task?.location,
+          projectId: updated.projectId || task?.projectId || currentProject?.id,
+          projectCode: updated.projectCode || currentProject?.code || '',
+          projectYear: updated.projectYear || currentProject?.year,
+          projectStore: updated.projectStore || currentProject?.store,
+          location: updated.location || task?.location || currentProject?.location,
           name: updated.name || '',
           start: updated.start,
           finish: updated.finish,
@@ -364,7 +364,14 @@ export function useTaskModalLogic({
 
     if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
       if (formData.predecessor) {
-        formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode);
+        const predContext: PredecessorContext = {
+          projectId: formData.projectId || task?.projectId || currentProject?.id,
+          projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+          projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+          projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+          projectLocation: formData.location || task?.location || currentProject?.location
+        };
+        formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext);
         const taskNoMap = buildTaskNoMap(projects, tasks);
         let parts = splitPredecessors(formData.predecessor, taskNoMap);
         if (parts.length >= 2) {
@@ -377,7 +384,13 @@ export function useTaskModalLogic({
       }
       // Allow external predecessor links across projects without blocking window.confirm in iframe/mobile
       const taskNoMap = buildTaskNoMap(projects, tasks);
-      const dummyTask: any = { projectCode: formData.projectCode, projectYear: formData.projectYear, projectStore: formData.projectStore };
+      const dummyTask: any = {
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        location: formData.location || task?.location || currentProject?.location
+      };
       parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
     }
 

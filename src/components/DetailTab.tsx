@@ -378,15 +378,6 @@ export function DetailTab({
     }
   }, [tasks, projects]);
 
-  // Auto-heal on data change if needed in background (debounced to avoid mount lag)
-  useEffect(() => {
-    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
-    const timer = setTimeout(() => {
-      handleSyncAllPredecessors(false);
-    }, 2500);
-    return () => clearTimeout(timer);
-  }, [tasks, projects, handleSyncAllPredecessors]);
-
   // Escape key triggers Clear Search / Clear Focus when not in modals
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

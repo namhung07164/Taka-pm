@@ -1,5 +1,6 @@
 import { Task, Project } from '../types';
 import { parseDateTime, formatToDatetimeLocal } from './utils';
+import { useAppStore } from '../store/useAppStore';
 
 export function getPredecessorCodeUpdates(oldTaskNoMap: Map<string, Task[]>, newTaskNoMap: Map<string, Task[]>, projects: Project[], newTasks: Task[]): Map<string, string> {
   const oldCodeToNewCode = new Map<string, string>();
@@ -350,24 +351,32 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     ));
     groupTasks.forEach((t, i) => {
       if (!t) return;
-      // 1. Task secondary code (taskCodePhu) if any
+      // 1. Task canonical computed code
+      const computed = computeTaskCode(projects, tasks, t);
+      if (computed) {
+        addKey(t, computed);
+        if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
+        if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+      }
+
+      // 2. Task secondary code (taskCodePhu) if any
       if (t.taskCodePhu) {
         addKey(t, t.taskCodePhu);
         if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
         if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
       }
 
-      // 2. Sequential code within project: ${p.code}#${i + 1} and legacy ${p.code}-${i + 1}
+      // 3. Sequential code within project: ${p.code}#${i + 1} and legacy ${p.code}-${i + 1}
       addKey(t, `${p.code || ''}#${i + 1}`);
       addKey(t, `${p.code || ''}-${i + 1}`);
 
-      // 3. OrderIndex-based code if defined
+      // 4. OrderIndex-based code if defined
       if (t.orderIndex !== undefined && t.orderIndex !== null) {
         addKey(t, `${p.code || ''}#${Number(t.orderIndex) + 1}`);
         addKey(t, `${p.code || ''}-${Number(t.orderIndex) + 1}`);
       }
 
-      // 4. Raw task ID
+      // 5. Raw task ID
       if (t.id) addKey(t, t.id);
     });
   });
@@ -375,16 +384,20 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
   // Also index all tasks directly to ensure unparented or cross-project tasks are reachable
   safeTasks.forEach(t => {
     if (!t) return;
+    const computed = computeTaskCode(projects, tasks, t);
+    if (computed) {
+      addKey(t, computed);
+      if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
+      if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+    }
     if (t.taskCodePhu) {
       addKey(t, t.taskCodePhu);
       if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
       if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
     }
-    if (t.projectCode) {
-      if (t.orderIndex !== undefined && t.orderIndex !== null) {
-        addKey(t, `${t.projectCode}#${Number(t.orderIndex) + 1}`);
-        addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
-      }
+    if (t.orderIndex !== undefined && t.orderIndex !== null && t.projectCode) {
+      addKey(t, `${t.projectCode}#${Number(t.orderIndex) + 1}`);
+      addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
     }
     if (t.id) addKey(t, t.id);
   });
@@ -465,6 +478,8 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
 
 export function parsePredecessors(predecessorString: string, taskNoMap: Map<string, Task[]>, contextTask?: Task) {
   if (!predecessorString) return [];
+  const safeProjects: Project[] = typeof window !== 'undefined' ? (useAppStore.getState?.()?.projects || []) : [];
+  const safeTasks: Task[] = typeof window !== 'undefined' ? (useAppStore.getState?.()?.tasks || []) : [];
   const preds = splitPredecessors(predecessorString, taskNoMap);
   return preds.map(pMatches => {
     const lowerMatches = pMatches.toLowerCase();
@@ -557,30 +572,56 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
       const possibleTasks = taskNoMap.get(longestMatch);
       let resolvedTask: Task | undefined;
       if (possibleTasks && possibleTasks.length > 0) {
-        if (possibleTasks.length === 1) {
+        if (possibleTasks.length === 1 && !contextTask) {
           resolvedTask = possibleTasks[0];
-        } else if (contextTask) {
-          const ctxPCode = String(contextTask.projectCode || '').trim().toLowerCase();
-          const ctxYear = contextTask.projectYear !== undefined && contextTask.projectYear !== null
-            ? String(contextTask.projectYear).trim().toLowerCase()
-            : '';
-          const ctxStore = String(contextTask.projectStore || '').trim().toLowerCase();
-          const ctxLoc = String(contextTask.location || '').trim().toLowerCase();
-          const ctxProjId = contextTask.projectId || '';
+        } else {
+          // Extract requested subtask number if any (e.g. "B2-B208#2" -> 2, "#2" -> 2, "2" -> 2)
+          const targetNumMatch = longestMatch.match(/(?:^|[-#_])0*(\d+)$/);
+          const targetSubtaskNumber = targetNumMatch ? parseInt(targetNumMatch[1], 10) : null;
 
-          // Score each candidate to pick the closest contextual match:
-          // Priority: 1. same projectId, 2. same projectCode, 3. same year, 4. same store, 5. same location
+          const ctxPCode = contextTask ? String(contextTask.projectCode || '').trim().toLowerCase() : '';
+          const ctxProj = contextTask ? safeProjects.find(p => 
+            (contextTask.projectId && p.id === contextTask.projectId) ||
+            (p.code && String(p.code).trim().toLowerCase() === ctxPCode &&
+             (contextTask.projectYear ? String(p.year) === String(contextTask.projectYear) : true) &&
+             (contextTask.projectStore ? p.store === contextTask.projectStore : true))
+          ) : undefined;
+
+          const ctxYear = contextTask ? String(contextTask.projectYear || ctxProj?.year || '').trim().toLowerCase() : '';
+          const ctxStore = contextTask ? String(contextTask.projectStore || ctxProj?.store || '').trim().toLowerCase() : '';
+          const ctxLoc = contextTask ? String(contextTask.location || ctxProj?.location || '').trim().toLowerCase() : '';
+          const ctxProjId = contextTask ? (contextTask.projectId || ctxProj?.id || '') : '';
+
           let bestScore = -Infinity;
           for (const cand of possibleTasks) {
             if (!cand) continue;
             let candScore = 0;
             const candPCode = String(cand.projectCode || '').trim().toLowerCase();
-            const candYear = cand.projectYear !== undefined && cand.projectYear !== null
-              ? String(cand.projectYear).trim().toLowerCase()
-              : '';
-            const candStore = String(cand.projectStore || '').trim().toLowerCase();
-            const candLoc = String(cand.location || '').trim().toLowerCase();
-            const candProjId = cand.projectId || '';
+            const candProj = safeProjects.find(p =>
+              (cand.projectId && p.id === cand.projectId) ||
+              (p.code && String(p.code).trim().toLowerCase() === candPCode &&
+               (cand.projectYear ? String(p.year) === String(cand.projectYear) : true) &&
+               (cand.projectStore ? p.store === cand.projectStore : true))
+            );
+
+            const candYear = String(cand.projectYear || candProj?.year || '').trim().toLowerCase();
+            const candStore = String(cand.projectStore || candProj?.store || '').trim().toLowerCase();
+            const candLoc = String(cand.location || candProj?.location || '').trim().toLowerCase();
+            const candProjId = cand.projectId || candProj?.id || '';
+
+            // Numerical Conflict Guard: ensure subtask order numbers match exactly
+            if (targetSubtaskNumber !== null) {
+              const candComputed = computeTaskCode(safeProjects, safeTasks, cand) || cand.taskCodePhu || '';
+              const candNumMatch = candComputed.match(/(?:^|[-#_])0*(\d+)$/);
+              const candSubtaskNum = candNumMatch ? parseInt(candNumMatch[1], 10) : null;
+              if (candSubtaskNum !== null) {
+                if (candSubtaskNum === targetSubtaskNumber) {
+                  candScore += 25000;
+                } else {
+                  candScore -= 50000; // Strong penalty for mismatched subtask number
+                }
+              }
+            }
 
             // 1. Same parent project ID: top priority
             if (ctxProjId && candProjId && ctxProjId === candProjId) {
@@ -1259,10 +1300,6 @@ export function healAllTasksPredecessors(
 
     const computedCode = computeTaskCode(projects, allTasks, t);
     const newPhu = computedCode || t.taskCodePhu || '';
-
-    if (newPhu !== (t.taskCodePhu || '')) {
-      taskChanged = true;
-    }
 
     if (t.predecessor) {
       const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
