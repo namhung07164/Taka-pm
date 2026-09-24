@@ -44,11 +44,9 @@ export function PredecessorMultiInput({
 }) {
   const { t: translate } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
   const initialValueOnFocus = useRef<string>('');
   const selectionRef = useRef<{ start: number; end: number } | null>(null);
 
@@ -272,61 +270,6 @@ export function PredecessorMultiInput({
     executeSelect(task, relationship);
   };
 
-  const renderColoredText = (val: string) => {
-    if (!val) return null;
-    const parts = splitPredecessors(val, knownCodes);
-    if (parts.length === 0) {
-      return <span>{val}</span>;
-    }
-    if (parts.length === 1) {
-      const p0 = parts[0];
-      const idx0 = val.indexOf(p0);
-      if (idx0 === -1) return <span className="text-blue-600 dark:text-[#8ab4f8]">{val}</span>;
-      const before0 = val.substring(0, idx0);
-      const after0 = val.substring(idx0 + p0.length);
-      return (
-        <>
-          {before0}
-          <span className="text-blue-600 dark:text-[#8ab4f8]">{p0}</span>
-          <span className="text-slate-800 dark:text-slate-200">{after0}</span>
-        </>
-      );
-    }
-
-    const p0 = parts[0];
-    const p1 = parts[1];
-    const idx0 = val.indexOf(p0);
-    if (idx0 === -1) {
-      return <span className="text-blue-600 dark:text-[#8ab4f8]">{val}</span>;
-    }
-    const before0 = val.substring(0, idx0);
-    const after0 = val.substring(idx0 + p0.length);
-    const idx1 = after0.indexOf(p1);
-
-    if (idx1 === -1) {
-      return (
-        <>
-          {before0}
-          <span className="text-blue-600 dark:text-[#8ab4f8]">{p0}</span>
-          <span className="text-slate-800 dark:text-slate-200">{after0}</span>
-        </>
-      );
-    }
-
-    const delimiter = after0.substring(0, idx1);
-    const remainder = after0.substring(idx1 + p1.length);
-
-    return (
-      <>
-        {before0}
-        <span className="text-blue-600 dark:text-[#8ab4f8]">{p0}</span>
-        <span className="text-slate-800 dark:text-slate-200">{delimiter}</span>
-        <span className="text-rose-600 dark:text-rose-400">{p1}</span>
-        <span className="text-slate-800 dark:text-slate-200">{remainder}</span>
-      </>
-    );
-  };
-  
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
     const rawStart = e.target.selectionStart ?? rawVal.length;
@@ -406,9 +349,6 @@ export function PredecessorMultiInput({
     }
   };
 
-  // Exact monospace font formatting to guarantee pixel-perfect caret and character alignment across all devices/OS
-  const commonTextClasses = "text-sm font-mono leading-normal tracking-normal whitespace-pre";
-
   const getBadgeLabel = (item: RankedPredecessorMatch) => {
     const diff = item.diffDetails;
     if (!diff || !diff.diffFactors || diff.diffFactors.length === 0) {
@@ -434,22 +374,10 @@ export function PredecessorMultiInput({
     <div className="relative w-full" ref={containerRef}>
       <div 
         className={cn(
-          "w-full relative rounded-lg bg-white dark:bg-[#18181a] border overflow-hidden flex items-center",
-          disabled ? "bg-slate-50 dark:bg-[#18181a] border-slate-200 dark:border-[#444446] opacity-60" : "border-slate-200 dark:border-[#444446] focus-within:ring-2 focus-within:ring-purple-500"
+          "w-full relative rounded-lg bg-white dark:bg-[#18181a] border overflow-hidden flex items-center transition-colors",
+          disabled ? "bg-slate-50 dark:bg-[#18181a] border-slate-200 dark:border-[#444446] opacity-60" : "border-slate-200 dark:border-[#444446] focus-within:ring-2 focus-within:ring-blue-500 dark:focus-within:ring-blue-400 focus-within:border-transparent"
         )}
       >
-        <div 
-          ref={overlayRef} 
-          className={cn(
-            "absolute inset-0 px-3 py-2 pointer-events-none overflow-hidden z-10 flex items-center font-mono font-medium transition-opacity",
-            commonTextClasses,
-            isFocused ? "opacity-0" : "opacity-100"
-          )} 
-          aria-hidden="true"
-        >
-          {renderColoredText(value || "")}
-        </div>
-        
         <input
           ref={inputRef}
           type="text"
@@ -457,22 +385,15 @@ export function PredecessorMultiInput({
           value={value || ''}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onScroll={(e) => { if (overlayRef.current) overlayRef.current.scrollLeft = e.currentTarget.scrollLeft; }}
           onFocus={() => {
-            setIsFocused(true);
             initialValueOnFocus.current = value || '';
             setIsOpen(true);
-          }}
-          onBlur={() => {
-            setIsFocused(false);
           }}
           disabled={disabled}
           placeholder={value ? "" : "e.g. A01-1SS, A02-2FF"}
           className={cn(
-            "w-full px-3 py-2 relative z-20 bg-transparent outline-none border-none focus:ring-0 shadow-none m-0 caret-blue-600 dark:caret-[#8ab4f8] font-mono font-medium",
-            commonTextClasses,
-            value && !disabled ? "pr-8" : "",
-            isFocused ? "text-slate-900 dark:text-slate-100" : "text-transparent"
+            "w-full px-3 py-2 bg-transparent outline-none border-none focus:ring-0 shadow-none m-0 font-mono font-bold text-sm tracking-normal leading-normal text-blue-600 dark:text-[#8ab4f8] placeholder:text-slate-400 dark:placeholder:text-slate-500 caret-blue-600 dark:caret-[#8ab4f8]",
+            value && !disabled ? "pr-8" : ""
           )}
         />
 
@@ -490,7 +411,7 @@ export function PredecessorMultiInput({
                 selectionRef.current = { start: 0, end: 0 };
               }
             }}
-            className="absolute right-2 z-30 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="absolute right-2 z-10 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             title={translate("Clear") || "Clear"}
           >
             <X className="w-3.5 h-3.5" />
