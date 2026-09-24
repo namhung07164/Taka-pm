@@ -971,8 +971,8 @@ export function normalizeAndHealTaskPredecessors(
       }
     }
 
-    // 2. Extract trailing link/lag suffix: e.g. "SS", "FS+0.5", "+0.5", "-1", "FF", etc.
-    const suffixMatch = rawToken.match(/\s*((?:FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)?|[+-]\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)\s*$/i);
+    // 2. Extract trailing link/lag suffix: e.g. "SS", "FS+0.5", "+0.5", " - 1", "FF", etc.
+    const suffixMatch = rawToken.match(/\s*((?:FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)?|\+\s*\d+(?:\.\d+)?|\s+-\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)\s*$/i);
     let lagSuffix = "";
     let baseToken = rawToken;
 

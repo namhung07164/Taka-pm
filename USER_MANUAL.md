@@ -1289,3 +1289,20 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Bảo Vệ Tính Toàn Vẹn Khi Lưu (Persistence Normalization)**:
      + Cả hai chế độ Online (Firestore) và Offline Sync đều tự động chuẩn hóa các trường này trước khi lưu trữ, đảm bảo không bao giờ phát sinh giá trị rác hoặc rỗng trên hệ thống.
 
+16. **Ô Tìm Kiếm & Tự Động Điền Khớp Nhất Cho Predecessor (Predecessor Smart Search & Nearest Match Auto-fill)**:
+   - **Gợi Ý & Xếp Hạng Độ Trùng Khớp Thông Minh (Ranked Suggestions)**:
+     + Khi gõ vào ô Predecessor (ở cả Modal chi tiết Task và ô sửa nhanh trực tiếp trên bảng DetailTab), hệ thống hiển thị danh sách gợi ý được sắp xếp theo mức độ gần giống nhất (Match Score).
+     + Ứng viên gần giống nhất được đánh dấu nổi bật với huy hiệu `★ Khớp nhất` (`★ Best Match`) cùng màu viền/nền tương phản.
+     + Hỗ trợ tra cứu siêu tốc đa tiêu chí: mã task đầy đủ (`CP-01-2`), mã viết tắt/thiếu ký tự (`smz2-85` → `HN-TKV-SMZ2-85`), số thứ tự trong dự án (`2`, `85`), hoặc tên công việc (`Thi công sàn gỗ`).
+   - **Tự Động Điền Ô Đúng Vào Khi Nhập Gần Giống Nhất (Auto-fill Nearest Match)**:
+     + **Khi nhấn phím Tab hoặc điều hướng mũi tên và Enter**: Tự động lấy kết quả gợi ý đang được chọn và điền mã task chính xác vào ô.
+     + **Khi nhấn Enter trực tiếp hoặc nhấp chuột ra ngoài (Blur / Click Outside)**: Nếu người dùng nhập mã cụ thể (như `B2-B208-2`), hệ thống luôn ưu tiên lưu mã chính xác đó. Nếu gõ ký tự viết tắt hợp lệ (như `smz2-85SS` hoặc `2`), hệ thống sẽ chuyển đổi thành mã chuẩn (`HN-TKV-SMZ2-85SS` hoặc `B2-B208-2`), bảo toàn nguyên vẹn mối quan hệ (`SS`, `FF`, `SF`, `FS`) và độ trễ (`Lag`).
+     + **Khi gõ dấu phẩy (`,`)**: Tự động chuẩn hóa phân đoạn tiền nhiệm thứ nhất thành mã đúng trước khi chuyển sang nhập phân đoạn tiền nhiệm thứ hai.
+   - **Cơ Chế Bảo Vệ Toàn Vẹn Mã Nhập & Chống Xung Đột Số Thứ Tự (Numerical Conflict Guard & Precision Protection)**:
+     + **Bảo vệ mã người dùng gõ**: Khi người dùng nhập một mã cụ thể (ví dụ `B2-B208-2` có đuôi `-2`), hệ thống áp dụng cơ chế *Numerical Conflict Guard* chặt chẽ: các công việc có số thứ tự khác (như `B2-B208-1` mang đuôi `-1` hay `B2-B208-3` mang đuôi `-3`) bị gán điểm trùng khớp bằng 0, tuyệt đối không bao giờ được tự động ép hay thay thế đè lên mã người dùng đã gõ.
+     + **Nhận diện toàn vẹn qua bộ lọc (Global Task Visibility Pool)**: Cơ chế phân giải quét toàn bộ kho dữ liệu công việc trong bộ nhớ ứng dụng (`Global Task Store`), đảm bảo nhận diện chính xác các mã công việc ngay cả khi công việc đó đang bị ẩn bởi bộ lọc tìm kiếm hoặc phân quyền phụ trách (Party RBAC).
+   - **Tải Động & Cảnh Báo Liên Kết Ngoài Dự Án (Cross-Project Predecessor Integration)**:
+     + Tự động phát hiện tiền tố dự án ngoài (như `smz2` cho `HN-TKV-SMZ2`) để tải trước danh sách công việc của dự án đó từ máy chủ.
+     + Tự động hiển thị hộp thoại xác nhận khi liên kết chéo sang dự án khác để người dùng chủ động kiểm soát.
+
+

@@ -25,7 +25,7 @@ const firebaseConfigDev = {
 };
 
 // Tự động nhận diện môi trường
-const isDevMode = (import.meta as any).env?.DEV || window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev');
+const isDevMode = (import.meta as any).env?.DEV || (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev')));
 const firebaseConfig = isDevMode ? firebaseConfigDev : firebaseConfigProd;
 
 console.log(`🔥 Firebase Initialized in ${isDevMode ? 'DEVELOPMENT' : 'PRODUCTION'} mode. Project: ${firebaseConfig.projectId}`);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PredecessorMultiInput } from '../PredecessorMultiInput';
 import { Task, Project } from '../../types';
 import { normalizeAndHealTaskPredecessors } from '../../lib/ganttUtils';
+import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
   value,
@@ -24,24 +25,33 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const healed = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
-    setVal(healed || (value !== undefined && value !== null ? value : ''));
-  }, [value, task, tasks, projects]);
+    if (!isEditing) {
+      const healed = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
+      setVal(healed || (value !== undefined && value !== null ? value : ''));
+    }
+  }, [value, task, tasks, projects, isEditing]);
+
+  const commitSave = (rawVal: string) => {
+    setIsEditing(false);
+    const resolved = resolvePredecessorString(rawVal, tasks, projects, task.projectCode);
+    setVal(resolved);
+    if (resolved !== (value || '')) {
+      onSave(resolved);
+    }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (isEditing && containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsEditing(false);
-        if (val !== value) {
-          onSave(val);
-        }
+        commitSave(val);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isEditing, val, value, onSave]);
+  }, [isEditing, val, value, onSave, tasks, projects, task.projectCode]);
 
-  const displayVal = task ? (normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor || val) : val;
+  const healedVal = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
+  const displayVal = isEditing ? val : (value !== undefined && value !== null && value !== '' ? value : (healedVal || val));
 
   if (!canWrite) {
     return (
@@ -55,8 +65,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     return (
       <div ref={containerRef} className="w-full relative" onKeyDown={(e) => {
         if (e.key === 'Enter') {
-          setIsEditing(false);
-          if (val !== value) onSave(val);
+          commitSave(val);
         } else if (e.key === 'Escape') {
           setIsEditing(false);
           setVal(displayVal !== undefined && displayVal !== null ? displayVal : '');

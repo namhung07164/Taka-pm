@@ -9,6 +9,7 @@ import { db, APP_ID, writeBatch } from "../lib/firebase";
 import { addPendingUpdate } from '../lib/syncQueue';
 import { undoManager } from '../lib/undoManager';
 import { calculateTaskDatesFromPredecessors, getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, addDays, splitPredecessors, normalizeAndHealTaskPredecessors } from '../lib/ganttUtils';
+import { resolvePredecessorString } from '../lib/predecessorMatchUtils';
 import { generateId } from '../lib/utils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 import { saveTaskStateUnified, ensureProjectTasksLoaded } from '../lib/taskStateService';
@@ -355,6 +356,7 @@ export function useTaskModalLogic({
 
     if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
       if (formData.predecessor) {
+        formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode);
         const taskNoMap = buildTaskNoMap(projects, tasks);
         let parts = splitPredecessors(formData.predecessor, taskNoMap);
         if (parts.length >= 2) {

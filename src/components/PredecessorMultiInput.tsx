@@ -1,11 +1,18 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Task, Project } from '../types';
-import { Search, X, Check, ExternalLink } from 'lucide-react';
+import { Search, X, Check, ExternalLink, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useLanguage } from '../lib/LanguageContext';
 import { computeTaskCode, splitPredecessors } from '../lib/ganttUtils';
 import { ensureProjectTasksLoaded } from '../lib/taskStateService';
 import { ConfirmModal } from './ConfirmModal';
+import {
+  parsePredecessorToken,
+  rankCandidateTasks,
+  findClosestTaskMatch,
+  resolvePredecessorString,
+  RankedPredecessorMatch
+} from '../lib/predecessorMatchUtils';
 
 export function PredecessorMultiInput({
   value,
@@ -28,6 +35,7 @@ export function PredecessorMultiInput({
 }) {
   const { t: translate } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -47,75 +55,6 @@ export function PredecessorMultiInput({
     return Array.from(codes);
   }, [tasks, projects]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        if (isOpen) {
-          setIsOpen(false);
-          const merged = enforceRules(value || '', true);
-          if (merged !== value) onChange(merged);
-        }
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, value, onChange, knownCodes]);
-
-  const segments = useMemo(() => {
-    return splitPredecessors(value || '', knownCodes);
-  }, [value, knownCodes]);
-
-  const isTrailingDelimiter = /,\s*$/.test(value || '');
-  const activeSegment = isTrailingDelimiter ? '' : (segments.length > 0 ? segments[segments.length - 1] : '');
-
-  // Dynamic loading of external project tasks when typing external project code
-  useEffect(() => {
-    if (!activeSegment || activeSegment.trim().length < 2) return;
-    const clean = activeSegment.toLowerCase().replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-    if (!clean) return;
-
-    const matchedProjects = (projects || []).filter(p => 
-      p.code && p.code !== currentProjectCode &&
-      (p.code.toLowerCase().includes(clean) || clean.includes(p.code.toLowerCase()))
-    );
-
-    matchedProjects.forEach(p => {
-      ensureProjectTasksLoaded(p.code);
-    });
-  }, [activeSegment, projects, currentProjectCode]);
-
-  const candidateTasks = useMemo(() => {
-    const searchLower = activeSegment ? activeSegment.toLowerCase().replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim() : '';
-    
-    // In-scope tasks (same project, year, store)
-    const inScopeTasks = tasks.filter(t => 
-      t.projectCode === currentProjectCode &&
-      (!currentProjectYear || String(t.projectYear) === String(currentProjectYear)) &&
-      (!currentProjectStore || String(t.projectStore) === String(currentProjectStore))
-    );
-
-    // External tasks (other projects)
-    const externalTasks = tasks.filter(t => 
-      t.projectCode && t.projectCode !== currentProjectCode
-    );
-
-    if (!searchLower) {
-      return (inScopeTasks.length > 0 ? inScopeTasks : tasks).slice(0, 15);
-    }
-
-    const matchTask = (t: Task) => {
-      const codeStr = (t.taskCodePhu || computeTaskCode(projects, tasks, t) || t.id).toLowerCase();
-      const nameStr = (t.name || '').toLowerCase();
-      const pCodeStr = (t.projectCode || '').toLowerCase();
-      return codeStr.includes(searchLower) || nameStr.includes(searchLower) || pCodeStr.includes(searchLower);
-    };
-
-    const inScopeMatches = inScopeTasks.filter(matchTask);
-    const externalMatches = externalTasks.filter(matchTask);
-
-    return [...inScopeMatches, ...externalMatches].slice(0, 25);
-  }, [activeSegment, tasks, projects, currentProjectCode, currentProjectYear, currentProjectStore]);
-
   const enforceRules = (val: string, isFinal: boolean = false) => {
     let parts = splitPredecessors(val, knownCodes);
     if (parts.length > 2) {
@@ -134,6 +73,99 @@ export function PredecessorMultiInput({
     
     return parts.join(', ');
   };
+
+  const handleResolveAndClose = () => {
+    setIsOpen(false);
+    if (!value) return;
+    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode);
+    const merged = enforceRules(resolved, true);
+    if (merged !== value) {
+      onChange(merged);
+    }
+  };
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        if (isOpen) {
+          handleResolveAndClose();
+        }
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen, value, onChange, knownCodes, tasks, projects, currentProjectCode]);
+
+  const segments = useMemo(() => {
+    return splitPredecessors(value || '', knownCodes);
+  }, [value, knownCodes]);
+
+  const isTrailingDelimiter = /,\s*$/.test(value || '');
+  const activeSegment = isTrailingDelimiter ? '' : (segments.length > 0 ? segments[segments.length - 1] : '');
+
+  const { query: activeQuery, suffix: activeSuffix } = useMemo(() => {
+    return parsePredecessorToken(activeSegment);
+  }, [activeSegment]);
+
+  // Dynamic loading of external project tasks when typing external project code
+  useEffect(() => {
+    if (!activeQuery || activeQuery.trim().length < 2) return;
+    const clean = activeQuery.toLowerCase().trim();
+    if (!clean) return;
+
+    const cleanAlpha = clean.replace(/[^a-z0-9]/g, '');
+    const cleanPrefix = clean.split(/[-_\s]+/)[0] || clean;
+
+    const matchedProjects = (projects || []).filter(p => {
+      if (!p.code || p.code === currentProjectCode) return false;
+      const pCodeLower = p.code.toLowerCase();
+      const pCodeAlpha = pCodeLower.replace(/[^a-z0-9]/g, '');
+      return (
+        pCodeLower.includes(clean) ||
+        clean.includes(pCodeLower) ||
+        pCodeAlpha.includes(cleanAlpha) ||
+        cleanAlpha.includes(pCodeAlpha) ||
+        (cleanPrefix.length >= 2 && pCodeLower.includes(cleanPrefix))
+      );
+    });
+
+    matchedProjects.forEach(p => {
+      ensureProjectTasksLoaded(p.code);
+    });
+  }, [activeQuery, projects, currentProjectCode]);
+
+  // Ranked candidate tasks: closest match first
+  const rankedCandidateList = useMemo(() => {
+    // Pool all tasks from store to ensure candidates are not missed due to table filters
+    const storeTasks = typeof window !== 'undefined' ? (useAppStore.getState?.()?.tasks || []) : [];
+    const taskMap = new Map<string, Task>();
+    (storeTasks || []).forEach(t => { if (t && t.id) taskMap.set(t.id, t); });
+    (tasks || []).forEach(t => { if (t && t.id) taskMap.set(t.id, t); });
+    const allCandidatePool = taskMap.size > 0 ? Array.from(taskMap.values()) : tasks;
+
+    const searchClean = activeQuery.trim();
+    if (!searchClean) {
+      // In-scope tasks (same project, year, store)
+      const inScopeTasks = allCandidatePool.filter(t => 
+        t.projectCode === currentProjectCode &&
+        (!currentProjectYear || String(t.projectYear) === String(currentProjectYear)) &&
+        (!currentProjectStore || String(t.projectStore) === String(currentProjectStore))
+      );
+      const list = inScopeTasks.length > 0 ? inScopeTasks : allCandidatePool;
+      return list.slice(0, 15).map(t => ({
+        task: t,
+        score: 0,
+        exactTaskCode: computeTaskCode(projects, allCandidatePool, t) || t.taskCodePhu || t.id,
+        isExternal: Boolean(t.projectCode && currentProjectCode && t.projectCode !== currentProjectCode)
+      }));
+    }
+
+    return rankCandidateTasks(searchClean, allCandidatePool, projects, allCandidatePool, currentProjectCode).slice(0, 25);
+  }, [activeQuery, tasks, projects, currentProjectCode, currentProjectYear, currentProjectStore]);
+
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [activeQuery]);
 
   const executeSelect = (task: Task, relationship?: string) => {
     const code = computeTaskCode(projects, tasks, task) || task.taskCodePhu || task.id;
@@ -232,6 +264,16 @@ export function PredecessorMultiInput({
     let val = e.target.value.toUpperCase();
     val = val.replace(/[^A-Z0-9\-\+\.,\s]/g, '');
     
+    // Auto-resolve preceding token when typing comma
+    if (val.endsWith(',')) {
+      const beforeComma = val.slice(0, -1).trim();
+      const resolvedBefore = resolvePredecessorString(beforeComma, tasks, projects, currentProjectCode);
+      const merged = enforceRules(resolvedBefore, false);
+      onChange(merged + ', ');
+      setIsOpen(true);
+      return;
+    }
+
     const parts = splitPredecessors(val, knownCodes);
     if (parts.length > 2) {
       val = parts.slice(0, 2).join(', '); // Prevent typing a third predecessor
@@ -239,6 +281,42 @@ export function PredecessorMultiInput({
     
     onChange(val);
     setIsOpen(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      if (!isOpen) {
+        setIsOpen(true);
+      } else {
+        e.preventDefault();
+        setHighlightedIndex(prev => Math.min(prev + 1, rankedCandidateList.length - 1));
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (isOpen) {
+        e.preventDefault();
+        setHighlightedIndex(prev => Math.max(prev - 1, -1));
+      }
+    } else if (e.key === 'Enter') {
+      if (isOpen && highlightedIndex >= 0 && rankedCandidateList[highlightedIndex]) {
+        e.preventDefault();
+        e.stopPropagation();
+        const selected = rankedCandidateList[highlightedIndex];
+        const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
+        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
+      } else {
+        handleResolveAndClose();
+      }
+    } else if (e.key === 'Tab') {
+      if (isOpen && rankedCandidateList.length > 0 && activeQuery) {
+        e.preventDefault();
+        e.stopPropagation();
+        const selected = highlightedIndex >= 0 ? rankedCandidateList[highlightedIndex] : rankedCandidateList[0];
+        const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
+        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
   };
 
   // Exact same text formatting to ensure perfect 1:1 overlay alignment
@@ -269,6 +347,7 @@ export function PredecessorMultiInput({
           inputMode="text"
           value={value || ''}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           onScroll={(e) => { if (overlayRef.current) overlayRef.current.scrollLeft = e.currentTarget.scrollLeft; }}
           onFocus={() => setIsOpen(true)}
           disabled={disabled}
@@ -284,36 +363,58 @@ export function PredecessorMultiInput({
         />
       </div>
       
-      {isOpen && activeSegment && candidateTasks.length > 0 && !disabled && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#1c1c1f] border border-slate-200 dark:border-[#333336] rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-          {candidateTasks.map((t) => {
+      {isOpen && activeSegment && rankedCandidateList.length > 0 && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#1c1c1f] border border-slate-200 dark:border-[#333336] rounded-lg shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+          {rankedCandidateList.map((item, idx) => {
+            const t = item.task;
             const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
-            const isExternal = t.projectCode && t.projectCode !== currentProjectCode;
-            const taskCode = computeTaskCode(projects, tasks, t) || t.taskCodePhu || t.id;
+            const isExternal = item.isExternal;
+            const taskCode = item.exactTaskCode;
+            const isHighlighted = idx === highlightedIndex;
+            const isBestMatch = activeQuery && idx === 0 && item.score >= 450;
+
             return (
               <div
                 key={t.id}
-                onClick={() => !isSecondPredecessor && handleSelect(t)}
+                onClick={() => !isSecondPredecessor && handleSelect(t, activeSuffix || undefined)}
+                onMouseEnter={() => setHighlightedIndex(idx)}
                 className={cn(
                   "p-2.5 border-b border-slate-100 dark:border-[#28282a] last:border-0 transition-colors",
+                  isHighlighted ? "bg-purple-50/80 dark:bg-purple-900/30" : "",
                   !isSecondPredecessor ? "hover:bg-purple-50 dark:hover:bg-purple-900/20 cursor-pointer flex flex-col" : "flex flex-col bg-slate-50/50 dark:bg-[#18181a]/50"
                 )}
               >
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate flex-1">
                       {t.name}
                     </span>
-                    {isExternal && (
-                      <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 inline-flex items-center gap-1">
-                        <ExternalLink className="w-2.5 h-2.5" />
-                        {translate("External Link") || "External Link"}: {t.projectCode}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isBestMatch && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 inline-flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                          {translate("Best Match") || "Best Match"}
+                        </span>
+                      )}
+                      {isExternal && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 inline-flex items-center gap-1">
+                          <ExternalLink className="w-2.5 h-2.5" />
+                          {translate("External Link") || "External Link"}: {t.projectCode}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-blue-600 dark:text-[#8ab4f8] font-mono font-bold">
+                      {taskCode}
+                    </span>
+                    {(t.start || t.finish) && (
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                        {t.start ? t.start.substring(5, 10) : ''} {t.start && t.finish ? '→' : ''} {t.finish ? t.finish.substring(5, 10) : ''}
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-blue-600 dark:text-[#8ab4f8] font-mono font-medium">
-                    {taskCode}
-                  </span>
                 </div>
                 
                 {isSecondPredecessor && (
@@ -363,4 +464,5 @@ export function PredecessorMultiInput({
     </div>
   );
 }
+
 
