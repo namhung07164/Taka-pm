@@ -983,6 +983,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
      - Các task con hiển thị biểu tượng nhánh `↳` sắc nét ngay tại cùng cột.
      - Trong Edit Mode, khi rê chuột vào biểu tượng `↳` của task con sẽ xuất hiện biểu tượng **Unlink** màu đỏ để tách nhanh khỏi task mẹ chỉ bằng một click.
      - Khi sử dụng thanh tìm kiếm, nếu từ khóa khớp với task con đang bị ẩn, hệ thống sẽ tự động bung mở nhóm đó ra ngay lập tức để người dùng không bỏ sót thông tin.
+     - **Bảng Tooltip hiển thị các Task Con đang On Process (In Progress)**: Khi bạn rê chuột (hoặc nhấp) vào thanh ngang biểu đồ Gantt của Task Mẹ gom nhóm (có biểu tượng mũi tên tím), bảng chú giải (Tooltip) sẽ tự động hiển thị chi tiết danh sách các **Task con đang trong tiến trình thi công (`Tasks In Progress`)** kèm mã task và % tiến độ hoàn thành thực tế, giúp người dùng nắm bắt ngay hiện trạng thi công chi tiết của từng hạng mục con mà không cần phải mở rộng cây công việc.
 
 
    6. **Mũi Tên Tím Mở Rộng / Thu Gọn Toàn Bộ Task Modular (Expand/Collapse All Modular Tasks)**:

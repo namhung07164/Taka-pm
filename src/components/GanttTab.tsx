@@ -1120,6 +1120,7 @@ export function GanttTab({
           parentTask?: Task;
           hasChildren: boolean;
           childCount: number;
+          childTasks?: Task[];
           isModularExpanded: boolean;
           p: Project;
           taskCode: string;
@@ -1206,6 +1207,7 @@ export function GanttTab({
             isChild: false,
             hasChildren,
             childCount: children.length,
+            childTasks: children,
             isModularExpanded,
             p,
             taskCode,
@@ -3107,6 +3109,7 @@ export function GanttTab({
                     parentTask={item.parentTask}
                     hasChildren={item.hasChildren}
                     childCount={item.childCount}
+                    childTasks={item.childTasks}
                     isModularExpanded={item.isModularExpanded}
                     p={item.p}
                     projects={projects}

@@ -19,6 +19,17 @@ export interface GanttBarProps {
     predecessors?: string;
     highlight?: 'assignee' | 'creator' | null;
     isSimulation?: boolean;
+    hasChildren?: boolean;
+    childCount?: number;
+    onProcessChildTasks?: Array<{
+      id: string;
+      name: string;
+      taskCode?: string;
+      actPrg?: number;
+      start?: string;
+      finish?: string;
+      duration?: string | number;
+    }>;
   };
   startDate: Date;
   dayWidth: number;
@@ -184,6 +195,47 @@ export const GanttBar = React.memo(function GanttBar({
                 <span className="text-pink-300 dark:text-pink-300">{formatGanttDate(endStr) || "N/A"}</span>
               </span>
             </div>
+            {extraVars?.hasChildren && (
+              <div className="mt-1.5 pt-1.5 border-t border-slate-600/80">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-300 mb-1">
+                  <span className="flex items-center gap-1.5 text-blue-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                    Tasks In Progress ({extraVars.onProcessChildTasks?.length || 0}/{extraVars.childCount || 0}):
+                  </span>
+                </div>
+                {extraVars.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 ? (
+                  <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                    {extraVars.onProcessChildTasks.map((ct) => (
+                      <div
+                        key={ct.id}
+                        className="flex items-center justify-between gap-1.5 text-[10px] bg-slate-900/70 dark:bg-slate-800/90 px-2 py-1 rounded border border-slate-700/60"
+                      >
+                        <div className="flex items-center gap-1 min-w-0 flex-1">
+                          <span className="text-emerald-400 text-[9px] shrink-0 font-mono">▶</span>
+                          <span className="font-medium text-slate-100 truncate" title={ct.name}>
+                            {ct.name}
+                          </span>
+                          {ct.taskCode && (
+                            <span className="font-mono text-[9px] text-blue-300/80 shrink-0">
+                              [{ct.taskCode}]
+                            </span>
+                          )}
+                        </div>
+                        {ct.actPrg !== undefined && (
+                          <span className="text-emerald-400 font-mono font-bold shrink-0 text-[10px] pl-1">
+                            {ct.actPrg}%
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-slate-400 italic">
+                    No child tasks currently in progress
+                  </div>
+                )}
+              </div>
+            )}
           </div>,
           document.body
         )}
@@ -316,6 +368,47 @@ export const GanttBar = React.memo(function GanttBar({
               </span>
             </div>
           )}
+          {extraVars?.hasChildren && (
+            <div className="mt-1.5 pt-1.5 border-t border-slate-600/80">
+              <div className="flex items-center justify-between text-[10px] font-bold text-slate-300 mb-1">
+                <span className="flex items-center gap-1.5 text-blue-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  Tasks In Progress ({extraVars.onProcessChildTasks?.length || 0}/{extraVars.childCount || 0}):
+                </span>
+              </div>
+              {extraVars.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 ? (
+                <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {extraVars.onProcessChildTasks.map((ct) => (
+                    <div
+                      key={ct.id}
+                      className="flex items-center justify-between gap-1.5 text-[10px] bg-slate-900/70 dark:bg-slate-800/90 px-2 py-1 rounded border border-slate-700/60"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                        <span className="text-emerald-400 text-[9px] shrink-0 font-mono">▶</span>
+                        <span className="font-medium text-slate-100 truncate" title={ct.name}>
+                          {ct.name}
+                        </span>
+                        {ct.taskCode && (
+                          <span className="font-mono text-[9px] text-blue-300/80 shrink-0">
+                            [{ct.taskCode}]
+                          </span>
+                        )}
+                      </div>
+                      {ct.actPrg !== undefined && (
+                        <span className="text-emerald-400 font-mono font-bold shrink-0 text-[10px] pl-1">
+                          {ct.actPrg}%
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[10px] text-slate-400 italic">
+                  No child tasks currently in progress
+                </div>
+              )}
+            </div>
+          )}
         </div>,
         document.body
       )}
@@ -346,5 +439,8 @@ export const GanttBar = React.memo(function GanttBar({
          pe.taskCode === ne.taskCode &&
          pe.predecessors === ne.predecessors &&
          pe.highlight === ne.highlight &&
-         pe.isSimulation === ne.isSimulation;
+         pe.isSimulation === ne.isSimulation &&
+         pe.hasChildren === ne.hasChildren &&
+         pe.childCount === ne.childCount &&
+         pe.onProcessChildTasks === ne.onProcessChildTasks;
 });

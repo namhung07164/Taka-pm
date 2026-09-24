@@ -62,10 +62,11 @@ export interface GanttTaskRowProps {
   onNavigateToTaskDetail?: (id: string) => void;
   taskCode?: string;
   delegationGroup?: any;
+  childTasks?: Task[];
 }
 
 export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
-  t, isChild, parentTask, hasChildren, childCount, isModularExpanded,
+  t, isChild, parentTask, hasChildren, childCount, isModularExpanded, childTasks,
   p, projects, tasks, delegationGroups, isHighlightDelegationOn, currentUser,
   selectedTaskSet, selectedTaskIds, setSelectedTaskIds,
   isEditMode, canWrite, handleGroupModularTasks, handleUnlinkModularTasks,
@@ -93,6 +94,38 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
   const taskCode = taskCodeProp !== undefined
     ? taskCodeProp
     : computeTaskCode(projects, tasks, t);
+
+  const onProcessChildTasks = React.useMemo(() => {
+    if (!hasChildren || !childTasks || childTasks.length === 0) return undefined;
+    return childTasks
+      .filter((ct) => {
+        const ctStatus = getTaskStatus(ct.start, ct.finish);
+        const ctDelGroup = delegationGroups.find((g) => g.parentTaskId === ct.id);
+        const ctActStatusObj = resolveActualStatus(ctStatus, ctDelGroup?.subTasks || []);
+        const ctActStatusLabel = (ctActStatusObj?.label || "").toLowerCase();
+        return (
+          ctStatus === "On process" ||
+          ctActStatusLabel === "in progress" ||
+          ctActStatusLabel === "on process" ||
+          ctActStatusLabel === "delay" ||
+          ctActStatusLabel === "delayed"
+        );
+      })
+      .map((ct) => {
+        const ctCode = computeTaskCode(projects, tasks, ct);
+        const ctProg = computeActProgressPercent([ct], delegationGroups);
+        return {
+          id: ct.id,
+          name: ct.name,
+          taskCode: ctCode,
+          actPrg: ctProg,
+          start: ct.start,
+          finish: ct.finish,
+          duration: ct.duration,
+        };
+      });
+  }, [hasChildren, childTasks, delegationGroups, projects, tasks]);
+
   const extraVars = React.useMemo(() => ({
     actStatus: actStatus,
     actStatusColor: actStatusObj.color,
@@ -102,7 +135,10 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
     taskCode: taskCode,
     predecessors: t.predecessor,
     highlight: isHighlightDelegationOn ? getUserDelegationRoleForTask(t, currentUser, delegationGroups) : null,
-  }), [actStatus, actStatusObj.color, t.party, tActPrg, t.duration, taskCode, t.predecessor, isHighlightDelegationOn, currentUser, delegationGroups]);
+    hasChildren,
+    childCount,
+    onProcessChildTasks,
+  }), [actStatus, actStatusObj.color, t.party, tActPrg, t.duration, taskCode, t.predecessor, isHighlightDelegationOn, currentUser, delegationGroups, hasChildren, childCount, onProcessChildTasks]);
                         return (
                           <tr
                             id={`gantt-task-${t.id}`}
@@ -461,6 +497,7 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
   return prev.isChild === next.isChild &&
          prev.hasChildren === next.hasChildren &&
          prev.childCount === next.childCount &&
+         prev.childTasks === next.childTasks &&
          prev.isModularExpanded === next.isModularExpanded &&
          prev.isHighlightDelegationOn === next.isHighlightDelegationOn &&
          prev.isEditMode === next.isEditMode &&
