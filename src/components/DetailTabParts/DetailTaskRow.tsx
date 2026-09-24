@@ -122,7 +122,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
               </div>
             )}
             {childTasksCount > 0 && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-2xs flex items-center gap-0.5 leading-none" title={`${childTasksCount} task con`}>
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/90 text-purple-700 dark:text-purple-200 border border-purple-300 dark:border-purple-600 shadow-2xs flex items-center gap-0.5 leading-none" title={`${childTasksCount} task con`}>
                 ({childTasksCount})
               </span>
             )}

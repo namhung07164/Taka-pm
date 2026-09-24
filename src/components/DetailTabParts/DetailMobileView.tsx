@@ -8,7 +8,8 @@ import {
   formatDisplayDateMain, 
   calculateDays, 
   computePlanProgressPercent, 
-  computeActProgressPercent
+  computeActProgressPercent,
+  matchesAdvancedSearch
 } from '../../lib/utils';
 
 interface DetailMobileViewProps {
@@ -173,7 +174,9 @@ export const DetailMobileView = memo(function DetailMobileView({
           const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
           const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
 
-          const isProjectMatch = lowerSearchTerm ? [p.store, p.location, p.year, p.code, p.name].some(val => String(val || "").toLowerCase().includes(lowerSearchTerm)) : true;
+          const isProjectMatch = lowerSearchTerm
+            ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.name])
+            : true;
           const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
             const taskFields = [
               t.taskCodePhu,
@@ -186,9 +189,8 @@ export const DetailMobileView = memo(function DetailMobileView({
               formatDisplayDateMain(t.start),
               formatDisplayDateMain(t.finish)
             ];
-            const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
-            const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm)) || false;
-            return fieldMatch || notesMatch;
+            const notesFields = t.notes?.map(n => String(n.content || '')) || [];
+            return matchesAdvancedSearch(lowerSearchTerm, [...taskFields, ...notesFields]);
           });
 
           return (
