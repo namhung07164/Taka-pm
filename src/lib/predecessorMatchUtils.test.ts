@@ -5,7 +5,9 @@ import {
   scoreTaskPredecessorMatch,
   rankCandidateTasks,
   findClosestTaskMatch,
-  resolvePredecessorString
+  resolvePredecessorString,
+  getTaskProjectDiffDetails,
+  isTaskDifferentProject
 } from './predecessorMatchUtils';
 import { Task, Project } from '../types';
 
@@ -176,6 +178,176 @@ describe('predecessorMatchUtils', () => {
     it('auto-resolves two predecessors and applies Gantt rule on second: "1, 2" -> "CP-01#1, CP-01#2FF"', () => {
       const res = resolvePredecessorString('1, 2', tasks, projects, 'CP-01');
       expect(res).toBe('CP-01#1, CP-01#2FF');
+    });
+
+    it('correctly disambiguates same project code across different years (e.g. 2026 vs 2027 B2-B208)', () => {
+      const ambiguousProjects: Project[] = [
+        { id: 'p2026', code: 'B2-B208', year: 2026, store: 'HCM', location: 'B2' } as unknown as Project,
+        { id: 'p2027', code: 'B2-B208', year: 2027, store: 'HCM', location: 'B2' } as unknown as Project
+      ];
+
+      const ambiguousTasks: Task[] = [
+        {
+          id: 't2026_1',
+          projectId: 'p2026',
+          projectCode: 'B2-B208',
+          projectYear: 2026,
+          projectStore: 'HCM',
+          location: 'B2',
+          orderIndex: 0,
+          name: 'Task in 2026',
+          finishManual: false
+        } as unknown as Task,
+        {
+          id: 't2027_1',
+          projectId: 'p2027',
+          projectCode: 'B2-B208',
+          projectYear: 2027,
+          projectStore: 'HCM',
+          location: 'B2',
+          orderIndex: 0,
+          name: 'Task in 2027',
+          finishManual: false
+        } as unknown as Task
+      ];
+
+      // Context 2026
+      const ctx2026 = {
+        projectId: 'p2026',
+        projectCode: 'B2-B208',
+        projectYear: 2026,
+        projectStore: 'HCM',
+        projectLocation: 'B2'
+      };
+
+      const match2026 = findClosestTaskMatch('1', ambiguousTasks, ambiguousProjects, ambiguousTasks, 'B2-B208', 750, ctx2026);
+      expect(match2026).not.toBeNull();
+      expect(match2026?.task.id).toBe('t2026_1');
+
+      // Context 2027
+      const ctx2027 = {
+        projectId: 'p2027',
+        projectCode: 'B2-B208',
+        projectYear: 2027,
+        projectStore: 'HCM',
+        projectLocation: 'B2'
+      };
+
+      const match2027 = findClosestTaskMatch('1', ambiguousTasks, ambiguousProjects, ambiguousTasks, 'B2-B208', 750, ctx2027);
+      expect(match2027).not.toBeNull();
+      expect(match2027?.task.id).toBe('t2027_1');
+    });
+  });
+
+  describe('Cross-project diff validation (Year, Store, Location, Code)', () => {
+    const testProjects: Project[] = [
+      { id: 'p1', code: 'B2-B208', year: 2026, store: 'HCM', location: 'B2' } as unknown as Project,
+      { id: 'p2', code: 'B2-B208', year: 2027, store: 'HCM', location: 'B2' } as unknown as Project,
+      { id: 'p3', code: 'B2-B208', year: 2026, store: 'HN', location: 'B2' } as unknown as Project,
+      { id: 'p4', code: 'B2-B208', year: 2026, store: 'HCM', location: '1F' } as unknown as Project
+    ];
+
+    const currentContext = {
+      projectId: 'p1',
+      projectCode: 'B2-B208',
+      projectYear: 2026,
+      projectStore: 'HCM',
+      projectLocation: 'B2'
+    };
+
+    it('flags task with different year as different project', () => {
+      const taskDifferentYear: Task = {
+        id: 't_diff_year',
+        projectId: 'p2',
+        projectCode: 'B2-B208',
+        projectYear: 2027,
+        projectStore: 'HCM',
+        location: 'B2'
+      } as unknown as Task;
+
+      const diff = getTaskProjectDiffDetails(currentContext, taskDifferentYear, testProjects);
+      expect(diff.isDifferent).toBe(true);
+      expect(diff.diffFactors).toContain('year');
+      expect(isTaskDifferentProject(currentContext, taskDifferentYear, testProjects)).toBe(true);
+    });
+
+    it('flags task with different store as different project', () => {
+      const taskDifferentStore: Task = {
+        id: 't_diff_store',
+        projectId: 'p3',
+        projectCode: 'B2-B208',
+        projectYear: 2026,
+        projectStore: 'HN',
+        location: 'B2'
+      } as unknown as Task;
+
+      const diff = getTaskProjectDiffDetails(currentContext, taskDifferentStore, testProjects);
+      expect(diff.isDifferent).toBe(true);
+      expect(diff.diffFactors).toContain('store');
+      expect(isTaskDifferentProject(currentContext, taskDifferentStore, testProjects)).toBe(true);
+    });
+
+    it('flags task with different location as different project', () => {
+      const taskDifferentLocation: Task = {
+        id: 't_diff_loc',
+        projectId: 'p4',
+        projectCode: 'B2-B208',
+        projectYear: 2026,
+        projectStore: 'HCM',
+        location: '1F'
+      } as unknown as Task;
+
+      const diff = getTaskProjectDiffDetails(currentContext, taskDifferentLocation, testProjects);
+      expect(diff.isDifferent).toBe(true);
+      expect(diff.diffFactors).toContain('location');
+      expect(isTaskDifferentProject(currentContext, taskDifferentLocation, testProjects)).toBe(true);
+    });
+
+    it('considers task with matching year, store, location and code as same project', () => {
+      const taskSameProject: Task = {
+        id: 't_same',
+        projectId: 'p1',
+        projectCode: 'B2-B208',
+        projectYear: 2026,
+        projectStore: 'HCM',
+        location: 'B2'
+      } as unknown as Task;
+
+      const diff = getTaskProjectDiffDetails(currentContext, taskSameProject, testProjects);
+      expect(diff.isDifferent).toBe(false);
+      expect(diff.diffFactors).toEqual([]);
+      expect(isTaskDifferentProject(currentContext, taskSameProject, testProjects)).toBe(false);
+    });
+
+    it('accurately sets isExternal flag in rankCandidateTasks based on year, store, or location differences', () => {
+      const allTasks: Task[] = [
+        {
+          id: 't_same',
+          projectCode: 'B2-B208',
+          projectYear: 2026,
+          projectStore: 'HCM',
+          location: 'B2',
+          taskCodePhu: 'B2-B208#1',
+          name: 'Task Same'
+        } as unknown as Task,
+        {
+          id: 't_diff_loc',
+          projectCode: 'B2-B208',
+          projectYear: 2026,
+          projectStore: 'HCM',
+          location: '1F',
+          taskCodePhu: 'B2-B208#2',
+          name: 'Task Diff Location'
+        } as unknown as Task
+      ];
+
+      const ranked = rankCandidateTasks('', allTasks, testProjects, allTasks, 'B2-B208', currentContext);
+      const sameMatch = ranked.find(r => r.task.id === 't_same');
+      const diffLocMatch = ranked.find(r => r.task.id === 't_diff_loc');
+
+      expect(sameMatch?.isExternal).toBe(false);
+      expect(diffLocMatch?.isExternal).toBe(true);
+      expect(diffLocMatch?.diffDetails?.diffFactors).toContain('location');
     });
   });
 });

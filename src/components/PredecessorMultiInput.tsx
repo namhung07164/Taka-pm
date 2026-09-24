@@ -12,7 +12,11 @@ import {
   rankCandidateTasks,
   findClosestTaskMatch,
   resolvePredecessorString,
-  RankedPredecessorMatch
+  RankedPredecessorMatch,
+  PredecessorContext,
+  getTaskProjectDiffDetails,
+  ProjectDiffDetails,
+  findTaskByQueryOrCode
 } from '../lib/predecessorMatchUtils';
 
 export function PredecessorMultiInput({
@@ -20,18 +24,22 @@ export function PredecessorMultiInput({
   onChange,
   tasks,
   projects,
+  currentProjectId,
   currentProjectCode,
   currentProjectYear,
   currentProjectStore,
+  currentProjectLocation,
   disabled
 }: {
   value: string;
   onChange: (val: string) => void;
   tasks: Task[];
   projects: Project[];
+  currentProjectId?: string;
   currentProjectCode?: string;
   currentProjectYear?: number | string;
   currentProjectStore?: string;
+  currentProjectLocation?: string;
   disabled?: boolean;
 }) {
   const { t: translate } = useLanguage();
@@ -40,11 +48,22 @@ export function PredecessorMultiInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const initialValueOnFocus = useRef<string>('');
   const [confirmExternalModal, setConfirmExternalModal] = useState<{
     isOpen: boolean;
     task?: Task;
     relationship?: string;
+    diffDetails?: ProjectDiffDetails;
+    pendingValue?: string;
   }>({ isOpen: false });
+
+  const currentContext: PredecessorContext = useMemo(() => ({
+    projectId: currentProjectId,
+    projectCode: currentProjectCode,
+    projectYear: currentProjectYear,
+    projectStore: currentProjectStore,
+    projectLocation: currentProjectLocation
+  }), [currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation]);
 
   const knownCodes = useMemo(() => {
     const codes = new Set<string>();
@@ -78,9 +97,39 @@ export function PredecessorMultiInput({
   const handleResolveAndClose = () => {
     setIsOpen(false);
     if (!value) return;
-    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode);
+    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode, currentContext);
     const merged = enforceRules(resolved, true);
     if (merged !== value) {
+      // Check if newly introduced predecessor tokens are from a different project
+      const oldTokens = splitPredecessors(initialValueOnFocus.current || '', knownCodes)
+        .map(t => parsePredecessorToken(t).query.toLowerCase());
+      const newTokens = splitPredecessors(merged, knownCodes);
+
+      let diffItem: { task: Task; diff: ProjectDiffDetails; merged: string } | null = null;
+      for (const tok of newTokens) {
+        const { query } = parsePredecessorToken(tok);
+        if (!query || oldTokens.includes(query.toLowerCase())) continue;
+
+        const matchedTask = findTaskByQueryOrCode(query, tasks, projects, currentContext);
+        if (matchedTask) {
+          const diff = getTaskProjectDiffDetails(currentContext, matchedTask, projects);
+          if (diff.isDifferent) {
+            diffItem = { task: matchedTask, diff, merged };
+            break;
+          }
+        }
+      }
+
+      if (diffItem) {
+        setConfirmExternalModal({
+          isOpen: true,
+          task: diffItem.task,
+          diffDetails: diffItem.diff,
+          pendingValue: diffItem.merged
+        });
+        return;
+      }
+
       onChange(merged);
     }
   };
@@ -95,7 +144,7 @@ export function PredecessorMultiInput({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, value, onChange, knownCodes, tasks, projects, currentProjectCode]);
+  }, [isOpen, value, onChange, knownCodes, tasks, projects, currentProjectCode, currentContext]);
 
   const segments = useMemo(() => {
     return splitPredecessors(value || '', knownCodes);
@@ -135,7 +184,7 @@ export function PredecessorMultiInput({
     });
   }, [activeQuery, projects, currentProjectCode]);
 
-  // Ranked candidate tasks: closest match first
+  // Ranked candidate tasks: closest match first, strongly scoped to current project/year/store/location
   const rankedCandidateList = useMemo(() => {
     // Pool all tasks from store to ensure candidates are not missed due to table filters
     const storeTasks = typeof window !== 'undefined' ? (useAppStore.getState?.()?.tasks || []) : [];
@@ -146,23 +195,26 @@ export function PredecessorMultiInput({
 
     const searchClean = activeQuery.trim();
     if (!searchClean) {
-      // In-scope tasks (same project, year, store)
-      const inScopeTasks = allCandidatePool.filter(t => 
-        t.projectCode === currentProjectCode &&
-        (!currentProjectYear || String(t.projectYear) === String(currentProjectYear)) &&
-        (!currentProjectStore || String(t.projectStore) === String(currentProjectStore))
-      );
+      // In-scope tasks (same parent project, year, store, location)
+      const inScopeTasks = allCandidatePool.filter(t => {
+        const diff = getTaskProjectDiffDetails(currentContext, t, projects);
+        return !diff.isDifferent;
+      });
       const list = inScopeTasks.length > 0 ? inScopeTasks : allCandidatePool;
-      return list.slice(0, 15).map(t => ({
-        task: t,
-        score: 0,
-        exactTaskCode: computeTaskCode(projects, allCandidatePool, t) || t.taskCodePhu || t.id,
-        isExternal: Boolean(t.projectCode && currentProjectCode && t.projectCode !== currentProjectCode)
-      }));
+      return list.slice(0, 15).map(t => {
+        const diff = getTaskProjectDiffDetails(currentContext, t, projects);
+        return {
+          task: t,
+          score: 0,
+          exactTaskCode: computeTaskCode(projects, allCandidatePool, t) || t.taskCodePhu || t.id,
+          isExternal: diff.isDifferent,
+          diffDetails: diff
+        };
+      });
     }
 
-    return rankCandidateTasks(searchClean, allCandidatePool, projects, allCandidatePool, currentProjectCode).slice(0, 25);
-  }, [activeQuery, tasks, projects, currentProjectCode, currentProjectYear, currentProjectStore]);
+    return rankCandidateTasks(searchClean, allCandidatePool, projects, allCandidatePool, currentProjectCode, currentContext).slice(0, 25);
+  }, [activeQuery, tasks, projects, currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation, currentContext]);
 
   useEffect(() => {
     setHighlightedIndex(-1);
@@ -194,12 +246,13 @@ export function PredecessorMultiInput({
   };
 
   const handleSelect = (task: Task, relationship?: string, forceConfirmed: boolean = false) => {
-    const isExternal = task.projectCode && task.projectCode !== currentProjectCode;
-    if (isExternal && !forceConfirmed) {
+    const diff = getTaskProjectDiffDetails(currentContext, task, projects);
+    if (diff.isDifferent && !forceConfirmed) {
       setConfirmExternalModal({
         isOpen: true,
         task,
-        relationship
+        relationship,
+        diffDetails: diff
       });
       return;
     }
@@ -268,7 +321,7 @@ export function PredecessorMultiInput({
     // Auto-resolve preceding token when typing comma
     if (val.endsWith(',')) {
       const beforeComma = val.slice(0, -1).trim();
-      const resolvedBefore = resolvePredecessorString(beforeComma, tasks, projects, currentProjectCode);
+      const resolvedBefore = resolvePredecessorString(beforeComma, tasks, projects, currentProjectCode, currentContext);
       const merged = enforceRules(resolvedBefore, false);
       onChange(merged + ', ');
       setIsOpen(true);
@@ -304,6 +357,12 @@ export function PredecessorMultiInput({
         const selected = rankedCandidateList[highlightedIndex];
         const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
         handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
+      } else if (isOpen && rankedCandidateList.length > 0 && activeQuery && rankedCandidateList[0].score >= 450) {
+        e.preventDefault();
+        e.stopPropagation();
+        const selected = rankedCandidateList[0];
+        const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
+        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
       } else {
         handleResolveAndClose();
       }
@@ -322,6 +381,27 @@ export function PredecessorMultiInput({
 
   // Exact same text formatting to ensure perfect 1:1 overlay alignment
   const commonTextClasses = "text-sm font-sans leading-normal tracking-normal whitespace-pre";
+
+  const getBadgeLabel = (item: RankedPredecessorMatch) => {
+    const diff = item.diffDetails;
+    if (!diff || !diff.diffFactors || diff.diffFactors.length === 0) {
+      return item.task.projectCode || translate("External") || "External";
+    }
+    const factors = diff.diffFactors;
+    if (factors.length === 1) {
+      if (factors[0] === 'year') return `${translate("Diff Year") || "Khác Năm"}: ${diff.taskInfo.year}`;
+      if (factors[0] === 'store') return `${translate("Diff Store") || "Khác Chi nhánh"}: ${diff.taskInfo.store}`;
+      if (factors[0] === 'location') return `${translate("Diff Location") || "Khác Vị trí/Tầng"}: ${diff.taskInfo.location}`;
+      if (factors[0] === 'code') return `${translate("Diff Project") || "Khác Dự án"}: ${diff.taskInfo.code}`;
+    }
+    const factorLabels = factors.map(f => {
+      if (f === 'year') return translate("Year") || 'Năm';
+      if (f === 'store') return translate("Store") || 'Chi nhánh';
+      if (f === 'location') return translate("Location") || 'Vị trí';
+      return translate("Project") || 'Dự án';
+    });
+    return `${translate("Cross-Project") || "Khác Dự án"} (${factorLabels.join(', ')})`;
+  };
 
   return (
     <div className="relative w-full" ref={containerRef}>
@@ -350,7 +430,10 @@ export function PredecessorMultiInput({
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onScroll={(e) => { if (overlayRef.current) overlayRef.current.scrollLeft = e.currentTarget.scrollLeft; }}
-          onFocus={() => setIsOpen(true)}
+          onFocus={() => {
+            initialValueOnFocus.current = value || '';
+            setIsOpen(true);
+          }}
           disabled={disabled}
           placeholder={value ? "" : "e.g. A01-1SS, A02-2FF"}
           className={cn(
@@ -400,7 +483,7 @@ export function PredecessorMultiInput({
                       {isExternal && (
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 inline-flex items-center gap-1">
                           <ExternalLink className="w-2.5 h-2.5" />
-                          {translate("External Link") || "External Link"}: {t.projectCode}
+                          {getBadgeLabel(item)}
                         </span>
                       )}
                     </div>
@@ -444,21 +527,30 @@ export function PredecessorMultiInput({
 
       <ConfirmModal
         isOpen={confirmExternalModal.isOpen}
-        title={translate("Confirm External Predecessor") || "Confirm External Predecessor"}
+        title={translate("Confirm Cross-Project Predecessor") || "Xác nhận liên kết khác dự án"}
         message={
           confirmExternalModal.task 
-            ? `Công việc "${confirmExternalModal.task.name}" (${computeTaskCode(projects, tasks, confirmExternalModal.task) || confirmExternalModal.task.taskCodePhu || confirmExternalModal.task.id}) thuộc dự án khác [${confirmExternalModal.task.projectCode}]. Bạn có chắc chắn muốn liên kết phụ thuộc (Predecessor) ngoài dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor.`
+            ? (
+                confirmExternalModal.diffDetails?.reasons?.length
+                  ? `Công việc "${confirmExternalModal.task.name}" (${computeTaskCode(projects, tasks, confirmExternalModal.task) || confirmExternalModal.task.taskCodePhu || confirmExternalModal.task.id}) thuộc dự án khác do khác yếu tố: [${confirmExternalModal.diffDetails.reasons.join(', ')}]. Bạn có đồng ý liên kết phụ thuộc (Predecessor) khác dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor.`
+                  : `Công việc "${confirmExternalModal.task.name}" (${computeTaskCode(projects, tasks, confirmExternalModal.task) || confirmExternalModal.task.taskCodePhu || confirmExternalModal.task.id}) thuộc dự án khác [${confirmExternalModal.task.projectCode}]. Bạn có đồng ý liên kết phụ thuộc (Predecessor) ngoài dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor.`
+              )
             : "Bạn có chắc chắn muốn tạo liên kết phụ thuộc ngoài dự án này không?"
         }
-        confirmText={translate("Link Predecessor") || "Link Predecessor"}
+        confirmText={translate("Agree & Link") || "Đồng ý liên kết"}
         confirmStyle="primary"
         onConfirm={() => {
           if (confirmExternalModal.task) {
             handleSelect(confirmExternalModal.task, confirmExternalModal.relationship, true);
+          } else if (confirmExternalModal.pendingValue) {
+            onChange(confirmExternalModal.pendingValue);
           }
           setConfirmExternalModal({ isOpen: false });
         }}
         onCancel={() => {
+          if (confirmExternalModal.pendingValue) {
+            onChange(initialValueOnFocus.current || '');
+          }
           setConfirmExternalModal({ isOpen: false });
         }}
       />

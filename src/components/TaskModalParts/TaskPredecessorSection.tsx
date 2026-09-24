@@ -55,9 +55,11 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
         onChange={handlePredecessorChange}
         tasks={tasks}
         projects={projects}
+        currentProjectId={formData.projectId}
         currentProjectCode={formData.projectCode}
         currentProjectYear={formData.projectYear}
         currentProjectStore={formData.projectStore}
+        currentProjectLocation={formData.location}
         disabled={!canWrite}
       />
 

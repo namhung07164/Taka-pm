@@ -188,7 +188,10 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
    - Trong cửa sổ Task Modal hoặc bảng Task Detail, nhập mã công việc tiền nhiệm vào ô **Predecessor** (ví dụ: `L1-113-3-2` hoặc gõ tắt `2`, `-2` đối với các task cùng dự án).
    - Hệ thống cung cấp danh sách gợi ý thông minh hiển thị đầy đủ: Mã công việc, Tên công việc, Ngày bắt đầu/kết thúc và Dự án để dễ dàng lựa chọn.
    - **Tìm kiếm gợi ý xuyên dự án (Cross-Project Search & Suggestions)**: Khi gõ mã dự án ngoài (ví dụ: `HN-TKV-SMZ2`, `SMZ2`, `85`...) hoặc tên công việc của dự án khác, hệ thống tự động tìm kiếm và nạp dữ liệu tức thời, hiển thị các công việc ngoài dự án trong danh sách gợi ý kèm nhãn huy hiệu tím nổi bật `External Link: [Mã dự án]`.
-   - **Hộp thoại xác nhận liên kết ngoài (External Link Confirmation Dialog)**: Khi chọn công việc thuộc dự án khác từ danh sách gợi ý, hệ thống tự động bật hộp thoại xác nhận chuyên nghiệp hỏi người dùng: *"Công việc '[Tên task]' thuộc dự án khác [Mã dự án]. Bạn có chắc chắn muốn liên kết phụ thuộc (Predecessor) ngoài dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor"*. Người dùng bấm **Link Predecessor** để hoàn tất liên kết hoặc **Cancel** để hủy bỏ.
+   - **Hộp thoại xác nhận liên kết khác dự án (Multi-Factor Cross-Project Confirmation Dialog)**: Khi chọn hoặc nhập công việc khác dự án, hệ thống áp dụng cơ chế xác thực đa yếu tố:
+     + **Quy tắc phân biệt dự án độc lập (Multi-Factor Project Isolation)**: Một công việc được xem là thuộc dự án khác nếu **khác bất kỳ một trong các yếu tố**: **Năm (Year)**, **Chi nhánh (Store)**, **Vị trí/Tầng (Location)**, hoặc **Mã dự án (Project Code)**. Ví dụ: dự án `2026 B2-B208 HCM` và `2027 B2-B208 HCM` (cùng mã `B2-B208`, cùng store và location nhưng khác niên độ 2026 vs 2027) được xác định là hai dự án riêng biệt.
+     + **Hiển thị huy hiệu nhận diện chi tiết**: Trong danh sách gợi ý, các công việc khác yếu tố sẽ có huy hiệu màu tím chỉ rõ nguyên nhân: `Khác Năm: [Năm]`, `Khác Chi nhánh: [Store]`, `Khác Vị trí/Tầng: [Location]`, hoặc `Khác Dự án: [Code]`.
+     + **Xác nhận người dùng trước khi liên kết**: Khi người dùng chọn công việc từ danh sách gợi ý hoặc nhập tay công việc khác dự án, hệ thống sẽ mở hộp thoại xác nhận nêu rõ các yếu tố khác biệt: *"Công việc '[Tên task]' ([Mã task]) thuộc dự án khác do khác yếu tố: [Năm: 2027 (hiện tại: 2026)]. Bạn có đồng ý liên kết phụ thuộc (Predecessor) khác dự án không? Hệ thống sẽ tự động đồng bộ ngày theo logic Predecessor"*. Người dùng bấm **"Đồng ý liên kết"** để áp dụng hoặc **"Hủy"** để hủy bỏ liên kết ngoại vi.
    - **Hỗ trợ Đa Tiền Nhiệm (Multi-Predecessor)**: Hỗ trợ nhập đồng thời nhiều tiền nhiệm phân cách bởi dấu phẩy `,` (ví dụ: `CP-01-1, CP-01-2FF` hoặc `HN-TKV-SMZ2-85SS, HN-TKV-IT-1FF`).
    - **Áp dụng đuôi FF hoặc SF cho Tiền nhiệm thứ 2**: Tiền nhiệm thứ 2 hỗ trợ cả 2 chuẩn liên kết ràng buộc mốc kết thúc: `FF` (Finish-to-Finish) và `SF` (Start-to-Finish). Khi người dùng chọn tiền nhiệm thứ 2 từ danh sách gợi ý, hệ thống mặc định gắn `FF` và cho phép tùy chỉnh sang `SF` (hoặc kèm Lag như `+2`, `-1`).
    - **Cảnh báo Task ngoài dự án (Cross-Project Warning)**: Cả tiền nhiệm thứ nhất và thứ hai (hoặc bất kỳ tiền nhiệm nào) nếu trỏ tới task thuộc dự án khác đều được hệ thống hiển thị huy hiệu nhận diện màu tím kèm tên dự án nguồn để người dùng nhận biết ngay.
@@ -232,6 +235,15 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
        * Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01#1` ➜ `PRJ-02#1`).
        * Đồng thời, tự động quét và viết lại toàn bộ các chuỗi tiền nhiệm (`Predecessor`) tham chiếu đến các công việc của dự án này trên toàn bộ hệ thống.
        * Toàn bộ hậu tố kiểu ràng buộc tiến độ (như `FS+2`, `SS`, `FF`, `SF-1`) được bảo toàn chính xác 100%.
+    - **Tự Động Điền Giá Trị Mặc Định Khi Tạo Task Mới (Default Task Values)**:
+      + Khi tạo công việc mới nếu người dùng không điền vào các ô `Start date`, `Finish date`, `Baseline start`, `Baseline finish`, `Duration`, `Party`:
+        * Mốc ngày `Start date`, `Finish date`, `Baseline start`, `Baseline finish` sẽ tự động lấy mặc định là ngày hôm nay.
+        * `Duration` (thời lượng) mặc định là `0` ngày.
+        * `Party` (đơn vị phụ trách) tự động kế thừa từ thông tin đối tác của dự án mẹ hoặc mặc định là `Takashimaya`.
+    - **Tìm Kiếm & Tự Động Điền Gợi Ý Tiền Nhiệm Thông Minh (Smart Predecessor Suggestion & Auto-Complete)**:
+      + Ô nhập tiền nhiệm hỗ trợ đầy đủ ký tự `#` (gõ `Shift + 3`) và phân biệt rõ ràng giữa các năm/chi nhánh khác nhau (ví dụ phân biệt `2026 B2-B208 HCM` với `2027 B2-B208 HCM`).
+      + Hệ thống hiển thị danh sách gợi ý theo thuật toán tính điểm ưu tiên tuyệt đối công việc cùng dự án cha, cùng năm, cùng chi nhánh và cùng tầng (`Location`).
+      + Khi gõ mã gần giống nhất và nhấn `Enter` hoặc `Tab`, hệ thống sẽ tự động điền gợi ý phù hợp nhất vào ô một cách tức thời. Khi click ra ngoài, hệ thống cũng tự động chuẩn hóa tiền nhiệm đã nhập.
 
 6. **Đồng Bộ Ngày Bắt Đầu & Kết Thúc Tức Thì Sang Tab General (Real-Time Pre-computed Dates Sync)**:
    - Mọi thao tác thêm mới, chỉnh sửa ngày (`Start`/`Finish`), xóa hoặc cập nhật tiến độ công việc trên tab **Task detail** đều tự động tính toán lại ngày bắt đầu sớm nhất (`computedTakStart`), ngày kết thúc muộn nhất (`computedTakCompl`) và ngày khai trương (`computedOpening`) của dự án.
@@ -1312,8 +1324,8 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Hỗ Trợ Ký Tự `#` (Shift + 3) & Định Dạng Subtask Chuẩn Mới**:
      + Ô nhập Predecessor cho phép gõ trực tiếp ký tự `#` (thao tác `Shift + 3` trên bàn phím) một cách trơn tru, không bị lọc hay xóa tự động.
      + Hệ thống hỗ trợ tìm kiếm và gợi ý thông minh với cả định dạng mã subtask có dấu thăng `#` (ví dụ: `B2-B208#1`, `#1`, `smz2#85SS`), tự động phân tách tiền tố dự án và số thứ tự công việc con để đưa ra đề xuất chính xác nhất.
-   - **Tải Động & Cảnh Báo Liên Kết Ngoài Dự Án (Cross-Project Predecessor Integration)**:
+   - **Tải Động & Cảnh Báo Liên Kết Khác Dự Án (Multi-Factor Cross-Project Predecessor Integration)**:
      + Tự động phát hiện tiền tố dự án ngoài (như `smz2` cho `HN-TKV-SMZ2`) để tải trước danh sách công việc của dự án đó từ máy chủ.
-     + Tự động hiển thị hộp thoại xác nhận khi liên kết chéo sang dự án khác để người dùng chủ động kiểm soát.
+     + **Kiểm soát đa yếu tố (Year / Store / Location / Code)**: Phân biệt chính xác giữa các dự án có cùng mã nhưng khác niên độ (như 2026 vs 2027), khác chi nhánh (HCM vs HN) hoặc khác vị trí/tầng (như B2 vs 1F). Khi khác bất kỳ yếu tố nào, hệ thống đều phân loại là khác dự án và tự động bật hộp thoại xác nhận (ConfirmModal) kèm lý do chi tiết để người dùng phê duyệt trước khi tạo liên kết.
 
 

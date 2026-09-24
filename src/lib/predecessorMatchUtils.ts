@@ -84,20 +84,221 @@ export function parsePredecessorToken(token: string): { query: string; suffix: s
   return { query: trimmed, suffix: '' };
 }
 
+export interface PredecessorContext {
+  projectId?: string;
+  projectCode?: string;
+  projectYear?: number | string;
+  projectStore?: string;
+  projectLocation?: string;
+  location?: string;
+}
+
+export interface ProjectDiffDetails {
+  isDifferent: boolean;
+  diffFactors: ('year' | 'store' | 'location' | 'code' | 'id')[];
+  reasons: string[];
+  contextInfo: {
+    projectId?: string;
+    code?: string;
+    year?: string;
+    store?: string;
+    location?: string;
+  };
+  taskInfo: {
+    projectId?: string;
+    code?: string;
+    year?: string;
+    store?: string;
+    location?: string;
+  };
+}
+
+export function resolveProjectContext(
+  context: PredecessorContext | undefined,
+  projects: Project[]
+): {
+  projectId: string;
+  code: string;
+  year: string;
+  store: string;
+  location: string;
+} {
+  const ctxProjId = (context?.projectId || '').trim();
+  let ctxCode = (context?.projectCode || '').trim();
+  let ctxYear = context?.projectYear !== undefined && context?.projectYear !== null ? String(context.projectYear).trim() : '';
+  let ctxStore = (context?.projectStore || '').trim();
+  let ctxLoc = (context?.projectLocation || context?.location || '').trim();
+
+  if ((!ctxYear || !ctxStore || !ctxLoc || !ctxCode) && (ctxProjId || ctxCode)) {
+    const parent = projects.find(p => (ctxProjId && p.id === ctxProjId) || (ctxCode && p.code && p.code.trim().toLowerCase() === ctxCode.toLowerCase()));
+    if (parent) {
+      if (!ctxCode && parent.code) ctxCode = parent.code;
+      if (!ctxYear && parent.year) ctxYear = String(parent.year);
+      if (!ctxStore && parent.store) ctxStore = parent.store;
+      if (!ctxLoc && parent.location) ctxLoc = parent.location;
+    }
+  }
+
+  return {
+    projectId: ctxProjId,
+    code: ctxCode,
+    year: ctxYear,
+    store: ctxStore,
+    location: ctxLoc
+  };
+}
+
+export function resolveTaskProjectContext(
+  task: Task,
+  projects: Project[]
+): {
+  projectId: string;
+  code: string;
+  year: string;
+  store: string;
+  location: string;
+} {
+  const taskProjId = (task.projectId || '').trim();
+  let taskCode = (task.projectCode || '').trim();
+  let taskYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
+  let taskStore = (task.projectStore || '').trim();
+  let taskLoc = (task.location || (task as any).projectLocation || '').trim();
+
+  if ((!taskYear || !taskStore || !taskLoc || !taskCode) && (taskProjId || taskCode)) {
+    const parent = projects.find(p => (taskProjId && p.id === taskProjId) || (taskCode && p.code && p.code.trim().toLowerCase() === taskCode.toLowerCase()));
+    if (parent) {
+      if (!taskCode && parent.code) taskCode = parent.code;
+      if (!taskYear && parent.year) taskYear = String(parent.year);
+      if (!taskStore && parent.store) taskStore = parent.store;
+      if (!taskLoc && parent.location) taskLoc = parent.location;
+    }
+  }
+
+  return {
+    projectId: taskProjId,
+    code: taskCode,
+    year: taskYear,
+    store: taskStore,
+    location: taskLoc
+  };
+}
+
+/**
+ * Checks whether a candidate task differs from the current context in:
+ * - year
+ * - store
+ * - location
+ * - projectCode
+ * - projectId
+ * Returns detailed diff factors and human-readable explanation reasons.
+ */
+export function getTaskProjectDiffDetails(
+  context: PredecessorContext | undefined,
+  task: Task | undefined,
+  projects: Project[]
+): ProjectDiffDetails {
+  if (!task) {
+    return {
+      isDifferent: false,
+      diffFactors: [],
+      reasons: [],
+      contextInfo: {},
+      taskInfo: {}
+    };
+  }
+
+  const ctx = resolveProjectContext(context, projects);
+  const tInfo = resolveTaskProjectContext(task, projects);
+
+  const diffFactors: ('year' | 'store' | 'location' | 'code' | 'id')[] = [];
+  const reasons: string[] = [];
+
+  // 1. Year check (Khác Năm)
+  if (ctx.year && tInfo.year && ctx.year.toLowerCase() !== tInfo.year.toLowerCase()) {
+    diffFactors.push('year');
+    reasons.push(`Năm: ${tInfo.year} (hiện tại: ${ctx.year})`);
+  }
+
+  // 2. Store check (Khác Chi nhánh: HCM vs HN)
+  if (ctx.store && tInfo.store && ctx.store.toLowerCase() !== tInfo.store.toLowerCase()) {
+    diffFactors.push('store');
+    reasons.push(`Chi nhánh: ${tInfo.store} (hiện tại: ${ctx.store})`);
+  }
+
+  // 3. Location check (Khác Tầng / Khu vực: B2 vs 1F)
+  if (ctx.location && tInfo.location && ctx.location.toLowerCase() !== tInfo.location.toLowerCase()) {
+    diffFactors.push('location');
+    reasons.push(`Vị trí/Tầng: ${tInfo.location} (hiện tại: ${ctx.location})`);
+  }
+
+  // 4. Project code check (Khác Mã dự án)
+  if (ctx.code && tInfo.code && ctx.code.toLowerCase() !== tInfo.code.toLowerCase()) {
+    diffFactors.push('code');
+    reasons.push(`Mã dự án: ${tInfo.code} (hiện tại: ${ctx.code})`);
+  }
+
+  // 5. Project ID check
+  if (ctx.projectId && tInfo.projectId && ctx.projectId !== tInfo.projectId) {
+    if (!diffFactors.includes('code')) {
+      diffFactors.push('id');
+    }
+  }
+
+  return {
+    isDifferent: diffFactors.length > 0,
+    diffFactors,
+    reasons,
+    contextInfo: ctx,
+    taskInfo: tInfo
+  };
+}
+
+export function isTaskDifferentProject(
+  context: PredecessorContext | undefined,
+  task: Task | undefined,
+  projects: Project[]
+): boolean {
+  return getTaskProjectDiffDetails(context, task, projects).isDifferent;
+}
+
+/**
+ * Finds a task by full code, secondary code, id or closest match query.
+ */
+export function findTaskByQueryOrCode(
+  tokenOrCode: string,
+  tasks: Task[],
+  projects: Project[],
+  context?: PredecessorContext
+): Task | null {
+  if (!tokenOrCode) return null;
+  const { query } = parsePredecessorToken(tokenOrCode);
+  if (!query) return null;
+
+  const qLower = query.toLowerCase();
+
+  for (const t of tasks) {
+    if (t.id && t.id.toLowerCase() === qLower) return t;
+    if (t.taskCodePhu && t.taskCodePhu.trim().toLowerCase() === qLower) return t;
+    const code = computeTaskCode(projects, tasks, t);
+    if (code && code.toLowerCase() === qLower) return t;
+  }
+
+  const match = findClosestTaskMatch(query, tasks, projects, tasks, context?.projectCode, 650, context);
+  return match?.task || null;
+}
+
 /**
  * Calculates a match score for a task against a search query.
  * Higher score = closer match.
- * 1000+: Exact match
- * 800 - 999: Very high confidence match (sub-index, code suffix, normalized exact)
- * 500 - 799: Good match (substring, project match, high similarity)
- * 0: No match
+ * Strongly prioritizes tasks belonging to the exact same parent project (same year, location, store, project code).
  */
 export function scoreTaskPredecessorMatch(
   task: Task,
   rawQuery: string,
   projects: Project[],
   allTasks: Task[],
-  currentProjectCode?: string
+  currentProjectCode?: string,
+  context?: PredecessorContext
 ): number {
   if (!rawQuery || !task) return 0;
   const q = rawQuery.trim().toLowerCase();
@@ -107,115 +308,155 @@ export function scoreTaskPredecessorMatch(
   const codePhu = (task.taskCodePhu || '').trim().toLowerCase();
   const name = (task.name || '').trim().toLowerCase();
   const taskPCode = (task.projectCode || '').trim().toLowerCase();
-  const currentPCode = (currentProjectCode || '').trim().toLowerCase();
-  const isSameProject = Boolean(taskPCode && currentPCode && taskPCode === currentPCode);
+  const currentPCode = (context?.projectCode || currentProjectCode || '').trim().toLowerCase();
+
+  // Resolve contexts
+  const ctx = resolveProjectContext(context, projects);
+  const tInfo = resolveTaskProjectContext(task, projects);
+
+  const contextYear = ctx.year.toLowerCase();
+  const contextStore = ctx.store.toLowerCase();
+  const contextLocation = ctx.location.toLowerCase();
+  const contextProjectId = ctx.projectId;
+
+  const taskYear = tInfo.year.toLowerCase();
+  const taskStore = tInfo.store.toLowerCase();
+  const taskLocation = tInfo.location.toLowerCase();
+  const taskProjectId = tInfo.projectId;
+
+  const isSameCode = Boolean(taskPCode && currentPCode && taskPCode === currentPCode);
+  const isSameProjectId = Boolean(contextProjectId && taskProjectId && contextProjectId === taskProjectId);
+  const isSameYear = Boolean(contextYear && taskYear && contextYear === taskYear);
+  const isDiffYear = Boolean(contextYear && taskYear && contextYear !== taskYear);
+  const isSameStore = Boolean(contextStore && taskStore && contextStore === taskStore);
+  const isDiffStore = Boolean(contextStore && taskStore && contextStore !== taskStore);
+  const isSameLocation = Boolean(contextLocation && taskLocation && contextLocation === taskLocation);
+  const isDiffLocation = Boolean(contextLocation && taskLocation && contextLocation !== taskLocation);
+
+  const isExactSameParentProject = isSameProjectId || (isSameCode && !isDiffYear && !isDiffStore && !isDiffLocation);
 
   const qAlphaNum = q.replace(/[^a-z0-9]/g, '');
   const fullCodeAlphaNum = fullCode.replace(/[^a-z0-9]/g, '');
   const codePhuAlphaNum = codePhu.replace(/[^a-z0-9]/g, '');
   const pCodeAlphaNum = taskPCode.replace(/[^a-z0-9]/g, '');
 
-  // 1. Exact match on full code or code phu
-  if (fullCode === q || codePhu === q) {
-    return 1000 + (isSameProject ? 10 : 0);
-  }
-
-  // 2. Alphanumeric exact match (ignoring dashes/dots/spaces)
-  if (qAlphaNum && (fullCodeAlphaNum === qAlphaNum || codePhuAlphaNum === qAlphaNum)) {
-    return 950 + (isSameProject ? 10 : 0);
-  }
-
   // Numerical Conflict Guard:
   // If the search query explicitly contains a task number (e.g. "-2" in "B2-B208-2" or standalone "2" / "#2"),
   // and the candidate task has a different number (e.g. "-1" or "-3"),
-  // they are FUNDAMENTALLY DIFFERENT tasks. They must NEVER match under fuzzy, substring, or name rules!
+  // they are FUNDAMENTALLY DIFFERENT tasks. They must NEVER match!
   const qTaskNum = extractTrailingTaskNumber(q);
   const candidateTaskNum = extractTrailingTaskNumber(fullCode) ?? extractTrailingTaskNumber(codePhu) ?? (task.orderIndex !== undefined ? task.orderIndex + 1 : null);
   if (qTaskNum !== null && candidateTaskNum !== null && qTaskNum !== candidateTaskNum) {
     return 0;
   }
 
-  let score = 0;
+  let baseScore = 0;
 
-  // 3. User typed only digits or #digits (e.g. "85", "2", "#2", "-2")
-  const digitMatch = q.match(/^[-#\s]*(\d+)$/);
-  if (digitMatch) {
-    const num = parseInt(digitMatch[1], 10);
-    // Matches the trailing task number (e.g. "CP-01#2" or legacy "CP-01-2")
-    const codeNumMatch = fullCode.match(/[-#]0*(\d+)$/);
-    if (codeNumMatch && parseInt(codeNumMatch[1], 10) === num) {
-      score = isSameProject ? 920 : 780;
-    } else if (task.orderIndex !== undefined && (task.orderIndex + 1) === num) {
-      score = isSameProject ? 900 : 760;
-    }
-    if (score > 0) return score;
-  }
+  // 1. Exact match on full code or code phu
+  if (fullCode === q || codePhu === q) {
+    baseScore = 1000;
+  } else if (qAlphaNum && (fullCodeAlphaNum === qAlphaNum || codePhuAlphaNum === qAlphaNum)) {
+    // 2. Alphanumeric exact match (ignoring dashes/dots/spaces)
+    baseScore = 950;
+  } else {
+    // 3. User typed only digits or #digits (e.g. "85", "2", "#2", "-2")
+    const digitMatch = q.match(/^[-#\s]*(\d+)$/);
+    if (digitMatch) {
+      const num = parseInt(digitMatch[1], 10);
+      const codeNumMatch = fullCode.match(/[-#]0*(\d+)$/);
+      const isNumMatch = (codeNumMatch && parseInt(codeNumMatch[1], 10) === num) ||
+                         (task.orderIndex !== undefined && (task.orderIndex + 1) === num);
 
-  // 4. Code ends with query (e.g. query "smz2-85" matches "HN-TKV-SMZ2-85" or "85" matches "P-85")
-  if (fullCode.endsWith(q) || (codePhu && codePhu.endsWith(q))) {
-    score = Math.max(score, 850 + (isSameProject ? 20 : 0));
-  } else if (qAlphaNum.length >= 2 && fullCodeAlphaNum.endsWith(qAlphaNum)) {
-    score = Math.max(score, 820 + (isSameProject ? 20 : 0));
-  }
+      if (isNumMatch) {
+        if (isExactSameParentProject) {
+          baseScore = 920;
+        } else if (isSameCode) {
+          baseScore = 860;
+        } else {
+          // Cross-project match for task number (in-scope projects will heavily outscore this via contextual weighting)
+          baseScore = 760;
+        }
+      }
+    } else if (fullCode.endsWith(q) || (codePhu && codePhu.endsWith(q))) {
+      // 4. Code ends with query
+      baseScore = 850;
+    } else if (qAlphaNum.length >= 2 && fullCodeAlphaNum.endsWith(qAlphaNum)) {
+      baseScore = 820;
+    } else if (fullCode.startsWith(q) || (codePhu && codePhu.startsWith(q))) {
+      // 5. Code starts with query
+      baseScore = 800;
+    } else if (qAlphaNum.length >= 2 && fullCodeAlphaNum.startsWith(qAlphaNum)) {
+      baseScore = 780;
+    } else if (fullCode.includes(q) || (codePhu && codePhu.includes(q))) {
+      // 6. Code contains query
+      baseScore = 750;
+    } else if (qAlphaNum.length >= 2 && fullCodeAlphaNum.includes(qAlphaNum)) {
+      baseScore = 720;
+    } else {
+      // 7. Project Code contains part of query and query contains task number
+      const qParts = q.split(/[-_#\s]+/).filter(Boolean);
+      if (qParts.length >= 2) {
+        const candidatePCodePart = qParts.slice(0, -1).join('');
+        const candidateNumPart = qParts[qParts.length - 1];
+        if (pCodeAlphaNum.includes(candidatePCodePart.replace(/[^a-z0-9]/g, '')) && fullCode.endsWith(candidateNumPart)) {
+          baseScore = 880;
+        }
+      }
 
-  // 5. Code starts with query (e.g. query "smz2" matches "SMZ2-85")
-  if (fullCode.startsWith(q) || (codePhu && codePhu.startsWith(q))) {
-    score = Math.max(score, 800 + (isSameProject ? 20 : 0));
-  } else if (qAlphaNum.length >= 2 && fullCodeAlphaNum.startsWith(qAlphaNum)) {
-    score = Math.max(score, 780 + (isSameProject ? 20 : 0));
-  }
+      // 8. Task Name matching
+      if (!baseScore) {
+        if (name === q) {
+          baseScore = 820;
+        } else if (name.startsWith(q)) {
+          baseScore = 760;
+        } else if (name.includes(q)) {
+          baseScore = 680;
+        }
+      }
 
-  // 6. Code contains query
-  if (fullCode.includes(q) || (codePhu && codePhu.includes(q))) {
-    score = Math.max(score, 750 + (isSameProject ? 20 : 0));
-  } else if (qAlphaNum.length >= 2 && fullCodeAlphaNum.includes(qAlphaNum)) {
-    score = Math.max(score, 720 + (isSameProject ? 20 : 0));
-  }
-
-  // 7. Project Code contains part of query and query contains task number
-  // e.g. query "smz2-85" or "smz2#85": "smz2" matches project code "HN-TKV-SMZ2" and "85" matches task number
-  const qParts = q.split(/[-_#\s]+/).filter(Boolean);
-  if (qParts.length >= 2) {
-    const candidatePCodePart = qParts.slice(0, -1).join('');
-    const candidateNumPart = qParts[qParts.length - 1];
-    if (pCodeAlphaNum.includes(candidatePCodePart.replace(/[^a-z0-9]/g, '')) && fullCode.endsWith(candidateNumPart)) {
-      score = Math.max(score, 880);
-    }
-  }
-
-  // 8. Task Name matching
-  if (name === q) {
-    score = Math.max(score, 820);
-  } else if (name.startsWith(q)) {
-    score = Math.max(score, 760);
-  } else if (name.includes(q)) {
-    score = Math.max(score, 680);
-  }
-
-  // 9. Fuzzy string similarity (Bigram Sorensen-Dice)
-  if (qAlphaNum.length >= 2) {
-    const simFull = stringSimilarity(qAlphaNum, fullCodeAlphaNum);
-    const simPhu = codePhuAlphaNum ? stringSimilarity(qAlphaNum, codePhuAlphaNum) : 0;
-    const maxSim = Math.max(simFull, simPhu);
-    if (maxSim >= 0.5) {
-      score = Math.max(score, 500 + Math.round(maxSim * 250));
-    }
-
-    // Also check task name similarity for longer queries
-    if (q.length >= 4) {
-      const simName = stringSimilarity(q, name);
-      if (simName >= 0.6) {
-        score = Math.max(score, 450 + Math.round(simName * 200));
+      // 9. Fuzzy string similarity
+      if (!baseScore && qAlphaNum.length >= 2) {
+        const simFull = stringSimilarity(qAlphaNum, fullCodeAlphaNum);
+        const simPhu = codePhuAlphaNum ? stringSimilarity(qAlphaNum, codePhuAlphaNum) : 0;
+        const maxSim = Math.max(simFull, simPhu);
+        if (maxSim >= 0.5) {
+          baseScore = 500 + Math.round(maxSim * 250);
+        } else if (q.length >= 4) {
+          const simName = stringSimilarity(q, name);
+          if (simName >= 0.6) {
+            baseScore = 450 + Math.round(simName * 200);
+          }
+        }
       }
     }
   }
 
-  // Same project tie-breaker
-  if (score > 0 && isSameProject) {
-    score += 15;
+  if (baseScore === 0) return 0;
+
+  // Contextual priority weighting:
+  // "nếu trong cùng task mẹ thì ưu tiên cùng year, cùng location, cùng project code"
+  let score = baseScore;
+
+  if (isExactSameParentProject) {
+    score += 600;
+    if (isSameLocation) score += 50;
+  } else if (isSameCode) {
+    if (isDiffYear) score -= 400;
+    if (isDiffStore) score -= 200;
+    if (isDiffLocation) score -= 100;
+    if (isSameYear) score += 150;
+    if (isSameStore) score += 80;
+    if (isSameLocation) score += 40;
+  } else {
+    // Cross-project match:
+    if (isSameYear) score += 150;
+    if (isDiffYear) score -= 300;
+    if (isSameStore) score += 80;
+    if (isDiffStore) score -= 150;
+    if (isSameLocation) score += 40;
   }
 
-  return score;
+  return Math.max(1, score);
 }
 
 export interface RankedPredecessorMatch {
@@ -223,6 +464,7 @@ export interface RankedPredecessorMatch {
   score: number;
   exactTaskCode: string;
   isExternal: boolean;
+  diffDetails?: ProjectDiffDetails;
 }
 
 /**
@@ -234,29 +476,37 @@ export function rankCandidateTasks(
   candidateTasks: Task[],
   projects: Project[],
   allTasks: Task[],
-  currentProjectCode?: string
+  currentProjectCode?: string,
+  context?: PredecessorContext
 ): RankedPredecessorMatch[] {
+  const effectiveContext: PredecessorContext = context || { projectCode: currentProjectCode };
+
   if (!query || !query.trim()) {
-    return candidateTasks.map(t => ({
-      task: t,
-      score: 0,
-      exactTaskCode: computeTaskCode(projects, allTasks, t) || t.taskCodePhu || t.id,
-      isExternal: Boolean(t.projectCode && currentProjectCode && t.projectCode !== currentProjectCode)
-    }));
+    return candidateTasks.map(t => {
+      const diff = getTaskProjectDiffDetails(effectiveContext, t, projects);
+      return {
+        task: t,
+        score: 0,
+        exactTaskCode: computeTaskCode(projects, allTasks, t) || t.taskCodePhu || t.id,
+        isExternal: diff.isDifferent,
+        diffDetails: diff
+      };
+    });
   }
 
   const results: RankedPredecessorMatch[] = [];
 
   for (const t of candidateTasks) {
-    const score = scoreTaskPredecessorMatch(t, query, projects, allTasks, currentProjectCode);
+    const score = scoreTaskPredecessorMatch(t, query, projects, allTasks, currentProjectCode, effectiveContext);
     if (score > 0) {
       const exactCode = computeTaskCode(projects, allTasks, t) || t.taskCodePhu || t.id;
-      const isExternal = Boolean(t.projectCode && currentProjectCode && t.projectCode !== currentProjectCode);
+      const diff = getTaskProjectDiffDetails(effectiveContext, t, projects);
       results.push({
         task: t,
         score,
         exactTaskCode: exactCode,
-        isExternal
+        isExternal: diff.isDifferent,
+        diffDetails: diff
       });
     }
   }
@@ -275,9 +525,10 @@ export function findClosestTaskMatch(
   projects: Project[],
   allTasks: Task[],
   currentProjectCode?: string,
-  minThreshold: number = 750
+  minThreshold: number = 750,
+  context?: PredecessorContext
 ): RankedPredecessorMatch | null {
-  const ranked = rankCandidateTasks(query, candidateTasks, projects, allTasks, currentProjectCode);
+  const ranked = rankCandidateTasks(query, candidateTasks, projects, allTasks, currentProjectCode, context);
   if (ranked.length > 0 && ranked[0].score >= minThreshold) {
     return ranked[0];
   }
@@ -295,7 +546,8 @@ export function resolvePredecessorString(
   rawValue: string,
   tasks: Task[],
   projects: Project[],
-  currentProjectCode?: string
+  currentProjectCode?: string,
+  context?: PredecessorContext
 ): string {
   if (!rawValue || typeof rawValue !== 'string') return '';
   const trimmed = rawValue.trim();
@@ -328,8 +580,8 @@ export function resolvePredecessorString(
       return query + suffix;
     }
 
-    // Find the closest matching task with strict threshold (750+)
-    const match = findClosestTaskMatch(query, poolTasks, projects, poolTasks, currentProjectCode, 750);
+    // Find the closest matching task with threshold (650+)
+    const match = findClosestTaskMatch(query, poolTasks, projects, poolTasks, currentProjectCode, 650, context);
     if (match) {
       let finalSuffix = suffix;
       // If it's the second predecessor and has no relationship, default to FF per Gantt rules

@@ -81,9 +81,11 @@ export interface TaskComment {
 
 export interface Task {
   id: string;
+  projectId?: string;
   projectCode: string;
   projectYear?: number | string;
   projectStore?: string;
+  location?: string;
   name: string;
   start: string;
   baselineStart?: string;

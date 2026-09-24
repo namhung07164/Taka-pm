@@ -343,8 +343,10 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     const pTasks = tasksByProjectCode.get(pCode) || [];
     const groupTasks = sortGroupTasks(pTasks.filter(t => 
        t &&
+       (p.id && t.projectId ? t.projectId === p.id : true) &&
        (p.year ? String(t.projectYear || '') === String(p.year) : true) &&
-       (p.store ? String(t.projectStore || '') === String(p.store) : true)
+       (p.store ? String(t.projectStore || '') === String(p.store) : true) &&
+       (p.location && t.location ? String(t.location || '').trim().toLowerCase() === String(p.location || '').trim().toLowerCase() : true)
     ));
     groupTasks.forEach((t, i) => {
       if (!t) return;
@@ -396,24 +398,30 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   const taskPCode = String(task.projectCode || '').trim().toLowerCase();
   
   const p = projects.find(proj => {
-    if (!proj || !proj.code) return false;
+    if (!proj) return false;
+    if (task.projectId && proj.id && proj.id === task.projectId) return true;
+    if (!proj.code) return false;
     const projCode = String(proj.code).trim().toLowerCase();
     const matchesCode = projCode === taskPCode || projCode.includes(taskPCode) || taskPCode.includes(projCode);
     const matchesYear = proj.year ? String(task.projectYear || '').trim().toLowerCase() === String(proj.year).trim().toLowerCase() : true;
     const matchesStore = proj.store ? String(task.projectStore || '').trim().toLowerCase() === String(proj.store).trim().toLowerCase() : true;
-    return matchesCode && matchesYear && matchesStore;
+    const matchesLocation = proj.location && task.location ? String(task.location || '').trim().toLowerCase() === String(proj.location).trim().toLowerCase() : true;
+    return matchesCode && matchesYear && matchesStore && matchesLocation;
   });
 
   const currentPCode = p ? String(p.code).trim() : String(task.projectCode || '').trim();
 
   const groupTasks = sortGroupTasks((tasks || []).filter(t => {
-    if (!t || !t.projectCode) return false;
+    if (!t) return false;
+    if (p && p.id && t.projectId && p.id === t.projectId) return true;
+    if (!t.projectCode) return false;
     const tPCode = String(t.projectCode).trim().toLowerCase();
     const targetCode = currentPCode.toLowerCase();
     const matchesCode = tPCode === targetCode || tPCode.includes(targetCode) || targetCode.includes(tPCode);
     const matchesYear = p && p.year ? String(t.projectYear || '').trim().toLowerCase() === String(p.year).trim().toLowerCase() : true;
     const matchesStore = p && p.store ? String(t.projectStore || '').trim().toLowerCase() === String(p.store).trim().toLowerCase() : true;
-    return matchesCode && matchesYear && matchesStore;
+    const matchesLocation = p && p.location && t.location ? String(t.location || '').trim().toLowerCase() === String(p.location).trim().toLowerCase() : true;
+    return matchesCode && matchesYear && matchesStore && matchesLocation;
   }));
 
   const i = groupTasks.findIndex(t => t.id === task.id);
@@ -547,17 +555,70 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
       }
       
       const possibleTasks = taskNoMap.get(longestMatch);
-      let resolvedTask;
-      if (possibleTasks) {
-        if (contextTask) {
-           resolvedTask = possibleTasks.find(t => 
-             t &&
-             String(t.projectCode || '').trim().toLowerCase() === String(contextTask.projectCode || '').trim().toLowerCase() && 
-             String(t.projectYear || '').trim().toLowerCase() === String(contextTask.projectYear || '').trim().toLowerCase() && 
-             String(t.projectStore || '').trim().toLowerCase() === String(contextTask.projectStore || '').trim().toLowerCase()
-           );
+      let resolvedTask: Task | undefined;
+      if (possibleTasks && possibleTasks.length > 0) {
+        if (possibleTasks.length === 1) {
+          resolvedTask = possibleTasks[0];
+        } else if (contextTask) {
+          const ctxPCode = String(contextTask.projectCode || '').trim().toLowerCase();
+          const ctxYear = contextTask.projectYear !== undefined && contextTask.projectYear !== null
+            ? String(contextTask.projectYear).trim().toLowerCase()
+            : '';
+          const ctxStore = String(contextTask.projectStore || '').trim().toLowerCase();
+          const ctxLoc = String(contextTask.location || '').trim().toLowerCase();
+          const ctxProjId = contextTask.projectId || '';
+
+          // Score each candidate to pick the closest contextual match:
+          // Priority: 1. same projectId, 2. same projectCode, 3. same year, 4. same store, 5. same location
+          let bestScore = -Infinity;
+          for (const cand of possibleTasks) {
+            if (!cand) continue;
+            let candScore = 0;
+            const candPCode = String(cand.projectCode || '').trim().toLowerCase();
+            const candYear = cand.projectYear !== undefined && cand.projectYear !== null
+              ? String(cand.projectYear).trim().toLowerCase()
+              : '';
+            const candStore = String(cand.projectStore || '').trim().toLowerCase();
+            const candLoc = String(cand.location || '').trim().toLowerCase();
+            const candProjId = cand.projectId || '';
+
+            // 1. Same parent project ID: top priority
+            if (ctxProjId && candProjId && ctxProjId === candProjId) {
+              candScore += 10000;
+            }
+
+            // 2. Same project code
+            if (ctxPCode && candPCode && ctxPCode === candPCode) {
+              candScore += 5000;
+            }
+
+            // 3. Same year
+            if (ctxYear && candYear) {
+              if (ctxYear === candYear) candScore += 3000;
+              else candScore -= 4000; // Strong penalty for mismatched year
+            }
+
+            // 4. Same store (HCM / HN)
+            if (ctxStore && candStore) {
+              if (ctxStore === candStore) candScore += 1500;
+              else candScore -= 2000;
+            }
+
+            // 5. Same location (floor / unit)
+            if (ctxLoc && candLoc) {
+              if (ctxLoc === candLoc) candScore += 500;
+              else candScore -= 500;
+            }
+
+            if (candScore > bestScore) {
+              bestScore = candScore;
+              resolvedTask = cand;
+            }
+          }
         }
-        if (!resolvedTask) resolvedTask = possibleTasks[0];
+        if (!resolvedTask) {
+          resolvedTask = possibleTasks[0];
+        }
       }
 
       return {
@@ -981,7 +1042,42 @@ export function normalizeAndHealTaskPredecessors(
       if (lowerToken.startsWith(code)) {
         const remainder = lowerToken.substring(code.length);
         if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainder)) {
-          const targetTask = matchingTasks && matchingTasks[0];
+          let targetTask: Task | undefined;
+          if (matchingTasks && matchingTasks.length > 0) {
+            if (matchingTasks.length === 1) {
+              targetTask = matchingTasks[0];
+            } else {
+              const ctxPCode = String(task.projectCode || '').trim().toLowerCase();
+              const ctxYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim().toLowerCase() : '';
+              const ctxStore = String(task.projectStore || '').trim().toLowerCase();
+              const ctxLoc = String(task.location || '').trim().toLowerCase();
+              const ctxProjId = task.projectId || '';
+
+              let bestScore = -Infinity;
+              for (const cand of matchingTasks) {
+                if (!cand) continue;
+                let candScore = 0;
+                if (ctxProjId && cand.projectId && ctxProjId === cand.projectId) candScore += 10000;
+                if (ctxPCode && cand.projectCode && ctxPCode === String(cand.projectCode).trim().toLowerCase()) candScore += 5000;
+                if (ctxYear && cand.projectYear) {
+                  if (ctxYear === String(cand.projectYear).trim().toLowerCase()) candScore += 3000;
+                  else candScore -= 4000;
+                }
+                if (ctxStore && cand.projectStore) {
+                  if (ctxStore === String(cand.projectStore).trim().toLowerCase()) candScore += 1500;
+                  else candScore -= 2000;
+                }
+                if (ctxLoc && cand.location) {
+                  if (ctxLoc === String(cand.location).trim().toLowerCase()) candScore += 500;
+                  else candScore -= 500;
+                }
+                if (candScore > bestScore) {
+                  bestScore = candScore;
+                  targetTask = cand;
+                }
+              }
+            }
+          }
           if (targetTask) {
             const currentTargetCode = computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu;
             if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {

@@ -33,7 +33,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
 
   const commitSave = (rawVal: string) => {
     setIsEditing(false);
-    const resolved = resolvePredecessorString(rawVal, tasks, projects, task.projectCode);
+    const context = {
+      projectId: task?.projectId,
+      projectCode: task?.projectCode,
+      projectYear: task?.projectYear,
+      projectStore: task?.projectStore,
+      projectLocation: task?.location
+    };
+    const resolved = resolvePredecessorString(rawVal, tasks, projects, task?.projectCode, context);
     setVal(resolved);
     if (resolved !== (value || '')) {
       onSave(resolved);
@@ -42,13 +49,17 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest('.fixed') || target.closest('[role="dialog"]') || target.closest('.modal-handle'))) {
+        return;
+      }
       if (isEditing && containerRef.current && !containerRef.current.contains(event.target as Node)) {
         commitSave(val);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isEditing, val, value, onSave, tasks, projects, task.projectCode]);
+  }, [isEditing, val, value, onSave, tasks, projects, task?.projectCode, task?.projectId, task?.projectYear, task?.projectStore, task?.location]);
 
   const healedVal = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
   const displayVal = isEditing ? val : (value !== undefined && value !== null && value !== '' ? value : (healedVal || val));
@@ -64,6 +75,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   if (isEditing) {
     return (
       <div ref={containerRef} className="w-full relative" onKeyDown={(e) => {
+        if (e.defaultPrevented) return;
         if (e.key === 'Enter') {
           commitSave(val);
         } else if (e.key === 'Escape') {
@@ -76,9 +88,11 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
           onChange={setVal}
           tasks={tasks}
           projects={projects}
+          currentProjectId={task.projectId}
           currentProjectCode={task.projectCode}
           currentProjectYear={task.projectYear}
           currentProjectStore={task.projectStore}
+          currentProjectLocation={task.location}
         />
       </div>
     );

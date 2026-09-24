@@ -65,9 +65,11 @@ export function useTaskModalLogic({
     ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
 
     return {
+      projectId: targetProj?.id || undefined,
       projectCode: prefillProjectCode || targetProj?.code || '',
       projectYear: prefillProjectYear || targetProj?.year || undefined,
       projectStore: prefillProjectStore || targetProj?.store || undefined,
+      location: targetProj?.location || undefined,
       name: '',
       start: defaultDate,
       finish: defaultDate,
@@ -76,7 +78,7 @@ export function useTaskModalLogic({
       duration: '0',
       durationManual: true,
       finishManual: false,
-      party: targetProj?.party || ''
+      party: targetProj?.party || 'Takashimaya'
     };
   });
   const nameRef = useRef<HTMLInputElement>(null);
@@ -144,9 +146,11 @@ export function useTaskModalLogic({
       ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
 
       setFormData({
+        projectId: targetProj?.id || undefined,
         projectCode: prefillProjectCode || targetProj?.code || '',
         projectYear: prefillProjectYear || targetProj?.year || undefined,
         projectStore: prefillProjectStore || targetProj?.store || undefined,
+        location: targetProj?.location || undefined,
         name: '',
         start: defaultDate,
         finish: defaultDate,
@@ -155,7 +159,7 @@ export function useTaskModalLogic({
         duration: '0',
         durationManual: true,
         finishManual: false,
-        party: targetProj?.party || ''
+        party: targetProj?.party || 'Takashimaya'
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,9 +179,11 @@ export function useTaskModalLogic({
       const taskNoMap = buildTaskNoMap(projects || [], tasks || []);
       const dummyTask: Task = {
         id: task?.id || 'temp',
+        projectId: formData.projectId || task?.projectId,
         projectCode: formData.projectCode || '',
         projectYear: formData.projectYear,
         projectStore: formData.projectStore,
+        location: formData.location || task?.location,
         name: formData.name || '',
         start: formData.start,
         finish: formData.finish,
@@ -189,7 +195,7 @@ export function useTaskModalLogic({
     } catch {
       return [];
     }
-  }, [formData.predecessor, formData.projectCode, formData.projectYear, formData.projectStore, projects, tasks, task?.id]);
+  }, [formData.predecessor, formData.projectId, formData.projectCode, formData.projectYear, formData.projectStore, formData.location, projects, tasks, task?.id, task?.projectId, task?.location]);
 
 
 
@@ -211,9 +217,11 @@ export function useTaskModalLogic({
         let taskNoMap = buildTaskNoMap(projects || [], currentTasks);
         const dummyTask: Task = {
           id: task?.id || 'temp',
+          projectId: updated.projectId || task?.projectId,
           projectCode: updated.projectCode || '',
           projectYear: updated.projectYear,
           projectStore: updated.projectStore,
+          location: updated.location || task?.location,
           name: updated.name || '',
           start: updated.start,
           finish: updated.finish,
@@ -388,8 +396,8 @@ export function useTaskModalLogic({
         finalFormData.duration = "0";
         finalFormData.finish = finalFormData.start;
       }
-      if (!finalFormData.party && currentProject?.party) {
-        finalFormData.party = currentProject.party;
+      if (!finalFormData.party) {
+        finalFormData.party = currentProject?.party || 'Takashimaya';
       }
 
       if (cloudStatus === 'offline') {
