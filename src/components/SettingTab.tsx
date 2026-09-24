@@ -1,8 +1,8 @@
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import React, { useState, Suspense } from "react";
 import { useLanguage } from "../lib/LanguageContext";
-import { Plus, Trash2, Smartphone, RefreshCw, Bell, Database, Sparkles, Activity, ChevronDown, ChevronUp, Calendar, FolderOutput, Monitor } from "lucide-react";
-import { NotificationRule, AppUser } from "../types";
+import { Plus, Trash2, Smartphone, RefreshCw, Bell, Database, Sparkles, Activity, ChevronDown, ChevronUp, Calendar, FolderOutput, Monitor, Hash } from "lucide-react";
+import { NotificationRule, AppUser, Task, Project } from "../types";
 import { cn, generateId } from "../lib/utils";
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, APP_ID , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
@@ -13,6 +13,7 @@ import { clearAllIDB } from "../lib/idb";
 import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
 import { syncAllProjectsTaskCountsToFirestore } from "../lib/projectDatesService";
 import { bumpConfigVersion } from "../lib/configCacheService";
+import { convertAllSubtaskCodesAndPredecessorsToHash } from "../lib/ganttUtils";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 
 const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
@@ -223,6 +224,72 @@ export function SettingTab({ rules}: SettingTabProps) {
   const [isDeduplicatingDelegations, setIsDeduplicatingDelegations] = useState(false);
   const [isSyncingTaskCounts, setIsSyncingTaskCounts] = useState(false);
   const [isScanningOrphans, setIsScanningOrphans] = useState(false);
+  const [isConvertingToHash, setIsConvertingToHash] = useState(false);
+
+  const handleConvertToHashFormat = async () => {
+    if (!isAdmin) return;
+    setConfirmModal({
+      isOpen: true,
+      title: "Quét & Chuyển đổi '-' thành '#' (Subtask Code & Predecessor)",
+      message: "Hệ thống sẽ quét toàn bộ dữ liệu công việc trong ứng dụng và chuyển đổi tất cả mã phụ (Subtask Code) và liên kết Predecessor từ dấu '-' sang '#' (Ví dụ: B2-B208-1 ➜ B2-B208#1, CP-01-2 ➜ CP-01#2). Bạn có muốn tiếp tục?",
+      onConfirm: async () => {
+        setIsConvertingToHash(true);
+        try {
+          // Fetch complete projects and tasks from Firestore to ensure 100% full scan coverage
+          const [projSnap, taskSnap] = await Promise.all([
+            getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')),
+            getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'))
+          ]);
+
+          const allProjects: Project[] = projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+          const allTasks: Task[] = taskSnap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
+
+          const result = convertAllSubtaskCodesAndPredecessorsToHash(allTasks, allProjects);
+
+          if (result.changedCount > 0) {
+            // Batch commit to Firestore in chunks of 400
+            const CHUNK_SIZE = 400;
+            for (let i = 0; i < result.updatesToSave.length; i += CHUNK_SIZE) {
+              const chunk = result.updatesToSave.slice(i, i + CHUNK_SIZE);
+              const batch = writeBatch(db);
+              chunk.forEach(u => {
+                const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id);
+                const updatePayload: any = { updatedAt: u.updatedAt };
+                if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
+                if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
+                batch.update(tRef, updatePayload);
+              });
+              await batch.commit();
+            }
+
+            // Update local store if tasks are loaded
+            useAppStore.getState().setTasks(result.updatedTasks);
+
+            useAppStore.getState().setToast({
+              title: "Chuyển đổi thành công",
+              message: `Đã quét và chuyển đổi thành công ${result.changedCount} công việc sang định dạng '#' (Subtask Code & Predecessor)!`,
+              type: "success"
+            });
+          } else {
+            useAppStore.getState().setToast({
+              title: "Hoàn tất kiểm tra",
+              message: "Tất cả các mã Subtask Code và Predecessor đã ở định dạng '#' chuẩn.",
+              type: "info"
+            });
+          }
+        } catch (e: any) {
+          console.error("Convert to hash error:", e);
+          useAppStore.getState().setToast({
+            title: "Lỗi chuyển đổi",
+            message: e?.message || "Có lỗi xảy ra khi chuyển đổi sang định dạng '#'.",
+            type: "error"
+          });
+        } finally {
+          setIsConvertingToHash(false);
+        }
+      }
+    });
+  };
 
   const handleScanOrphanData = async () => {
     if (!isAdmin) return;
@@ -955,6 +1022,16 @@ export function SettingTab({ rules}: SettingTabProps) {
           >
             <Trash2 className="w-4 h-4 text-rose-500" />
             {isScanningOrphans ? "Đang quét dữ liệu mồ côi..." : "Quét & Dọn dữ liệu Mồ côi"}
+          </button>
+
+          <button 
+            onClick={handleConvertToHashFormat}
+            disabled={isConvertingToHash}
+            title="Quét toàn bộ công việc và chuyển đổi dấu '-' thành '#' cho Subtask Code và chuỗi Predecessor"
+            className="px-5 py-2.5 rounded-lg border border-cyan-200 dark:border-cyan-900/40 bg-white dark:bg-[#1e1e20] hover:bg-cyan-50 dark:hover:bg-cyan-950/20 transition-colors flex items-center gap-3 font-medium text-cyan-700 dark:text-cyan-400 shadow-sm text-sm disabled:opacity-50 cursor-pointer"
+          >
+            <Hash className="w-4 h-4 text-cyan-500" />
+            {isConvertingToHash ? "Đang chuyển đổi..." : "Chuyển '-' sang '#' (Subtask & Pred)"}
           </button>
         </div>
       )}

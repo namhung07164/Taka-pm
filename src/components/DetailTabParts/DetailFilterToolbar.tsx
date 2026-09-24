@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Search, Edit3, Plus, Wand2, X } from 'lucide-react';
+import { Search, Edit3, Plus, Wand2, Hash, X } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { ColumnAdder } from '../ColumnAdder';
@@ -38,6 +38,8 @@ interface DetailFilterToolbarProps {
   projects: Project[];
   handleSyncAllPredecessors: (v: boolean) => void;
   isSyncingPredecessors: boolean;
+  handleConvertAllSubtasksToHash?: () => void;
+  isConvertingToHash?: boolean;
   currentUser: AppUser;
   handleExportProjects: () => void;
   handleImportProjects: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -74,6 +76,8 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
   projects,
   handleSyncAllPredecessors,
   isSyncingPredecessors,
+  handleConvertAllSubtasksToHash,
+  isConvertingToHash,
   currentUser,
   handleExportProjects,
   handleImportProjects,
@@ -205,6 +209,20 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     {isSyncingPredecessors ? 'Đang sửa...' : 'Sync Predecessor'}
                   </span>
                 </button>
+
+                {handleConvertAllSubtasksToHash && (
+                  <button 
+                    onClick={() => handleConvertAllSubtasksToHash()}
+                    disabled={isConvertingToHash}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-cyan-600 dark:bg-cyan-600 border border-cyan-700 text-white rounded-lg hover:bg-cyan-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Quét toàn bộ và chuyển đổi dấu '-' thành '#' cho Subtask Code và Predecessor"
+                  >
+                    <Hash className={`w-4 h-4 pointer-events-none ${isConvertingToHash ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isConvertingToHash ? 'Đang đổi...' : "Đổi '-' sang '#'"}
+                    </span>
+                  </button>
+                )}
               </>
             )}
 

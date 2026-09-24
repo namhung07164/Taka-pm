@@ -21,7 +21,7 @@ import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
-import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors } from '../lib/ganttUtils';
+import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
 import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/projectDatesService';
 import { 
   saveTaskStateUnified, 
@@ -375,6 +375,79 @@ export function DetailTab({
     } finally {
       isSyncingPredecessorsRef.current = false;
       setIsSyncingPredecessors(false);
+    }
+  }, [tasks, projects]);
+
+  // Command to scan and convert all subtask codes and predecessor references from '-' to '#'
+  const isConvertingToHashRef = useRef(false);
+  const [isConvertingToHash, setIsConvertingToHash] = useState(false);
+
+  const handleConvertAllSubtasksToHash = React.useCallback(async (showToast = true) => {
+    if (isConvertingToHashRef.current) return;
+    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) {
+      if (showToast) {
+        useAppStore.getState().setToast({
+          title: "Thông báo",
+          message: "Chưa có dữ liệu công việc để quét chuyển đổi.",
+          type: "info"
+        });
+      }
+      return;
+    }
+
+    try {
+      isConvertingToHashRef.current = true;
+      setIsConvertingToHash(true);
+
+      const result = convertAllSubtaskCodesAndPredecessorsToHash(tasks, projects);
+      if (result.changedCount > 0) {
+        // Zero-delay optimistic UI update (0ms)
+        useAppStore.getState().setTasks(result.updatedTasks);
+
+        // Batch update to Firestore in background in chunks of 400
+        const CHUNK_SIZE = 400;
+        const commitChunks = async () => {
+          for (let i = 0; i < result.updatesToSave.length; i += CHUNK_SIZE) {
+            const chunk = result.updatesToSave.slice(i, i + CHUNK_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(u => {
+              const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", u.id);
+              const updatePayload: any = { updatedAt: u.updatedAt };
+              if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
+              if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
+              batch.update(tRef, updatePayload);
+            });
+            await batch.commit();
+          }
+        };
+        commitChunks().catch(e => console.error("Background convert to hash error:", e));
+
+        if (showToast) {
+          useAppStore.getState().setToast({
+            title: "Chuyển đổi thành công",
+            message: `Đã quét và chuyển đổi ${result.changedCount} công việc sang định dạng '#' (Subtask Code & Predecessor)!`,
+            type: "success"
+          });
+        }
+      } else if (showToast) {
+        useAppStore.getState().setToast({
+          title: "Hoàn tất kiểm tra",
+          message: "Tất cả các mã Subtask Code và Predecessor đã ở định dạng '#' chuẩn.",
+          type: "info"
+        });
+      }
+    } catch (e: any) {
+      console.error("Convert to hash error:", e);
+      if (showToast) {
+        useAppStore.getState().setToast({
+          title: "Lỗi chuyển đổi",
+          message: e?.message || "Có lỗi xảy ra khi chuyển đổi sang định dạng '#'.",
+          type: "error"
+        });
+      }
+    } finally {
+      isConvertingToHashRef.current = false;
+      setIsConvertingToHash(false);
     }
   }, [tasks, projects]);
 
@@ -3125,6 +3198,8 @@ export function DetailTab({
         projects={projects}
         handleSyncAllPredecessors={handleSyncAllPredecessors}
         isSyncingPredecessors={isSyncingPredecessors}
+        handleConvertAllSubtasksToHash={handleConvertAllSubtasksToHash}
+        isConvertingToHash={isConvertingToHash}
         currentUser={currentUser}
         handleExportProjects={handleExportProjects}
         handleImportProjects={handleImportProjects}

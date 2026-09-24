@@ -245,6 +245,14 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
       + Hệ thống hiển thị danh sách gợi ý theo thuật toán tính điểm ưu tiên tuyệt đối công việc cùng dự án cha, cùng năm, cùng chi nhánh và cùng tầng (`Location`).
       + Khi gõ mã gần giống nhất và nhấn `Enter` hoặc `Tab`, hệ thống sẽ tự động điền gợi ý phù hợp nhất vào ô một cách tức thời. Khi click ra ngoài, hệ thống cũng tự động chuẩn hóa tiền nhiệm đã nhập.
 
+    - **Lệnh Quét & Chuyển Đổi Hàng Loạt '-' sang '#' (Batch Subtask Code & Predecessor Hash Converter)**:
+      + **Vị trí 1 (Tab Task Detail)**: Khi bật chế độ chỉnh sửa (**Edit Mode**), trên thanh công cụ xuất hiện nút **"Đổi '-' sang '#'"** (biểu tượng dấu thăng `#`).
+      + **Vị trí 2 (Tab Setting)**: Trong mục công cụ quản trị hệ thống có nút **"Chuyển '-' sang '#' (Subtask & Pred)"**.
+      + **Cơ chế hoạt động**: Khi bấm nút và xác nhận, hệ thống sẽ thực hiện quét toàn bộ công việc trong ứng dụng:
+        * Tự động nhận diện và chuyển đổi tất cả mã nhiệm vụ phụ (`taskCodePhu`) có dấu gạch ngang sang dấu thăng `#` (ví dụ: `B2-B208-1` ➜ `B2-B208#1`, `HN-TKV-SMZ2-85` ➜ `HN-TKV-SMZ2#85`, `CP-01-2` ➜ `CP-01#2`).
+        * Đồng thời tự động phân tích và cập nhật toàn bộ các chuỗi tiền nhiệm (`Predecessor`) đang trỏ đến các mã này (ví dụ: `B2-B208-1, B2-B208-2FF` ➜ `B2-B208#1, B2-B208#2FF`).
+        * Cập nhật tức thời vào bộ nhớ giao diện (0ms Optimistic UI) và đồng bộ hàng loạt (Batch writes 400 docs/lần) lên cơ sở dữ liệu nền, thông báo chính xác số lượng bản ghi đã được chuyển đổi thành công.
+
 6. **Đồng Bộ Ngày Bắt Đầu & Kết Thúc Tức Thì Sang Tab General (Real-Time Pre-computed Dates Sync)**:
    - Mọi thao tác thêm mới, chỉnh sửa ngày (`Start`/`Finish`), xóa hoặc cập nhật tiến độ công việc trên tab **Task detail** đều tự động tính toán lại ngày bắt đầu sớm nhất (`computedTakStart`), ngày kết thúc muộn nhất (`computedTakCompl`) và ngày khai trương (`computedOpening`) của dự án.
    - **Hỗ trợ Dự án Multi-code**: Đối với các dự án ghép mã gian hàng (ví dụ: `L3-333-2, L3-333-3` hoặc `L3-303-1`), hệ thống tự động gom chính xác toàn bộ danh sách task thuộc tất cả các phân đoạn mã để cập nhật tiến độ và mốc thời gian toàn diện.

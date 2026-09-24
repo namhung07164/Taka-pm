@@ -1,6 +1,7 @@
 import { Task, Project } from '../types';
 import { parseDateTime, formatToDatetimeLocal } from './utils';
 import { useAppStore } from '../store/useAppStore';
+import { parsePredecessorToken } from './predecessorMatchUtils';
 
 export function getPredecessorCodeUpdates(oldTaskNoMap: Map<string, Task[]>, newTaskNoMap: Map<string, Task[]>, projects: Project[], newTasks: Task[]): Map<string, string> {
   const oldCodeToNewCode = new Map<string, string>();
@@ -1297,4 +1298,143 @@ export function healAllTasksPredecessors(
     updatesToSave
   };
 }
+
+/**
+ * Scans all tasks and projects in the app and explicitly converts subtask codes and predecessor references
+ * from '-' format (e.g. B2-B208-1) to '#' format (e.g. B2-B208#1).
+ */
+export function convertAllSubtaskCodesAndPredecessorsToHash(
+  allTasks: Task[],
+  allProjects: Project[]
+): {
+  updatedTasks: Task[];
+  changedCount: number;
+  updatesToSave: Array<{ id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }>;
+} {
+  const projectCodes = new Set((allProjects || []).map(p => String(p.code || '').trim()).filter(Boolean));
+  
+  // 1. Build map of old codes to new codes for all tasks
+  const taskOldToNewCodeMap = new Map<string, string>();
+  
+  const updatedTasksWithCodes = (allTasks || []).map(t => {
+    const oldCode = (t.taskCodePhu || '').trim();
+    let newCode = oldCode;
+    const pCode = String(t.projectCode || '').trim();
+
+    if (oldCode) {
+      if (pCode && oldCode.toLowerCase().startsWith(pCode.toLowerCase() + '-')) {
+        const suffix = oldCode.substring(pCode.length + 1);
+        if (/^\d+$/.test(suffix)) {
+          newCode = `${pCode}#${suffix}`;
+        }
+      } else {
+        const dashMatch = oldCode.match(/^(.*)-(\d+)$/);
+        if (dashMatch) {
+          const prefix = dashMatch[1];
+          const digits = dashMatch[2];
+          const isKnown = projectCodes.has(prefix) || 
+            (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
+            (pCode && prefix.toLowerCase() === pCode.toLowerCase());
+          if (isKnown || prefix.length >= 2) {
+            const canonicalPrefix = (allProjects || []).find(p => p.code && p.code.toLowerCase() === prefix.toLowerCase())?.code || prefix;
+            newCode = `${canonicalPrefix}#${digits}`;
+          }
+        }
+      }
+    } else if (pCode) {
+      const order = (t.orderIndex !== undefined ? t.orderIndex : 0) + 1;
+      newCode = `${pCode}#${order}`;
+    }
+
+    if (oldCode && oldCode !== newCode) {
+      taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
+    }
+    
+    return {
+      ...t,
+      taskCodePhu: newCode
+    };
+  });
+
+  // 2. Convert predecessor strings across all tasks
+  let changedCount = 0;
+  const updatesToSave: Array<{ id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }> = [];
+
+  const finalTasks = updatedTasksWithCodes.map((t, idx) => {
+    const originalTask = allTasks[idx];
+    let predChanged = false;
+    let newPred = t.predecessor || '';
+    const oldPred = t.predecessor || '';
+
+    if (oldPred && oldPred.trim()) {
+      const tokens = splitPredecessors(oldPred);
+      const convertedTokens = tokens.map(rawToken => {
+        const token = rawToken.trim();
+        if (!token) return token;
+
+        const { query, suffix } = parsePredecessorToken(token);
+        const queryLower = query.toLowerCase();
+
+        // 1. Direct mapping from taskOldToNewCodeMap
+        if (taskOldToNewCodeMap.has(queryLower)) {
+          const mapped = taskOldToNewCodeMap.get(queryLower)!;
+          const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
+          return `${mapped}${formattedSuffix}`;
+        }
+
+        // 2. Format ProjectCode-Index -> ProjectCode#Index
+        const dashMatch = query.match(/^(.*)-(\d+)$/);
+        if (dashMatch) {
+          const prefix = dashMatch[1];
+          const digits = dashMatch[2];
+          const isKnownProj = projectCodes.has(prefix) || 
+            (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
+            (t.projectCode && prefix.toLowerCase() === String(t.projectCode).trim().toLowerCase());
+          
+          if (isKnownProj) {
+            const canonicalPrefix = (allProjects || []).find(p => p.code && p.code.toLowerCase() === prefix.toLowerCase())?.code || prefix;
+            const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
+            return `${canonicalPrefix}#${digits}${formattedSuffix}`;
+          }
+        }
+
+        const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
+        return `${query}${formattedSuffix}`;
+      });
+
+      newPred = convertedTokens.join(', ');
+      if (newPred !== oldPred) {
+        predChanged = true;
+      }
+    }
+
+    const codeChanged = (t.taskCodePhu || '') !== (originalTask.taskCodePhu || '');
+    if (codeChanged || predChanged) {
+      changedCount++;
+      const updatedAt = new Date().toISOString();
+      const updatePayload: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string } = {
+        id: t.id,
+        updatedAt
+      };
+      if (codeChanged) updatePayload.taskCodePhu = t.taskCodePhu;
+      if (predChanged) updatePayload.predecessor = newPred;
+      updatesToSave.push(updatePayload);
+
+      return {
+        ...t,
+        predecessor: newPred,
+        updatedAt
+      };
+    }
+
+    return t;
+  });
+
+  return {
+    updatedTasks: finalTasks,
+    changedCount,
+    updatesToSave
+  };
+}
+
 
