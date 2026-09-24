@@ -115,7 +115,7 @@ export function PredecessorMultiInput({
     if (!clean) return;
 
     const cleanAlpha = clean.replace(/[^a-z0-9]/g, '');
-    const cleanPrefix = clean.split(/[-_\s]+/)[0] || clean;
+    const cleanPrefix = clean.split(/[-_#\s]+/)[0] || clean;
 
     const matchedProjects = (projects || []).filter(p => {
       if (!p.code || p.code === currentProjectCode) return false;
@@ -263,7 +263,7 @@ export function PredecessorMultiInput({
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value.toUpperCase();
-    val = val.replace(/[^A-Z0-9\-\+\.,\s]/g, '');
+    val = val.replace(/[^A-Z0-9\-\+\.,\s#]/g, '');
     
     // Auto-resolve preceding token when typing comma
     if (val.endsWith(',')) {

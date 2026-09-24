@@ -173,8 +173,8 @@ export function scoreTaskPredecessorMatch(
   }
 
   // 7. Project Code contains part of query and query contains task number
-  // e.g. query "smz2-85": "smz2" matches project code "HN-TKV-SMZ2" and "85" matches task number
-  const qParts = q.split(/[-_\s]+/).filter(Boolean);
+  // e.g. query "smz2-85" or "smz2#85": "smz2" matches project code "HN-TKV-SMZ2" and "85" matches task number
+  const qParts = q.split(/[-_#\s]+/).filter(Boolean);
   if (qParts.length >= 2) {
     const candidatePCodePart = qParts.slice(0, -1).join('');
     const candidateNumPart = qParts[qParts.length - 1];

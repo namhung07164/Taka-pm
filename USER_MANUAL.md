@@ -1309,6 +1309,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Cơ Chế Bảo Vệ Toàn Vẹn Mã Nhập & Chống Xung Đột Số Thứ Tự (Numerical Conflict Guard & Precision Protection)**:
      + **Bảo vệ mã người dùng gõ**: Khi người dùng nhập một mã cụ thể (ví dụ `B2-B208-2` có đuôi `-2`), hệ thống áp dụng cơ chế *Numerical Conflict Guard* chặt chẽ: các công việc có số thứ tự khác (như `B2-B208-1` mang đuôi `-1` hay `B2-B208-3` mang đuôi `-3`) bị gán điểm trùng khớp bằng 0, tuyệt đối không bao giờ được tự động ép hay thay thế đè lên mã người dùng đã gõ.
      + **Nhận diện toàn vẹn qua bộ lọc (Global Task Visibility Pool)**: Cơ chế phân giải quét toàn bộ kho dữ liệu công việc trong bộ nhớ ứng dụng (`Global Task Store`), đảm bảo nhận diện chính xác các mã công việc ngay cả khi công việc đó đang bị ẩn bởi bộ lọc tìm kiếm hoặc phân quyền phụ trách (Party RBAC).
+   - **Hỗ Trợ Ký Tự `#` (Shift + 3) & Định Dạng Subtask Chuẩn Mới**:
+     + Ô nhập Predecessor cho phép gõ trực tiếp ký tự `#` (thao tác `Shift + 3` trên bàn phím) một cách trơn tru, không bị lọc hay xóa tự động.
+     + Hệ thống hỗ trợ tìm kiếm và gợi ý thông minh với cả định dạng mã subtask có dấu thăng `#` (ví dụ: `B2-B208#1`, `#1`, `smz2#85SS`), tự động phân tách tiền tố dự án và số thứ tự công việc con để đưa ra đề xuất chính xác nhất.
    - **Tải Động & Cảnh Báo Liên Kết Ngoài Dự Án (Cross-Project Predecessor Integration)**:
      + Tự động phát hiện tiền tố dự án ngoài (như `smz2` cho `HN-TKV-SMZ2`) để tải trước danh sách công việc của dự án đó từ máy chủ.
      + Tự động hiển thị hộp thoại xác nhận khi liên kết chéo sang dự án khác để người dùng chủ động kiểm soát.
