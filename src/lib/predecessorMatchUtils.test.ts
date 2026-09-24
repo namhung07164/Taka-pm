@@ -87,22 +87,22 @@ describe('predecessorMatchUtils', () => {
       const match = findClosestTaskMatch('2', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t2');
-      expect(match?.exactTaskCode).toBe('CP-01#2');
+      expect(match?.exactTaskCode).toBe('CP-01-2');
     });
 
-    it('matches partial cross-project code: smz2-85 -> HN-TKV-SMZ2#85', () => {
+    it('matches partial cross-project code: smz2-85 -> HN-TKV-SMZ2-85', () => {
       const match = findClosestTaskMatch('smz2-85', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t3');
-      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2#85');
+      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2-85');
       expect(match?.isExternal).toBe(true);
     });
 
-    it('matches partial cross-project code with # delimiter: smz2#85 -> HN-TKV-SMZ2#85', () => {
+    it('matches partial cross-project code with # delimiter: smz2#85 -> HN-TKV-SMZ2-85', () => {
       const match = findClosestTaskMatch('smz2#85', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t3');
-      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2#85');
+      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2-85');
       expect(match?.isExternal).toBe(true);
     });
 
@@ -110,14 +110,14 @@ describe('predecessorMatchUtils', () => {
       const match = findClosestTaskMatch('#2', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t2');
-      expect(match?.exactTaskCode).toBe('CP-01#2');
+      expect(match?.exactTaskCode).toBe('CP-01-2');
     });
 
     it('matches task number 85 to task with -85 or #85', () => {
       const match = findClosestTaskMatch('85', tasks, projects, tasks, 'CP-01');
       expect(match).not.toBeNull();
       expect(match?.task.id).toBe('t3');
-      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2#85');
+      expect(match?.exactTaskCode).toBe('HN-TKV-SMZ2-85');
     });
 
     it('matches task by name', () => {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PredecessorMultiInput } from '../PredecessorMultiInput';
 import { Task, Project } from '../../types';
-import { normalizeAndHealTaskPredecessors } from '../../lib/ganttUtils';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
@@ -20,16 +19,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   projects: Project[]
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const healedInitial = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
-  const [val, setVal] = useState(healedInitial || (value !== undefined && value !== null ? value : ''));
+  const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isEditing) {
-      const healed = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
-      setVal(healed || (value !== undefined && value !== null ? value : ''));
+      setVal(value !== undefined && value !== null ? value : '');
     }
-  }, [value, task, tasks, projects, isEditing]);
+  }, [value, isEditing]);
 
   const commitSave = (rawVal: string) => {
     setIsEditing(false);
@@ -61,8 +58,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isEditing, val, value, onSave, tasks, projects, task?.projectCode, task?.projectId, task?.projectYear, task?.projectStore, task?.location]);
 
-  const healedVal = task ? normalizeAndHealTaskPredecessors(task, tasks, projects).newPredecessor : '';
-  const displayVal = isEditing ? val : (value !== undefined && value !== null && value !== '' ? value : (healedVal || val));
+  const displayVal = isEditing ? val : (value !== undefined && value !== null ? value : '');
 
   if (!canWrite) {
     return (

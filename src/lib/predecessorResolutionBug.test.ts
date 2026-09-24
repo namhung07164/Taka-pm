@@ -190,4 +190,38 @@ describe('Predecessor Resolution and Subtask Index Matching', () => {
     expect(parsed[0].task?.id).toBe('task-2027-2');
     expect(parsed[0].task?.name).toBe('Re-instatement');
   });
+
+  it('preserves dash format in computeTaskCode and does not convert "-" to "#"', () => {
+    const taskWithDash: Task = {
+      id: 'task-custom-dash',
+      projectId: 'proj-2027',
+      projectCode: 'B2-B208',
+      projectYear: 2027,
+      projectStore: 'HCM',
+      location: 'B2',
+      taskCodePhu: 'B2-B208-2',
+      name: 'Re-instatement'
+    } as unknown as Task;
+
+    const computed = computeTaskCode(mockProjects, mockTasks, taskWithDash);
+    expect(computed).toBe('B2-B208-2');
+  });
+
+  it('resolves predecessor B2-B208-2 directly to Re-instatement in 2027', () => {
+    const taskNoMap = buildTaskNoMap(mockProjects, mockTasks);
+    const contextTask: Task = {
+      id: 'task-2027-3',
+      projectId: 'proj-2027',
+      projectCode: 'B2-B208',
+      projectYear: 2027,
+      projectStore: 'HCM',
+      location: 'B2',
+      name: 'Handover'
+    } as unknown as Task;
+
+    const parsed = parsePredecessors('B2-B208-2', taskNoMap, contextTask);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].task?.id).toBe('task-2027-2');
+    expect(parsed[0].task?.name).toBe('Re-instatement');
+  });
 });

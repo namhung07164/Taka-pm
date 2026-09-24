@@ -220,18 +220,16 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
 4. **Tự Động Cập Nhật Predecessor Của Task Con Khi Đổi Task Code Mẹ (Hỗ Trợ Task Code Chứa Dấu Phẩy ",")**:
    - Khi chỉnh sửa mã công việc mẹ (`Task Code` / `taskCodePhu`), hệ thống tự động quét và cập nhật lại mã tương ứng trong chuỗi `Predecessor` của tất cả các Task con phụ thuộc mà không làm gián đoạn chuỗi liên kết tiến độ.
    - **Xử lý đặc biệt cho Task Code có chứa dấu phẩy `","`** (ví dụ mã công việc dạng `L1,L2-01`): Thuật toán nhận diện thông minh bảo vệ toàn vẹn chuỗi ký tự của Task Code, phân biệt chính xác dấu phẩy nằm bên trong mã với dấu phẩy dùng để ngăn cách giữa các Predecessor khác nhau, tuyệt đối không bị tách nhầm thành nhiều tiền nhiệm rời rạc hay làm mất dữ liệu.
-5. **Chuẩn Định Dạng Mã Task Phụ Dạng "#" & Cơ Chế Chữa Lành Tự Động (Subtask Code Standard "#" & Auto-Healing)**:
-   - **Định dạng chuẩn `#` (vd: `B2-B208#1`, `CP-01#2`)**:
-     + Nhằm phân biệt rõ ràng giữa dấu gạch ngang trong mã dự án (ví dụ `B2-B208`, `HN-TKV-SMZ2`) và số thứ tự công việc con, hệ thống sử dụng dấu `#` làm dấu phân tách chính thức (`ProjectCode#Index`, ví dụ `B2-B208#1`, `B2-B208#2`).
-     + Dấu `#` giúp tránh hoàn toàn nhầm lẫn với dấu trừ toán học hoặc độ trễ âm (Lag) trong chuỗi tiền nhiệm (`FS-1`).
-   - **Tự động chuyển đổi toàn bộ mã phụ và tiền nhiệm cũ sang `#` (Seamless Migration)**:
-     + Khi người dùng truy cập bảng chi tiết, hệ thống tự động quét và nâng cấp tất cả các mã phụ `taskCodePhu` và chuỗi tiền nhiệm `Predecessor` từ chuẩn cũ `-` sang chuẩn `#` (vd: `B2-B208-1` ➜ `B2-B208#1`, `smz2-85` ➜ `HN-TKV-SMZ2#85`).
-     + Tiến trình chạy ngầm qua từng đợt (chunks) không làm gián đoạn hay đơ giao diện (`0ms Optimistic UI`).
+5. **Chuẩn Định Dạng Mã Task Phụ & Bảo Toàn Dữ Liệu Tiền Nhiệm (Subtask Code & Predecessor Integrity)**:
+   - **Hỗ trợ linh hoạt cả định dạng `#` và `-`**:
+     + Hệ thống hỗ trợ linh hoạt cả 2 định dạng phân tách: dấu `#` (`ProjectCode#Index`, ví dụ `B2-B208#2`) và dấu gạch ngang `-` (`ProjectCode-Index`, ví dụ `B2-B208-2`).
+     + **Tôn trọng định dạng người dùng (No Forced Auto-Conversion)**: Hệ thống giữ nguyên vẹn 100% mã do người dùng nhập hoặc lưu trữ trong dữ liệu, không tự động cưỡng bức chuyển đổi ký tự `-` sang `#`.
+   - **Bảo Toàn Chuỗi Predecessor & Tính Nhất Quán Trong - Ngoài (Predecessor Modal & View Integrity)**:
+     + Khi mở cửa sổ Task Modal hoặc sửa nhanh trên bảng DetailTab, giá trị `Predecessor` được giữ nguyên vẹn tuyệt đối từ cơ sở dữ liệu (ví dụ ở ngoài bảng là `B2-B208#2` thì trong Modal hiển thị chính xác `B2-B208#2`, không bị logic quét ngầm ghi đè hay thay đổi thành `#1`).
    - **Bảo Vệ Xung Đột Số (Numerical Conflict Guard)**:
-      + **Bảo đảm chuẩn xác Subtask Index**: Khi nhập hoặc chọn mã công việc (như B2-B208#2), hệ thống áp dụng cơ chế bảo vệ số thứ tự, đảm bảo 100% liên kết chính xác Subtask #2 (Re-instatement) và không bao giờ bị lệch sang Subtask #1 (Hoarding up).
+      + **Bảo đảm chuẩn xác Subtask Index**: Khi nhập hoặc chọn mã công việc (như `B2-B208#2` hoặc `B2-B208-2`), hệ thống áp dụng cơ chế bảo vệ số thứ tự, đảm bảo 100% liên kết chính xác Subtask #2 (Re-instatement) và không bao giờ bị lệch sang Subtask #1 (Hoarding up).
       + **Hiệu năng lưu tức thời (Zero-Lag Save Engine)**: Lưu công việc và tính toán mốc ngày trong 0ms, loại bỏ hoàn toàn các vòng lặp quét nền ngầm gây đơ hoặc giật lag ứng dụng.
-     + Khi người dùng gõ tìm kiếm tiền nhiệm có số thứ tự cụ thể (ví dụ nhập `B2-B208-2` hoặc `#2` hoặc `2`), hệ thống chặn tuyệt đối việc ép gợi ý về các task khác số (như `B2-B208#1`).
-     + Nếu gõ theo định dạng cũ có dấu `-` (ví dụ `B2-B208-2`), hệ thống tự động hiểu và chuẩn hóa chính xác sang `B2-B208#2`.
+     + Khi người dùng gõ tìm kiếm tiền nhiệm có số thứ tự cụ thể (ví dụ nhập `B2-B208-2` hoặc `#2` hoặc `2`), hệ thống đối soát chính xác số thứ tự tương ứng, chặn tuyệt đối việc ép gợi ý về các task khác số (như `B2-B208#1`).
    - **Tự Động Đồng Bộ Chuỗi Predecessor Khi Đổi Mã Dự Án (Project Code Cascade)**:
      + Khi chỉnh sửa mã dự án trong cửa sổ chỉnh sửa dự án hoặc trên bảng chi tiết:
        * Hệ thống tự động cập nhật lại mã dự án và mã công việc phụ (`taskCodePhu` ví dụ: `PRJ-01#1` ➜ `PRJ-02#1`).

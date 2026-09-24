@@ -441,39 +441,11 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   const orderNum = i !== -1 ? i + 1 : ((task.orderIndex !== undefined ? task.orderIndex : 0) + 1);
   const defaultCode = currentPCode ? `${currentPCode}#${orderNum}` : '';
 
-  if (!task.taskCodePhu || !task.taskCodePhu.trim()) {
-    return defaultCode;
+  if (task.taskCodePhu && task.taskCodePhu.trim()) {
+    return task.taskCodePhu.trim();
   }
 
-  const trimmedPhu = task.taskCodePhu.trim();
-  const lowerPhu = trimmedPhu.toLowerCase();
-  const lowerPCode = currentPCode.toLowerCase();
-
-  // If already formatted with '#', e.g. "B2-B208#1"
-  if (lowerPCode && lowerPhu.startsWith(lowerPCode + '#')) {
-    return trimmedPhu;
-  }
-
-  // If using legacy '-' format e.g. "B2-B208-1", convert to '#'
-  if (lowerPCode && lowerPhu.startsWith(lowerPCode + '-')) {
-    const suffix = trimmedPhu.substring(lowerPCode.length + 1);
-    return `${currentPCode}#${suffix}`;
-  }
-
-  if (lowerPCode) {
-    const pCodeParts = lowerPCode.split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
-    const matchedPart = pCodeParts.find(part => lowerPhu.startsWith(part + '#') || lowerPhu.startsWith(part + '-'));
-    if (matchedPart) {
-      const suffix = trimmedPhu.substring(matchedPart.length + 1);
-      return `${currentPCode}#${suffix}`;
-    }
-  }
-
-  if (currentPCode) {
-    return defaultCode;
-  }
-
-  return trimmedPhu;
+  return defaultCode;
 }
 
 export function parsePredecessors(predecessorString: string, taskNoMap: Map<string, Task[]>, contextTask?: Task) {
@@ -1242,24 +1214,6 @@ export function normalizeAndHealTaskPredecessors(
             }
           }
         }
-      }
-    }
-
-    // Direct regex migration fallback if token is in legacy format "PROJ-1" -> "PROJ#1"
-    const legacyDashMatch = baseToken.match(/^(.+)-(\d+)$/);
-    if (legacyDashMatch) {
-      const pCandidate = legacyDashMatch[1].trim();
-      const numCandidate = legacyDashMatch[2];
-      const pLower = pCandidate.toLowerCase();
-      const isKnownProject = projects.some(p => {
-        if (!p || !p.code) return false;
-        const code = p.code.toLowerCase();
-        return code === pLower || code.includes(pLower) || pLower.includes(code);
-      });
-      if (isKnownProject || pLower === String(task.projectCode || '').trim().toLowerCase()) {
-        changed = true;
-        const migratedToken = `${pCandidate}#${numCandidate}`;
-        return `${migratedToken}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
       }
     }
 
