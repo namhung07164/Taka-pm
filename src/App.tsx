@@ -2827,8 +2827,9 @@ const handlePrintToPDF = async () => {
 
                       if (layoutMatch?.hasUnit) {
                         // 1. Synchronize global Year & Store filters if needed
-                        if (layoutMatch.project?.year && String(layoutMatch.project.year) !== globalYearFilter) {
-                          setGlobalYearFilter(String(layoutMatch.project.year));
+                        const targetYear = layoutMatch.year || (layoutMatch.project?.year ? String(layoutMatch.project.year) : (notif.projectYear ? String(notif.projectYear) : ''));
+                        if (targetYear && targetYear !== globalYearFilter) {
+                          setGlobalYearFilter(targetYear);
                         }
                         if (layoutMatch.store && globalStoreFilter !== "all" && layoutMatch.store.toLowerCase() !== globalStoreFilter.toLowerCase()) {
                           setGlobalStoreFilter("all");
@@ -2838,7 +2839,7 @@ const handlePrintToPDF = async () => {
                         setLayoutTabFilters({
                           store: layoutMatch.store,
                           location: layoutMatch.location,
-                          projectCode: layoutMatch.unitCode,
+                          projectCode: layoutMatch.unitCode || layoutMatch.project?.code || notif.projectCode,
                           sourceTaskId: layoutMatch.task?.id,
                         });
 
@@ -2862,7 +2863,44 @@ const handlePrintToPDF = async () => {
                         return;
                       }
 
-                      // 5. If project has no unit in layout tab, keep standard deep link flow
+                      // 5. If project has no unit in layout tab (or delegation without layout unit):
+                      // Link to Task Detail tab and open project modal with comment tab
+                      if (notif.targetType === "task_delegation") {
+                        handleTabChange("detail");
+                        const targetProject =
+                          layoutMatch?.project ||
+                          combinedProjects.find(
+                            (p) =>
+                              (notif.projectCode && p.code?.toLowerCase() === notif.projectCode.toLowerCase()) ||
+                              String(p.id) === String(notif.targetId) ||
+                              String(p.no) === String(notif.targetId)
+                          );
+
+                        if (targetProject) {
+                          setEditingProject(targetProject);
+                          setIsReadOnlyModal(false);
+                          setModalInitialTab("chat");
+                          setIsProjectModalOpen(true);
+                        } else if (layoutMatch?.task) {
+                          setEditingTask(layoutMatch.task);
+                          setIsReadOnlyModal(false);
+                          setModalInitialTab("chat");
+                          setIsTaskModalOpen(true);
+                        } else {
+                          executeDeepLinkRef.current?.(
+                            notif.targetType,
+                            notif.targetId,
+                            {
+                              store: notif.projectStore,
+                              year: String(notif.projectYear),
+                              code: notif.projectCode,
+                            }
+                          );
+                        }
+                        return;
+                      }
+
+                      // 6. Default deep link flow for other types
                       executeDeepLinkRef.current?.(
                         notif.targetType,
                         notif.targetId,

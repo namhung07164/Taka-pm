@@ -1,11 +1,13 @@
 import { Project, Task, ActiveNotification } from '../types';
 import { useDataStore } from '../components/PictureMapping/DataContext';
 import { useAppStore } from '../store/useAppStore';
+import { extractAllProjectCodes, projectMatchesUnitCode } from './utils';
 
 export interface LayoutUnitMatchResult {
   hasUnit: boolean;
   store: string;
   location: string;
+  year?: string;
   unitCode: string;
   project?: Project | null;
   task?: Task | null;
@@ -31,8 +33,8 @@ export const extractFloorFromCodeOrName = (str?: string | null): string | null =
 };
 
 /**
- * Searches if a notification (or project/task) has a corresponding unit on the Live Layout floor plans.
- * Returns location, store, matched unit code, and comment flags if found; returns null otherwise.
+ * Searches if a notification (or project/task/delegation) has a corresponding unit on the Live Layout floor plans.
+ * Returns location, store, year, matched unit code, and comment flags if found; returns null otherwise.
  */
 export function findProjectLayoutUnit(
   notif: ActiveNotification,
@@ -66,7 +68,26 @@ export function findProjectLayoutUnit(
           (p.id && String(p.id).toLowerCase() === targetId) ||
           (p.no && String(p.no).toLowerCase() === targetId) ||
           (p.code && String(p.code).toLowerCase() === targetId) ||
-          (p.code && String(p.code).toLowerCase() === notifProjCode)
+          (p.code && String(p.code).toLowerCase() === notifProjCode) ||
+          (p.linkCodes && extractAllProjectCodes(p).includes(targetId)) ||
+          (p.linkCodes && notifProjCode && extractAllProjectCodes(p).includes(notifProjCode))
+      ) || null;
+  } else if (targetType === 'task_delegation') {
+    const delegationGroups = useAppStore.getState().delegationGroups || [];
+    const matchedGroup = delegationGroups.find((g) => g.id && String(g.id).toLowerCase() === targetId) || null;
+    
+    if (matchedGroup?.taskId) {
+      matchedTask = tasksList.find((t) => t.id && String(t.id).toLowerCase() === String(matchedGroup.taskId).toLowerCase()) || null;
+    }
+
+    const groupProjCode = (matchedGroup?.projectCode || matchedTask?.projectCode || notifProjCode).toLowerCase();
+    matchedProject =
+      projectsList.find(
+        (p) =>
+          (p.code && String(p.code).toLowerCase() === groupProjCode) ||
+          (matchedGroup?.projectId && (p.id === matchedGroup.projectId || String(p.no) === String(matchedGroup.projectId))) ||
+          (matchedTask && (matchedTask as any).projectId === p.id) ||
+          (p.linkCodes && groupProjCode && extractAllProjectCodes(p).includes(groupProjCode))
       ) || null;
   }
 
@@ -84,15 +105,17 @@ export function findProjectLayoutUnit(
   // 2. Build Candidate Keys to match against layout map units
   const candidateKeys = new Set<string>();
   if (notifProjCode) candidateKeys.add(notifProjCode);
-  if (matchedProject?.code) candidateKeys.add(String(matchedProject.code).trim().toLowerCase());
-  if ((matchedProject as any)?.unit) candidateKeys.add(String((matchedProject as any).unit).trim().toLowerCase());
-  if (matchedProject?.name) candidateKeys.add(String(matchedProject.name).trim().toLowerCase());
+  if (matchedProject) {
+    const allProjCodes = extractAllProjectCodes(matchedProject);
+    allProjCodes.forEach(c => candidateKeys.add(c));
+    if ((matchedProject as any)?.unit) candidateKeys.add(String((matchedProject as any).unit).trim().toLowerCase());
+    if (matchedProject?.name) candidateKeys.add(String(matchedProject.name).trim().toLowerCase());
+  }
   if (matchedTask?.taskCodePhu) candidateKeys.add(String(matchedTask.taskCodePhu).trim().toLowerCase());
   if (matchedTask?.projectCode) candidateKeys.add(String(matchedTask.projectCode).trim().toLowerCase());
 
-  if (candidateKeys.size === 0) {
-    return null;
-  }
+  const candidateArray = Array.from(candidateKeys);
+  const targetYear = String(matchedProject?.year || notif.projectYear || '2026');
 
   // 3. Search in DataContext mapVersions across HCM & HN
   try {
@@ -106,19 +129,23 @@ export function findProjectLayoutUnit(
       if (!v.location) continue;
       const vStore = v.store || matchedProject?.store || notif.projectStore || 'HCM';
       const vLoc = String(v.location).trim().toUpperCase();
+      const vYear = v.year ? String(v.year) : targetYear;
 
       // Check group mappings
       if (v.groupMappings && typeof v.groupMappings === 'object') {
-        // Group ID match or unit array match
         for (const [groupId, unitIds] of Object.entries(v.groupMappings)) {
           if (Array.isArray(unitIds)) {
-            const hasUnit = unitIds.some((uid) => candidateKeys.has(String(uid).trim().toLowerCase()));
+            const hasUnit = unitIds.some((uid) => {
+              const strUid = String(uid).trim().toLowerCase();
+              return candidateKeys.has(strUid) || projectMatchesUnitCode(candidateArray, strUid);
+            });
             if (hasUnit) {
               const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode || unitIds[0];
               return {
                 hasUnit: true,
                 store: vStore,
                 location: vLoc,
+                year: vYear,
                 unitCode: String(uCode),
                 project: matchedProject,
                 task: matchedTask,
@@ -128,7 +155,6 @@ export function findProjectLayoutUnit(
               };
             }
           }
-          // Check if group itself matches candidates
           const groupObj = v.groups?.find((g) => g.id === groupId);
           if (groupObj) {
             const gCode = ((groupObj as any).code || '').trim().toLowerCase();
@@ -140,6 +166,7 @@ export function findProjectLayoutUnit(
                   hasUnit: true,
                   store: vStore,
                   location: vLoc,
+                  year: vYear,
                   unitCode: String(uCode),
                   project: matchedProject,
                   task: matchedTask,
@@ -158,8 +185,8 @@ export function findProjectLayoutUnit(
       if (vUnits && Array.isArray(vUnits)) {
         const foundUnit = vUnits.find(
           (u: any) =>
-            (u.name && candidateKeys.has(String(u.name).trim().toLowerCase())) ||
-            (u.id && candidateKeys.has(String(u.id).trim().toLowerCase()))
+            (u.name && (candidateKeys.has(String(u.name).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.name)))) ||
+            (u.id && (candidateKeys.has(String(u.id).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.id))))
         );
         if (foundUnit) {
           const uCode = foundUnit.name || matchedProject?.code || notif.projectCode || foundUnit.id;
@@ -167,6 +194,7 @@ export function findProjectLayoutUnit(
             hasUnit: true,
             store: vStore,
             location: vLoc,
+            year: vYear,
             unitCode: String(uCode),
             project: matchedProject,
             task: matchedTask,
@@ -182,9 +210,9 @@ export function findProjectLayoutUnit(
     const unitInfo = dataState.unitInfo || [];
     const matchedUInfo = unitInfo.find(
       (u: any) =>
-        (u.unit && candidateKeys.has(String(u.unit).trim().toLowerCase())) ||
-        (u.name && candidateKeys.has(String(u.name).trim().toLowerCase())) ||
-        (u.unitId && candidateKeys.has(String(u.unitId).trim().toLowerCase()))
+        (u.unit && (candidateKeys.has(String(u.unit).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.unit)))) ||
+        (u.name && (candidateKeys.has(String(u.name).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.name)))) ||
+        (u.unitId && (candidateKeys.has(String(u.unitId).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.unitId))))
     );
 
     if (matchedUInfo) {
@@ -195,6 +223,7 @@ export function findProjectLayoutUnit(
         hasUnit: true,
         store,
         location,
+        year: matchedUInfo.year ? String(matchedUInfo.year) : targetYear,
         unitCode: String(uCode),
         project: matchedProject,
         task: matchedTask,
@@ -214,14 +243,15 @@ export function findProjectLayoutUnit(
       if (record?.mapUnits && Array.isArray(record.mapUnits)) {
         const foundUnit = record.mapUnits.find(
           (u) =>
-            (u.name && candidateKeys.has(String(u.name).trim().toLowerCase())) ||
-            (u.id && candidateKeys.has(String(u.id).trim().toLowerCase()))
+            (u.name && (candidateKeys.has(String(u.name).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.name)))) ||
+            (u.id && (candidateKeys.has(String(u.id).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.id))))
         );
         if (foundUnit) {
           return {
             hasUnit: true,
             store,
             location: cleanLoc,
+            year: targetYear,
             unitCode: String(foundUnit.name || matchedProject?.code || notif.projectCode || foundUnit.id),
             project: matchedProject,
             task: matchedTask,
@@ -244,7 +274,6 @@ export function findProjectLayoutUnit(
       const store = matchedProject?.store || notif.projectStore || 'HCM';
       const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode;
       if (uCode) {
-        // Confirm if floor has map units in storeLocationData
         const partKey = `${store}_${extractedFloor}`;
         const record = dataState.storeLocationData?.[partKey];
         if (record?.mapUnits && record.mapUnits.length > 0) {
@@ -252,6 +281,7 @@ export function findProjectLayoutUnit(
             hasUnit: true,
             store,
             location: extractedFloor,
+            year: targetYear,
             unitCode: String(uCode),
             project: matchedProject,
             task: matchedTask,
@@ -266,5 +296,17 @@ export function findProjectLayoutUnit(
     console.warn('Error in findProjectLayoutUnit:', err);
   }
 
-  return null;
+  // Return project/task info even if unit wasn't found on drawing
+  return {
+    hasUnit: false,
+    store: matchedProject?.store || notif.projectStore || 'HCM',
+    location: String(matchedProject?.location || (matchedTask as any)?.location || 'L1').trim().toUpperCase(),
+    year: targetYear,
+    unitCode: notif.projectCode || matchedProject?.code || '',
+    project: matchedProject,
+    task: matchedTask,
+    isComment,
+    isTaskComment,
+    isProjectComment,
+  };
 }

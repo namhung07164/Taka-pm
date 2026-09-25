@@ -20,7 +20,6 @@ import R2UploadModal from '../R2UploadModal';
 import { uploadFilesToR2 } from '../../lib/r2Upload';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
-import CloudSyncManager from '../CloudSync/CloudSyncManager';
 
 interface ReviewTabProps {
   units: UnitShape[];
@@ -715,8 +714,6 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <CloudSyncManager scope="review" compact showCleanButton={false} />
-
             {/* Year Filter */}
             <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-lg shadow-inner">
               <Calendar size={12} className="text-brand-400" />

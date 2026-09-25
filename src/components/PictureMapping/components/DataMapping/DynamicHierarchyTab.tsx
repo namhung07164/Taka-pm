@@ -32,7 +32,6 @@ import {
   BackgroundSyncStatus,
 } from "../../lib/dynamicExportService";
 import { useDynamicRules } from "../../hooks/useDynamicRules";
-import CloudSyncManager from "../CloudSync/CloudSyncManager";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -863,8 +862,6 @@ function DynamicHierarchyTab({
                       </span>
                     )}
                   </div>
-
-                  <CloudSyncManager scope="dynamic" compact showCleanButton={false} />
 
                   <button
                     onClick={applyRules}
