@@ -120,6 +120,22 @@ export function getStoredR2Credentials(): R2Credentials | null {
     // fallback to localStorage if store not yet ready
   }
 
+  // Check taka_cache_r2_config_v1
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    try {
+      const cached = localStorage.getItem('taka_cache_r2_config_v1');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.accountId && parsed?.accessKeyId && parsed?.secretAccessKey && parsed?.bucketName) {
+          accountId = parsed.accountId.trim();
+          accessKeyId = parsed.accessKeyId.trim();
+          secretAccessKey = parsed.secretAccessKey.trim();
+          bucketName = parsed.bucketName.trim();
+        }
+      }
+    } catch {}
+  }
+
   if (!accountId) accountId = (localStorage.getItem('r2_account_id') || '').trim();
   if (!accessKeyId) accessKeyId = (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
   if (!secretAccessKey) secretAccessKey = (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
@@ -129,6 +145,87 @@ export function getStoredR2Credentials(): R2Credentials | null {
     return null;
   }
   return { accountId, accessKeyId, secretAccessKey, bucketName };
+}
+
+/**
+ * Asynchronously retrieve R2 credentials, with fallback to Firestore taka_config/r2_credentials
+ * on fresh accounts / cold boots before configCacheService sync completes.
+ */
+export async function getStoredR2CredentialsAsync(): Promise<R2Credentials | null> {
+  const syncCreds = getStoredR2Credentials();
+  if (syncCreds) return syncCreds;
+
+  try {
+    const { doc, getDoc } = await import('firebase/firestore');
+    const { db, APP_ID } = await import('../../../lib/firebase');
+    const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
+    if (r2Doc.exists()) {
+      const data = r2Doc.data() as any;
+      if (data?.accountId && data?.accessKeyId && data?.secretAccessKey && data?.bucketName) {
+        const creds: R2Credentials = {
+          accountId: (data.accountId || '').trim(),
+          accessKeyId: (data.accessKeyId || '').trim(),
+          secretAccessKey: (data.secretAccessKey || '').trim(),
+          bucketName: (data.bucketName || '').trim(),
+        };
+        try {
+          useAppStore.getState().setR2Config(creds);
+        } catch {}
+        try {
+          localStorage.setItem('r2_account_id', creds.accountId);
+          localStorage.setItem('r2_bucket_name', creds.bucketName);
+          localStorage.setItem('r2_access_key', creds.accessKeyId);
+          localStorage.setItem('r2_access_key_id', creds.accessKeyId);
+          localStorage.setItem('r2_secret_key', creds.secretAccessKey);
+          localStorage.setItem('r2_secret_access_key', creds.secretAccessKey);
+          localStorage.setItem('taka_cache_r2_config_v1', JSON.stringify(creds));
+        } catch {}
+        return creds;
+      }
+    }
+  } catch (err) {
+    console.warn('[R2 Async Creds] Failed to fetch r2_credentials from Firestore:', err);
+  }
+  return null;
+}
+
+/**
+ * Resolves an r2:// link, R2 object key, or expired signed URL into a valid presigned HTTP GET URL.
+ */
+export async function resolveR2UrlToHttp(url: string | null | undefined): Promise<string | null> {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+
+  const r2Key = extractR2Key(trimmed);
+  // If it's a regular external HTTP URL (not R2), return directly
+  if (!r2Key && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))) {
+    return trimmed;
+  }
+
+  if (r2Key) {
+    const creds = await getStoredR2CredentialsAsync();
+    if (creds) {
+      try {
+        const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
+        const s3 = new S3Client({
+          region: 'auto',
+          endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+          credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+        });
+        const command = new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key });
+        return await getSignedUrl(s3, command, { expiresIn: 3600 * 24 * 7 });
+      } catch (err) {
+        console.warn('[R2 Resolve] Could not generate presigned url for key:', r2Key, err);
+      }
+    }
+  }
+
+  return trimmed.startsWith('r2://') ? null : trimmed;
 }
 
 /**

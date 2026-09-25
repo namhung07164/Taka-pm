@@ -127,6 +127,12 @@ export function cacheR2Config(config: { accountId: string; bucketName: string; a
   try {
     if (config) {
       safeSetItemLocal(CACHE_KEYS.R2_CONFIG, JSON.stringify(config));
+      safeSetItemLocal('r2_account_id', config.accountId || '');
+      safeSetItemLocal('r2_bucket_name', config.bucketName || '');
+      safeSetItemLocal('r2_access_key', config.accessKeyId || '');
+      safeSetItemLocal('r2_access_key_id', config.accessKeyId || '');
+      safeSetItemLocal('r2_secret_key', config.secretAccessKey || '');
+      safeSetItemLocal('r2_secret_access_key', config.secretAccessKey || '');
     } else {
       safeSetItemLocal(CACHE_KEYS.R2_CONFIG, "");
     }

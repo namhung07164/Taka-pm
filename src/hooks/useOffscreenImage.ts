@@ -7,12 +7,14 @@ import {
   fetchAndCacheImageBlob,
   normalizeImageCacheKey,
 } from '../lib/imageDBCache';
+import { resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
 
 /**
  * Custom hook to load & decode floorplan images off the Main Thread.
  * Features:
  * - 0ms In-Memory LRU Cache Hit
  * - IndexedDB Persistent Storage for instant offline / cold-boot (<30ms)
+ * - Automatic resolution and caching for Cloudflare R2 links (r2:// and signed URLs)
  * - Worker-based createImageBitmap() off-thread decoding
  * - Fallback to Blob ObjectURL and HTMLImageElement.decode()
  */
@@ -31,7 +33,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
   });
 
   useEffect(() => {
-    if (!url) {
+    if (!url || typeof url !== 'string' || !url.trim()) {
       setImage(null);
       setStatus('failed');
       return;
@@ -51,10 +53,10 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
     async function loadWithIndexedDBCache() {
       try {
-        // Step A: Check IndexedDB
+        // Step A: Check IndexedDB (works across r2://, key, and signed URL)
         let blob = await getCachedBlobFromIDB(url!);
 
-        // Step B: If missing from IDB, fetch and cache
+        // Step B: If missing from IDB, fetch and cache (auto-resolves r2:// to presigned HTTP)
         if (!blob) {
           blob = await fetchAndCacheImageBlob(url!);
         }
@@ -104,10 +106,21 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           return;
         }
 
-        // Step E: If direct fetch failed (e.g. CORS limitation), fallback to HTMLImageElement
+        // Step E: If direct blob fetch failed (e.g. CORS limitation), fallback to HTMLImageElement
+        let fallbackSrc = url!;
+        if (fallbackSrc.startsWith('r2://') || (!fallbackSrc.startsWith('http://') && !fallbackSrc.startsWith('https://') && !fallbackSrc.startsWith('blob:') && !fallbackSrc.startsWith('data:'))) {
+          const resolved = await resolveR2UrlToHttp(fallbackSrc);
+          if (resolved) {
+            fallbackSrc = resolved;
+          } else {
+            if (isMounted) setStatus('failed');
+            return;
+          }
+        }
+
         const fallbackImg = new Image();
         if (crossOrigin) fallbackImg.crossOrigin = crossOrigin;
-        fallbackImg.src = url!;
+        fallbackImg.src = fallbackSrc;
 
         const onFallbackDone = () => {
           if (isMounted) {

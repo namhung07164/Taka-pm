@@ -4,7 +4,7 @@ import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { calculateSummaryData } from './summaryData';
-import { getStoredR2Credentials, uploadSingleR2File, extractR2Key, getS3Sdk } from './r2Upload';
+import { getStoredR2Credentials, getStoredR2CredentialsAsync, uploadSingleR2File, extractR2Key, getS3Sdk } from './r2Upload';
 import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
 
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
@@ -363,7 +363,7 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
  * Bước 1: Tải toàn bộ cấu hình và dữ liệu từ Cloudflare R2 về ứng dụng
  */
 export async function loadStoreFromCloudR2(): Promise<{ success: boolean; message: string }> {
-  const creds = getStoredR2Credentials();
+  const creds = await getStoredR2CredentialsAsync();
   if (!creds) {
     throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng cấu hình R2 trước.');
   }
@@ -510,7 +510,7 @@ export async function saveStoreToCloudR2(
   targetStore: 'HCM' | 'HN',
   customStoreLocationData?: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>
 ): Promise<{ success: boolean; message: string }> {
-  const creds = getStoredR2Credentials();
+  const creds = await getStoredR2CredentialsAsync();
   if (!creds) {
     throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" để kết nối.');
   }
@@ -661,7 +661,7 @@ export async function triggerBackgroundR2Sync(
   targetStore: 'HCM' | 'HN',
   customStoreLocationData?: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId?: string | null }>
 ): Promise<void> {
-  const creds = getStoredR2Credentials();
+  const creds = await getStoredR2CredentialsAsync();
   if (!creds) {
     console.info('[BackgroundSync] R2 credentials not configured, skipping background upload.');
     return;

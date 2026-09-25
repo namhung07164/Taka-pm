@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CloudUpload, CloudDownload, RefreshCw, Sparkles } from 'lucide-react';
-import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
+import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, getStoredR2CredentialsAsync, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
 import { cleanOrphanR2Files } from '../../../../lib/r2StorageUtils';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
 import { MapVersion } from '../DataMapping/types';
@@ -39,13 +39,19 @@ export default function CloudSyncManager() {
   } = useDataStore();
 
   React.useEffect(() => {
-    const creds = getStoredR2Credentials();
-    if (!hasAutoLoaded && creds && creds.accountId && creds.accessKeyId) {
+    let isMounted = true;
+    async function checkAutoLoad() {
+      if (hasAutoLoaded) return;
       if (Object.keys(storeLocationData).length === 0 && mapVersions.length === 0) {
-        setHasAutoLoaded(true);
-        executeSync('download', true);
+        const creds = await getStoredR2CredentialsAsync();
+        if (isMounted && creds && creds.accountId && creds.accessKeyId) {
+          setHasAutoLoaded(true);
+          executeSync('download', true);
+        }
       }
     }
+    checkAutoLoad();
+    return () => { isMounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAutoLoaded, storeLocationData, mapVersions.length]);
 
@@ -62,7 +68,7 @@ export default function CloudSyncManager() {
     setStatusText(currentAction === 'upload' ? 'Chuẩn bị dữ liệu...' : 'Đang kết nối Cloudflare R2...');
 
     try {
-      const creds = getStoredR2Credentials();
+      const creds = await getStoredR2CredentialsAsync();
       if (!creds) {
         throw new Error('Thiếu thông tin cấu hình Cloudflare R2 trong cài đặt!');
       }

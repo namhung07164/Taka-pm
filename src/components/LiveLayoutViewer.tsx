@@ -112,10 +112,31 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
     setLoading(true);
     setError(null);
     try {
-      const accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
-      const accessKeyId = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
-      const secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
-      const bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
+      let accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
+      let accessKeyId = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+      let secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+      let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
+
+      // If r2Config is not yet populated in store on fresh account boot, fetch directly from Firestore
+      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+        try {
+          const { doc, getDoc } = await import('firebase/firestore');
+          const { db, APP_ID } = await import('../lib/firebase');
+          const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
+          if (r2Doc.exists()) {
+            const r2Data = r2Doc.data() as any;
+            if (r2Data?.accountId && r2Data?.accessKeyId) {
+              accountId = r2Data.accountId;
+              accessKeyId = r2Data.accessKeyId;
+              secretAccessKey = r2Data.secretAccessKey;
+              bucketName = r2Data.bucketName;
+              useAppStore.getState().setR2Config(r2Data);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn("Could not fetch r2_credentials from Firestore:", fetchErr);
+        }
+      }
 
       if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
         initFormFromStorage();
@@ -158,6 +179,37 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
                   }
               }
           }
+
+          // Also resolve signed URLs for legacy data.versions array and data.version at root
+          if (Array.isArray(data.versions)) {
+            for (const v of data.versions) {
+              const imgKey = extractR2Key(v.backgroundUrl);
+              if (imgKey) {
+                const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+                resolvePromises.push(
+                  getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
+                    v.backgroundUrl = url;
+                  }).catch(err => {
+                    console.warn('Could not resolve signed URL for', imgKey, err);
+                  })
+                );
+              }
+            }
+          }
+          if (data.version) {
+            const imgKey = extractR2Key(data.version.backgroundUrl);
+            if (imgKey) {
+              const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+              resolvePromises.push(
+                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
+                  data.version.backgroundUrl = url;
+                }).catch(err => {
+                  console.warn('Could not resolve signed URL for', imgKey, err);
+                })
+              );
+            }
+          }
+
           await Promise.all(resolvePromises);
           setConfig(data);
           try {
@@ -490,7 +542,17 @@ function LiveCanvas({
           part.mapVersions.forEach((v: any) => {
             if (v?.id) {
               const existing = versionsMap.get(v.id) || {};
-              versionsMap.set(v.id, { ...existing, ...v, location: v.location || existing.location || key.split('_')[1] });
+              const resolvedBg = (existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://'))
+                ? existing.backgroundUrl
+                : (v.backgroundUrl && !v.backgroundUrl.startsWith('r2://'))
+                  ? v.backgroundUrl
+                  : (existing.backgroundUrl || v.backgroundUrl);
+              versionsMap.set(v.id, { 
+                ...existing, 
+                ...v, 
+                backgroundUrl: resolvedBg,
+                location: v.location || existing.location || key.split('_')[1] 
+              });
             }
           });
         }
@@ -502,7 +564,17 @@ function LiveCanvas({
       config.versions.forEach((v: any) => {
         if (v?.id) {
           const existing = versionsMap.get(v.id) || {};
-          versionsMap.set(v.id, { ...existing, ...v, store: v.store || 'HCM' });
+          const resolvedBg = (existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://'))
+            ? existing.backgroundUrl
+            : (v.backgroundUrl && !v.backgroundUrl.startsWith('r2://'))
+              ? v.backgroundUrl
+              : (existing.backgroundUrl || v.backgroundUrl);
+          versionsMap.set(v.id, { 
+            ...existing, 
+            ...v, 
+            backgroundUrl: resolvedBg,
+            store: v.store || 'HCM' 
+          });
         }
       });
     }
@@ -537,11 +609,21 @@ function LiveCanvas({
       return [];
     }
 
-    // Filter STRICTLY by year if globalYearFilter is active (synced with Picture tab / Review tab)
+    // Filter by year if globalYearFilter is active (synced with Picture tab / Review tab)
     if (globalYearFilter && globalYearFilter !== 'all') {
       const targetYear = String(globalYearFilter).trim();
       const yearMatched = matched.filter(v => String(v.year || '').trim() === targetYear);
-      return yearMatched;
+      if (yearMatched.length > 0) {
+        return yearMatched;
+      }
+      // If there is no specific version uploaded for this year yet, fallback to the latest available drawing
+      // for this floor (sorted descending by year) so the layout and unit locations are never blank
+      const sortedByYear = [...matched].sort((a, b) => {
+        const yA = Number(a.year) || 0;
+        const yB = Number(b.year) || 0;
+        return yB - yA;
+      });
+      return sortedByYear;
     }
 
     return matched;

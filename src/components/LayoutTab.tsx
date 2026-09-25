@@ -250,20 +250,35 @@ export function LayoutTab({
   }, [locationOptions]);
 
   // Lọc danh sách location:
-  // Dựa vào Review tab: Chỉ hiển thị những location (tầng) thực sự có version trong activeStore và effectiveYear
+  // Dựa vào Review tab: Hiển thị những location (tầng) có version trong activeStore
   const availableLocations = React.useMemo(() => {
+    // 1. Ưu tiên các tầng có version đúng năm effectiveYear
     const yearVersions = allStoreVersions.filter(v => {
       const vYear = String(v.year || '').trim();
       return vYear === String(effectiveYear).trim();
     });
 
-    const locationsWithVersions = Array.from(
+    let locationsWithVersions = Array.from(
       new Set(
         yearVersions
           .map(v => (v.location || '').toUpperCase().trim())
           .filter(Boolean)
       )
     );
+
+    // 2. Nếu năm này chưa có đầy đủ bản vẽ, bổ sung thêm các tầng có bản vẽ ở các năm khác trong cùng Store
+    const allStoreLocs = Array.from(
+      new Set(
+        allStoreVersions
+          .map(v => (v.location || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    );
+    allStoreLocs.forEach(loc => {
+      if (!locationsWithVersions.includes(loc)) {
+        locationsWithVersions.push(loc);
+      }
+    });
 
     if (locationsWithVersions.length > 0) {
       const filtered = userAllowedLocations.filter(loc => 

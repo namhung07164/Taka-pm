@@ -1,3 +1,5 @@
+import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
+
 /**
  * IndexedDB & Memory Cache Manager for CAD Floorplan Images.
  * Provides instant 0ms switching between floors/versions during and across sessions.
@@ -32,6 +34,12 @@ export function normalizeImageCacheKey(url: string | undefined | null): string {
   // Data URLs and Blob URLs use their direct string/prefix
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
+  }
+
+  // Unified persistent key for Cloudflare R2 objects across r2:// links, keys, and signed URLs
+  const r2Key = extractR2Key(trimmed);
+  if (r2Key) {
+    return `r2_object_${r2Key}`;
   }
 
   try {
@@ -200,24 +208,51 @@ export async function setCachedBlobToIDB(url: string, blob: Blob): Promise<void>
  */
 export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> {
   if (!url) return null;
-  const key = normalizeImageCacheKey(url);
+  const trimmed = url.trim();
+  if (!trimmed) return null;
 
-  // Check IDB first
-  const existingBlob = await getCachedBlobFromIDB(url);
+  const key = normalizeImageCacheKey(trimmed);
+
+  // Check IDB first (normalized key matches across r2://, key, and signed URL)
+  const existingBlob = await getCachedBlobFromIDB(trimmed);
   if (existingBlob) return existingBlob;
 
-  // Deduplicate concurrent fetch requests for the same URL
+  // Deduplicate concurrent fetch requests for the same URL/key
   if (inFlightRequests.has(key)) {
     return inFlightRequests.get(key)!;
   }
 
   const fetchPromise = (async () => {
     try {
-      const res = await fetch(url, { mode: 'cors' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let activeFetchUrl = trimmed;
+
+      // If it is an r2:// link or raw key, resolve to a presigned HTTP URL
+      if (activeFetchUrl.startsWith('r2://') || (!activeFetchUrl.startsWith('http://') && !activeFetchUrl.startsWith('https://') && !activeFetchUrl.startsWith('blob:') && !activeFetchUrl.startsWith('data:'))) {
+        const resolved = await resolveR2UrlToHttp(activeFetchUrl);
+        if (!resolved) return null;
+        activeFetchUrl = resolved;
+      }
+
+      let res = await fetch(activeFetchUrl, { mode: 'cors' }).catch(() => null);
+
+      // If fetch failed with 401/403 (expired signed URL), refresh signed URL from R2 and retry once
+      if ((!res || !res.ok) && extractR2Key(trimmed)) {
+        const refreshedUrl = await resolveR2UrlToHttp(trimmed);
+        if (refreshedUrl && refreshedUrl !== activeFetchUrl) {
+          res = await fetch(refreshedUrl, { mode: 'cors' }).catch(() => null);
+        }
+      }
+
+      if (!res || !res.ok) {
+        return null;
+      }
+
       const blob = await res.blob();
-      await setCachedBlobToIDB(url, blob);
-      return blob;
+      if (blob && blob.size > 0) {
+        await setCachedBlobToIDB(trimmed, blob);
+        return blob;
+      }
+      return null;
     } catch (_err) {
       return null;
     } finally {
