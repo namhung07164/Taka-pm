@@ -287,10 +287,10 @@ export function LayoutTab({
       if (filtered.length > 0) {
         return filtered;
       }
-      return locationsWithVersions;
+      return userAllowedLocations;
     }
 
-    // Fallback nếu chưa có version nào:
+    // Fallback if no version exists:
     if (isAdmin) {
       return userAllowedLocations;
     }

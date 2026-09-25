@@ -9,27 +9,32 @@ export function useLocationOptions() {
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const currentUser = useAppStore(state => state.currentUser);
   const locationVisibility = useAppStore(state => state.locationVisibility);
+  const locations = useAppStore(state => state.locations);
   
   return useMemo(() => {
     const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
-    
-    // Filter enrichedProjects based on current year and store
-    const filteredProjects = enrichedProjects.filter(p => {
-      // 1. Check Store
-      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
-      
-      // 2. Check Year
-      const pYear = String(p.year || '');
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-      
-      return true;
+    const isAdmin = currentUser?.role === 'admin';
+    const locPerms = currentUser?.locationPermissions || {};
+    const hasAll = isAdmin || locPerms['all'];
+
+    // 1. All possible locations configured in store or found in projects
+    const allKnownLocations = Array.from(
+      new Set([
+        ...locations,
+        ...enrichedProjects.map(p => p.location).filter(Boolean)
+      ])
+    );
+
+    // 2. Filter locations strictly by user RBAC permissions
+    const permittedLocations = allKnownLocations.filter(loc => {
+      if (!loc || String(loc).trim() === '') return false;
+      if (hasAll) return true;
+      const lLower = String(loc).toLowerCase().trim();
+      return locPerms[lLower] || locPerms[`md-${lLower}`];
     });
+
+    // 3. Filter by locationVisibility config
+    return permittedLocations.filter(loc => locationVisibility[loc] !== false).sort();
     
-    // 3. Extract unique locations
-    const uniqueLocations = [...new Set(filteredProjects.map(p => p.location).filter(Boolean))].sort();
-    
-    // 4. Apply locationVisibility (permissions are already applied in enrichedProjects)
-    return uniqueLocations.filter(loc => locationVisibility[loc] !== false);
-    
-  }, [enrichedProjects, globalStoreFilter, globalYearFilter, currentUser, locationVisibility]);
+  }, [enrichedProjects, locations, globalStoreFilter, globalYearFilter, currentUser, locationVisibility]);
 }

@@ -58,8 +58,10 @@ export default React.memo(function DataMappingTab() {
     if (isAdmin || currentUser.locationPermissions?.['all']) {
       return baseList;
     }
-    const filtered = baseList.filter(loc => currentUser.locationPermissions?.[loc.toLowerCase()]);
-    return filtered.length > 0 ? filtered : defaults.slice(0, 1);
+    return baseList.filter(loc => {
+      const lLower = loc.toLowerCase();
+      return currentUser.locationPermissions?.[lLower] || currentUser.locationPermissions?.[`md-${lLower}`];
+    });
   }, [appLocations, appProjects, currentUser, isAdmin]);
   
   // Shared State
