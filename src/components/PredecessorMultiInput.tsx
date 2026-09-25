@@ -22,6 +22,7 @@ import {
 export function PredecessorMultiInput({
   value,
   onChange,
+  onCommit,
   tasks,
   projects,
   currentProjectId,
@@ -33,6 +34,7 @@ export function PredecessorMultiInput({
 }: {
   value: string;
   onChange: (val: string) => void;
+  onCommit?: (val: string) => void;
   tasks: Task[];
   projects: Project[];
   currentProjectId?: string;
@@ -103,9 +105,12 @@ export function PredecessorMultiInput({
     return parts.join(', ');
   };
 
-  const handleResolveAndClose = () => {
+  const handleResolveAndClose = (triggerCommit: boolean = false) => {
     setIsOpen(false);
-    if (!value) return;
+    if (!value) {
+      if (triggerCommit) onCommit?.('');
+      return;
+    }
     const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode, currentContext);
     const merged = enforceRules(resolved, true);
     if (merged !== value) {
@@ -140,6 +145,13 @@ export function PredecessorMultiInput({
       }
 
       onChange(merged);
+      if (triggerCommit) {
+        onCommit?.(merged);
+      }
+    } else {
+      if (triggerCommit) {
+        onCommit?.(merged);
+      }
     }
   };
 
@@ -238,7 +250,7 @@ export function PredecessorMultiInput({
     setHighlightedIndex(-1);
   }, [activeQuery]);
 
-  const executeSelect = (task: Task, relationship?: string) => {
+  const executeSelect = (task: Task, relationship?: string, triggerCommit: boolean = true) => {
     const code = computeTaskCode(projects, tasks, task) || task.taskCodePhu || task.id;
     const itemToAdd = code + (relationship || '');
     let newSegments = [...segments];
@@ -261,9 +273,13 @@ export function PredecessorMultiInput({
     if (inputRef.current) {
       inputRef.current.blur();
     }
+
+    if (triggerCommit) {
+      onCommit?.(merged);
+    }
   };
 
-  const handleSelect = (task: Task, relationship?: string, forceConfirmed: boolean = false) => {
+  const handleSelect = (task: Task, relationship?: string, forceConfirmed: boolean = false, triggerCommit: boolean = true) => {
     const diff = getTaskProjectDiffDetails(currentContext, task, projects);
     if (diff.isDifferent && !forceConfirmed) {
       setConfirmExternalModal({
@@ -274,7 +290,7 @@ export function PredecessorMultiInput({
       });
       return;
     }
-    executeSelect(task, relationship);
+    executeSelect(task, relationship, triggerCommit);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,20 +344,19 @@ export function PredecessorMultiInput({
         setHighlightedIndex(prev => Math.max(prev - 1, -1));
       }
     } else if (e.key === 'Enter') {
+      e.preventDefault();
       if (isOpen && highlightedIndex >= 0 && rankedCandidateList[highlightedIndex]) {
-        e.preventDefault();
         e.stopPropagation();
         const selected = rankedCandidateList[highlightedIndex];
         const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
-        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
+        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined), false, true);
       } else if (isOpen && rankedCandidateList.length > 0 && activeQuery && rankedCandidateList[0].score >= 450) {
-        e.preventDefault();
         e.stopPropagation();
         const selected = rankedCandidateList[0];
         const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
-        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
+        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined), false, true);
       } else {
-        handleResolveAndClose();
+        handleResolveAndClose(true);
       }
     } else if (e.key === 'Tab') {
       if (isOpen && rankedCandidateList.length > 0 && activeQuery) {
@@ -349,7 +364,7 @@ export function PredecessorMultiInput({
         e.stopPropagation();
         const selected = highlightedIndex >= 0 ? rankedCandidateList[highlightedIndex] : rankedCandidateList[0];
         const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
-        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined));
+        handleSelect(selected.task, activeSuffix || (isSecondPredecessor ? 'FF' : undefined), false, true);
       }
     } else if (e.key === 'Escape') {
       setIsOpen(false);

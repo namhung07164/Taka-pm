@@ -82,6 +82,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
         <PredecessorMultiInput
           value={val}
           onChange={setVal}
+          onCommit={(finalVal) => commitSave(finalVal)}
           tasks={tasks}
           projects={projects}
           currentProjectId={task.projectId}
