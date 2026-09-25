@@ -265,7 +265,7 @@ export default React.memo(function DataMappingTab() {
           </div>
 
           <div className="flex items-center gap-2">
-            <CloudSyncManager />
+            <CloudSyncManager scope={activeSubTab === 'dynamic-hierarchy' ? 'dynamic' : activeSubTab} />
             <div className="flex bg-slate-900/70 p-0.5 rounded-lg border border-slate-800/80">
               <button
                 onClick={() => setActiveSubTab('edit')}

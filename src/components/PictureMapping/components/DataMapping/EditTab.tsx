@@ -16,6 +16,7 @@ import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 
 import { extractR2Key } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
+import CloudSyncManager from '../CloudSync/CloudSyncManager';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -1318,6 +1319,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         {dynamicSummaryList.length}
                     </span>
                 </button>
+
+                <CloudSyncManager scope="edit" compact showCleanButton={false} />
 
                 <button
                     onClick={() => {
