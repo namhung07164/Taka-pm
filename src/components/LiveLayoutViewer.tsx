@@ -779,6 +779,21 @@ function LiveCanvas({
     };
   }, []);
 
+  // Wake-up redraw handler after tab cold freeze or background sleep
+  useEffect(() => {
+    const handleWakeUp = () => {
+      if (document.visibilityState === 'visible') {
+        stageRef.current?.batchDraw();
+      }
+    };
+    document.addEventListener('visibilitychange', handleWakeUp);
+    window.addEventListener('focus', handleWakeUp);
+    return () => {
+      document.removeEventListener('visibilitychange', handleWakeUp);
+      window.removeEventListener('focus', handleWakeUp);
+    };
+  }, []);
+
   const handleTriggerExport = async () => {
     if (!canWrite) {
       alert('⚠️ Bạn không có quyền ghi (Write) để thực hiện Trigger Export.');

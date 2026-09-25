@@ -75,6 +75,11 @@ export function getMemoryCachedImage(url: string): ImageBitmap | HTMLImageElemen
   if (!key) return null;
   const img = memoryCache.get(key);
   if (img) {
+    // Cold freeze / GPU context loss protection: check if ImageBitmap was detached
+    if ('width' in img && img.width === 0) {
+      memoryCache.delete(key);
+      return null;
+    }
     // Move to end (most recently used)
     memoryCache.delete(key);
     memoryCache.set(key, img);
@@ -101,20 +106,50 @@ function getDB(): Promise<IDBDatabase> {
       return;
     }
 
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        // Clean up connection promise when closed by browser sleep / discard
+        db.onclose = () => {
+          dbPromise = null;
+        };
+        db.onversionchange = () => {
+          try { db.close(); } catch (_) {}
+          dbPromise = null;
+        };
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        dbPromise = null;
+        reject(request.error);
+      };
+    } catch (err) {
+      dbPromise = null;
+      reject(err);
+    }
   });
 
   return dbPromise;
+}
+
+function queryIDB(db: IDBDatabase, key: string): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => resolve(null);
+  });
 }
 
 export async function getCachedBlobFromIDB(url: string): Promise<Blob | null> {
@@ -122,15 +157,17 @@ export async function getCachedBlobFromIDB(url: string): Promise<Blob | null> {
   if (!key) return null;
 
   try {
-    const db = await getDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(key);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
+    let db = await getDB();
+    try {
+      return await queryIDB(db, key);
+    } catch (_txErr) {
+      // Reconnect if database connection was invalidated during cold freeze / long sleep
+      dbPromise = null;
+      db = await getDB();
+      return await queryIDB(db, key);
+    }
   } catch (_e) {
+    dbPromise = null;
     return null;
   }
 }
@@ -140,11 +177,20 @@ export async function setCachedBlobToIDB(url: string, blob: Blob): Promise<void>
   if (!key || !blob) return;
 
   try {
-    const db = await getDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.put(blob, key);
+    let db = await getDB();
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(blob, key);
+    } catch (_txErr) {
+      dbPromise = null;
+      db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(blob, key);
+    }
   } catch (_e) {
+    dbPromise = null;
     // Ignore IndexedDB write failures (e.g. quota exceeded or private browsing restrictions)
   }
 }
