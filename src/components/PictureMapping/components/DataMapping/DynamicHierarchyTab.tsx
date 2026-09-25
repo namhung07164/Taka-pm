@@ -113,6 +113,7 @@ function DynamicHierarchyTab({
   }, [versions, store, location, effectiveYear]);
 
   // Ensure strict year tagging for legacy versions without auto-creating deleted versions
+  const normalizedYearVersionIdsRef = useRef<string>('');
   useEffect(() => {
     let hasUntagged = false;
     const normalizedVersions = versions.map(v => {
@@ -124,7 +125,11 @@ function DynamicHierarchyTab({
     });
 
     if (hasUntagged) {
-      setVersions(normalizedVersions);
+      const currentUntaggedFingerprint = versions.filter(v => !v.year || !String(v.year).trim()).map(v => `${v.id}_${effectiveYear}`).join('|');
+      if (currentUntaggedFingerprint && currentUntaggedFingerprint !== normalizedYearVersionIdsRef.current) {
+        normalizedYearVersionIdsRef.current = currentUntaggedFingerprint;
+        setVersions(normalizedVersions);
+      }
     }
   }, [effectiveYear, versions, setVersions]);
 

@@ -3,9 +3,12 @@ import { CloudUpload, CloudDownload, RefreshCw, Sparkles, ChevronDown, Check, La
 import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, getStoredR2CredentialsAsync, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
 import { cleanOrphanR2Files } from '../../../../lib/r2StorageUtils';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
+import { useShallow } from 'zustand/react/shallow';
 import { MapVersion } from '../DataMapping/types';
 import R2UploadModal from '../R2UploadModal';
 import { cn } from '../../lib/utils';
+
+let hasGlobalAutoSyncStarted = false;
 
 export type CloudSyncScope = 'all' | 'edit' | 'dynamic' | 'review';
 
@@ -28,7 +31,6 @@ export default function CloudSyncManager({
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
   const [actionType, setActionType] = useState<'upload' | 'download' | null>(null);
-  const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
   const [showScopeDropdown, setShowScopeDropdown] = useState(false);
 
   // Sync internal selectedScope when prop scope changes
@@ -40,41 +42,62 @@ export default function CloudSyncManager({
     store,
     location,
     storeLocationData,
-    setStoreLocationData,
-    mapUnits, mapVersions, setMapUnits, setMapVersions,
-    activeMapVersionId, setActiveMapVersionId,
-    reviewSelectedLabels, setReviewSelectedLabels,
-    reviewLabelColors, setReviewLabelColors,
-    unitInfo, setUnitInfo,
-    classInfo, setClassInfo,
-    actualClassInfo, setActualClassInfo,
-    sales, setSales,
-    profits, setProfits,
-    subFees, setSubFees,
-    mdStatus, setMdStatus,
-    projectStatus, setProjectStatus,
-    projectLink, setProjectLink,
-    basePlan, setBasePlan,
-    units, setUnits,
-    loadFullCloudData
-  } = useDataStore();
+    mapUnits, mapVersions,
+    activeMapVersionId,
+    reviewSelectedLabels,
+    reviewLabelColors,
+    unitInfo,
+    classInfo,
+    actualClassInfo,
+    sales,
+    profits,
+    subFees,
+    mdStatus,
+    projectStatus,
+    projectLink,
+    basePlan,
+    units,
+    loadFullCloudData,
+    isCloudLoaded
+  } = useDataStore(useShallow(state => ({
+    store: state.store,
+    location: state.location,
+    storeLocationData: state.storeLocationData,
+    mapUnits: state.mapUnits,
+    mapVersions: state.mapVersions,
+    activeMapVersionId: state.activeMapVersionId,
+    reviewSelectedLabels: state.reviewSelectedLabels,
+    reviewLabelColors: state.reviewLabelColors,
+    unitInfo: state.unitInfo,
+    classInfo: state.classInfo,
+    actualClassInfo: state.actualClassInfo,
+    sales: state.sales,
+    profits: state.profits,
+    subFees: state.subFees,
+    mdStatus: state.mdStatus,
+    projectStatus: state.projectStatus,
+    projectLink: state.projectLink,
+    basePlan: state.basePlan,
+    units: state.units,
+    loadFullCloudData: state.loadFullCloudData,
+    isCloudLoaded: state.isCloudLoaded,
+  })));
 
   React.useEffect(() => {
-    let isMounted = true;
+    if (hasGlobalAutoSyncStarted || isCloudLoaded) return;
     async function checkAutoLoad() {
-      if (hasAutoLoaded) return;
+      if (hasGlobalAutoSyncStarted) return;
       if (Object.keys(storeLocationData).length === 0 && mapVersions.length === 0) {
         const creds = await getStoredR2CredentialsAsync();
-        if (isMounted && creds && creds.accountId && creds.accessKeyId) {
-          setHasAutoLoaded(true);
+        if (creds && creds.accountId && creds.accessKeyId && !hasGlobalAutoSyncStarted) {
+          hasGlobalAutoSyncStarted = true;
           executeSync('download', true, 'all');
         }
       }
     }
     checkAutoLoad();
-    return () => { isMounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAutoLoaded, storeLocationData, mapVersions.length]);
+  }, []);
 
   const handleOpenSync = (type: 'upload' | 'download', targetScope?: CloudSyncScope) => {
     setActionType(type);

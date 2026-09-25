@@ -91,13 +91,16 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
   useEffect(() => {
     if (initialActiveVersionId && filteredVersions.some(v => v.id === initialActiveVersionId)) {
-      setActiveVersionId(initialActiveVersionId);
-    } else if (filteredVersions.length > 0 && (!activeVersionId || !filteredVersions.some(v => v.id === activeVersionId))) {
-      setActiveVersionId(filteredVersions[0].id);
+      setActiveVersionId(prev => (prev !== initialActiveVersionId ? initialActiveVersionId : prev));
+    } else if (filteredVersions.length > 0) {
+      setActiveVersionId(prev => {
+        if (prev && filteredVersions.some(v => v.id === prev)) return prev;
+        return filteredVersions[0].id;
+      });
     } else if (filteredVersions.length === 0) {
-      setActiveVersionId(null);
+      setActiveVersionId(prev => (prev !== null ? null : prev));
     }
-  }, [initialActiveVersionId, filteredVersions, activeVersionId]);
+  }, [initialActiveVersionId, filteredVersions]);
 
   const activeVersion = versions.find(v => v.id === activeVersionId);
   const summaryData = useSummaryData();
