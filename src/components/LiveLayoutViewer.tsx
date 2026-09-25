@@ -694,6 +694,16 @@ function LiveCanvas({
 
     const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
 
+    // 0. From finalVersion.mapUnits if embedded
+    if (Array.isArray(finalVersion?.mapUnits)) {
+      finalVersion.mapUnits.forEach((u: any) => {
+        if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
+          const existing = unitsMap.get(u.id) || {};
+          unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || targetLoc });
+        }
+      });
+    }
+
     // 1. From config.storeLocationData across partitions matching storeFilter
     if (config?.storeLocationData) {
       Object.entries(config.storeLocationData).forEach(([key, part]: [string, any]) => {
@@ -784,8 +794,8 @@ function LiveCanvas({
       const uLoc = (u.location || '').toUpperCase().trim();
       if (uLoc && (uLoc === vLoc || uLoc === tLoc || vLoc.includes(uLoc) || uLoc.includes(vLoc))) return true;
 
-      // Fallback: if no location info, include only if both vLoc and tLoc are empty
-      if (!uLoc && !vLoc && !tLoc) return true;
+      // Fallback: if no location info on shape, include on the active floor
+      if (!uLoc) return true;
 
       return false;
     });
@@ -1379,25 +1389,24 @@ function LiveCanvas({
                       val = data.appProjectBudget ?? 0;
                     } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual') {
                       val = data.appProjectActual ?? 0;
-                    } else if (val === undefined || val === null || String(val).trim() === '') {
-                      // 2. General attribute fallbacks
-                      if (f === 'floor' || f === 'location') {
-                        val = data.floor || u.location || targetLoc || '';
-                      } else if (f === 'year') {
-                        val = data.appProjectYear || data.year || '';
-                      } else if (f === 'status' || f === 'projectstatus') {
-                        val = data.appProjectStatus || data.projectStatus || data.status || '';
-                      } else if (f === 'mdstatus') {
-                        val = data.appProjectMdStatus || data.mdStatus || '';
-                      } else if (f === 'actstatus') {
-                        val = data.appProjectActStatus || data.actStatus || '';
-                      } else if (f === 'detail' || f === 'description (project)') {
-                        val = data.appProjectDetail || data.detail || '';
-                      } else if (f === 'party') {
-                        val = data.appProjectParty || data.party || '';
-                      } else if (f === 'unit' || f === 'code') {
-                        val = data.unit || data.appProjectCode || u.name || '';
-                      }
+                    } else if (f === 'status' || f === 'projectstatus') {
+                      val = data.appProjectStatus || data.projectStatus || data.status || '';
+                    } else if (f === 'mdstatus') {
+                      val = data.appProjectMdStatus || data.mdStatus || '';
+                    } else if (f === 'actstatus') {
+                      val = data.appProjectActStatus || data.actStatus || '';
+                    } else if (f === 'year') {
+                      val = data.appProjectYear || data.year || '';
+                    } else if (f === 'floor' || f === 'location') {
+                      val = data.floor || u.location || targetLoc || '';
+                    } else if (f === 'detail' || f === 'description (project)') {
+                      val = data.appProjectDetail || data.detail || '';
+                    } else if (f === 'party') {
+                      val = data.appProjectParty || data.party || '';
+                    } else if (f === 'unit' || f === 'code') {
+                      val = data.unit || data.appProjectCode || u.name || '';
+                    } else if (val === undefined || val === null) {
+                      val = '';
                     }
                     if (rule.field === "margin" || rule.field === "marginByCp") val = Number(val || 0) * 100;
                     const numVal = Number(rule.value);
