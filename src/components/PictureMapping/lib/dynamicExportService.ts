@@ -315,7 +315,6 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
       // Find the active version corresponding to current effectiveYear to colorize unit fills
       const activeVer =
         updatedVersions.find((v) => v.id === partition.activeMapVersionId && String(v.year || '').trim() === effectiveYear) ||
-        updatedVersions.find((v) => String(v.year || '').trim() === effectiveYear && v.isDynamicActive !== false) ||
         updatedVersions.find((v) => String(v.year || '').trim() === effectiveYear) ||
         updatedVersions.find((v) => v.id === partition.activeMapVersionId) ||
         updatedVersions[0];
@@ -470,7 +469,7 @@ export async function loadStoreFromCloudR2(): Promise<{ success: boolean; messag
         v.location = v.location || pLoc;
         v.groups = v.groups || [];
         v.groupMappings = v.groupMappings || {};
-        v.isDynamicActive = v.isDynamicActive !== false;
+        v.isDynamicActive = true;
       }
     }
   }
@@ -567,7 +566,7 @@ export async function saveStoreToCloudR2(
         backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
         groups: v.groups || [],
         groupMappings: v.groupMappings || {},
-        isDynamicActive: v.isDynamicActive !== false,
+        isDynamicActive: true,
       });
     }
 

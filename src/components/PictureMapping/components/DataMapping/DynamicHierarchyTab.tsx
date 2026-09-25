@@ -124,7 +124,7 @@ function DynamicHierarchyTab({
     : (filteredVersions[0]?.id || null);
 
   const activeVersion = versions.find((v) => v.id === viewVersionId);
-  const isVersionActive = activeVersion?.isDynamicActive ?? true;
+  const isVersionActive = true; // Always permanently active per system mandate
 
   // ============================================================================
   // 3-TIER ARCHITECTURE FOR DYNAMIC RULES
@@ -214,7 +214,8 @@ function DynamicHierarchyTab({
 
   const toggleVersionActive = () => {
     if (!activeVersion) return;
-    updateVersionsWithDebounce(versions.map(v => v.id === activeVersion.id ? { ...v, isDynamicActive: !isVersionActive } : v));
+    // Always keep isDynamicActive: true permanently
+    updateVersionsWithDebounce(versions.map(v => ({ ...v, isDynamicActive: true })));
   };
 
   const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name, location: u.location }))), [units]);
@@ -507,6 +508,7 @@ function DynamicHierarchyTab({
         year: String(effectiveYear),
         groups: newGroups,
         groupMappings: newGroupMappings,
+        isDynamicActive: true,
       };
       updateVersionsWithDebounce([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
@@ -786,14 +788,11 @@ function DynamicHierarchyTab({
               <>
                 <button
                   onClick={toggleVersionActive}
-                  className={cn(
-                    "px-4 py-2 rounded-lg text-xs font-bold uppercase transition-colors shrink-0",
-                    isVersionActive
-                      ? "bg-brand-600/20 text-brand-400 border border-brand-500/50"
-                      : "bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700",
-                  )}
+                  className="px-4 py-2 rounded-lg text-xs font-bold uppercase transition-colors shrink-0 bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 flex items-center gap-1.5 shadow-sm"
+                  title="Dynamic Rules is permanently enabled (Always ON)"
                 >
-                  {isVersionActive ? "Active ON" : "Active OFF"}
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Dynamic Active: ALWAYS ON
                 </button>
                 <button
                   onClick={duplicateVersion}

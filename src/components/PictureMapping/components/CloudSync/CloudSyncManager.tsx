@@ -156,7 +156,7 @@ export default function CloudSyncManager() {
               backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
               groups: v.groups || [],
               groupMappings: v.groupMappings || {},
-              isDynamicActive: v.isDynamicActive !== false,
+              isDynamicActive: true,
             });
 
             // Local version: working HTTP signed URL so browser can render image
@@ -167,7 +167,7 @@ export default function CloudSyncManager() {
               backgroundUrl: displayUrl,
               groups: v.groups || [],
               groupMappings: v.groupMappings || {},
-              isDynamicActive: v.isDynamicActive !== false,
+              isDynamicActive: true,
             });
           }
 
@@ -321,7 +321,7 @@ export default function CloudSyncManager() {
               v.location = v.location || pLoc;
               v.groups = v.groups || [];
               v.groupMappings = v.groupMappings || {};
-              v.isDynamicActive = v.isDynamicActive !== false;
+              v.isDynamicActive = true;
             }
           }
         }

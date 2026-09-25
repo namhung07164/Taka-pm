@@ -1208,7 +1208,7 @@ function LiveCanvas({
                 isMatch = true;
             }
             
-            const isDynamicActive = version.isDynamicActive !== false;
+            const isDynamicActive = true; // Always permanently active per system mandate
             
             if (group.rules && group.rules.length > 0) {
                 const hasManualMapping = version.groupMappings && Object.values(version.groupMappings).some(m => Array.isArray(m) && m.length > 0);

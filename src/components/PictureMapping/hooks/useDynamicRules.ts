@@ -306,8 +306,8 @@ export function useDynamicRules(
     (inputVersions: MapVersion[]): { nextVersions: MapVersion[]; hasChanges: boolean } => {
       let hasChanges = false;
       const nextVersions = inputVersions.map((v) => {
-        const isActive = v.isDynamicActive !== false;
-        if (!isActive || !v.groups || v.groups.length === 0) return v;
+        const isActive = true; // Always active
+        if (!v.groups || v.groups.length === 0) return { ...v, isDynamicActive: true };
 
         let versionChanged = false;
         const newMappings: Record<string, string[]> = { ...(v.groupMappings || {}) };
@@ -362,7 +362,7 @@ export function useDynamicRules(
         // Optionally update units fill colors for the active version
         if (setUnits && units.length > 0) {
           const activeVer =
-            nextVersions.find((v) => String(v.year || '').trim() === String(effectiveYear).trim() && v.isDynamicActive !== false) ||
+            nextVersions.find((v) => String(v.year || '').trim() === String(effectiveYear).trim()) ||
             nextVersions[0];
 
           if (activeVer && activeVer.groups) {
