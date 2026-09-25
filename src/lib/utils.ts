@@ -317,6 +317,39 @@ export function getStatus(
   return "On process";
 }
 
+/**
+ * Extracts all project codes from both project.code and project.linkCodes
+ */
+export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: string | null }): string[] {
+  const codeSet = new Set<string>();
+  if (p.code && String(p.code).trim()) {
+    codeSet.add(String(p.code).trim().toLowerCase());
+  }
+  if (p.linkCodes && String(p.linkCodes).trim()) {
+    String(p.linkCodes)
+      .split(/[+;,/]+/)
+      .map(c => c.trim().toLowerCase())
+      .filter(Boolean)
+      .forEach(c => codeSet.add(c));
+  }
+  return Array.from(codeSet);
+}
+
+/**
+ * Checks if a project's codes match a given unit name (exact or subdiv/lot prefix)
+ */
+export function projectMatchesUnitCode(pCodes: string[], unitName: string): boolean {
+  const u = (unitName || '').toLowerCase().trim();
+  if (!u) return false;
+  for (const c of pCodes) {
+    if (u === c) return true;
+    if (u.startsWith(c + '-') || u.startsWith(c + '_')) return true;
+    if (c.startsWith(u + '-') || c.startsWith(u + '_')) return true;
+  }
+  return false;
+}
+
+
 export function getTaskStatus(
   start: string | undefined,
   finish: string | undefined,

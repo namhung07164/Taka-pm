@@ -18,7 +18,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
 import { useAppStore } from "../../../../store/useAppStore";
-import { getStatus, enrichProjects, computeProjectActStatus } from "../../../../lib/utils";
+import { getStatus, enrichProjects, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from "../../../../lib/utils";
 import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 import { useDataStore } from "../../DataContext";
@@ -46,11 +46,17 @@ interface DynamicHierarchyTabProps {
 }
 
 const normalizeRuleField = (f: string) => {
-  if (f === "appMdStatus" || f === "app:md status") return "appProjectMdStatus";
-  if (f === "appActStatus" || f === "app: act status") return "appProjectActStatus";
+  if (f === "appStatus" || f === "app: status") return "appProjectStatus";
+  if (f === "appYear" || f === "app: year") return "appProjectYear";
+  if (f === "appCode" || f === "app: project code") return "appProjectCode";
+  if (f === "appFloor" || f === "app: floor") return "appProjectFloor";
+  if (f === "appMdStatus" || f === "app: md status" || f === "app:md status") return "appProjectMdStatus";
+  if (f === "appActStatus" || f === "app: act status" || f === "app:act status") return "appProjectActStatus";
   if (f === "appDetail" || f === "app: detail (project)") return "appProjectDetail";
   if (f === "appDescription" || f === "app: description (project)" || f === "description (project)") return "appProjectDescription";
   if (f === "appParty" || f === "app: party") return "appProjectParty";
+  if (f === "appBudget" || f === "app: budget") return "appProjectBudget";
+  if (f === "appActual" || f === "app: actual") return "appProjectActual";
   return f;
 };
 
@@ -269,14 +275,17 @@ function DynamicHierarchyTab({
       }
     });
 
-    // Merge real Project data synchronized by globalYearFilter
+    // Merge real Project data synchronized by effectiveYear and store
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
+      if (store && store !== 'all') {
+        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
+        if (pStore && pStore !== store.toUpperCase()) return;
+      }
       const pYear = String(p.year || (p as any).projectYear || '').trim();
-      if (globalYearFilter && globalYearFilter !== 'all' && pYear && pYear !== String(globalYearFilter)) return;
+      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
 
-      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
+      const pCodes = extractAllProjectCodes(p);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
       const detailStr = p.detail || '';
@@ -284,13 +293,24 @@ function DynamicHierarchyTab({
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
 
+      const targetUnitKeys = new Set<string>();
       pCodes.forEach(code => {
+        if (dataMap[code]) targetUnitKeys.add(code);
+      });
+      Object.keys(dataMap).forEach(uKey => {
+        if (projectMatchesUnitCode(pCodes, uKey)) {
+          targetUnitKeys.add(uKey);
+        }
+      });
+
+      targetUnitKeys.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].appProjectStatus = status;
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
             dataMap[code].appProjectYear = pYear;
+            dataMap[code].year = pYear;
 
             dataMap[code].appProjectMdStatus = mdStatusStr;
             dataMap[code].appMdStatus = mdStatusStr;
@@ -306,14 +326,12 @@ function DynamicHierarchyTab({
 
             dataMap[code].appProjectParty = partyStr;
             dataMap[code].appParty = partyStr;
-
-            if (!dataMap[code].year) dataMap[code].year = pYear;
          }
       });
     });
 
     return dataMap;
-  }, [unitNamesStr, summaryData, enrichedProjects, globalYearFilter, delegationGroups]);
+  }, [unitNamesStr, summaryData, enrichedProjects, store, effectiveYear, delegationGroups]);
 
   // Evaluates rules for a given group against a unit shape
   const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
@@ -325,23 +343,49 @@ function DynamicHierarchyTab({
     // Must pass all rules (AND condition)
     return rules.every((rule) => {
       let val = data[rule.field];
-      if (val === undefined || val === null) {
-        if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
-          val = data.appProjectMdStatus ?? '';
-        } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
-          val = data.appProjectActStatus ?? '';
-        } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
-          val = data.appProjectDetail ?? '';
-        } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
-          val = data.appProjectDescription ?? '';
-        } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
-          val = data.appProjectParty ?? '';
-        } else if (rule.field === 'appProjectStatus' || rule.field === 'appStatus' || rule.field === 'app: status') {
-          val = data.appProjectStatus ?? '';
-        } else if (rule.field === 'appProjectYear' || rule.field === 'appYear' || rule.field === 'app: year') {
-          val = data.appProjectYear ?? '';
-        } else if (rule.field === 'appProjectCode' || rule.field === 'appCode' || rule.field === 'app: project code') {
-          val = data.appProjectCode ?? '';
+      const f = String(rule.field || '').toLowerCase().trim();
+
+      // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
+      if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status') {
+        val = data.appProjectStatus || '';
+      } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
+        val = data.appProjectYear || '';
+      } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
+        val = data.appProjectCode || '';
+      } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
+        val = data.appProjectFloor || '';
+      } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
+        val = data.appProjectMdStatus || '';
+      } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+        val = data.appProjectActStatus || '';
+      } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+        val = data.appProjectDetail || '';
+      } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+        val = data.appProjectDescription || '';
+      } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+        val = data.appProjectParty || '';
+      } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget') {
+        val = data.appProjectBudget ?? 0;
+      } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual') {
+        val = data.appProjectActual ?? 0;
+      } else if (val === undefined || val === null || String(val).trim() === '') {
+        // 2. General attribute fallbacks
+        if (f === 'floor' || f === 'location') {
+          val = data.floor || unit.location || location || '';
+        } else if (f === 'year') {
+          val = data.appProjectYear || data.year || '';
+        } else if (f === 'status' || f === 'projectstatus') {
+          val = data.appProjectStatus || data.projectStatus || data.status || '';
+        } else if (f === 'mdstatus') {
+          val = data.appProjectMdStatus || data.mdStatus || '';
+        } else if (f === 'actstatus') {
+          val = data.appProjectActStatus || data.actStatus || '';
+        } else if (f === 'detail' || f === 'description (project)') {
+          val = data.appProjectDetail || data.detail || '';
+        } else if (f === 'party') {
+          val = data.appProjectParty || data.party || '';
+        } else if (f === 'unit' || f === 'code') {
+          val = data.unit || data.appProjectCode || unit.name || '';
         }
       }
 
@@ -884,8 +928,9 @@ function DynamicHierarchyTab({
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {activeGroups.map((group) => {
-                  const assignedUnits =
-                    activeVersion.groupMappings[group.id] || [];
+                  const assignedUnits = (group.rules && group.rules.length > 0)
+                    ? units.filter((u) => matchRules(u, group.rules)).map((u) => u.id)
+                    : (activeVersion.groupMappings[group.id] || []);
                   return (
                     <div
                       key={group.id}

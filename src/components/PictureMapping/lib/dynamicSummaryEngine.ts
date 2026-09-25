@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 
 export interface DynamicUnitSummaryItem {
@@ -67,12 +67,10 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.hasAppProject ? data.location : '';
     } else if (f === 'year') {
       val = data.year || '';
-    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
-      val = data.hasAppProject ? data.appProjectYear : '';
-    } else if (f === 'status' || f === 'projectstatus') {
-      val = data.excelProjectStatus || '';
-    } else if (f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
-      val = data.hasAppProject ? data.appProjectStatus : '';
+    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear' || f === 'year') {
+      val = data.hasAppProject ? data.appProjectYear : data.year;
+    } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
+      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : (data.excelProjectStatus || data.status || '');
     } else if (f === 'unit' || f === 'code') {
       val = data.unitName || '';
     } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
@@ -317,8 +315,7 @@ export function useDynamicUnitSummary({
       const pYear = String(p.year || (p as any).projectYear || '').trim();
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== effectiveYear) return;
 
-      const rawCodes = p.linkCodes && p.linkCodes.trim() ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]+/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+      const pCodes = extractAllProjectCodes(p);
 
       const status = getStatus(
         p.computedTakStart || p.start,
@@ -339,7 +336,18 @@ export function useDynamicUnitSummary({
         if (list) list.forEach((t) => matchedTaskSet.add(t));
       }
 
-      pCodes.forEach((code) => {
+      const targetUnitKeys = new Set<string>();
+      pCodes.forEach(code => {
+        if (sMap.has(code)) targetUnitKeys.add(code);
+      });
+      sList.forEach(item => {
+        if (projectMatchesUnitCode(pCodes, item.unitName || item.unitId)) {
+          targetUnitKeys.add(item.unitId);
+          if (item.unitName) targetUnitKeys.add(item.unitName.toLowerCase());
+        }
+      });
+
+      targetUnitKeys.forEach((code) => {
         const item = sMap.get(code);
         if (item) {
           item.hasAppProject = true;
@@ -347,6 +355,7 @@ export function useDynamicUnitSummary({
           item.projectName = p.name || '';
           item.appProjectStatus = status || '';
           item.appProjectYear = pYear || effectiveYear;
+          item.year = pYear || effectiveYear;
           item.appProjectMdStatus = p.mdStatus || '';
           item.appProjectActStatus = actStatus || '';
           item.appProjectDetail = p.detail || '';

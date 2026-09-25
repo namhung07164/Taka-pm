@@ -3,7 +3,7 @@ import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/type
 import { SummaryDataItem, calculateSummaryData } from '../lib/summaryData';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
 
 // ============================================================================
 // TIER 1: MEMORY EVALUATION (0ms - 100% RAM EXECUTION)
@@ -12,23 +12,49 @@ import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib
 
 export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>): boolean {
   let val = data[rule.field];
-  if (val === undefined || val === null) {
-    if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
-      val = data.appProjectMdStatus ?? '';
-    } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
-      val = data.appProjectActStatus ?? '';
-    } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
-      val = data.appProjectDetail ?? '';
-    } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
-      val = data.appProjectDescription ?? '';
-    } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
-      val = data.appProjectParty ?? '';
-    } else if (rule.field === 'appProjectStatus' || rule.field === 'appStatus' || rule.field === 'app: status') {
-      val = data.appProjectStatus ?? '';
-    } else if (rule.field === 'appProjectYear' || rule.field === 'appYear' || rule.field === 'app: year') {
-      val = data.appProjectYear ?? '';
-    } else if (rule.field === 'appProjectCode' || rule.field === 'appCode' || rule.field === 'app: project code') {
-      val = data.appProjectCode ?? '';
+  const f = String(rule.field || '').toLowerCase().trim();
+
+  // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
+  if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status') {
+    val = data.appProjectStatus || '';
+  } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
+    val = data.appProjectYear || '';
+  } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
+    val = data.appProjectCode || '';
+  } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
+    val = data.appProjectFloor || '';
+  } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
+    val = data.appProjectMdStatus || '';
+  } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+    val = data.appProjectActStatus || '';
+  } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+    val = data.appProjectDetail || '';
+  } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+    val = data.appProjectDescription || '';
+  } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+    val = data.appProjectParty || '';
+  } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget') {
+    val = data.appProjectBudget ?? 0;
+  } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual') {
+    val = data.appProjectActual ?? 0;
+  } else if (val === undefined || val === null || String(val).trim() === '') {
+    // 2. General attribute fallbacks
+    if (f === 'floor' || f === 'location') {
+      val = data.floor || data.location || '';
+    } else if (f === 'year') {
+      val = data.appProjectYear || data.year || '';
+    } else if (f === 'status' || f === 'projectstatus') {
+      val = data.appProjectStatus || data.projectStatus || data.status || '';
+    } else if (f === 'mdstatus') {
+      val = data.appProjectMdStatus || data.mdStatus || '';
+    } else if (f === 'actstatus') {
+      val = data.appProjectActStatus || data.actStatus || '';
+    } else if (f === 'detail' || f === 'description (project)') {
+      val = data.appProjectDetail || data.detail || '';
+    } else if (f === 'party') {
+      val = data.appProjectParty || data.party || '';
+    } else if (f === 'unit' || f === 'code') {
+      val = data.unit || data.appProjectCode || '';
     }
   }
 
@@ -256,13 +282,16 @@ export function useDynamicRules(
     // Merge real-time Project data from Zustand
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
+      if (store && store !== 'all') {
+        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
+        if (pStore && pStore !== store.toUpperCase()) return;
+      }
       const pYear = String(p.year || (p as any).projectYear || '').trim();
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) {
         return;
       }
 
-      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]+/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+      const pCodes = extractAllProjectCodes(p);
       const status = getStatus(
         p.computedTakStart || p.start,
         p.computedTakCompl || p.handover,
@@ -276,13 +305,24 @@ export function useDynamicRules(
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
 
-      pCodes.forEach((code) => {
+      const targetUnitKeys = new Set<string>();
+      pCodes.forEach(code => {
+        if (dataMap[code]) targetUnitKeys.add(code);
+      });
+      Object.keys(dataMap).forEach(uKey => {
+        if (projectMatchesUnitCode(pCodes, uKey)) {
+          targetUnitKeys.add(uKey);
+        }
+      });
+
+      targetUnitKeys.forEach((code) => {
         if (dataMap[code]) {
           dataMap[code].appProjectStatus = status;
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code);
           dataMap[code].appProjectYear = pYear;
+          dataMap[code].year = pYear;
 
           dataMap[code].appProjectMdStatus = mdStatusStr;
           dataMap[code].appMdStatus = mdStatusStr;
@@ -298,14 +338,12 @@ export function useDynamicRules(
 
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
-
-          if (!dataMap[code].year) dataMap[code].year = pYear;
         }
       });
     });
 
     return dataMap;
-  }, [unitNamesStr, internalSummaryData, enrichedProjects, effectiveYear, delegationGroups]);
+  }, [unitNamesStr, internalSummaryData, enrichedProjects, store, effectiveYear, delegationGroups]);
 
   // Pure in-memory calculation function (< 3ms)
   const calculateNextVersions = useCallback(
