@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
-import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, MapPin, Calendar } from 'lucide-react';
+import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, MapPin, Calendar, Building, Calculator, CloudUpload } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
@@ -13,12 +13,13 @@ import type { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
 import { useAppStore } from '../../../../store/useAppStore';
-import { Calculator, CloudUpload } from 'lucide-react';
 import { applyAllDynamicRulesForStore } from '../../lib/dynamicExportService';
 import { uploadFileToDrive } from '../../lib/drive';
 import { initAuth, googleSignIn, getAccessToken } from '../../lib/auth';
 import R2UploadModal from '../R2UploadModal';
 import { uploadFilesToR2 } from '../../lib/r2Upload';
+import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
+import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 
 interface ReviewTabProps {
   units: UnitShape[];
@@ -100,25 +101,24 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   const activeVersion = versions.find(v => v.id === activeVersionId);
   const summaryData = useSummaryData();
 
+  // Dynamic Event-Driven Unit Summary Engine
+  const { summaryMap: dynamicSummaryMap, summaryList: dynamicSummaryList } = useDynamicUnitSummary({
+    units,
+    activeVersion,
+    store: (activeVersion?.store as any) || store,
+    location: activeVersion?.location || location,
+    year: String(effectiveYear),
+  });
+
+  const [isSummaryTableOpen, setIsSummaryTableOpen] = useState(false);
+  const [selectedReviewUnitId, setSelectedReviewUnitId] = useState<string | null>(null);
+  const summaryModalRef = useRef<HTMLDivElement>(null);
+
   const [showLabelSettings, setShowLabelSettings] = useState(false);
 
   // Optimize units rendering by pre-calculating styles, bbox, and filtering
   const styledUnits = React.useMemo(() => {
     if (!activeVersion) return [];
-
-    // Pre-map unit IDs to group styles for O(1) lookup
-    const unitToGroupStyle = new Map<string, { color: string; opacity: number }>();
-    if (activeVersion.groups && activeVersion.groupMappings) {
-      activeVersion.groups.forEach(group => {
-        const assignedIds = activeVersion.groupMappings[group.id] || [];
-        assignedIds.forEach(id => {
-          unitToGroupStyle.set(id, {
-            color: group.color,
-            opacity: group.opacity ?? 0.6
-          });
-        });
-      });
-    }
 
     const summaryMap = new Map();
     summaryData.forEach(s => summaryMap.set(s.unit, s));
@@ -128,10 +128,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     return units
       .filter(unit => {
         if (activeLoc && unit.location && unit.location !== activeLoc) return false;
-        return unitToGroupStyle.has(unit.id);
+        return true;
       })
       .map(unit => {
-        const style = unitToGroupStyle.get(unit.id)!;
+        const dynamicItem = dynamicSummaryMap.get(unit.id) || dynamicSummaryMap.get(unit.name?.toLowerCase());
+        const displayColor = dynamicItem?.color || unit.fill || '#3b82f6';
+        const displayOpacity = dynamicItem?.opacity ?? unit.opacity ?? 0.6;
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels);
@@ -156,14 +158,14 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
         return {
           ...unit,
-          displayColor: style.color,
-          displayOpacity: style.opacity,
+          displayColor,
+          displayOpacity,
           sizeLabelLines,
           sizeLabel,
           bbox
         };
       });
-  }, [units, activeVersion, summaryData, selectedLabels]);
+  }, [units, activeVersion, summaryData, dynamicSummaryMap, selectedLabels]);
 
   const [image] = useOffscreenImage(activeVersion?.backgroundUrl || '', 'anonymous');
   const [scale, setScale] = useState(activeVersion?.backgroundScale || 1);
@@ -618,6 +620,23 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           <button
+            onClick={() => setIsSummaryTableOpen(prev => !prev)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all shadow-md",
+              isSummaryTableOpen 
+                ? "bg-emerald-600 text-white border border-emerald-400 ring-2 ring-emerald-500/30 shadow-emerald-900/30" 
+                : "bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-slate-800 hover:border-emerald-500/50"
+            )}
+            title="Mở Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế (Dynamic Unit Summary)"
+          >
+            <Building size={13} className="text-emerald-400" />
+            <span>Summary Table</span>
+            <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+              {dynamicSummaryList.length}
+            </span>
+          </button>
+
+          <button
             onClick={applyAllDynamicRules}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-lg shadow-brand-900/20 box-border border border-brand-400"
           >
@@ -938,6 +957,46 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
           )}
         </div>
       </div>
+
+      {/* Dynamic Unit Summary Draggable Modal */}
+      {isSummaryTableOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99998] pointer-events-none flex items-center justify-center p-4">
+          <Draggable handle=".summary-modal-handle" nodeRef={summaryModalRef}>
+            <div 
+              ref={summaryModalRef} 
+              className="pointer-events-auto bg-slate-900/95 border border-slate-700/80 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden text-slate-200 backdrop-blur-md flex flex-col max-h-[85vh]"
+            >
+              <div className="summary-modal-handle cursor-grab active:cursor-grabbing px-5 py-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between select-none">
+                <div className="flex items-center gap-2">
+                  <GripHorizontal className="text-slate-400 w-5 h-5" />
+                  <Building className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế [{(activeVersion?.store as any) || store} • {activeVersion?.location || location} • {activeVersion?.year || effectiveYear}]
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setIsSummaryTableOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
+                <DynamicUnitSummaryTable
+                  summaryList={dynamicSummaryList}
+                  selectedUnitId={selectedReviewUnitId}
+                  onSelectUnit={(uid) => {
+                    setSelectedReviewUnitId(uid);
+                  }}
+                  title={`Chi tiết ${dynamicSummaryList.length} gian hàng theo bộ luật`}
+                />
+              </div>
+            </div>
+          </Draggable>
+        </div>,
+        document.body
+      )}
 
       {showShareModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-hidden">

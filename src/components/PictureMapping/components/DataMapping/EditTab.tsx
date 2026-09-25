@@ -4,13 +4,15 @@ import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Tex
 import useImage from 'use-image';
 import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { v4 as uuidv4 } from 'uuid';
-import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, Plus } from 'lucide-react';
+import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, Plus, Building } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, ShapeType, MapVersion } from './types';
 import { cn } from '../../lib/utils';
 import { useDropzone } from 'react-dropzone';
 import { useSummaryData } from '../../lib/summaryData';
 import { useAppStore } from '../../../../store/useAppStore';
+import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
+import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
@@ -165,6 +167,18 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   }, [summaryData]);
 
   const activeVersion = versions.find(v => v.id === activeVersionId);
+
+  // Dynamic Event-Driven Unit Summary Engine
+  const { summaryMap: dynamicSummaryMap, summaryList: dynamicSummaryList } = useDynamicUnitSummary({
+    units,
+    activeVersion,
+    store: (activeVersion?.store as any) || 'HCM',
+    location: activeVersion?.location || 'B1',
+    year: String(effectiveYear),
+  });
+
+  const [isSummaryTableOpen, setIsSummaryTableOpen] = useState(false);
+  const summaryModalRef = useRef<HTMLDivElement>(null);
 
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
@@ -1269,6 +1283,21 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
             
             <div className="flex gap-2 items-center pointer-events-auto flex-wrap">
                 <button
+                    onClick={() => setIsSummaryTableOpen(prev => !prev)}
+                    className={cn(
+                        "p-2 bg-slate-900/80 hover:bg-slate-800 rounded-lg border backdrop-blur-sm transition-all flex items-center gap-1.5 shadow-sm",
+                        isSummaryTableOpen ? "text-emerald-400 border-emerald-500/50 bg-emerald-950/40 ring-1 ring-emerald-500/30" : "text-slate-300 border-slate-700"
+                    )}
+                    title="Mở Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế (Dynamic Unit Summary)"
+                >
+                    <Building size={16} className="text-emerald-400" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Dynamic Summary</span>
+                    <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                        {dynamicSummaryList.length}
+                    </span>
+                </button>
+
+                <button
                     onClick={() => {
                         setCopyBgSearchTerm('');
                         setIsCopyBgModalOpen(true);
@@ -2146,6 +2175,46 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     Đóng
                   </button>
                 </div>
+              </div>
+            </div>
+          </Draggable>
+        </div>,
+        document.body
+      )}
+
+      {/* Dynamic Unit Summary Draggable Floating Modal */}
+      {isSummaryTableOpen && createPortal(
+        <div className="fixed inset-0 z-[99998] pointer-events-none flex items-center justify-center p-4">
+          <Draggable handle=".summary-modal-handle" nodeRef={summaryModalRef}>
+            <div 
+              ref={summaryModalRef} 
+              className="pointer-events-auto bg-slate-900/95 border border-slate-700/80 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden text-slate-200 backdrop-blur-md flex flex-col max-h-[85vh]"
+            >
+              <div className="summary-modal-handle cursor-grab active:cursor-grabbing px-5 py-3.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between select-none">
+                <div className="flex items-center gap-2">
+                  <GripHorizontal className="text-slate-400 w-5 h-5" />
+                  <Building className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế [{(activeVersion?.store as any) || 'HCM'} • {activeVersion?.location || 'L1'} • {activeVersion?.year || effectiveYear}]
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setIsSummaryTableOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
+                <DynamicUnitSummaryTable
+                  summaryList={dynamicSummaryList}
+                  selectedUnitId={selectedId}
+                  onSelectUnit={(uid) => {
+                    setSelectedId(uid);
+                  }}
+                  title={`Chi tiết ${dynamicSummaryList.length} gian hàng theo bộ luật`}
+                />
               </div>
             </div>
           </Draggable>

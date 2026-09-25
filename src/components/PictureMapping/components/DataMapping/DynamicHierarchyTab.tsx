@@ -23,6 +23,8 @@ import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 import { useDataStore } from "../../DataContext";
 import { useShallow } from "zustand/react/shallow";
+import { useDynamicUnitSummary } from "../../lib/dynamicSummaryEngine";
+import { DynamicUnitSummaryTable } from "./DynamicUnitSummaryTable";
 import {
   applyAllDynamicRulesForStore,
   triggerBackgroundR2Sync,
@@ -217,6 +219,14 @@ function DynamicHierarchyTab({
     // Always keep isDynamicActive: true permanently
     updateVersionsWithDebounce(versions.map(v => ({ ...v, isDynamicActive: true })));
   };
+
+  const { summaryMap, summaryList, groupStats } = useDynamicUnitSummary({
+    units,
+    activeVersion,
+    store,
+    location,
+    year: String(effectiveYear),
+  });
 
   const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name, location: u.location }))), [units]);
 
@@ -1142,6 +1152,14 @@ function DynamicHierarchyTab({
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Real-time Dynamic Unit Summary Table (Bảng Tổng Hợp So Sánh & Màu Tô) */}
+              <div className="pt-4 border-t border-slate-800/80">
+                <DynamicUnitSummaryTable 
+                  summaryList={summaryList}
+                  title={`Bảng Tổng Hợp Trạng Thái & Màu Tô Thực Tế [${store} • ${location} • ${effectiveYear}]`}
+                />
               </div>
             </div>
           ) : (
