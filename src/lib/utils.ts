@@ -398,6 +398,22 @@ export function projectMatchesUnitCode(pCodes: string[], unitName: string): bool
   return false;
 }
 
+/**
+ * Removes a specific unit code from a linkCodes string.
+ * Example: removeCodeFromLinkCodesString("101, 102, 103", "102") -> "101, 103"
+ */
+export function removeCodeFromLinkCodesString(linkCodesStr: string | null | undefined, codeToRemove: string): string {
+  if (!linkCodesStr) return '';
+  const target = codeToRemove.trim().toLowerCase();
+  if (!target) return linkCodesStr;
+  const parts = String(linkCodesStr)
+    .split(/[\r\n\t,;+/&|]+|\s{2,}/)
+    .map(c => c.trim())
+    .filter(Boolean);
+  const filtered = parts.filter(c => c.toLowerCase() !== target);
+  return filtered.join(', ');
+}
+
 
 export function getTaskStatus(
   start: string | undefined,

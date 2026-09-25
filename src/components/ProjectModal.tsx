@@ -6,7 +6,7 @@ import { Portal } from './Portal';
 import Draggable from 'react-draggable';
 import { X, Target, Edit2, Plus, Trash2, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { Project, Task, AppUser, DelegationGroup, TaskComment } from '../types';
-import { getStatus, formatToDatetimeLocal, parseDateTime, enrichProjects, generateId, cn, getTaskStatus, resolveActualStatus } from '../lib/utils';
+import { getStatus, formatToDatetimeLocal, parseDateTime, enrichProjects, generateId, cn, getTaskStatus, resolveActualStatus, removeCodeFromLinkCodesString, extractAllProjectCodes } from '../lib/utils';
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
 import {    db, APP_ID, storage , writeBatch , setDoc , deleteDoc } from "../lib/firebase";
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -490,11 +490,32 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         useAppStore.getState().setTasks(updatedTasks);
 
         const rawProjects = useAppStore.getState().projects || [];
-        const updatedProjects = rawProjects.map(p => 
-          ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) 
-            ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } 
-            : p
-        );
+        const savedCode = String(formData.code).trim().toLowerCase();
+        const savedYearStr = String(formData.year || '').trim();
+        const savedStoreStr = String(formData.store || '').trim().toUpperCase();
+
+        // Automatically clean up savedCode from any other project's linkCodes in the same store and year
+        const updatedProjects = rawProjects.map(p => {
+          if ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) {
+            return { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() };
+          }
+          const pStore = String(p.store || '').trim().toUpperCase();
+          const pYear = String(p.year || '').trim();
+          if ((!savedStoreStr || !pStore || pStore === savedStoreStr) && (!savedYearStr || !pYear || pYear === savedYearStr)) {
+            if (p.linkCodes) {
+              const allCodes = extractAllProjectCodes(p);
+              if (allCodes.includes(savedCode) && String(p.code || '').trim().toLowerCase() !== savedCode) {
+                const cleaned = removeCodeFromLinkCodesString(p.linkCodes, formData.code);
+                batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', p.id || String(p.no)), {
+                  linkCodes: cleaned,
+                  updatedAt: new Date().toISOString()
+                }, { merge: true });
+                return { ...p, linkCodes: cleaned, updatedAt: new Date().toISOString() };
+              }
+            }
+          }
+          return p;
+        });
         useAppStore.getState().setProjects(updatedProjects);
 
         batch.commit().catch(e => {
@@ -543,15 +564,42 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         }, { merge: true });
         
         const rawProjects = useAppStore.getState().projects || [];
+        const savedCode = String(formData.code).trim().toLowerCase();
+        const savedYearStr = String(formData.year || '').trim();
+        const savedStoreStr = String(formData.store || '').trim().toUpperCase();
+
+        // Automatically clean up savedCode from any other project's linkCodes in the same store and year
+        const otherProjectsToClean: { id: string; linkCodes: string }[] = [];
+        const updatedProjects = rawProjects.map(p => {
+          if (project && ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no))) {
+            return { ...p, ...dataToSave, isDeleted: false, id: project.id || docId, updatedAt: new Date().toISOString() };
+          }
+          const pStore = String(p.store || '').trim().toUpperCase();
+          const pYear = String(p.year || '').trim();
+          if ((!savedStoreStr || !pStore || pStore === savedStoreStr) && (!savedYearStr || !pYear || pYear === savedYearStr)) {
+            if (p.linkCodes) {
+              const allCodes = extractAllProjectCodes(p);
+              if (allCodes.includes(savedCode) && String(p.code || '').trim().toLowerCase() !== savedCode) {
+                const cleaned = removeCodeFromLinkCodesString(p.linkCodes, formData.code);
+                otherProjectsToClean.push({ id: p.id || String(p.no), linkCodes: cleaned });
+                return { ...p, linkCodes: cleaned, updatedAt: new Date().toISOString() };
+              }
+            }
+          }
+          return p;
+        });
+
+        otherProjectsToClean.forEach(item => {
+          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', item.id), {
+            linkCodes: item.linkCodes,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }).catch(console.error);
+        });
+
         if (project) {
-          const updatedProjects = rawProjects.map(p => 
-            ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) 
-              ? { ...p, ...dataToSave, isDeleted: false, id: project.id || docId, updatedAt: new Date().toISOString() } 
-              : p
-          );
           useAppStore.getState().setProjects(updatedProjects);
         } else {
-          useAppStore.getState().setProjects([...rawProjects, { ...dataToSave, isDeleted: false, id: docId, updatedAt: new Date().toISOString() } as any]);
+          useAppStore.getState().setProjects([...updatedProjects, { ...dataToSave, isDeleted: false, id: docId, updatedAt: new Date().toISOString() } as any]);
 
           // Auto-adjust filters so user immediately sees their newly created project
           const currentYearFilter = useAppStore.getState().globalYearFilter;

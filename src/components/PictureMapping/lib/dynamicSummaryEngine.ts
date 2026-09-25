@@ -306,6 +306,14 @@ export function useDynamicUnitSummary({
       sList.push(item);
     });
 
+    // Identify all independent project codes created in Task Detail
+    const independentProjectCodes = new Set<string>();
+    enrichedProjects.forEach((p) => {
+      if (p.code && String(p.code).trim()) {
+        independentProjectCodes.add(String(p.code).trim().toLowerCase());
+      }
+    });
+
     // Step B: Match Real-time App Project & Tasks (Filtered STRICTLY by Store & Year)
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -316,6 +324,7 @@ export function useDynamicUnitSummary({
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== effectiveYear) return;
 
       const pCodes = extractAllProjectCodes(p);
+      const primaryCodeLower = String(p.code || '').trim().toLowerCase();
 
       const status = getStatus(
         p.computedTakStart || p.start,
@@ -350,6 +359,12 @@ export function useDynamicUnitSummary({
       targetUnitKeys.forEach((code) => {
         const item = sMap.get(code);
         if (item) {
+          const isDirectMatch = primaryCodeLower && (code === primaryCodeLower || item.unitName?.toLowerCase() === primaryCodeLower || projectMatchesUnitCode([primaryCodeLower], code) || projectMatchesUnitCode([primaryCodeLower], item.unitName || ''));
+          // If this is a secondary linked unit but an independent project already exists for this unit code, do not overwrite with primary project
+          if (!isDirectMatch && (independentProjectCodes.has(code) || (item.unitName && independentProjectCodes.has(item.unitName.toLowerCase())))) {
+            return;
+          }
+
           item.hasAppProject = true;
           item.appProjectCode = String(p.code || code);
           item.projectName = p.name || '';

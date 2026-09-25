@@ -279,6 +279,14 @@ export function useDynamicRules(
       }
     });
 
+    // Identify all independent project codes created in Task Detail
+    const independentProjectCodes = new Set<string>();
+    enrichedProjects.forEach((p) => {
+      if (p.code && String(p.code).trim()) {
+        independentProjectCodes.add(String(p.code).trim().toLowerCase());
+      }
+    });
+
     // Merge real-time Project data from Zustand
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -292,6 +300,7 @@ export function useDynamicRules(
       }
 
       const pCodes = extractAllProjectCodes(p);
+      const primaryCodeLower = String(p.code || '').trim().toLowerCase();
       const status = getStatus(
         p.computedTakStart || p.start,
         p.computedTakCompl || p.handover,
@@ -304,6 +313,8 @@ export function useDynamicRules(
       const descStr = p.detail || (p as any).description || '';
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
+      const pLocation = String(p.location || (p as any).floor || '').trim();
+      const pStoreVal = String(p.store || store || '').trim();
 
       const targetUnitKeys = new Set<string>();
       pCodes.forEach(code => {
@@ -317,12 +328,30 @@ export function useDynamicRules(
 
       targetUnitKeys.forEach((code) => {
         if (dataMap[code]) {
+          const isDirectMatch = primaryCodeLower && (code === primaryCodeLower || projectMatchesUnitCode([primaryCodeLower], code));
+          // If this is a secondary linked unit but an independent project already exists for this unit code, do not overwrite with primary project
+          if (!isDirectMatch && independentProjectCodes.has(code)) {
+            return;
+          }
+
           dataMap[code].appProjectStatus = status;
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code);
           dataMap[code].appProjectYear = pYear;
-          dataMap[code].year = pYear;
+          dataMap[code].year = pYear || dataMap[code].year;
+
+          // Inherit store and floor/location for secondary linked units
+          if (pStoreVal) {
+            dataMap[code].store = pStoreVal;
+            dataMap[code].appProjectStore = pStoreVal;
+          }
+          if (pLocation) {
+            dataMap[code].floor = pLocation;
+            dataMap[code].location = pLocation;
+            dataMap[code].appProjectFloor = pLocation;
+            dataMap[code].appProjectLocation = pLocation;
+          }
 
           dataMap[code].appProjectMdStatus = mdStatusStr;
           dataMap[code].appMdStatus = mdStatusStr;
