@@ -1516,7 +1516,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 opacity={0.3}
                             />
                         )}
-                        {units.map((unit) => (
+                        {units.map((unit) => {
+                            const editFill = (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6';
+                            return (
                             <React.Fragment key={unit.id}>
                                 {unit.visible && unit.type === 'rect' && (
                                     <Rect
@@ -1525,8 +1527,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         y={unit.y}
                                         width={unit.width}
                                         height={unit.height}
-                                        fill={unit.fill}
-                                        opacity={unit.opacity ?? 0.6}
+                                        fill={editFill}
+                                        opacity={unit.opacity ?? 0.5}
                                         rotation={unit.rotation || 0}
                                         stroke={selectedId === unit.id ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
                                         strokeWidth={selectedId === unit.id ? 3 : 2}
@@ -1575,8 +1577,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         x={unit.x}
                                         y={unit.y}
                                         radius={unit.radius}
-                                        fill={unit.fill}
-                                        opacity={unit.opacity ?? 0.6}
+                                        fill={editFill}
+                                        opacity={unit.opacity ?? 0.5}
                                         rotation={unit.rotation || 0}
                                         stroke={selectedId === unit.id ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
                                         strokeWidth={selectedId === unit.id ? 3 : 2}
@@ -1623,8 +1625,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         x={unit.x || 0}
                                         y={unit.y || 0}
                                         points={unit.points}
-                                        fill={unit.fill}
-                                        opacity={unit.opacity ?? 0.6}
+                                        fill={editFill}
+                                        opacity={unit.opacity ?? 0.5}
                                         rotation={unit.rotation || 0}
                                         stroke={selectedId === unit.id ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
                                         strokeWidth={selectedId === unit.id ? 3 : 2}
@@ -1730,7 +1732,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     );
                                 })()}
                             </React.Fragment>
-                        ))}
+                        );})}
                         
                         {isDrawing && newShape && newShape.type === 'rect' && (
                            <Rect
@@ -1954,7 +1956,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                              >
                                 {unit.locked ? <Lock size={12} /> : <Unlock size={12} />}
                              </button>
-                             <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: unit.fill || '#3b82f6' }} />
+                             <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
                         </div>
                     </div>
                 )) : (

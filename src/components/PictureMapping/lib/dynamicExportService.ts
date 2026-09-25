@@ -344,29 +344,16 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
         };
       });
 
-      // Find the active version corresponding to current effectiveYear to colorize unit fills
-      const activeVer =
-        updatedVersions.find((v) => v.id === partition.activeMapVersionId && String(v.year || '').trim() === effectiveYear) ||
-        updatedVersions.find((v) => String(v.year || '').trim() === effectiveYear) ||
-        updatedVersions.find((v) => v.id === partition.activeMapVersionId) ||
-        updatedVersions[0];
+      // Ensure units maintain default visible styling and do not get overwritten with transparent colors
+      const sanitizedUnits = pUnits.map((u) => ({
+        ...u,
+        fill: (u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' && u.fill !== 'transparent') ? u.fill : '#3b82f6',
+      }));
 
-      if (activeVer && activeVer.groups) {
-        pUnits.forEach((u, idx) => {
-          let assignedColor: string | null = null;
-          activeVer.groups.forEach((g) => {
-            if (activeVer.groupMappings?.[g.id]?.includes(u.id)) {
-              assignedColor = g.color;
-            }
-          });
-          pUnits[idx] = { ...u, fill: assignedColor || 'rgba(0, 0, 0, 0.001)' };
-        });
-      }
-
-      totalEvaluatedUnits += pUnits.length;
+      totalEvaluatedUnits += sanitizedUnits.length;
       updatedStoreLocationData[pKey] = {
         ...partition,
-        mapUnits: pUnits,
+        mapUnits: sanitizedUnits,
         mapVersions: updatedVersions,
       };
     }

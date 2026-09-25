@@ -408,27 +408,7 @@ export function useDynamicRules(
         prevEvaluatedRef.current = serialized;
         setVersions(nextVersions);
 
-        // Optionally update units fill colors for the active version
-        if (setUnits && units.length > 0) {
-          const activeVer =
-            nextVersions.find((v) => String(v.year || '').trim() === String(effectiveYear).trim()) ||
-            nextVersions[0];
-
-          if (activeVer && activeVer.groups) {
-            const updatedUnits = units.map((u) => {
-              let assignedColor = u.fill || '#3b82f6';
-              for (const g of activeVer.groups) {
-                if (activeVer.groupMappings?.[g.id]?.includes(u.id)) {
-                  assignedColor = g.color;
-                  break;
-                }
-              }
-              return assignedColor !== u.fill ? { ...u, fill: assignedColor } : u;
-            });
-            setUnits(updatedUnits);
-          }
-        }
-
+        // Note: Dynamic rules calculate groupMappings and display colors without corrupting base units
         onDirtyChange?.();
       }
     }
