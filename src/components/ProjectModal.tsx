@@ -277,7 +277,8 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         return;
       }
 
-      const validNos = projects.map(p => p.no).filter(n => typeof n === 'number' && !isNaN(n));
+      const allStoreProjects = useAppStore.getState().projects || [];
+      const validNos = allStoreProjects.map(p => p.no).filter(n => typeof n === 'number' && !isNaN(n));
       let no = project ? project.no : (validNos.length ? Math.max(...validNos) + 1 : 1);
       if (isNaN(no)) no = (validNos.length ? Math.max(...validNos) + 1 : 1);
       
@@ -326,6 +327,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         year: yearNum,
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
+        isDeleted: false,
         taskCount: computedDates.taskCount ?? project?.taskCount ?? 0,
         taskSummaries: computedDates.taskSummaries || project?.taskSummaries || [],
         computedPlanProgress: computedDates.computedPlanProgress ?? project?.computedPlanProgress ?? 0,
@@ -544,12 +546,38 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         if (project) {
           const updatedProjects = rawProjects.map(p => 
             ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) 
-              ? { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() } 
+              ? { ...p, ...dataToSave, isDeleted: false, id: project.id || docId, updatedAt: new Date().toISOString() } 
               : p
           );
           useAppStore.getState().setProjects(updatedProjects);
         } else {
-          useAppStore.getState().setProjects([...rawProjects, { ...dataToSave, id: docId, updatedAt: new Date().toISOString() } as any]);
+          useAppStore.getState().setProjects([...rawProjects, { ...dataToSave, isDeleted: false, id: docId, updatedAt: new Date().toISOString() } as any]);
+
+          // Auto-adjust filters so user immediately sees their newly created project
+          const currentYearFilter = useAppStore.getState().globalYearFilter;
+          const currentStoreFilter = useAppStore.getState().globalStoreFilter;
+          let filterChangedNotice = '';
+
+          if (currentYearFilter !== 'all' && String(currentYearFilter) !== String(yearNum)) {
+            useAppStore.getState().setGlobalYearFilter(String(yearNum));
+            filterChangedNotice += ` Năm ${yearNum}`;
+          }
+          if (currentStoreFilter !== 'all' && currentStoreFilter !== formData.store) {
+            const curUser = useAppStore.getState().currentUser;
+            const canSeeStore = curUser?.role === 'admin' || (formData.store === 'HCM' ? curUser?.storePermissions?.hcm : curUser?.storePermissions?.hn);
+            if (canSeeStore) {
+              useAppStore.getState().setGlobalStoreFilter(formData.store);
+              filterChangedNotice += ` Chi nhánh ${formData.store}`;
+            }
+          }
+
+          useAppStore.getState().setToast({
+            title: "Tạo dự án thành công",
+            message: filterChangedNotice
+              ? `Đã tạo dự án ${formData.code} (${yearNum} - ${formData.store}) và tự động chuyển bộ lọc sang${filterChangedNotice}.`
+              : `Đã tạo dự án ${formData.code} thành công.`,
+            type: "success"
+          });
         }
 
         undoManager.push({
