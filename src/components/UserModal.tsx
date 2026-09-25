@@ -65,6 +65,22 @@ export function UserModal({ isOpen, onClose, user}: UserModalProps) {
     }
 
     try {
+      const newUserObj: AppUser = {
+        id,
+        username,
+        password: finalPassword,
+        role: user ? user.role : 'Staff',
+        canSee: user ? user.canSee : true,
+        canWrite: user ? user.canWrite : true,
+        ...(user || {})
+      };
+      const currentUsers = useAppStore.getState().appUsers;
+      const exists = currentUsers.some(u => u.id === id);
+      const updatedUsers = exists
+        ? currentUsers.map(u => u.id === id ? { ...u, ...newUserObj } : u)
+        : [...currentUsers, newUserObj];
+      useAppStore.getState().setAppUsers(updatedUsers);
+
       await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', id), {
         id,
         username,
@@ -73,7 +89,7 @@ export function UserModal({ isOpen, onClose, user}: UserModalProps) {
         canSee: user ? user.canSee : true,
         canWrite: user ? user.canWrite : true
       }, { merge: true });
-      bumpConfigVersion("app_users");
+      await bumpConfigVersion("app_users");
       onClose();
     } catch (e) { console.error(e); }
   };

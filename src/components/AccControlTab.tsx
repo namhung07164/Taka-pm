@@ -43,39 +43,69 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     onConfirm: () => {}
   });
 
+  const updateUserInStore = (userId: string, updateFn: (u: AppUser) => AppUser) => {
+    const setAppUsers = useAppStore.getState().setAppUsers;
+    const currentList = useAppStore.getState().appUsers;
+    const updatedList = currentList.map(u => u.id === userId ? updateFn(u) : u);
+    setAppUsers(updatedList);
+  };
+
   const changeRole = async (userId: string, role: string) => {
     try {
-              const canWrite = role === 'Manager' || role === 'Staff' || role === 'CP' || role === 'admin';
-              const canSee = true;
-              setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), { role, canWrite, canSee }, { merge: true });
+      const canWrite = role === 'Manager' || role === 'Staff' || role === 'CP' || role === 'admin';
+      const canSee = true;
+      updateUserInStore(userId, u => ({ ...u, role: role as AppRole, canWrite, canSee }));
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), { role, canWrite, canSee }, { merge: true });
+      await bumpConfigVersion('app_users');
     } catch (e) { console.error(e); }
   };
 
   const toggleUserPermission = async (userId: string, category: 'storePermissions' | 'locationPermissions', field: string, currentValue: boolean) => {
     try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+      const newValue = !currentValue;
+      updateUserInStore(userId, u => ({
+        ...u,
         [category]: {
-          [field]: !currentValue
+          ...(u[category] || {}),
+          [field]: newValue
+        }
+      }));
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+        [category]: {
+          [field]: newValue
         }
       }, { merge: true });
+      await bumpConfigVersion('app_users');
     } catch (e) { console.error(e); }
   };
 
   const toggleNotificationPermission = async (userId: string, currentValue: boolean) => {
     try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
-        notification: !currentValue
+      const newValue = !currentValue;
+      updateUserInStore(userId, u => ({ ...u, notification: newValue }));
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+        notification: newValue
       }, { merge: true });
+      await bumpConfigVersion('app_users');
     } catch (e) { console.error(e); }
   };
 
   const toggleUserPartyTag = async (userId: string, party: string, currentValue: boolean) => {
     try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+      const newValue = !currentValue;
+      updateUserInStore(userId, u => ({
+        ...u,
         partyPermissions: {
-          [party]: !currentValue
+          ...(u.partyPermissions || {}),
+          [party]: newValue
+        }
+      }));
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+        partyPermissions: {
+          [party]: newValue
         }
       }, { merge: true });
+      await bumpConfigVersion('app_users');
     } catch (e) { console.error(e); }
   };
 
@@ -86,8 +116,9 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
 
     try {
       const newList = [...parties, party];
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties'), { list: newList }, { merge: true });
-      bumpConfigVersion('parties');
+      useAppStore.getState().setParties(newList);
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties'), { list: newList }, { merge: true });
+      await bumpConfigVersion('parties');
       setNewParty('');
     } catch (e) { console.error(e); }
   };
@@ -95,16 +126,20 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
   const removeParty = async (party: string) => {
     try {
       const newList = parties.filter(p => p !== party);
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties'), { list: newList }, { merge: true });
-      bumpConfigVersion('parties');
+      useAppStore.getState().setParties(newList);
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties'), { list: newList }, { merge: true });
+      await bumpConfigVersion('parties');
     } catch (e) { console.error(e); }
   };
 
   const toggleByPartyPermission = async (userId: string, currentValue: boolean) => {
     try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
-        byPartyAccess: !currentValue
+      const newValue = !currentValue;
+      updateUserInStore(userId, u => ({ ...u, byPartyAccess: newValue }));
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+        byPartyAccess: newValue
       }, { merge: true });
+      await bumpConfigVersion('app_users');
     } catch (e) { console.error(e); }
   };
 
@@ -115,8 +150,21 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
       locPerms[loc.toLowerCase()] = newValue;
     });
 
+    updateUserInStore(userId, u => ({
+      ...u,
+      notification: newValue,
+      storePermissions: {
+        hcm: newValue,
+        hn: newValue
+      },
+      locationPermissions: locPerms,
+      partyPermissions: {
+        all: newValue
+      }
+    }));
+
     try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId), {
         notification: newValue,
         storePermissions: {
           hcm: newValue,
@@ -127,6 +175,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
           all: newValue
         }
       }, { merge: true });
+      await bumpConfigVersion('app_users');
     } catch (e) { console.error(e); }
   };
 
@@ -137,8 +186,9 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
 
     try {
       const newList = [...locations, loc];
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { list: newList }, { merge: true });
-      bumpConfigVersion('locations');
+      useAppStore.getState().setLocations(newList);
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { list: newList }, { merge: true });
+      await bumpConfigVersion('locations');
       setNewLocation('');
     } catch (e) { console.error(e); }
   };
@@ -146,16 +196,18 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
   const removeLocation = async (loc: string) => {
     try {
       const newList = locations.filter(l => l !== loc);
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { list: newList }, { merge: true });
-      bumpConfigVersion('locations');
+      useAppStore.getState().setLocations(newList);
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { list: newList }, { merge: true });
+      await bumpConfigVersion('locations');
     } catch (e) { console.error(e); }
   };
 
   const toggleLocationVisibility = async (loc: string, currentVisible: boolean) => {
     try {
       const newVisibility = { ...locationVisibility, [loc]: !currentVisible };
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { visibility: newVisibility }, { merge: true });
-      bumpConfigVersion('locations');
+      useAppStore.getState().setLocationVisibility(newVisibility);
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations'), { visibility: newVisibility }, { merge: true });
+      await bumpConfigVersion('locations');
     } catch (e) { console.error(e); }
   };
 
@@ -210,7 +262,11 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
       message: 'Delete this account?',
       onConfirm: async () => {
         try {
-          deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', id));
+          const setAppUsers = useAppStore.getState().setAppUsers;
+          const currentList = useAppStore.getState().appUsers;
+          setAppUsers(currentList.filter(u => u.id !== id));
+          await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', id));
+          await bumpConfigVersion('app_users');
         } catch (e) { console.error(e); }
       }
     });
