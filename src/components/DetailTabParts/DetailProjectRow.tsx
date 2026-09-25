@@ -183,18 +183,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               onSave={(val) => onUpdateProject(p, 'name', val)}
               canWrite={canWrite}
             />
-            {!visibleColumns.includes('taskName') && (
-              <span className={cn(
-                "text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0",
-                effectiveTaskCount >= 2
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
-                  : effectiveTaskCount === 1
-                  ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800"
-                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
-              )}>
-                {effectiveTaskCount} tasks
-              </span>
-            )}
           </div>
         </td>
       )}
@@ -206,16 +194,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               onSave={(val) => onUpdateProject(p, 'name', val)}
               canWrite={canWrite}
             />
-            <span className={cn(
-              "text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0",
-              effectiveTaskCount >= 2
-                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
-                : effectiveTaskCount === 1
-                ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800"
-                : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
-            )}>
-              {effectiveTaskCount} tasks
-            </span>
           </div>
         </td>
       )}
