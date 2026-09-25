@@ -132,77 +132,30 @@ function DynamicHierarchyTab({
   // 3-TIER ARCHITECTURE FOR DYNAMIC RULES
   // Tier 1: Memory Evaluation (0ms on RAM)
   // Tier 2: Debounce Cloud Saver (5000ms delay)
-  // Tier 3: Auto-Save On Unmount / Tab Switch
-  // ============================================================================
-  const isDirtyRef = useRef(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Pure In-Memory Version Management (Senior Coder Architecture: 0ms RAM, zero redundant R2 writes)
   const storeRef = useRef(store);
   storeRef.current = store;
   const versionsRef = useRef(versions);
   versionsRef.current = versions;
 
   const [cloudSyncStatus, setCloudSyncStatus] = useState<BackgroundSyncStatus>('idle');
-  const [isDebouncePending, setIsDebouncePending] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeBackgroundSyncStatus((status) => {
       setCloudSyncStatus(status);
-      if (status === 'saved') {
-        setIsDebouncePending(false);
-      }
     });
     return unsub;
   }, []);
 
-  const scheduleDebounceSave = useCallback(() => {
-    isDirtyRef.current = true;
-    setIsDebouncePending(true);
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      if (isDirtyRef.current) {
-        setIsDebouncePending(false);
-        triggerBackgroundR2Sync(storeRef.current);
-        isDirtyRef.current = false;
-      }
-    }, 5000);
-  }, []);
-
-  // Tier 3: Auto-Save On Unmount / Tab Switch
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      if (isDirtyRef.current) {
-        triggerBackgroundR2Sync(storeRef.current);
-        isDirtyRef.current = false;
-      }
-    };
-  }, []);
-
-  // Flush on browser tab close / refresh
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (isDirtyRef.current) {
-        triggerBackgroundR2Sync(storeRef.current);
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
-
-  // Wrap setVersions to automatically schedule 5s debounced cloud save
-  const updateVersionsWithDebounce = useCallback(
+  // Wrap setVersions to update Zustand and RAM state instantly (0ms)
+  const updateVersions = useCallback(
     (newVersions: MapVersion[]) => {
       setVersions(newVersions);
-      scheduleDebounceSave();
     },
-    [setVersions, scheduleDebounceSave]
+    [setVersions]
   );
 
-  // Tier 1: Auto-Evaluate in RAM (0ms execution, <3ms across all units, zero Firestore reads/writes)
+  // Tier 1: Auto-Evaluate in RAM (0ms execution, <3ms across all units, zero Firestore & R2 writes)
   useDynamicRules({
     units,
     versions,
@@ -211,13 +164,12 @@ function DynamicHierarchyTab({
     store,
     year: effectiveYear,
     autoEvaluate: true,
-    onDirtyChange: scheduleDebounceSave,
   });
 
   const toggleVersionActive = () => {
     if (!activeVersion) return;
     // Always keep isDynamicActive: true permanently
-    updateVersionsWithDebounce(versions.map(v => ({ ...v, isDynamicActive: true })));
+    updateVersions(versions.map(v => ({ ...v, isDynamicActive: true })));
   };
 
   const { summaryMap, summaryList, groupStats } = useDynamicUnitSummary({
@@ -445,16 +397,10 @@ function DynamicHierarchyTab({
       setVersions(allUpdatedVersions);
       setUnits(allUpdatedUnits);
 
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      isDirtyRef.current = false;
-      setIsDebouncePending(false);
-
-      // Immediately trigger background R2 sync
+      // Immediately trigger background R2 sync when user confirms and applies rules
       await triggerBackgroundR2Sync(store);
 
-      alert(`Đã áp dụng điều kiện logic cho toàn bộ các version trên tất cả các tầng tại ${store} (${totalEvaluatedUnits} units). Dữ liệu đã được lưu ngầm lên Cloudflare R2.`);
+      alert(`Đã áp dụng điều kiện logic cho toàn bộ các version trên tất cả các tầng tại ${store} (${totalEvaluatedUnits} units). Dữ liệu đã được lưu lên Cloudflare R2.`);
     } catch (err: any) {
       console.error("Lỗi khi áp dụng rules:", err);
       alert(`Có lỗi xảy ra khi áp dụng rules: ${err?.message || err}`);
@@ -492,7 +438,7 @@ function DynamicHierarchyTab({
         isDynamicActive: true,
         year: String(effectiveYear),
       };
-      updateVersionsWithDebounce([...versions, newVersion]);
+      updateVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
     }
   };
@@ -526,7 +472,7 @@ function DynamicHierarchyTab({
         groupMappings: newGroupMappings,
         isDynamicActive: true,
       };
-      updateVersionsWithDebounce([...versions, newVersion]);
+      updateVersions([...versions, newVersion]);
       setActiveVersionId(newVersion.id);
     }
   };
@@ -536,7 +482,7 @@ function DynamicHierarchyTab({
     if (!confirm(`Bạn có chắc muốn xoá version "${activeVersion.name}" (${activeVersion.store || store} - ${activeVersion.location || location} - ${activeVersion.year || effectiveYear})?`))
       return;
     const newVersions = versions.filter((v) => v.id !== activeVersion.id);
-    updateVersionsWithDebounce(newVersions);
+    updateVersions(newVersions);
 
     // Find remaining version in the same partition (store, location, effectiveYear)
     const remainingInPartition = newVersions.filter(v => {
@@ -560,7 +506,7 @@ function DynamicHierarchyTab({
           .padStart(6, "0");
       const newGroup = { id: uuidv4(), name, color, rules: [] };
 
-      updateVersionsWithDebounce(
+      updateVersions(
         versions.map((v) => {
           if (v.id === activeVersion.id) {
             return {
@@ -578,7 +524,7 @@ function DynamicHierarchyTab({
   const deleteGroup = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Xoá group này khỏi version hiện tại?")) return;
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === viewVersionId) {
           const newMappings = { ...v.groupMappings };
@@ -600,7 +546,7 @@ function DynamicHierarchyTab({
     if (!group) return;
     const newName = prompt("Đổi tên group:", group.name);
     if (newName && newName !== group.name) {
-      updateVersionsWithDebounce(
+      updateVersions(
         versions.map((v) => {
           if (v.id === viewVersionId) {
             return {
@@ -617,7 +563,7 @@ function DynamicHierarchyTab({
   };
 
   const updateGroupColor = (groupId: string, color: string) => {
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === viewVersionId) {
           return {
@@ -633,7 +579,7 @@ function DynamicHierarchyTab({
   };
 
   const updateGroupOpacity = (groupId: string, opacity: number) => {
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === viewVersionId) {
           return {
@@ -649,7 +595,7 @@ function DynamicHierarchyTab({
   };
 
   const addRuleToGroup = (groupId: string) => {
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === viewVersionId) {
           return {
@@ -677,7 +623,7 @@ function DynamicHierarchyTab({
     attr: keyof GroupRule,
     value: string,
   ) => {
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === viewVersionId) {
           return {
@@ -698,7 +644,7 @@ function DynamicHierarchyTab({
   };
 
   const deleteRule = (groupId: string, ruleIndex: number) => {
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === viewVersionId) {
           return {
@@ -734,7 +680,7 @@ function DynamicHierarchyTab({
         newGroupMappings[newId] = [...(sourceVersion.groupMappings[g.id] || [])];
     });
 
-    updateVersionsWithDebounce(
+    updateVersions(
       versions.map((v) => {
         if (v.id === activeVersion.id) {
           return {
@@ -845,20 +791,15 @@ function DynamicHierarchyTab({
                   Rule-Based Groups
                 </h4>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* 3-Tier Status Indicator */}
+                  {/* Memory & Cloud Status Indicator */}
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Tier 1: Đánh giá RAM 0ms" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" title="Tier 1: Đánh giá RAM 0ms" />
                     <span className="text-slate-300 font-semibold">RAM 0ms</span>
                     <span className="text-slate-600">•</span>
-                    {isDebouncePending ? (
-                      <span className="text-amber-400 font-semibold flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                        Chờ Cloud (5s)...
-                      </span>
-                    ) : cloudSyncStatus === 'syncing' ? (
+                    {cloudSyncStatus === 'syncing' ? (
                       <span className="text-cyan-400 font-semibold flex items-center gap-1 animate-pulse">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                        Lưu R2 ngầm...
+                        Lưu R2...
                       </span>
                     ) : cloudSyncStatus === 'saved' ? (
                       <span className="text-emerald-400 font-semibold flex items-center gap-1">
@@ -868,7 +809,7 @@ function DynamicHierarchyTab({
                     ) : (
                       <span className="text-slate-400 font-medium flex items-center gap-1">
                         <Cloud size={12} className="text-slate-500" />
-                        R2 Tự động
+                        R2 Sẵn sàng
                       </span>
                     )}
                   </div>

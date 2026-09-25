@@ -578,15 +578,14 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
      * **`App: Party`**: Lọc theo tên nhà thầu, đơn vị phụ trách hoặc đối tác thi công (`party` / `contractor`).
      * Hỗ trợ đầy đủ các toán tử so sánh chuỗi linh hoạt: `=`, `contains` (chứa các từ khóa), `exclude` (loại trừ từ khóa) cũng như các toán tử số học `>`, `<`, `>=`, `<=`. Dữ liệu được chuẩn hóa và tự động đồng bộ xuyên suốt từ giao diện Dynamic Tab, Live Layout Viewer cho đến tiến trình Trigger Export.
 
-7. **Kiến Trúc Tối Ưu 3 Lớp Cho Dynamic Rules (3-Tier Architecture for Zero-Lag Dynamic Hierarchy)**:
-   - **Lớp 1: Đánh giá trên bộ nhớ RAM (Memory Evaluation - 0ms)**: Khi cờ Dynamic Rules bật (`isDynamicActive: true`), danh sách gian hàng thuộc các nhóm quy tắc được đánh giá tự động tức thì trên RAM (Zustand Global Store `useAppStore` & `useDataStore`) thông qua thuật toán tối ưu hóa `useDynamicRules`. Tốc độ tính toán dưới 3ms cho toàn bộ các tầng, không tốn bất kỳ lượt đọc/ghi Firestore nào, không làm giật lag giao diện (duy trì 60 FPS mượt mà).
-   - **Lớp 2: Bộ đệm trì hoãn lưu Cloud (Debounce Cloud Saver - 5000ms)**: Khi người dùng chỉnh sửa rule, thêm/sửa/xóa group, hoặc khi dữ liệu Project/Task thay đổi tạo ra cập nhật mới, hệ thống tự động thiết lập bộ đếm lùi Debounce 5 giây (5000ms). Nếu trong 5 giây người dùng tiếp tục thao tác, bộ đếm sẽ tự động đặt lại từ đầu. Sau khi người dùng ngừng thao tác đủ 5 giây, hệ thống mới lặng lẽ đóng gói và lưu dữ liệu lên Cloudflare R2 ở chế độ chạy ngầm (Background Async), hoàn toàn không khóa hay chặn luồng tương tác của giao diện.
-   - **Lớp 3: Tự động lưu khi thoát hoặc chuyển tab (Auto-Save on Unmount / Tab Switch)**: Khi người dùng chuyển sang tab khác, đóng modal hoặc đóng/refresh trình duyệt, hàm kiểm tra cờ thay đổi (`isDirtyRef`) sẽ lập tức kích hoạt đẩy bản lưu mới nhất lên Cloudflare R2 đúng 1 lần duy nhất, đảm bảo cấu hình phân loại màu sắc và quy tắc không bao giờ bị thất lạc.
-   - **Huy hiệu chỉ báo trạng thái 3 lớp trực quan (3-Tier Status Indicator)**: Ngay tại thanh công cụ Dynamic Hierarchy, hệ thống hiển thị huy hiệu trạng thái trực quan:
+7. **Kiến Trúc Tối Ưu Cho Dynamic Rules (Senior Reactive In-Memory Engine & Explicit R2 Cloud Persistence)**:
+   - **Tầng 1: Đánh giá tức thời trên bộ nhớ RAM (In-Memory Evaluation - 0ms)**: Danh sách gian hàng thuộc các nhóm quy tắc được đánh giá tự động tức thì trên RAM (Zustand Global Store `useAppStore` & `useDataStore`) thông qua thuật toán tối ưu hóa `useDynamicRules`. Tốc độ tính toán dưới 3ms cho toàn bộ các tầng, không tốn bất kỳ lượt đọc/ghi Firestore hay Cloud R2 nào, loại bỏ hoàn toàn các vòng lặp ghi đè bản nháp khi đang tinh chỉnh quy tắc.
+   - **Tầng 2: Đồng bộ Cloud chuẩn xác theo lệnh (Intentional & Reliable R2 Persistence)**: Loại bỏ các luồng auto-save 5 giây và ngắt kết nối dở dang khi tắt trình duyệt (`beforeunload`). Cấu hình chỉ được ghi vĩnh viễn lên Cloudflare R2 khi người dùng chủ động bấm **"Apply Rules"** (Áp dụng quy tắc) hoặc bấm **"Save Cloud"**, đảm bảo tính toàn vẹn 100% của bản vẽ phát hành chính thức và tiết kiệm chi phí lưu trữ tối đa.
+   - **Huy hiệu chỉ báo trạng thái trực quan**: Ngay tại thanh công cụ Dynamic Hierarchy, hệ thống hiển thị huy hiệu trạng thái:
      * `🟢 RAM 0ms`: Báo hiệu thuật toán RAM đang phản hồi tức thì trong chưa đầy 3ms.
-     * `🟡 Chờ Cloud (5s)...`: Báo hiệu đang trong thời gian đệm 5 giây chờ người dùng hoàn tất các thao tác gõ/chỉnh sửa.
-     * `🔵 Lưu R2 ngầm...`: Báo hiệu tiến trình đang tải bản cập nhật lên Cloudflare R2 ở chế độ ngầm không chặn UI.
+     * `🔵 Lưu R2...`: Báo hiệu tiến trình đang tải bản cập nhật lên Cloudflare R2 ở chế độ ngầm không chặn UI.
      * `🟢 R2 Đã lưu`: Báo hiệu toàn bộ cấu hình quy tắc và màu sắc đã được đồng bộ lên Cloudflare R2 an toàn.
+     * `⚪ R2 Sẵn sàng`: Sẵn sàng cho lần áp dụng quy tắc tiếp theo.
 
 8. **Giao Diện Thanh Công Cụ Tinh Gọn, Chống Che Khuất & Tối Ưu Màn Hình Nhỏ (Optimized & Collision-Free Responsive Toolbar)**:
    - **Cụm Hàng Trên — Tiêu Đề, Bộ Lọc Hợp Nhất & Cụm Nút Hành Động Liền Kề Nút Gantt**:
