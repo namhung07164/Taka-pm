@@ -14,15 +14,21 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
   let val = data[rule.field];
   if (val === undefined || val === null) {
     if (rule.field === 'appProjectMdStatus' || rule.field === 'appMdStatus' || rule.field === 'app:md status') {
-      val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
+      val = data.appProjectMdStatus ?? '';
     } else if (rule.field === 'appProjectActStatus' || rule.field === 'appActStatus' || rule.field === 'app: act status') {
-      val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
+      val = data.appProjectActStatus ?? '';
     } else if (rule.field === 'appProjectDetail' || rule.field === 'appDetail' || rule.field === 'app: detail (project)') {
-      val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
+      val = data.appProjectDetail ?? '';
     } else if (rule.field === 'appProjectDescription' || rule.field === 'appDescription' || rule.field === 'app: description (project)' || rule.field === 'description (project)') {
-      val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
+      val = data.appProjectDescription ?? '';
     } else if (rule.field === 'appProjectParty' || rule.field === 'appParty' || rule.field === 'app: party') {
-      val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
+      val = data.appProjectParty ?? '';
+    } else if (rule.field === 'appProjectStatus' || rule.field === 'appStatus' || rule.field === 'app: status') {
+      val = data.appProjectStatus ?? '';
+    } else if (rule.field === 'appProjectYear' || rule.field === 'appYear' || rule.field === 'app: year') {
+      val = data.appProjectYear ?? '';
+    } else if (rule.field === 'appProjectCode' || rule.field === 'appCode' || rule.field === 'app: project code') {
+      val = data.appProjectCode ?? '';
     }
   }
 

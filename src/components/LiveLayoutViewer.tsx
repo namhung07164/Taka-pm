@@ -1219,24 +1219,42 @@ function LiveCanvas({
                             let val = data[rule.field];
                             if (val === undefined || val === null || String(val).trim() === '') {
                               const f = String(rule.field || '').toLowerCase().trim();
-                              if (f === 'floor' || f === 'location' || f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
-                                val = data.floor || data.appProjectFloor || data.appFloor || u.location || targetLoc || '';
-                              } else if (f === 'year' || f === 'appprojectyear' || f === 'app: year' || f === 'appyear' || f === 'projectyear') {
-                                val = data.appProjectYear || data.year || globalYearFilter || '';
-                              } else if (f === 'appprojectstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
-                                val = data.appProjectStatus || data.projectStatus || data.status || '';
-                              } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'code' || f === 'unit') {
-                                val = data.appProjectCode || data.unit || u.name || '';
-                              } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status' || f === 'mdstatus') {
-                                val = data.appProjectMdStatus ?? data.appMdStatus ?? data.mdStatus ?? '';
-                              } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
-                                val = data.appProjectActStatus ?? data.appActStatus ?? data.actStatus ?? '';
-                              } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
-                                val = data.appProjectDetail ?? data.appDetail ?? data.detail ?? '';
-                              } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)' || f === 'description (project)') {
-                                val = data.appProjectDescription ?? data.appDescription ?? data.detail ?? '';
-                              } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party' || f === 'party') {
-                                val = data.appProjectParty ?? data.appParty ?? data.party ?? '';
+                              if (f === 'floor' || f === 'location') {
+                                val = data.floor || u.location || targetLoc || '';
+                              } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
+                                val = data.appProjectFloor || data.appFloor || '';
+                              } else if (f === 'year') {
+                                val = data.year || '';
+                              } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
+                                val = data.appProjectYear || '';
+                              } else if (f === 'status' || f === 'projectstatus') {
+                                val = data.projectStatus || data.status || '';
+                              } else if (f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
+                                val = data.appProjectStatus || '';
+                              } else if (f === 'unit' || f === 'code') {
+                                val = data.unit || u.name || '';
+                              } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
+                                val = data.appProjectCode || '';
+                              } else if (f === 'mdstatus') {
+                                val = data.mdStatus || '';
+                              } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
+                                val = data.appProjectMdStatus || '';
+                              } else if (f === 'actstatus') {
+                                val = data.actStatus || '';
+                              } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+                                val = data.appProjectActStatus || '';
+                              } else if (f === 'detail') {
+                                val = data.detail || '';
+                              } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+                                val = data.appProjectDetail || '';
+                              } else if (f === 'description (project)') {
+                                val = data.detail || '';
+                              } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+                                val = data.appProjectDescription || '';
+                              } else if (f === 'party') {
+                                val = data.party || '';
+                              } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+                                val = data.appProjectParty || '';
                               }
                             }
                             if (rule.field === "margin" || rule.field === "marginByCp") val = Number(val || 0) * 100;
