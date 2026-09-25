@@ -350,6 +350,68 @@ export async function purgeOldR2BackgroundImages(
 }
 
 /**
+ * Downloads a JSON file from Cloudflare R2 using dual method:
+ * Method 1: S3 SDK direct getObject with transformToString()
+ * Method 2: Presigned GET URL fetch with custom CORS error classification
+ */
+export async function downloadR2JsonFile<T = any>(
+  key: string,
+  creds: R2Credentials,
+  s3: S3ClientType
+): Promise<{ success: boolean; data?: T; error?: string; notFound?: boolean }> {
+  const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
+
+  // Method 1: S3Client SDK direct send
+  try {
+    const command = new GetObjectCommand({
+      Bucket: creds.bucketName.trim(),
+      Key: key,
+    });
+    const res = await s3.send(command);
+    if (res.Body) {
+      const text = await (res.Body as any).transformToString();
+      const parsed = JSON.parse(text);
+      return { success: true, data: parsed };
+    }
+  } catch (sdkErr: any) {
+    const name = sdkErr?.name || '';
+    const msg = sdkErr?.message || '';
+    if (name === 'NoSuchKey' || name === 'NotFound' || msg.includes('does not exist') || msg.includes('404')) {
+      return { success: false, notFound: true, error: `File "${key}" chưa tồn tại trên R2 Bucket (Vui lòng bấm Save Cloud để lưu cấu hình lần đầu).` };
+    }
+    console.warn(`[R2 Download] S3 send failed for "${key}", trying signed URL fallback:`, sdkErr);
+  }
+
+  // Method 2: Presigned GET URL fetch
+  try {
+    const command = new GetObjectCommand({
+      Bucket: creds.bucketName.trim(),
+      Key: key,
+    });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    const res = await fetch(signedUrl);
+    if (res.status === 404) {
+      return { success: false, notFound: true, error: `File "${key}" chưa tồn tại trên R2 Bucket (Vui lòng bấm Save Cloud để lưu cấu hình lần đầu).` };
+    }
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      return { success: false, error: `Lỗi R2 HTTP ${res.status}: ${txt.substring(0, 100)}` };
+    }
+    const data = await res.json();
+    return { success: true, data };
+  } catch (fetchErr: any) {
+    const errMsg = fetchErr?.message || String(fetchErr);
+    if (errMsg.includes('Load failed') || errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('CORS')) {
+      return { 
+        success: false, 
+        error: 'Lỗi CORS / Mạng khi kết nối Cloudflare R2: Hãy đảm bảo CORS Policy trên R2 Bucket cho phép GET/PUT từ domain của bạn.' 
+      };
+    }
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
  * Upload single file with multiple retry attempts and proxy fallback
  */
 export async function uploadSingleR2File(

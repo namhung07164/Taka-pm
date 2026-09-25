@@ -4,7 +4,7 @@ import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Tex
 import useImage from 'use-image';
 import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { v4 as uuidv4 } from 'uuid';
-import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, Plus, Building } from 'lucide-react';
+import { MousePointer2, Square, Circle as CircleIcon, Hexagon, Upload, Trash2, Maximize, Minimize, Lock, Unlock, Save, Magnet, Search, X as CloseIcon, Undo2, RotateCw, RefreshCw, Eye, EyeOff, Download, FolderOpen, Pencil, FileImage, Move, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, GripHorizontal, Plus, Building, Copy } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { UnitShape, ShapeType, MapVersion } from './types';
 import { cn } from '../../lib/utils';
@@ -14,6 +14,8 @@ import { useAppStore } from '../../../../store/useAppStore';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 
+import { extractR2Key } from '../../lib/r2Upload';
+import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -929,6 +931,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
     setIsLoading(true);
     try {
+      const currentVersion = versions.find(v => v.id === activeVersionId);
+      const oldBgKey = extractR2Key(currentVersion?.backgroundUrl);
+
       let imageUrl = '';
       if (file.type === 'application/pdf') {
         imageUrl = await convertPdfToImage(file);
@@ -938,6 +943,14 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       }
       setLocalImageUrl(imageUrl);
       setVersions(versions.map(v => v.id === activeVersionId ? { ...v, backgroundUrl: imageUrl } : v));
+
+      // Auto Garbage Collection: If old background was on R2, check if any other version uses it
+      if (oldBgKey) {
+        const isUsedElsewhere = versions.some(v => v.id !== activeVersionId && extractR2Key(v.backgroundUrl) === oldBgKey);
+        if (!isUsedElsewhere) {
+          deleteR2StorageFiles([oldBgKey]).catch((err) => console.warn('[R2 Auto-GC] Could not delete replaced image:', err));
+        }
+      }
     } catch (err) {
       console.error(err);
       alert('Error updating background');
@@ -1176,9 +1189,18 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                               const v = versions.find(v => v.id === activeVersionId);
                               if (!v) return;
                               if (!confirm(`Bạn có chắc muốn xoá version "${v.name}${v.year ? ` • ${v.year}` : ''}"?`)) return;
+                              const oldBgKey = extractR2Key(v.backgroundUrl);
                               const newVersions = versions.filter(item => item.id !== activeVersionId);
                               setVersions(newVersions);
                               setActiveVersionId(newVersions.length > 0 ? newVersions[0].id : null);
+
+                              // Auto Garbage Collection on R2
+                              if (oldBgKey) {
+                                const isUsedElsewhere = newVersions.some(item => extractR2Key(item.backgroundUrl) === oldBgKey);
+                                if (!isUsedElsewhere) {
+                                  deleteR2StorageFiles([oldBgKey]).catch((err) => console.warn('[R2 Auto-GC] Could not delete removed version image:', err));
+                                }
+                              }
                           }}
                           className="p-2 bg-slate-900/90 text-rose-400 hover:text-rose-200 hover:bg-rose-900/50 rounded-lg border border-slate-700 backdrop-blur-md transition-colors"
                           title="Delete Version"

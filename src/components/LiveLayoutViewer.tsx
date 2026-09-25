@@ -5,9 +5,10 @@ import { useAppStore } from '../store/useAppStore';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff, Bell, AlertTriangle } from 'lucide-react';
 import useImage from 'use-image';
 import { useOffscreenImage } from '../hooks/useOffscreenImage';
+import { preloadFloorImages } from '../lib/imageDBCache';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import { extractR2Key, getS3Sdk } from './PictureMapping/lib/r2Upload';
+import { extractR2Key, getS3Sdk, downloadR2JsonFile } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
@@ -128,16 +129,12 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
         credentials: { accessKeyId, secretAccessKey },
       });
 
-      const command = new GetObjectCommand({
-        Bucket: bucketName,
-        Key: 'mapping_config.json'
-      });
-      const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
+      if (!downloadRes.success || !downloadRes.data) {
+        throw new Error(downloadRes.error || 'Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
+      }
       
-      const res = await fetch(signedUrl);
-      if (!res.ok) throw new Error('Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
-      
-      const data = await res.json();
+      const data = downloadRes.data;
       
       // Resolve R2 URLs in storeLocationData if it exists (New Format)
       if (data.storeLocationData) {
@@ -168,6 +165,32 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
           } catch (e) {
             console.warn('Could not sync loaded cloud data to store', e);
           }
+
+          // Background Pre-cache all floor maps into IndexedDB for 0ms floor switching
+          try {
+            const bgUrlsToPreload: string[] = [];
+            if (data?.storeLocationData) {
+              Object.values(data.storeLocationData).forEach((part: any) => {
+                if (Array.isArray(part?.mapVersions)) {
+                  part.mapVersions.forEach((v: any) => {
+                    if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
+                      bgUrlsToPreload.push(v.backgroundUrl);
+                    }
+                  });
+                }
+              });
+            }
+            if (Array.isArray(data?.versions)) {
+              data.versions.forEach((v: any) => {
+                if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
+                  bgUrlsToPreload.push(v.backgroundUrl);
+                }
+              });
+            }
+            if (bgUrlsToPreload.length > 0) {
+              preloadFloorImages(bgUrlsToPreload);
+            }
+          } catch (_preloadErr) {}
       } else if (data.versions && data.versions.length > 0) {
           // Legacy format fallback
          const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
@@ -486,6 +509,18 @@ function LiveCanvas({
 
     return Array.from(versionsMap.values());
   }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
+
+  // Pre-cache all floor maps for this store into IndexedDB
+  useEffect(() => {
+    if (availableStoreVersions.length > 0) {
+      const urls = availableStoreVersions
+        .map(v => v?.backgroundUrl)
+        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('r2://'));
+      if (urls.length > 0) {
+        preloadFloorImages(urls);
+      }
+    }
+  }, [availableStoreVersions]);
 
   // 2. Filter versions specific to targetLoc (e.g. L2) and year from Picture Mapping / global setting
   const locationVersions = useMemo(() => {

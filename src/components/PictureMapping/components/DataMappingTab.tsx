@@ -12,6 +12,7 @@ import { useAppStore } from '../../../store/useAppStore';
 import { getUserAllowedStores } from '../../../lib/utils';
 
 import CloudSyncManager from './CloudSync/CloudSyncManager';
+import { preloadFloorImages } from '../../../lib/imageDBCache';
 
 export type SubTab = 'edit' | 'dynamic-hierarchy' | 'review';
 
@@ -117,6 +118,18 @@ export default React.memo(function DataMappingTab() {
   const allStoreVersions = React.useMemo(() => {
     return getAllStoreVersions(store);
   }, [store, mapVersions, storeLocationData, getAllStoreVersions]);
+
+  // Pre-cache all floor maps into IndexedDB for instant switching
+  React.useEffect(() => {
+    if (allStoreVersions.length > 0) {
+      const urls = allStoreVersions
+        .map(v => v?.backgroundUrl)
+        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('r2://'));
+      if (urls.length > 0) {
+        preloadFloorImages(urls);
+      }
+    }
+  }, [allStoreVersions]);
 
   React.useEffect(() => {
     try {

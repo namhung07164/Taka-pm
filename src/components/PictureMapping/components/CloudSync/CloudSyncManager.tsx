@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CloudUpload, CloudDownload, RefreshCw } from 'lucide-react';
-import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, extractR2Key, getS3Sdk } from '../../lib/r2Upload';
+import { CloudUpload, CloudDownload, RefreshCw, Sparkles } from 'lucide-react';
+import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
+import { cleanOrphanR2Files } from '../../../../lib/r2StorageUtils';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
 import { MapVersion } from '../DataMapping/types';
 import R2UploadModal from '../R2UploadModal';
@@ -42,7 +43,7 @@ export default function CloudSyncManager() {
     if (!hasAutoLoaded && creds && creds.accountId && creds.accessKeyId) {
       if (Object.keys(storeLocationData).length === 0 && mapVersions.length === 0) {
         setHasAutoLoaded(true);
-        executeSync('download');
+        executeSync('download', true);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -53,7 +54,7 @@ export default function CloudSyncManager() {
     setIsModalOpen(true);
   };
 
-  const executeSync = async (forceAction?: 'upload' | 'download') => {
+  const executeSync = async (forceAction?: 'upload' | 'download', isAuto = false) => {
     const currentAction = forceAction || actionType;
     setIsModalOpen(false);
     setSyncing(true);
@@ -251,16 +252,20 @@ export default function CloudSyncManager() {
         setProgress(20);
         setStatusText('Đang tải mapping_config.json từ R2...');
 
-        const command = new GetObjectCommand({
-          Bucket: creds.bucketName,
-          Key: 'mapping_config.json',
-        });
+        const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
 
-        const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-        const res = await fetch(signedUrl);
-        if (!res.ok) throw new Error('Không tìm thấy file cấu hình trên Cloudflare R2.');
+        if (!downloadRes.success || !downloadRes.data) {
+          if (downloadRes.notFound) {
+            if (isAuto) {
+              setSyncing(false);
+              return;
+            }
+            throw new Error('Chưa có file cấu hình mapping_config.json trên R2 Bucket (Vui lòng bấm Save Cloud để lưu cấu hình đầu tiên).');
+          }
+          throw new Error(downloadRes.error || 'Không thể tải file cấu hình từ R2.');
+        }
 
-        const data = await res.json();
+        const data = downloadRes.data;
 
         setProgress(50);
         setStatusText('Đang phân giải liên kết ảnh và cấu hình các tầng...');
@@ -357,9 +362,49 @@ export default function CloudSyncManager() {
       setTimeout(() => setSyncing(false), 2000);
 
     } catch (err: any) {
-      console.error('Cloud Sync Error:', err);
-      setStatusText(`Lỗi: ${err.message}`);
-      setTimeout(() => setSyncing(false), 4000);
+      if (!isAuto) {
+        console.error('Cloud Sync Error:', err);
+        setStatusText(`Lỗi: ${err.message}`);
+        setTimeout(() => setSyncing(false), 4000);
+      } else {
+        setSyncing(false);
+      }
+    }
+  };
+
+  const handleCleanR2Garbage = async () => {
+    const creds = getStoredR2Credentials();
+    if (!creds) {
+      alert('Chưa cấu hình Cloudflare R2 trong hệ thống.');
+      return;
+    }
+
+    if (!confirm('Hệ thống sẽ quét toàn bộ R2 Bucket và xóa tất cả ảnh nền cũ/mồ côi không còn thuộc bất kỳ version nào. Bạn có muốn tiếp tục?')) {
+      return;
+    }
+
+    setSyncing(true);
+    setStatusText('Đang quét và thu gom file rác R2...');
+
+    try {
+      const activeData = {
+        storeLocationData,
+        mapVersions,
+      };
+
+      const result = await cleanOrphanR2Files(activeData, {
+        onProgress: (msg) => setStatusText(msg),
+      });
+
+      if (result.deletedCount > 0) {
+        alert(`🧹 Đã dọn dẹp và giải phóng thành công ${result.deletedCount} file rác trên Cloudflare R2!`);
+      } else {
+        alert(`✅ R2 Bucket hoàn toàn sạch sẽ! Tất cả ${result.scannedCount} file đều đang được sử dụng.`);
+      }
+    } catch (err: any) {
+      alert(`Lỗi khi dọn rác R2: ${err.message}`);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -388,6 +433,15 @@ export default function CloudSyncManager() {
           >
             <CloudDownload size={14} />
             <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Load Cloud</span>
+          </button>
+
+          <button 
+            onClick={handleCleanR2Garbage}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-700/50 text-emerald-400 hover:text-emerald-300 transition-colors shadow-sm"
+            title="Dọn dẹp & giải phóng tất cả ảnh nền mồ côi trên Cloudflare R2"
+          >
+            <Sparkles size={13} />
+            <span className="text-[10px] font-bold uppercase tracking-widest hidden md:inline">Clean R2</span>
           </button>
         </>
       )}

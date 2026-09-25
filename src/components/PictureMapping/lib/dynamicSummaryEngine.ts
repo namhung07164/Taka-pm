@@ -279,7 +279,7 @@ export function useDynamicUnitSummary({
         planProgress: 0,
         actProgress: 0,
         matchedTasksCount: 0,
-        size: excelItem?.size || 0,
+        size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
         sales: excelItem?.salesAmount || 0,
         salesByCp: excelItem?.salesByCp || 0,
         profit: excelItem?.profitAmount || 0,

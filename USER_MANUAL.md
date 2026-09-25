@@ -1126,8 +1126,10 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
        + **Tab Điều Kiện Động (Dynamic Hierarchy Tab)**: Lưu toàn bộ danh mục nhóm phân cấp (`groups`), bộ quy tắc điều kiện gán màu/phân nhóm (`rules`) và liên kết ánh xạ gian hàng (`groupMappings`).
        + **Tab Đánh Giá & Xem Lại (Review Tab)**: Lưu toàn bộ danh sách nhãn đã chọn (`reviewSelectedLabels`), bảng màu tùy chỉnh (`reviewLabelColors`) và các cài đặt hiển thị liên quan.
        + **Dữ liệu kinh doanh đính kèm**: Lưu trữ đồng bộ các bảng thông tin chuyên đề (`unitInfo`, `classInfo`, `actualClassInfo`, `sales`, `profits`, `subFees`, `mdStatus`, `projectStatus`, `basePlan`, `units`).
-   - **Tự động quét và dọn dẹp ảnh nền mồ côi (Smart Purge Strategy)**:
-     - Hệ thống chỉ giữ lại các file ảnh nền đang được liên kết trong các phiên bản bản vẽ hợp lệ, tự động quét và xóa sạch các file ảnh nền cũ không còn sử dụng trên R2 để tối ưu hóa dung lượng lưu trữ.
+   - **Thu gom & Dọn rác file cũ tự động trên R2 (R2 Garbage Collector)**:
+     - **Tự động xóa ảnh nền khi thay thế (Replace Background Auto-GC)**: Khi người dùng tải lên ảnh nền mới thay cho ảnh cũ của một Version, hệ thống tự động kiểm tra xem ảnh cũ trên R2 có còn được dùng bởi Version nào khác không. Nếu không, file cũ trên R2 sẽ được tự động xóa ngầm ngay lập tức, ngăn chặn rác mồ côi.
+     - **Tự động xóa ảnh khi xóa Version (Delete Version Auto-GC)**: Khi xóa một phiên bản bản đồ, nếu ảnh nền của phiên bản đó là duy nhất và không còn liên kết với bất kỳ bản vẽ nào, hệ thống tự động gửi lệnh xóa file vật lý trên Cloudflare R2 trong nền (fire-and-forget 0ms).
+     - **Tính năng Dọn rác R2 1 chạm (1-Click Clean R2 Button)**: Trên thanh công cụ Cloud Sync của Picture Mapping, hệ thống trang bị nút **"Clean R2"** (icon ✨). Khi bấm, hệ thống sẽ đối soát toàn bộ danh sách file ảnh nền trên R2 Bucket với các phiên bản đang hoạt động trên tất cả các tầng/chi nhánh, tự động thu gom và xóa sạch 100% các file ảnh nền mồ côi dư thừa, tiết kiệm tối đa chi phí lưu trữ Cloud.
    - **Tải từ Cloud (Load Cloud)**:
      - Khi nhấn **Load Cloud**, hệ thống tự động tải `mapping_config.json`, tạo signed URL 7 ngày cho toàn bộ ảnh nền trên mọi tầng và nạp đồng thời (atomic load) vào Zustand store mà không gây xung đột hoặc mất dữ liệu.
 4. **Cơ Chế Bảng Pop-up Linh Hoạt (Draggable & Responsive Viewport)**:

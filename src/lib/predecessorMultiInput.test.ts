@@ -4,8 +4,8 @@ import { Project, Task } from '../types';
 
 describe('Predecessor Multi Input & Selection After Comma', () => {
   const projects: Project[] = [
-    { id: 'p1', code: 'B2-B208', year: 2027, store: 'HCM', location: 'B2', name: 'Project 208' },
-    { id: 'p2', code: 'B2-B207', year: 2027, store: 'HCM', location: 'B2', name: 'Project 207' }
+    { id: 'p1', no: 1, code: 'B2-B208', year: 2027, store: 'HCM', location: 'B2', name: 'Project 208' },
+    { id: 'p2', no: 2, code: 'B2-B207', year: 2027, store: 'HCM', location: 'B2', name: 'Project 207' }
   ];
 
   const tasks: Task[] = [
@@ -19,6 +19,9 @@ describe('Predecessor Multi Input & Selection After Comma', () => {
       taskCodePhu: 'B2-B208#1',
       start: '2027-04-01T09:00',
       finish: '2027-04-02T21:00',
+      duration: '1.5',
+      durationManual: false,
+      finishManual: false,
       orderIndex: 0
     },
     {
@@ -31,6 +34,9 @@ describe('Predecessor Multi Input & Selection After Comma', () => {
       taskCodePhu: 'B2-B208#2',
       start: '2027-04-01T09:00',
       finish: '2027-04-06T21:00',
+      duration: '5.5',
+      durationManual: false,
+      finishManual: false,
       orderIndex: 1
     },
     {
@@ -43,6 +49,9 @@ describe('Predecessor Multi Input & Selection After Comma', () => {
       taskCodePhu: 'B2-B208#3',
       start: '2027-04-03T09:00',
       finish: '2027-04-06T21:00',
+      duration: '3.5',
+      durationManual: false,
+      finishManual: false,
       orderIndex: 2
     }
   ];
@@ -64,7 +73,9 @@ describe('Predecessor Multi Input & Selection After Comma', () => {
       name: 'Handover',
       start: '2027-04-01T09:00',
       finish: '2027-04-06T21:00',
-      duration: '5.5'
+      duration: '5.5',
+      durationManual: false,
+      finishManual: false
     };
 
     const parsed = parsePredecessors('B2-B208#1, B2-B208#3FF', taskNoMap, contextTask);
