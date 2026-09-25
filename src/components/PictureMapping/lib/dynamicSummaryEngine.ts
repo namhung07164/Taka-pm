@@ -361,7 +361,7 @@ export function useDynamicUnitSummary({
       });
     });
 
-    // Step C: Apply Dynamic Rules & Group Mappings from activeVersion
+    // Step C: Apply Dynamic Rules strictly from activeVersion (Rules-only evaluation)
     const stats: Record<string, { group: any; count: number; unitNames: string[] }> = {};
 
     if (activeVersion && Array.isArray(activeVersion.groups)) {
@@ -369,26 +369,7 @@ export function useDynamicUnitSummary({
         stats[group.id] = { group, count: 0, unitNames: [] };
       });
 
-      // 1. Process Manual Group Mappings
-      if (activeVersion.groupMappings) {
-        Object.entries(activeVersion.groupMappings).forEach(([groupId, unitIds]) => {
-          const group = activeVersion.groups.find((g) => g.id === groupId);
-          if (!group || !Array.isArray(unitIds)) return;
-
-          unitIds.forEach((id) => {
-            const item = sMap.get(id) || sMap.get(String(id).toLowerCase());
-            if (item && !item.isRestricted) {
-              item.matchedGroupId = group.id;
-              item.matchedGroupName = group.name;
-              item.color = group.color;
-              item.opacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
-              item.matchedRuleReason = `Manual Mapping: ${group.name}`;
-            }
-          });
-        });
-      }
-
-      // 2. Evaluate Dynamic Rules (Always ON)
+      // Strictly evaluate Dynamic Rules only - NO static manual groupMappings
       activeVersion.groups.forEach((group) => {
         if (!group.rules || group.rules.length === 0) return;
 

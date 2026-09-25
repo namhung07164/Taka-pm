@@ -1313,7 +1313,7 @@ function LiveCanvas({
     return dataMap;
   }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups, layoutTooltipVisibility]);
 
-  // 3. Evaluate rules on the fly to build unitColorMap
+  // 3. Evaluate rules on the fly to build unitColorMap (Strict Dynamic Rules matching only)
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
     const groupMap: Record<string, string> = {};
@@ -1325,9 +1325,14 @@ function LiveCanvas({
     version.groups.forEach((group: any) => {
         let matchCount = 0;
         const matchedUnits: any[] = [];
-        const mappedUnitIds = new Set((version.groupMappings?.[group.id] || []).map((id: any) => String(id)));
         const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
         
+        // STRICT REQUIREMENT: Only match when group.rules are defined and pass against aggregatedData
+        // (Do NOT use static/manual groupMappings or any other fallback)
+        if (!group.rules || !Array.isArray(group.rules) || group.rules.length === 0) {
+            return;
+        }
+
         units.forEach((u: any) => {
             const uName = String(u.name || '').toLowerCase().trim();
             if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) {
@@ -1335,89 +1340,78 @@ function LiveCanvas({
                 return;
             }
             let isMatch = false;
-            
-            if (mappedUnitIds.has(String(u.id))) {
-                isMatch = true;
-            }
-            
-            const isDynamicActive = true; // Always permanently active per system mandate
-            
-            if (group.rules && group.rules.length > 0) {
-                const hasManualMapping = version.groupMappings && Object.values(version.groupMappings).some(m => Array.isArray(m) && m.length > 0);
-                if (isDynamicActive || !hasManualMapping) {
-                    const data = aggregatedData[u.name?.toLowerCase() || ''];
-                    if (data) {
-                        const passedRules = group.rules.every((rule: any) => {
-                            let val = data[rule.field];
-                            if (val === undefined || val === null || String(val).trim() === '') {
-                              const f = String(rule.field || '').toLowerCase().trim();
-                              if (f === 'floor' || f === 'location') {
-                                val = data.floor || u.location || targetLoc || '';
-                              } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
-                                val = data.appProjectFloor || data.appFloor || '';
-                              } else if (f === 'year') {
-                                val = data.year || '';
-                              } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
-                                val = data.appProjectYear || '';
-                              } else if (f === 'status' || f === 'projectstatus') {
-                                val = data.projectStatus || data.status || '';
-                              } else if (f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
-                                val = data.appProjectStatus || '';
-                              } else if (f === 'unit' || f === 'code') {
-                                val = data.unit || u.name || '';
-                              } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
-                                val = data.appProjectCode || '';
-                              } else if (f === 'mdstatus') {
-                                val = data.mdStatus || '';
-                              } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-                                val = data.appProjectMdStatus || '';
-                              } else if (f === 'actstatus') {
-                                val = data.actStatus || '';
-                              } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-                                val = data.appProjectActStatus || '';
-                              } else if (f === 'detail') {
-                                val = data.detail || '';
-                              } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-                                val = data.appProjectDetail || '';
-                              } else if (f === 'description (project)') {
-                                val = data.detail || '';
-                              } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-                                val = data.appProjectDescription || '';
-                              } else if (f === 'party') {
-                                val = data.party || '';
-                              } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-                                val = data.appProjectParty || '';
-                              }
-                            }
-                            if (rule.field === "margin" || rule.field === "marginByCp") val = Number(val || 0) * 100;
-                            const numVal = Number(rule.value);
-                            const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== "";
-                            
-                            let compareValStr = String(val || "").toLowerCase().trim();
-                            let compareRuleStr = String(rule.value || "").toLowerCase().trim();
-                            if (compareRuleStr === "in progress") compareRuleStr = "on process";
-                            if (compareValStr === "in progress") compareValStr = "on process";
 
-                            switch (rule.operator) {
-                              case ">": return isNum ? Number(val) > numVal : false;
-                              case "<": return isNum ? Number(val) < numVal : false;
-                              case ">=": return isNum ? Number(val) >= numVal : false;
-                              case "<=": return isNum ? Number(val) <= numVal : false;
-                              case "=": return compareValStr === compareRuleStr;
-                              case "contains": {
-                                const searchTerms = compareRuleStr.split(/\s+/);
-                                return searchTerms.every(term => compareValStr.includes(term));
-                              }
-                              case "exclude": {
-                                const searchTerms = compareRuleStr.split(/\s+/);
-                                return !searchTerms.some(term => compareValStr.includes(term));
-                              }
-                              default: return false;
-                            }
-                        });
-                        if (passedRules) isMatch = true;
+            const data = aggregatedData[u.name?.toLowerCase() || ''];
+            if (data) {
+                const passedRules = group.rules.every((rule: any) => {
+                    let val = data[rule.field];
+                    if (val === undefined || val === null || String(val).trim() === '') {
+                      const f = String(rule.field || '').toLowerCase().trim();
+                      if (f === 'floor' || f === 'location') {
+                        val = data.floor || u.location || targetLoc || '';
+                      } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
+                        val = data.appProjectFloor || data.appFloor || '';
+                      } else if (f === 'year') {
+                        val = data.year || '';
+                      } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
+                        val = data.appProjectYear || '';
+                      } else if (f === 'status' || f === 'projectstatus') {
+                        val = data.projectStatus || data.status || '';
+                      } else if (f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
+                        val = data.appProjectStatus || '';
+                      } else if (f === 'unit' || f === 'code') {
+                        val = data.unit || u.name || '';
+                      } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
+                        val = data.appProjectCode || '';
+                      } else if (f === 'mdstatus') {
+                        val = data.mdStatus || '';
+                      } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
+                        val = data.appProjectMdStatus || '';
+                      } else if (f === 'actstatus') {
+                        val = data.actStatus || '';
+                      } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+                        val = data.appProjectActStatus || '';
+                      } else if (f === 'detail') {
+                        val = data.detail || '';
+                      } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+                        val = data.appProjectDetail || '';
+                      } else if (f === 'description (project)') {
+                        val = data.detail || '';
+                      } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+                        val = data.appProjectDescription || '';
+                      } else if (f === 'party') {
+                        val = data.party || '';
+                      } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+                        val = data.appProjectParty || '';
+                      }
                     }
-                }
+                    if (rule.field === "margin" || rule.field === "marginByCp") val = Number(val || 0) * 100;
+                    const numVal = Number(rule.value);
+                    const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== "";
+                    
+                    let compareValStr = String(val || "").toLowerCase().trim();
+                    let compareRuleStr = String(rule.value || "").toLowerCase().trim();
+                    if (compareRuleStr === "in progress") compareRuleStr = "on process";
+                    if (compareValStr === "in progress") compareValStr = "on process";
+
+                    switch (rule.operator) {
+                      case ">": return isNum ? Number(val) > numVal : false;
+                      case "<": return isNum ? Number(val) < numVal : false;
+                      case ">=": return isNum ? Number(val) >= numVal : false;
+                      case "<=": return isNum ? Number(val) <= numVal : false;
+                      case "=": return compareValStr === compareRuleStr;
+                      case "contains": {
+                        const searchTerms = compareRuleStr.split(/\s+/);
+                        return searchTerms.every(term => compareValStr.includes(term));
+                      }
+                      case "exclude": {
+                        const searchTerms = compareRuleStr.split(/\s+/);
+                        return !searchTerms.some(term => compareValStr.includes(term));
+                      }
+                      default: return false;
+                    }
+                });
+                if (passedRules) isMatch = true;
             }
 
             if (isMatch) {
@@ -1435,7 +1429,7 @@ function LiveCanvas({
     });
 
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
-  }, [version?.groups, version?.groupMappings, version?.isDynamicActive, units, aggregatedData, restrictedProjectCodes]);
+  }, [version?.groups, units, aggregatedData, restrictedProjectCodes, targetLoc]);
 
   // Total count of units with alerts on this floor
   const totalFloorAlerts = useMemo(() => {

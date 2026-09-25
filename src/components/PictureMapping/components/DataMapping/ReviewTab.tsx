@@ -132,8 +132,9 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       })
       .map(unit => {
         const dynamicItem = dynamicSummaryMap.get(unit.id) || dynamicSummaryMap.get(unit.name?.toLowerCase());
-        const displayColor = dynamicItem?.color || unit.fill || '#3b82f6';
-        const displayOpacity = dynamicItem?.opacity ?? unit.opacity ?? 0.6;
+        const hasMatchedRule = Boolean(dynamicItem?.matchedGroupId && dynamicItem?.color);
+        const displayColor = hasMatchedRule ? dynamicItem!.color : 'rgba(0, 0, 0, 0.001)';
+        const displayOpacity = hasMatchedRule ? (dynamicItem!.opacity ?? 0.85) : 0;
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels);

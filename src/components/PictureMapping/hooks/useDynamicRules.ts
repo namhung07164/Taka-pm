@@ -320,6 +320,11 @@ export function useDynamicRules(
 
         v.groups.forEach((group) => {
           if (!group.rules || group.rules.length === 0) {
+            if (newMappings[group.id] && newMappings[group.id].length > 0) {
+              newMappings[group.id] = [];
+              versionChanged = true;
+              hasChanges = true;
+            }
             return;
           }
 

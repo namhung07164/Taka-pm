@@ -308,7 +308,7 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
               .map((u) => u.id);
             newMappings[group.id] = matchingIds;
           } else {
-            newMappings[group.id] = v.groupMappings?.[group.id] || [];
+            newMappings[group.id] = [];
           }
         });
 
@@ -327,13 +327,13 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
 
       if (activeVer && activeVer.groups) {
         pUnits.forEach((u, idx) => {
-          let assignedColor = '#3b82f6';
+          let assignedColor: string | null = null;
           activeVer.groups.forEach((g) => {
             if (activeVer.groupMappings?.[g.id]?.includes(u.id)) {
               assignedColor = g.color;
             }
           });
-          pUnits[idx] = { ...u, fill: assignedColor };
+          pUnits[idx] = { ...u, fill: assignedColor || 'rgba(0, 0, 0, 0.001)' };
         });
       }
 
