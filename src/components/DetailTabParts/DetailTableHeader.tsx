@@ -1,7 +1,6 @@
 import React, { memo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { ResizableHeader } from '../ResizableHeader';
-import { ColumnAdder } from '../ColumnAdder';
 import { Project } from '../../types';
 
 interface DetailTableHeaderProps {
@@ -219,14 +218,6 @@ export const DetailTableHeader = memo(function DetailTableHeader({
           Action
         </ResizableHeader>
       )}
-      <th className="px-1.5 py-3 w-9 text-center">
-        <ColumnAdder 
-          availableColumns={availableColumnsForUser} 
-          visibleColumns={visibleColumns} 
-          onAddColumn={onToggleColumn} 
-          isHeader={true}
-        />
-      </th>
     </tr>
   );
 });

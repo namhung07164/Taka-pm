@@ -195,6 +195,78 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   const [searchUnit, setSearchUnit] = useState('');
   const [namingCallback, setNamingCallback] = useState<{ resolve: (name: string) => void, reject: () => void } | null>(null);
 
+  // Copy Background from Version Modal state
+  const [isCopyBgModalOpen, setIsCopyBgModalOpen] = useState(false);
+  const [copyBgSearchTerm, setCopyBgSearchTerm] = useState('');
+  const [showAllVersionsForCopy, setShowAllVersionsForCopy] = useState(false);
+  const copyBgModalRef = useRef<HTMLDivElement>(null);
+
+  const availableCopyVersions = React.useMemo(() => {
+    const currentStore = activeVersion?.store;
+    const currentLoc = activeVersion?.location;
+    const currentYear = String(activeVersion?.year || effectiveYear).trim();
+
+    return versions.filter(v => {
+      if (activeVersionId && v.id === activeVersionId) return false;
+      if (!v.backgroundUrl) return false;
+
+      if (!showAllVersionsForCopy && (currentStore || currentLoc || currentYear)) {
+        const matchStore = !currentStore || !v.store || v.store === currentStore;
+        const matchLoc = !currentLoc || !v.location || v.location === currentLoc;
+        const matchYear = !currentYear || !v.year || String(v.year).trim() === currentYear;
+        return matchStore && matchLoc && matchYear;
+      }
+      return true;
+    });
+  }, [versions, activeVersionId, activeVersion?.store, activeVersion?.location, activeVersion?.year, effectiveYear, showAllVersionsForCopy]);
+
+  const filteredCopyVersions = React.useMemo(() => {
+    if (!copyBgSearchTerm.trim()) return availableCopyVersions;
+    const q = copyBgSearchTerm.toLowerCase().trim();
+    return availableCopyVersions.filter(v => 
+      (v.name || '').toLowerCase().includes(q) ||
+      (v.year || '').toLowerCase().includes(q) ||
+      (v.location || '').toLowerCase().includes(q) ||
+      (v.store || '').toLowerCase().includes(q)
+    );
+  }, [availableCopyVersions, copyBgSearchTerm]);
+
+  const handleCopyBackgroundFromVersion = (sourceVer: MapVersion) => {
+    if (!sourceVer.backgroundUrl) {
+      alert('Version nguồn không có ảnh nền.');
+      return;
+    }
+
+    const newBgUrl = sourceVer.backgroundUrl;
+    const newScale = sourceVer.backgroundScale ?? 1;
+    const newPos = sourceVer.backgroundPos ? { ...sourceVer.backgroundPos } : { x: 0, y: 0 };
+    const newBgRotation = sourceVer.backgroundRotation ?? 0;
+    const newImagePos = sourceVer.imagePos ? { ...sourceVer.imagePos } : { x: 0, y: 0 };
+    const newImageScale = sourceVer.imageScale ?? 1;
+
+    setLocalImageUrl(newBgUrl);
+    setScale(newScale);
+    setPosition(newPos);
+    setBgRotation(newBgRotation);
+    setImagePos(newImagePos);
+    setImageScale(newImageScale);
+    setIsLocked(true);
+
+    if (activeVersionId) {
+      setVersions(versions.map(v => v.id === activeVersionId ? {
+        ...v,
+        backgroundUrl: newBgUrl,
+        backgroundScale: newScale,
+        backgroundPos: newPos,
+        backgroundRotation: newBgRotation,
+        imagePos: newImagePos,
+        imageScale: newImageScale,
+      } : v));
+    }
+
+    setIsCopyBgModalOpen(false);
+  };
+
   const openNamingModal = (): Promise<string> => {
       setIsNamingModalOpen(true);
       setSearchUnit('');
@@ -1038,6 +1110,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                   />
                 </div>
                 <ToolButton icon={RotateCw} active={false} onClick={handleRotateBackground} title="Rotate Background Image/PDF 90°" />
+                <ToolButton icon={Copy} active={isCopyBgModalOpen} onClick={() => { setCopyBgSearchTerm(''); setIsCopyBgModalOpen(true); }} title="Copy Background & Alignment from Another Version" />
               </>
             )}
         </div>,
@@ -1194,7 +1267,19 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 )}
             </div>
             
-            <div className="flex gap-2 items-center pointer-events-auto">
+            <div className="flex gap-2 items-center pointer-events-auto flex-wrap">
+                <button
+                    onClick={() => {
+                        setCopyBgSearchTerm('');
+                        setIsCopyBgModalOpen(true);
+                    }}
+                    className="p-2 bg-slate-900/80 hover:bg-slate-800 text-brand-400 hover:text-brand-300 rounded-lg border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1.5 shadow-sm"
+                    title="Sao chép Background & cách căn chỉnh từ một Version khác (cùng Store, Tầng, Năm)"
+                >
+                    <Copy size={16} />
+                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Copy BG từ Version</span>
+                </button>
+
                 {localImageUrl && (
                     <>
                         <div className="relative">
@@ -1938,6 +2023,128 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                       Type above to create a unit or search suggestions.
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          </Draggable>
+        </div>,
+        document.body
+      )}
+
+      {/* Copy Background & Alignment Modal */}
+      {isCopyBgModalOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <Draggable handle=".copy-bg-handle" nodeRef={copyBgModalRef}>
+            <div ref={copyBgModalRef} className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-slate-200">
+              <div className="copy-bg-handle cursor-grab active:cursor-grabbing px-5 py-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between select-none">
+                <div className="flex items-center gap-2">
+                  <GripHorizontal className="text-slate-400 w-5 h-5" />
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Copy size={16} className="text-brand-400" />
+                      Copy Background & Căn Chỉnh từ Version Khác
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Sao chép ảnh nền/PDF cùng toàn bộ vị trí, góc xoay và tỷ lệ scale
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsCopyBgModalOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Current Target Info */}
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span className="text-slate-400">Đang chỉnh sửa Version:</span>
+                  <div className="flex items-center gap-2 font-mono font-bold">
+                    <span className="px-2 py-0.5 rounded bg-brand-600/20 text-brand-300 border border-brand-500/30">
+                      {activeVersion?.name || 'Active Draft'}
+                    </span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-purple-400">{activeVersion?.store || 'HCM'}</span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-emerald-400">{activeVersion?.location || 'L1'}</span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-amber-400">{activeVersion?.year || effectiveYear}</span>
+                  </div>
+                </div>
+
+                {/* Search & Filter */}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm version theo tên, năm..."
+                      value={copyBgSearchTerm}
+                      onChange={(e) => setCopyBgSearchTerm(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                    />
+                  </div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none shrink-0 px-2">
+                    <input
+                      type="checkbox"
+                      checked={showAllVersionsForCopy}
+                      onChange={(e) => setShowAllVersionsForCopy(e.target.checked)}
+                      className="rounded border-slate-700 text-brand-600 focus:ring-0"
+                    />
+                    <span>Tất cả tầng/năm</span>
+                  </label>
+                </div>
+
+                {/* Version List */}
+                <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2 pr-1">
+                  {filteredCopyVersions.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs italic bg-slate-950/40 rounded-xl border border-slate-800">
+                      Không tìm thấy version nào khác có Background {!showAllVersionsForCopy ? 'cùng Chi nhánh, Tầng và Năm' : ''}.
+                    </div>
+                  ) : (
+                    filteredCopyVersions.map((v) => (
+                      <div
+                        key={v.id}
+                        className="p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 transition-all flex items-center justify-between gap-3 group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-bold text-white text-xs truncate max-w-[200px]" title={v.name}>
+                              {v.name}
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                              {v.store || 'HCM'} • {v.location || 'L1'} • {v.year || effectiveYear}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-3 font-mono">
+                            <span>Scale: <strong className="text-slate-200">{(v.backgroundScale ?? 1).toFixed(2)}x</strong></span>
+                            <span>Pos: <strong className="text-slate-200">{Math.round(v.backgroundPos?.x ?? 0)}, {Math.round(v.backgroundPos?.y ?? 0)}</strong></span>
+                            <span>Rot: <strong className="text-slate-200">{v.backgroundRotation ?? 0}°</strong></span>
+                            <span>Zoom: <strong className="text-slate-200">{Math.round((v.imageScale ?? 1) * 100)}%</strong></span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleCopyBackgroundFromVersion(v)}
+                          className="px-3.5 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 shrink-0 flex items-center gap-1.5"
+                        >
+                          <Copy size={14} />
+                          <span>Sao chép</span>
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-end">
+                  <button
+                    onClick={() => setIsCopyBgModalOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    Đóng
+                  </button>
                 </div>
               </div>
             </div>
