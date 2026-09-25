@@ -85,6 +85,27 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
       const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
       return searchTerms.every((term) => compareValStr.includes(term));
     }
+    case 'or':
+    case 'OR': {
+      const orTerms = compareRuleStr
+        .split(/[\r\n\t,;+/&|]+|\s{2,}/)
+        .map((t) => {
+          let tr = t.trim();
+          if (tr === 'in progress') tr = 'on process';
+          return tr;
+        })
+        .filter(Boolean);
+      if (orTerms.length === 0) {
+        const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+        return spaceTerms.some((term) => compareValStr === term || compareValStr.includes(term));
+      }
+      return orTerms.some((term) => {
+        if (compareValStr === term) return true;
+        if (compareValStr.includes(term)) return true;
+        if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
+        return false;
+      });
+    }
     case 'exclude': {
       const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
       return !searchTerms.some((term) => compareValStr.includes(term));
@@ -279,14 +300,6 @@ export function useDynamicRules(
       }
     });
 
-    // Identify all independent project codes created in Task Detail
-    const independentProjectCodes = new Set<string>();
-    enrichedProjects.forEach((p) => {
-      if (p.code && String(p.code).trim()) {
-        independentProjectCodes.add(String(p.code).trim().toLowerCase());
-      }
-    });
-
     // Merge real-time Project data from Zustand
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -300,7 +313,6 @@ export function useDynamicRules(
       }
 
       const pCodes = extractAllProjectCodes(p);
-      const primaryCodeLower = String(p.code || '').trim().toLowerCase();
       const status = getStatus(
         p.computedTakStart || p.start,
         p.computedTakCompl || p.handover,
@@ -313,8 +325,6 @@ export function useDynamicRules(
       const descStr = p.detail || (p as any).description || '';
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
-      const pLocation = String(p.location || (p as any).floor || '').trim();
-      const pStoreVal = String(p.store || store || '').trim();
 
       const targetUnitKeys = new Set<string>();
       pCodes.forEach(code => {
@@ -328,30 +338,12 @@ export function useDynamicRules(
 
       targetUnitKeys.forEach((code) => {
         if (dataMap[code]) {
-          const isDirectMatch = primaryCodeLower && (code === primaryCodeLower || projectMatchesUnitCode([primaryCodeLower], code));
-          // If this is a secondary linked unit but an independent project already exists for this unit code, do not overwrite with primary project
-          if (!isDirectMatch && independentProjectCodes.has(code)) {
-            return;
-          }
-
           dataMap[code].appProjectStatus = status;
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code);
           dataMap[code].appProjectYear = pYear;
-          dataMap[code].year = pYear || dataMap[code].year;
-
-          // Inherit store and floor/location for secondary linked units
-          if (pStoreVal) {
-            dataMap[code].store = pStoreVal;
-            dataMap[code].appProjectStore = pStoreVal;
-          }
-          if (pLocation) {
-            dataMap[code].floor = pLocation;
-            dataMap[code].location = pLocation;
-            dataMap[code].appProjectFloor = pLocation;
-            dataMap[code].appProjectLocation = pLocation;
-          }
+          dataMap[code].year = pYear;
 
           dataMap[code].appProjectMdStatus = mdStatusStr;
           dataMap[code].appMdStatus = mdStatusStr;

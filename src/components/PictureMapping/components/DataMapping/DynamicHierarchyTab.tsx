@@ -280,14 +280,6 @@ function DynamicHierarchyTab({
       }
     });
 
-    // Identify all independent project codes created in Task Detail
-    const independentProjectCodes = new Set<string>();
-    enrichedProjects.forEach((p) => {
-      if (p.code && String(p.code).trim()) {
-        independentProjectCodes.add(String(p.code).trim().toLowerCase());
-      }
-    });
-
     // Merge real Project data synchronized by effectiveYear and store
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -299,15 +291,12 @@ function DynamicHierarchyTab({
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
 
       const pCodes = extractAllProjectCodes(p);
-      const primaryCodeLower = String(p.code || '').trim().toLowerCase();
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
       const detailStr = p.detail || '';
       const descStr = p.detail || (p as any).description || '';
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
-      const pLocation = String(p.location || (p as any).floor || '').trim();
-      const pStoreVal = String(p.store || store || '').trim();
 
       const targetUnitKeys = new Set<string>();
       pCodes.forEach(code => {
@@ -321,30 +310,12 @@ function DynamicHierarchyTab({
 
       targetUnitKeys.forEach(code => {
          if (dataMap[code]) {
-            const isDirectMatch = primaryCodeLower && (code === primaryCodeLower || projectMatchesUnitCode([primaryCodeLower], code));
-            // If this is a secondary linked unit but an independent project already exists for this unit code, do not overwrite with primary project
-            if (!isDirectMatch && independentProjectCodes.has(code)) {
-              return;
-            }
-
             dataMap[code].appProjectStatus = status;
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
             dataMap[code].appProjectYear = pYear;
-            dataMap[code].year = pYear || dataMap[code].year;
-
-            // Inherit store and floor/location for secondary linked units
-            if (pStoreVal) {
-              dataMap[code].store = pStoreVal;
-              dataMap[code].appProjectStore = pStoreVal;
-            }
-            if (pLocation) {
-              dataMap[code].floor = pLocation;
-              dataMap[code].location = pLocation;
-              dataMap[code].appProjectFloor = pLocation;
-              dataMap[code].appProjectLocation = pLocation;
-            }
+            dataMap[code].year = pYear;
 
             dataMap[code].appProjectMdStatus = mdStatusStr;
             dataMap[code].appMdStatus = mdStatusStr;
@@ -451,6 +422,29 @@ function DynamicHierarchyTab({
         case "contains": {
           const searchTerms = compareRuleStr.split(/\s+/);
           res = searchTerms.every(term => compareValStr.includes(term));
+          break;
+        }
+        case "or":
+        case "OR": {
+          const orTerms = compareRuleStr
+            .split(/[\r\n\t,;+/&|]+|\s{2,}/)
+            .map(t => {
+              let tr = t.trim();
+              if (tr === "in progress") tr = "on process";
+              return tr;
+            })
+            .filter(Boolean);
+          if (orTerms.length === 0) {
+            const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+            res = spaceTerms.some(term => compareValStr === term || compareValStr.includes(term));
+          } else {
+            res = orTerms.some(term => {
+              if (compareValStr === term) return true;
+              if (compareValStr.includes(term)) return true;
+              if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
+              return false;
+            });
+          }
           break;
         }
         case "exclude": {
@@ -1114,6 +1108,7 @@ function DynamicHierarchyTab({
                                 <option value="<=">&lt;=</option>
                                 <option value="=">=</option>
                                 <option value="contains">Contains (Bao gồm)</option>
+                                <option value="or">OR (Hoặc)</option>
                                 <option value="exclude">Exclude (Ngoại trừ)</option>
                               </select>
 

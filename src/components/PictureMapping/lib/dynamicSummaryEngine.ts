@@ -127,6 +127,27 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
       return searchTerms.every((term) => compareValStr.includes(term));
     }
+    case 'or':
+    case 'OR': {
+      const orTerms = compareRuleStr
+        .split(/[\r\n\t,;+/&|]+|\s{2,}/)
+        .map((t) => {
+          let tr = t.trim();
+          if (tr === 'in progress') tr = 'on process';
+          return tr;
+        })
+        .filter(Boolean);
+      if (orTerms.length === 0) {
+        const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+        return spaceTerms.some((term) => compareValStr === term || compareValStr.includes(term));
+      }
+      return orTerms.some((term) => {
+        if (compareValStr === term) return true;
+        if (compareValStr.includes(term)) return true;
+        if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
+        return false;
+      });
+    }
     case 'exclude': {
       const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
       return !searchTerms.some((term) => compareValStr.includes(term));
@@ -306,14 +327,6 @@ export function useDynamicUnitSummary({
       sList.push(item);
     });
 
-    // Identify all independent project codes created in Task Detail
-    const independentProjectCodes = new Set<string>();
-    enrichedProjects.forEach((p) => {
-      if (p.code && String(p.code).trim()) {
-        independentProjectCodes.add(String(p.code).trim().toLowerCase());
-      }
-    });
-
     // Step B: Match Real-time App Project & Tasks (Filtered STRICTLY by Store & Year)
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -324,7 +337,6 @@ export function useDynamicUnitSummary({
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== effectiveYear) return;
 
       const pCodes = extractAllProjectCodes(p);
-      const primaryCodeLower = String(p.code || '').trim().toLowerCase();
 
       const status = getStatus(
         p.computedTakStart || p.start,
@@ -359,12 +371,6 @@ export function useDynamicUnitSummary({
       targetUnitKeys.forEach((code) => {
         const item = sMap.get(code);
         if (item) {
-          const isDirectMatch = primaryCodeLower && (code === primaryCodeLower || item.unitName?.toLowerCase() === primaryCodeLower || projectMatchesUnitCode([primaryCodeLower], code) || projectMatchesUnitCode([primaryCodeLower], item.unitName || ''));
-          // If this is a secondary linked unit but an independent project already exists for this unit code, do not overwrite with primary project
-          if (!isDirectMatch && (independentProjectCodes.has(code) || (item.unitName && independentProjectCodes.has(item.unitName.toLowerCase())))) {
-            return;
-          }
-
           item.hasAppProject = true;
           item.appProjectCode = String(p.code || code);
           item.projectName = p.name || '';
