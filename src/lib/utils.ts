@@ -318,6 +318,19 @@ export function getStatus(
 }
 
 /**
+ * Strips common floor/zone prefixes like 'L1-', 'F1-', '1F-', 'B1-', 'GF-', 'UG-', 'Unit '
+ */
+function normalizeUnitCodeBase(code: string): string {
+  if (!code) return '';
+  let str = code.toLowerCase().trim();
+  // Remove leading 'unit ' or 'shop ' or 'lot ' or 'booth '
+  str = str.replace(/^(unit|shop|lot|booth|kiosk|store)\s*[-_:]?\s*/i, '');
+  // Remove floor prefixes like l1-, l2-, f1-, 1f-, 2f-, b1-, b2-, gf-, ug-
+  str = str.replace(/^([a-z]?\d+[a-z]?|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
+  return str.trim();
+}
+
+/**
  * Extracts all project codes from both project.code and project.linkCodes
  */
 export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: string | null }): string[] {
@@ -327,24 +340,60 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
   }
   if (p.linkCodes && String(p.linkCodes).trim()) {
     String(p.linkCodes)
-      .split(/[+;,/]+/)
+      .split(/[\r\n\t,;+/&|]+|\s{2,}/)
       .map(c => c.trim().toLowerCase())
       .filter(Boolean)
-      .forEach(c => codeSet.add(c));
+      .forEach(c => {
+        codeSet.add(c);
+        // Also add space-separated sub-codes if present
+        const spaceSub = c.split(/\s+/).map(s => s.trim()).filter(Boolean);
+        if (spaceSub.length > 1) {
+          spaceSub.forEach(s => codeSet.add(s));
+        }
+      });
   }
   return Array.from(codeSet);
 }
 
 /**
- * Checks if a project's codes match a given unit name (exact or subdiv/lot prefix)
+ * Checks if a project's codes match a given unit name (exact, stripped prefix, or subdiv/lot prefix)
  */
 export function projectMatchesUnitCode(pCodes: string[], unitName: string): boolean {
   const u = (unitName || '').toLowerCase().trim();
   if (!u) return false;
-  for (const c of pCodes) {
+  const uStripped = normalizeUnitCodeBase(u);
+
+  for (const rawCode of pCodes) {
+    const c = (rawCode || '').toLowerCase().trim();
+    if (!c) continue;
+
+    // 1. Exact match
     if (u === c) return true;
-    if (u.startsWith(c + '-') || u.startsWith(c + '_')) return true;
-    if (c.startsWith(u + '-') || c.startsWith(u + '_')) return true;
+
+    // 2. Sub-lot prefix match (e.g. '101-A' matching '101' or 'L1-01_sub' matching 'L1-01')
+    if (u.startsWith(c + '-') || u.startsWith(c + '_') || u.startsWith(c + ' ')) return true;
+    if (c.startsWith(u + '-') || c.startsWith(u + '_') || c.startsWith(u + ' ')) return true;
+
+    // 3. Base code match after stripping floor prefixes (e.g. 'L1-01' matching '01' or 'F1-102' matching 'L1-102')
+    const cStripped = normalizeUnitCodeBase(c);
+    if (uStripped && cStripped && uStripped === cStripped) return true;
+    if (uStripped && cStripped) {
+      if (uStripped.startsWith(cStripped + '-') || uStripped.startsWith(cStripped + '_')) return true;
+      if (cStripped.startsWith(uStripped + '-') || cStripped.startsWith(uStripped + '_')) return true;
+    }
+
+    // 4. Pure number match (e.g. unit '101' matching '101' inside 'L1-101')
+    const uNum = u.match(/\d+/)?.[0];
+    const cNum = c.match(/\d+/)?.[0];
+    if (uNum && cNum && uNum === cNum && uNum.length >= 2) {
+      // If stripped text also aligns or numbers are unique
+      if (u === `l1-${c}` || u === `l2-${c}` || u === `l3-${c}` || u === `l4-${c}` || u === `l5-${c}` || u === `b1-${c}` || u === `b2-${c}`) {
+        return true;
+      }
+      if (c === `l1-${u}` || c === `l2-${u}` || c === `l3-${u}` || c === `l4-${u}` || c === `l5-${u}` || c === `b1-${u}` || c === `b2-${u}`) {
+        return true;
+      }
+    }
   }
   return false;
 }

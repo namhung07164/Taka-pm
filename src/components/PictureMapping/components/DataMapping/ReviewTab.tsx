@@ -8,7 +8,7 @@ import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, 
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
-import { enrichProjects, getStatus, computeProjectActStatus } from '../../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from '../../../../lib/utils';
 import type { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
@@ -430,11 +430,15 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
     const enrichedProjects = enrichProjects(appProjects || [], appTasks || [], appDelegationGroups || []);
     enrichedProjects.forEach((p) => {
+      if (!p.code && !p.linkCodes) return;
+      if (store && store !== 'all') {
+        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
+        if (pStore && pStore !== store.toUpperCase()) return;
+      }
       const pYear = String(p.year || (p as any).projectYear || '').trim();
       if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
 
-      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+      const pCodes = extractAllProjectCodes(p);
       const status = getStatus(
         p.computedTakStart || p.start,
         p.computedTakCompl || p.handover,
@@ -447,13 +451,24 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
 
-      pCodes.forEach((code) => {
+      const targetUnitKeys = new Set<string>();
+      pCodes.forEach(code => {
+        if (dataMap[code]) targetUnitKeys.add(code);
+      });
+      Object.keys(dataMap).forEach(uKey => {
+        if (projectMatchesUnitCode(pCodes, uKey)) {
+          targetUnitKeys.add(uKey);
+        }
+      });
+
+      targetUnitKeys.forEach((code) => {
         if (dataMap[code]) {
           dataMap[code].appProjectStatus = status;
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code);
           dataMap[code].appProjectYear = pYear;
+          dataMap[code].year = pYear || dataMap[code].year;
 
           dataMap[code].appProjectMdStatus = mdStatusStr;
           dataMap[code].appMdStatus = mdStatusStr;
@@ -479,7 +494,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     });
 
     return dataMap;
-  }, [units, summaryData, appProjects, appTasks, appDelegationGroups, effectiveYear]);
+  }, [units, summaryData, appProjects, appTasks, appDelegationGroups, effectiveYear, store]);
 
   const applyAllDynamicRules = () => {
     try {

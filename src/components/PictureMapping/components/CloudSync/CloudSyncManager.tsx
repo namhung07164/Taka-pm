@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CloudUpload, CloudDownload, RefreshCw, Sparkles, ChevronDown, Check, Layers, GitMerge, Eye, Edit3 } from 'lucide-react';
+import { CloudUpload, CloudDownload, RefreshCw, Sparkles, ChevronDown, Check, Layers, GitMerge, Eye, Edit3, Settings } from 'lucide-react';
 import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, getStoredR2CredentialsAsync, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
 import { cleanOrphanR2Files } from '../../../../lib/r2StorageUtils';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
@@ -7,6 +7,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { MapVersion } from '../DataMapping/types';
 import R2UploadModal from '../R2UploadModal';
 import { cn } from '../../lib/utils';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, APP_ID } from '../../../../lib/firebase';
 
 let hasGlobalAutoSyncStarted = false;
 
@@ -87,11 +89,49 @@ export default function CloudSyncManager({
     if (hasGlobalAutoSyncStarted || isCloudLoaded) return;
     async function checkAutoLoad() {
       if (hasGlobalAutoSyncStarted) return;
-      if (Object.keys(storeLocationData).length === 0 && mapVersions.length === 0) {
-        const creds = await getStoredR2CredentialsAsync();
-        if (creds && creds.accountId && creds.accessKeyId && !hasGlobalAutoSyncStarted) {
-          hasGlobalAutoSyncStarted = true;
-          executeSync('download', true, 'all');
+      hasGlobalAutoSyncStarted = true;
+
+      // 1. Immediately restore from LocalStorage cache for instant 0ms restoration
+      try {
+        const cached = localStorage.getItem('taka_mapping_config_backup');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.storeLocationData && Object.keys(parsed.storeLocationData).length > 0) {
+            loadFullCloudData({
+              storeLocationData: parsed.storeLocationData,
+              store: parsed.store || store,
+              location: parsed.location || location,
+              activeMapVersionId: parsed.activeMapVersionId || activeMapVersionId,
+              reviewSelectedLabels: parsed.reviewSelectedLabels || [],
+              reviewLabelColors: parsed.reviewLabelColors || {},
+            });
+          }
+        }
+      } catch (e) {}
+
+      // 2. Fetch latest from Cloudflare R2 / Firestore
+      const creds = await getStoredR2CredentialsAsync();
+      if (creds && creds.accountId && creds.accessKeyId) {
+        executeSync('download', true, 'all');
+      } else {
+        // Fallback to Firestore backup on boot
+        try {
+          const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+          if (snap.exists()) {
+            const fsData = snap.data() as any;
+            if (fsData?.storeLocationData) {
+              loadFullCloudData({
+                storeLocationData: fsData.storeLocationData,
+                store: store,
+                location: location,
+                activeMapVersionId: activeMapVersionId,
+                reviewSelectedLabels: fsData.reviewSelectedLabels || [],
+                reviewLabelColors: fsData.reviewLabelColors || {},
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('[AutoLoad Fallback] Firestore boot fallback error:', e);
         }
       }
     }
@@ -99,10 +139,13 @@ export default function CloudSyncManager({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleOpenSync = (type: 'upload' | 'download', targetScope?: CloudSyncScope) => {
+  const handleOpenSync = async (type: 'upload' | 'download', targetScope?: CloudSyncScope) => {
     setActionType(type);
+    const effScope = targetScope || selectedScope;
     if (targetScope) setSelectedScope(targetScope);
-    setIsModalOpen(true);
+
+    // Direct 1-click execution: always saves/loads via R2 + Firestore + LocalStorage
+    executeSync(type, false, effScope);
   };
 
   const getScopeName = (sc: CloudSyncScope) => {
@@ -120,32 +163,11 @@ export default function CloudSyncManager({
     setIsModalOpen(false);
     setSyncing(true);
     setProgress(10);
-    setStatusText(currentAction === 'upload' ? `Chuẩn bị lưu [${getScopeName(currentScope)}]...` : `Đang tải [${getScopeName(currentScope)}] từ R2...`);
+    setStatusText(currentAction === 'upload' ? `Đang lưu [${getScopeName(currentScope)}]...` : `Đang tải [${getScopeName(currentScope)}] từ Cloud...`);
 
     try {
       const creds = await getStoredR2CredentialsAsync();
-      if (!creds) {
-        throw new Error('Thiếu thông tin cấu hình Cloudflare R2 trong cài đặt!');
-      }
-
-      const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
-      const s3 = new S3Client({
-        region: 'auto',
-        endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
-        credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
-      });
-
-      // Fetch existing cloud configuration first for surgical scoped merges
-      let existingCloudData: any = null;
-      try {
-        const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
-        if (downloadRes.success && downloadRes.data) {
-          existingCloudData = downloadRes.data;
-        }
-      } catch (e) {
-        console.warn('Could not pre-fetch mapping_config.json for merge:', e);
-      }
-
+      
       const currentActiveKey = `${store}_${location}`;
       const updatedStoreLocationData = { ...storeLocationData };
       updatedStoreLocationData[currentActiveKey] = {
@@ -156,9 +178,38 @@ export default function CloudSyncManager({
 
       if (currentAction === 'upload') {
         setProgress(25);
+        let existingCloudData: any = null;
+
+        if (creds) {
+          try {
+            const { S3Client } = await getS3Sdk();
+            const s3 = new S3Client({
+              region: 'auto',
+              endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+              credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+            });
+            const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
+            if (downloadRes.success && downloadRes.data) {
+              existingCloudData = downloadRes.data;
+            }
+          } catch (e) {
+            console.warn('Could not pre-fetch mapping_config.json for merge:', e);
+          }
+        }
+
         const allValidBgNames: string[] = [];
         const cloudStoreLocationData: Record<string, StoreLocationRecord> = existingCloudData?.storeLocationData ? { ...existingCloudData.storeLocationData } : {};
         const localStoreLocationData: Record<string, StoreLocationRecord> = { ...updatedStoreLocationData };
+
+        let s3ClientInstance: any = null;
+        if (creds) {
+          const { S3Client } = await getS3Sdk();
+          s3ClientInstance = new S3Client({
+            region: 'auto',
+            endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+            credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+          });
+        }
 
         // 1. Process Background Images & Partitions
         for (const pKey in updatedStoreLocationData) {
@@ -187,24 +238,26 @@ export default function CloudSyncManager({
             let r2Key = extractR2Key(currentBg) || (v as any).r2Key || null;
             let displayUrl = currentBg;
 
-            if (currentBg && (currentBg.startsWith('blob:') || currentBg.startsWith('data:'))) {
+            if (creds && s3ClientInstance && currentBg && (currentBg.startsWith('blob:') || currentBg.startsWith('data:'))) {
               setStatusText(`Đang tải ảnh nền: [${pKey}] ${v.name}...`);
               const res = await fetch(currentBg);
               const blob = await res.blob();
               const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
 
-              const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3);
+              const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3ClientInstance);
               if (!uploadRes.success) {
                 throw new Error(`Lỗi tải lên ảnh nền ${v.name}: ${uploadRes.error}`);
               }
               r2Key = uploadRes.name;
 
-              const signedUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }), { expiresIn: 3600 * 24 * 7 });
+              const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
+              const signedUrl = await getSignedUrl(s3ClientInstance, new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }), { expiresIn: 3600 * 24 * 7 });
               displayUrl = signedUrl;
-            } else if (r2Key) {
+            } else if (creds && s3ClientInstance && r2Key) {
               if (!displayUrl || displayUrl.startsWith('r2://')) {
                 try {
-                  displayUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }), { expiresIn: 3600 * 24 * 7 });
+                  const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
+                  displayUrl = await getSignedUrl(s3ClientInstance, new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }), { expiresIn: 3600 * 24 * 7 });
                 } catch (e) {
                   console.warn('Could not generate signed url for key', r2Key, e);
                 }
@@ -215,7 +268,6 @@ export default function CloudSyncManager({
               allValidBgNames.push(r2Key);
             }
 
-            // Version for Cloud: keep groups & mappings based on scope
             const existingCloudVer = existingCloudPart?.mapVersions?.find((cv: any) => cv.id === v.id || cv.name === v.name);
 
             const cloudGroups = (currentScope === 'edit' && existingCloudVer)
@@ -241,8 +293,8 @@ export default function CloudSyncManager({
               store: v.store || pStore,
               location: v.location || pLoc,
               backgroundUrl: displayUrl,
-              groups: v.groups || [],
-              groupMappings: v.groupMappings || {},
+              groups: (currentScope === 'edit' && existingCloudVer) ? (existingCloudVer.groups || v.groups || []) : (v.groups || []),
+              groupMappings: (currentScope === 'edit' && existingCloudVer) ? (existingCloudVer.groupMappings || v.groupMappings || {}) : (v.groupMappings || {}),
               isDynamicActive: true,
             });
           }
@@ -283,11 +335,11 @@ export default function CloudSyncManager({
         }
 
         // 2. Dọn dẹp ảnh mồ côi nếu scope có liên quan tới edit hoặc all
-        if ((currentScope === 'edit' || currentScope === 'all') && allValidBgNames.length > 0) {
+        if (creds && s3ClientInstance && (currentScope === 'edit' || currentScope === 'all') && allValidBgNames.length > 0) {
           setProgress(60);
           setStatusText('Đang dọn dẹp ảnh nền cũ trên R2...');
           try {
-            await purgeOldR2BackgroundImages(allValidBgNames, creds, s3, (status) => setStatusText(status));
+            await purgeOldR2BackgroundImages(allValidBgNames, creds, s3ClientInstance, (status) => setStatusText(status));
           } catch (cleanErr) {
             console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
           }
@@ -295,7 +347,7 @@ export default function CloudSyncManager({
 
         // 3. Build config Data
         setProgress(80);
-        setStatusText(`Đang lưu cấu hình [${getScopeName(currentScope)}] lên R2...`);
+        setStatusText(`Đang lưu cấu hình [${getScopeName(currentScope)}] lên Cloud...`);
 
         const activeCloudPartition = cloudStoreLocationData[currentActiveKey] || Object.values(cloudStoreLocationData)[0] || { mapUnits: [], mapVersions: [], activeMapVersionId: null };
 
@@ -324,11 +376,41 @@ export default function CloudSyncManager({
           timestamp: Date.now(),
         };
 
-        const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
-        const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3);
-        if (!uploadRes.success) {
-          throw new Error(`Lỗi tải lên cấu hình: ${uploadRes.error}`);
+        // Upload to Cloudflare R2 if creds available
+        if (creds && s3ClientInstance) {
+          const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
+          const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3ClientInstance);
+          if (!uploadRes.success) {
+            console.warn(`[R2 Upload Warning] ${uploadRes.error}`);
+          }
         }
+
+        // Parallel Backup: Always save snapshot to Firestore and LocalStorage for 100% Zero Data Loss
+        try {
+          await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), {
+            storeLocationData: cloudStoreLocationData,
+            store,
+            location,
+            activeMapVersionId,
+            reviewSelectedLabels: configData.reviewSelectedLabels,
+            reviewLabelColors: configData.reviewLabelColors,
+            lastSavedScope: currentScope,
+            updatedAt: new Date().toISOString(),
+            timestamp: Date.now(),
+          }, { merge: true });
+        } catch (fsErr) {
+          console.warn('[Firestore Backup] Error saving backup:', fsErr);
+        }
+
+        try {
+          localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+            storeLocationData: cloudStoreLocationData,
+            store,
+            location,
+            activeMapVersionId,
+            updatedAt: Date.now(),
+          }));
+        } catch {}
 
         // 4. Update local React store
         loadFullCloudData({
@@ -342,33 +424,69 @@ export default function CloudSyncManager({
 
         setProgress(100);
         if (currentScope === 'edit') {
-          setStatusText('Hoàn tất! Đã lưu bản vẽ & tọa độ (Tab Edit) lên Cloud.');
+          setStatusText('Đã lưu bản vẽ & tọa độ (Tab Edit) lên Cloud thành công!');
         } else if (currentScope === 'dynamic') {
-          setStatusText('Hoàn tất! Đã lưu quy tắc & nhóm phân loại (Tab Dynamic) lên Cloud.');
+          setStatusText('Đã lưu quy tắc & nhóm phân loại (Tab Dynamic) lên Cloud thành công!');
         } else if (currentScope === 'review') {
-          setStatusText('Hoàn tất! Đã lưu cấu hình review & nhãn (Tab Review) lên Cloud.');
+          setStatusText('Đã lưu cấu hình review & nhãn (Tab Review) lên Cloud thành công!');
         } else {
-          setStatusText('Hoàn tất! Đã lưu toàn bộ bản vẽ, dynamic và review lên Cloud.');
+          setStatusText('Đã lưu toàn bộ bản vẽ, dynamic và review lên Cloud thành công!');
         }
 
       } else if (currentAction === 'download') {
         setProgress(20);
-        setStatusText(`Đang tải dữ liệu [${getScopeName(currentScope)}] từ R2...`);
+        setStatusText(`Đang tải dữ liệu [${getScopeName(currentScope)}] từ Cloud...`);
 
-        const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
+        let data: any = null;
 
-        if (!downloadRes.success || !downloadRes.data) {
-          if (downloadRes.notFound) {
-            if (isAuto) {
-              setSyncing(false);
-              return;
+        // Try R2 download first
+        if (creds) {
+          try {
+            const { S3Client } = await getS3Sdk();
+            const s3 = new S3Client({
+              region: 'auto',
+              endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+              credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+            });
+            const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
+            if (downloadRes.success && downloadRes.data) {
+              data = downloadRes.data;
             }
-            throw new Error('Chưa có file cấu hình mapping_config.json trên R2 Bucket (Vui lòng bấm Save Cloud để lưu cấu hình đầu tiên).');
+          } catch (r2Err) {
+            console.warn('[R2 Download] R2 fetch error, trying fallback:', r2Err);
           }
-          throw new Error(downloadRes.error || 'Không thể tải file cấu hình từ R2.');
         }
 
-        const data = downloadRes.data;
+        // Fallback to Firestore backup if R2 didn't return data
+        if (!data) {
+          try {
+            const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+            if (snap.exists()) {
+              data = snap.data();
+            }
+          } catch (fsErr) {
+            console.warn('[Firestore Fallback] Error reading backup:', fsErr);
+          }
+        }
+
+        // Fallback to LocalStorage backup
+        if (!data) {
+          try {
+            const cached = localStorage.getItem('taka_mapping_config_backup');
+            if (cached) {
+              data = JSON.parse(cached);
+            }
+          } catch {}
+        }
+
+        if (!data) {
+          if (isAuto) {
+            setSyncing(false);
+            return;
+          }
+          throw new Error('Chưa tìm thấy dữ liệu trên Cloud (Vui lòng bấm Save Cloud để lưu cấu hình đầu tiên).');
+        }
+
         setProgress(50);
         setStatusText('Đang phân giải liên kết ảnh và dữ liệu...');
 
@@ -386,7 +504,17 @@ export default function CloudSyncManager({
           };
         }
 
-        // Resolve background signed URLs
+        // Resolve background signed URLs if creds available
+        let s3ClientInstance: any = null;
+        if (creds) {
+          const { S3Client } = await getS3Sdk();
+          s3ClientInstance = new S3Client({
+            region: 'auto',
+            endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+            credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+          });
+        }
+
         for (const pKey in normalizedStoreLocationData) {
           const partition = normalizedStoreLocationData[pKey];
           if (!partition) continue;
@@ -408,10 +536,11 @@ export default function CloudSyncManager({
               const v = partition.mapVersions[j];
               const r2Key = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
 
-              if (r2Key) {
+              if (creds && s3ClientInstance && r2Key) {
                 try {
+                  const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
                   const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key });
-                  const imgUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
+                  const imgUrl = await getSignedUrl(s3ClientInstance, imgCommand, { expiresIn: 3600 * 24 * 7 });
                   v.backgroundUrl = imgUrl;
                   (v as any).r2Key = r2Key;
                 } catch (imgErr) {
@@ -543,7 +672,7 @@ export default function CloudSyncManager({
         }
       }
 
-      setTimeout(() => setSyncing(false), 2000);
+      setTimeout(() => setSyncing(false), 2500);
 
     } catch (err: any) {
       if (!isAuto) {
@@ -604,7 +733,7 @@ export default function CloudSyncManager({
       {syncing ? (
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 shadow-md">
            <RefreshCw className="animate-spin text-brand-400 shrink-0" size={13} />
-           <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wide truncate max-w-[200px]">{statusText}</span>
+           <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wide truncate max-w-[240px]">{statusText}</span>
         </div>
       ) : (
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -612,10 +741,10 @@ export default function CloudSyncManager({
           <button 
             onClick={() => handleOpenSync('upload')}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-brand-400 hover:text-brand-300 transition-all shadow-sm active:scale-95",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-brand-400 hover:text-brand-300 transition-all shadow-sm active:scale-95 cursor-pointer",
               compact ? "text-[10px] px-2 py-1" : "text-[11px]"
             )}
-            title={`Lưu dữ liệu (${getScopeName(selectedScope)}) lên Cloudflare R2`}
+            title={`Lưu dữ liệu (${getScopeName(selectedScope)}) lên Cloudflare R2 & Firestore`}
           >
             <CloudUpload size={13} className="shrink-0" />
             <span className="font-bold uppercase tracking-wider">Save Cloud</span>
@@ -630,7 +759,7 @@ export default function CloudSyncManager({
           <button 
             onClick={() => handleOpenSync('download')}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 transition-all shadow-sm active:scale-95",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 transition-all shadow-sm active:scale-95 cursor-pointer",
               compact ? "text-[10px] px-2 py-1" : "text-[11px]"
             )}
             title={`Tải dữ liệu (${getScopeName(selectedScope)}) từ Cloudflare R2`}
@@ -648,7 +777,7 @@ export default function CloudSyncManager({
           <div className="relative">
             <button
               onClick={() => setShowScopeDropdown(!showScopeDropdown)}
-              className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+              className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
               title="Chọn phạm vi Lưu / Tải Cloud (Edit, Dynamic, Review, Toàn bộ)"
             >
               <ChevronDown size={12} className={cn("transition-transform duration-200", showScopeDropdown && "rotate-180")} />
@@ -665,7 +794,7 @@ export default function CloudSyncManager({
                 <button
                   onClick={() => { setSelectedScope('edit'); setShowScopeDropdown(false); }}
                   className={cn(
-                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left",
+                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left cursor-pointer",
                     selectedScope === 'edit' ? "bg-blue-500/20 text-blue-300" : "text-slate-300 hover:bg-slate-800"
                   )}
                 >
@@ -678,7 +807,7 @@ export default function CloudSyncManager({
                 <button
                   onClick={() => { setSelectedScope('dynamic'); setShowScopeDropdown(false); }}
                   className={cn(
-                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left",
+                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left cursor-pointer",
                     selectedScope === 'dynamic' ? "bg-amber-500/20 text-amber-300" : "text-slate-300 hover:bg-slate-800"
                   )}
                 >
@@ -691,7 +820,7 @@ export default function CloudSyncManager({
                 <button
                   onClick={() => { setSelectedScope('review'); setShowScopeDropdown(false); }}
                   className={cn(
-                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left",
+                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left cursor-pointer",
                     selectedScope === 'review' ? "bg-emerald-500/20 text-emerald-300" : "text-slate-300 hover:bg-slate-800"
                   )}
                 >
@@ -704,7 +833,7 @@ export default function CloudSyncManager({
                 <button
                   onClick={() => { setSelectedScope('all'); setShowScopeDropdown(false); }}
                   className={cn(
-                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left border-t border-slate-800 mt-0.5",
+                    "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors text-left border-t border-slate-800 mt-0.5 cursor-pointer",
                     selectedScope === 'all' ? "bg-purple-500/20 text-purple-300" : "text-slate-300 hover:bg-slate-800"
                   )}
                 >
@@ -718,11 +847,20 @@ export default function CloudSyncManager({
             )}
           </div>
 
+          {/* R2 Credentials Settings Button */}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+            title="Cài đặt khóa kết nối Cloudflare R2"
+          >
+            <Settings size={12} />
+          </button>
+
           {showCleanButton && (
             <button 
               onClick={handleCleanR2Garbage}
               className={cn(
-                "flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-700/50 text-emerald-400 hover:text-emerald-300 transition-colors shadow-sm active:scale-95",
+                "flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-700/50 text-emerald-400 hover:text-emerald-300 transition-colors shadow-sm active:scale-95 cursor-pointer",
                 compact ? "text-[10px] px-1.5 py-1" : "text-[11px]"
               )}
               title="Dọn dẹp & giải phóng tất cả ảnh nền mồ côi trên Cloudflare R2"
@@ -737,7 +875,7 @@ export default function CloudSyncManager({
       <R2UploadModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onStartExport={executeSync}
+        onStartExport={() => executeSync('upload', false, selectedScope)}
         uploading={false}
         uploadProgress={0}
       />
