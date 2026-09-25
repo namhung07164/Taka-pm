@@ -70,7 +70,7 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
     } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear' || f === 'year') {
       val = data.hasAppProject ? data.appProjectYear : data.year;
     } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
-      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : (data.excelProjectStatus || data.status || '');
+      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : (data.excelProjectStatus || (data as any).status || '');
     } else if (f === 'unit' || f === 'code') {
       val = data.unitName || '';
     } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {

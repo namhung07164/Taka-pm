@@ -283,7 +283,7 @@ function DynamicHierarchyTab({
     // Merge real Project data synchronized by effectiveYear and store
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      if (store && store !== 'all') {
+      if (store && (store as string) !== 'all') {
         const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
         if (pStore && pStore !== store.toUpperCase()) return;
       }

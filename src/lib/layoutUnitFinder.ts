@@ -76,16 +76,18 @@ export function findProjectLayoutUnit(
     const delegationGroups = useAppStore.getState().delegationGroups || [];
     const matchedGroup = delegationGroups.find((g) => g.id && String(g.id).toLowerCase() === targetId) || null;
     
-    if (matchedGroup?.taskId) {
-      matchedTask = tasksList.find((t) => t.id && String(t.id).toLowerCase() === String(matchedGroup.taskId).toLowerCase()) || null;
+    const parentTaskId = matchedGroup?.parentTaskId || (matchedGroup as any)?.taskId;
+    if (parentTaskId) {
+      matchedTask = tasksList.find((t) => t.id && String(t.id).toLowerCase() === String(parentTaskId).toLowerCase()) || null;
     }
 
     const groupProjCode = (matchedGroup?.projectCode || matchedTask?.projectCode || notifProjCode).toLowerCase();
+    const groupProjId = (matchedGroup as any)?.projectId;
     matchedProject =
       projectsList.find(
         (p) =>
           (p.code && String(p.code).toLowerCase() === groupProjCode) ||
-          (matchedGroup?.projectId && (p.id === matchedGroup.projectId || String(p.no) === String(matchedGroup.projectId))) ||
+          (groupProjId && (p.id === groupProjId || String(p.no) === String(groupProjId))) ||
           (matchedTask && (matchedTask as any).projectId === p.id) ||
           (p.linkCodes && groupProjCode && extractAllProjectCodes(p).includes(groupProjCode))
       ) || null;
