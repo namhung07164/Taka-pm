@@ -1347,3 +1347,18 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Kiểm soát đa yếu tố (Year / Store / Location / Code)**: Phân biệt chính xác giữa các dự án có cùng mã nhưng khác niên độ (như 2026 vs 2027), khác chi nhánh (HCM vs HN) hoặc khác vị trí/tầng (như B2 vs 1F). Khi khác bất kỳ yếu tố nào, hệ thống đều phân loại là khác dự án và tự động bật hộp thoại xác nhận (ConfirmModal) kèm lý do chi tiết để người dùng phê duyệt trước khi tạo liên kết.
 
 
+
+
+17. **Khôi Phục Thanh Trực Quan Tiến Độ & Bảng Điều Khiển Nhanh Dự Án (Task Detail Progress Bars & Controls Bar)**:
+   - **Thanh Tiến Độ Kế Hoạch & Thực Tế (Visual Progress Bars)**:
+     + **PLAN PRG**: Thanh đo tiến độ kế hoạch màu xanh dương (`bg-blue-500`) kèm chỉ số phần trăm hiển thị trực quan tỷ lệ hoàn thành dự kiến của các công việc con.
+     + **ACT PRG**: Thanh đo tiến độ thực tế màu xanh ngọc (`bg-emerald-500`) kèm chỉ số phần trăm phản ánh chính xác trạng thái thực thi thực tế của dự án.
+   - **Thanh Điều Khiển & Nhãn Trực Quan (Controls Bar)**:
+     + **Bộ Đếm Sub-**: Hiển thị tổng số công việc con theo dạng 2 dòng in nghiêng (`15\nSub-`), hỗ trợ chạm/click để đóng/mở nhanh danh sách công việc con.
+     + **Nút Sắp Xếp (Sort)**: Biểu tượng mũi tên hai chiều `[↑↓ Sort]` giúp sắp xếp tức thời danh sách công việc con theo Ngày bắt đầu (Start Date).
+     + **Huy Hiệu Nhà Thầu/Bên Phụ Trách (Party Tag)**: Huy hiệu viền tím nổi bật (`border-purple-500 bg-purple-950/60`) liệt kê các đối tác, nhà thầu chịu trách nhiệm thực hiện (ví dụ: `Con1, CP, MD`).
+     + **Nút Gạt Ủy Quyền (Delegation FastToggle)**: Công tắc gạt nhanh trạng thái ủy quyền của dự án sang phân hệ Delegation.
+     + **Nút Xem Chi Tiết (Maximize)**: Biểu tượng mũi tên mở rộng chéo `⤢` màu xanh dương cho phép mở nhanh modal chi tiết dự án.
+     + **Hiển Thị Ngày 3 Dòng (Stacked Dates Display)**:
+       - **Ngày bắt đầu (Start Date)**: Hiển thị 3 dòng màu xanh dương (`Tháng\nNgày,\nNăm` ví dụ: `May\n4,\n2026`).
+       - **Ngày kết thúc (Completion Date)**: Hiển thị 3 dòng màu hồng cánh sen (`Tháng\nNgày,\nNăm` ví dụ: `Oct\n16,\n2026`).

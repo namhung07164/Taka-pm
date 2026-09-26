@@ -1,16 +1,29 @@
 import React, { memo, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Plus } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, ArrowDownUp, Maximize2 } from 'lucide-react';
 import { Project, Task, DelegationGroup } from '../../types';
 import { QuickNavButton } from '../QuickNavButton';
 import { DetailMobileTaskItem } from './DetailMobileTaskItem';
+import { FastToggle } from './FastToggle';
 import { 
   cn, 
   formatDisplayDateMain, 
   calculateDays, 
   computePlanProgressPercent, 
   computeActProgressPercent,
-  matchesAdvancedSearch
+  matchesAdvancedSearch,
+  parseDateTime
 } from '../../lib/utils';
+
+function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
+  if (!dateStr) return null;
+  const d = parseDateTime(dateStr);
+  if (!d || isNaN(d.getTime())) return null;
+  return {
+    month: d.toLocaleDateString('en-US', { month: 'short' }),
+    day: `${d.getDate()},`,
+    year: String(d.getFullYear())
+  };
+}
 
 interface DetailMobileViewProps {
   filteredProjects: Project[];
@@ -38,6 +51,7 @@ interface DetailMobileViewProps {
   handleDeleteTask: (task: Task) => void;
   taskCodeMap?: Map<string, string>;
   taskActualStatusMap?: Map<string, { label: string; color: string }>;
+  onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
 }
 
 export const DetailMobileView = memo(function DetailMobileView({
@@ -57,11 +71,13 @@ export const DetailMobileView = memo(function DetailMobileView({
   onEditProject,
   onAddTask,
   onEditTask,
+  handleUpdateProject,
   handleMoveTask,
   handleUpdateTask,
   handleDeleteTask,
   taskCodeMap,
-  taskActualStatusMap
+  taskActualStatusMap,
+  onSortSubTasks
 }: DetailMobileViewProps) {
   const handleMobileScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -277,31 +293,140 @@ export const DetailMobileView = memo(function DetailMobileView({
               </div>
 
               {/* Project Dates & Metrics */}
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-[#a3a3a3] border-t border-slate-200/80 dark:border-[#38383b] pt-2 mt-0.5">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-mono text-blue-700 dark:text-[#8ab4f8] font-bold">
-                    {formatDisplayDateMain(computedTakStart)}
-                  </span>
-                  <span>-</span>
-                  <span className="font-mono text-pink-700 dark:text-pink-400 font-bold">
-                    {formatDisplayDateMain(computedTakCompl)}
-                  </span>
-                  <span className="text-[10px] italic text-slate-400">
-                    ({calculateDays(computedTakStart, computedTakCompl)})
-                  </span>
-                </div>
+              {(() => {
+                const startParts = parseStackedDate(computedTakStart || p.start);
+                const complParts = parseStackedDate(computedTakCompl || p.handover || p.opening);
+                const displayParty = p.party || Array.from(new Set(groupTasks.map(t => t.party?.trim()).filter(Boolean))).join(', ');
 
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="font-semibold text-slate-400">PLAN PRG:</span>
-                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{planProgressPercent}%</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px]">
-                    <span className="font-semibold text-slate-400">ACT PRG:</span>
-                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{actProgressPercent}%</span>
-                  </div>
-                </div>
-              </div>
+                return (
+                  <>
+                    {/* Progress Bars (Plan Progress & Actual Progress) */}
+                    <div className="flex flex-col gap-2 pt-1 border-t border-slate-200/80 dark:border-[#38383b]">
+                      {/* PLAN PRG */}
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="font-bold text-xs tracking-wider text-slate-400 dark:text-slate-300 w-20 shrink-0">
+                          PLAN PRG:
+                        </span>
+                        <div className="flex-1 h-2.5 sm:h-3 bg-slate-700/60 dark:bg-[#333336] rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }}
+                          />
+                        </div>
+                        <span className="font-mono font-bold text-xs sm:text-sm text-slate-300 dark:text-slate-200 shrink-0 w-10 text-right">
+                          {planProgressPercent}%
+                        </span>
+                      </div>
+
+                      {/* ACT PRG */}
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="font-bold text-xs tracking-wider text-slate-400 dark:text-slate-300 w-20 shrink-0">
+                          ACT PRG:
+                        </span>
+                        <div className="flex-1 h-2.5 sm:h-3 bg-slate-700/60 dark:bg-[#333336] rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }}
+                          />
+                        </div>
+                        <span className="font-mono font-bold text-xs sm:text-sm text-slate-300 dark:text-slate-200 shrink-0 w-10 text-right">
+                          {actProgressPercent}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-slate-200/80 dark:border-[#38383b] my-0.5" />
+
+                    {/* Controls Bar: Sub- count, Sort, Party, Toggle, Maximize, and Stacked Dates */}
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+                        {/* Sub- count */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleGroup(p.id!);
+                          }}
+                          className="flex flex-col items-start leading-none italic font-bold text-slate-400 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer select-none active:scale-95 touch-manipulation text-left"
+                          title={isExpanded ? "Collapse sub-tasks" : `Expand sub-tasks (${effectiveTaskCount})`}
+                        >
+                          <span className="text-sm sm:text-base font-extrabold">{effectiveTaskCount}</span>
+                          <span className="text-[11px] sm:text-xs">Sub-</span>
+                        </button>
+
+                        {/* Sort Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSortSubTasks?.(p, groupTasks);
+                          }}
+                          className="px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 shadow-2xs active:scale-95 touch-manipulation cursor-pointer"
+                          title="Sort sub-tasks by Start Date"
+                        >
+                          <ArrowDownUp className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                          <span>Sort</span>
+                        </button>
+
+                        {/* Party / Contractor Tag */}
+                        {displayParty ? (
+                          <span 
+                            className="px-2 py-0.5 rounded-md border border-purple-500/80 dark:border-purple-500 bg-purple-100/60 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-semibold whitespace-nowrap shadow-2xs"
+                            title={`Party: ${displayParty}`}
+                          >
+                            {displayParty}
+                          </span>
+                        ) : null}
+
+                        {/* Delegation Toggle Switch */}
+                        <div className="flex items-center">
+                          <FastToggle
+                            value={Boolean(p.delegation)}
+                            canWrite={canWrite}
+                            onToggle={(val) => handleUpdateProject(p, 'delegation', val)}
+                            isSmall={true}
+                          />
+                        </div>
+
+                        {/* Maximize Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditProject?.(p, !canWrite, "chat");
+                          }}
+                          className="p-1 text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                          title="Open Project Details"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Right side: Stacked Dates */}
+                      <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                        {startParts && (
+                          <div 
+                            className="flex flex-col items-center text-center font-bold text-xs sm:text-sm leading-tight text-blue-600 dark:text-sky-400 select-none"
+                            title={`Start: ${formatDisplayDateMain(computedTakStart || p.start)}`}
+                          >
+                            <span>{startParts.month}</span>
+                            <span>{startParts.day}</span>
+                            <span>{startParts.year}</span>
+                          </div>
+                        )}
+                        {complParts && (
+                          <div 
+                            className="flex flex-col items-center text-center font-bold text-xs sm:text-sm leading-tight text-pink-600 dark:text-pink-400 select-none"
+                            title={`Finish: ${formatDisplayDateMain(computedTakCompl || p.handover || p.opening)}`}
+                          >
+                            <span>{complParts.month}</span>
+                            <span>{complParts.day}</span>
+                            <span>{complParts.year}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Sub-tasks section */}
               {isExpanded && (

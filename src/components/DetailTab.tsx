@@ -3367,6 +3367,7 @@ export function DetailTab({
         handleDeleteTask={handleDeleteTask}
         taskCodeMap={taskCodeMap}
         taskActualStatusMap={taskActualStatusMap}
+        onSortSubTasks={handleSortSubTasks}
       />
 
       <DetailFocusControls 
