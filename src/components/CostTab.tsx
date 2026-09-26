@@ -502,11 +502,19 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.costDetail) && !isArchiveYear;
 
-  const years = [...new Set([...projects.map(p=> {
-    if (p.year) return String(p.year).trim();
-    if (p.start) return String(p.start).substring(0, 4);
-    return null;
-  }).filter(Boolean), '2026', '2027'])].sort();
+  const years = useMemo(() => {
+    const projYears = projects.map(p => {
+      if (p.year) return String(p.year).trim();
+      if (p.start) return String(p.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+
+    if (currentUser?.role === 'admin') {
+      return Array.from(new Set([...projYears, '2026', '2027'])).sort();
+    }
+    const unique = Array.from(new Set(projYears)).sort();
+    return unique.length > 0 ? unique : ['2026'];
+  }, [projects, currentUser]);
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const stores = allowedStores;

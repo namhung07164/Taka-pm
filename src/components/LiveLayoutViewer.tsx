@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback, useDeferredVa
 import Konva from 'konva';
 import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
-import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff, Bell, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff, Bell, AlertTriangle, ShieldAlert } from 'lucide-react';
 import useImage from 'use-image';
 import { useOffscreenImage } from '../hooks/useOffscreenImage';
 import { preloadFloorImages } from '../lib/imageDBCache';
@@ -2069,6 +2069,47 @@ function LiveCanvas({
 
   // Capped pixel ratio for silky smooth iOS GPU execution
   const pixelRatio = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+
+  // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout
+  const hasUserAccessInStoreYear = useMemo(() => {
+    if (!currUser || currUser.role === 'admin') return true;
+    const yr = String(globalYearFilter || '2026').trim();
+    if (yr === 'all') return true;
+    const hasProj = enrichedProjects.some(p => {
+      if (storeFilter !== 'all') {
+        const pStore = String(p.store || '').toUpperCase().trim();
+        if (pStore && pStore !== storeFilter.toUpperCase()) return false;
+      }
+      const pYear = String(p.year || '').trim();
+      return pYear === yr;
+    });
+    if (hasProj) return true;
+    const hasTask = tasks.some(t => {
+      if (storeFilter !== 'all') {
+        const tStore = String(t.projectStore || '').toUpperCase().trim();
+        if (tStore && tStore !== storeFilter.toUpperCase()) return false;
+      }
+      const tYear = String(t.projectYear || '').trim();
+      return tYear === yr;
+    });
+    return hasTask;
+  }, [currUser, enrichedProjects, tasks, storeFilter, globalYearFilter]);
+
+  if (!hasUserAccessInStoreYear) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 text-slate-400 p-6 text-center select-none">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-center mb-3 shadow-inner">
+          <ShieldAlert className="w-8 h-8 text-amber-600 dark:text-amber-400 opacity-80" />
+        </div>
+        <p className="text-base font-bold text-slate-700 dark:text-slate-200">
+          Không có dự án hoặc công việc được phân quyền ({globalYearFilter || 'Năm này'})
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
+          Mặt bằng và dữ liệu trực tiếp được bảo mật và ẩn đối với tài khoản không có nhiệm vụ trong giai đoạn này.
+        </p>
+      </div>
+    );
+  }
 
   if (!version || !version.id) {
     return (

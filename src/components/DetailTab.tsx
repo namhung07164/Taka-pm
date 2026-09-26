@@ -1009,11 +1009,24 @@ export function DetailTab({
     }
   }, [tasks, projects, hasWritePermission, handleSyncAllPredecessors]);
 
-  const years = [...new Set([...projects.map(p=> {
-    if (p.year) return String(p.year);
-    if (p.start) return String(p.start).substring(0, 4);
-    return null;
-  }).filter(Boolean), '2026', '2027'])].sort();
+  const years = useMemo(() => {
+    const projYears = projects.map(p => {
+      if (p.year) return String(p.year);
+      if (p.start) return String(p.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const taskYears = tasks.map(t => {
+      if (t.projectYear) return String(t.projectYear);
+      if (t.start) return String(t.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+
+    if (currentUser?.role === 'admin') {
+      return Array.from(new Set([...projYears, ...taskYears, '2026', '2027'])).sort();
+    }
+    const unique = Array.from(new Set([...projYears, ...taskYears])).sort();
+    return unique.length > 0 ? unique : ['2026'];
+  }, [projects, tasks, currentUser]);
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const stores = allowedStores;

@@ -4,7 +4,7 @@ import { useEnrichedData } from '../hooks/useEnrichedData';
 import { useLocationOptions } from '../hooks/useLocationOptions';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
-import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Maximize2, Eye, Move, HelpCircle, Clipboard, Map } from 'lucide-react';
+import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Maximize2, Eye, Move, HelpCircle, Clipboard, Map, ShieldAlert } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
 import { AppUser, PermissionMatrix, AppRole, Project } from '../types';
@@ -190,6 +190,18 @@ export function LayoutTab({
 
   // Available years: strictly based on existing versions for this store (matching Review Tab)
   const availableYears = React.useMemo(() => {
+    if (!isAdmin) {
+      // For non-admin user (e.g. ksm-01): strictly derive available years from accessible projects and tasks!
+      const userYears = Array.from(
+        new Set([
+          ...projects.map(p => (p.year ? String(p.year).trim() : '')),
+          ...tasks.map(t => (t.projectYear ? String(t.projectYear).trim() : ''))
+        ])
+      ).filter(y => y && y.toLowerCase() !== 'all').sort((a, b) => Number(b) - Number(a));
+
+      return userYears.length > 0 ? userYears : [new Date().getFullYear().toString()];
+    }
+
     const versionYears = Array.from(
       new Set(
         allStoreVersions
@@ -211,7 +223,7 @@ export function LayoutTab({
       .filter(y => y && y.toLowerCase() !== 'all')
       .sort((a, b) => Number(b) - Number(a));
     return allYrs;
-  }, [allStoreVersions, projects, tasks]);
+  }, [allStoreVersions, projects, tasks, isAdmin]);
 
   const effectiveYear = React.useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
@@ -219,6 +231,27 @@ export function LayoutTab({
     }
     return availableYears[0] || new Date().getFullYear().toString();
   }, [globalYearFilter, availableYears]);
+
+  // Check if non-admin user has ANY accessible projects or tasks in activeStore & effectiveYear
+  const hasAccessibleDataInYear = React.useMemo(() => {
+    if (isAdmin) return true;
+    const effYr = String(effectiveYear || '').trim();
+    const hasProj = projects.some(p => {
+      const pStore = String(p.store || '').toUpperCase().trim();
+      if (activeStore && activeStore !== 'all' && pStore && pStore !== activeStore.toUpperCase()) return false;
+      const pYear = String(p.year || '').trim();
+      return pYear === effYr;
+    });
+    if (hasProj) return true;
+
+    const hasTask = tasks.some(t => {
+      const tStore = String(t.projectStore || '').toUpperCase().trim();
+      if (activeStore && activeStore !== 'all' && tStore && tStore !== activeStore.toUpperCase()) return false;
+      const tYear = String(t.projectYear || '').trim();
+      return tYear === effYr;
+    });
+    return hasTask;
+  }, [projects, tasks, activeStore, effectiveYear, isAdmin]);
 
   // Layout tab requires specific year selection (no 'all' option allowed)
   useEffect(() => {
@@ -252,6 +285,11 @@ export function LayoutTab({
   // Lọc danh sách location:
   // Dựa vào Review tab: Hiển thị những location (tầng) có version trong activeStore
   const availableLocations = React.useMemo(() => {
+    // If non-admin user has NO accessible data in this year/store, return []
+    if (!isAdmin && !hasAccessibleDataInYear) {
+      return [];
+    }
+
     // 1. Ưu tiên các tầng có version đúng năm effectiveYear
     const yearVersions = allStoreVersions.filter(v => {
       const vYear = String(v.year || '').trim();
@@ -298,7 +336,7 @@ export function LayoutTab({
       const specificKey = `url_${activeStore}_${loc}`;
       return isValidUrl(layoutSettings[specificKey]);
     });
-  }, [allStoreVersions, effectiveYear, userAllowedLocations, isAdmin, layoutSettings, activeStore]);
+  }, [allStoreVersions, effectiveYear, userAllowedLocations, isAdmin, layoutSettings, activeStore, hasAccessibleDataInYear]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor)
   useEffect(() => {
@@ -968,11 +1006,16 @@ export function LayoutTab({
                   const val = e.target.value;
                   setGlobalLocationFilter([val]);
                 }}
-                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer"
+                disabled={availableLocations.length === 0}
+                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer disabled:opacity-50"
               >
-                {availableLocations.map(loc => (
-                  <option key={loc} value={loc}>{loc}</option>
-                ))}
+                {availableLocations.length === 0 ? (
+                  <option value="">No Location</option>
+                ) : (
+                  availableLocations.map(loc => (
+                    <option key={loc} value={loc}>{loc}</option>
+                  ))
+                )}
               </select>
               <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
               <select
@@ -1205,7 +1248,19 @@ export function LayoutTab({
       )}
 
       <div className="flex-grow flex w-full min-h-[460px] h-[calc(100dvh-175px)] sm:h-[calc(100vh-195px)] bg-slate-50 dark:bg-slate-900/50 rounded-2xl shadow-inner border border-slate-200 dark:border-slate-800 overflow-hidden relative print:h-[100vh] print:w-full print:min-h-0 print:border-none print:shadow-none print:rounded-none print:bg-white">
-        {isLiveMapMode ? (
+        {!isAdmin && !hasAccessibleDataInYear ? (
+          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900 p-6 text-center select-none">
+            <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-center mb-3 shadow-inner">
+              <ShieldAlert className="w-8 h-8 text-amber-600 dark:text-amber-400 opacity-80" />
+            </div>
+            <p className="text-base font-bold text-slate-700 dark:text-slate-200">
+              Không có dự án hoặc công việc được phân quyền tại {activeStore} • Năm {effectiveYear}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
+              Mặt bằng và dữ liệu trực tiếp được bảo mật và ẩn đối với tài khoản không có nhiệm vụ trong giai đoạn này.
+            </p>
+          </div>
+        ) : isLiveMapMode ? (
           <LiveLayoutViewer 
             storeFilter={activeStore} 
             locationFilter={locFilterStr} 

@@ -576,9 +576,16 @@ export function GanttTab({
   };
 
   const uniqueYears = useMemo(() => {
-    const years = new Set([...projects.map(p => String(p.year)).filter(Boolean), '2026', '2027']);
-    return Array.from(years).sort((a, b) => b.localeCompare(a));
-  }, [projects]);
+    const projYears = projects.map(p => String(p.year)).filter(Boolean);
+    const taskYears = tasks.map(t => String(t.projectYear)).filter(Boolean);
+    if (currentUser?.role === 'admin') {
+      const years = new Set([...projYears, ...taskYears, '2026', '2027']);
+      return Array.from(years).sort((a, b) => b.localeCompare(a));
+    }
+    const years = new Set([...projYears, ...taskYears]);
+    const arr = Array.from(years).sort((a, b) => b.localeCompare(a));
+    return arr.length > 0 ? arr : ['2026'];
+  }, [projects, tasks, currentUser]);
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const uniqueStores = allowedStores;
