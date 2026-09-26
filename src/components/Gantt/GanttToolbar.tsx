@@ -179,39 +179,51 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = React.memo(({
     <div className="px-5 pt-4 pb-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col gap-4 shrink-0 print:hidden">
       <div className="flex flex-col xl:flex-row gap-4 justify-between items-start xl:items-center">
         <div className="flex flex-wrap gap-3 w-full xl:w-auto flex-grow max-w-2xl">
-          <select
-            value={globalYearFilter}
-            onChange={(e) => setGlobalYearFilter(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[100px] flex-[1_1_45%] xl:flex-none"
-          >
-            <option value="all">{t("All Years")}</option>
-            {uniqueYears.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+          {uniqueYears.length > 0 && (
+            <select
+              value={globalYearFilter}
+              onChange={(e) => setGlobalYearFilter(e.target.value)}
+              className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[100px] flex-[1_1_45%] xl:flex-none"
+            >
+              {uniqueYears.length > 1 && <option value="all">{t("All Years")}</option>}
+              {uniqueYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <select
-            value={effectiveStore}
-            onChange={(e) => setGlobalStoreFilter(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[100px] flex-[1_1_45%] xl:flex-none"
-          >
-            {uniqueStores.length > 1 && <option value="all">{t("All Stores")}</option>}
-            {uniqueStores.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          {uniqueStores.length > 0 && (
+            <select
+              value={effectiveStore}
+              onChange={(e) => setGlobalStoreFilter(e.target.value)}
+              className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[100px] flex-[1_1_45%] xl:flex-none"
+            >
+              {uniqueStores.length > 1 && <option value="all">{t("All Stores")}</option>}
+              {uniqueStores.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <MultiCheckboxSelect
-            value={globalLocationFilter}
-            onChange={setGlobalLocationFilter}
-            options={locationOptions}
-            placeholder={t("All Locations")}
-            className="min-w-[100px] flex-[1_1_45%] xl:flex-none"
-          />
+          {locationOptions.length > 0 && (
+            <MultiCheckboxSelect
+              value={globalLocationFilter}
+              onChange={setGlobalLocationFilter}
+              options={locationOptions}
+              placeholder={t("All Locations")}
+              className="min-w-[100px] flex-[1_1_45%] xl:flex-none"
+            />
+          )}
+
+          {uniqueYears.length === 0 && uniqueStores.length === 0 && locationOptions.length === 0 && (
+            <div className="flex items-center text-xs text-slate-400 dark:text-slate-500 italic py-2 px-1">
+              No accessible projects for this account
+            </div>
+          )}
 
           <select
             value={filterProjectStatus}

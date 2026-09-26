@@ -135,7 +135,7 @@ export function GanttTab({
   const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
   const locations = useAppStore(state => state.locations);
-  const locationOptions = useLocationOptions();
+  const locationVisibility = useAppStore(state => state.locationVisibility);
   const theme = useAppStore(state => state.theme);
   const appUsers = useAppStore(state => state.appUsers);
   const subAppUsers = useAppStore(state => state.subAppUsers);
@@ -576,19 +576,85 @@ export function GanttTab({
   };
 
   const uniqueYears = useMemo(() => {
-    const projYears = projects.map(p => String(p.year)).filter(Boolean);
-    const taskYears = tasks.map(t => String(t.projectYear)).filter(Boolean);
-    if (currentUser?.role === 'admin') {
-      const years = new Set([...projYears, ...taskYears, '2026', '2027']);
-      return Array.from(years).sort((a, b) => b.localeCompare(a));
-    }
-    const years = new Set([...projYears, ...taskYears]);
-    const arr = Array.from(years).sort((a, b) => b.localeCompare(a));
-    return arr.length > 0 ? arr : ['2026'];
-  }, [projects, tasks, currentUser]);
+    const years = new Set<string>();
+    projects.forEach(p => {
+      const y = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+      if (y && y.toLowerCase() !== 'all') {
+        years.add(y);
+      }
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [projects]);
 
-  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
-  const uniqueStores = allowedStores;
+  const uniqueStores = useMemo(() => {
+    const allowed = getUserAllowedStores(currentUser);
+    const storesWithProjects = new Set<string>();
+    projects.forEach(p => {
+      const s = String(p.store || '').toUpperCase().trim();
+      if (s) storesWithProjects.add(s);
+    });
+    if (currentUser?.role !== 'admin') {
+      return allowed.filter(s => storesWithProjects.has(s.toUpperCase()));
+    }
+    if (projects.length > 0) {
+      const filtered = allowed.filter(s => storesWithProjects.has(s.toUpperCase()));
+      return filtered.length > 0 ? filtered : allowed;
+    }
+    return [];
+  }, [currentUser, projects]);
+
+  const locationOptions = useMemo(() => {
+    const locsWithProjects = new Set<string>();
+    projects.forEach(p => {
+      if (effectiveStore && effectiveStore !== 'all') {
+        const pStore = String(p.store || '').toUpperCase().trim();
+        if (pStore && pStore !== effectiveStore.toUpperCase().trim()) return;
+      }
+      if (globalYearFilter && globalYearFilter !== 'all') {
+        const pYear = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+        if (pYear && pYear !== String(globalYearFilter).trim()) return;
+      }
+      const loc = String(p.location || '').trim();
+      if (loc && loc.toLowerCase() !== 'all') {
+        locsWithProjects.add(loc);
+      }
+    });
+
+    if (locsWithProjects.size === 0 && projects.length > 0) {
+      projects.forEach(p => {
+        const loc = String(p.location || '').trim();
+        if (loc && loc.toLowerCase() !== 'all') {
+          locsWithProjects.add(loc);
+        }
+      });
+    }
+
+    return Array.from(locsWithProjects)
+      .filter(loc => locationVisibility[loc] !== false)
+      .sort((a, b) => a.localeCompare(b));
+  }, [projects, effectiveStore, globalYearFilter, locationVisibility]);
+
+  // Synchronize filters when active options change
+  useEffect(() => {
+    if (uniqueYears.length > 0 && globalYearFilter !== 'all' && !uniqueYears.includes(globalYearFilter)) {
+      setGlobalYearFilter('all');
+    }
+  }, [uniqueYears, globalYearFilter, setGlobalYearFilter]);
+
+  useEffect(() => {
+    if (uniqueStores.length > 0 && effectiveStore !== 'all' && !uniqueStores.includes(effectiveStore)) {
+      setGlobalStoreFilter(uniqueStores[0]);
+    }
+  }, [uniqueStores, effectiveStore, setGlobalStoreFilter]);
+
+  useEffect(() => {
+    if (locationOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
 
 
 
@@ -3174,6 +3240,17 @@ export function GanttTab({
                   />
                 );
               })}
+              {sortedProjects.length === 0 && (
+                <tr>
+                  <td colSpan={totalColSpan} className="text-center py-20 text-slate-400 dark:text-slate-500">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Calendar className="w-8 h-8 opacity-30" />
+                      <p className="text-sm font-medium">No accessible projects or tasks found</p>
+                      <p className="text-xs text-slate-400">There are no projects matching your account permissions or filter criteria.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {paddingBottom > 0 && (
                 <tr style={{ height: `${paddingBottom}px` }} className="pointer-events-none select-none">
                   <td colSpan={totalColSpan} className="p-0 border-0 m-0" />

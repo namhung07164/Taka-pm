@@ -4,7 +4,7 @@ import { useEnrichedData } from '../hooks/useEnrichedData';
 import { useLocationOptions } from '../hooks/useLocationOptions';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
-import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Maximize2, Eye, Move, HelpCircle, Clipboard, Map, ShieldAlert } from 'lucide-react';
+import { Edit2, Save, ArrowLeft, Filter, Search, X, RefreshCw, ZoomIn, ZoomOut, Maximize, Maximize2, Eye, Move, HelpCircle, Clipboard, Map } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
 import { AppUser, PermissionMatrix, AppRole, Project } from '../types';
@@ -76,9 +76,25 @@ export function LayoutTab({
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
 
-  const allowedStores = React.useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const allowedStores = React.useMemo(() => {
+    const rawAllowed = getUserAllowedStores(currentUser);
+    const storesWithProjects = new Set<string>();
+    projects.forEach(p => {
+      const s = String(p.store || '').toUpperCase().trim();
+      if (s) storesWithProjects.add(s);
+    });
+
+    if (currentUser?.role !== 'admin') {
+      return rawAllowed.filter(s => storesWithProjects.has(s.toUpperCase()));
+    }
+    if (projects.length > 0) {
+      const filtered = rawAllowed.filter(s => storesWithProjects.has(s.toUpperCase()));
+      return filtered.length > 0 ? filtered : rawAllowed;
+    }
+    return rawAllowed;
+  }, [currentUser, projects]);
   const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
-  const activeStore = effectiveStore === 'all' ? (allowedStores[0] || 'HCM') : effectiveStore;
+  const activeStore = effectiveStore === 'all' ? (allowedStores[0] || '') : (allowedStores.includes(effectiveStore) ? effectiveStore : (allowedStores[0] || ''));
 
   const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
   const storeLocationData = useDataStore((state) => state.storeLocationData);
@@ -188,18 +204,19 @@ export function LayoutTab({
     }
   }, [initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
 
-  // Available years: strictly based on existing versions for this store (matching Review Tab)
+  // Available years: strictly based on years where this account has accessible projects (and layouts for store)
   const availableYears = React.useMemo(() => {
-    if (!isAdmin) {
-      // For non-admin user (e.g. ksm-01): strictly derive available years from accessible projects and tasks!
-      const userYears = Array.from(
-        new Set([
-          ...projects.map(p => (p.year ? String(p.year).trim() : '')),
-          ...tasks.map(t => (t.projectYear ? String(t.projectYear).trim() : ''))
-        ])
-      ).filter(y => y && y.toLowerCase() !== 'all').sort((a, b) => Number(b) - Number(a));
+    const storeProjects = projects.filter(p => !activeStore || !p.store || String(p.store).toUpperCase().trim() === activeStore);
+    const projectYearsSet = new Set<string>();
+    storeProjects.forEach(p => {
+      const y = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+      if (y && y.toLowerCase() !== 'all') {
+        projectYearsSet.add(y);
+      }
+    });
 
-      return userYears.length > 0 ? userYears : [new Date().getFullYear().toString()];
+    if (currentUser?.role !== 'admin') {
+      return Array.from(projectYearsSet).sort((a, b) => Number(b) - Number(a));
     }
 
     const versionYears = Array.from(
@@ -208,50 +225,28 @@ export function LayoutTab({
           .map(v => (v.year ? String(v.year).trim() : ''))
           .filter(y => y && y.toLowerCase() !== 'all')
       )
-    ).sort((a, b) => Number(b) - Number(a));
+    );
+    const combined = Array.from(new Set([...projectYearsSet, ...versionYears]))
+      .filter(Boolean)
+      .sort((a, b) => Number(b) - Number(a));
 
-    if (versionYears.length > 0) {
-      return versionYears;
+    if (combined.length > 0) {
+      return combined;
     }
 
-    // Fallback if no version exists at all yet
-    const currentYr = new Date().getFullYear().toString();
-    const baseYears = ['2024', '2025', '2026', '2027', '2028'];
-    const projectYears = projects.map(p => p.year ? String(p.year) : '').filter(Boolean);
-    const taskYears = tasks.map(t => t.projectYear ? String(t.projectYear) : '').filter(Boolean);
-    const allYrs = Array.from(new Set([currentYr, ...baseYears, ...projectYears, ...taskYears]))
-      .filter(y => y && y.toLowerCase() !== 'all')
-      .sort((a, b) => Number(b) - Number(a));
-    return allYrs;
-  }, [allStoreVersions, projects, tasks, isAdmin]);
+    if (projects.length === 0) {
+      return [];
+    }
+
+    return [new Date().getFullYear().toString()];
+  }, [allStoreVersions, projects, activeStore, currentUser]);
 
   const effectiveYear = React.useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
       return globalYearFilter;
     }
-    return availableYears[0] || new Date().getFullYear().toString();
+    return availableYears[0] || '';
   }, [globalYearFilter, availableYears]);
-
-  // Check if non-admin user has ANY accessible projects or tasks in activeStore & effectiveYear
-  const hasAccessibleDataInYear = React.useMemo(() => {
-    if (isAdmin) return true;
-    const effYr = String(effectiveYear || '').trim();
-    const hasProj = projects.some(p => {
-      const pStore = String(p.store || '').toUpperCase().trim();
-      if (activeStore && activeStore !== 'all' && pStore && pStore !== activeStore.toUpperCase()) return false;
-      const pYear = String(p.year || '').trim();
-      return pYear === effYr;
-    });
-    if (hasProj) return true;
-
-    const hasTask = tasks.some(t => {
-      const tStore = String(t.projectStore || '').toUpperCase().trim();
-      if (activeStore && activeStore !== 'all' && tStore && tStore !== activeStore.toUpperCase()) return false;
-      const tYear = String(t.projectYear || '').trim();
-      return tYear === effYr;
-    });
-    return hasTask;
-  }, [projects, tasks, activeStore, effectiveYear, isAdmin]);
 
   // Layout tab requires specific year selection (no 'all' option allowed)
   useEffect(() => {
@@ -262,7 +257,7 @@ export function LayoutTab({
 
   // Layout tab only supports store-specific floor plans (HCM, HN), hide all-stores
   useEffect(() => {
-    if (globalStoreFilter === 'all' && allowedStores.length > 0) {
+    if (allowedStores.length > 0 && (!globalStoreFilter || globalStoreFilter === 'all' || !allowedStores.includes(globalStoreFilter))) {
       setGlobalStoreFilter(allowedStores[0]);
     }
   }, [globalStoreFilter, allowedStores, setGlobalStoreFilter]);
@@ -283,11 +278,21 @@ export function LayoutTab({
   }, [locationOptions]);
 
   // Lọc danh sách location:
-  // Dựa vào Review tab: Hiển thị những location (tầng) có version trong activeStore
+  // Dựa vào Review tab & danh sách dự án của người dùng:
   const availableLocations = React.useMemo(() => {
-    // If non-admin user has NO accessible data in this year/store, return []
-    if (!isAdmin && !hasAccessibleDataInYear) {
-      return [];
+    const storeProjects = projects.filter(p => !activeStore || !p.store || String(p.store).toUpperCase().trim() === activeStore);
+    const locsWithProjects = new Set<string>();
+    storeProjects.forEach(p => {
+      const loc = String(p.location || '').toUpperCase().trim();
+      if (loc && loc !== 'ALL') {
+        locsWithProjects.add(loc);
+      }
+    });
+
+    if (currentUser?.role !== 'admin') {
+      return userAllowedLocations.filter(loc => 
+        locsWithProjects.has(loc.toUpperCase().trim())
+      );
     }
 
     // 1. Ưu tiên các tầng có version đúng năm effectiveYear
@@ -318,6 +323,12 @@ export function LayoutTab({
       }
     });
 
+    locsWithProjects.forEach(loc => {
+      if (!locationsWithVersions.includes(loc)) {
+        locationsWithVersions.push(loc);
+      }
+    });
+
     if (locationsWithVersions.length > 0) {
       const filtered = userAllowedLocations.filter(loc => 
         locationsWithVersions.includes(loc.toUpperCase().trim())
@@ -328,6 +339,10 @@ export function LayoutTab({
       return userAllowedLocations;
     }
 
+    if (projects.length === 0 && allStoreVersions.length === 0) {
+      return [];
+    }
+
     // Fallback if no version exists:
     if (isAdmin) {
       return userAllowedLocations;
@@ -336,7 +351,7 @@ export function LayoutTab({
       const specificKey = `url_${activeStore}_${loc}`;
       return isValidUrl(layoutSettings[specificKey]);
     });
-  }, [allStoreVersions, effectiveYear, userAllowedLocations, isAdmin, layoutSettings, activeStore, hasAccessibleDataInYear]);
+  }, [allStoreVersions, effectiveYear, userAllowedLocations, isAdmin, layoutSettings, activeStore, projects, currentUser]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor)
   useEffect(() => {
@@ -366,7 +381,7 @@ export function LayoutTab({
       if (matched) return matched;
       return currentLoc;
     }
-    return availableLocations[0] || 'B1';
+    return availableLocations[0] || '';
   }, [globalLocationFilter, availableLocations, userAllowedLocations]);
   const docKey = `url_${activeStore}_${locFilterStr}`;
 
@@ -992,41 +1007,49 @@ export function LayoutTab({
             {/* Unified Filter Pill */}
             <div className="flex items-center gap-1 sm:gap-1.5 bg-white dark:bg-[#1e1e20] p-1 sm:p-1.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-xs">
               <Filter className="w-3.5 h-3.5 text-slate-400 dark:text-[#838383] ml-1 shrink-0" />
-              <select
-                value={activeStore}
-                onChange={(e) => setGlobalStoreFilter(e.target.value)}
-                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[70px] outline-none cursor-pointer"
-              >
-                {allowedStores.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
-              <select
-                value={locFilterStr}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setGlobalLocationFilter([val]);
-                }}
-                disabled={availableLocations.length === 0}
-                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer disabled:opacity-50"
-              >
-                {availableLocations.length === 0 ? (
-                  <option value="">No Location</option>
-                ) : (
-                  availableLocations.map(loc => (
+              {allowedStores.length > 0 && (
+                <select
+                  value={activeStore}
+                  onChange={(e) => setGlobalStoreFilter(e.target.value)}
+                  className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[70px] outline-none cursor-pointer"
+                >
+                  {allowedStores.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              )}
+              {allowedStores.length > 0 && availableLocations.length > 0 && (
+                <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
+              )}
+              {availableLocations.length > 0 && (
+                <select
+                  value={locFilterStr}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGlobalLocationFilter([val]);
+                  }}
+                  className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer"
+                >
+                  {availableLocations.map(loc => (
                     <option key={loc} value={loc}>{loc}</option>
-                  ))
-                )}
-              </select>
-              <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
-              <select
-                value={globalYearFilter === 'all' ? (new Date().getFullYear().toString()) : globalYearFilter}
-                onChange={(e) => setGlobalYearFilter(e.target.value)}
-                className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer pr-1"
-              >
-                {availableYears.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+                  ))}
+                </select>
+              )}
+              {availableLocations.length > 0 && availableYears.length > 0 && (
+                <div className="w-px h-3.5 bg-slate-200 dark:bg-[#444446]"></div>
+              )}
+              {availableYears.length > 0 && (
+                <select
+                  value={effectiveYear}
+                  onChange={(e) => setGlobalYearFilter(e.target.value)}
+                  className="bg-transparent border-none text-xs sm:text-sm text-slate-700 dark:text-[#c3c3c3] font-bold min-w-[55px] sm:min-w-[65px] outline-none cursor-pointer pr-1"
+                >
+                  {availableYears.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              )}
+              {allowedStores.length === 0 && availableLocations.length === 0 && availableYears.length === 0 && (
+                <span className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No accessible projects</span>
+              )}
             </div>
           </div>
 
@@ -1248,17 +1271,11 @@ export function LayoutTab({
       )}
 
       <div className="flex-grow flex w-full min-h-[460px] h-[calc(100dvh-175px)] sm:h-[calc(100vh-195px)] bg-slate-50 dark:bg-slate-900/50 rounded-2xl shadow-inner border border-slate-200 dark:border-slate-800 overflow-hidden relative print:h-[100vh] print:w-full print:min-h-0 print:border-none print:shadow-none print:rounded-none print:bg-white">
-        {!isAdmin && !hasAccessibleDataInYear ? (
-          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900 p-6 text-center select-none">
-            <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-center mb-3 shadow-inner">
-              <ShieldAlert className="w-8 h-8 text-amber-600 dark:text-amber-400 opacity-80" />
-            </div>
-            <p className="text-base font-bold text-slate-700 dark:text-slate-200">
-              Không có dự án hoặc công việc được phân quyền tại {activeStore} • Năm {effectiveYear}
-            </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
-              Mặt bằng và dữ liệu trực tiếp được bảo mật và ẩn đối với tài khoản không có nhiệm vụ trong giai đoạn này.
-            </p>
+        {allowedStores.length === 0 || availableLocations.length === 0 ? (
+          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900 p-6 text-center">
+            <Map className="w-12 h-12 mb-3 opacity-20" />
+            <p className="text-sm font-medium">No accessible projects or layouts found for this account</p>
+            <p className="text-xs mt-1 text-slate-400">There are no projects matching your account permissions.</p>
           </div>
         ) : isLiveMapMode ? (
           <LiveLayoutViewer 
