@@ -1472,7 +1472,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
                                       const y = currentY;
                                       currentY += block.blockHeight;
                                       return (
-                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
+                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} perfectDrawEnabled={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
                                       );
                                   });
                                 })()}
@@ -1523,7 +1523,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
                                       const y = currentY;
                                       currentY += block.blockHeight;
                                       return (
-                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
+                                        <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} perfectDrawEnabled={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
                                       );
                                   });
                                 })()}
@@ -1574,7 +1574,7 @@ const HiddenExportStage = ({ version, units, summaryData, selectedLabels, review
                                           const y = currentY;
                                           currentY += block.blockHeight;
                                           return (
-                                            <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
+                                            <Text key={i} x={0} y={y} width={effectiveWidth} text={block.text} fill={reviewLabelColors?.[block.key] || '#ffffff'} align="center" fontSize={fontSize} fontStyle="bold" listening={false} perfectDrawEnabled={false} shadowColor="black" shadowBlur={2} shadowOpacity={1} />
                                           );
                                       });
                                     })()}

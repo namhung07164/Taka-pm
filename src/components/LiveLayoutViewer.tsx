@@ -3283,6 +3283,7 @@ function LiveCanvas({
                           dash={[6, 4]}
                           cornerRadius={6}
                           listening={false}
+                          perfectDrawEnabled={false}
                        />
                     )}
 

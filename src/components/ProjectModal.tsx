@@ -694,6 +694,19 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           const costsToDelete = relatedCosts.map(c => ({ id: c.id, data: c }));
           const delegationsToDelete = relatedDelGroups.map(d => ({ id: d.id, data: d }));
 
+          // Storage Cleanup (Deep Clean) - As per AGENTS.md Rule 4
+          const urlsToDelete: string[] = [];
+          urlsToDelete.push(...extractStorageUrls(project));
+          relatedTasks.forEach(t => {
+            urlsToDelete.push(...extractStorageUrls(t));
+          });
+          relatedCosts.forEach(c => {
+            urlsToDelete.push(...extractStorageUrls(c));
+          });
+          if (urlsToDelete.length > 0) {
+            deleteStorageFiles(urlsToDelete).catch(err => console.error("Storage delete failed", err));
+          }
+
           try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
       } catch (error: any) {

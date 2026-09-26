@@ -589,7 +589,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
           if (urlsToDelete.length > 0) {
              deleteStorageFiles(urlsToDelete).catch(console.error);
           }
-          await batch.commit();
+          batch.commit().catch(e => console.error("Batch commit cost delete failed:", e));
 
           undoManager.push({
             description: `Delete Cost`,
