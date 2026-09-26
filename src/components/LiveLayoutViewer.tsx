@@ -1354,22 +1354,58 @@ function LiveCanvas({
     return dataMap;
   }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups, layoutTooltipVisibility]);
 
-  // 3. Evaluate rules on the fly to build unitColorMap (Strict Dynamic Rules matching only)
+  // 3. Evaluate rules on the fly & merge pre-calculated ReviewTab groupMappings to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
     const groupMap: Record<string, string> = {};
     const opacityMap: Record<string, number> = {};
-    const groupsInUse: any[] = [];
+    const groupsInUseMap = new Map<string, any>();
     
-    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
+    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: [] };
 
+    // Step A. Sync from ReviewTab groupMappings & unit.targetColor
+    if (version.groupMappings && typeof version.groupMappings === 'object') {
+      version.groups.forEach((group: any) => {
+        const mappedUnitIds = version.groupMappings[group.id];
+        if (Array.isArray(mappedUnitIds) && mappedUnitIds.length > 0) {
+          const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
+          const matchedUnits: any[] = [];
+          mappedUnitIds.forEach((uid: string) => {
+            const targetUnit = units.find((u: any) => u.id === uid || String(u.name || '').toLowerCase().trim() === String(uid).toLowerCase().trim());
+            if (targetUnit) {
+              const uName = String(targetUnit.name || '').toLowerCase().trim();
+              if (!restrictedProjectCodes.has(uName) && !aggregatedData[uName]?.isRestricted) {
+                colorMap[targetUnit.id] = group.color;
+                groupMap[targetUnit.id] = group.id;
+                opacityMap[targetUnit.id] = groupOpacity;
+                matchedUnits.push({ id: targetUnit.id, name: targetUnit.name });
+              }
+            }
+          });
+          if (matchedUnits.length > 0) {
+            groupsInUseMap.set(group.id, { ...group, matchCount: matchedUnits.length, matchedUnits });
+          }
+        }
+      });
+    }
+
+    // Step B. Sync embedded unit.targetColor if present
+    units.forEach((u: any) => {
+      const uName = String(u.name || '').toLowerCase().trim();
+      if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
+      if (!colorMap[u.id] && u.targetColor) {
+        colorMap[u.id] = u.targetColor;
+        if (u.targetGroupId) groupMap[u.id] = u.targetGroupId;
+        opacityMap[u.id] = u.targetOpacity ?? 0.65;
+      }
+    });
+
+    // Step C. Real-time dynamic rule evaluation for any remaining unmapped units
     version.groups.forEach((group: any) => {
         let matchCount = 0;
         const matchedUnits: any[] = [];
         const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
         
-        // STRICT REQUIREMENT: Only match when group.rules are defined and pass against aggregatedData
-        // (Do NOT use static/manual groupMappings or any other fallback)
         if (!group.rules || !Array.isArray(group.rules) || group.rules.length === 0) {
             return;
         }
@@ -1377,11 +1413,16 @@ function LiveCanvas({
         units.forEach((u: any) => {
             const uName = String(u.name || '').toLowerCase().trim();
             if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) {
-                // Restricted project for current user -> DO NOT match color or group
                 return;
             }
-            let isMatch = false;
+            if (colorMap[u.id]) {
+                // Already mapped from groupMappings or targetColor
+                matchCount++;
+                matchedUnits.push({ id: u.id, name: u.name });
+                return;
+            }
 
+            let isMatch = false;
             const data = aggregatedData[u.name?.toLowerCase() || ''];
             if (data) {
                 const passedRules = group.rules.every((rule: any) => {
@@ -1490,11 +1531,11 @@ function LiveCanvas({
         });
         
         if (matchCount > 0) {
-            groupsInUse.push({ ...group, matchCount, matchedUnits });
+            groupsInUseMap.set(group.id, { ...group, matchCount, matchedUnits });
         }
     });
 
-    return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: groupsInUse };
+    return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: Array.from(groupsInUseMap.values()) };
   }, [version?.groups, units, aggregatedData, restrictedProjectCodes, targetLoc]);
 
   // Total count of units with alerts on this floor
