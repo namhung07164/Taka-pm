@@ -1354,7 +1354,6 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **PLAN PRG**: Thanh đo tiến độ kế hoạch màu xanh dương (`bg-blue-500`) kèm chỉ số phần trăm hiển thị trực quan tỷ lệ hoàn thành dự kiến của các công việc con.
      + **ACT PRG**: Thanh đo tiến độ thực tế màu xanh ngọc (`bg-emerald-500`) kèm chỉ số phần trăm phản ánh chính xác trạng thái thực thi thực tế của dự án.
    - **Thanh Điều Khiển & Nhãn Trực Quan (Controls Bar)**:
-     + **Bộ Đếm Sub-**: Hiển thị tổng số công việc con theo dạng 2 dòng in nghiêng (`15\nSub-`), hỗ trợ chạm/click để đóng/mở nhanh danh sách công việc con.
      + **Nút Sắp Xếp (Sort)**: Biểu tượng mũi tên hai chiều `[↑↓ Sort]` giúp sắp xếp tức thời danh sách công việc con theo Ngày bắt đầu (Start Date).
      + **Huy Hiệu Nhà Thầu/Bên Phụ Trách (Party Tag)**: Huy hiệu viền tím nổi bật (`border-purple-500 bg-purple-950/60`) liệt kê các đối tác, nhà thầu chịu trách nhiệm thực hiện (ví dụ: `Con1, CP, MD`).
      + **Nút Gạt Ủy Quyền (Delegation FastToggle)**: Công tắc gạt nhanh trạng thái ủy quyền của dự án sang phân hệ Delegation.

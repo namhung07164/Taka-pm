@@ -338,22 +338,9 @@ export const DetailMobileView = memo(function DetailMobileView({
                     {/* Divider */}
                     <div className="border-t border-slate-200/80 dark:border-[#38383b] my-0.5" />
 
-                    {/* Controls Bar: Sub- count, Sort, Party, Toggle, Maximize, and Stacked Dates */}
+                    {/* Controls Bar: Sort, Party, Toggle, Maximize, and Stacked Dates */}
                     <div className="flex items-center justify-between gap-2 pt-0.5">
                       <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-                        {/* Sub- count */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleGroup(p.id!);
-                          }}
-                          className="flex flex-col items-start leading-none italic font-bold text-slate-400 dark:text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer select-none active:scale-95 touch-manipulation text-left"
-                          title={isExpanded ? "Collapse sub-tasks" : `Expand sub-tasks (${effectiveTaskCount})`}
-                        >
-                          <span className="text-sm sm:text-base font-extrabold">{effectiveTaskCount}</span>
-                          <span className="text-[11px] sm:text-xs">Sub-</span>
-                        </button>
-
                         {/* Sort Button */}
                         <button
                           onClick={(e) => {
