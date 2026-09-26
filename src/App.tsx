@@ -459,16 +459,17 @@ export default function App() {
         return tMatch;
       });
 
-      // Anyone filled in party of project or its tasks can always see this project
-      if (pMatch || tMatch) {
-        return true;
-      }
-
-      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
+      // Mandatory Store & Location permission checks
+      if (!hasStorePerm || !hasLocPerm) {
         return false;
       }
 
-      return hasStorePerm && hasLocPerm;
+      // If By-Party Access is enabled for user, require party match
+      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
+        return pMatch || tMatch;
+      }
+
+      return true;
     });
 
     return visibleEnriched;
@@ -670,13 +671,17 @@ export default function App() {
         );
       });
 
-      if (pMatch || tMatch) return true;
-
-      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
+      // Mandatory Store & Location permission checks
+      if (!hasStorePerm || !hasLocPerm) {
         return false;
       }
 
-      return hasStorePerm && hasLocPerm;
+      // If By-Party Access is enabled for user, require party match
+      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
+        return pMatch || tMatch;
+      }
+
+      return true;
     });
   }, [allProjectsForNotifs, allTasksForNotifs, projects, tasks, currentUser]);
 

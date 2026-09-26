@@ -97,13 +97,17 @@ export function useEnrichedData() {
         if (tMatch) break;
       }
 
-      if (pMatch || tMatch) {
-        return true;
-      }
-      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
+      // Mandatory Store & Location permission checks
+      if (!hasStorePerm || !hasLocPerm) {
         return false;
       }
-      return hasStorePerm && hasLocPerm;
+
+      // If By-Party Access is enabled for user, require party match
+      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
+        return pMatch || tMatch;
+      }
+
+      return true;
     });
 
     // 3. Pre-index visible projects into O(1) set & map for fast task filtering
