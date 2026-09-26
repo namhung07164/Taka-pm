@@ -8,7 +8,7 @@ import { useOffscreenImage } from '../hooks/useOffscreenImage';
 import { preloadFloorImages } from '../lib/imageDBCache';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import { extractR2Key, getS3Sdk, downloadR2JsonFile } from './PictureMapping/lib/r2Upload';
+import { extractR2Key, getS3Sdk, downloadR2JsonFile, resolveR2UrlToHttp } from './PictureMapping/lib/r2Upload';
 import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn, extractAllProjectCodes, projectMatchesUnitCode } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
@@ -817,7 +817,29 @@ function LiveCanvas({
 
   const version = r2Version;
   const units = r2Units;
-  const [bgImage] = useOffscreenImage(version?.backgroundUrl || '', 'anonymous');
+
+  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    const rawUrl = version?.backgroundUrl || '';
+    if (!rawUrl) {
+      setResolvedBgUrl('');
+      return;
+    }
+    if (rawUrl.startsWith('r2://') || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && !rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:'))) {
+      resolveR2UrlToHttp(rawUrl).then(url => {
+        if (isMounted) setResolvedBgUrl(url || rawUrl);
+      }).catch(() => {
+        if (isMounted) setResolvedBgUrl(rawUrl);
+      });
+    } else {
+      setResolvedBgUrl(rawUrl);
+    }
+    return () => { isMounted = false; };
+  }, [version?.backgroundUrl]);
+
+  const [bgImage] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
   
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);

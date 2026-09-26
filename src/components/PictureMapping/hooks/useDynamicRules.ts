@@ -16,7 +16,7 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
 
   // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
   if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status') {
-    val = data.appProjectStatus || '';
+    val = (data.appProjectStatus && data.appProjectStatus !== 'Upcoming') ? data.appProjectStatus : (data.appProjectActStatus || data.appProjectStatus || '');
   } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
     val = data.appProjectYear || '';
   } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {

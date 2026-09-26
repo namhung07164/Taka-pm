@@ -106,7 +106,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           return;
         }
 
-        // Step E: If direct blob fetch failed (e.g. CORS limitation), fallback to HTMLImageElement
+        // Step E: If direct blob fetch failed (e.g. CORS limitation or expired link), fallback to HTMLImageElement
         let fallbackSrc = url!;
         if (fallbackSrc.startsWith('r2://') || (!fallbackSrc.startsWith('http://') && !fallbackSrc.startsWith('https://') && !fallbackSrc.startsWith('blob:') && !fallbackSrc.startsWith('data:'))) {
           const resolved = await resolveR2UrlToHttp(fallbackSrc);
@@ -120,6 +120,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
         const fallbackImg = new Image();
         if (crossOrigin) fallbackImg.crossOrigin = crossOrigin;
+        fallbackSrc = fallbackSrc.trim();
         fallbackImg.src = fallbackSrc;
 
         const onFallbackDone = () => {
@@ -130,12 +131,29 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           }
         };
 
+        const tryNoCorsFallback = () => {
+          const directImg = new Image();
+          directImg.src = fallbackSrc;
+          directImg.onload = () => {
+            if (isMounted) {
+              setMemoryCachedImage(url!, directImg);
+              setImage(directImg);
+              setStatus('loaded');
+            }
+          };
+          directImg.onerror = () => {
+            if (isMounted) setStatus('failed');
+          };
+        };
+
         if (typeof fallbackImg.decode === 'function') {
-          fallbackImg.decode().then(onFallbackDone).catch(onFallbackDone);
+          fallbackImg.decode().then(onFallbackDone).catch(() => {
+            tryNoCorsFallback();
+          });
         } else {
           fallbackImg.onload = onFallbackDone;
           fallbackImg.onerror = () => {
-            if (isMounted) setStatus('failed');
+            tryNoCorsFallback();
           };
         }
       } catch (_err) {
