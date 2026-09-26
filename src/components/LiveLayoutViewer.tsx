@@ -1363,15 +1363,21 @@ function LiveCanvas({
     
     if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: [] };
 
-    // Step A. Sync from ReviewTab groupMappings & unit.targetColor
+    // Step A. Sync from ReviewTab groupMappings & unit.targetColor with O(1) pre-indexed lookup
     if (version.groupMappings && typeof version.groupMappings === 'object') {
+      const unitMapByIdOrName = new Map<string, any>();
+      units.forEach((u: any) => {
+        if (u.id) unitMapByIdOrName.set(u.id, u);
+        if (u.name) unitMapByIdOrName.set(String(u.name).toLowerCase().trim(), u);
+      });
+
       version.groups.forEach((group: any) => {
         const mappedUnitIds = version.groupMappings[group.id];
         if (Array.isArray(mappedUnitIds) && mappedUnitIds.length > 0) {
           const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
           const matchedUnits: any[] = [];
           mappedUnitIds.forEach((uid: string) => {
-            const targetUnit = units.find((u: any) => u.id === uid || String(u.name || '').toLowerCase().trim() === String(uid).toLowerCase().trim());
+            const targetUnit = unitMapByIdOrName.get(uid) || unitMapByIdOrName.get(String(uid).toLowerCase().trim());
             if (targetUnit) {
               const uName = String(targetUnit.name || '').toLowerCase().trim();
               if (!restrictedProjectCodes.has(uName) && !aggregatedData[uName]?.isRestricted) {
