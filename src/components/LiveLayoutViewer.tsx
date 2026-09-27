@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import Konva from 'konva';
-import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
+import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group, Path } from 'react-konva';
 import { useAppStore } from '../store/useAppStore';
 import { RefreshCw, Download, Layers, Settings, Key, X, Cloud, Search, ZoomIn, ZoomOut, Maximize2, FolderOutput, Menu, Palette, ChevronDown, ChevronUp, Check, Info, MessageSquare, Printer, SlidersHorizontal, Eye, EyeOff, Bell, AlertTriangle, ShieldAlert } from 'lucide-react';
 import useImage from 'use-image';
@@ -957,6 +957,21 @@ function LiveCanvas({
   const rafWheelIdRef = useRef<number | null>(null);
   const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Smooth kinetic inertia momentum panning refs
+  const dragVelocityTrackerRef = useRef<{
+    history: Array<{ x: number; y: number; time: number }>;
+  }>({
+    history: [],
+  });
+  const rafInertiaIdRef = useRef<number | null>(null);
+
+  const stopInertia = useCallback(() => {
+    if (rafInertiaIdRef.current !== null) {
+      cancelAnimationFrame(rafInertiaIdRef.current);
+      rafInertiaIdRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     (window as any).__taka_layout_stage = stageRef.current;
     return () => {
@@ -970,11 +985,13 @@ function LiveCanvas({
     return () => {
       if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
       if (rafWheelIdRef.current !== null) cancelAnimationFrame(rafWheelIdRef.current);
+      if (rafInertiaIdRef.current !== null) cancelAnimationFrame(rafInertiaIdRef.current);
     };
   }, []);
 
   // Auto-fit floor plan background & units to perfectly fit and center in the viewport
   const fitToScreen = useCallback((animated: boolean = false) => {
+    stopInertia();
     const containerW = containerRef.current?.offsetWidth || dimensions.width;
     const containerH = containerRef.current?.offsetHeight || dimensions.height;
     if (containerW <= 0 || containerH <= 0) return;
@@ -1056,7 +1073,105 @@ function LiveCanvas({
       setStageScale(clampedScale);
       setStagePos(newPos);
     }
-  }, [bgImage, version, units, dimensions]);
+  }, [bgImage, version, units, dimensions, stopInertia]);
+
+  // Inertia momentum panning handlers
+  const handleDragStart = useCallback(() => {
+    stopInertia();
+    isInteractingRef.current = true;
+    setHoverInfo(null);
+    const stage = stageRef.current;
+    if (stage) {
+      dragVelocityTrackerRef.current.history = [
+        { x: stage.x(), y: stage.y(), time: performance.now() }
+      ];
+    }
+  }, [stopInertia]);
+
+  const handleDragMove = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const now = performance.now();
+    const history = dragVelocityTrackerRef.current.history;
+    history.push({ x: stage.x(), y: stage.y(), time: now });
+    while (history.length > 2 && now - history[0].time > 100) {
+      history.shift();
+    }
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) {
+      isInteractingRef.current = false;
+      return;
+    }
+
+    const history = dragVelocityTrackerRef.current.history;
+    const now = performance.now();
+    while (history.length > 2 && now - history[0].time > 100) {
+      history.shift();
+    }
+
+    let vx = 0;
+    let vy = 0;
+    if (history.length >= 2) {
+      const oldest = history[0];
+      const newest = history[history.length - 1];
+      const dt = newest.time - oldest.time;
+      if (dt > 10 && dt < 150) {
+        vx = (newest.x - oldest.x) / dt; // px / ms
+        vy = (newest.y - oldest.y) / dt;
+      }
+    }
+
+    const speed = Math.hypot(vx, vy);
+    if (speed > 0.12) {
+      const maxSpeed = 3.0;
+      if (speed > maxSpeed) {
+        const ratio = maxSpeed / speed;
+        vx *= ratio;
+        vy *= ratio;
+      }
+
+      let currentVx = vx;
+      let currentVy = vy;
+      let lastTime = performance.now();
+
+      const step = (time: number) => {
+        const frameDt = Math.min(32, time - lastTime);
+        lastTime = time;
+
+        const friction = Math.pow(0.925, frameDt / 16.6);
+        currentVx *= friction;
+        currentVy *= friction;
+
+        const currentStage = stageRef.current;
+        if (!currentStage) {
+          isInteractingRef.current = false;
+          return;
+        }
+
+        const nextX = currentStage.x() + currentVx * frameDt;
+        const nextY = currentStage.y() + currentVy * frameDt;
+
+        currentStage.position({ x: nextX, y: nextY });
+        currentStage.batchDraw();
+
+        if (Math.hypot(currentVx, currentVy) > 0.02) {
+          rafInertiaIdRef.current = requestAnimationFrame(step);
+        } else {
+          rafInertiaIdRef.current = null;
+          setStagePos({ x: currentStage.x(), y: currentStage.y() });
+          isInteractingRef.current = false;
+        }
+      };
+
+      rafInertiaIdRef.current = requestAnimationFrame(step);
+    } else {
+      setStagePos({ x: stage.x(), y: stage.y() });
+      isInteractingRef.current = false;
+    }
+  }, []);
 
   // Trigger fitToScreen when background image or partition version changes (only if no unit is currently searched/focused)
   const lastFloorVersionKeyRef = useRef<string>('');
@@ -1636,6 +1751,7 @@ function LiveCanvas({
         let textWidth = 100;
         let textHeight = 30;
 
+        let svgPath = '';
         if (unit.type === 'rect') {
           minX = unit.x || 0;
           minY = unit.y || 0;
@@ -1660,6 +1776,7 @@ function LiveCanvas({
           maxX = -Infinity;
           minY = Infinity;
           maxY = -Infinity;
+          let pathStr = `M ${unit.points[0]} ${unit.points[1]}`;
           for (let i = 0; i < unit.points.length; i += 2) {
             const px = unit.points[i];
             const py = unit.points[i + 1];
@@ -1667,7 +1784,12 @@ function LiveCanvas({
             if (px > maxX) maxX = px;
             if (py < minY) minY = py;
             if (py > maxY) maxY = py;
+            if (i > 0) {
+              pathStr += ` L ${px} ${py}`;
+            }
           }
+          pathStr += ' Z';
+          svgPath = pathStr;
           if (minX === Infinity) { minX = 0; maxX = 100; minY = 0; maxY = 30; }
           textX = minX;
           textY = minY;
@@ -1684,6 +1806,7 @@ function LiveCanvas({
           maxX,
           minY,
           maxY,
+          svgPath,
           textX,
           textY,
           textWidth,
@@ -1691,6 +1814,12 @@ function LiveCanvas({
         };
       });
   }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, focusedUnitId, filterOnlyAlerts]);
+
+  // Focused unit object for Isolated Overlay Highlight Layer
+  const focusedUnit = useMemo(() => {
+    if (!focusedUnitId) return null;
+    return displayedUnits.find((u: any) => u.id === focusedUnitId) || null;
+  }, [displayedUnits, focusedUnitId]);
 
   // 5. Viewport Spatial Culling (Loại bỏ các shape nằm ngoài khung nhìn khi Zoom để tối ưu GPU/FPS)
   const visibleUnits = useMemo(() => {
@@ -3088,27 +3217,25 @@ function LiveCanvas({
             pixelRatio={pixelRatio}
             draggable
             style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
-            onDragStart={() => {
-              isInteractingRef.current = true;
-              setHoverInfo(null);
-            }}
-            onDragEnd={(e) => {
-              isInteractingRef.current = false;
-              setStagePos({ x: e.target.x(), y: e.target.y() });
-            }}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
             onClick={(e) => {
+              stopInertia();
               if (e.target === stageRef.current) {
                 isPinnedRef.current = false;
                 setHoverInfo(null);
               }
             }}
             onTap={(e) => {
+              stopInertia();
               if (e.target === stageRef.current) {
                 isPinnedRef.current = false;
                 setHoverInfo(null);
               }
             }}
             onDblClick={() => {
+              stopInertia();
               const stage = stageRef.current;
               if (!stage) return;
               const pointer = stage.getPointerPosition();
@@ -3137,6 +3264,7 @@ function LiveCanvas({
               });
             }}
             onTouchStart={(e) => {
+              stopInertia();
               if (e.evt.touches.length === 2) {
                 const touch1 = e.evt.touches[0];
                 const touch2 = e.evt.touches[1];
@@ -3213,6 +3341,7 @@ function LiveCanvas({
             }}
             onWheel={(e) => {
               e.evt.preventDefault();
+              stopInertia();
               const stage = stageRef.current;
               if (!stage) return;
               
@@ -3265,7 +3394,7 @@ function LiveCanvas({
               }
             }}
         >
-          {/* Static FastLayer for background CAD layout image to bypass hit-graph calculations */}
+          {/* Layer 1: Static FastLayer for background CAD layout image to bypass hit-graph calculations */}
           <FastLayer listening={false}>
             {bgImage && (
               <KonvaImage
@@ -3281,8 +3410,8 @@ function LiveCanvas({
             )}
           </FastLayer>
 
-          {/* Dynamic Layer for interactive unit shapes and tooltips */}
-          <Layer>
+          {/* Layer 2: Interactive unit shapes, text, and alert badges */}
+          <Layer id="units-interactive-layer">
             {visibleUnits.map((unit: any) => {
                const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
                const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
@@ -3310,11 +3439,6 @@ function LiveCanvas({
                   strokeWidth: isFocused ? 3 : 1.5,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
-                  ...(isFocused ? {
-                    shadowColor: '#f59e0b',
-                    shadowBlur: 16,
-                    shadowOpacity: 0.9,
-                  } : {}),
                   x: unit.x || 0,
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,
@@ -3425,25 +3549,12 @@ function LiveCanvas({
                     {unit.type === 'circle' && (
                        <Circle {...commonProps} radius={unit.radius} />
                     )}
-                    {unit.type === 'polygon' && unit.points && (
-                       <Line {...commonProps} points={unit.points} closed={true} />
-                    )}
-
-                    {/* Focused Unit Golden Ring Indicator */}
-                    {isFocused && (
-                       <Rect
-                          x={(unit.textX || unit.x || 0) - 4}
-                          y={(unit.textY || unit.y || 0) - 4}
-                          width={(unit.textWidth || unit.width || 100) + 8}
-                          height={(unit.textHeight || unit.height || 40) + 8}
-                          stroke="#f59e0b"
-                          strokeWidth={2.5}
-                          strokeScaleEnabled={false}
-                          dash={[6, 4]}
-                          cornerRadius={6}
-                          listening={false}
-                          perfectDrawEnabled={false}
-                       />
+                    {unit.type === 'polygon' && (
+                       unit.svgPath ? (
+                         <Path {...commonProps} data={unit.svgPath} />
+                       ) : (
+                         <Line {...commonProps} points={unit.points} closed={true} />
+                       )
                     )}
 
                     {unit.name && showTextAndBadge && (
@@ -3502,6 +3613,30 @@ function LiveCanvas({
                  </React.Fragment>
                );
             })}
+          </Layer>
+
+          {/* Layer 3: Dynamic Isolated Overlay Layer for Focused Unit Golden Ring */}
+          <Layer id="overlay-highlight-layer" listening={false}>
+            {focusedUnit && (
+              <Group listening={false}>
+                <Rect
+                  x={(focusedUnit.textX || focusedUnit.x || 0) - 4}
+                  y={(focusedUnit.textY || focusedUnit.y || 0) - 4}
+                  width={(focusedUnit.textWidth || focusedUnit.width || 100) + 8}
+                  height={(focusedUnit.textHeight || focusedUnit.height || 40) + 8}
+                  stroke="#f59e0b"
+                  strokeWidth={2.5}
+                  strokeScaleEnabled={false}
+                  dash={[6, 4]}
+                  cornerRadius={6}
+                  shadowColor="#f59e0b"
+                  shadowBlur={10}
+                  shadowOpacity={0.8}
+                  listening={false}
+                  perfectDrawEnabled={false}
+                />
+              </Group>
+            )}
           </Layer>
         </Stage>
       </div>
