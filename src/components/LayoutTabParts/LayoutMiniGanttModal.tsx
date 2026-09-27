@@ -13,12 +13,27 @@ import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime } from '../../lib/utils';
 
-// Helper to format date concisely as DD/MM
-const formatCompactDate = (d: Date | null): string => {
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Helper to format date concisely as "Dec 20"
+const formatMonthDay = (d: Date | null): string => {
   if (!d || isNaN(d.getTime())) return '';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  return `${day}/${month}`;
+  const month = MONTH_NAMES[d.getMonth()];
+  const day = d.getDate();
+  return `${month} ${day}`;
+};
+
+// Format task date range as "Dec 15 - Dec 20" or "Dec 20"
+const formatTaskDateRange = (start: Date | null, finish: Date | null): string => {
+  const sStr = formatMonthDay(start);
+  const fStr = formatMonthDay(finish);
+
+  if (sStr && fStr) {
+    return sStr === fStr ? sStr : `${sStr} - ${fStr}`;
+  }
+  if (sStr) return sStr;
+  if (fStr) return `→ ${fStr}`;
+  return '';
 };
 
 interface LayoutMiniGanttModalProps {
@@ -278,11 +293,11 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                 <Calendar className="w-3.5 h-3.5 text-blue-500" />
                 <span className="text-[11px] font-medium">Timeline:</span>
                 <span className="font-bold font-mono text-[11px] text-slate-700 dark:text-slate-200">
-                  {timelineBounds.startDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  {formatMonthDay(timelineBounds.startDate)}
                 </span>
                 <span className="text-slate-400">→</span>
                 <span className="font-bold font-mono text-[11px] text-slate-700 dark:text-slate-200">
-                  {timelineBounds.finishDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  {formatMonthDay(timelineBounds.finishDate)}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">({timelineBounds.totalDays}d)</span>
               </div>
@@ -328,15 +343,15 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                 {/* Timeline Grid Header */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-slate-200 dark:border-[#333336] bg-slate-100/90 dark:bg-[#202022] backdrop-blur-xs text-[10px] font-bold text-slate-500 dark:text-slate-400">
                   {/* Left Column: Task Name & Dates */}
-                  <div className="w-[230px] sm:w-[260px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider flex items-center justify-between">
+                  <div className="w-[240px] sm:w-[270px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider flex items-center justify-between">
                     <span>Task</span>
                     <span className="font-mono text-[9px] text-slate-400 font-medium">Dates</span>
                   </div>
                   {/* Right Column: Time Scale Markers */}
                   <div className="flex-1 px-3 py-1.5 flex justify-between uppercase tracking-wider">
-                    <span>{timelineBounds.startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
+                    <span>{formatMonthDay(timelineBounds.startDate)}</span>
                     <span className="hidden sm:inline">Timeline Progress</span>
-                    <span>{timelineBounds.finishDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
+                    <span>{formatMonthDay(timelineBounds.finishDate)}</span>
                   </div>
                 </div>
 
@@ -348,17 +363,8 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                     const rawDuration = parseInt(t.duration || '1', 10);
                     const duration = isNaN(rawDuration) || rawDuration <= 0 ? 1 : rawDuration;
 
-                    // Concise dates: DD/MM - DD/MM
-                    const sFormatted = formatCompactDate(tStart);
-                    const fFormatted = formatCompactDate(tFinish);
-                    let dateRangeText = '';
-                    if (sFormatted && fFormatted) {
-                      dateRangeText = sFormatted === fFormatted ? sFormatted : `${sFormatted} - ${fFormatted}`;
-                    } else if (sFormatted) {
-                      dateRangeText = sFormatted;
-                    } else if (fFormatted) {
-                      dateRangeText = `→ ${fFormatted}`;
-                    }
+                    // Dates in "Dec 20" style: "Dec 15 - Dec 20" or "Dec 20"
+                    const dateRangeText = formatTaskDateRange(tStart, tFinish);
 
                     // Compute relative Gantt Bar position
                     let leftPercent = 0;
@@ -390,8 +396,8 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                         key={t.id || idx}
                         className="flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group h-9"
                       >
-                        {/* Task Info Cell: Name & Compact Dates */}
-                        <div className="w-[230px] sm:w-[260px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
+                        {/* Task Info Cell: Name & Dates in Dec 20 style */}
+                        <div className="w-[240px] sm:w-[270px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
                           <span 
                             className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1"
                             title={`${t.name}${dateRangeText ? ` (${dateRangeText})` : ''}`}
@@ -400,8 +406,8 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                           </span>
                           {dateRangeText && (
                             <span 
-                              className="font-mono text-[10px] text-slate-500 dark:text-slate-400 shrink-0 tabular-nums"
-                              title={`Start: ${t.start || 'N/A'} - Finish: ${t.finish || 'N/A'}`}
+                              className="font-mono text-[10px] text-slate-500 dark:text-slate-400 shrink-0 tabular-nums font-medium"
+                              title={`Start: ${t.start || 'N/A'} • Finish: ${t.finish || 'N/A'}`}
                             >
                               {dateRangeText}
                             </span>
