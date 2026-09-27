@@ -1627,24 +1627,39 @@ function LiveCanvas({
         const targetColor = unitColorMap[unit.id] || null;
         const targetOpacity = unitOpacityMap[unit.id] ?? 0.85;
         
+        let minX = 0;
+        let maxX = 0;
+        let minY = 0;
+        let maxY = 0;
         let textX = unit.x || 0;
         let textY = unit.y || 0;
         let textWidth = 100;
         let textHeight = 30;
 
         if (unit.type === 'rect') {
-          textX = unit.x || 0;
-          textY = unit.y || 0;
+          minX = unit.x || 0;
+          minY = unit.y || 0;
+          maxX = minX + (unit.width || 100);
+          maxY = minY + (unit.height || 30);
+          textX = minX;
+          textY = minY;
           textWidth = unit.width || 100;
           textHeight = unit.height || 30;
         } else if (unit.type === 'circle') {
           const r = unit.radius || 20;
-          textX = (unit.x || 0) - r;
-          textY = (unit.y || 0) - r;
+          minX = (unit.x || 0) - r;
+          maxX = (unit.x || 0) + r;
+          minY = (unit.y || 0) - r;
+          maxY = (unit.y || 0) + r;
+          textX = minX;
+          textY = minY;
           textWidth = r * 2;
           textHeight = r * 2;
         } else if (unit.type === 'polygon' && unit.points && unit.points.length >= 2) {
-          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          minX = Infinity;
+          maxX = -Infinity;
+          minY = Infinity;
+          maxY = -Infinity;
           for (let i = 0; i < unit.points.length; i += 2) {
             const px = unit.points[i];
             const py = unit.points[i + 1];
@@ -1653,6 +1668,7 @@ function LiveCanvas({
             if (py < minY) minY = py;
             if (py > maxY) maxY = py;
           }
+          if (minX === Infinity) { minX = 0; maxX = 100; minY = 0; maxY = 30; }
           textX = minX;
           textY = minY;
           textWidth = Math.max(20, maxX - minX);
@@ -1664,6 +1680,10 @@ function LiveCanvas({
           targetColor,
           targetOpacity,
           targetGroupId: unitGroupMap[unit.id],
+          minX,
+          maxX,
+          minY,
+          maxY,
           textX,
           textY,
           textWidth,
@@ -1672,9 +1692,56 @@ function LiveCanvas({
       });
   }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, focusedUnitId, filterOnlyAlerts]);
 
-  // Handle position tooltip directly via DOM with 2D collision clamping to prevent screen cropping
+  // 5. Viewport Spatial Culling (Loại bỏ các shape nằm ngoài khung nhìn khi Zoom để tối ưu GPU/FPS)
+  const visibleUnits = useMemo(() => {
+    const scale = stageScale || 1;
+    const vpW = dimensions.width || 800;
+    const vpH = dimensions.height || 600;
+
+    // Khi người dùng xem toàn cảnh (scale <= 0.35), hầu hết mọi unit đều nằm trong màn hình
+    if (scale <= 0.35 || displayedUnits.length <= 40) {
+      return displayedUnits;
+    }
+
+    // Đệm biên an toàn (Screen-space 200px quy đổi ra World coordinates) để khi Pan không bị chớp biên
+    const bufferPadding = Math.max(150, 300 / scale);
+    const minWorldX = (-stagePos.x / scale) - bufferPadding;
+    const maxWorldX = ((vpW - stagePos.x) / scale) + bufferPadding;
+    const minWorldY = (-stagePos.y / scale) - bufferPadding;
+    const maxWorldY = ((vpH - stagePos.y) / scale) + bufferPadding;
+
+    return displayedUnits.filter((unit: any) => {
+      // Luôn giữ unit đang được chọn (Focus) hoặc đang tìm kiếm
+      if (unit.id === focusedUnitId || deferredSearchQuery.trim()) {
+        return true;
+      }
+
+      const uMinX = unit.minX ?? unit.x ?? 0;
+      const uMaxX = unit.maxX ?? (uMinX + (unit.width || 100));
+      const uMinY = unit.minY ?? unit.y ?? 0;
+      const uMaxY = unit.maxY ?? (uMinY + (unit.height || 30));
+
+      // AABB Box intersection check
+      return uMaxX >= minWorldX && uMinX <= maxWorldX && uMaxY >= minWorldY && uMinY <= maxWorldY;
+    });
+  }, [displayedUnits, stageScale, stagePos.x, stagePos.y, dimensions.width, dimensions.height, focusedUnitId, deferredSearchQuery]);
+
+  // Handle position tooltip directly via DOM with RAF throttle and 2D collision clamping
+  const rafTooltipIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (rafTooltipIdRef.current !== null) {
+        cancelAnimationFrame(rafTooltipIdRef.current);
+      }
+    };
+  }, []);
+
   const updateTooltipPos = (clientX: number, clientY: number) => {
-    requestAnimationFrame(() => {
+    if (rafTooltipIdRef.current !== null) {
+      cancelAnimationFrame(rafTooltipIdRef.current);
+    }
+    rafTooltipIdRef.current = requestAnimationFrame(() => {
+      rafTooltipIdRef.current = null;
       if (!tooltipRef.current) return;
       const el = tooltipRef.current;
       const rect = el.getBoundingClientRect();
@@ -3216,7 +3283,7 @@ function LiveCanvas({
 
           {/* Dynamic Layer for interactive unit shapes and tooltips */}
           <Layer>
-            {displayedUnits.map((unit: any) => {
+            {visibleUnits.map((unit: any) => {
                const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
                const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
                const hasColor = Boolean(unit.targetColor);
@@ -3346,6 +3413,10 @@ function LiveCanvas({
                const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
                const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
 
+               // Dynamic Level of Detail (LOD) threshold:
+               // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
+               const showTextAndBadge = isFocused || (stageScale || 1) >= 0.22;
+
                return (
                  <React.Fragment key={unit.id}>
                     {unit.type === 'rect' && (
@@ -3375,7 +3446,7 @@ function LiveCanvas({
                        />
                     )}
 
-                    {unit.name && (stageScale || 1) > 0.08 && (
+                    {unit.name && showTextAndBadge && (
                        <Text 
                           text={unit.name}
                           x={unit.textX}
@@ -3397,8 +3468,8 @@ function LiveCanvas({
                        />
                     )}
 
-                    {/* Smart Alert Badge (Rendered ONLY when unit has real critical/warning alerts) */}
-                    {hasAlert && unitData?.alerts && (stageScale || 1) > 0.08 && (
+                    {/* Smart Alert Badge (Rendered ONLY when unit has real critical/warning alerts and LOD permits) */}
+                    {hasAlert && unitData?.alerts && showTextAndBadge && (
                        <Group x={badgeX} y={badgeY} listening={false}>
                           <Circle
                              radius={badgeRadius}
