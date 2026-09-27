@@ -820,7 +820,7 @@ export default function App() {
         );
       }
     }
-  }, [enrichedProjects, filteredTasks, notificationRules, currentUser]);
+  }, [globalEnrichedProjectsForNotifs, globalFilteredTasksForNotifs, notificationRules, visibleDelegationGroups, currentUser]);
 
   const readNotifs = currentUser.readNotifs || [];
   const unreadCount = currentUser.notification === false ? 0 : activeNotifications.filter(

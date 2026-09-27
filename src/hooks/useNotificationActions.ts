@@ -124,7 +124,10 @@ export function useNotificationActions() {
         const next = [...prev, notif.id];
         const updatedUser = { ...currentUser, readNotifs: next };
         setCurrentUser(updatedUser);
-        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', currentUser.id), { readNotifs: next }, { merge: true }).catch(console.error);
+        safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(next));
+        if (currentUser.id !== 'guest') {
+          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', currentUser.id), { readNotifs: next }, { merge: true }).catch(console.error);
+        }
       }
     } catch (e) {
       console.error("Error rejecting notification", e);
@@ -139,6 +142,7 @@ export function useNotificationActions() {
         const next = [...prev, notif.id];
         const updatedUser = { ...currentUser, readNotifs: next };
         setCurrentUser(updatedUser);
+        safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(next));
         if (currentUser.id !== "guest") {
           setAppUsers(appUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
           safeSetItemLocal("taka_auth_v1", JSON.stringify(updatedUser));

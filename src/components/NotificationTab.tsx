@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { Bell, Check, RotateCcw } from 'lucide-react';
 import { Project, Task, NotificationRule, ActiveNotification, AppUser } from '../types';
-import { parseDateTime, formatDisplayDateTime } from '../lib/utils';
+import { parseDateTime, formatDisplayDateTime, getUserAllowedStores } from '../lib/utils';
 import { testLocalNotification } from '../lib/notifications';
 
 interface NotificationTabProps {
@@ -36,19 +36,26 @@ export function NotificationTab({
 
   const { t } = useLanguage();
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const [statusFilter, setStatusFilter] = useState<'read' | 'unread' | 'all'>(initialStatusFilter);
   const [typeFilter, setTypeFilter] = useState<'project' | 'task' | 'task_delegation' | 'all'>('all');
   const [storeFilter, setStoreFilter] = useState<'all' | 'HCM' | 'HN'>(() => {
-    if (globalStoreFilter === 'HCM' || globalStoreFilter === 'HN') return globalStoreFilter;
+    const allowed = getUserAllowedStores(currentUser);
+    if (globalStoreFilter === 'HCM' || globalStoreFilter === 'HN') {
+      if (allowed.includes(globalStoreFilter)) return globalStoreFilter;
+    }
+    if (allowed.length === 1) return allowed[0] as 'HCM' | 'HN';
     return 'all';
   });
 
   // Keep store filter in sync if user changes global store selector
   useEffect(() => {
     if (globalStoreFilter === 'HCM' || globalStoreFilter === 'HN') {
-      setStoreFilter(globalStoreFilter);
+      if (allowedStores.includes(globalStoreFilter)) {
+        setStoreFilter(globalStoreFilter);
+      }
     }
-  }, [globalStoreFilter]);
+  }, [globalStoreFilter, allowedStores]);
 
   const unreadProjectCount = useMemo(() => activeNotifications.filter(n => n.targetType === 'project' && !readNotifs.includes(n.id)).length, [activeNotifications, readNotifs]);
   const unreadTaskCount = useMemo(() => activeNotifications.filter(n => n.targetType === 'task' && !readNotifs.includes(n.id)).length, [activeNotifications, readNotifs]);
@@ -211,57 +218,65 @@ export function NotificationTab({
               )}
             </button>
           </div>
-          <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm">
-            <button
-              onClick={() => {
-                if (filterId && onClearFilter) onClearFilter();
-                setStoreFilter('all');
-              }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${
-                storeFilter === 'all'
-                  ? 'bg-blue-100 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8]'
-                  : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
-              }`}
-            >
-              All Store
-            </button>
-            <button
-              onClick={() => {
-                if (filterId && onClearFilter) onClearFilter();
-                setStoreFilter('HCM');
-              }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors relative ${
-                storeFilter === 'HCM'
-                  ? 'bg-blue-100 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8]'
-                  : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
-              }`}
-            >
-              HCM
-              {unreadHcmCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center">
-                  {unreadHcmCount > 99 ? '99+' : unreadHcmCount}
-                </span>
+          {allowedStores.length > 0 && (
+            <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm">
+              {allowedStores.length > 1 && (
+                <button
+                  onClick={() => {
+                    if (filterId && onClearFilter) onClearFilter();
+                    setStoreFilter('all');
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors active:scale-95 touch-manipulation ${
+                    storeFilter === 'all'
+                      ? 'bg-blue-100 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8]'
+                      : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
+                  }`}
+                >
+                  All Stores
+                </button>
               )}
-            </button>
-            <button
-              onClick={() => {
-                if (filterId && onClearFilter) onClearFilter();
-                setStoreFilter('HN');
-              }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors relative ${
-                storeFilter === 'HN'
-                  ? 'bg-blue-100 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8]'
-                  : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
-              }`}
-            >
-              HN
-              {unreadHnCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center">
-                  {unreadHnCount > 99 ? '99+' : unreadHnCount}
-                </span>
+              {allowedStores.includes('HCM') && (
+                <button
+                  onClick={() => {
+                    if (filterId && onClearFilter) onClearFilter();
+                    setStoreFilter('HCM');
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors relative active:scale-95 touch-manipulation ${
+                    storeFilter === 'HCM'
+                      ? 'bg-blue-100 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8]'
+                      : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
+                  }`}
+                >
+                  HCM
+                  {unreadHcmCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center">
+                      {unreadHcmCount > 99 ? '99+' : unreadHcmCount}
+                    </span>
+                  )}
+                </button>
               )}
-            </button>
-          </div>
+              {allowedStores.includes('HN') && (
+                <button
+                  onClick={() => {
+                    if (filterId && onClearFilter) onClearFilter();
+                    setStoreFilter('HN');
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors relative active:scale-95 touch-manipulation ${
+                    storeFilter === 'HN'
+                      ? 'bg-blue-100 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8]'
+                      : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
+                  }`}
+                >
+                  HN
+                  {unreadHnCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center">
+                      {unreadHnCount > 99 ? '99+' : unreadHnCount}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <div className="overflow-y-auto flex-grow p-4 bg-slate-50/50">
@@ -269,7 +284,7 @@ export function NotificationTab({
           {filteredNotifications.length === 0 ? (
             <div className="text-center py-12">
               <Bell className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-              <p className="text-slate-400 dark:text-[#838383] font-medium">Great! No upcoming events.</p>
+              <p className="text-slate-400 dark:text-[#838383] font-medium">No active notifications</p>
             </div>
           ) : (
             filteredNotifications.map(notif => {

@@ -811,20 +811,57 @@ export function calculateActiveNotifications(
 
   const currentActualYear = now.getFullYear();
 
-  // Generate notifications for Cross-Year Rollover
+  // O(1) Pre-indexing for projects by code_year_store, code_store, and code (AGENTS.md Rule 7)
+  const projectByKeyMap = new Map<string, Project>();
+  const projectByCodeStoreMap = new Map<string, Project>();
+  const projectByCodeMap = new Map<string, Project>();
+
+  projects.forEach((p) => {
+    const pCode = String(p.code || "").trim().toLowerCase();
+    if (!pCode) return;
+    const pStore = String(p.store || "HCM").trim().toUpperCase();
+    const pYear = String(p.year || "").trim();
+
+    if (!projectByCodeMap.has(pCode)) {
+      projectByCodeMap.set(pCode, p);
+    }
+    const csKey = `${pCode}_${pStore}`;
+    if (!projectByCodeStoreMap.has(csKey)) {
+      projectByCodeStoreMap.set(csKey, p);
+    }
+    if (pYear) {
+      projectByKeyMap.set(`${pCode}_${pYear}_${pStore}`, p);
+    }
+  });
+
+  const findParentProject = (code?: string, year?: string | number, store?: string): Project | undefined => {
+    const c = String(code || "").trim().toLowerCase();
+    if (!c) return undefined;
+    const s = String(store || "HCM").trim().toUpperCase();
+    const y = String(year || "").trim();
+
+    if (y && projectByKeyMap.has(`${c}_${y}_${s}`)) {
+      return projectByKeyMap.get(`${c}_${y}_${s}`);
+    }
+    if (projectByCodeStoreMap.has(`${c}_${s}`)) {
+      return projectByCodeStoreMap.get(`${c}_${s}`);
+    }
+    return projectByCodeMap.get(c);
+  };
+
+  // Generate notifications for Cross-Year Rollover (only active/pending tasks, skip completed & canceled)
   tasks.forEach((task) => {
-    if (task.runningStatus !== 'Completed' && task.projectYear && Number(task.projectYear) < currentActualYear) {
-      const project = projects.find(
-        (p) =>
-          p.code === task.projectCode &&
-          (String(p.year || "") === String(task.projectYear || "") ||
-            (!p.year && !task.projectYear)) &&
-          (String(p.store || "") === String(task.projectStore || "") ||
-            (!p.store && !task.projectStore)),
-      );
+    const isCompleted = task.runningStatus === 'Completed';
+    if (!isCompleted && task.projectYear && Number(task.projectYear) < currentActualYear) {
+      const project = findParentProject(task.projectCode, task.projectYear, task.projectStore);
+      if (project?.computedStatus === 'Canceled' || project?.mdStatus === 'Canceled') return;
+
       const subtitleStr = project
         ? `${task.projectCode} - ${project.name} - ${task.name}`
         : `${task.projectCode || ""} ${task.name}`.trim();
+
+      const pStore = String(task.projectStore || project?.store || "HCM").toUpperCase().trim();
+      const pYear = String(task.projectYear || project?.year || "").trim();
 
       notifications.push({
         id: `rollover_task_${task.id}`,
@@ -837,8 +874,8 @@ export function calculateActiveNotifications(
         targetType: "task",
         targetId: task.id,
         projectCode: task.projectCode,
-        projectStore: task.projectStore || project?.store || "",
-        projectYear: task.projectYear || project?.year || "",
+        projectStore: pStore,
+        projectYear: pYear,
         action: 'cross_year_rollover',
         actionData: { taskId: task.id, newYear: currentActualYear }
       });
@@ -848,14 +885,7 @@ export function calculateActiveNotifications(
   // Generate notifications for @mentions
   if (currentUserId) {
     tasks.forEach((task) => {
-      const project = projects.find(
-        (p) =>
-          p.code === task.projectCode &&
-          (String(p.year || "") === String(task.projectYear || "") ||
-            (!p.year && !task.projectYear)) &&
-          (String(p.store || "") === String(task.projectStore || "") ||
-            (!p.store && !task.projectStore)),
-      );
+      const project = findParentProject(task.projectCode, task.projectYear, task.projectStore);
       if (task.comments && task.comments.length > 0) {
         task.comments.forEach((comment) => {
           if (
@@ -869,6 +899,8 @@ export function calculateActiveNotifications(
               const subtitleStr = project
                 ? `${task.projectCode} - ${project.name} - ${task.name}`
                 : `${task.projectCode || ""} ${task.name}`.trim();
+              const pStore = String(task.projectStore || project?.store || "HCM").toUpperCase().trim();
+              const pYear = String(task.projectYear || project?.year || "").trim();
               notifications.push({
                 id: `mention_${comment.id}`,
                 title: "You were mentioned in a task",
@@ -880,8 +912,8 @@ export function calculateActiveNotifications(
                 targetType: "task",
                 targetId: task.id,
                 projectCode: task.projectCode,
-                projectStore: task.projectStore || project?.store || "",
-                projectYear: task.projectYear || project?.year || "",
+                projectStore: pStore,
+                projectYear: pYear,
               });
             }
           }
@@ -912,8 +944,8 @@ export function calculateActiveNotifications(
                 targetType: "project",
                 targetId: project.id || project.no,
                 projectCode: project.code,
-                projectStore: project.store || "",
-                projectYear: project.year || "",
+                projectStore: String(project.store || "HCM").toUpperCase().trim(),
+                projectYear: String(project.year || "").trim(),
               });
             }
           }
@@ -1132,24 +1164,13 @@ export function calculateActiveNotifications(
               subtitle = p.name || "N/A";
               notificationBody = `${fName} deadline ${timeMsg}`;
               itemProjectCode = p.code || "";
-              itemProjectStore = p.store || "";
-              itemProjectYear = p.year || "";
+              itemProjectStore = String(p.store || "HCM").toUpperCase().trim();
+              itemProjectYear = String(p.year || "").trim();
               notifId = `${rule.id}_${p.id || p.no}`;
             } else {
               const t = item as Task;
               let projName = "N/A";
-              const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : "";
-              const tYear = t.projectYear ? String(t.projectYear).trim() : "";
-
-              // Locate parent project taking STORE and YEAR into account!
-              const p = projects.find((proj) =>
-                proj.code === t.projectCode &&
-                (tStore ? String(proj.store || "").trim().toUpperCase() === tStore : true) &&
-                (tYear ? String(proj.year || "").trim() === tYear : true)
-              ) || projects.find((proj) =>
-                proj.code === t.projectCode &&
-                (tStore ? String(proj.store || "").trim().toUpperCase() === tStore : true)
-              ) || projects.find((proj) => proj.code === t.projectCode);
+              const p = findParentProject(t.projectCode, t.projectYear, t.projectStore);
 
               if (p && p.name) projName = p.name;
 
@@ -1159,8 +1180,8 @@ export function calculateActiveNotifications(
               notificationBody = `${fName} deadline ${timeMsg}${pParty}`;
 
               itemProjectCode = t.projectCode || "";
-              itemProjectStore = t.projectStore || p?.store || "";
-              itemProjectYear = t.projectYear || p?.year || "";
+              itemProjectStore = String(t.projectStore || p?.store || "HCM").toUpperCase().trim();
+              itemProjectYear = String(t.projectYear || p?.year || "").trim();
               notifId = `${rule.id}_${t.id}`;
             }
 
