@@ -33,17 +33,36 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
   const setActiveTab = useAppStore(state => state.setActiveTab);
   const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
 
-  // Auto-expand this project's tasks on-demand (AGENTS.md Rule 3 & 8)
+  // Zero-Read Guard: Only request tasks from Firestore if NO embedded taskSummaries and NO cached tasks in Zustand
   useEffect(() => {
-    if (project?.id) {
-      if (!isTasksRequested) {
-        setIsTasksRequested(true);
-      }
-      if (!expandedProjectIds.includes(project.id)) {
-        setExpandedProjectIds([...expandedProjectIds, project.id]);
-      }
+    if (!project?.id) return;
+    const hasCachedTasks = tasks.some(t => 
+      t.projectId === project.id || 
+      (t.projectCode && project.code && t.projectCode.trim().toUpperCase() === project.code.trim().toUpperCase())
+    );
+    const hasSummaries = (project.taskSummaries?.length ?? 0) > 0;
+    
+    // If we already have tasks in cache or embedded summaries, DO NOT trigger any Firestore queries! (0 Reads)
+    if (hasCachedTasks || hasSummaries) {
+      return;
     }
-  }, [project?.id, isTasksRequested, expandedProjectIds, setIsTasksRequested, setExpandedProjectIds]);
+
+    // If neither exists, load only this project's tasks on-demand
+    if (!isTasksRequested) {
+      setIsTasksRequested(true);
+    }
+    if (!expandedProjectIds.includes(project.id)) {
+      setExpandedProjectIds([...expandedProjectIds, project.id]);
+    }
+
+    return () => {
+      // Clean up on unmount: remove this project from expandedProjectIds to stop listener
+      const current = useAppStore.getState().expandedProjectIds;
+      if (current.includes(project.id)) {
+        useAppStore.getState().setExpandedProjectIds(current.filter(id => id !== project.id));
+      }
+    };
+  }, [project?.id, project?.code, project?.taskSummaries, tasks, isTasksRequested, expandedProjectIds, setIsTasksRequested, setExpandedProjectIds]);
 
   // Handle ESC key to close (AGENTS.md Rule 6)
   useEffect(() => {
@@ -56,28 +75,51 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Filter tasks for this project
+  // Filter tasks for this project (Prioritizes Zustand cache, falls back to embedded project.taskSummaries)
   const projectTasks = useMemo(() => {
     if (!project) return [];
     const pId = project.id;
     const pCode = (project.code || '').trim().toUpperCase();
 
-    return tasks.filter(t => {
+    const matchedZustandTasks = tasks.filter(t => {
       if (t.isDeleted) return false;
       if (pId && t.projectId === pId) return true;
       if (pCode && t.projectCode && t.projectCode.trim().toUpperCase() === pCode) return true;
       return false;
-    }).sort((a, b) => {
-      if (a.orderIndex !== undefined && b.orderIndex !== undefined) {
-        return a.orderIndex - b.orderIndex;
-      }
-      if (a.taskCodePhu && b.taskCodePhu) {
-        return a.taskCodePhu.localeCompare(b.taskCodePhu, undefined, { numeric: true });
-      }
-      const dateA = a.start ? new Date(a.start).getTime() : 0;
-      const dateB = b.start ? new Date(b.start).getTime() : 0;
-      return dateA - dateB;
     });
+
+    if (matchedZustandTasks.length > 0) {
+      return matchedZustandTasks.sort((a, b) => {
+        if (a.orderIndex !== undefined && b.orderIndex !== undefined) {
+          return a.orderIndex - b.orderIndex;
+        }
+        if (a.taskCodePhu && b.taskCodePhu) {
+          return a.taskCodePhu.localeCompare(b.taskCodePhu, undefined, { numeric: true });
+        }
+        const dateA = a.start ? new Date(a.start).getTime() : 0;
+        const dateB = b.start ? new Date(b.start).getTime() : 0;
+        return dateA - dateB;
+      });
+    }
+
+    // 0-Read Fallback: Use embedded taskSummaries already present inside the Project document
+    if (project.taskSummaries && project.taskSummaries.length > 0) {
+      return project.taskSummaries.map((ts: any, idx: number) => ({
+        id: `ts_${idx}`,
+        name: ts.name || 'Task',
+        start: ts.start || '',
+        finish: ts.finish || '',
+        duration: ts.duration || '1',
+        taskCodePhu: ts.taskCodePhu || `#${idx + 1}`,
+        runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
+        approval: ts.approval,
+        party: ts.party,
+        projectCode: project.code,
+        projectId: project.id
+      })) as Task[];
+    }
+
+    return [];
   }, [tasks, project]);
 
   // Calculate timeline bounding dates
