@@ -17,6 +17,11 @@ import { db, APP_ID } from '../lib/firebase';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
 import { useDataStore } from './PictureMapping/DataContext';
 
+// Performance tuning for older iOS WebKit & high-fps dragging
+Konva.hitOnDragEnabled = false;
+Konva.dragDistance = 3;
+Konva.dragButtons = [0];
+
 interface LiveLayoutViewerProps {
   storeFilter: string;
   locationFilter: string;
@@ -2084,8 +2089,9 @@ function LiveCanvas({
      document.body.removeChild(link);
   };
 
-  // Capped pixel ratio for silky smooth iOS GPU execution
-  const pixelRatio = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+  // Capped pixel ratio for silky smooth iOS GPU execution (iOS 12/WebKit canvas buffer optimization)
+  const isIOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1));
+  const pixelRatio = typeof window !== 'undefined' ? (isIOS ? 1 : Math.min(window.devicePixelRatio || 1, 1.25)) : 1;
 
   // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout
   const hasUserAccessInStoreYear = useMemo(() => {
@@ -3237,9 +3243,11 @@ function LiveCanvas({
                   strokeWidth: isFocused ? 3 : 1.5,
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
-                  shadowColor: isFocused ? '#f59e0b' : '#000000',
-                  shadowBlur: isFocused ? 16 : 0,
-                  shadowOpacity: isFocused ? 0.9 : 0,
+                  ...(isFocused ? {
+                    shadowColor: '#f59e0b',
+                    shadowBlur: 16,
+                    shadowOpacity: 0.9,
+                  } : {}),
                   x: unit.x || 0,
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,

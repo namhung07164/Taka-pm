@@ -147,7 +147,7 @@ export function ProjectQuickNavModal({
     <AnimatePresence>
       <div 
         id="project-quick-nav-modal-backdrop"
-        className="fixed inset-0 z-[9999] flex items-center justify-center p-3 bg-slate-900/40 backdrop-blur-[2px] transition-opacity"
+        className="fixed inset-0 z-[100050] flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-[2px] transition-opacity"
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
         }}

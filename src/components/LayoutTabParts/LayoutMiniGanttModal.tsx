@@ -12,6 +12,7 @@ import {
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
+import { QuickNavButton } from '../QuickNavButton';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -239,12 +240,20 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     <div className="fixed inset-0 z-[9999] pointer-events-none flex items-center justify-center p-3 sm:p-5">
       {/* Semi-transparent backdrop for focus */}
       <div 
-        onClick={onClose} 
-        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-xs pointer-events-auto transition-opacity" 
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }} 
+        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-xs pointer-events-auto transition-opacity cursor-pointer" 
       />
 
       {/* Draggable Window (AGENTS.md Rule 11) */}
-      <Draggable handle=".modal-handle" nodeRef={nodeRef} bounds="parent">
+      <Draggable 
+        handle=".modal-handle" 
+        cancel="button, input, select, textarea, .no-drag" 
+        nodeRef={nodeRef} 
+        bounds="parent"
+      >
         <div
           ref={nodeRef}
           className="relative pointer-events-auto bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl flex flex-col w-full max-w-3xl max-h-[85vh] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
@@ -276,21 +285,20 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
             </div>
 
             {/* Header Action Buttons */}
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 no-drag">
+              <QuickNavButton 
+                project={project} 
+                title={`Quick Navigator (${project.code})`} 
+                className="no-drag"
+              />
               <button
                 type="button"
-                onClick={handleOpenFullGantt}
-                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-[#8ab4f8] dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800/80 transition-all active:scale-95 touch-manipulation cursor-pointer"
-                title="Open this project in full Gantt chart"
-              >
-                <BarChartHorizontal className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Open Full Gantt</span>
-                <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="no-drag p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors cursor-pointer active:scale-95 touch-manipulation"
                 title="Close Mini Gantt (Esc)"
               >
                 <X className="w-4 h-4" />
