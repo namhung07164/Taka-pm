@@ -1,17 +1,20 @@
-import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef } from 'react';
+import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef, useState, Suspense, lazy } from 'react';
 import { 
   MessageSquare, 
   X,
   AlertTriangle,
   Bell,
   GripHorizontal,
-  ChevronRight
+  ChevronRight,
+  BarChartHorizontal
 } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
 import { cn, parseDateTime } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
+
+const LayoutMiniGanttModal = lazy(() => import('./LayoutMiniGanttModal'));
 
 interface LayoutUnitTooltipProps {
   hoverInfo: {
@@ -100,6 +103,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
   const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
+  const [showMiniGantt, setShowMiniGantt] = useState(false);
 
   // Draggable State Handling
   const isDraggingRef = useRef(false);
@@ -626,10 +630,26 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                     ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-800/80 hover:bg-blue-100" 
                     : "bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-[#444446] hover:text-blue-500"
                 )}
-                title="Mở trao đổi / Bình luận dự án"
+                title="Open Project Comments"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 {commentsCount > 0 && <span>{commentsCount}</span>}
+              </button>
+            )}
+
+            {/* Modular Mini Gantt Button (Next to comments button) */}
+            {p && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMiniGantt(true);
+                }}
+                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all active:scale-95 touch-manipulation cursor-pointer shrink-0 shadow-xs"
+                title="Open Mini Gantt Timeline"
+              >
+                <BarChartHorizontal className="w-3.5 h-3.5" />
+                <span>Gantt</span>
               </button>
             )}
           </div>
@@ -713,6 +733,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {/* JIT Mounted Draggable Mini Gantt Modal (AGENTS.md Rule 11 & 12) */}
+      {showMiniGantt && p && (
+        <Suspense fallback={null}>
+          <LayoutMiniGanttModal
+            project={p}
+            isOpen={showMiniGantt}
+            onClose={() => setShowMiniGantt(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

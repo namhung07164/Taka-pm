@@ -541,6 +541,15 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
          - Khi mở ô Comment từ Tooltip của Layout Tab, hệ thống **CHỈ** đọc tin nhắn trao đổi của riêng dự án đó (subcollection chats hoặc document chats) mà **KHÔNG** tải hay lắng nghe (listen) toàn bộ danh sách Task, Cost, hay Delegation của toàn bộ hệ thống.
          - Tiết kiệm 100% chi phí Firestore read không cần thiết, bảo vệ giới hạn đọc và duy trì hiệu năng 60fps mượt mà cho bản đồ.
           - **Phân trang Tin nhắn (Pagination / Limit to Last 25)**: Mặc định chỉ hiển thị 25 tin nhắn trao đổi gần nhất để giao diện chat mở tức thì (0ms) và chống tràn bộ nhớ. Phía trên có nút `[ ⬆️ Xem thêm tin nhắn cũ hơn (+25) ]` để người dùng chủ động tải thêm khi cần xem lại lịch sử trao đổi. Khi nhấp từ thông báo (`focusCommentId`), hệ thống tự động mở rộng vùng hiển thị để cuộn chính xác đến tin nhắn cần xem.
+      - **Nút Xem Nhanh Biểu Đồ Mini Gantt (Modular Mini Gantt Timeline Button)**:
+        * **Vị trí**: Đặt ngay bên cạnh nút Bình luận `[ 💬 ]` trong bảng thông tin `LayoutUnitTooltip` với nút bấm màu tím indigo nổi bật: `[ 📊 Gantt ]`.
+        * **Cửa sổ Timeline Kéo thả (Draggable Window)**: Nhấp vào nút `[ 📊 Gantt ]` sẽ mở ra cửa sổ **Mini Gantt Timeline** độc lập, hỗ trợ kéo thả tự do (`.modal-handle`, `cursor-grab`) để di chuyển khắp màn hình mà không che khuất mặt bằng bản vẽ.
+        * **Trực quan hóa Tiến độ Công việc**:
+          - Hiển thị dải thời gian tổng (`Timeline: Start → Finish`) và tổng số ngày thực hiện của gian hàng.
+          - Liệt kê đầy đủ danh sách các hạng mục công việc con, mã đầu việc, thời lượng số ngày và thanh bar tiến độ trực quan theo thời gian thực.
+          - Tự động phân màu trạng thái: Xanh lá (`Completed / Done`), Xanh dương (`In Progress / Doing`), Đỏ nhấp nháy (`Delayed / Delay`).
+        * **Zero-Read & Tải Lười JIT (Rule 8 & 12)**: Tải lười qua `React.lazy`, chỉ mount khi mở (`{showMiniGantt && <LayoutMiniGanttModal />}`) và đọc trực tiếp từ bộ nhớ đệm Zustand, không phát sinh thêm lượt đọc Firestore.
+        * **Nút Chuyển nhanh sang Full Gantt Tab**: Góc dưới cửa sổ có nút `[ Full Gantt View ]` (biểu tượng ↗) giúp người dùng chuyển ngay sang biểu đồ Gantt toàn diện với đúng dự án đang chọn khi cần thao tác chi tiết. Bấm phím `Escape` hoặc nút `X` để đóng nhanh cửa sổ.
 5. **Chế độ Bản đồ Trực quan (Live View), Bảng Chú Thích Màu & Cấu Hình Hiển Thị Labels Appear (Tooltip Visibility)**:
    - **Tự động Bật Sẵn Chế độ Live View**: Khi người dùng mở hoặc chuyển sang tab Layout, hệ thống sẽ tự động kích hoạt ngay chế độ Live Map tương tác GPU mượt mà mà không cần bấm nút chuyển đổi thủ công.
    - **Edit Mode & Tùy Chỉnh Bật/Tắt Nhãn Tooltip (Labels Appear Settings)**: Trong menu Hamburger góc phải trên cùng (nằm giữa mục "Đồng bộ Apple Calendar" và "Print Preview"), mục **Edit Mode** cho phép người dùng mở bảng cấu hình chuyên sâu của mặt bằng:
