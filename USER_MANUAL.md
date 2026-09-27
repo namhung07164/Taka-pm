@@ -1361,3 +1361,21 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Hiển Thị Ngày 3 Dòng (Stacked Dates Display)**:
        - **Ngày bắt đầu (Start Date)**: Hiển thị 3 dòng màu xanh dương (`Tháng\nNgày,\nNăm` ví dụ: `May\n4,\n2026`).
        - **Ngày kết thúc (Completion Date)**: Hiển thị 3 dòng màu hồng cánh sen (`Tháng\nNgày,\nNăm` ví dụ: `Oct\n16,\n2026`).
+
+
+18. **Tìm Kiếm Toàn Cục Toàn Năng (Global Search - Phím tắt `/`)**:
+   - **Kích Hoạt Nhanh Bằng Phím Tắt `/`**:
+     + Nhấn phím `/` từ bất kỳ tab hoặc vị trí nào trên ứng dụng để mở và focus trực tiếp vào thanh tìm kiếm toàn cục (Global Search).
+     + Khi người dùng kích hoạt tìm kiếm, hệ thống tự động kích hoạt tải danh sách công việc ngầm (`isTasksRequested: true`) mà không phá vỡ cơ chế lazy-loading.
+     + Nhấn `Esc` để đóng hộp thoại kết quả và xóa tiêu điểm con trỏ.
+   - **Phạm Vi Tìm Kiếm Đa Chiều (Multi-Domain Search Scope)**:
+     + **Tên Dự Án & Mã Dự Án (Project Names & Codes)**: Tìm kiếm tức thời theo mã dự án (ví dụ `L1-01`, `B2-208`), tên gian hàng/dự án, chi nhánh (HCM, HN), niên độ năm, và vị trí/tầng.
+     + **Tên Công Việc Con & Mã WBS (Task Names & Subtask Codes)**: Tìm kiếm chi tiết theo tên hạng mục thi công (ví dụ: `Demolition`, `MEP`, `Painting`), mã định danh công việc con (`#1`, `L1-01-1`), ngày bắt đầu/kết thúc.
+     + **Bên Phụ Trách / Nhà Thầu / Assignees (Party & PIC)**: Tìm kiếm danh sách các nhà thầu, bên phụ trách (`Con1`, `CP`, `MD`, `Tenant`, người được phân công) kèm số lượng dự án và công việc đang đảm nhiệm.
+   - **Bảng Kết Quả Thả Xuống Trực Quan & Điều Hướng Nhanh (Dropdown Results & Quick Navigation)**:
+     + **Bộ Lọc Phân Loại Tabs**: Cho phép chuyển đổi nhanh giữa các nhóm kết quả: `All` (Tất cả), `Projects` (Dự án), `Tasks` (Công việc), và `Assignees` (Người phụ trách). Nhấn phím `Tab` để xoay vòng chuyển đổi giữa các nhóm.
+     + **Điều Hướng Bàn Phím Chuẩn**: Dùng phím `↑` và `↓` để di chuyển chọn các kết quả trong danh sách thả xuống, nhấn `Enter` để kích hoạt chuyển trang tới kết quả đang chọn.
+     + **Nút Nhảy Nhanh Đa Phân Hệ (1-Click Quick Jump)**:
+       - **Dự án**: Hỗ trợ nút nhảy nhanh đến `Detail` (bảng chi tiết), `Gantt` (tiến độ ngang), hoặc mở modal điều hướng 5 tab `Quick Nav`.
+       - **Công việc**: Nhấp vào công việc sẽ chuyển ngay sang `Detail Tab`, tự động mở rộng dự án cha, cuộn mượt và làm nổi bật (focus highlight) công việc đó; hoặc nhảy thẳng tới thanh bar của công việc trong biểu đồ `Gantt`.
+       - **Assignees**: Nhấp vào người phụ trách sẽ tự động lọc toàn bộ công việc và dự án thuộc quyền quản lý của đơn vị/cá nhân đó.

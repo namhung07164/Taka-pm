@@ -29,7 +29,7 @@ export function ShortcutsModal({ isOpen, onClose}: ShortcutsModalProps) {
   if (!isOpen) return null;
 
   const shortcuts = [
-    { keys: ['/'], description: 'Focus search input' },
+    { keys: ['/'], description: 'Global search (Projects, Tasks, Assignees)' },
     { keys: ['Backspace'], description: 'Back to previous page' },
     { keys: ['Esc'], description: 'Close modals / Clear Focus' },
     { keys: ['Shift', 'F'], description: 'Toggle focus mode' },

@@ -37,6 +37,7 @@ const QRScannerModal = lazyWithRetry(() => import("./QRScannerModal").then(m => 
 import { AppUser, TabId, AppRole } from "../types";
 import { cn } from "../lib/utils";
 import { useLanguage } from "../lib/LanguageContext";
+import { GlobalSearch } from "./GlobalSearch";
 
 interface HeaderProps {
   cloudStatus: "online" | "syncing" | "offline";
@@ -56,10 +57,11 @@ interface HeaderProps {
   isPrintPreview?: boolean;
   onPrintPreviewToggle?: () => void;
   onDeepLink?: (scannedText: string) => void;
+  onQuickNavigate?: (targetTab: TabId, target: any) => void;
 }
 
 export function Header({
-  cloudStatus, onLoginClick, onLogoutClick, onTabChange, activeTab, notificationCount = 0, onUndo, canUndo = false, hasDataToUndo = false, undoDescription, onToggleTheme, isFocusMode = false, onToggleFocusMode, onPrintClick, isPrintPreview = false, onPrintPreviewToggle, onDeepLink}: HeaderProps) {
+  cloudStatus, onLoginClick, onLogoutClick, onTabChange, activeTab, notificationCount = 0, onUndo, canUndo = false, hasDataToUndo = false, undoDescription, onToggleTheme, isFocusMode = false, onToggleFocusMode, onPrintClick, isPrintPreview = false, onPrintPreviewToggle, onDeepLink, onQuickNavigate}: HeaderProps) {
 
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser)!;
@@ -494,6 +496,14 @@ export function Header({
             })()}
           </div>
         </div>
+      </div>
+
+      {/* Global Search Bar */}
+      <div className="flex-1 max-w-xs sm:max-w-sm xl:max-w-md mx-1 sm:mx-2 min-w-[200px] order-last xl:order-none w-full xl:w-auto">
+        <GlobalSearch 
+          onQuickNavigate={onQuickNavigate}
+          onTabChange={onTabChange}
+        />
       </div>
 
       <div className="flex flex-wrap justify-end items-center gap-1 sm:gap-2 shrink-0 ml-auto">

@@ -1217,15 +1217,23 @@ export default function App() {
       if (isTyping) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-      // /: Focus search input
+      // /: Focus global search input (Projects, Tasks, Assignees)
       if (e.key === "/") {
         e.preventDefault();
-        const searchInput = document.querySelector<HTMLInputElement>(
-          'input[placeholder*="Search" i], input[placeholder*="Tìm kiếm" i], input[type="search"]'
+        const globalSearchInput = document.querySelector<HTMLInputElement>(
+          'input[data-global-search-input="true"]'
         );
-        if (searchInput) {
-          searchInput.focus();
-          searchInput.select?.();
+        if (globalSearchInput) {
+          globalSearchInput.focus();
+          globalSearchInput.select?.();
+        } else {
+          const searchInput = document.querySelector<HTMLInputElement>(
+            'input[placeholder*="Search" i], input[placeholder*="Tìm kiếm" i], input[type="search"]'
+          );
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select?.();
+          }
         }
         return;
       }
@@ -2486,6 +2494,7 @@ const handlePrintToPDF = async () => {
                 isPrintPreview={isPrintPreview}
                 onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
                 onDeepLink={handleDeepLinkString}
+                onQuickNavigate={handleQuickNavigate}
               />
             </div>
           )}

@@ -54,6 +54,7 @@ export function LayoutTab({
   const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
   const locations = useAppStore(state => state.locations);
+  const locationVisibility = useAppStore(state => state.locationVisibility);
   const theme = useAppStore(state => state.theme);
   const appUsers = useAppStore(state => state.appUsers);
   const subAppUsers = useAppStore(state => state.subAppUsers);
@@ -270,90 +271,84 @@ export function LayoutTab({
     return true;
   };
 
-  const locationOptions = useLocationOptions();
-
-  // Danh sách toàn bộ location mà người dùng được phân quyền (áp dụng chuẩn theo Account Control RBAC)
-  const userAllowedLocations = React.useMemo(() => {
-    return locationOptions.filter(loc => loc && String(loc).trim() !== '' && String(loc).toLowerCase() !== 'all');
-  }, [locationOptions]);
-
-  // Lọc danh sách location:
-  // Dựa vào Review tab & danh sách dự án của người dùng:
+  // Danh sách location của Tab Layout:
+  // Chỉ hiển thị các location CÓ DỮ LIỆU VERSION ở tab Picture Mapping (trong store hiện tại)
+  // và kết hợp cùng quyền location permissions của user đó (RBAC)
   const availableLocations = React.useMemo(() => {
-    const storeProjects = projects.filter(p => !activeStore || !p.store || String(p.store).toUpperCase().trim() === activeStore);
-    const locsWithProjects = new Set<string>();
-    storeProjects.forEach(p => {
-      const loc = String(p.location || '').toUpperCase().trim();
+    const storeParam = (activeStore === 'HN' ? 'HN' : 'HCM');
+    const pmLocationsSet = new Set<string>();
+
+    // 1. Lấy tất cả location từ allStoreVersions
+    allStoreVersions.forEach(v => {
+      const loc = String(v.location || '').toUpperCase().trim();
       if (loc && loc !== 'ALL') {
-        locsWithProjects.add(loc);
+        pmLocationsSet.add(loc);
       }
     });
 
-    if (currentUser?.role !== 'admin') {
-      return userAllowedLocations.filter(loc => 
-        locsWithProjects.has(loc.toUpperCase().trim())
-      );
+    // 2. Lấy tất cả location từ storeLocationData partitions
+    if (storeLocationData) {
+      Object.entries(storeLocationData).forEach(([key, partition]) => {
+        if (key.startsWith(`${storeParam}_`)) {
+          const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
+          if (loc && loc !== 'ALL') {
+            if (
+              (partition?.mapVersions && partition.mapVersions.length > 0) ||
+              (partition?.mapUnits && partition.mapUnits.length > 0) ||
+              partition?.activeMapVersionId
+            ) {
+              pmLocationsSet.add(loc);
+            }
+          }
+        }
+      });
     }
 
-    // 1. Ưu tiên các tầng có version đúng năm effectiveYear
-    const yearVersions = allStoreVersions.filter(v => {
-      const vYear = String(v.year || '').trim();
-      return vYear === String(effectiveYear).trim();
+    const pmLocList = Array.from(pmLocationsSet);
+
+    // 3. Kết hợp cùng quyền location permissions của user (RBAC) & trạng thái hiển thị
+    const isAdmin = currentUser?.role === 'admin';
+    const locPerms = currentUser?.locationPermissions || {};
+    const hasAll = isAdmin || locPerms['all'] === true;
+
+    const permittedLocations = pmLocList.filter(loc => {
+      if (!loc || loc.trim() === '' || loc.toUpperCase() === 'ALL') return false;
+      
+      // Kiểm tra ẩn/hiện cấu hình
+      if (locationVisibility[loc] === false) return false;
+
+      // Admin hoặc user có quyền 'all'
+      if (hasAll) return true;
+
+      // User thông thường: kiểm tra quyền theo tên tầng
+      const lLower = loc.toLowerCase().trim();
+      const cleanLoc = lLower.replace(/^md-/, '');
+      return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower]);
     });
 
-    let locationsWithVersions = Array.from(
-      new Set(
-        yearVersions
-          .map(v => (v.location || '').toUpperCase().trim())
-          .filter(Boolean)
-      )
-    );
-
-    // 2. Nếu năm này chưa có đầy đủ bản vẽ, bổ sung thêm các tầng có bản vẽ ở các năm khác trong cùng Store
-    const allStoreLocs = Array.from(
-      new Set(
-        allStoreVersions
-          .map(v => (v.location || '').toUpperCase().trim())
-          .filter(Boolean)
-      )
-    );
-    allStoreLocs.forEach(loc => {
-      if (!locationsWithVersions.includes(loc)) {
-        locationsWithVersions.push(loc);
+    // 4. Sắp xếp thứ tự các tầng chuẩn: B4, B3, B2, B1, GF, MF, L1, L2, L3, L4, L5...
+    const floorRank = (name: string) => {
+      const n = name.toUpperCase().trim();
+      if (n.startsWith('B')) {
+        const num = parseInt(n.replace('B', ''), 10) || 1;
+        return -100 + num;
       }
-    });
-
-    locsWithProjects.forEach(loc => {
-      if (!locationsWithVersions.includes(loc)) {
-        locationsWithVersions.push(loc);
+      if (n === 'GF' || n === 'G') return 0;
+      if (n === 'MF' || n === 'M') return 0.5;
+      if (n.startsWith('L')) {
+        const num = parseInt(n.replace('L', ''), 10) || 1;
+        return num;
       }
-    });
-
-    if (locationsWithVersions.length > 0) {
-      const filtered = userAllowedLocations.filter(loc => 
-        locationsWithVersions.includes(loc.toUpperCase().trim())
-      );
-      if (filtered.length > 0) {
-        return filtered;
+      if (/^\d+F$/.test(n)) {
+        return parseInt(n.replace('F', ''), 10) || 1;
       }
-      return userAllowedLocations;
-    }
+      return 100;
+    };
 
-    if (projects.length === 0 && allStoreVersions.length === 0) {
-      return [];
-    }
+    return permittedLocations.sort((a, b) => floorRank(a) - floorRank(b) || a.localeCompare(b));
+  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility]);
 
-    // Fallback if no version exists:
-    if (isAdmin) {
-      return userAllowedLocations;
-    }
-    return userAllowedLocations.filter(loc => {
-      const specificKey = `url_${activeStore}_${loc}`;
-      return isValidUrl(layoutSettings[specificKey]);
-    });
-  }, [allStoreVersions, effectiveYear, userAllowedLocations, isAdmin, layoutSettings, activeStore, projects, currentUser]);
-
-  // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor)
+  // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor with versions)
   useEffect(() => {
     if (availableLocations.length > 0) {
       const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
@@ -362,27 +357,21 @@ export function LayoutTab({
         if (globalLocationFilter[0] !== matched) {
           setGlobalLocationFilter([matched]);
         }
-      } else if (!currentLoc || currentLoc === 'ALL') {
-        setGlobalLocationFilter([availableLocations[0]]);
       } else {
-        const allowedMatched = userAllowedLocations.find(l => l.toUpperCase().trim() === currentLoc);
-        if (!allowedMatched) {
-          setGlobalLocationFilter([availableLocations[0]]);
-        }
+        setGlobalLocationFilter([availableLocations[0]]);
       }
     }
-  }, [availableLocations, globalLocationFilter, userAllowedLocations, setGlobalLocationFilter]);
+  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter]);
 
   const locFilterStr = React.useMemo(() => {
     const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
     if (currentLoc && currentLoc !== 'ALL') {
-      const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc) ||
-        userAllowedLocations.find(l => l.toUpperCase().trim() === currentLoc);
+      const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
       if (matched) return matched;
       return currentLoc;
     }
     return availableLocations[0] || '';
-  }, [globalLocationFilter, availableLocations, userAllowedLocations]);
+  }, [globalLocationFilter, availableLocations]);
   const docKey = `url_${activeStore}_${locFilterStr}`;
 
   // Automatically sync activeStore and floor partition to useDataStore (PictureMapping / useSummaryData)
@@ -417,7 +406,7 @@ export function LayoutTab({
   const unitSuggestions = React.useMemo(() => {
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
     const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string; code?: string }>();
-    const allowedLocsSet = new Set(userAllowedLocations.map(l => String(l).toLowerCase().trim()));
+    const allowedLocsSet = new Set(availableLocations.map(l => String(l).toLowerCase().trim()));
 
     // 1. Index storeUnits (only if location is accessible for this user)
     storeUnits.forEach((u: any) => {
@@ -468,7 +457,7 @@ export function LayoutTab({
     });
 
     return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string; code?: string }>;
-  }, [getAllStoreUnits, activeStore, projects, userAllowedLocations, isAdmin]);
+  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin]);
 
   const filteredUnitSuggestions = React.useMemo(() => {
     if (!unitSearchInput.trim()) return [];
