@@ -295,73 +295,116 @@ export function SettingTab({ rules}: SettingTabProps) {
     if (!isAdmin) return;
     setIsScanningOrphans(true);
     try {
-      const collectionsToCheck = [
-        { name: "taka_projects", label: "Projects" },
-        { name: "taka_tasks", label: "Tasks" },
-        { name: "taka_costs", label: "Costs" },
-        { name: "taka_delegation_groups", label: "Delegations" }
-      ];
+      // 1. Fetch reference collections to detect relational orphans
+      const projectsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
+      const projSnap = await getDocs(projectsCol);
+      const projectIds = new Set(projSnap.docs.map(d => d.id));
+      const projectCodes = new Set(projSnap.docs.map(d => String(d.data().code || '').trim().toUpperCase()).filter(Boolean));
 
-      const stats: Record<string, { total: number, orphans: any[] }> = {};
-      let totalOrphans = 0;
+      const tasksCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks");
+      const taskSnap = await getDocs(tasksCol);
+      const taskIds = new Set(taskSnap.docs.map(d => d.id));
 
-      for (const colInfo of collectionsToCheck) {
-        const colRef = collection(db, "artifacts", APP_ID, "public", "data", colInfo.name);
-        const snap = await getDocs(colRef);
-        const orphans: any[] = [];
+      const costsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
+      const costSnap = await getDocs(costsCol);
 
-        snap.docs.forEach(docSnap => {
-          const d = docSnap.data();
-          const yr = d.year !== undefined && d.year !== null && String(d.year).trim() !== '' 
-            ? String(d.year).trim() 
-            : (d.projectYear !== undefined && d.projectYear !== null && String(d.projectYear).trim() !== '' ? String(d.projectYear).trim() : '');
-          
-          const st = d.store !== undefined && d.store !== null && String(d.store).trim() !== '' 
-            ? String(d.store).trim() 
-            : (d.projectStore !== undefined && d.projectStore !== null && String(d.projectStore).trim() !== '' ? String(d.projectStore).trim() : '');
+      const delCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups");
+      const delSnap = await getDocs(delCol);
 
-          const cd = d.code !== undefined && d.code !== null && String(d.code).trim() !== '' 
-            ? String(d.code).trim() 
-            : (d.projectCode !== undefined && d.projectCode !== null && String(d.projectCode).trim() !== '' 
-              ? String(d.projectCode).trim() 
-              : (d.parentTaskId !== undefined && d.parentTaskId !== null && String(d.parentTaskId).trim() !== '' 
-                ? String(d.parentTaskId).trim() 
-                : ''));
+      const stats: Record<string, { total: number, orphans: any[], label: string }> = {
+        taka_projects: { total: projSnap.docs.length, orphans: [], label: "Projects" },
+        taka_tasks: { total: taskSnap.docs.length, orphans: [], label: "Tasks" },
+        taka_costs: { total: costSnap.docs.length, orphans: [], label: "Costs" },
+        taka_delegation_groups: { total: delSnap.docs.length, orphans: [], label: "Delegations" }
+      };
 
-          // Record is considered an orphan if it lacks ANY of Year, Store, or Project Code (code/projectCode/parentTaskId)
-          if (!yr || !st || !cd) {
-            orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref });
-          }
-        });
+      // Audit Projects
+      projSnap.docs.forEach(docSnap => {
+        const d = docSnap.data();
+        const yr = String(d.year ?? d.projectYear ?? '').trim();
+        const st = String(d.store ?? d.projectStore ?? '').trim();
+        const cd = String(d.code ?? '').trim();
+        if (!yr || !st || !cd) {
+          stats.taka_projects.orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref, reason: "Missing Year, Store, or Code" });
+        }
+      });
 
-        stats[colInfo.name] = { total: snap.docs.length, orphans };
-        totalOrphans += orphans.length;
-      }
+      // Audit Tasks
+      taskSnap.docs.forEach(docSnap => {
+        const d = docSnap.data();
+        const yr = String(d.projectYear ?? d.year ?? '').trim();
+        const st = String(d.projectStore ?? d.store ?? '').trim();
+        const cd = String(d.projectCode ?? d.code ?? '').trim();
+        const pId = d.projectId;
+        const pCode = String(d.projectCode || d.code || '').trim().toUpperCase();
+        const hasParent = (pId && projectIds.has(pId)) || (pCode && projectCodes.has(pCode));
 
-      const summaryLines = collectionsToCheck.map(c => {
-        const s = stats[c.name];
-        return `• ${c.label} (${c.name}): Tổng ${s.total} bản ghi → ${s.orphans.length} bản ghi mồ côi (thiếu Year, Store hoặc Project Code)`;
+        if (!yr || !st || !cd) {
+          stats.taka_tasks.orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref, reason: "Missing Year, Store, or Code" });
+        } else if (!hasParent) {
+          stats.taka_tasks.orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref, reason: "No matching parent Project" });
+        }
+      });
+
+      // Audit Costs
+      costSnap.docs.forEach(docSnap => {
+        const d = docSnap.data();
+        const yr = String(d.projectYear ?? d.year ?? '').trim();
+        const st = String(d.projectStore ?? d.store ?? '').trim();
+        const cd = String(d.projectCode ?? '').trim();
+        const pId = d.projectId;
+        const pCode = String(d.projectCode || '').trim().toUpperCase();
+        const hasParent = (pId && projectIds.has(pId)) || (pCode && projectCodes.has(pCode));
+
+        if (!yr || !st || !cd) {
+          stats.taka_costs.orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref, reason: "Missing Year, Store, or Code" });
+        } else if (!hasParent) {
+          stats.taka_costs.orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref, reason: "No matching parent Project" });
+        }
+      });
+
+      // Audit Delegations
+      delSnap.docs.forEach(docSnap => {
+        const d = docSnap.data();
+        const parentTask = d.parentTaskId;
+        const pCode = String(d.projectCode || '').trim().toUpperCase();
+        const hasTask = parentTask && taskIds.has(parentTask);
+        const hasProj = (pCode && projectCodes.has(pCode)) || (parentTask && projectIds.has(parentTask));
+
+        if (!hasTask && !hasProj) {
+          stats.taka_delegation_groups.orphans.push({ id: docSnap.id, data: d, ref: docSnap.ref, reason: "Orphaned group (no matching task or project)" });
+        }
+      });
+
+      const totalOrphans = Object.values(stats).reduce((acc, s) => acc + s.orphans.length, 0);
+
+      const summaryLines = Object.entries(stats).map(([_, s]) => {
+        return `• ${s.label}: ${s.total} total records → ${s.orphans.length} orphaned/invalid`;
       }).join('\n');
 
       if (totalOrphans === 0) {
         useAppStore.getState().setToast({
-          title: "Kiểm tra hoàn tất (Không có mồ côi)",
-          message: `Firestore hoàn toàn sạch sẽ! Không có bản ghi mồ côi nào (thiếu 1 trong 3 yếu tố: Year, Store, Project Code).\n\nChi tiết:\n${summaryLines}`,
+          title: "Audit Completed (Clean)",
+          message: `Firestore database is completely clean! No orphan records detected.\n\nSummary:\n${summaryLines}`,
           type: "success"
         });
       } else {
         setConfirmModal({
           isOpen: true,
-          title: `Phát hiện ${totalOrphans} bản ghi mồ côi!`,
-          message: `Kết quả kiểm tra trên Firestore:\n\n${summaryLines}\n\nBạn có muốn thực hiện xóa (dọn dẹp) ${totalOrphans} bản ghi mồ côi này không?`,
+          title: `Detected ${totalOrphans} Orphaned Records`,
+          message: `Enterprise Integrity Audit Results:\n\n${summaryLines}\n\nDo you want to permanently purge these ${totalOrphans} orphaned records and deeply clean associated physical files on Firebase Storage?`,
           onConfirm: async () => {
             try {
               let batch = writeBatch(db);
               let opCount = 0;
+              const urlsToDeepClean: string[] = [];
 
-              for (const colInfo of collectionsToCheck) {
-                const orphanList = stats[colInfo.name].orphans;
-                for (const item of orphanList) {
+              for (const s of Object.values(stats)) {
+                for (const item of s.orphans) {
+                  const files = extractStorageUrls(item.data);
+                  if (files && files.length > 0) {
+                    urlsToDeepClean.push(...files);
+                  }
                   batch.delete(item.ref);
                   opCount++;
                   if (opCount % 400 === 0) {
@@ -375,16 +418,21 @@ export function SettingTab({ rules}: SettingTabProps) {
                 await batch.commit();
               }
 
+              // Deep clean storage files in background (AGENTS.md Rule 4)
+              if (urlsToDeepClean.length > 0) {
+                deleteStorageFiles(urlsToDeepClean).catch(err => console.error("Storage deep clean error:", err));
+              }
+
               useAppStore.getState().setToast({
-                title: "Dọn dẹp hoàn tất",
-                message: `Đã xóa thành công ${totalOrphans} bản ghi mồ côi khỏi Firestore.`,
+                title: "Purge Completed",
+                message: `Successfully purged ${totalOrphans} orphan records and initiated deep storage cleanup for ${urlsToDeepClean.length} files.`,
                 type: "success"
               });
             } catch (err: any) {
-              console.error("Xóa orphan error:", err);
+              console.error("Purge orphan error:", err);
               useAppStore.getState().setToast({
-                title: "Lỗi dọn dẹp",
-                message: err?.message || "Không thể xóa bản ghi mồ côi",
+                title: "Cleanup Failed",
+                message: err?.message || "Could not purge orphan records",
                 type: "error"
               });
             }
@@ -394,8 +442,8 @@ export function SettingTab({ rules}: SettingTabProps) {
     } catch (error: any) {
       console.error("Scan orphan error:", error);
       useAppStore.getState().setToast({
-        title: "Lỗi kiểm tra",
-        message: error?.message || "Không thể quét dữ liệu",
+        title: "Audit Failed",
+        message: error?.message || "Could not complete database audit",
         type: "error"
       });
     } finally {
@@ -407,13 +455,13 @@ export function SettingTab({ rules}: SettingTabProps) {
     if (!isAdmin) return;
     setConfirmModal({
       isOpen: true,
-      title: "Cập nhật Task Counts toàn bộ Dự án",
-      message: "Hệ thống sẽ quét toàn bộ các Dự án và Tasks con trên Firestore để tính toán chính xác số lượng taskCon (taskCount), tiến độ và ngày thực tế, sau đó lưu trực tiếp vào từng Dự án. Thao tác này chỉ cần chạy 1 lần để kích hoạt cơ chế On-Demand Expansion Loading không tốn lượt đọc. Bạn có muốn thực hiện không?",
+      title: "Sync Project Task Counts",
+      message: "The system will scan all Projects and Tasks on Firestore to recalculate accurate task counts, progress, and actual dates, then write them directly to each Project document. Do you want to proceed?",
       onConfirm: async () => {
         setIsSyncingTaskCounts(true);
         useAppStore.getState().setToast({
-          title: "Đang đồng bộ...",
-          message: "Đang tổng hợp và cập nhật taskCount cho toàn bộ Dự án trên Firestore...",
+          title: "Syncing...",
+          message: "Aggregating and synchronizing task counts across all projects on Firestore...",
           type: "info"
         });
         try {
@@ -421,15 +469,15 @@ export function SettingTab({ rules}: SettingTabProps) {
             console.log(`[TaskCountSync] Processed ${processed}/${total} projects`);
           });
           useAppStore.getState().setToast({
-            title: "Đồng bộ hoàn tất!",
-            message: `Đã cập nhật taskCount thành công cho ${result.updatedCount}/${result.totalProjects} dự án trên Firestore.`,
+            title: "Sync Complete",
+            message: `Successfully updated task counts for ${result.updatedCount}/${result.totalProjects} projects on Firestore.`,
             type: "success"
           });
         } catch (error: any) {
           console.error("Error syncing task counts:", error);
           useAppStore.getState().setToast({
-            title: "Lỗi đồng bộ",
-            message: error?.message || "Không thể đồng bộ taskCount",
+            title: "Sync Failed",
+            message: error?.message || "Failed to sync task counts",
             type: "error"
           });
         } finally {
@@ -443,8 +491,8 @@ export function SettingTab({ rules}: SettingTabProps) {
     if (!isAdmin) return;
     setConfirmModal({
       isOpen: true,
-      title: "Dọn dẹp bản ghi Ủy quyền trùng lặp (Deduplicate)",
-      message: "Hệ thống sẽ quét bộ sưu tập 'taka_delegation_groups' trên Firestore, tự động gộp các nhóm ủy quyền có cùng parentTaskId (chỉ giữ lại 1 bản ghi mới nhất và hợp nhất các subtask), xóa bỏ toàn bộ bản ghi trùng lặp thừa để giảm tải lượt đọc (hiện tại đang tải tới ~1,910 bản ghi). Bạn có muốn thực hiện không?",
+      title: "Deduplicate Delegation Groups",
+      message: "The system will scan 'taka_delegation_groups' on Firestore, automatically merge delegation groups sharing the same parent task or project into the newest record, and remove redundant duplicate entries to optimize read operations. Do you want to proceed?",
       onConfirm: async () => {
         setIsDeduplicatingDelegations(true);
         try {
@@ -510,9 +558,7 @@ export function SettingTab({ rules}: SettingTabProps) {
             const isTaskDelegation = parentKey.startsWith('task_');
 
             if (isTaskDelegation) {
-              // Quy tắc: Đối với công việc giao cho nhiều đơn vị thì chỉ tạo 1 delegation, đơn vị nhận việc lấy bất kỳ party nào từ task
               if (mergedSubTasks.length > 0) {
-                // Ưu tiên subtask đang có tiến độ/được duyệt, hoặc có cập nhật mới nhất
                 let bestSubTask = mergedSubTasks[0];
                 for (let i = 1; i < mergedSubTasks.length; i++) {
                   const candidate = mergedSubTasks[i];
@@ -530,7 +576,6 @@ export function SettingTab({ rules}: SettingTabProps) {
                 finalSubTasks = [bestSubTask];
               }
             } else {
-              // Deduplicate subtasks by party for project-level delegations: if same party has duplicate subtasks, keep the active/latest one
               const partyMap = new Map<string, any>();
               const nonPartySubTasks: any[] = [];
               mergedSubTasks.forEach((st: any) => {
@@ -603,15 +648,15 @@ export function SettingTab({ rules}: SettingTabProps) {
           }
 
           useAppStore.getState().setToast({
-            title: "Dọn dẹp thành công",
-            message: `Đã xóa ${delCount} bản ghi ủy quyền trùng lặp/thừa. Tổng bản ghi còn lại: ${snap.docs.length - delCount}.`,
+            title: "Deduplication Completed",
+            message: `Successfully removed ${delCount} duplicate delegation entries. Total entries remaining: ${snap.docs.length - delCount}.`,
             type: "success"
           });
         } catch (e) {
           console.error("Deduplicate delegations error:", e);
           useAppStore.getState().setToast({
-            title: "Lỗi",
-            message: "Có lỗi xảy ra khi dọn dẹp bản ghi ủy quyền trùng lặp.",
+            title: "Error",
+            message: "Failed to deduplicate delegation groups.",
             type: "error"
           });
         } finally {
@@ -625,8 +670,8 @@ export function SettingTab({ rules}: SettingTabProps) {
     if (!isAdmin) return;
     setConfirmModal({
       isOpen: true,
-      title: "Đồng bộ chuẩn hóa Năm (Number Format)",
-      message: "Hệ thống sẽ quét toàn bộ dữ liệu (Dự án, Công việc, Chi phí) và chuyển đổi các trường năm (year, projectYear) dạng chuỗi ('2026', '2027'...) thành dạng số (2026, 2027...) để đồng nhất 100%. Bạn có muốn tiếp tục?",
+      title: "Standardize Fiscal Year Format",
+      message: "The system will scan all Projects, Tasks, Costs, and Delegations to convert string year values ('2026', '2027') to uniform number format (2026, 2027). Do you want to proceed?",
       onConfirm: async () => {
         setIsStandardizingYears(true);
         try {
@@ -657,12 +702,12 @@ export function SettingTab({ rules}: SettingTabProps) {
                   totalUpdated++;
                   if (count >= 400) {
                     try {
-        batch.commit().catch(e => console.error("Batch commit failed", e));
-      } catch (error: any) {
-        console.error("Batch commit failed", error);
-        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        return;
-      }
+                      await batch.commit();
+                    } catch (error: any) {
+                      console.error("Batch commit failed", error);
+                      useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied.", type: "error" });
+                      return;
+                    }
                     batch = writeBatch(db);
                     count = 0;
                   }
@@ -671,24 +716,26 @@ export function SettingTab({ rules}: SettingTabProps) {
             }
             if (count > 0) {
               try {
-        batch.commit().catch(e => console.error("Batch commit failed", e));
-      } catch (error: any) {
-        console.error("Batch commit failed", error);
-        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        return;
-      }
+                await batch.commit();
+              } catch (error: any) {
+                console.error("Batch commit failed", error);
+                useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied.", type: "error" });
+                return;
+              }
             }
           }
 
           useAppStore.getState().setToast({
-            title: "Thành công",
-            message: `Đã chuẩn hóa thành công ${totalUpdated} bản ghi sang định dạng số.`
+            title: "Standardization Completed",
+            message: `Successfully standardized ${totalUpdated} records to number format.`,
+            type: "success"
           });
         } catch (e) {
           console.error("Standardize years error:", e);
           useAppStore.getState().setToast({
-            title: "Lỗi",
-            message: "Có lỗi xảy ra khi chuẩn hóa dữ liệu năm."
+            title: "Error",
+            message: "Failed to standardize fiscal year values.",
+            type: "error"
           });
         } finally {
           setIsStandardizingYears(false);
@@ -701,12 +748,11 @@ export function SettingTab({ rules}: SettingTabProps) {
     if (!isAdmin) return;
     setConfirmModal({
       isOpen: true,
-      title: "Vá lỗi thiếu Project Year",
-      message: "Hệ thống sẽ quét các dữ liệu (Tasks, Costs, Delegations) đang bị rỗng projectYear. Nếu projectCode khớp với một Project mẹ, hệ thống sẽ lấy năm của Project mẹ điền vào. Bạn có muốn tiếp tục?",
+      title: "Repair Missing Project Years",
+      message: "The system will scan Tasks, Costs, and Delegations with empty projectYear values and backfill the year from their matching parent Projects. Do you want to proceed?",
       onConfirm: async () => {
         setIsFixingMissingYears(true);
         try {
-          // 1. Lấy tất cả projects để build map projectCode -> year
           const projRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
           const projSnap = await getDocs(projRef);
           const projectYearMap = new Map<string, number>();
@@ -732,7 +778,6 @@ export function SettingTab({ rules}: SettingTabProps) {
 
             for (const d of snap.docs) {
               const data = d.data();
-              // Missing or invalid projectYear
               const rawYear = data[item.field];
               if (rawYear === undefined || rawYear === null || rawYear === '' || isNaN(Number(rawYear))) {
                 const code = data.projectCode || data.code;
@@ -745,7 +790,7 @@ export function SettingTab({ rules}: SettingTabProps) {
                   totalUpdated++;
                   if (count >= 400) {
                     try {
-                      batch.commit().catch(e => console.error("Batch commit failed", e));
+                      await batch.commit();
                     } catch (error: any) {
                       console.error("Batch commit failed", error);
                       useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied.", type: "error" });
@@ -759,7 +804,7 @@ export function SettingTab({ rules}: SettingTabProps) {
             }
             if (count > 0) {
               try {
-                batch.commit().catch(e => console.error("Batch commit failed", e));
+                await batch.commit();
               } catch (error: any) {
                 console.error("Batch commit failed", error);
                 useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied.", type: "error" });
@@ -769,13 +814,13 @@ export function SettingTab({ rules}: SettingTabProps) {
           }
 
           useAppStore.getState().setToast({
-            title: "Thành công",
-            message: `Đã tự động vá projectYear cho ${totalUpdated} bản ghi.`,
+            title: "Repair Completed",
+            message: `Successfully backfilled projectYear for ${totalUpdated} records.`,
             type: "success"
           });
         } catch (error: any) {
           console.error("Error fixing missing years", error);
-          useAppStore.getState().setToast({ title: "Lỗi", message: error.message || "Có lỗi xảy ra", type: "error" });
+          useAppStore.getState().setToast({ title: "Error", message: error?.message || "An error occurred", type: "error" });
         } finally {
           setIsFixingMissingYears(false);
         }
@@ -788,10 +833,10 @@ export function SettingTab({ rules}: SettingTabProps) {
     setConfirmModal({
       isOpen: true,
       title: "Archive Cold Storage (2024, 2025)",
-      message: "Hệ thống sẽ lấy toàn bộ dữ liệu Projects, Tasks, Costs, Delegations của các năm cũ (2024, 2025) và tạo file JSON nén lưu vào Firebase Storage. Tác vụ này giúp giảm tải Firestore Reads khi người dùng chọn 'All Years'. Bạn có muốn tiếp tục?",
+      message: "The system will extract all Projects, Tasks, Costs, and Delegations from archived years (2024, 2025) and upload a compressed JSON bundle to Firebase Storage. This optimizes Firestore reads when selecting 'All Years'. Do you want to proceed?",
       onConfirm: async () => {
         setIsArchiving(true);
-        useAppStore.getState().setToast({ title: "Bắt đầu...", message: "Đang tạo archive data cho các năm cũ. Vui lòng đợi...", type: "info" });
+        useAppStore.getState().setToast({ title: "Archiving...", message: "Generating archive bundle for historical years. Please wait...", type: "info" });
         try {
           const { ARCHIVED_YEARS } = await import("../lib/utils");
           const collectionsToArchive = [
@@ -826,13 +871,13 @@ export function SettingTab({ rules}: SettingTabProps) {
           });
           
           useAppStore.getState().setToast({ 
-            title: "Thành công!", 
-            message: `Tạo Archive thành công! Đã lưu trữ ${Object.values(archiveData).reduce((acc: number, arr: any) => acc + arr.length, 0)} bản ghi.`, 
+            title: "Archived Successfully", 
+            message: `Created archive containing ${Object.values(archiveData).reduce((acc: number, arr: any) => acc + arr.length, 0)} records.`, 
             type: "success" 
           });
         } catch (e) {
           console.error("Archive error:", e);
-          useAppStore.getState().setToast({ title: "Lỗi", message: "Có lỗi khi tạo archive data.", type: "error" });
+          useAppStore.getState().setToast({ title: "Error", message: "Failed to create archive data.", type: "error" });
         } finally {
           setIsArchiving(false);
         }
@@ -967,71 +1012,71 @@ export function SettingTab({ rules}: SettingTabProps) {
           <button 
             onClick={handleStandardizeYears}
             disabled={isStandardizingYears}
-            title="Chuẩn hóa toàn bộ trường năm (year, projectYear) sang định dạng số (number)"
+            title="Convert all fiscal year fields (year, projectYear) to standard number format"
             className="px-5 py-2.5 rounded-lg border border-indigo-200 dark:border-indigo-900/40 bg-white dark:bg-[#1e1e20] hover:bg-indigo-50 dark:hover:bg-indigo-950/20 transition-colors flex items-center gap-3 font-medium text-indigo-700 dark:text-indigo-400 shadow-sm text-sm disabled:opacity-50"
           >
             <Calendar className="w-4 h-4 text-indigo-500" />
-            {isStandardizingYears ? "Đang xử lý..." : "Chuẩn hóa Năm (Số)"}
+            {isStandardizingYears ? "Standardizing..." : "Standardize Years (Num)"}
           </button>
 
           <button 
             onClick={handleFixMissingTaskYears}
             disabled={isFixingMissingYears}
-            title="Tự động quét các tasks, costs bị trống năm và gán năm của project mẹ"
+            title="Scan tasks and costs with empty years and backfill from parent projects"
             className="px-5 py-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900/40 bg-white dark:bg-[#1e1e20] hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-3 font-medium text-emerald-700 dark:text-emerald-400 shadow-sm text-sm disabled:opacity-50"
           >
             <Calendar className="w-4 h-4 text-emerald-500" />
-            {isFixingMissingYears ? "Đang vá lỗi..." : "Vá lỗi thiếu Project Year"}
+            {isFixingMissingYears ? "Repairing..." : "Repair Missing Years"}
           </button>
 
           <button 
             onClick={handleArchiveData}
             disabled={isArchiving}
-            title="Tạo file nén dữ liệu các năm cũ (2024, 2025) lưu vào Storage để giảm Firestore reads"
+            title="Compress and archive historical years (2024, 2025) to Firebase Storage"
             className="px-5 py-2.5 rounded-lg border border-blue-200 dark:border-blue-900/40 bg-white dark:bg-[#1e1e20] hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors flex items-center gap-3 font-medium text-blue-700 dark:text-blue-400 shadow-sm text-sm disabled:opacity-50"
           >
             <FolderOutput className="w-4 h-4 text-blue-500" />
-            {isArchiving ? "Đang nén..." : "Tạo Archive Data"}
+            {isArchiving ? "Archiving..." : "Archive Historical Data"}
           </button>
 
           <button 
             onClick={handleDeduplicateDelegationGroups}
             disabled={isDeduplicatingDelegations}
-            title="Gộp và xóa các bản ghi ủy quyền trùng lặp trên Firestore để giảm tải lượt đọc"
+            title="Merge duplicate delegation entries on Firestore to optimize read performance"
             className="px-5 py-2.5 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-white dark:bg-[#1e1e20] hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors flex items-center gap-3 font-medium text-purple-700 dark:text-purple-400 shadow-sm text-sm disabled:opacity-50"
           >
             <FolderOutput className="w-4 h-4 text-purple-500" />
-            {isDeduplicatingDelegations ? "Đang xử lý..." : "Dọn dẹp Ủy quyền trùng lặp"}
+            {isDeduplicatingDelegations ? "Deduplicating..." : "Deduplicate Delegations"}
           </button>
 
           <button 
             onClick={handleSyncAllTaskCounts}
             disabled={isSyncingTaskCounts}
-            title="Quét toàn bộ dự án và task trên Firestore để tính và cập nhật taskCount, tiến độ trực tiếp vào Dự án (Chạy 1 lần)"
+            title="Recalculate task counts, progress, and actual dates directly onto Project documents"
             className="px-5 py-2.5 rounded-lg border border-teal-200 dark:border-teal-900/40 bg-white dark:bg-[#1e1e20] hover:bg-teal-50 dark:hover:bg-teal-950/20 transition-colors flex items-center gap-3 font-medium text-teal-700 dark:text-teal-400 shadow-sm text-sm disabled:opacity-50"
           >
             <Sparkles className="w-4 h-4 text-teal-500" />
-            {isSyncingTaskCounts ? "Đang cập nhật Task Counts..." : "Cập nhật Task Counts toàn bộ Dự án"}
+            {isSyncingTaskCounts ? "Syncing..." : "Sync Project Task Counts"}
           </button>
 
           <button 
             onClick={handleScanOrphanData}
             disabled={isScanningOrphans}
-            title="Quét và xóa dữ liệu mồ côi (bản ghi thiếu 1 trong 3 yếu tố: Year, Store, Project Code)"
+            title="Scan relational orphans and deeply clean storage files"
             className="px-5 py-2.5 rounded-lg border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-[#1e1e20] hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors flex items-center gap-3 font-medium text-rose-700 dark:text-rose-400 shadow-sm text-sm disabled:opacity-50"
           >
             <Trash2 className="w-4 h-4 text-rose-500" />
-            {isScanningOrphans ? "Đang quét dữ liệu mồ côi..." : "Quét & Dọn dữ liệu Mồ côi"}
+            {isScanningOrphans ? "Auditing Database..." : "Scan & Clean Orphan Data"}
           </button>
 
           <button 
             onClick={handleConvertToHashFormat}
             disabled={isConvertingToHash}
-            title="Quét toàn bộ công việc và chuyển đổi dấu '-' thành '#' cho Subtask Code và chuỗi Predecessor"
+            title="Convert '-' to '#' separator in subtask codes and predecessor references"
             className="px-5 py-2.5 rounded-lg border border-cyan-200 dark:border-cyan-900/40 bg-white dark:bg-[#1e1e20] hover:bg-cyan-50 dark:hover:bg-cyan-950/20 transition-colors flex items-center gap-3 font-medium text-cyan-700 dark:text-cyan-400 shadow-sm text-sm disabled:opacity-50 cursor-pointer"
           >
             <Hash className="w-4 h-4 text-cyan-500" />
-            {isConvertingToHash ? "Đang chuyển đổi..." : "Chuyển '-' sang '#' (Subtask & Pred)"}
+            {isConvertingToHash ? "Converting..." : "Standardize Subtask Codes (#)"}
           </button>
         </div>
       )}
