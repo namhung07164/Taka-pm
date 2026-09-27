@@ -3185,6 +3185,7 @@ function LiveCanvas({
               }
             }}
             onOpenMiniGantt={(project) => {
+              isPinnedRef.current = true;
               setMiniGanttProject(project);
             }}
             onEditProject={(project, isReadOnly, tab) => {

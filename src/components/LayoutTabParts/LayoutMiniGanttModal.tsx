@@ -12,6 +12,7 @@ import {
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
+import { sortGroupTasks } from '../../lib/ganttUtils';
 import { QuickNavButton } from '../QuickNavButton';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -102,31 +103,27 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Filter tasks for this project (Prioritizes Zustand cache, falls back to embedded project.taskSummaries)
-  const projectTasks = useMemo(() => {
+  // Raw tasks for this project (Prioritizes Zustand cache, falls back to embedded project.taskSummaries)
+  const rawProjectTasks = useMemo(() => {
     if (!project) return [];
     const pId = project.id;
-    const pCode = (project.code || '').trim().toUpperCase();
+    const pCode = (project.code || '').trim().toLowerCase();
+    const pYear = project.year ? String(project.year).trim() : '';
+    const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
 
     const matchedZustandTasks = tasks.filter(t => {
       if (t.isDeleted) return false;
       if (pId && t.projectId === pId) return true;
-      if (pCode && t.projectCode && t.projectCode.trim().toUpperCase() === pCode) return true;
+      if (pCode && String(t.projectCode || '').trim().toLowerCase() === pCode) {
+        if (pYear && t.projectYear && String(t.projectYear).trim() !== pYear) return false;
+        if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore) return false;
+        return true;
+      }
       return false;
     });
 
     if (matchedZustandTasks.length > 0) {
-      return matchedZustandTasks.sort((a, b) => {
-        if (a.orderIndex !== undefined && b.orderIndex !== undefined) {
-          return a.orderIndex - b.orderIndex;
-        }
-        if (a.taskCodePhu && b.taskCodePhu) {
-          return a.taskCodePhu.localeCompare(b.taskCodePhu, undefined, { numeric: true });
-        }
-        const dateA = a.start ? new Date(a.start).getTime() : 0;
-        const dateB = b.start ? new Date(b.start).getTime() : 0;
-        return dateA - dateB;
-      });
+      return matchedZustandTasks;
     }
 
     // 0-Read Fallback: Use embedded taskSummaries already present inside the Project document
@@ -142,12 +139,89 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
         approval: ts.approval,
         party: ts.party,
         projectCode: project.code,
-        projectId: project.id
+        projectId: project.id,
+        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx
       })) as Task[];
     }
 
     return [];
   }, [tasks, project]);
+
+  // Exact GanttTab task ordering with sortGroupTasks and parent-child tree hierarchy
+  const orderedGanttRows = useMemo(() => {
+    if (rawProjectTasks.length === 0) return [];
+
+    // 1. Sort tasks according to GanttTab standard algorithm (orderIndex, fallback to stable id)
+    const sortedRawTasks = sortGroupTasks(rawProjectTasks);
+
+    // 2. Build parent-child tree mapping (modular tasks) with circular reference protection
+    const childTasksMap = new Map<string, Task[]>();
+    const isChildSet = new Set<string>();
+    const ptMap = new Map(sortedRawTasks.map(pt => [String(pt.id), pt]));
+
+    sortedRawTasks.forEach((t) => {
+      if (t.parentTaskId) {
+        const currParentId = String(t.parentTaskId);
+        if (ptMap.has(currParentId)) {
+          let rootParentId = currParentId;
+          const visited = new Set<string>([String(t.id), rootParentId]);
+          while (true) {
+            const pTask = ptMap.get(rootParentId);
+            if (pTask && pTask.parentTaskId && !visited.has(String(pTask.parentTaskId))) {
+              if (ptMap.has(String(pTask.parentTaskId))) {
+                rootParentId = String(pTask.parentTaskId);
+                visited.add(rootParentId);
+                continue;
+              }
+            }
+            break;
+          }
+          isChildSet.add(String(t.id));
+          const list = childTasksMap.get(rootParentId) || [];
+          list.push(t);
+          childTasksMap.set(rootParentId, list);
+        }
+      }
+    });
+
+    type MiniGanttRow = {
+      task: Task;
+      isChild: boolean;
+      hasChildren: boolean;
+      childCount: number;
+    };
+
+    const rows: MiniGanttRow[] = [];
+
+    sortedRawTasks.forEach((t) => {
+      const tIdStr = String(t.id);
+      if (isChildSet.has(tIdStr)) return; // Subtasks are rendered directly beneath their parent
+
+      const rawChildren = childTasksMap.get(tIdStr) || [];
+      const children = sortGroupTasks(rawChildren);
+      const hasChildren = children.length > 0;
+
+      rows.push({
+        task: t,
+        isChild: false,
+        hasChildren,
+        childCount: children.length
+      });
+
+      if (hasChildren) {
+        children.forEach((c) => {
+          rows.push({
+            task: c,
+            isChild: true,
+            hasChildren: false,
+            childCount: 0
+          });
+        });
+      }
+    });
+
+    return rows;
+  }, [rawProjectTasks]);
 
   // Calculate timeline bounding dates
   const timelineBounds = useMemo(() => {
@@ -160,7 +234,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     if (projFinish) dates.push(projFinish.getTime());
 
     // Task dates
-    projectTasks.forEach(t => {
+    rawProjectTasks.forEach(t => {
       const s = parseDateTime(t.start);
       const f = parseDateTime(t.finish);
       if (s) dates.push(s.getTime());
@@ -185,7 +259,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
       finishDate: new Date(maxTime),
       totalDays
     };
-  }, [project, projectTasks]);
+  }, [project, rawProjectTasks]);
 
   // Calculate Today position on timeline (Today Line)
   const todayData = useMemo(() => {
@@ -216,13 +290,13 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
   // Overall task stats matching GanttTab logic
   const stats = useMemo(() => {
-    const total = projectTasks.length;
+    const total = rawProjectTasks.length;
     let completed = 0;
     let inProgress = 0;
     let upcoming = 0;
     let milestone = 0;
 
-    projectTasks.forEach(t => {
+    rawProjectTasks.forEach(t => {
       const rawDur = parseFloat(String(t.duration || ''));
       if (!isNaN(rawDur) && rawDur === 0) {
         milestone++;
@@ -245,8 +319,14 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
       }
     });
 
-    return { total, completed, inProgress, upcoming, milestone };
-  }, [projectTasks]);
+    return {
+      total,
+      completed,
+      inProgress,
+      upcoming,
+      milestone
+    };
+  }, [rawProjectTasks]);
 
   if (!isOpen || !project) return null;
 
@@ -392,7 +472,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
           {/* 3. Gantt Chart Area */}
           <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[55vh] flex flex-col bg-white dark:bg-[#1a1a1c]">
-            {projectTasks.length === 0 ? (
+            {orderedGanttRows.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
                 <Layers className="w-10 h-10 mb-2 opacity-30 text-slate-400" />
                 <div className="font-semibold text-sm text-slate-600 dark:text-slate-300">
@@ -436,7 +516,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
                 {/* Task Rows */}
                 <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                  {projectTasks.map((t, idx) => {
+                  {orderedGanttRows.map(({ task: t, isChild, hasChildren }, idx) => {
                     const tStart = parseDateTime(t.start);
                     const tFinish = parseDateTime(t.finish);
                     const rawDuration = parseFloat(String(t.duration || ''));
@@ -477,16 +557,27 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                     return (
                       <div 
                         key={t.id || idx}
-                        className="flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group h-9"
+                        className={cn(
+                          "flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group h-9",
+                          isChild && "bg-slate-50/40 dark:bg-[#1a1a1c]/40"
+                        )}
                       >
                         {/* Task Info Cell: Name & Dates (Start: Blue, Finish: Pink) */}
                         <div className="w-[240px] sm:w-[270px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
-                          <span 
-                            className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1"
-                            title={`${t.name}${sFormatted || fFormatted ? ` (${sFormatted || ''} - ${fFormatted || ''})` : ''}`}
-                          >
-                            {t.name}
-                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {isChild && (
+                              <span className="text-slate-400 dark:text-slate-500 font-mono text-[11px] select-none pl-1.5 shrink-0">↳</span>
+                            )}
+                            <span 
+                              className={cn(
+                                "text-xs truncate flex-1",
+                                isChild ? "text-slate-600 dark:text-slate-300 font-normal" : "text-slate-800 dark:text-slate-100 font-medium"
+                              )}
+                              title={`${t.name}${sFormatted || fFormatted ? ` (${sFormatted || ''} - ${fFormatted || ''})` : ''}`}
+                            >
+                              {t.name}
+                            </span>
+                          </div>
                           {(sFormatted || fFormatted) && (
                             <span 
                               className="font-mono text-[10px] shrink-0 tabular-nums font-semibold flex items-center gap-0.5"
