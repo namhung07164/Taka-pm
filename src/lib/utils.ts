@@ -657,11 +657,25 @@ export function enrichProjects(
 
     const projectTasks = Array.from(matchedTaskMap.values());
 
-    const taskSummaries = projectTasks.length > 0
-      ? projectTasks.filter(t => t.start && t.finish && t.name).map(t => ({
+    const sortedProjTasks = [...projectTasks].sort((a, b) => {
+      const valA = a.orderIndex !== undefined ? a.orderIndex : 0;
+      const valB = b.orderIndex !== undefined ? b.orderIndex : 0;
+      if (valA === valB) return String(a.id || '').localeCompare(String(b.id || ''));
+      return valA - valB;
+    });
+
+    const taskSummaries = sortedProjTasks.length > 0
+      ? sortedProjTasks.filter(t => t.start && t.finish && t.name).map((t, idx) => ({
           name: t.name!,
           start: t.start!,
-          finish: t.finish!
+          finish: t.finish!,
+          orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
+          duration: t.duration,
+          parentTaskId: t.parentTaskId,
+          taskCodePhu: t.taskCodePhu,
+          runningStatus: t.runningStatus,
+          approval: t.approval,
+          party: t.party
         }))
       : (p.taskSummaries || []);
 

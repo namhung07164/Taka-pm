@@ -415,17 +415,30 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       className={cn(
         "fixed z-[120] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
         "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
-        "overflow-y-auto custom-scrollbar"
+        "overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y"
       )}
       style={{ 
         position: 'fixed',
-        transformOrigin: 'top left'
+        transformOrigin: 'top left',
+        touchAction: 'pan-y'
       }}
       onClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest('.cursor-grab, .modal-handle')) {
+          e.stopPropagation();
+        }
+      }}
     >
       {/* 1. Top Bar: Badges (MD Status & Act Status) + Action Buttons (Drag, QuickNav, Close) */}
       <div 
-        onPointerDown={handlePointerDown}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          handlePointerDown(e);
+        }}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}

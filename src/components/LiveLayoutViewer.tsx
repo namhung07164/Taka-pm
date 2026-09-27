@@ -3233,12 +3233,13 @@ function LiveCanvas({
             x={stagePos.x}
             y={stagePos.y}
             pixelRatio={pixelRatio}
-            draggable
+            draggable={!isProjectModalOpen && !miniGanttProject}
             style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
             onDragStart={handleDragStart}
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
             onClick={(e) => {
+              if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               if (e.target === stageRef.current) {
                 isPinnedRef.current = false;
@@ -3246,6 +3247,7 @@ function LiveCanvas({
               }
             }}
             onTap={(e) => {
+              if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               if (e.target === stageRef.current) {
                 isPinnedRef.current = false;
@@ -3253,6 +3255,7 @@ function LiveCanvas({
               }
             }}
             onDblClick={() => {
+              if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               const stage = stageRef.current;
               if (!stage) return;
@@ -3282,6 +3285,7 @@ function LiveCanvas({
               });
             }}
             onTouchStart={(e) => {
+              if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               if (e.evt.touches.length === 2) {
                 const touch1 = e.evt.touches[0];
@@ -3358,6 +3362,7 @@ function LiveCanvas({
               isInteractingRef.current = false;
             }}
             onWheel={(e) => {
+              if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               e.evt.preventDefault();
               stopInertia();
               const stage = stageRef.current;

@@ -357,8 +357,17 @@ export const ProjectChat = React.memo(function ProjectChat({
   };
 
   return (
-    <div className="flex flex-col h-full flex-grow overflow-hidden relative">
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+    <div 
+      className="flex flex-col h-full flex-grow overflow-hidden relative overscroll-contain"
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
+      <div 
+        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 overscroll-contain touch-pan-y custom-scrollbar"
+        style={{ touchAction: 'pan-y' }}
+      >
         {/* Load older messages button if more comments exist (Pagination / Limit to Last 25) */}
         {localComments.length > visibleCount && (
           <div className="flex justify-center pb-2">

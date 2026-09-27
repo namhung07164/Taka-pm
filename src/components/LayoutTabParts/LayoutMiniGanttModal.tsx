@@ -7,7 +7,8 @@ import {
   BarChartHorizontal, 
   Calendar, 
   ExternalLink,
-  Layers
+  Layers,
+  Loader2
 } from 'lucide-react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -55,30 +56,23 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
   const nodeRef = useRef<HTMLDivElement>(null);
   const tasks = useAppStore(state => state.tasks);
   const isTasksRequested = useAppStore(state => state.isTasksRequested);
+  const isTasksLoading = useAppStore(state => state.isTasksLoading);
   const setIsTasksRequested = useAppStore(state => state.setIsTasksRequested);
   const expandedProjectIds = useAppStore(state => state.expandedProjectIds);
   const setExpandedProjectIds = useAppStore(state => state.setExpandedProjectIds);
   const setActiveTab = useAppStore(state => state.setActiveTab);
   const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
 
-  // Zero-Read Guard: Only request tasks from Firestore if NO embedded taskSummaries and NO cached tasks in Zustand
+  // Request tasks for this project on-demand when Mini Gantt opens
   useEffect(() => {
     if (!project?.id) return;
-    const hasCachedTasks = tasks.some(t => 
-      t.projectId === project.id || 
-      (t.projectCode && project.code && t.projectCode.trim().toUpperCase() === project.code.trim().toUpperCase())
-    );
-    const hasSummaries = (project.taskSummaries?.length ?? 0) > 0;
     
-    // If we already have tasks in cache or embedded summaries, DO NOT trigger any Firestore queries! (0 Reads)
-    if (hasCachedTasks || hasSummaries) {
-      return;
-    }
-
-    // If neither exists, load only this project's tasks on-demand
+    // Ensure task listener engine is active
     if (!isTasksRequested) {
       setIsTasksRequested(true);
     }
+    
+    // Add this project to expandedProjectIds so useFirebaseData attaches a snapshot listener for this project's tasks
     if (!expandedProjectIds.includes(project.id)) {
       setExpandedProjectIds([...expandedProjectIds, project.id]);
     }
@@ -90,7 +84,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
         useAppStore.getState().setExpandedProjectIds(current.filter(id => id !== project.id));
       }
     };
-  }, [project?.id, project?.code, project?.taskSummaries, tasks, isTasksRequested, expandedProjectIds, setIsTasksRequested, setExpandedProjectIds]);
+  }, [project?.id, isTasksRequested, expandedProjectIds, setIsTasksRequested, setExpandedProjectIds]);
 
   // Handle ESC key to close (AGENTS.md Rule 6)
   useEffect(() => {
@@ -344,7 +338,13 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] pointer-events-none flex items-center justify-center p-3 sm:p-5">
+    <div 
+      className="fixed inset-0 z-[9999] pointer-events-none flex items-center justify-center p-3 sm:p-5 overscroll-contain"
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
       {/* Semi-transparent backdrop for focus */}
       <div 
         onClick={(e) => {
@@ -354,7 +354,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
-        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-xs pointer-events-auto transition-opacity cursor-pointer" 
+        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-xs pointer-events-auto transition-opacity cursor-pointer overscroll-contain" 
       />
 
       {/* Draggable Window (AGENTS.md Rule 11) */}
@@ -369,7 +369,10 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
-          className="relative pointer-events-auto bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl flex flex-col w-full max-w-3xl max-h-[85vh] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
+          onTouchMove={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          className="relative pointer-events-auto bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl flex flex-col w-full max-w-3xl max-h-[85vh] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150 overscroll-contain"
           style={{ cursor: 'default' }}
         >
           {/* 1. Header (Handle) */}
@@ -474,13 +477,24 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
           <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[55vh] flex flex-col bg-white dark:bg-[#1a1a1c]">
             {orderedGanttRows.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
-                <Layers className="w-10 h-10 mb-2 opacity-30 text-slate-400" />
-                <div className="font-semibold text-sm text-slate-600 dark:text-slate-300">
-                  No tasks registered for this project yet
-                </div>
-                <div className="text-xs text-slate-400 mt-1 max-w-sm">
-                  Tasks will appear here once defined in Task Detail or Gantt chart.
-                </div>
+                {isTasksLoading ? (
+                  <>
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-2" />
+                    <div className="font-semibold text-sm text-slate-600 dark:text-slate-300">
+                      Loading project tasks...
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Layers className="w-10 h-10 mb-2 opacity-30 text-slate-400" />
+                    <div className="font-semibold text-sm text-slate-600 dark:text-slate-300">
+                      No tasks registered for this project yet
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1 max-w-sm">
+                      Tasks will appear here once defined in Task Detail or Gantt chart.
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <div className="min-w-[550px] flex flex-col">

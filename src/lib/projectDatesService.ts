@@ -140,12 +140,26 @@ export function calculateProjectComputedDates(
     ? computeActProgressPercent(projectTasks, delegationGroups)
     : (project.computedActProgress ?? 0);
 
-  const taskSummaries = (projectTasks || [])
+  const sortedProjTasks = [...(projectTasks || [])].sort((a, b) => {
+    const valA = a.orderIndex !== undefined ? a.orderIndex : 0;
+    const valB = b.orderIndex !== undefined ? b.orderIndex : 0;
+    if (valA === valB) return String(a.id || '').localeCompare(String(b.id || ''));
+    return valA - valB;
+  });
+
+  const taskSummaries = sortedProjTasks
     .filter(t => t.start && t.finish && t.name)
-    .map(t => ({
+    .map((t, idx) => ({
       name: t.name!,
       start: t.start!,
-      finish: t.finish!
+      finish: t.finish!,
+      orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
+      duration: t.duration,
+      parentTaskId: t.parentTaskId,
+      taskCodePhu: t.taskCodePhu,
+      runningStatus: t.runningStatus,
+      approval: t.approval,
+      party: t.party
     }));
 
   const taskCount = projectTasks && projectTasks.length > 0 
