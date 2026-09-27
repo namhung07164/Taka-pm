@@ -120,10 +120,25 @@ export const getUserAllowedStores = (
   currentUser: AppUser | null | undefined,
 ): string[] => {
   if (!currentUser || currentUser.role === "admin") return ["HCM", "HN"];
+
+  // CP & Manager roles default to both stores unless explicitly disabled (set to false)
+  if (currentUser.role === "CP" || currentUser.role === "Manager") {
+    const list: string[] = [];
+    if (currentUser.storePermissions?.hcm !== false) list.push("HCM");
+    if (currentUser.storePermissions?.hn !== false) list.push("HN");
+    return list.length > 0 ? list : ["HCM", "HN"];
+  }
+
   const list: string[] = [];
   if (currentUser.storePermissions?.hcm) list.push("HCM");
   if (currentUser.storePermissions?.hn) list.push("HN");
-  return list;
+
+  // Default to all stores if storePermissions is not explicitly configured
+  if (list.length === 0 && (!currentUser.storePermissions || (currentUser.storePermissions.hcm === undefined && currentUser.storePermissions.hn === undefined))) {
+    return ["HCM", "HN"];
+  }
+
+  return list.length > 0 ? list : ["HCM", "HN"];
 };
 
 export const getEffectiveStoreFilter = (
