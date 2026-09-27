@@ -544,8 +544,9 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
       - **Nút Xem Nhanh Biểu Đồ Mini Gantt (Modular Mini Gantt Timeline Button)**:
         * **Vị trí**: Đặt ngay bên cạnh nút Bình luận `[ 💬 ]` trong bảng thông tin `LayoutUnitTooltip` với nút bấm màu tím indigo nổi bật: `[ 📊 Gantt ]`.
         * **Cửa sổ Timeline Kéo thả (Draggable Window)**: Nhấp vào nút `[ 📊 Gantt ]` sẽ mở ra cửa sổ **Mini Gantt Timeline** độc lập, hỗ trợ kéo thả tự do (`.modal-handle`, `cursor-grab`) để di chuyển khắp màn hình mà không che khuất mặt bằng bản vẽ.
-        * **Trực quan hóa Tiến độ Công việc**:
+        * **Trực quan hóa Tiến độ Công việc & Đường Ngày Hiện Tại (Today Line)**:
           - Hiển thị dải thời gian tổng (`Timeline: Start → Finish`) và tổng số ngày thực hiện của gian hàng.
+          - **Đường Ngày Hiện Tại (Today Line Marker)**: Tự động hiển thị một huy hiệu đánh dấu đỏ/hồng nổi bật `[ TODAY (Sep 27) ]` ở thanh thước thời gian (Timeline Header) và một đường kẻ chỉ báo dọc màu đỏ hồng chạy xuyên suốt toàn bộ các hàng công việc (Task Rows). Giúp người dùng ngay lập tức đối chiếu trực quan các công việc đã qua (Past), công việc đang diễn ra hôm nay (In Progress) hay sắp tới (Upcoming).
           - Liệt kê gọn gàng danh sách các hạng mục công việc (bỏ mã task rườm rà và nhãn Pending thừa thãi), hiển thị ngày bắt đầu và kết thúc dạng tháng ngày chuẩn quốc tế gọn đẹp (ví dụ: `Dec 15 - Dec 20` hoặc `Dec 20`) với mã màu đồng bộ tab General (**Start màu xanh dương Blue**, **Finish màu hồng Pink**), thời lượng số ngày và thanh bar tiến độ trực quan theo thời gian thực.
           - Tự động phân màu thanh Gantt và biểu tượng đồng bộ 100% với Tab Gantt chuẩn: Xanh lá (`Completed / bg-green-500`), Xanh dương (`On process / bg-blue-500`), Xám Slate (`Upcoming / bg-slate-700 dark:bg-slate-500`), Hình thoi màu Cam (`Milestone / bg-orange-500`), và Xám nhạt (`Canceled / bg-slate-400`).
         * **Zero-Read & Tải Lười JIT (Rule 8 & 12)**: Tải lười qua `React.lazy`, chỉ mount khi mở (`{showMiniGantt && <LayoutMiniGanttModal />}`) và đọc trực tiếp từ bộ nhớ đệm Zustand, không phát sinh thêm lượt đọc Firestore.

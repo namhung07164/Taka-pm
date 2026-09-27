@@ -187,6 +187,33 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     };
   }, [project, projectTasks]);
 
+  // Calculate Today position on timeline (Today Line)
+  const todayData = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTime = today.getTime();
+    
+    const startTime = new Date(timelineBounds.startDate);
+    startTime.setHours(0, 0, 0, 0);
+    
+    const finishTime = new Date(timelineBounds.finishDate);
+    finishTime.setHours(23, 59, 59, 999);
+
+    const totalDays = Math.max(1, timelineBounds.totalDays);
+    const offsetDays = (todayTime - startTime.getTime()) / 86400000;
+    const percent = (offsetDays / totalDays) * 100;
+
+    const isInTimeline = percent >= 0 && percent <= 100;
+    const clampedPercent = Math.min(100, Math.max(0, percent));
+
+    return {
+      today,
+      formattedToday: formatMonthDay(today),
+      percent: clampedPercent,
+      isInTimeline
+    };
+  }, [timelineBounds]);
+
   // Overall task stats matching GanttTab logic
   const stats = useMemo(() => {
     const total = projectTasks.length;
@@ -326,6 +353,11 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
             {/* Right: Task Status Badges matching GanttTab */}
             <div className="flex items-center gap-1.5 flex-wrap">
+              {todayData.isInTimeline && (
+                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-rose-400 border border-red-200 dark:border-red-800/80">
+                  Today: {todayData.formattedToday}
+                </span>
+              )}
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 {stats.total} Tasks
               </span>
@@ -374,10 +406,25 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                     <span className="font-mono text-[9px] text-slate-400 font-medium">Dates (Start - End)</span>
                   </div>
                   {/* Right Column: Time Scale Markers */}
-                  <div className="flex-1 px-3 py-1.5 flex justify-between uppercase tracking-wider">
+                  <div className="flex-1 px-3 py-1.5 relative flex justify-between uppercase tracking-wider overflow-visible">
                     <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{formatMonthDay(timelineBounds.startDate)}</span>
                     <span className="hidden sm:inline">Timeline Progress</span>
                     <span className="font-mono font-bold text-pink-600 dark:text-pink-400">{formatMonthDay(timelineBounds.finishDate)}</span>
+
+                    {/* Today Pin Header Marker */}
+                    {todayData.isInTimeline && (
+                      <div 
+                        className="absolute top-0 bottom-0 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20"
+                        style={{ left: `calc(12px + (100% - 24px) * ${todayData.percent / 100})` }}
+                        title={`Today: ${todayData.formattedToday}`}
+                      >
+                        <div className="bg-red-500 dark:bg-rose-500 text-white font-extrabold text-[8px] px-1.5 py-0.5 rounded shadow-xs tracking-wider flex items-center gap-0.5 whitespace-nowrap">
+                          <span>TODAY</span>
+                          <span className="opacity-90 font-mono">({todayData.formattedToday})</span>
+                        </div>
+                        <div className="w-0.5 flex-1 bg-red-500 dark:bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -466,6 +513,16 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                             <div className="w-1/4 border-r border-dashed border-slate-400" />
                             <div className="w-1/4 border-r border-dashed border-slate-400" />
                           </div>
+
+                          {/* Vertical Today Line through task rows */}
+                          {todayData.isInTimeline && (
+                            <div 
+                              className="absolute top-0 bottom-0 -translate-x-1/2 pointer-events-none z-10"
+                              style={{ left: `calc(12px + (100% - 24px) * ${todayData.percent / 100})` }}
+                            >
+                              <div className="w-0.5 h-full bg-red-500/80 dark:bg-rose-500/80 shadow-[0_0_6px_rgba(239,68,68,0.4)]" />
+                            </div>
+                          )}
 
                           {/* Task Bar / Milestone diamond matching GanttTab */}
                           {isMilestone ? (
