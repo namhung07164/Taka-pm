@@ -383,9 +383,10 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
       return null;
     }).filter(Boolean) as string[];
 
-    const unique = Array.from(new Set([...projYears, ...taskYears, '2026', '2027'])).sort();
-    return unique;
-  }, [projects, tasks]);
+    const baseYears = currentUser?.role === 'admin' ? ['2026', '2027'] : [];
+    const unique = Array.from(new Set([...projYears, ...taskYears, ...baseYears])).filter(Boolean).sort();
+    return unique.length > 0 ? unique : (currentUser?.role === 'admin' ? ['2026', '2027'] : ['2026']);
+  }, [projects, tasks, currentUser?.role]);
 
   const allowedStores = React.useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const stores = allowedStores;

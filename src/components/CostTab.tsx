@@ -509,9 +509,10 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
       return null;
     }).filter(Boolean) as string[];
 
-    const unique = Array.from(new Set([...projYears, '2026', '2027'])).sort();
-    return unique;
-  }, [projects]);
+    const baseYears = currentUser?.role === 'admin' ? ['2026', '2027'] : [];
+    const unique = Array.from(new Set([...projYears, ...baseYears])).filter(Boolean).sort();
+    return unique.length > 0 ? unique : (currentUser?.role === 'admin' ? ['2026', '2027'] : ['2026']);
+  }, [projects, currentUser?.role]);
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const stores = allowedStores;

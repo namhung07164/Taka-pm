@@ -191,8 +191,9 @@ export function LayoutTab({
     }
   }, [initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
 
-  // Available years: based on years from projects, versions, and active years
+  // Available years: based on user permissions, projects, tasks, and store versions
   const availableYears = React.useMemo(() => {
+    // 1. Collect years from projects the current user has access to in activeStore
     const storeProjects = projects.filter(p => {
       if (!activeStore || activeStore === 'all') return true;
       const pStore = String(p.store || 'HCM').toUpperCase().trim();
@@ -207,6 +208,32 @@ export function LayoutTab({
       }
     });
 
+    // 2. Collect years from tasks the current user has access to in activeStore
+    const storeTasks = tasks.filter(t => {
+      if (!activeStore || activeStore === 'all') return true;
+      const tStore = String(t.projectStore || 'HCM').toUpperCase().trim();
+      return tStore === activeStore;
+    });
+    const taskYearsSet = new Set<string>();
+    storeTasks.forEach(t => {
+      const y = String(t.projectYear || (t.start ? String(t.start).substring(0, 4) : '')).trim();
+      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
+        taskYearsSet.add(y);
+      }
+    });
+
+    const userPermittedYears = new Set([...projectYearsSet, ...taskYearsSet]);
+
+    // For non-admin accounts (contractors, partners like ksm-01):
+    // Strictly restrict to years where the user has authorized projects or tasks
+    if (!isAdmin) {
+      const permitted = Array.from(userPermittedYears)
+        .filter(Boolean)
+        .sort((a, b) => Number(b) - Number(a));
+      return permitted;
+    }
+
+    // For Admin: Include version years and fallback years
     const versionYears = Array.from(
       new Set(
         allStoreVersions
@@ -220,7 +247,7 @@ export function LayoutTab({
       )
     );
 
-    const combined = Array.from(new Set([...projectYearsSet, ...versionYears]))
+    const combined = Array.from(new Set([...userPermittedYears, ...versionYears]))
       .filter(Boolean)
       .sort((a, b) => Number(b) - Number(a));
 
@@ -235,7 +262,7 @@ export function LayoutTab({
       return ['2027'];
     }
     return ['2026', '2027'];
-  }, [allStoreVersions, projects, activeStore]);
+  }, [allStoreVersions, projects, tasks, activeStore, isAdmin]);
 
   const effectiveYear = React.useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
