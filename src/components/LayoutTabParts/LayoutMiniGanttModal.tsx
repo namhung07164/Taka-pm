@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { cn, parseDateTime } from '../../lib/utils';
+import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -23,17 +23,20 @@ const formatMonthDay = (d: Date | null): string => {
   return `${month} ${day}`;
 };
 
-// Format task date range as "Dec 15 - Dec 20" or "Dec 20"
-const formatTaskDateRange = (start: Date | null, finish: Date | null): string => {
-  const sStr = formatMonthDay(start);
-  const fStr = formatMonthDay(finish);
-
-  if (sStr && fStr) {
-    return sStr === fStr ? sStr : `${sStr} - ${fStr}`;
-  }
-  if (sStr) return sStr;
-  if (fStr) return `→ ${fStr}`;
-  return '';
+// Bar color mapping matching GanttTab 100%
+const getBarColor = (status: string, duration?: string | number) => {
+  if (
+    duration !== undefined &&
+    duration !== "" &&
+    parseFloat(String(duration)) === 0
+  )
+    return "bg-orange-500 hover:bg-orange-600";
+  if (status === "On process" || status === "In Progress") return "bg-blue-500 hover:bg-blue-600";
+  if (status === "Upcoming") return "bg-slate-700 dark:bg-slate-500 hover:bg-slate-800 dark:hover:bg-slate-400";
+  if (status === "Completed") return "bg-green-500 hover:bg-green-600";
+  if (status === "Handover") return "bg-blue-500 hover:bg-blue-600";
+  if (status === "Canceled") return "bg-slate-400 hover:bg-slate-500";
+  return "bg-slate-400 hover:bg-slate-500";
 };
 
 interface LayoutMiniGanttModalProps {
@@ -183,28 +186,38 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     };
   }, [project, projectTasks]);
 
-  // Overall task stats
+  // Overall task stats matching GanttTab logic
   const stats = useMemo(() => {
     const total = projectTasks.length;
     let completed = 0;
     let inProgress = 0;
-    let delayed = 0;
     let upcoming = 0;
+    let milestone = 0;
 
     projectTasks.forEach(t => {
+      const rawDur = parseFloat(String(t.duration || ''));
+      if (!isNaN(rawDur) && rawDur === 0) {
+        milestone++;
+        return;
+      }
       const s = (t.runningStatus || '').toLowerCase();
+      let status = getTaskStatus(t.start, t.finish);
       if (t.approval === 'Approved' || s.includes('complete')) {
+        status = 'Completed';
+      } else if (s.includes('process') || s.includes('progress')) {
+        status = 'On process';
+      }
+
+      if (status === 'Completed') {
         completed++;
-      } else if (s.includes('delay') || s.includes('overdue')) {
-        delayed++;
-      } else if (s.includes('process') || s.includes('progress') || t.start) {
+      } else if (status === 'On process') {
         inProgress++;
       } else {
         upcoming++;
       }
     });
 
-    return { total, completed, inProgress, delayed, upcoming };
+    return { total, completed, inProgress, upcoming, milestone };
   }, [projectTasks]);
 
   if (!isOpen || !project) return null;
@@ -292,35 +305,40 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
               <div className="flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5 text-blue-500" />
                 <span className="text-[11px] font-medium">Timeline:</span>
-                <span className="font-bold font-mono text-[11px] text-slate-700 dark:text-slate-200">
+                <span className="font-bold font-mono text-[11px] text-blue-600 dark:text-[#8ab4f8]">
                   {formatMonthDay(timelineBounds.startDate)}
                 </span>
                 <span className="text-slate-400">→</span>
-                <span className="font-bold font-mono text-[11px] text-slate-700 dark:text-slate-200">
+                <span className="font-bold font-mono text-[11px] text-pink-600 dark:text-pink-400">
                   {formatMonthDay(timelineBounds.finishDate)}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">({timelineBounds.totalDays}d)</span>
               </div>
             </div>
 
-            {/* Right: Task Status Badges */}
+            {/* Right: Task Status Badges matching GanttTab */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 {stats.total} Tasks
               </span>
               {stats.completed > 0 && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80">
-                  {stats.completed} Done
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-50 text-green-700 dark:bg-green-950/60 dark:text-green-400 border border-green-200 dark:border-green-800/80">
+                  {stats.completed} Completed
                 </span>
               )}
               {stats.inProgress > 0 && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-[#8ab4f8] border border-blue-200 dark:border-blue-800/80">
-                  {stats.inProgress} Doing
+                  {stats.inProgress} On process
                 </span>
               )}
-              {stats.delayed > 0 && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 animate-pulse">
-                  {stats.delayed} Delay
+              {stats.upcoming > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  {stats.upcoming} Upcoming
+                </span>
+              )}
+              {stats.milestone > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 dark:bg-orange-950/60 dark:text-orange-400 border border-orange-200 dark:border-orange-800/80">
+                  {stats.milestone} Milestone
                 </span>
               )}
             </div>
@@ -345,13 +363,13 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                   {/* Left Column: Task Name & Dates */}
                   <div className="w-[240px] sm:w-[270px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider flex items-center justify-between">
                     <span>Task</span>
-                    <span className="font-mono text-[9px] text-slate-400 font-medium">Dates</span>
+                    <span className="font-mono text-[9px] text-slate-400 font-medium">Dates (Start - End)</span>
                   </div>
                   {/* Right Column: Time Scale Markers */}
                   <div className="flex-1 px-3 py-1.5 flex justify-between uppercase tracking-wider">
-                    <span>{formatMonthDay(timelineBounds.startDate)}</span>
+                    <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{formatMonthDay(timelineBounds.startDate)}</span>
                     <span className="hidden sm:inline">Timeline Progress</span>
-                    <span>{formatMonthDay(timelineBounds.finishDate)}</span>
+                    <span className="font-mono font-bold text-pink-600 dark:text-pink-400">{formatMonthDay(timelineBounds.finishDate)}</span>
                   </div>
                 </div>
 
@@ -360,11 +378,29 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                   {projectTasks.map((t, idx) => {
                     const tStart = parseDateTime(t.start);
                     const tFinish = parseDateTime(t.finish);
-                    const rawDuration = parseInt(t.duration || '1', 10);
-                    const duration = isNaN(rawDuration) || rawDuration <= 0 ? 1 : rawDuration;
+                    const rawDuration = parseFloat(String(t.duration || ''));
+                    const isMilestone = !isNaN(rawDuration) && rawDuration === 0;
+                    const duration = isNaN(rawDuration) || rawDuration <= 0 ? (isMilestone ? 0 : 1) : rawDuration;
 
-                    // Dates in "Dec 20" style: "Dec 15 - Dec 20" or "Dec 20"
-                    const dateRangeText = formatTaskDateRange(tStart, tFinish);
+                    // Dates in "Dec 20" style with General tab color coding (Start: Blue, Finish: Pink)
+                    const sFormatted = formatMonthDay(tStart);
+                    const fFormatted = formatMonthDay(tFinish);
+
+                    // Compute task status matching GanttTab logic
+                    let computedStatus = getTaskStatus(t.start, t.finish);
+                    const statusStr = (t.runningStatus || '').toLowerCase();
+                    if (t.approval === 'Approved' || statusStr.includes('complete')) {
+                      computedStatus = 'Completed';
+                    } else if (statusStr.includes('cancel')) {
+                      computedStatus = 'Canceled';
+                    } else if (statusStr.includes('handover')) {
+                      computedStatus = 'Handover';
+                    } else if (statusStr.includes('process') || statusStr.includes('progress')) {
+                      computedStatus = 'On process';
+                    }
+
+                    // Bar color matching GanttTab logic 100%
+                    const barColor = getBarColor(computedStatus, t.duration);
 
                     // Compute relative Gantt Bar position
                     let leftPercent = 0;
@@ -377,39 +413,39 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                       widthPercent = Math.min(100 - leftPercent, Math.max(2.5, (taskDays / timelineBounds.totalDays) * 100));
                     }
 
-                    // Bar colors based on status
-                    const statusStr = (t.runningStatus || '').toLowerCase();
-                    const isCompleted = t.approval === 'Approved' || statusStr.includes('complete');
-                    const isDelay = statusStr.includes('delay') || statusStr.includes('overdue');
-                    const isInProgress = statusStr.includes('process') || statusStr.includes('progress');
-
-                    const barColor = isCompleted
-                      ? 'bg-emerald-500 hover:bg-emerald-600'
-                      : isDelay
-                        ? 'bg-rose-500 hover:bg-rose-600'
-                        : isInProgress
-                          ? 'bg-blue-500 hover:bg-blue-600'
-                          : 'bg-indigo-400 hover:bg-indigo-500';
-
                     return (
                       <div 
                         key={t.id || idx}
                         className="flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group h-9"
                       >
-                        {/* Task Info Cell: Name & Dates in Dec 20 style */}
+                        {/* Task Info Cell: Name & Dates (Start: Blue, Finish: Pink) */}
                         <div className="w-[240px] sm:w-[270px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
                           <span 
                             className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1"
-                            title={`${t.name}${dateRangeText ? ` (${dateRangeText})` : ''}`}
+                            title={`${t.name}${sFormatted || fFormatted ? ` (${sFormatted || ''} - ${fFormatted || ''})` : ''}`}
                           >
                             {t.name}
                           </span>
-                          {dateRangeText && (
+                          {(sFormatted || fFormatted) && (
                             <span 
-                              className="font-mono text-[10px] text-slate-500 dark:text-slate-400 shrink-0 tabular-nums font-medium"
+                              className="font-mono text-[10px] shrink-0 tabular-nums font-semibold flex items-center gap-0.5"
                               title={`Start: ${t.start || 'N/A'} • Finish: ${t.finish || 'N/A'}`}
                             >
-                              {dateRangeText}
+                              {sFormatted && (
+                                <span className="text-blue-600 dark:text-[#8ab4f8]">{sFormatted}</span>
+                              )}
+                              {sFormatted && fFormatted && sFormatted !== fFormatted && (
+                                <span className="text-slate-400 dark:text-slate-500 font-normal">-</span>
+                              )}
+                              {fFormatted && sFormatted !== fFormatted && (
+                                <span className="text-pink-600 dark:text-pink-400">{fFormatted}</span>
+                              )}
+                              {!sFormatted && fFormatted && (
+                                <>
+                                  <span className="text-slate-400 dark:text-slate-500 font-normal">→</span>
+                                  <span className="text-pink-600 dark:text-pink-400">{fFormatted}</span>
+                                </>
+                              )}
                             </span>
                           )}
                         </div>
@@ -423,30 +459,43 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                             <div className="w-1/4 border-r border-dashed border-slate-400" />
                           </div>
 
-                          {/* Task Bar */}
-                          <div
-                            className={cn(
-                              "relative h-5 rounded-md shadow-xs transition-all flex items-center overflow-hidden cursor-pointer",
-                              barColor
-                            )}
-                            style={{
-                              left: `${leftPercent}%`,
-                              width: `${widthPercent}%`
-                            }}
-                            title={`${t.name}\nStart: ${t.start || 'N/A'}\nFinish: ${t.finish || 'N/A'}\nDuration: ${duration}d\nStatus: ${t.runningStatus || 'N/A'}${t.party ? `\nParty: ${t.party}` : ''}`}
-                          >
-                            {/* Inner Shading for completion */}
-                            {isCompleted && (
-                              <div className="absolute top-0 left-0 bottom-0 w-full bg-black/15 pointer-events-none" />
-                            )}
-
-                            {/* Label inside bar if wide enough */}
-                            {widthPercent > 12 && (
-                              <span className="relative z-10 px-1.5 text-[9px] font-extrabold text-white truncate drop-shadow-xs">
-                                {duration}d
+                          {/* Task Bar / Milestone diamond matching GanttTab */}
+                          {isMilestone ? (
+                            <div 
+                              className="absolute top-1/2 -translate-y-1/2 flex items-center cursor-pointer group/bar"
+                              style={{ left: `${leftPercent}%` }}
+                              title={`${t.name}\nMilestone: ${t.start || t.finish || 'N/A'}\nStatus: ${computedStatus}`}
+                            >
+                              <div className="w-3.5 h-3.5 rotate-45 rounded-xs shadow-xs bg-orange-500 hover:bg-orange-600 transition-transform group-hover/bar:scale-110" />
+                              <span className="ml-1.5 text-[9px] font-bold text-orange-600 dark:text-orange-400 whitespace-nowrap">
+                                0d
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          ) : (
+                            <div
+                              className={cn(
+                                "relative h-5 rounded-md shadow-xs transition-all flex items-center overflow-hidden cursor-pointer",
+                                barColor
+                              )}
+                              style={{
+                                left: `${leftPercent}%`,
+                                width: `${widthPercent}%`
+                              }}
+                              title={`${t.name}\nStart: ${t.start || 'N/A'}\nFinish: ${t.finish || 'N/A'}\nDuration: ${duration}d\nStatus: ${computedStatus}${t.party ? `\nParty: ${t.party}` : ''}`}
+                            >
+                              {/* Inner Shading for completion */}
+                              {computedStatus === 'Completed' && (
+                                <div className="absolute top-0 left-0 bottom-0 w-full bg-black/15 pointer-events-none" />
+                              )}
+
+                              {/* Label inside bar if wide enough */}
+                              {widthPercent > 12 && (
+                                <span className="relative z-10 px-1.5 text-[9px] font-extrabold text-white truncate drop-shadow-xs">
+                                  {duration}d
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
