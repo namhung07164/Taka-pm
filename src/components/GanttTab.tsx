@@ -583,12 +583,10 @@ export function GanttTab({
         years.add(y);
       }
     });
-    if (currentUser?.role === 'admin') {
-      years.add('2026');
-      years.add('2027');
-    }
+    years.add('2026');
+    years.add('2027');
     const arr = Array.from(years).sort((a, b) => b.localeCompare(a));
-    return arr.length > 0 ? arr : (currentUser?.role === 'admin' ? ['2027', '2026'] : ['2026']);
+    return arr.length > 0 ? arr : ['2027', '2026'];
   }, [projects, currentUser?.role]);
 
   const uniqueStores = useMemo(() => {

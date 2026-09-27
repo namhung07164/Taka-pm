@@ -48,12 +48,10 @@ export function SummaryTab({}: SummaryTabProps) {
       const year = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
       if (year) yearsSet.add(year);
     });
-    if (currentUser?.role === 'admin') {
-      yearsSet.add('2026');
-      yearsSet.add('2027');
-    }
+    yearsSet.add('2026');
+    yearsSet.add('2027');
     const arr = Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
-    return arr.length > 0 ? arr : (currentUser?.role === 'admin' ? ['2027', '2026'] : ['2026']);
+    return arr.length > 0 ? arr : ['2027', '2026'];
   }, [projects, currentUser?.role]);
 
   const globalYearFilter = useAppStore(state => state.globalYearFilter);

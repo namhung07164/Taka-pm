@@ -715,9 +715,9 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
       return null;
     }).filter(Boolean) as string[];
 
-    const baseYears = currentUser?.role === 'admin' ? ['2026', '2027'] : [];
+    const baseYears = ['2026', '2027'];
     const unique = Array.from(new Set([...projYears, ...baseYears])).filter(Boolean).sort();
-    return unique.length > 0 ? unique : (currentUser?.role === 'admin' ? ['2026', '2027'] : ['2026']);
+    return unique.length > 0 ? unique : ['2026', '2027'];
   }, [projects, currentUser?.role]);
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);

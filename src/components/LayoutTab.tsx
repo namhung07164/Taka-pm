@@ -224,16 +224,7 @@ export function LayoutTab({
 
     const userPermittedYears = new Set([...projectYearsSet, ...taskYearsSet]);
 
-    // For non-admin accounts (contractors, partners like ksm-01):
-    // Strictly restrict to years where the user has authorized projects or tasks
-    if (!isAdmin) {
-      const permitted = Array.from(userPermittedYears)
-        .filter(Boolean)
-        .sort((a, b) => Number(b) - Number(a));
-      return permitted;
-    }
-
-    // For Admin: Include version years and fallback years
+    // 3. Include version years from allStoreVersions for activeStore
     const versionYears = Array.from(
       new Set(
         allStoreVersions
@@ -247,22 +238,17 @@ export function LayoutTab({
       )
     );
 
-    const combined = Array.from(new Set([...userPermittedYears, ...versionYears]))
+    // 4. Default operational years per store:
+    // For HN: default to ['2027'] (HN is a 2027 store)
+    // For HCM: default to ['2026', '2027']
+    const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
+
+    const combined = Array.from(new Set([...userPermittedYears, ...versionYears, ...defaultStoreYears]))
       .filter(Boolean)
       .sort((a, b) => Number(b) - Number(a));
 
-    if (combined.length > 0) {
-      return combined;
-    }
-
-    // Fallback if store has no projects or versions yet:
-    // For HCM: default to ['2026', '2027']
-    // For HN: default to ['2027'] (do NOT show 2026 if HN has no 2026 data)
-    if (activeStore === 'HN') {
-      return ['2027'];
-    }
-    return ['2026', '2027'];
-  }, [allStoreVersions, projects, tasks, activeStore, isAdmin]);
+    return combined;
+  }, [allStoreVersions, projects, tasks, activeStore]);
 
   const effectiveYear = React.useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {

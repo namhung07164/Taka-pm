@@ -507,6 +507,7 @@ function LiveCanvas({
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
+  const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
   const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
 
   // 1. Gather all store versions across all sources (Zustand helper, local partitions, cloud partitions, and root config)
@@ -1287,33 +1288,43 @@ function LiveCanvas({
             const alertReasons: string[] = [];
             let alertLevel: 'critical' | 'warning' | null = null;
 
-            if (layoutTooltipVisibility?.notifications !== false) {
+            const isProjectCompleted = (p.computedActProgress ?? 0) >= 100 || 
+              String(status).toLowerCase() === 'completed' || 
+              String(actStatus).toLowerCase() === 'completed';
+
+            if (layoutTooltipVisibility?.notifications !== false && !isProjectCompleted) {
               // 1. Overdue tasks check
+              const subTasksList = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
+              let overdueCount = 0;
               if (layoutTooltipVisibility?.alertOverdue !== false) {
-                const subTasksList = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
-                let overdueCount = 0;
                 subTasksList.forEach((st: any) => {
                   if (st.finish && st.finish < todayStr) {
                     const prog = st.progress ?? st.computedActProgress ?? 0;
-                    if (prog < 100 && st.status !== 'Completed' && st.status !== 'Done') {
+                    if (prog < 100 && st.status !== 'Completed' && st.status !== 'Done' && st.status !== 'Canceled') {
                       overdueCount++;
                     }
                   }
                 });
-                if (overdueCount > 0) {
-                  alertReasons.push(`${overdueCount} overdue task${overdueCount > 1 ? 's' : ''}`);
-                  alertLevel = 'critical';
-                }
               }
 
               // 2. Project status delayed / late
+              let isDelayed = false;
               if (layoutTooltipVisibility?.alertDelay !== false) {
                 const lowerStat = String(status).toLowerCase();
                 const lowerAct = String(actStatus).toLowerCase();
-                if (lowerStat.includes('delay') || lowerStat.includes('late') || lowerAct.includes('delay') || lowerAct.includes('late')) {
-                  alertReasons.push('Project delayed');
-                  alertLevel = 'critical';
-                }
+                isDelayed = lowerStat.includes('delay') || lowerStat.includes('late') || lowerAct.includes('delay') || lowerAct.includes('late');
+              }
+
+              // Deduplicate & Hierarchy: Merge Delay + Overdue into single clear critical alert
+              if (isDelayed && overdueCount > 0) {
+                alertReasons.push(`Project delayed (${overdueCount} overdue task${overdueCount > 1 ? 's' : ''})`);
+                alertLevel = 'critical';
+              } else if (isDelayed) {
+                alertReasons.push('Project delayed');
+                alertLevel = 'critical';
+              } else if (overdueCount > 0) {
+                alertReasons.push(`${overdueCount} overdue task${overdueCount > 1 ? 's' : ''}`);
+                alertLevel = 'critical';
               }
 
               // 3. Upcoming handover within 3 days (if not completed)
@@ -1328,14 +1339,20 @@ function LiveCanvas({
                 }
               }
 
-              // 4. Upcoming opening within 3 days (if not completed)
+              // 4. Upcoming opening & Retail Opening at Risk Guard
               if (layoutTooltipVisibility?.alertOpening !== false) {
                 const oDate = p.opening || p.computedOpening;
                 if (oDate && oDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
                   const diffDays = Math.ceil((new Date(oDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                  if (diffDays >= 0 && diffDays <= 3) {
-                    alertReasons.push(`Opening ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'}`);
-                    if (!alertLevel) alertLevel = 'warning';
+                  if (diffDays >= 0 && diffDays <= 5) {
+                    const actProg = p.computedActProgress ?? 0;
+                    if (actProg < 80 && layoutTooltipVisibility?.alertOpeningRisk !== false) {
+                      alertReasons.push(`Opening at risk (<80% prg, ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'})`);
+                      alertLevel = 'critical';
+                    } else if (diffDays <= 3) {
+                      alertReasons.push(`Opening ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'}`);
+                      if (!alertLevel) alertLevel = 'warning';
+                    }
                   }
                 }
               }
@@ -2073,6 +2090,17 @@ function LiveCanvas({
   // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout
   const hasUserAccessInStoreYear = useMemo(() => {
     if (!currUser || currUser.role === 'admin') return true;
+
+    // Internal management roles (CP, Manager, Staff) with authorized store permission can view store layout
+    const isInternalRole = ['manager', 'staff', 'cp'].includes(String(currUser.role || '').toLowerCase());
+    const hasStorePerm = storeFilter === 'HN'
+      ? Boolean(currUser.storePermissions?.hn)
+      : (storeFilter === 'HCM' ? Boolean(currUser.storePermissions?.hcm) : true);
+
+    if (isInternalRole && hasStorePerm && !currUser.byPartyAccess) {
+      return true;
+    }
+
     const yr = String(globalYearFilter || '2026').trim();
     if (yr === 'all') return true;
     const hasProj = enrichedProjects.some(p => {
@@ -2241,15 +2269,21 @@ function LiveCanvas({
             type="button"
             onClick={() => setFilterOnlyAlerts(prev => !prev)}
             className={cn(
-              "flex items-center gap-1 px-1.5 py-1 sm:px-2 sm:py-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all active:scale-95 touch-manipulation border mr-0.5",
+              "flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all active:scale-95 touch-manipulation border mr-0.5",
               filterOnlyAlerts
-                ? "bg-red-500 text-white border-red-600 shadow-sm"
+                ? "bg-red-600 text-white border-red-700 shadow-md ring-2 ring-red-400/50"
                 : "bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/50 dark:hover:bg-red-900/60 dark:text-red-300 border-red-200 dark:border-red-900/60"
             )}
-            title={filterOnlyAlerts ? "Filtering alert units (Click to show all)" : `Filter ${totalFloorAlerts} alert units`}
+            title={filterOnlyAlerts ? "Currently filtering only alert units (Click to show all)" : `Filter ${totalFloorAlerts} alert units`}
           >
             <Bell className={cn("w-3.5 h-3.5", filterOnlyAlerts ? "text-white animate-bounce" : "text-red-500")} />
-            <span className="font-bold font-mono">{totalFloorAlerts}</span>
+            <span className="font-bold">{filterOnlyAlerts ? "Alerts Only" : "Alerts"}</span>
+            <span className={cn(
+              "font-mono font-bold px-1.5 py-0.2 rounded-full text-[10px]",
+              filterOnlyAlerts ? "bg-white/25 text-white" : "bg-red-200 dark:bg-red-900/70 text-red-800 dark:text-red-200"
+            )}>
+              {totalFloorAlerts}
+            </span>
           </button>
         )}
         <button
@@ -2441,6 +2475,21 @@ function LiveCanvas({
         </div>
       )}
 
+      {/* Active Alert Filter Banner */}
+      {filterOnlyAlerts && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-red-600 text-white px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 hide-on-actual-print print:hidden">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-white animate-pulse" />
+          <span>Showing {totalFloorAlerts} unit{totalFloorAlerts > 1 ? 's' : ''} with active alerts</span>
+          <button
+            type="button"
+            onClick={() => setFilterOnlyAlerts(false)}
+            className="ml-1 bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-2 py-0.5 rounded-full active:scale-95 transition-all cursor-pointer"
+          >
+            Show All
+          </button>
+        </div>
+      )}
+
       {/* Floating Bottom Action Buttons */}
       <div className={`absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 transition-all duration-150 hide-on-actual-print print:hidden ${hoverInfo?.visible ? 'max-sm:opacity-0 max-sm:pointer-events-none' : 'opacity-100'}`}>
         <button 
@@ -2465,6 +2514,28 @@ function LiveCanvas({
             </span>
           )}
         </button>
+
+        {totalFloorAlerts > 0 && (
+          <button
+            onClick={() => setFilterOnlyAlerts(prev => !prev)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 backdrop-blur-md border shadow-xl rounded-full text-xs font-bold active:scale-95 touch-manipulation transition-all whitespace-nowrap",
+              filterOnlyAlerts
+                ? "bg-red-600 hover:bg-red-700 text-white border-red-500 shadow-red-500/20 ring-2 ring-red-400"
+                : "bg-white/95 dark:bg-slate-800/95 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60"
+            )}
+            title={filterOnlyAlerts ? "Click to show all units" : "Highlight only units with active alerts"}
+          >
+            <AlertTriangle className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", filterOnlyAlerts ? "text-white" : "text-red-500 animate-pulse")} />
+            <span>{filterOnlyAlerts ? "Show All" : "Focus Alerts"}</span>
+            <span className={cn(
+              "px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold",
+              filterOnlyAlerts ? "bg-white/25 text-white" : "bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300"
+            )}>
+              {totalFloorAlerts}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Full Color Legend Modal / Drawer (iOS friendly) */}
@@ -2643,13 +2714,18 @@ function LiveCanvas({
               )}
             </div>
 
-            {/* Smart Notifications & Alerts Config */}
+            {/* Smart Notifications & Alerts Config (Collapsible Accordion) */}
             <div className="space-y-2 p-3 bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-2xl">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[11px] uppercase font-bold text-red-600 dark:text-red-400 tracking-wider">
+                <button
+                  type="button"
+                  onClick={() => setIsSmartAlertCollapsed(prev => !prev)}
+                  className="flex items-center gap-1.5 text-[11px] uppercase font-bold text-red-600 dark:text-red-400 tracking-wider hover:opacity-80 cursor-pointer active:scale-95 touch-manipulation"
+                >
                   <Bell className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                  <span>Smart Notifications & Alerts</span>
-                </div>
+                  <span>Smart Alerts & Badges</span>
+                  {isSmartAlertCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                </button>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
@@ -2660,9 +2736,10 @@ function LiveCanvas({
                         alertDelay: true,
                         alertHandover: true,
                         alertOpening: true,
+                        alertOpeningRisk: true,
                       });
                     }}
-                    className="text-[10px] text-red-600 dark:text-red-400 hover:underline font-semibold cursor-pointer"
+                    className="text-[10px] text-red-600 dark:text-red-400 hover:underline font-semibold cursor-pointer active:scale-95"
                   >
                     Enable All
                   </button>
@@ -2676,64 +2753,67 @@ function LiveCanvas({
                         alertDelay: false,
                         alertHandover: false,
                         alertOpening: false,
+                        alertOpeningRisk: false,
                       });
                     }}
-                    className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium cursor-pointer"
+                    className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium cursor-pointer active:scale-95"
                   >
                     Disable All
                   </button>
                 </div>
               </div>
 
-              {/* Notification Toggle Items Grid */}
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { key: 'notifications', label: 'All Alert Badges', desc: 'Master alert switch' },
-                  { key: 'alertOverdue', label: 'Overdue Tasks', desc: 'Past due unfinished tasks' },
-                  { key: 'alertDelay', label: 'Project Delay', desc: 'Late / delayed status' },
-                  { key: 'alertHandover', label: 'Handover Notice', desc: 'Handover within 3 days' },
-                  { key: 'alertOpening', label: 'Opening Notice', desc: 'Opening within 3 days' },
-                ].map((item) => {
-                  const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => {
-                        setLayoutTooltipVisibility((prev) => ({
-                          ...prev,
-                          [item.key]: !isActive,
-                        }));
-                      }}
-                      className={cn(
-                        "flex items-center justify-between p-2 rounded-xl border text-left transition-all active:scale-95 touch-manipulation cursor-pointer",
-                        isActive
-                          ? "bg-red-500/10 dark:bg-red-950/40 border-red-300 dark:border-red-800/80 text-red-900 dark:text-red-200 shadow-xs"
-                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60 text-slate-400 dark:text-slate-500 opacity-60 hover:opacity-100"
-                      )}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold truncate leading-tight">
-                          {item.label}
-                        </div>
-                        <div className="text-[9px] opacity-75 truncate">
-                          {item.desc}
-                        </div>
-                      </div>
-                      <div
+              {!isSmartAlertCollapsed && (
+                <div className="grid grid-cols-2 gap-1.5 pt-1 animate-in fade-in duration-150">
+                  {[
+                    { key: 'notifications', label: 'All Alert Badges', desc: 'Master alert switch' },
+                    { key: 'alertOverdue', label: 'Overdue Tasks', desc: 'Past due unfinished tasks' },
+                    { key: 'alertDelay', label: 'Project Delay', desc: 'Late / delayed status' },
+                    { key: 'alertOpeningRisk', label: 'Opening Risk', desc: '<80% prg in 5 days' },
+                    { key: 'alertHandover', label: 'Handover Notice', desc: 'Handover within 3 days' },
+                    { key: 'alertOpening', label: 'Opening Notice', desc: 'Opening within 3 days' },
+                  ].map((item) => {
+                    const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => {
+                          setLayoutTooltipVisibility((prev) => ({
+                            ...prev,
+                            [item.key]: !isActive,
+                          }));
+                        }}
                         className={cn(
-                          "w-4 h-4 rounded-full flex items-center justify-center shrink-0 ml-1.5 transition-colors",
+                          "flex items-center justify-between p-2 rounded-xl border text-left transition-all active:scale-95 touch-manipulation cursor-pointer",
                           isActive
-                            ? "bg-red-600 text-white"
-                            : "bg-slate-200 dark:bg-slate-700 text-transparent"
+                            ? "bg-red-500/10 dark:bg-red-950/40 border-red-300 dark:border-red-800/80 text-red-900 dark:text-red-200 shadow-xs"
+                            : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60 text-slate-400 dark:text-slate-500 opacity-60 hover:opacity-100"
                         )}
                       >
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold truncate leading-tight">
+                            {item.label}
+                          </div>
+                          <div className="text-[9px] opacity-75 truncate">
+                            {item.desc}
+                          </div>
+                        </div>
+                        <div
+                          className={cn(
+                            "w-4 h-4 rounded-full flex items-center justify-center shrink-0 ml-1.5 transition-colors",
+                            isActive
+                              ? "bg-red-600 text-white"
+                              : "bg-slate-200 dark:bg-slate-700 text-transparent"
+                          )}
+                        >
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Labels Appear / Tooltip Visibility Config */}

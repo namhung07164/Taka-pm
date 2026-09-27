@@ -306,6 +306,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
       alertDelay: true,
       alertHandover: true,
       alertOpening: true,
+      alertOpeningRisk: true,
     };
     try {
       const stored = safeGetItemLocal("taka_layout_tooltip_visibility");
@@ -339,6 +340,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
       alertDelay: true,
       alertHandover: true,
       alertOpening: true,
+      alertOpeningRisk: true,
     };
     safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(defaultVal));
     return { layoutTooltipVisibility: defaultVal };

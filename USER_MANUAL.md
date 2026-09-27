@@ -562,6 +562,12 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - **Bảng Tra Cứu Chú Thích Màu Toàn Diện (Color Legend Modal)**: Nằm ngay cạnh nút Menu dưới đáy màn hình với nút bấm chuyên biệt `[ 🎨 Chú thích màu ]`:
      - Hiển thị danh sách đầy đủ tất cả các nhóm ngành hàng/phân loại, mã màu, số lượng gian hàng và các mã gian hàng liên quan.
      - Cung cấp bảng quy chuẩn màu sắc trạng thái tiến độ dự án (`Completed` - Xanh lá, `On Process` - Xanh dương, `Upcoming` - Vàng cam, `Delay` - Đỏ) giúp người dùng tra cứu nhanh chóng mọi lúc mọi nơi.
+    - **Hệ Thống Cảnh Báo Thông Minh & Chế Độ Lọc Sự Cố Mặt Bằng (Smart Alerts & Focus Mode)**:
+      - **Huy hiệu cảnh báo trực quan (Smart Alert Badges)**: Tự động hiển thị huy hiệu đỏ (Critical) hoặc cam (Warning) ngay trên đỉnh gian hàng gặp vấn đề (công việc quá hạn, dự án chậm tiến độ, sắp bàn giao trong 3 ngày, hoặc nguy cơ trễ khai trương dưới 80% tiến độ khi còn dưới 5 ngày).
+      - **Chống báo động giả & Gộp lỗi thông minh**: Loại trừ hoàn toàn cảnh báo đối với các gian hàng đã hoàn thành 100% nghiệm thu (Completed); tự động gộp trùng lặp giữa lỗi trễ tiến độ dự án và danh sách công việc quá hạn thành một thông điệp súc tích: `Project delayed (X overdue tasks)`.
+      - **Chế độ Lọc Nhanh Sự Cố (Focus Alerts Mode)**: Nút bấm tiện ích `[ Focus Alerts ]` / `[ Alerts Only ]` ở góc trên và thanh công cụ đáy cho phép lọc nhanh chỉ hiển thị các gian hàng đang có sự cố, tự động làm mờ các gian hàng an toàn để người quản lý TTTM nhận diện ngay điểm nóng cần xử lý trên toàn tầng.
+      - **Tương tác 1 chạm (Click-to-Action)**: Nhấp trực tiếp vào dải thông báo cảnh báo trong `LayoutUnitTooltip` sẽ mở ngay bảng chi tiết dự án và công việc (`Inspect`) để phối hợp xử lý tức thì với nhà thầu.
+      - **Bảng Cấu Hình Thu Gọn (Accordion)**: Bảng tùy chỉnh Smart Alerts trong drawer được thiết kế dạng accordion thu gọn, cho phép bật/tắt linh hoạt từng loại cảnh báo: Overdue Tasks, Project Delay, Opening Risk, Handover Notice, Opening Notice.
 6. **Quy trình Xuất tự động 3 bước (Trigger Export - Live View & Layout)**:
    - Khi bấm nút **"Trigger Export"** (ở thanh công cụ Layout hoặc trong Menu chế độ Live View), hệ thống sẽ tự động thực hiện 3 bước tuần tự:
      - **Bước 1 — Tải Cloud R2 (Load Cloud)**: Kiểm tra thông minh dữ liệu trong ứng dụng; nếu dữ liệu bản vẽ Picture Mapping đã được tải từ Cloud trước đó thì tự động bỏ qua để tối ưu tốc độ và tránh ghi đè, nếu chưa có sẽ tự động tải cấu hình và ảnh nền mới nhất từ Cloudflare R2 về ứng dụng.

@@ -156,6 +156,7 @@ export interface LayoutTooltipVisibility {
   alertDelay?: boolean;
   alertHandover?: boolean;
   alertOpening?: boolean;
+  alertOpeningRisk?: boolean;
 }
 
 export interface DataSlice {
