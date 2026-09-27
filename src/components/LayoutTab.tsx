@@ -273,15 +273,36 @@ export function LayoutTab({
 
   // Danh sách location của Tab Layout:
   // Chỉ hiển thị các location CÓ DỮ LIỆU VERSION ở tab Picture Mapping (trong store hiện tại)
-  // và kết hợp cùng quyền location permissions của user đó (RBAC)
+  // và kết hợp cùng quyền location permissions của user đó (RBAC), loại bỏ các mục phi-mặt-bằng (Budget, Other, STORE...)
   const availableLocations = React.useMemo(() => {
     const storeParam = (activeStore === 'HN' ? 'HN' : 'HCM');
+    const isAdmin = currentUser?.role === 'admin';
+    const locPerms = currentUser?.locationPermissions || {};
+    const hasAll = isAdmin || locPerms['all'] === true;
+
+    const isFloorName = (name: string) => {
+      if (!name) return false;
+      const n = name.toUpperCase().trim();
+      const nonFloors = ['BUDGET', 'COST', 'OTHER', 'STORE', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
+      if (nonFloors.includes(n)) return false;
+      return true;
+    };
+
+    const isPermitted = (loc: string) => {
+      if (!loc || !isFloorName(loc)) return false;
+      if (locationVisibility[loc] === false) return false;
+      if (hasAll) return true;
+      const lLower = loc.toLowerCase().trim();
+      const cleanLoc = lLower.replace(/^md-/, '');
+      return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower]);
+    };
+
     const pmLocationsSet = new Set<string>();
 
     // 1. Lấy tất cả location từ allStoreVersions
     allStoreVersions.forEach(v => {
       const loc = String(v.location || '').toUpperCase().trim();
-      if (loc && loc !== 'ALL') {
+      if (loc && isPermitted(loc)) {
         pmLocationsSet.add(loc);
       }
     });
@@ -291,7 +312,7 @@ export function LayoutTab({
       Object.entries(storeLocationData).forEach(([key, partition]) => {
         if (key.startsWith(`${storeParam}_`)) {
           const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
-          if (loc && loc !== 'ALL') {
+          if (loc && isPermitted(loc)) {
             if (
               (partition?.mapVersions && partition.mapVersions.length > 0) ||
               (partition?.mapUnits && partition.mapUnits.length > 0) ||
@@ -304,27 +325,14 @@ export function LayoutTab({
       });
     }
 
-    const pmLocList = Array.from(pmLocationsSet);
-
-    // 3. Kết hợp cùng quyền location permissions của user (RBAC) & trạng thái hiển thị
-    const isAdmin = currentUser?.role === 'admin';
-    const locPerms = currentUser?.locationPermissions || {};
-    const hasAll = isAdmin || locPerms['all'] === true;
-
-    const permittedLocations = pmLocList.filter(loc => {
-      if (!loc || loc.trim() === '' || loc.toUpperCase() === 'ALL') return false;
-      
-      // Kiểm tra ẩn/hiện cấu hình
-      if (locationVisibility[loc] === false) return false;
-
-      // Admin hoặc user có quyền 'all'
-      if (hasAll) return true;
-
-      // User thông thường: kiểm tra quyền theo tên tầng
-      const lLower = loc.toLowerCase().trim();
-      const cleanLoc = lLower.replace(/^md-/, '');
-      return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower]);
-    });
+    // 3. Nếu Picture Mapping đã có danh sách versions cho store này -> dùng danh sách đó
+    // Nếu Picture Mapping chưa tải xong từ cloud/cache -> fallback vào danh sách floor hợp lệ từ locations
+    let finalLocations: string[] = [];
+    if (pmLocationsSet.size > 0) {
+      finalLocations = Array.from(pmLocationsSet);
+    } else {
+      finalLocations = (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
+    }
 
     // 4. Sắp xếp thứ tự các tầng chuẩn: B4, B3, B2, B1, GF, MF, L1, L2, L3, L4, L5...
     const floorRank = (name: string) => {
@@ -345,8 +353,8 @@ export function LayoutTab({
       return 100;
     };
 
-    return permittedLocations.sort((a, b) => floorRank(a) - floorRank(b) || a.localeCompare(b));
-  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility]);
+    return finalLocations.sort((a, b) => floorRank(a) - floorRank(b) || a.localeCompare(b));
+  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab (must always select a specific floor with versions)
   useEffect(() => {
