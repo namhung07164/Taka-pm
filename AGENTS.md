@@ -2,80 +2,72 @@
 
 > ⛔ **QUY TẮC BẤT KHẢ XÂM PHẠM**: Toàn bộ logic nghiệp vụ, UI/UX, tính năng và luồng dữ liệu TUYỆT ĐỐI KHÔNG ĐƯỢC XÓA, DISABLE HAY LÀM SUY GIẢM khi cập nhật, trừ khi người dùng yêu cầu rõ ràng. Mọi thay đổi phải là mở rộng (additive) hoặc tối ưu (optimization).
 
-## 1. On-Demand Business Logic (Cơ chế tra cứu)
-- **`BUSINESS_LOGIC.md`** là kho lưu trữ trung tâm của toàn bộ công thức, schema, RBAC và quy tắc nghiệp vụ.
-- **Quy trình**: Với tác vụ đơn giản (UI/UX, màu sắc), KHÔNG cần đọc file này. Với tác vụ can thiệp sâu vào tính toán, phân quyền hoặc nghiệp vụ (Budget, Gantt, RBAC), **BẮT BUỘC** dùng lệnh `view_file` đọc `BUSINESS_LOGIC.md` qua Navigation Index để đảm bảo 100% chuẩn xác.
+## 1. On-Demand Business Logic
+- **Kho quy chuẩn**: `BUSINESS_LOGIC.md` lưu trữ toàn bộ công thức tài chính, schema, RBAC và quy tắc nghiệp vụ.
+- **Quy trình**: Tác vụ UI/màu sắc không cần đọc. Tác vụ can thiệp sâu vào tính toán, phân quyền hoặc nghiệp vụ (Budget, Gantt, RBAC) **bắt buộc** dùng `view_file` tra cứu `BUSINESS_LOGIC.md` qua Navigation Index trước khi sửa code.
 
 ## 2. Core Architecture & Build Constraints
-- **Safe Boot Protocol**: Luôn boot tại general, cấm lưu taka_last_tab vào localStorage.
-- **State Management (Zustand)**: Bắt buộc dùng Zustand (`useAppStore.ts`) làm Global State. KHÔNG truyền prop quá sâu. Dùng Atomic Selectors (vd: `useAppStore(state => state.projects)`) để chống re-render.
-- **Package Manager (NPM ONLY)**: CHỈ SỬ DỤNG NPM. Tuyệt đối cấm Bun/Yarn/Pnpm. Nếu thấy `bun.lock`, `yarn.lock`, phải xóa ngay và chạy `npm install` để duy trì `package-lock.json`. Build SPA luôn trỏ vào `dist/`.
-- **Zero-Delay Optimistic UI**: Thao tác lưu/sửa/xóa phải cập nhật ngay vào Zustand và đóng Modal (0ms). Đẩy ngầm thao tác mạng (Firestore) ra background, KHÔNG chặn UI bằng `await batch.commit()`. Các nút bấm phải có class `active:scale-95 touch-manipulation` để phản hồi tức thời.
-- **Bảo Vệ Tính Toàn Vẹn**: KHÔNG tạo field rác hoặc đổi tên schema ngoài `src/types.ts`. Giữ nguyên mọi tính năng xuất file, watermark, delegation, export.
+- **Safe Boot**: Luôn boot tại tab General; cấm lưu `taka_last_tab` vào `localStorage`.
+- **Global State (Zustand)**: Quản lý toàn bộ state qua `useAppStore.ts`. Dùng Atomic Selectors (vd: `state => state.projects`) và shallow hooks (`useUISlice`, `useDataSlice`) để chống re-render. Cấm truyền prop quá sâu.
+- **Package Manager (NPM ONLY)**: Chỉ dùng NPM. Cấm Bun/Yarn/Pnpm (nếu có lockfile khác phải xóa ngay). Build SPA luôn trỏ vào `dist/`.
+- **Zero-Delay Optimistic UI & Offline Queue**: Lưu/sửa/xóa cập nhật ngay vào Zustand (0ms). Đẩy tác vụ Firestore ra chạy ngầm; bắt buộc bọc `try/catch` đẩy tác vụ lỗi vào Offline Queue (`src/lib/syncQueue.ts`) để chống mất dữ liệu ngầm (Silent Data Loss). Nút bấm dùng `active:scale-95 touch-manipulation`.
+- **Tính toàn vẹn Schema**: Cấm thêm field rác hoặc đổi tên schema ngoài `src/types.ts`. Bảo toàn 100% tính năng xuất file, watermark, delegation, export.
 
 ## 3. Data Fetching & Performance Guards (Firebase)
-- **Tri-Gate Lazy Loading**: Bảo toàn 3 cờ lazy loading (`isTasksRequested`, `isCostsRequested`, `isDelegationsRequested`), cấm kích hoạt query Tasks/Costs/Delegations khi chưa có yêu cầu từ user.
-- **Dot-Notation Aggregates**: Cập nhật tài chính lồng sâu bắt buộc dùng chuỗi chấm (`'financial.byStore...'` + `increment()`), gom 1 update/doc/batch.
-- **Lazy Loading & Anti-Read-Storm**: Tuyệt đối không query thừa. Tránh bỏ toàn bộ object vào dependency array của `useEffect` (gây loop read-storm). Khi chuyển tab, luôn đọc từ cache của Zustand thay vì query lại.
-- **Multi-listener Pooling ("All Years")**: Khi chọn "All Years", các listener của từng năm được đưa vào `useRef<Map>` pool (giữ kết nối Delta Sync), KHÔNG unmount khi chuyển về năm cũ để tránh tải lại (Zero-Read từ cache).
-- **IDB Locks & Wake-Up Sync**: 
-  - Iframe/PWA dùng `persistentSingleTabManager({ forceOwnership: true })` để tránh văng IndexedDB. Desktop chuẩn dùng `persistentMultipleTabManager`.
-  - Không unmount data listeners khi sleep (xóa logic 5-phút debounce timeout), cho phép giữ `resumeToken` để sync delta rẻ tiền thay vì cold-boot tải lại toàn bộ.
+- **Tri-Gate Lazy Loading**: Bảo toàn 3 cờ (`isTasksRequested`, `isCostsRequested`, `isDelegationsRequested`); không query khi user chưa yêu cầu.
+- **Dot-Notation & Atomic Aggregates**: Cập nhật tài chính lồng sâu bắt buộc dùng chuỗi chấm (`'financial.byStore...'` + `increment()`), gom 1 update/doc/batch để chống xung đột ghi đè đồng thời giữa các kế toán.
+- **Anti-Read-Storm**: Không query thừa; cấm đưa object vào deps của `useEffect`. Khi chuyển tab, luôn ưu tiên đọc cache Zustand.
+- **Multi-listener Pooling ("All Years")**: Quản lý listener từng năm qua `useRef<Map>` pool (giữ Delta Sync), không unmount khi chuyển năm cũ để Zero-Read từ cache.
+- **IDB Locks & Trần Bộ Nhớ iOS 40MB**: Iframe/PWA dùng `persistentSingleTabManager({ forceOwnership: true })`; Desktop chuẩn dùng `persistentMultipleTabManager`. Bắt buộc giới hạn cache iOS ở mức 40MB (`cacheSizeBytes: isIOS ? 41943040 : CACHE_SIZE_UNLIMITED`) để tránh WebKit dọn sạch IDB gây bão đọc.
 
-## 4. Hardware & Storage Safety
-- Luôn kiểm tra quyền `getUserMedia` cho Scanner/Camera; phải gọi `track.stop()` khi unmount. Giới hạn 3-5 FPS khi scan Face/QR để chống đơ UI.
-- **Storage Cleanup (Deep Clean)**: Khi xóa (soft-delete) Task/Project/Cost, bắt buộc dùng `extractStorageUrls` và `deleteStorageFiles` (trong `src/lib/storageUtils.ts`) để quét và xóa file đính kèm trên Firebase Storage, chống rác vật lý mồ côi.
-- Mọi dữ liệu config (`taka_users`, `taka_config`) phải dùng `onSnapshot` để UI cập nhật realtime khi Admin thay đổi.
+## 4. Hardware, Storage & Financial Audit Safety
+- **Camera/Scanner**: Luôn kiểm tra quyền `getUserMedia`; gọi `track.stop()` khi unmount. Giới hạn 3-5 FPS khi scan Face/QR để chống đơ UI.
+- **Storage Deep Clean**: Khi xóa (soft/hard delete) Task/Project/Cost, bắt buộc dùng `extractStorageUrls` và `deleteStorageFiles` (trong `src/lib/storageUtils.ts`) để xóa sạch file đính kèm trên Firebase Storage, chống rác mồ côi.
+- **Config Realtime & Audit Logging**: Bảng config (`taka_users`, `taka_config`) phải dùng `onSnapshot`. Mọi biến động luồng tiền (Budget/Cost) bắt buộc ghi log vào `audit_logs` (Append-only) để truy vết kiểm toán.
 
-## 5. Safe Integration (Tích hợp tính năng mới từ file ZIP)
-Khi giải nén và tích hợp tính năng mới (vd: picture mapping từ file ZIP), BẮT BUỘC tuân thủ nguyên tắc "Cô lập & Chỉ thêm vào" (Decoupled & Additive-Only):
-- **Strict Isolation**: Gom toàn bộ UI/Logic mới vào thư mục riêng biệt (vd: `src/components/NewFeature/`). Tuyệt đối không trộn lẫn vào các core components hiện tại.
-- **Zero-Modification**: TUYỆT ĐỐI KHÔNG sửa/xóa/ghi đè UI layout, CSS, custom hooks, hay các hàm đang chạy. Việc kết nối tính năng mới CHỈ ĐƯỢC cắm thêm qua 1 Nút/Tab Navigation (Plug-and-play).
-- **State & Schema Safety**: Mọi state mới phải là slice độc lập trong Zustand (không can thiệp vào `tasks`, `projects`, v.v.). Type mới viết nối ở cuối `src/types.ts` hoặc tạo file riêng. Cấm sửa đổi `BUSINESS_LOGIC.md`.
+## 5. Safe Integration (Tích Hợp Module Mới / ZIP)
+- **Strict Isolation**: Gom toàn bộ UI/Logic mới vào thư mục riêng (vd: `src/components/NewFeature/`). Không trộn lẫn vào core components.
+- **Zero-Modification**: Tuyệt đối không sửa/ghi đè UI layout, CSS, hooks hiện có. Chỉ kết nối qua 1 nút/tab navigation (Plug-and-play).
+- **State & Schema Safety**: State mới tạo slice độc lập trong Zustand; type mới viết nối cuối `src/types.ts` hoặc file riêng. Cấm sửa `BUSINESS_LOGIC.md`.
 
-## 6. UI/UX & Responsive Performance Architecture
-- **Atomic UI Component Isolation**: Mọi nút điều khiển UI/UX phức tạp (vd: `RibbonDisplayMenu`, Quick Access Toolbar) phải tách riêng thành standalone component và quản lý qua `UISlice` trong Zustand. Tuyệt đối không nhồi chung UI state vào data slices để tránh làm re-render toàn bộ bảng tính / danh sách công việc.
-- **Mobile/iOS Responsive Anti-Cluttering**:
-  - Trên màn hình di động/iOS, KHÔNG nhân bản hay xếp đè nhiều nút công cụ lên Header/Navigation.
-  - Sử dụng class `hidden lg:inline-flex` để ẩn các nút Ribbon/Toolbar phức tạp trên mobile và gom gọn vào đúng 1 vị trí trực quan duy nhất trong Slide-out Navigation Drawer.
-- **Sticky Controls & Reflow Prevention**: Các thanh công cụ/nút bấm quan trọng (vd: nút Edit Mode trong Task Detail, thanh Gantt Controls) phải dùng `sticky top-0 z-[100]` với `backdrop-blur-md` để theo dõi vị trí cuộn mượt mà mà không gây giật lag hay tính toán lại vị trí DOM (layout reflow).
-- **Keyboard Shortcuts & Clean Listeners**: Các chế độ hiển thị toàn màn hình (Full-screen/Focus mode) phải gắn listener phím `Escape` trên `window` và bắt buộc cleanup listener khi unmount để chống rò rỉ bộ nhớ (memory leak).
+## 6. UI/UX & Responsive Architecture
+- **Tách biệt UI Controls**: Nút điều khiển phức tạp (Ribbon/Toolbar) tách thành standalone component quản lý qua `UISlice`, không nhồi vào data slices.
+- **Mobile Responsive**: Trên di động, dùng `hidden lg:inline-flex` để ẩn Ribbon/Toolbar phức tạp trên Header và gom gọn vào Navigation Drawer.
+- **Sticky & Reflow Guard**: Thanh công cụ/nút chính dùng `sticky top-0 z-[100] backdrop-blur-md` để cuộn mượt mà, chống layout reflow.
+- **Shortcuts & Memory**: Full-screen/Focus mode gắn phím `Escape` trên `window` và cleanup listener khi unmount.
 
-## 7. Canvas & Graphics Performance Guards (Konva & SVG)
-- **Hit-Graph Overhead Elimination**: Mọi Konva element không nhận sự kiện click/tap (Text labels, Alert Badges, Golden Focus Rings, Grid Lines, Background Map shapes) **BẮT BUỘC** gắn `listening={false}` và `perfectDrawEnabled={false}` để Konva không tốn CPU vẽ Hit Canvas ngầm.
-- **High-Frequency Event Throttling**: Các thao tác Wheel, Pan, Pinch-to-zoom và Dragging phải bọc trong `requestAnimationFrame` và huỷ bằng `cancelAnimationFrame` khi unmount, ngăn chặn đơ UI trên trackpad và màn hình 120Hz/ProMotion.
-- **Offscreen Canvas & Image Caching**: Bản vẽ mặt bằng nặng (PNG/SVG HD) phải decode qua `useOffscreenImage` hoặc memoized HTMLImage, cấm reload lại ảnh khi chuyển tầng hoặc thay đổi bộ lọc màu.
-- **O(1) Data Pre-Indexing**: Tuyệt đối không dùng `.filter()` lồng trong `.map()` khi render canvas hoặc bảng tính lớn. Luôn index dữ liệu qua `Map<string, T[]>` trong `useMemo` trước khi render (chuyển đổi từ O(N*M) sang O(N)).
+## 7. Graphics & Canvas Guards (Konva & SVG)
+- **Hit-Graph Elimination**: Mọi Konva element không nhận sự kiện click (Labels, Badges, Rings, Grid, Background Map) **bắt buộc** gắn `listening={false}` và `perfectDrawEnabled={false}`.
+- **Event Throttling**: Wheel, Pan, Pinch, Drag phải bọc trong `requestAnimationFrame` và hủy bằng `cancelAnimationFrame` khi unmount.
+- **Image Caching**: Mặt bằng nặng giải mã qua `useOffscreenImage` hoặc memoized HTMLImage; cấm reload lại ảnh khi đổi filter/tầng.
+- **O(1) Data Pre-Indexing**: Không lồng `.filter()` trong `.map()`. Tiền xử lý dữ liệu qua `Map<string, T[]>` trong `useMemo` trước khi render.
 
-## 8. Realtime Chat, Comments & Inline Mutation Economy (Firestore Protection)
-- **Zero-Query Read for Modals**: Mọi modal chi tiết (Task Detail, Quick Navigator, Project Comments) phải đọc thẳng từ state Zustand đã được sync, cấm gọi `getDoc` hoặc `query` độc lập từ Firestore.
-- **Targeted ArrayUnion for Comments**: Thao tác thêm bình luận (`project.comments`), activity logs hoặc chat nội bộ phải dùng `arrayUnion()` trên doc dự án, tránh ghi đè toàn bộ doc gây race condition và xung đột dữ liệu.
-- **Debounced Sync Queue (Auto-Save)**: Các ô nhập liệu nhanh trong Gantt, Detail, Review phải cập nhật tức thời vào Zustand state (0ms) và debounce 400ms trước khi đưa vào hàng đợi `syncQueue` (Firestore Batch Write), cấm phát sinh 1 write/mỗi ký tự gõ.
+## 8. Realtime Mutation & Chat Economy
+- **Zero-Query for Modals**: Modal chi tiết (Task/Project Detail, QuickNav) đọc trực tiếp từ Zustand, cấm gọi query/getDoc Firestore độc lập.
+- **Targeted ArrayUnion**: Thêm bình luận (`project.comments`), activity log, chat phải dùng `arrayUnion()` trên doc, tránh ghi đè toàn bộ doc.
+- **Debounced Auto-Save**: Ô nhập nhanh cập nhật tức thì vào Zustand (0ms) và debounce 400ms trước khi đưa vào hàng đợi `syncQueue` (Firestore Batch Write).
 
-## 9. Task Hierarchy & Parent-Child Rollup Engine
-- **Pure In-Memory Computed Rollup**: Mọi ngày bắt đầu (start), kết thúc (finish), thời lượng (duration) và tiến độ (%) của Task mẹ phải được tính tự động từ danh sách Task con **hoàn toàn trong bộ nhớ client** (Pure Function).
-- **Zero Cascading Database Triggers**: Không tạo Cloud Function trigger hoặc vòng lặp write ngược lại Firestore để cập nhật Task mẹ, bảo toàn ngân sách Firestore và ngăn chặn lag mạng.
-- **Circular Dependency Guard**: Luôn kiểm tra `visited` Set trong các hàm duyệt cây task để chống treo trình duyệt do vòng lặp cha - con vô tận.
+## 9. Task Hierarchy & Rollup Engine
+- **In-Memory Computed Rollup**: Ngày bắt đầu, kết thúc, duration, tiến độ (%) của Task mẹ tính tự động từ Task con 100% trong bộ nhớ client (Pure Function). Cấm dùng Cloud Function trigger ghi ngược Firestore.
+- **Circular Guard**: Dùng `visited` Set khi duyệt cây task để chống treo trình duyệt do vòng lặp cha - con.
 
-## 10. Language & Terminology Standard (English UI Mandate)
-- **English UI & Titles**: Toàn bộ tiêu đề (Titles), nhãn điều khiển (Labels), chú thích (Tooltips), diễn giải chức năng (Descriptions), cảnh báo (Notifications & Alerts), và trạng thái (Badges) trên giao diện ứng dụng **BẮT BUỘC** viết bằng tiếng Anh ngắn gọn, súc tích và chuẩn chuyên nghiệp (Enterprise-grade English).
+## 10. Language Standard (English UI Mandate)
+- **100% English UI**: Toàn bộ tiêu đề (Titles), nhãn (Labels), chú thích (Tooltips), diễn giải (Descriptions), cảnh báo (Alerts/Toasts), trạng thái (Badges) phải dùng tiếng Anh chuyên nghiệp chuẩn Enterprise.
 
-## 11. Draggable Modals & Tooltips Mandate
-- **Universal Draggability**: Mọi modal, hộp thoại (ProjectModal, TaskModal, UserModal, ConfirmModal, CalendarSync, DesktopOptimization, QuickNav) và các bảng modular, floating tooltips (LayoutUnitTooltip, v.v.) hiện tại và tạo mới trong tương lai **BẮT BUỘC** hỗ trợ tính năng kéo thả di chuyển (Draggable / Pointer Drag) với tay cầm (`.modal-handle`, `cursor-grab active:cursor-grabbing` hoặc icon `GripHorizontal`) để người dùng linh hoạt dịch chuyển vị trí, không bị che khuất dữ liệu bên dưới.
+## 11. Universal Draggable Modals & Tooltips
+- Mọi modal (`ProjectModal`, `TaskModal`, `UserModal`, `ConfirmModal`, `CalendarSync`, `QuickNav`...) và modular tooltip bắt buộc hỗ trợ kéo thả (Draggable/Pointer Drag) với handle (`.modal-handle`, `cursor-grab active:cursor-grabbing` hoặc icon `GripHorizontal`).
 
-## 12. Modal & Component Performance Standards (Render Isolation & JIT)
-- **Conditional JIT Mounting**: Mọi modal nặng (`TaskModal`, `ProjectModal`, `UserModal`, `CalendarSyncModal`, `QRScannerModal`) BẮT BUỘC dùng Dynamic Import JIT, bọc trong `<Suspense fallback={null}>` và CHỈ MOUNT khi có lệnh mở (`{isOpen && <Modal />}`). Cấm duy trì DOM ẩn chạy ngầm khi Modal đóng.
-- **Form Sub-Component Modularization**: Mọi modal form phức tạp BẮT BUỘC tách thành các sub-components độc lập bọc `React.memo` (vd: `TaskDatesSection`, `TaskPredecessorSection`, `TaskModalHeader`). Thao tác gõ văn bản hoặc thay đổi input ở 1 phần không được gây re-render các phần còn lại.
-- **Unified Shallow Subscriptions**: Tận dụng triệt để các shallow selector hooks (`useUISlice`, `useDataSlice`, `useStoreShallow` trong `src/store/useAppStore.ts`) để đảm bảo component chỉ re-render khi đúng thuộc tính được lắng nghe thay đổi.
+## 12. Modal Performance, Code Splitting & JIT
+- **JIT Mounting**: Modal nặng bắt buộc dùng Dynamic Import (`React.lazy`), bọc `<Suspense fallback={null}>` và chỉ mount khi mở (`{isOpen && <Modal />}`). Cấm DOM ẩn chạy ngầm.
+- **Thư Viện Nặng & Code Splitting**: Cấm import tĩnh các thư viện nặng (`xlsx`, `html2canvas`, `konva`, `jspdf`) vào bundle chính. Bắt buộc dùng `await import(...)` hoặc `React.lazy` để file bundle chính luôn dưới 1MB, tối ưu thời gian khởi động (FCP) trên máy POS/di động.
+- **Form Sub-Components**: Form phức tạp tách thành các component con bọc `React.memo` để gõ phím không re-render cả modal.
 
-## 13. Unified UI/UX Design System & Element Consistency (Quy chuẩn Thiết kế Đồng nhất)
-- **Universal Design Consistency Mandate**: Các thành phần giao diện (UI elements) và ngôn ngữ thiết kế (Design Language) trên toàn bộ ứng dụng (General, Detail, Gantt, Cost, Budget, Layout, Summary, Notification, Settings, Modals, v.v.) **BẮT BUỘC** phải được thiết kế đồng nhất $100\%$ về kiểu dáng, font chữ, màu sắc, khoảng cách, icon và trải nghiệm tương tác.
-- **Data Field & Typography Uniformity**:
-  - **Year (Năm)**: Quy cách hiển thị, badge hoặc nhãn lọc năm (`font-bold`, palette màu neutral/theme chuẩn) phải đồng nhất trên mọi bảng tính, biểu đồ Gantt, thẻ tổng hợp và bộ lọc.
-  - **Project Code & Task Code**: Luôn dùng font monospace (`font-mono font-extrabold uppercase`), màu xanh thương hiệu (`text-blue-700 dark:text-[#8ab4f8]`), kèm hover state nhất quán.
-  - **Task Name & Descriptions**: Sử dụng thống nhất hệ thống Typography chuẩn (cùng `font-medium`/`font-semibold`, line-height, text truncation `truncate` hoặc `line-clamp` đồng bộ giữa Task Detail, Gantt, Modal và Calendar).
-  - **Store Identifier (Chi nhánh HCM / HN)**: Áp dụng màu sắc nhận diện bất biến trên toàn hệ thống (HCM: Blue `text-blue-600 dark:text-[#8ab4f8]`, HN: Red `text-red-600 dark:text-red-400`).
-  - **Status & Progress Badges**: Các trạng thái tiến độ (Completed, On Process, Upcoming, Delay, Overdue) phải dùng chung chuẩn màu Tailwind (Emerald, Blue, Amber, Rose) và cùng cấu trúc bo góc, padding badge trên mọi component.
-- **Interactive Controls & Tokens Reuse**: Mọi nút bấm (Buttons), thanh tìm kiếm (`DebouncedSearchInput`), dropdown lọc (`MultiCheckboxSelect`), ô nhập liệu nhanh (`FastInput`), date picker và các action buttons phải dùng chung quy chuẩn Token Tailwind (`rounded-lg`/`rounded-xl`, `active:scale-95 touch-manipulation`, border transition và focus ring).
+## 13. Unified Design System & Typography
+- **Year**: Định dạng hiển thị và badge năm đồng nhất (`font-bold`, palette neutral/theme chuẩn).
+- **Project & Task Code**: Dùng font monospace (`font-mono font-extrabold uppercase`), màu xanh thương hiệu (`text-blue-700 dark:text-[#8ab4f8]`).
+- **Store Identifier**: HCM: Blue (`text-blue-600 dark:text-[#8ab4f8]`), HN: Red (`text-red-600 dark:text-red-400`).
+- **Status Badges**: Trạng thái (Completed, On Process, Upcoming, Delay, Overdue) dùng chung màu Tailwind (Emerald, Blue, Amber, Rose) và quy cách bo góc/padding.
+- **Token Reuse**: Buttons, `DebouncedSearchInput`, `MultiCheckboxSelect`, `FastInput` dùng chung token (`rounded-lg`/`rounded-xl`, `active:scale-95 touch-manipulation`, border transition, focus ring).
 
-
+## 14. Documentation Maintenance
+- Khi hoàn thành hoặc thay đổi tính năng mới, **bắt buộc** cập nhật các bước thao tác vào `USER_MANUAL.md`.
