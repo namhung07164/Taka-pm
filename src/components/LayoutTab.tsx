@@ -205,7 +205,7 @@ export function LayoutTab({
     }
   }, [initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
 
-  // Available years: strictly based on years where this account has accessible projects (and layouts for store)
+  // Available years: based on years from projects, versions, and active years
   const availableYears = React.useMemo(() => {
     const storeProjects = projects.filter(p => !activeStore || !p.store || String(p.store).toUpperCase().trim() === activeStore);
     const projectYearsSet = new Set<string>();
@@ -216,10 +216,6 @@ export function LayoutTab({
       }
     });
 
-    if (currentUser?.role !== 'admin') {
-      return Array.from(projectYearsSet).sort((a, b) => Number(b) - Number(a));
-    }
-
     const versionYears = Array.from(
       new Set(
         allStoreVersions
@@ -227,20 +223,12 @@ export function LayoutTab({
           .filter(y => y && y.toLowerCase() !== 'all')
       )
     );
-    const combined = Array.from(new Set([...projectYearsSet, ...versionYears]))
+    const combined = Array.from(new Set([...projectYearsSet, ...versionYears, '2026', '2027']))
       .filter(Boolean)
       .sort((a, b) => Number(b) - Number(a));
 
-    if (combined.length > 0) {
-      return combined;
-    }
-
-    if (projects.length === 0) {
-      return [];
-    }
-
-    return [new Date().getFullYear().toString()];
-  }, [allStoreVersions, projects, activeStore, currentUser]);
+    return combined.length > 0 ? combined : ['2026', '2027'];
+  }, [allStoreVersions, projects, activeStore]);
 
   const effectiveYear = React.useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {

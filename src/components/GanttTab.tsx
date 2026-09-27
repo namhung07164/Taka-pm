@@ -583,6 +583,8 @@ export function GanttTab({
         years.add(y);
       }
     });
+    years.add('2026');
+    years.add('2027');
     return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [projects]);
 
