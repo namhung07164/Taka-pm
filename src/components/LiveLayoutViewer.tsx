@@ -12,6 +12,8 @@ import { extractR2Key, getS3Sdk, downloadR2JsonFile, resolveR2UrlToHttp } from '
 import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn, extractAllProjectCodes, projectMatchesUnitCode } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
+
+const LayoutMiniGanttModal = React.lazy(() => import('./LayoutTabParts/LayoutMiniGanttModal'));
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
@@ -867,6 +869,7 @@ function LiveCanvas({
     };
   } | null>(null);
   const isPinnedRef = useRef(false);
+  const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
@@ -3181,6 +3184,9 @@ function LiveCanvas({
                 onClearFocus?.();
               }
             }}
+            onOpenMiniGantt={(project) => {
+              setMiniGanttProject(project);
+            }}
             onEditProject={(project, isReadOnly, tab) => {
               if (tab === 'chat') {
                 isPinnedRef.current = true;
@@ -3197,6 +3203,17 @@ function LiveCanvas({
             storeFilter={storeFilter}
           />
         </div>
+      )}
+
+      {/* JIT Mounted Draggable Mini Gantt Modal (AGENTS.md Rule 11 & 12) - Locked to opened project to prevent jumping when panning */}
+      {miniGanttProject && (
+        <React.Suspense fallback={null}>
+          <LayoutMiniGanttModal
+            project={miniGanttProject}
+            isOpen={Boolean(miniGanttProject)}
+            onClose={() => setMiniGanttProject(null)}
+          />
+        </React.Suspense>
       )}
 
       {/* Canvas Viewport */}
@@ -3443,7 +3460,7 @@ function LiveCanvas({
                   y: unit.y || 0,
                   rotation: unit.rotation || 0,
                   onMouseEnter: (e: any) => {
-                     if (isInteractingRef.current || isPinnedRef.current) return;
+                     if (isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject)) return;
                      try {
                         const container = e.target.getStage()?.container();
                         if (container) container.style.cursor = 'pointer';
@@ -3461,7 +3478,7 @@ function LiveCanvas({
                      }
                   },
                   onMouseMove: (e: any) => {
-                     if (isInteractingRef.current || isPinnedRef.current) return;
+                     if (isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject)) return;
                      try {
                         updateTooltipPos(e.evt.clientX, e.evt.clientY);
                      } catch (err) {
@@ -3472,14 +3489,14 @@ function LiveCanvas({
                      try {
                         const container = e.target.getStage()?.container();
                         if (container) container.style.cursor = 'grab';
-                        if (isPinnedRef.current) return;
+                        if (isPinnedRef.current || Boolean(miniGanttProject)) return;
                         setHoverInfo(null);
                      } catch (err) {
                         console.error("Defensive Check: Error onMouseLeave unit in LiveLayoutViewer:", err, unit);
                      }
                   },
                   onClick: (e: any) => {
-                     if (isInteractingRef.current) return;
+                     if (isInteractingRef.current || Boolean(miniGanttProject)) return;
                      try {
                         isPinnedRef.current = true;
                         const uName = (unit.name || '').toLowerCase();
@@ -3496,7 +3513,7 @@ function LiveCanvas({
                      }
                   },
                   onTap: (e: any) => {
-                     if (isInteractingRef.current) return;
+                     if (isInteractingRef.current || Boolean(miniGanttProject)) return;
                      try {
                         isPinnedRef.current = true;
                         const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;

@@ -271,6 +271,9 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
           e.stopPropagation();
           onClose();
         }} 
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
         className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-xs pointer-events-auto transition-opacity cursor-pointer" 
       />
 
@@ -283,6 +286,9 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
       >
         <div
           ref={nodeRef}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
           className="relative pointer-events-auto bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl flex flex-col w-full max-w-3xl max-h-[85vh] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150"
           style={{ cursor: 'default' }}
         >

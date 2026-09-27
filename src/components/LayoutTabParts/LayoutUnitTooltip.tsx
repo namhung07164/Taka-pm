@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef, useState, Suspense, lazy } from 'react';
+import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef } from 'react';
 import { 
   MessageSquare, 
   X,
@@ -13,8 +13,6 @@ import { cn, parseDateTime } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
-
-const LayoutMiniGanttModal = lazy(() => import('./LayoutMiniGanttModal'));
 
 interface LayoutUnitTooltipProps {
   hoverInfo: {
@@ -36,6 +34,7 @@ interface LayoutUnitTooltipProps {
   containerRef?: React.RefObject<HTMLDivElement>;
   onClose: () => void;
   onEditProject?: (project: Project, isReadOnly?: boolean, tab?: 'details' | 'chat' | 'delegation') => void;
+  onOpenMiniGantt?: (project: Project) => void;
   canWrite?: boolean;
   storeFilter?: string;
 }
@@ -95,6 +94,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   containerRef,
   onClose,
   onEditProject,
+  onOpenMiniGantt,
   canWrite = false,
   storeFilter = 'HCM'
 }) => {
@@ -103,7 +103,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
   const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
-  const [showMiniGantt, setShowMiniGantt] = useState(false);
 
   // Draggable State Handling
   const isDraggingRef = useRef(false);
@@ -638,12 +637,12 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             )}
 
             {/* Modular Mini Gantt Button (Next to comments button) */}
-            {p && (
+            {p && onOpenMiniGantt && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setShowMiniGantt(true);
+                  onOpenMiniGantt(p);
                 }}
                 className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all active:scale-95 touch-manipulation cursor-pointer shrink-0 shadow-xs"
                 title="Open Mini Gantt Timeline"
@@ -733,17 +732,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             </div>
           )}
         </div>
-      )}
-
-      {/* JIT Mounted Draggable Mini Gantt Modal (AGENTS.md Rule 11 & 12) */}
-      {showMiniGantt && p && (
-        <Suspense fallback={null}>
-          <LayoutMiniGanttModal
-            project={p}
-            isOpen={showMiniGantt}
-            onClose={() => setShowMiniGantt(false)}
-          />
-        </Suspense>
       )}
     </div>
   );
