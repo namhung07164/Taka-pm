@@ -193,11 +193,16 @@ export function LayoutTab({
 
   // Available years: based on years from projects, versions, and active years
   const availableYears = React.useMemo(() => {
-    const storeProjects = projects.filter(p => !activeStore || !p.store || String(p.store).toUpperCase().trim() === activeStore);
+    const storeProjects = projects.filter(p => {
+      if (!activeStore || activeStore === 'all') return true;
+      const pStore = String(p.store || 'HCM').toUpperCase().trim();
+      return pStore === activeStore;
+    });
+
     const projectYearsSet = new Set<string>();
     storeProjects.forEach(p => {
       const y = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
-      if (y && y.toLowerCase() !== 'all') {
+      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
         projectYearsSet.add(y);
       }
     });
@@ -205,15 +210,31 @@ export function LayoutTab({
     const versionYears = Array.from(
       new Set(
         allStoreVersions
+          .filter(v => {
+            if (!activeStore || activeStore === 'all') return true;
+            const vStore = String(v.store || (activeStore === 'HN' ? 'HN' : 'HCM')).toUpperCase().trim();
+            return vStore === activeStore;
+          })
           .map(v => (v.year ? String(v.year).trim() : ''))
-          .filter(y => y && y.toLowerCase() !== 'all')
+          .filter(y => y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y))
       )
     );
-    const combined = Array.from(new Set([...projectYearsSet, ...versionYears, '2026', '2027']))
+
+    const combined = Array.from(new Set([...projectYearsSet, ...versionYears]))
       .filter(Boolean)
       .sort((a, b) => Number(b) - Number(a));
 
-    return combined.length > 0 ? combined : ['2026', '2027'];
+    if (combined.length > 0) {
+      return combined;
+    }
+
+    // Fallback if store has no projects or versions yet:
+    // For HCM: default to ['2026', '2027']
+    // For HN: default to ['2027'] (do NOT show 2026 if HN has no 2026 data)
+    if (activeStore === 'HN') {
+      return ['2027'];
+    }
+    return ['2026', '2027'];
   }, [allStoreVersions, projects, activeStore]);
 
   const effectiveYear = React.useMemo(() => {
