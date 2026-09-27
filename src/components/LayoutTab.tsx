@@ -78,22 +78,8 @@ export function LayoutTab({
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
 
   const allowedStores = React.useMemo(() => {
-    const rawAllowed = getUserAllowedStores(currentUser);
-    const storesWithProjects = new Set<string>();
-    projects.forEach(p => {
-      const s = String(p.store || '').toUpperCase().trim();
-      if (s) storesWithProjects.add(s);
-    });
-
-    if (currentUser?.role !== 'admin') {
-      return rawAllowed.filter(s => storesWithProjects.has(s.toUpperCase()));
-    }
-    if (projects.length > 0) {
-      const filtered = rawAllowed.filter(s => storesWithProjects.has(s.toUpperCase()));
-      return filtered.length > 0 ? filtered : rawAllowed;
-    }
-    return rawAllowed;
-  }, [currentUser, projects]);
+    return getUserAllowedStores(currentUser);
+  }, [currentUser]);
   const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
   const activeStore = effectiveStore === 'all' ? (allowedStores[0] || '') : (allowedStores.includes(effectiveStore) ? effectiveStore : (allowedStores[0] || ''));
 
