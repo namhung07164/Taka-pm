@@ -13,6 +13,14 @@ import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime } from '../../lib/utils';
 
+// Helper to format date concisely as DD/MM
+const formatCompactDate = (d: Date | null): string => {
+  if (!d || isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+};
+
 interface LayoutMiniGanttModalProps {
   project: Project;
   isOpen: boolean;
@@ -319,9 +327,10 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
               <div className="min-w-[550px] flex flex-col">
                 {/* Timeline Grid Header */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-slate-200 dark:border-[#333336] bg-slate-100/90 dark:bg-[#202022] backdrop-blur-xs text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                  {/* Left Column: Task Name & Code */}
-                  <div className="w-[210px] sm:w-[240px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider">
-                    Task Code / Name
+                  {/* Left Column: Task Name & Dates */}
+                  <div className="w-[230px] sm:w-[260px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider flex items-center justify-between">
+                    <span>Task</span>
+                    <span className="font-mono text-[9px] text-slate-400 font-medium">Dates</span>
                   </div>
                   {/* Right Column: Time Scale Markers */}
                   <div className="flex-1 px-3 py-1.5 flex justify-between uppercase tracking-wider">
@@ -338,6 +347,18 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                     const tFinish = parseDateTime(t.finish);
                     const rawDuration = parseInt(t.duration || '1', 10);
                     const duration = isNaN(rawDuration) || rawDuration <= 0 ? 1 : rawDuration;
+
+                    // Concise dates: DD/MM - DD/MM
+                    const sFormatted = formatCompactDate(tStart);
+                    const fFormatted = formatCompactDate(tFinish);
+                    let dateRangeText = '';
+                    if (sFormatted && fFormatted) {
+                      dateRangeText = sFormatted === fFormatted ? sFormatted : `${sFormatted} - ${fFormatted}`;
+                    } else if (sFormatted) {
+                      dateRangeText = sFormatted;
+                    } else if (fFormatted) {
+                      dateRangeText = `→ ${fFormatted}`;
+                    }
 
                     // Compute relative Gantt Bar position
                     let leftPercent = 0;
@@ -364,32 +385,27 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                           ? 'bg-blue-500 hover:bg-blue-600'
                           : 'bg-indigo-400 hover:bg-indigo-500';
 
-                    const displayCode = t.taskCodePhu || `#${idx + 1}`;
-
                     return (
                       <div 
                         key={t.id || idx}
                         className="flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group h-9"
                       >
-                        {/* Task Info Cell */}
-                        <div className="w-[210px] sm:w-[240px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-1.5 min-w-0">
-                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <span className="font-mono text-[10px] font-bold text-slate-400 dark:text-slate-500 shrink-0">
-                              {displayCode}
-                            </span>
-                            <span 
-                              className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate"
-                              title={`${displayCode ? `${displayCode} - ` : ''}${t.name}`}
-                            >
-                              {t.name}
-                            </span>
-                          </div>
-                          <span className={cn(
-                            "text-[9.5px] font-mono font-bold px-1 rounded shrink-0",
-                            isCompleted ? "text-emerald-600 dark:text-emerald-400" : isDelay ? "text-rose-600 dark:text-rose-400" : "text-slate-500 dark:text-slate-400"
-                          )}>
-                            {t.runningStatus || (isCompleted ? 'Done' : 'Pending')}
+                        {/* Task Info Cell: Name & Compact Dates */}
+                        <div className="w-[230px] sm:w-[260px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
+                          <span 
+                            className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1"
+                            title={`${t.name}${dateRangeText ? ` (${dateRangeText})` : ''}`}
+                          >
+                            {t.name}
                           </span>
+                          {dateRangeText && (
+                            <span 
+                              className="font-mono text-[10px] text-slate-500 dark:text-slate-400 shrink-0 tabular-nums"
+                              title={`Start: ${t.start || 'N/A'} - Finish: ${t.finish || 'N/A'}`}
+                            >
+                              {dateRangeText}
+                            </span>
+                          )}
                         </div>
 
                         {/* Gantt Bar Cell */}

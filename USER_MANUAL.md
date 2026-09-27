@@ -546,7 +546,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
         * **Cửa sổ Timeline Kéo thả (Draggable Window)**: Nhấp vào nút `[ 📊 Gantt ]` sẽ mở ra cửa sổ **Mini Gantt Timeline** độc lập, hỗ trợ kéo thả tự do (`.modal-handle`, `cursor-grab`) để di chuyển khắp màn hình mà không che khuất mặt bằng bản vẽ.
         * **Trực quan hóa Tiến độ Công việc**:
           - Hiển thị dải thời gian tổng (`Timeline: Start → Finish`) và tổng số ngày thực hiện của gian hàng.
-          - Liệt kê đầy đủ danh sách các hạng mục công việc con, mã đầu việc, thời lượng số ngày và thanh bar tiến độ trực quan theo thời gian thực.
+          - Liệt kê gọn gàng danh sách các hạng mục công việc (bỏ mã task rườm rà và nhãn Pending thừa thãi), hiển thị ngày bắt đầu - kết thúc dạng siêu gọn (`DD/MM - DD/MM`), thời lượng số ngày và thanh bar tiến độ trực quan theo thời gian thực.
           - Tự động phân màu trạng thái: Xanh lá (`Completed / Done`), Xanh dương (`In Progress / Doing`), Đỏ nhấp nháy (`Delayed / Delay`).
         * **Zero-Read & Tải Lười JIT (Rule 8 & 12)**: Tải lười qua `React.lazy`, chỉ mount khi mở (`{showMiniGantt && <LayoutMiniGanttModal />}`) và đọc trực tiếp từ bộ nhớ đệm Zustand, không phát sinh thêm lượt đọc Firestore.
         * **Nút Chuyển nhanh sang Full Gantt Tab**: Góc dưới cửa sổ có nút `[ Full Gantt View ]` (biểu tượng ↗) giúp người dùng chuyển ngay sang biểu đồ Gantt toàn diện với đúng dự án đang chọn khi cần thao tác chi tiết. Bấm phím `Escape` hoặc nút `X` để đóng nhanh cửa sổ.
