@@ -40,15 +40,24 @@ export const GanttTodayLine: React.FC<GanttTodayLineProps> = React.memo(({
     (showDuration ? durationColWidth : 0) +
     todayLeftPx;
 
+  const formattedDate = format(customToday, 'dd/MM/yyyy');
+
   return (
     <div
-      className="absolute top-0 bottom-0 w-1 z-20 group/today"
-      style={{ left: leftPosition }}
+      className="absolute top-0 bottom-0 pointer-events-none z-30 flex flex-col items-center group/today"
+      style={{ left: `${leftPosition}px` }}
+      title={`Today: ${formattedDate}`}
     >
-      <div className="absolute inset-y-0 left-0 w-px border-l-2 border-red-500" />
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover/today:opacity-100 transition-opacity whitespace-nowrap">
-        {format(customToday, 'dd/MM/yyyy')}
+      {/* Today Pin Header Badge matching Mini Gantt */}
+      <div className="sticky top-0 z-40 -translate-x-1/2 pt-0.5 select-none">
+        <div className="bg-red-500 dark:bg-rose-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded shadow-md tracking-wider flex items-center gap-1 whitespace-nowrap ring-1 ring-white/30 backdrop-blur-xs">
+          <span>TODAY</span>
+          <span className="opacity-95 font-mono font-bold">({formattedDate})</span>
+        </div>
       </div>
+
+      {/* Glowing Today Line matching Mini Gantt */}
+      <div className="w-0.5 flex-1 bg-red-500 dark:bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
     </div>
   );
 });
