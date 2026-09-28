@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { cn, parseDateTime } from '../../lib/utils';
 import { positionTooltip, formatGanttDate } from './GanttUtils';
+import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
+import { Task, Project } from '../../types';
 
 export interface GanttBarProps {
   startStr: string | undefined;
@@ -21,6 +23,10 @@ export interface GanttBarProps {
     isSimulation?: boolean;
     hasChildren?: boolean;
     childCount?: number;
+    task?: Task;
+    tasks?: Task[];
+    projects?: Project[];
+    canWrite?: boolean;
     onProcessChildTasks?: Array<{
       id: string;
       name: string;
@@ -66,6 +72,7 @@ export const GanttBar = React.memo(function GanttBar({
   const isMilestone = dStart && dEnd && Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000;
   
   const [isHovered, setIsHovered] = useState(false);
+  const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
@@ -129,7 +136,7 @@ export const GanttBar = React.memo(function GanttBar({
           </span>
         </div>
         
-        {(isHovered || activeTooltip === id) && createPortal(
+        {(isHovered || activeTooltip === id || isEditingPredecessor) && createPortal(
           <div
             ref={tooltipRef}
             style={{ top: -9999, left: -9999 }}
@@ -166,20 +173,31 @@ export const GanttBar = React.memo(function GanttBar({
                 )}
               </div>
             )}
-            {(extraVars?.party || extraVars?.predecessors) && (
-              <div className="flex justify-between gap-4">
+            {(extraVars?.party || extraVars?.task || extraVars?.predecessors) && (
+              <div className="flex flex-col gap-1.5 mt-0.5">
                 {extraVars?.party && (
                   <div className="flex gap-2">
                     <span className="text-slate-400">Party:</span>
                     <span>{extraVars.party}</span>
                   </div>
                 )}
-                {extraVars?.predecessors && (
+                {extraVars?.task ? (
+                  <GanttTooltipPredecessor
+                    task={extraVars.task}
+                    tasks={extraVars.tasks || []}
+                    projects={extraVars.projects || []}
+                    canWrite={!!extraVars.canWrite && !isSimulation}
+                    compact
+                    onEditingChange={setIsEditingPredecessor}
+                  />
+                ) : extraVars?.predecessors ? (
                   <div className="flex gap-2">
                     <span className="text-slate-400">Pred:</span>
-                    <span className="max-w-[200px] break-words whitespace-normal" title={extraVars.predecessors}>{extraVars.predecessors}</span>
+                    <span className="max-w-[200px] break-words whitespace-normal font-mono" title={extraVars.predecessors}>
+                      {extraVars.predecessors}
+                    </span>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
             {extraVars?.actStatus && (
@@ -295,7 +313,7 @@ export const GanttBar = React.memo(function GanttBar({
         )}
       </div>
       
-      {(isHovered || activeTooltip === id) && createPortal(
+      {(isHovered || activeTooltip === id || isEditingPredecessor) && createPortal(
         <div
           ref={tooltipRef}
           style={{ top: -9999, left: -9999 }}
@@ -345,26 +363,34 @@ export const GanttBar = React.memo(function GanttBar({
             </span>
             <span className="text-pink-300 dark:text-pink-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
           </div>
-          {(extraVars?.party || extraVars?.predecessors) && (
-            <div className="flex items-start gap-4 mt-1 border-t border-slate-600 pt-1.5">
+          {(extraVars?.party || extraVars?.task || extraVars?.predecessors) && (
+            <div className="flex flex-col gap-2 mt-1 border-t border-slate-600 pt-1.5">
               {extraVars?.party && (
-                <div className="flex flex-col gap-0.5 flex-1">
+                <div className="flex flex-col gap-0.5">
                   <span className="text-slate-400 dark:text-[#838383] text-[10px] uppercase tracking-wider">
                     Party
                   </span>
                   <span className="font-medium">{extraVars.party}</span>
                 </div>
               )}
-              {extraVars?.predecessors && (
+              {extraVars?.task ? (
+                <GanttTooltipPredecessor
+                  task={extraVars.task}
+                  tasks={extraVars.tasks || []}
+                  projects={extraVars.projects || []}
+                  canWrite={!!extraVars.canWrite && !isSimulation}
+                  onEditingChange={setIsEditingPredecessor}
+                />
+              ) : extraVars?.predecessors ? (
                 <div className="flex flex-col gap-0.5 flex-1">
                   <span className="text-slate-400 dark:text-[#838383] text-[10px] uppercase tracking-wider">
                     Predecessors
                   </span>
-                  <span className="font-medium whitespace-normal max-w-[200px] break-words" title={extraVars.predecessors}>
+                  <span className="font-medium font-mono whitespace-normal max-w-[200px] break-words" title={extraVars.predecessors}>
                     {extraVars.predecessors}
                   </span>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
           {extraVars?.actStatus && (

@@ -138,7 +138,11 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
     hasChildren,
     childCount,
     onProcessChildTasks,
-  }), [actStatus, actStatusObj.color, t.party, tActPrg, t.duration, taskCode, t.predecessor, isHighlightDelegationOn, currentUser, delegationGroups, hasChildren, childCount, onProcessChildTasks]);
+    task: t,
+    tasks,
+    projects,
+    canWrite,
+  }), [actStatus, actStatusObj.color, t.party, tActPrg, t.duration, taskCode, t.predecessor, isHighlightDelegationOn, currentUser, delegationGroups, hasChildren, childCount, onProcessChildTasks, t, tasks, projects, canWrite]);
                         return (
                           <tr
                             id={`gantt-task-${t.id}`}

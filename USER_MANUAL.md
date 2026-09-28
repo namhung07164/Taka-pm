@@ -308,6 +308,14 @@ Trực quan hóa kế hoạch và tiến độ thực tế theo thời gian.
      - **Thanh Gantt mô phỏng trực tiếp trên Timeline**: Trên vùng biểu đồ Gantt, cả đường tia chèn màu xanh và thanh tiến độ mô phỏng (`[Mô phỏng] Tên Task`) với viền nét đứt màu xanh hiển thị xuyên suốt chiều ngang từ cột tên sang timeline, giúp người dùng thấy rõ khung thời gian tương quan trước khi thả chuột.
    - **Tự Động Đồng Bộ Dữ Liệu & Hỗ Trợ Iframe Sandbox**: Thả chuột để hoàn tất chèn; hệ thống hỗ trợ dự phòng bộ nhớ state tự động cho các trình duyệt sandbox, tự động cập nhật lại thứ tự `orderIndex`, cập nhật mã phụ `taskCodePhu` và chuyển đổi tất cả chuỗi `Predecessor` liên quan.
    - **Hỗ Trợ Kéo Thả Nhiều Task Cùng Lúc**: Tích chọn nhiều checkbox ở đầu các dòng nhiệm vụ trong Edit Mode, sau đó kéo một task bất kỳ để chèn cả nhóm vào vị trí mới (dòng mô phỏng sẽ hiển thị tổng số lượng và tên các task được di chuyển cùng lúc).
+    - **Chỉnh Sửa & Điền Gợi Ý Tiền Nhiệm Trực Tiếp Trên Tooltip Gantt (Interactive Predecessor Tooltip Editor)**:
+      * **Thao tác nhanh**: Rê chuột hoặc nhấp vào bất kỳ thanh công việc/milestone nào trên biểu đồ Gantt để mở bảng thông tin nổi (Tooltip).
+      * **Nút sửa / thêm tiền nhiệm**: Trên bảng Tooltip xuất hiện dòng **Predecessors** kèm nút bấm `[ + Add ]` hoặc `[ ✏️ Edit ]`.
+      * **Gợi ý tự động thông minh (Smart Suggestions Dropdown)**: Khi bấm nút, một ô nhập liệu tiền nhiệm chuyên dụng mở ra ngay trên tooltip với đầy đủ tính năng:
+        - Tự động gợi ý danh sách các Task theo thứ tự ưu tiên gần nhất (cùng dự án, cùng năm, cùng chi nhánh, cùng vị trí).
+        - Hỗ trợ các nút chọn nhanh loại liên kết quan hệ tiến độ: **FS (Finish-to-Start)**, **SS (Start-to-Start)**, **FF (Finish-to-Finish)**, **SF (Start-to-Finish)** và độ trễ (`+/- ngày`).
+        - Khi nhấn **Enter** hoặc chọn gợi ý, hệ thống tự động tính toán lại các mốc ngày `Start`, `Finish`, `Duration` và tự động dịch chuyển (cascade) các công việc phụ thuộc phía sau trong 0ms (Optimistic UI), đồng thời lưu ngầm lên Firestore.
+        - Hỗ trợ nút `[ ✓ Apply ]` để xác nhận hoặc `[ ✕ Cancel / Phím Escape ]` để hủy thao tác nhanh chóng.
 
 ---
 
