@@ -1409,3 +1409,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
        - **Dự án**: Hỗ trợ nút nhảy nhanh đến `Detail` (bảng chi tiết), `Gantt` (tiến độ ngang), hoặc mở modal điều hướng 5 tab `Quick Nav`.
        - **Công việc**: Nhấp vào công việc sẽ chuyển ngay sang `Detail Tab`, tự động mở rộng dự án cha, cuộn mượt và làm nổi bật (focus highlight) công việc đó; hoặc nhảy thẳng tới thanh bar của công việc trong biểu đồ `Gantt`.
        - **Assignees**: Nhấp vào người phụ trách sẽ tự động lọc toàn bộ công việc và dự án thuộc quyền quản lý của đơn vị/cá nhân đó.
+
+19. **Tự Động Cập Nhật Ngay Lập Tức Task Count, Summary Task & Project Dates (0ms + Firestore Sync)**:
+   - **Đồng Bộ Tức Thời Khi Upload CSV & Tạo Task Mới**: Mỗi khi người dùng tải lên file CSV chứa danh sách công việc (Import Task) hoặc tạo một công việc mới trong Task Modal:
+     + Hệ thống lập tức tính toán lại toàn bộ thông số dự án cha tương ứng: `taskCount` (tổng số lượng task), `taskSummaries` (danh sách tóm tắt mã phụ, tên, ngày bắt đầu và kết thúc), `computedTakStart` (ngày bắt đầu sớm nhất), `computedTakCompl` (ngày hoàn thành muộn nhất), `computedOpening` và tỷ lệ tiến độ thực tế / kế hoạch.
+     + Cập nhật ngay lập tức vào bộ nhớ Zustand (0ms) và đồng bộ trực tiếp lên tài liệu dự án trên Firestore (`taka_projects`) bằng phương thức an toàn `setDoc({ merge: true })`.
+     + Đảm bảo khi đóng/thu gọn dự án (collapsed), hàng dự án luôn hiển thị đầy đủ số lượng task `(33)`, ngày bắt đầu và ngày kết thúc chuẩn xác mà không cần phải mở rộng mới cập nhật.

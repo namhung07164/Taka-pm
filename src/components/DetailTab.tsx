@@ -27,7 +27,9 @@ import {
   saveTaskStateUnified, 
   deleteTaskStateUnified, 
   reorderTasksStateUnified,
-  ensureProjectTasksLoaded
+  ensureProjectTasksLoaded,
+  findAffectedProjects,
+  syncAffectedProjects
 } from '../lib/taskStateService';
 import { QRCodeButton } from './QRCodeButton';
 import { QuickNavButton } from './QuickNavButton';
@@ -2253,7 +2255,10 @@ export function DetailTab({
          importCount++;
       }
       
-      saveTaskStateUnified(tasksToImport);
+      await saveTaskStateUnified(tasksToImport);
+      const affectedProjects = findAffectedProjects(tasksToImport);
+      const allCurrentTasks = useAppStore.getState().tasks;
+      await syncAffectedProjects(affectedProjects, allCurrentTasks);
       
       if (importCount > 0) {
         undoManager.push({

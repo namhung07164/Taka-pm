@@ -62,6 +62,7 @@ export const ProjectSchema = z.object({
   computedStatus: z.string().nullable().optional(),
   computedPlanProgress: z.number().min(0).max(100).nullable().optional(),
   computedActProgress: z.number().min(0).max(100).nullable().optional(),
+  taskCount: z.number().nullable().optional(),
   taskSummaries: z.array(z.any()).nullable().optional(),
   realtimeUpdate: z.boolean().nullable().optional(),
   delegation: z.boolean().nullable().optional(),

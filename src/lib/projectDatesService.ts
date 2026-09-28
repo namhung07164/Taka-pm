@@ -1,4 +1,4 @@
-import { updateDoc, writeBatch } from "../lib/firebase";
+import { setDoc, updateDoc, writeBatch } from "../lib/firebase";
 import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
@@ -149,18 +149,21 @@ export function calculateProjectComputedDates(
 
   const taskSummaries = sortedProjTasks
     .filter(t => t.start && t.finish && t.name)
-    .map((t, idx) => ({
-      name: t.name!,
-      start: t.start!,
-      finish: t.finish!,
-      orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
-      duration: t.duration,
-      parentTaskId: t.parentTaskId,
-      taskCodePhu: t.taskCodePhu,
-      runningStatus: t.runningStatus,
-      approval: t.approval,
-      party: t.party
-    }));
+    .map((t, idx) => {
+      const summary: Record<string, any> = {
+        name: t.name || '',
+        start: t.start || '',
+        finish: t.finish || '',
+        orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
+      };
+      if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
+      if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
+      if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
+      if (t.runningStatus) summary.runningStatus = t.runningStatus;
+      if (t.approval) summary.approval = t.approval;
+      if (t.party) summary.party = t.party;
+      return summary;
+    });
 
   const taskCount = projectTasks && projectTasks.length > 0 
     ? projectTasks.length 
@@ -193,7 +196,7 @@ export async function syncProjectDatesToFirestore(
     const { projects, setProjects } = useAppStore.getState();
     const existingProject = projects.find((p) => p.id === projectId);
 
-    // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task) thực sự thay đổi.
+    // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).
     const hasChanged =
       !existingProject ||
@@ -202,7 +205,8 @@ export async function syncProjectDatesToFirestore(
       (existingProject.computedOpening || "") !== (dates.computedOpening || "") ||
       Number(existingProject.computedPlanProgress ?? 0) !== Number(dates.computedPlanProgress ?? 0) ||
       Number(existingProject.computedActProgress ?? 0) !== Number(dates.computedActProgress ?? 0) ||
-      Number(existingProject.taskCount ?? 0) !== Number(dates.taskCount ?? 0);
+      Number(existingProject.taskCount ?? 0) !== Number(dates.taskCount ?? 0) ||
+      (existingProject.taskSummaries?.length ?? 0) !== (dates.taskSummaries?.length ?? 0);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     if (existingProject) {
@@ -256,10 +260,18 @@ export async function syncProjectDatesToFirestore(
       updatePayload.taskCount = dates.taskCount;
     }
     if (dates.taskSummaries !== undefined) {
-      updatePayload.taskSummaries = dates.taskSummaries;
+      updatePayload.taskSummaries = dates.taskSummaries.map((ts: any) => {
+        const item: Record<string, any> = {};
+        for (const [k, v] of Object.entries(ts)) {
+          if (v !== undefined) {
+            item[k] = v;
+          }
+        }
+        return item;
+      });
     }
 
-    updateDoc(projectRef, updatePayload).catch(console.error);
+    await setDoc(projectRef, updatePayload, { merge: true });
   } catch (error) {
     console.error(`Error syncing computed dates for project ${projectId}:`, error);
   }
