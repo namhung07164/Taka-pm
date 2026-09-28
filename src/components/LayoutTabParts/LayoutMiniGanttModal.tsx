@@ -67,36 +67,11 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Raw tasks for this project (0-Read: Prioritizes embedded project.taskSummaries, falls back to existing Zustand cache)
+  // Raw tasks for this project (Prioritizes Zustand cache, falls back to embedded project.taskSummaries)
   const rawProjectTasks = useMemo(() => {
     if (!project) return [];
 
-    // 1. Zero-Read First: Use embedded taskSummaries already present inside the Project document
-    if (project.taskSummaries && project.taskSummaries.length > 0) {
-      return project.taskSummaries.map((ts: any, idx: number) => {
-        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu, ts.name);
-        const derivedOrderIndex = subtaskNum !== null ? subtaskNum - 1 : (ts.orderIndex !== undefined ? ts.orderIndex : idx);
-        const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : (ts.taskCodePhu || `#${idx + 1}`);
-
-        return {
-          id: `ts_${idx}`,
-          name: ts.name || 'Task',
-          start: ts.start || '',
-          finish: ts.finish || '',
-          duration: ts.duration || '1',
-          taskCodePhu: ts.taskCodePhu || fallbackCode,
-          runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
-          approval: ts.approval,
-          party: ts.party,
-          parentTaskId: ts.parentTaskId,
-          projectCode: project.code,
-          projectId: project.id,
-          orderIndex: derivedOrderIndex
-        } as Task;
-      });
-    }
-
-    // 2. Fallback to existing Zustand tasks in memory if taskSummaries is empty
+    // 1. If tasks are already loaded in memory (Zustand cache), use them for 100% fidelity (0 Read)
     const pId = project.id;
     const pCode = (project.code || '').trim().toLowerCase();
     const pYear = project.year ? String(project.year).trim() : '';
@@ -113,7 +88,38 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
       return false;
     });
 
-    return matchedZustandTasks;
+    if (matchedZustandTasks.length > 0) {
+      return matchedZustandTasks;
+    }
+
+    // 2. Zero-Read Fallback: Use embedded taskSummaries already present inside the Project document
+    if (project.taskSummaries && project.taskSummaries.length > 0) {
+      return project.taskSummaries.map((ts: any, idx: number) => {
+        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
+        const derivedOrderIndex = subtaskNum !== null 
+          ? subtaskNum - 1 
+          : (ts.orderIndex !== undefined && ts.orderIndex !== null ? ts.orderIndex : null);
+        const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : (ts.taskCodePhu || '');
+
+        return {
+          id: `ts_${idx}`,
+          name: ts.name || 'Task',
+          start: ts.start || '',
+          finish: ts.finish || '',
+          duration: ts.duration || '1',
+          taskCodePhu: fallbackCode,
+          runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
+          approval: ts.approval,
+          party: ts.party,
+          parentTaskId: ts.parentTaskId,
+          projectCode: project.code,
+          projectId: project.id,
+          orderIndex: derivedOrderIndex
+        } as Task;
+      });
+    }
+
+    return [];
   }, [project, tasks]);
 
   // Exact GanttTab task ordering with sortGroupTasks and parent-child tree hierarchy

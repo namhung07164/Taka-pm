@@ -294,104 +294,47 @@ export function getProjectCodeChangePredecessorUpdates(
   };
 }
 
-const STANDARD_TASK_PATTERNS: Array<{ regex: RegExp; index: number }> = [
-  { regex: /request.*(?:make|prepare).*design.*guideline/i, index: 1 },
-  { regex: /1st.*design.*guideline/i, index: 2 },
-  { regex: /design.*guideline.*pmo/i, index: 2 },
-  { regex: /ffd.*consulting.*(?:1st|\(1st\))/i, index: 3 },
-  { regex: /pmo.*send.*back.*design.*guideline/i, index: 4 },
-  { regex: /md.*send.*design.*guideline.*tenant/i, index: 5 },
-  { regex: /tenant.*make.*design/i, index: 6 },
-  { regex: /md.*send.*drawing.*to.*pmo\b/i, index: 7 },
-  { regex: /tenant.*send.*1st.*(?:preliminary|drawing)/i, index: 8 },
-  { regex: /1st.*drawing.*check/i, index: 9 },
-  { regex: /ffd.*consulting.*(?:2nd|\(2nd\))/i, index: 10 },
-  { regex: /pmo.*send.*back.*drawing.*(?:2nd|\(2nd\))/i, index: 11 },
-  { regex: /pmo.*send.*back.*drawing/i, index: 11 },
-  { regex: /tenant.*make.*2nd/i, index: 12 },
-  { regex: /tenant.*make.*(?:final|revised).*drawing/i, index: 12 },
-  { regex: /md.*send.*drawing.*to.*pmo.*ffd/i, index: 13 },
-  { regex: /2nd.*drawing.*check/i, index: 14 },
-  { regex: /pmo.*send.*back.*2nd.*drawing/i, index: 15 },
-  { regex: /drawing.*approval/i, index: 16 },
-  { regex: /tenant.*submit.*fit-out/i, index: 17 },
-  { regex: /tenant.*send.*(?:final|shop).*drawing/i, index: 18 },
-  { regex: /ffd.*consulting.*revi/i, index: 19 },
-  { regex: /md.*send.*drawing.*to.*ffd/i, index: 20 },
-  { regex: /pmo.*check.*approve.*application/i, index: 21 },
-  { regex: /pre-construction.*meeting/i, index: 22 },
-  { regex: /(?:handover.*site|site.*handover).*tenant/i, index: 23 },
-  { regex: /site.*handover/i, index: 23 },
-  { regex: /tenant.*start.*fit-out/i, index: 24 },
-  { regex: /fit-out.*work/i, index: 24 },
-  { regex: /(?:firefighting|ffd).*inspection/i, index: 25 },
-  { regex: /(?:completion|pmo).*inspection/i, index: 26 },
-  { regex: /handover.*to.*(?:md|store)/i, index: 27 },
-  { regex: /tenant.*opening.*preparation/i, index: 28 },
-  { regex: /(?:grand\s*)?opening/i, index: 33 },
-];
-
-export function getStandardTaskIndexByName(name?: string | null): number | null {
-  if (!name) return null;
-  const trimmed = name.trim();
-  if (!trimmed) return null;
-
-  for (const item of STANDARD_TASK_PATTERNS) {
-    if (item.regex.test(trimmed)) {
-      return item.index;
-    }
-  }
-  return null;
-}
-
 /**
- * Extracts a numeric subtask index from any taskCodePhu representation or task name.
- * Supports "#13", "L3-304#13", "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "Task 13", "13", and standard 33 task names.
+ * Extracts a numeric subtask index from any taskCodePhu representation.
+ * Supports "#13", "L3-304#13", "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "Task 13", "13", etc.
  */
-export function extractSubtaskIndex(codeOrPhu?: string | null, name?: string | null): number | null {
-  if (codeOrPhu) {
-    const str = String(codeOrPhu).trim();
-    if (str) {
-      // 1. Check for '#' followed by digits (e.g., "L3-304#13", "#13", "HN-L3-304#1")
-      const hashMatch = str.match(/#\s*(\d+)/);
-      if (hashMatch) {
-        const num = parseInt(hashMatch[1], 10);
-        if (!isNaN(num)) return num;
-      }
+export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
+  if (!codeOrPhu) return null;
+  const str = String(codeOrPhu).trim();
+  if (!str) return null;
 
-      // 2. Check for delimiter (- _ . : /) followed by digits at the end (e.g., "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "B2-B208-1", "L3-304.13")
-      const delimiterMatch = str.match(/[-_.:/\s]+(\d+)\s*$/);
-      if (delimiterMatch) {
-        const num = parseInt(delimiterMatch[1], 10);
-        if (!isNaN(num)) return num;
-      }
-
-      // 3. Check if pure numeric string (e.g., "1", "13", "05")
-      if (/^\d+$/.test(str)) {
-        const num = parseInt(str, 10);
-        if (!isNaN(num)) return num;
-      }
-
-      // 4. Check for 'Task' or 'Step' or 'No' or 'T' prefix (e.g. "Task 1", "T-13", "No. 5")
-      const prefixMatch = str.match(/(?:task|step|no\.?|t)\s*[-#.:]?\s*(\d+)/i);
-      if (prefixMatch) {
-        const num = parseInt(prefixMatch[1], 10);
-        if (!isNaN(num)) return num;
-      }
-
-      // 5. Fallback: match any trailing number at end of string
-      const trailingDigitsMatch = str.match(/(\d+)\s*$/);
-      if (trailingDigitsMatch) {
-        const num = parseInt(trailingDigitsMatch[1], 10);
-        if (!isNaN(num)) return num;
-      }
-    }
+  // 1. Check for '#' followed by digits (e.g., "L3-304#13", "#13", "HN-L3-304#1")
+  const hashMatch = str.match(/#\s*(\d+)/);
+  if (hashMatch) {
+    const num = parseInt(hashMatch[1], 10);
+    if (!isNaN(num)) return num;
   }
 
-  // 6. If no code available or code has no number, check standard task name dictionary
-  if (name) {
-    const stdIdx = getStandardTaskIndexByName(name);
-    if (stdIdx !== null) return stdIdx;
+  // 2. Check for delimiter (- _ . : /) followed by digits at the end (e.g., "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "B2-B208-1", "L3-304.13")
+  const delimiterMatch = str.match(/[-_.:/\s]+(\d+)\s*$/);
+  if (delimiterMatch) {
+    const num = parseInt(delimiterMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 3. Check if pure numeric string (e.g., "1", "13", "05")
+  if (/^\d+$/.test(str)) {
+    const num = parseInt(str, 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 4. Check for 'Task' or 'Step' or 'No' or 'T' prefix (e.g. "Task 1", "T-13", "No. 5")
+  const prefixMatch = str.match(/(?:task|step|no\.?|t)\s*[-#.:]?\s*(\d+)/i);
+  if (prefixMatch) {
+    const num = parseInt(prefixMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 5. Fallback: match any trailing number at end of string
+  const trailingDigitsMatch = str.match(/(\d+)\s*$/);
+  if (trailingDigitsMatch) {
+    const num = parseInt(trailingDigitsMatch[1], 10);
+    if (!isNaN(num)) return num;
   }
 
   return null;
@@ -404,11 +347,11 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (!a) return 1;
     if (!b) return -1;
 
-    // 1. Prioritize natural subtask index extracted from taskCodePhu or standard task name
+    // 1. Prioritize natural subtask index extracted from taskCodePhu (e.g. #1, -1, #13, -13)
     const codeA = a.taskCodePhu || '';
     const codeB = b.taskCodePhu || '';
-    const numA = extractSubtaskIndex(codeA, a.name);
-    const numB = extractSubtaskIndex(codeB, b.name);
+    const numA = extractSubtaskIndex(codeA);
+    const numB = extractSubtaskIndex(codeB);
 
     if (numA !== null && numB !== null) {
       if (numA !== numB) return numA - numB;
@@ -424,7 +367,7 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
       if (codeCmp !== 0) return codeCmp;
     }
 
-    // 3. Chronological sort by Start Date & Finish Date
+    // 3. Chronological sort by Start Date (e.g., Jul 12 < Jul 15 < Jul 31 < Oct 29 < Nov 15 < Jan 1)
     const startA = a.start || '';
     const startB = b.start || '';
     if (startA && startB && startA !== startB) {
