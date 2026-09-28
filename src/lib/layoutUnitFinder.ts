@@ -265,46 +265,56 @@ export function findProjectLayoutUnit(
       }
     }
 
-    // 6. Check extracted floor regex from projectCode / unit / name
+    // 6. Check extracted floor regex from projectCode / unit / name / title
     const extractedFloor =
       extractFloorFromCodeOrName(notif.projectCode) ||
       extractFloorFromCodeOrName(matchedProject?.code) ||
+      extractFloorFromCodeOrName(notif.title) ||
       extractFloorFromCodeOrName((matchedProject as any)?.unit) ||
       extractFloorFromCodeOrName(matchedProject?.name);
 
     if (extractedFloor) {
-      const store = matchedProject?.store || notif.projectStore || 'HCM';
-      const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode;
+      const store = String(matchedProject?.store || notif.projectStore || 'HCM').trim().toUpperCase();
+      const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
       if (uCode) {
-        const partKey = `${store}_${extractedFloor}`;
-        const record = dataState.storeLocationData?.[partKey];
-        if (record?.mapUnits && record.mapUnits.length > 0) {
-          return {
-            hasUnit: true,
-            store,
-            location: extractedFloor,
-            year: targetYear,
-            unitCode: String(uCode),
-            project: matchedProject,
-            task: matchedTask,
-            isComment,
-            isTaskComment,
-            isProjectComment,
-          };
-        }
+        return {
+          hasUnit: true,
+          store,
+          location: extractedFloor,
+          year: targetYear,
+          unitCode: String(uCode),
+          project: matchedProject,
+          task: matchedTask,
+          isComment,
+          isTaskComment,
+          isProjectComment,
+        };
       }
     }
   } catch (err) {
     console.warn('Error in findProjectLayoutUnit:', err);
   }
 
-  // Return project/task info even if unit wasn't found on drawing
+  const fallbackFloor =
+    extractFloorFromCodeOrName(notif.projectCode) ||
+    extractFloorFromCodeOrName(matchedProject?.code) ||
+    extractFloorFromCodeOrName(notif.title) ||
+    extractFloorFromCodeOrName((matchedProject as any)?.unit) ||
+    extractFloorFromCodeOrName(matchedProject?.name) ||
+    'L1';
+
+  const rawLoc = String(matchedProject?.location || (matchedTask as any)?.location || fallbackFloor).trim().toUpperCase();
+  const finalLocation = (rawLoc && rawLoc !== 'ALL') ? rawLoc : fallbackFloor;
+  const finalStore = String(matchedProject?.store || notif.projectStore || 'HCM').trim().toUpperCase();
+  const finalCode = notif.projectCode || matchedProject?.code || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
+
+  // Return project/task info resolved for liveview
   return {
-    hasUnit: false,
-    store: matchedProject?.store || notif.projectStore || 'HCM',
-    location: String(matchedProject?.location || (matchedTask as any)?.location || 'L1').trim().toUpperCase(),
+    hasUnit: true,
+    store: finalStore,
+    location: finalLocation,
     year: targetYear,
-    unitCode: notif.projectCode || matchedProject?.code || '',
+    unitCode: String(finalCode),
     project: matchedProject,
     task: matchedTask,
     isComment,

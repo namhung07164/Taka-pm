@@ -702,10 +702,11 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - **Tự động nhận diện Dự án đang xem (Smart Viewport Tracking)**: Khi bạn cuộn/lướt danh sách dự án trên Detail Tab, nút ghim cố định `+ Add New Task` ở góc trên bên phải sẽ tự động bắt lấy dự án gần nhất trong tầm mắt và cập nhật nhãn (ví dụ: `+ Task (B1-B106)`). Khi bấm vào, hộp thoại tạo Task mới sẽ tự động điền sẵn mã dự án, năm và chi nhánh tương ứng mà không cần bạn phải chọn thủ công.
    - **Nút Thêm nhanh Task trực tiếp trên từng Dự án (In-Card / In-Row Quick Action)**: Ngay trên từng dòng dự án (ở cột Action trên Desktop) và ở thanh chân thẻ dự án (trên Mobile), luôn có nút `+ Task` nhanh giúp bạn tạo ngay công việc mới cho đúng dự án đó chỉ với 1 chạm duy nhất.
 
-20. **Điều hướng thông minh tại Trung tâm Thông báo (Notification Center)**: Mọi thẻ thông báo (gồm @mention, hạn chót Task/Project, và cập nhật phân công công việc Delegation Task) đều hỗ trợ mở trực tiếp mục tương ứng với cơ chế tìm kiếm thông minh:
-   - Thông báo Task: Mở trực tiếp Task Modal.
-   - Thông báo Project: Mở trực tiếp Project Modal.
-   - Thông báo Phân công (Delegation): Nếu là task liên kết sẽ mở Modal chi tiết, nếu là nhóm phân công độc lập (custom delegation) sẽ tự động chuyển sang tab **Task Delegation** để bạn thao tác ngay lập tức.
+20. **Điều hướng thông minh từ Trung tâm Thông báo sang Mặt Bằng Trực Quan (Notification to Layout Liveview Navigation)**: 
+   - Khi người dùng nhấp vào bất kỳ thẻ thông báo nào trong danh sách **Active Notifications** (hạn chót dự án, mốc bắt đầu/bàn giao, tiến độ công việc, hoặc nhắc việc @mention):
+     + Hệ thống tự động nhận diện Chi nhánh (`HCM`/`HN`), Năm (`Year`), Tầng/Vị trí (`Location`: ví dụ `L3` từ mã `L3-306-2`) và Mã dự án (`projectCode`).
+     + **Tự động chuyển thẳng sang phân hệ Mặt bằng (Layout Tab) ở chế độ Trực quan (Liveview Mode)**: Hệ thống tự động đồng bộ bộ lọc Chi nhánh, mở đúng Tầng của gian hàng, tự động phóng to (zoom & pan) và hiển thị thẻ thông tin tiến độ/bản đồ của dự án tương ứng.
+     + Nếu thông báo liên quan đến bình luận/trao đổi (@mention), cửa sổ Chat sẽ được mở ngay trên nền mặt bằng Liveview giúp người dùng trao đổi tức thì mà vẫn giữ nguyên vị trí trên bản đồ.
 
 21. **Đồng bộ điều hướng Task Gantt sang Task Detail (Gantt-to-Detail Sync) & Tự Động Xóa Focus khi Xóa Search**:
    - **Click Task con trên Gantt Tab**: Khi nhấp vào tên hoặc thanh của một Task con trên biểu đồ Gantt, hệ thống tự động điều hướng sang **Detail Tab**, tự động điền mã Task code phụ (hoặc mã task phụ `pCode-index`) vào ô tìm kiếm (`Search in detail...`) và lọc hiển thị duy nhất Task con đó, đồng thời mở rộng dự án cha, cuộn mượt mà đến đúng vị trí và highlight viền vàng nổi bật.

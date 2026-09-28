@@ -2396,21 +2396,28 @@ export default function App() {
                       const combinedTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().allTasksForNotifs || []);
                       const layoutMatch = canSeeLayout ? findProjectLayoutUnit(notif, combinedProjects, combinedTasks) : null;
 
-                      if (layoutMatch?.hasUnit) {
+                      if (canSeeLayout && layoutMatch) {
                         // 1. Synchronize global Year & Store filters if needed
                         const targetYear = layoutMatch.year || (layoutMatch.project?.year ? String(layoutMatch.project.year) : (notif.projectYear ? String(notif.projectYear) : ''));
-                        if (targetYear && targetYear !== globalYearFilter) {
+                        if (targetYear && targetYear !== globalYearFilter && targetYear !== 'all') {
                           setGlobalYearFilter(targetYear);
                         }
-                        if (layoutMatch.store && globalStoreFilter !== "all" && layoutMatch.store.toLowerCase() !== globalStoreFilter.toLowerCase()) {
-                          setGlobalStoreFilter("all");
+                        const targetStore = layoutMatch.store || notif.projectStore || 'HCM';
+                        if (targetStore && targetStore !== 'all') {
+                          setGlobalStoreFilter(targetStore);
                         }
+                        const targetLocation = layoutMatch.location || 'L1';
+                        if (targetLocation && targetLocation !== 'ALL') {
+                          useAppStore.getState().setGlobalLocationFilter([targetLocation]);
+                        }
+
+                        const targetUnitCode = layoutMatch.unitCode || layoutMatch.project?.code || notif.projectCode || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
 
                         // 2. Set layoutTabFilters to zoom, pan, focus, and open the unit tooltip on Liveview
                         setLayoutTabFilters({
-                          store: layoutMatch.store,
-                          location: layoutMatch.location,
-                          projectCode: layoutMatch.unitCode || layoutMatch.project?.code || notif.projectCode,
+                          store: targetStore,
+                          location: targetLocation,
+                          projectCode: targetUnitCode,
                           sourceTaskId: layoutMatch.task?.id,
                         });
 

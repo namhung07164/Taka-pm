@@ -102,6 +102,9 @@ export function LayoutTab({
     }
     
     let targetLoc = (initialLocation && initialLocation !== 'all') ? String(initialLocation).trim().toUpperCase() : '';
+    if (initialLocation && initialLocation !== 'all') {
+      setIsLiveMapMode(true);
+    }
     
     if (initialProjectCode) {
       setProjectCodeFilter(initialProjectCode);
