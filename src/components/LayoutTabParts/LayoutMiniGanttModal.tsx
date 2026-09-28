@@ -74,7 +74,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     // 1. Zero-Read First: Use embedded taskSummaries already present inside the Project document
     if (project.taskSummaries && project.taskSummaries.length > 0) {
       return project.taskSummaries.map((ts: any, idx: number) => {
-        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
+        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu, ts.name);
         const derivedOrderIndex = subtaskNum !== null ? subtaskNum - 1 : (ts.orderIndex !== undefined ? ts.orderIndex : idx);
         const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : (ts.taskCodePhu || `#${idx + 1}`);
 
