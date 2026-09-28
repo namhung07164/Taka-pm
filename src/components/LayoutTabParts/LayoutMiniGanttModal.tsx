@@ -55,7 +55,6 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
   const nodeRef = useRef<HTMLDivElement>(null);
   const tasks = useAppStore(state => state.tasks);
   const setActiveTab = useAppStore(state => state.setActiveTab);
-  const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
 
   // Handle ESC key to close (AGENTS.md Rule 6)
   useEffect(() => {
@@ -300,10 +299,11 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
   // Navigate to full Gantt Tab
   const handleOpenFullGantt = () => {
-    setQuickNavTarget({
-      project,
-      taskCode: project.code
-    });
+    const currentExpanded = useAppStore.getState().expandedProjectIds;
+    if (project.id && !currentExpanded.includes(project.id)) {
+      useAppStore.getState().setExpandedProjectIds([...currentExpanded, project.id]);
+    }
+    useAppStore.getState().setIsTasksRequested(true);
     setActiveTab('gantt');
     onClose();
   };
