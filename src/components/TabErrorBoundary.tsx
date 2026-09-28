@@ -68,26 +68,26 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
             <AlertTriangle className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-slate-800 dark:text-[#e3e3e3] mb-1">
-            {isChunkError ? 'Đang cập nhật phiên bản mới / Module chưa tải kịp' : 'Không thể tải phân hệ này'}
+            {isChunkError ? 'New Version Available / Module Loading' : 'Unable to Load Module'}
           </h3>
           <p className="text-xs text-slate-500 dark:text-[#a3a3a3] max-w-md mb-4 leading-relaxed">
             {isChunkError
-              ? 'Hệ thống vừa cập nhật hoặc kết nối mạng bị gián đoạn trong giây lát. Vui lòng bấm Thử lại hoặc Tải lại trang.'
-              : (this.state.error?.message || 'Đã có sự cố xảy ra khi hiển thị tab.')}
+              ? 'The system was updated or a transient network interruption occurred. Please retry or reload the page.'
+              : (this.state.error?.message || 'An unexpected issue occurred while displaying this tab.')}
           </p>
           <div className="flex items-center gap-2">
             <button
               onClick={this.handleRetry}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 active:scale-95"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer"
             >
               <RotateCw className="w-3.5 h-3.5" />
-              Thử lại (Retry)
+              Retry Module
             </button>
             <button
               onClick={this.handleReload}
-              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-[#2c2c30] dark:hover:bg-[#38383e] text-slate-800 dark:text-[#e3e3e3] text-xs font-bold rounded-xl transition-all shadow-xs active:scale-95"
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-[#2c2c30] dark:hover:bg-[#38383e] text-slate-800 dark:text-[#e3e3e3] text-xs font-bold rounded-xl transition-all shadow-xs active:scale-95 touch-manipulation cursor-pointer"
             >
-              Tải lại trang (Reload)
+              Reload Page
             </button>
           </div>
         </div>
