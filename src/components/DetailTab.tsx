@@ -1873,7 +1873,7 @@ export function DetailTab({
     return str;
   };
 
-  const handleExportTasks = async () => {
+  const handleExportTasks = () => {
     const headers = ['store', 'location', 'projectYear', 'projectCode', 'Sub-task code', 'Task name', 'start', 'finish', 'duration', 'party', 'predecessor', 'delegation', 'task flexible', 'comments'];
     
     // Flatten filtered belonging to filtered
@@ -1924,81 +1924,8 @@ export function DetailTab({
       ];
     });
 
-    try {
-      const XLSX = await import('xlsx');
-      const wb = XLSX.utils.book_new();
-
-      // Sheet 1: tasks (Danh sách công việc)
-      const wsTasksData = [headers, ...data];
-      const wsTasks = XLSX.utils.aoa_to_sheet(wsTasksData);
-      wsTasks['!cols'] = [
-        { wch: 10 }, // store
-        { wch: 10 }, // location
-        { wch: 12 }, // projectYear
-        { wch: 16 }, // projectCode
-        { wch: 18 }, // Sub-task code
-        { wch: 32 }, // Task name
-        { wch: 18 }, // start
-        { wch: 18 }, // finish
-        { wch: 10 }, // duration
-        { wch: 16 }, // party
-        { wch: 20 }, // predecessor
-        { wch: 12 }, // delegation
-        { wch: 14 }, // task flexible
-        { wch: 45 }, // comments
-      ];
-      XLSX.utils.book_append_sheet(wb, wsTasks, 'tasks');
-
-      // Sheet 2: method (Quy định & Hướng dẫn sử dụng)
-      const methodData: (string | number)[][] = [
-        ['QUY ĐỊNH & HƯỚNG DẪN IMPORT / EXPORT DỮ LIỆU TASK (TASK DATA METHOD & RULES)'],
-        [''],
-        ['1. CẤU TRÚC CÁC CỘT DỮ LIỆU TẠI SHEET "tasks" (DATA COLUMNS SPECIFICATIONS)'],
-        ['Tên Cột (Header)', 'Bắt Buộc (Required)', 'Định Dạng (Format)', 'Mô Tả & Quy Tắc Chi Tiết'],
-        ['store', 'Bắt buộc (Yes)', 'Text ("HCM" hoặc "HN")', 'Tên trung tâm thương mại / Store chi nhánh.'],
-        ['location', 'Tùy chọn (No)', 'Text (VD: L3, B1, L2, F1...)', 'Vị trí / Tầng triển khai dự án.'],
-        ['projectYear', 'Bắt buộc (Yes)', 'Số năm (VD: 2026, 2027)', 'Năm tài chính của dự án.'],
-        ['projectCode', 'Bắt buộc (Yes)', 'Text (VD: L3-303-1)', 'Mã dự án cha. Cùng với Store và Year tạo thành khóa định danh duy nhất của dự án.'],
-        ['Sub-task code', 'Tùy chọn (No)', 'Text (VD: L3-303-1-1)', 'Mã định danh công việc con. Nếu để trống hệ thống sẽ tự động gán theo số thứ tự (1, 2, 3...).'],
-        ['Task name', 'Bắt buộc (Yes)', 'Text (VD: TSC design)', 'Tên đầu việc cần thực hiện.'],
-        ['start', 'Bắt buộc (Yes)', 'MM/DD/YYYY HH:mm', 'Thời gian bắt đầu công việc. Hỗ trợ định dạng MM/DD/YYYY HH:mm hoặc YYYY-MM-DDTHH:mm.'],
-        ['finish', 'Bắt buộc (Yes)', 'MM/DD/YYYY HH:mm', 'Thời gian hoàn thành công việc.'],
-        ['duration', 'Tùy chọn (No)', 'Số ngày (VD: 0.5, 1.5, 30)', 'Thời lượng thực hiện tính theo ngày (cho phép số lẻ thập phân).'],
-        ['party', 'Tùy chọn (No)', 'Text (VD: Con1, CP, MD, Tenant)', 'Bên chịu trách nhiệm thực hiện, phân cách dấu phẩy nếu nhiều bên.'],
-        ['predecessor', 'Tùy chọn (No)', 'Text (VD: L3-303-1-1, L3-303-1-5SS)', 'Công việc tiên quyết (tiền nhiệm). Hỗ trợ liên kết Finish-to-Start (FS), Start-to-Start (SS) và độ trễ (Lag) như +0.5.'],
-        ['delegation', 'Tùy chọn (No)', 'true / false', 'Cho phép ủy quyền công việc (Task Delegation). Nhận: true, false, 1, 0, yes, no.'],
-        ['task flexible', 'Tùy chọn (No)', 'true / false', 'Chế độ cập nhật thời gian linh hoạt (realtime update). Nhận: true, false.'],
-        ['comments', 'Tùy chọn (No)', 'Text', 'Lịch sử trao đổi / Ghi chú của task (xem quy tắc chi tiết ở phần 2 dưới đây).'],
-        [''],
-        ['2. QUY ĐỊNH CHI TIẾT ĐỐI VỚI CỘT "comments" (LỊCH SỬ BÌNH LUẬN)'],
-        ['Thao tác', 'Cách ghi trong ô "comments"', 'Cơ chế xử lý của hệ thống'],
-        ['Giữ nguyên bình luận hiện tại', 'Để nguyên nội dung cũ xuất ra (hoặc để trống ô)', 'Hệ thống tự động bỏ qua, KHÔNG tạo bình luận trùng lặp, bảo toàn nguyên vẹn lịch sử trao đổi.'],
-        ['Thêm bình luận mới (Add-on)', 'Nhập nội dung ghi chú / trao đổi mới vào ô', 'Hệ thống tự động CỘNG DỒN (Append) bình luận mới này vào Task, lưu đúng tên người Import và ngày giờ. TUYỆT ĐỐI KHÔNG XÓA hay ghi đè các bình luận cũ.'],
-        ['Xóa toàn bộ bình luận của Task', 'Gõ chính xác từ khóa: [DELETE] hoặc [CLEAR]', 'Hệ thống nhận diện lệnh đặc biệt này và xóa sạch toàn bộ lịch sử bình luận của task tương ứng.'],
-        [''],
-        ['3. NGUYÊN TẮC HỢP NHẤT DỮ LIỆU KHI IMPORT (DATA MERGE LOGIC)'],
-        ['Nguyên tắc', 'Chi tiết', '', ''],
-        ['Định danh Task', 'Tổ hợp: Project Code + Project Year + Project Store + Task Name.', '', ''],
-        ['Cập nhật Task có sẵn', 'Nếu Task đã tồn tại: Hệ thống cập nhật các trường mới (Start, Finish, Duration, Predecessor, Comments...) mà vẫn giữ nguyên ID nội bộ và cấu trúc liên kết.', '', ''],
-        ['Thêm mới Task', 'Nếu Task chưa có trong hệ thống: Hệ thống tự động tạo mới Task và xếp theo thứ tự trong file.', '', ''],
-        ['Định dạng file hỗ trợ', 'Hệ thống hỗ trợ nhập cả file Excel (.xlsx, .xls) và file CSV (.csv). Khi import file Excel có nhiều sheet, hệ thống tự động đọc dữ liệu từ sheet "tasks" (hoặc sheet đầu tiên).', '', '']
-      ];
-
-      const wsMethod = XLSX.utils.aoa_to_sheet(methodData);
-      wsMethod['!cols'] = [
-        { wch: 32 },
-        { wch: 35 },
-        { wch: 28 },
-        { wch: 80 }
-      ];
-      XLSX.utils.book_append_sheet(wb, wsMethod, 'method');
-
-      XLSX.writeFile(wb, 'taka_tasks_filtered.xlsx');
-    } catch (err) {
-      console.error("Export tasks error:", err);
-      const csv = generateCSV(headers, data);
-      downloadCSV(csv, 'taka_tasks_filtered.csv');
-    }
+    const csv = generateCSV(headers, data);
+    downloadCSV(csv, 'taka_tasks_filtered.csv');
   };
 
   const handleImportTasks = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2289,55 +2216,7 @@ export function DetailTab({
         });
       });
 
-      const simulatedTasks = Array.from(simulatedTasksMap.values());
-      const simulatedTaskNoMap = buildTaskNoMap(projects, simulatedTasks);
-
-      // Group by project to calculate predecessor dates and sort topologically
-      const tasksByProjKey = new Map<string, Task[]>();
-      tasksToImport.forEach(t => {
-        const pKey = `${String(t.projectCode || '').trim().toLowerCase()}-${String(t.projectYear || '').trim().toLowerCase()}-${String(t.projectStore || '').trim().toLowerCase()}`;
-        const list = tasksByProjKey.get(pKey) || [];
-        list.push(t);
-        tasksByProjKey.set(pKey, list);
-      });
-
-      const finalOrderedTasksToImport: Task[] = [];
-
-      tasksByProjKey.forEach((projTasks) => {
-        // 1. Sort project tasks prioritizing predecessor dependency relationships
-        const sortedProjTasks = sortTasksByPredecessorsAndDates(projTasks, projects, simulatedTasks);
-
-        // 2. Cascade predecessor date calculations in topological order
-        sortedProjTasks.forEach((st, idx) => {
-          st.orderIndex = idx;
-          st.taskCodePhu = `${st.projectCode}#${idx + 1}`;
-          st.durationManual = true;
-
-          if (st.predecessor && st.predecessor.trim()) {
-            const parsed = parsePredecessors(st.predecessor, simulatedTaskNoMap, st);
-            const calc = calculateTaskDatesFromPredecessors(st, parsed);
-            if (calc) {
-              st.start = calc.start;
-              st.finish = calc.finish;
-              st.duration = calc.duration;
-              st.durationManual = true;
-            }
-          }
-        });
-
-        // 3. Re-sort with updated dates and finalize order
-        const finalSorted = sortTasksByPredecessorsAndDates(sortedProjTasks, projects, simulatedTasks);
-        finalSorted.forEach((fst, fIdx) => {
-          fst.orderIndex = fIdx;
-          fst.taskCodePhu = `${fst.projectCode}#${fIdx + 1}`;
-          fst.durationManual = true;
-          finalOrderedTasksToImport.push(fst);
-        });
-      });
-
-      const finalTasksList = finalOrderedTasksToImport.length > 0 ? finalOrderedTasksToImport : tasksToImport;
-
-      for (const finalTask of finalTasksList) {
+      for (const finalTask of tasksToImport) {
          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', finalTask.id), finalTask);
          if (finalTask.delegation) {
             const now = new Date().toISOString();
@@ -2374,7 +2253,7 @@ export function DetailTab({
          importCount++;
       }
       
-      saveTaskStateUnified(finalTasksList);
+      saveTaskStateUnified(tasksToImport);
       
       if (importCount > 0) {
         undoManager.push({

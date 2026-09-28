@@ -164,10 +164,9 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
    - Thao tác áp dụng ngay lập tức vào màn hình (Optimistic 0ms) và lưu đồng bộ lên Firestore theo khối Batch.
 
 #### 🔹 Hướng dẫn Nhập (Import) & Xuất (Export) Dữ Liệu Task (Excel / CSV):
-1. **Export Dữ Liệu (Xuất file kèm Sheet "method" hướng dẫn)**:
-   - Khi bấm nút **"Export Task"** trong menu Hamburger (hoặc trên Detail Tab), hệ thống sẽ xuất ra file Excel workbook (`taka_tasks_filtered.xlsx`) được cấu hình chuyên nghiệp với 2 sheets:
-     + **Sheet 1 (`tasks`)**: Danh sách toàn bộ các đầu việc tương ứng với bộ lọc hiện tại, bao gồm đầy đủ các cột: `store`, `location`, `projectYear`, `projectCode`, `Sub-task code` (mã phụ ví dụ: `CP-01-1`, `CP-01-2`), `Task name`, `start`, `finish`, `duration`, `party`, `predecessor`, `delegation` (`true`/`false`), `task flexible` (`true`/`false`), và **`comments`** (lịch sử bình luận & trao đổi).
-     + **Sheet 2 (`method`)**: Chứa toàn bộ bảng chỉ dẫn, quy định định dạng các cột dữ liệu, các trường bắt buộc, nguyên tắc ghép nối và hướng dẫn xử lý cột bình luận để người dùng dễ dàng tra cứu ngay trong Excel.
+1. **Export Dữ Liệu (Xuất file định dạng chuẩn CSV)**:
+   - Khi bấm nút **"Export Project"**: Hệ thống sẽ xuất ra file CSV (`taka_projects_filtered.csv`) chứa danh sách các dự án theo bộ lọc hiện tại (`store`, `location`, `year`, `code`, `name`).
+   - Khi bấm nút **"Export Task"**: Hệ thống sẽ xuất ra file CSV (`taka_tasks_filtered.csv`) chứa danh sách đầy đủ các đầu việc tương ứng theo bộ lọc hiện tại, bao gồm đầy đủ các cột: `store`, `location`, `projectYear`, `projectCode`, `Sub-task code`, `Task name`, `start`, `finish`, `duration`, `party`, `predecessor`, `delegation`, `task flexible`, và `comments` (lịch sử bình luận & trao đổi). File CSV có thể mở trực tiếp bằng Excel hoặc bất kỳ phần mềm quản lý bảng tính nào.
 2. **Quy Định Chi Tiết Đối Với Cột "comments" (Lịch sử bình luận & trao đổi)**:
    - **Định dạng hiển thị khi xuất**: Các bình luận của task được nối với nhau bằng dấu gạch đứng `|` theo cú pháp: `username: nội dung | username2: nội dung`.
    - **Thêm bình luận mới (Add-on mode)**: Để bổ sung ghi chú/bình luận mới cho task, bạn chỉ cần nhập nội dung mới vào ô `comments`. Khi Import, hệ thống sẽ tự động **cộng dồn (Append)** nội dung mới này vào Task dưới tên tài khoản của bạn và thời gian hiện tại, **tuyệt đối không xóa hay ghi đè** lịch sử các bình luận cũ.
