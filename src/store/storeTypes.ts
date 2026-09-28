@@ -78,6 +78,8 @@ export interface UISlice {
   setIsUserModalOpen: (isOpen: boolean) => void;
   isCalendarSyncModalOpen: boolean;
   setIsCalendarSyncModalOpen: (isOpen: boolean) => void;
+  isCommandPaletteOpen: boolean;
+  setIsCommandPaletteOpen: (isOpen: boolean) => void;
 
   quickNavTarget: QuickNavTarget | null;
   setQuickNavTarget: (target: QuickNavTarget | null) => void;

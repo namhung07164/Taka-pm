@@ -145,6 +145,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
   setIsUserModalOpen: (isUserModalOpen) => set({ isUserModalOpen }),
   isCalendarSyncModalOpen: false,
   setIsCalendarSyncModalOpen: (isCalendarSyncModalOpen) => set({ isCalendarSyncModalOpen }),
+  isCommandPaletteOpen: false,
+  setIsCommandPaletteOpen: (isCommandPaletteOpen) => set({ isCommandPaletteOpen }),
 
   quickNavTarget: null,
   setQuickNavTarget: (quickNavTarget) => set({ quickNavTarget }),

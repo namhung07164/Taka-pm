@@ -50,6 +50,7 @@ const SettingTab = lazyWithRetry(() => import("./components/SettingTab"), "Setti
 const ManualTab = lazyWithRetry(() => import("./components/ManualTab").then(m => ({ default: m.ManualTab })), "ManualTab");
 const AuditLogTab = lazyWithRetry(() => import("./components/AuditLogTab").then(m => ({ default: m.AuditLogTab })), "AuditLogTab");
 const AppTour = lazyWithRetry(() => import("./components/AppTour").then(m => ({ default: m.AppTour })), "AppTour");
+const CommandPaletteModal = lazyWithRetry(() => import("./components/CommandPaletteModal").then(m => ({ default: m.CommandPaletteModal })), "CommandPaletteModal");
 import { ProjectQuickNavModal } from "./components/ProjectQuickNavModal";
 const PrintPreviewOverlay = lazyWithRetry(() => import("./components/PrintPreviewOverlay").then(m => ({ default: m.PrintPreviewOverlay })), "PrintPreviewOverlay");
 import { AppModals } from "./components/AppModals";
@@ -83,6 +84,8 @@ export default function App() {
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const setIsExportingPDF = useAppStore(state => state.setIsExportingPDF);
   const triggerGanttToday = useAppStore(state => state.triggerGanttToday);
+  const isCommandPaletteOpen = useAppStore(state => state.isCommandPaletteOpen);
+  const setIsCommandPaletteOpen = useAppStore(state => state.setIsCommandPaletteOpen);
   
   useEffect(() => {
     if (isPrintPreview) {
@@ -1191,6 +1194,14 @@ export default function App() {
         if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
           (activeElement as HTMLElement).blur();
         }
+        return;
+      }
+
+      // Ctrl + K / Cmd + K: Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const state = useAppStore.getState();
+        state.setIsCommandPaletteOpen(!state.isCommandPaletteOpen);
         return;
       }
 
@@ -2511,6 +2522,19 @@ export default function App() {
           onClose={() => setQuickNavTarget(null)}
           onNavigate={handleQuickNavigate}
         />
+      )}
+
+      {isCommandPaletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPaletteModal
+            isOpen={isCommandPaletteOpen}
+            onClose={() => setIsCommandPaletteOpen(false)}
+            onTabChange={handleTabChange}
+            onToggleTheme={handleToggleTheme}
+            onToggleFocusMode={() => setIsFocusMode(!isFocusMode)}
+            onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
+          />
+        </Suspense>
       )}
 
       {toast && (

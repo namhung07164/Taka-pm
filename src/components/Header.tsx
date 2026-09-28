@@ -31,6 +31,8 @@ import {
   DollarSign,
   Shield,
   SlidersHorizontal,
+  Search,
+  Command,
 } from "lucide-react";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 const QRScannerModal = lazyWithRetry(() => import("./QRScannerModal").then(m => ({ default: m.QRScannerModal })), "QRScannerModal");
@@ -500,6 +502,17 @@ export function Header({
       <div className="flex flex-wrap justify-end items-center gap-1 sm:gap-2 shrink-0 ml-auto">
         {showQuickAccessToolbar && (
           <>
+            <button
+              onClick={() => useAppStore.getState().setIsCommandPaletteOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation"
+              title="Open Command Palette (Ctrl+K)"
+            >
+              <Search className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span className="hidden sm:inline font-medium">Search...</span>
+              <kbd className="hidden md:inline-block text-[9px] font-mono font-bold bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] px-1 py-0.2 rounded text-slate-500 dark:text-[#a3a3a3]">
+                ⌘K
+              </kbd>
+            </button>
             <button
               onClick={() => setIsQRScannerOpen(true)}
               className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400"
