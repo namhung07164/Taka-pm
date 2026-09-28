@@ -13,7 +13,6 @@ import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
 import { sortGroupTasks } from '../../lib/ganttUtils';
-import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
 import { QuickNavButton } from '../QuickNavButton';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -68,37 +67,11 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Load real tasks for project if not already in Zustand cache
-  useEffect(() => {
-    if (isOpen && project?.code) {
-      ensureProjectTasksLoaded(project.code);
-    }
-  }, [isOpen, project?.code]);
-
-  // Raw tasks for this project (Prioritizes Zustand cache, falls back to embedded project.taskSummaries)
+  // Raw tasks for this project (0-Read: Prioritizes embedded project.taskSummaries, falls back to existing Zustand cache)
   const rawProjectTasks = useMemo(() => {
     if (!project) return [];
-    const pId = project.id;
-    const pCode = (project.code || '').trim().toLowerCase();
-    const pYear = project.year ? String(project.year).trim() : '';
-    const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
 
-    const matchedZustandTasks = tasks.filter(t => {
-      if (t.isDeleted) return false;
-      if (pId && t.projectId === pId) return true;
-      if (pCode && String(t.projectCode || '').trim().toLowerCase() === pCode) {
-        if (pYear && t.projectYear && String(t.projectYear).trim() !== pYear) return false;
-        if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore) return false;
-        return true;
-      }
-      return false;
-    });
-
-    if (matchedZustandTasks.length > 0) {
-      return matchedZustandTasks;
-    }
-
-    // 0-Read Fallback: Use embedded taskSummaries already present inside the Project document
+    // 1. Zero-Read First: Use embedded taskSummaries already present inside the Project document
     if (project.taskSummaries && project.taskSummaries.length > 0) {
       return project.taskSummaries.map((ts: any, idx: number) => {
         let derivedOrderIndex = ts.orderIndex !== undefined ? ts.orderIndex : idx;
@@ -124,8 +97,25 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
       });
     }
 
-    return [];
-  }, [tasks, project]);
+    // 2. Fallback to existing Zustand tasks in memory if taskSummaries is empty
+    const pId = project.id;
+    const pCode = (project.code || '').trim().toLowerCase();
+    const pYear = project.year ? String(project.year).trim() : '';
+    const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+
+    const matchedZustandTasks = tasks.filter(t => {
+      if (t.isDeleted) return false;
+      if (pId && t.projectId === pId) return true;
+      if (pCode && String(t.projectCode || '').trim().toLowerCase() === pCode) {
+        if (pYear && t.projectYear && String(t.projectYear).trim() !== pYear) return false;
+        if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore) return false;
+        return true;
+      }
+      return false;
+    });
+
+    return matchedZustandTasks;
+  }, [project, tasks]);
 
   // Exact GanttTab task ordering with sortGroupTasks and parent-child tree hierarchy
   const orderedGanttRows = useMemo(() => {
