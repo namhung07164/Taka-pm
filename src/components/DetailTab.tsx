@@ -2887,6 +2887,17 @@ export function DetailTab({
         } else if (sortConfig.key === 'taskName') {
           valA = a.name || '';
           valB = b.name || '';
+        } else if (sortConfig.key === 'code') {
+          const codeA = a.taskCodePhu || '';
+          const codeB = b.taskCodePhu || '';
+          direction = sortConfig.direction;
+          const comp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+          return direction === 'asc' ? comp : -comp;
+        } else if (sortConfig.key === 'no') {
+          const ordA = a.orderIndex !== undefined ? a.orderIndex : 0;
+          const ordB = b.orderIndex !== undefined ? b.orderIndex : 0;
+          direction = sortConfig.direction;
+          return direction === 'asc' ? ordA - ordB : ordB - ordA;
         } else if (sortConfig.key === 'duration') {
           valA = a.duration || '0';
           valB = b.duration || '0';
