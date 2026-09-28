@@ -658,10 +658,26 @@ export function enrichProjects(
     const projectTasks = Array.from(matchedTaskMap.values());
 
     const sortedProjTasks = [...projectTasks].sort((a, b) => {
+      const codeA = a.taskCodePhu || '';
+      const codeB = b.taskCodePhu || '';
+      
+      const numA = codeA.match(/#\s*(\d+)/)?.[1] || codeA.match(/[-_.:/\s]+(\d+)\s*$/)?.[1] || (/^\d+$/.test(codeA.trim()) ? codeA.trim() : null);
+      const numB = codeB.match(/#\s*(\d+)/)?.[1] || codeB.match(/[-_.:/\s]+(\d+)\s*$/)?.[1] || (/^\d+$/.test(codeB.trim()) ? codeB.trim() : null);
+
+      if (numA !== null && numB !== null) {
+        const intA = parseInt(numA, 10);
+        const intB = parseInt(numB, 10);
+        if (!isNaN(intA) && !isNaN(intB) && intA !== intB) return intA - intB;
+      } else if (numA !== null && numB === null) {
+        return -1;
+      } else if (numA === null && numB !== null) {
+        return 1;
+      }
+
       const valA = a.orderIndex !== undefined ? a.orderIndex : 0;
       const valB = b.orderIndex !== undefined ? b.orderIndex : 0;
-      if (valA === valB) return String(a.id || '').localeCompare(String(b.id || ''));
-      return valA - valB;
+      if (valA !== valB) return valA - valB;
+      return String(a.id || '').localeCompare(String(b.id || ''));
     });
 
     const taskSummaries = sortedProjTasks.length > 0

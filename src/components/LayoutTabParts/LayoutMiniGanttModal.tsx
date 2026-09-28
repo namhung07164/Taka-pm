@@ -12,7 +12,7 @@ import {
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
-import { sortGroupTasks } from '../../lib/ganttUtils';
+import { sortGroupTasks, extractSubtaskIndex } from '../../lib/ganttUtils';
 import { QuickNavButton } from '../QuickNavButton';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -74,22 +74,21 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     // 1. Zero-Read First: Use embedded taskSummaries already present inside the Project document
     if (project.taskSummaries && project.taskSummaries.length > 0) {
       return project.taskSummaries.map((ts: any, idx: number) => {
-        let derivedOrderIndex = ts.orderIndex !== undefined ? ts.orderIndex : idx;
-        const code = ts.taskCodePhu || ts.name || '';
-        const match = code.match(/#(\d+)/);
-        if (match) {
-          derivedOrderIndex = parseInt(match[1], 10) - 1;
-        }
+        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
+        const derivedOrderIndex = subtaskNum !== null ? subtaskNum - 1 : (ts.orderIndex !== undefined ? ts.orderIndex : idx);
+        const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : (ts.taskCodePhu || `#${idx + 1}`);
+
         return {
           id: `ts_${idx}`,
           name: ts.name || 'Task',
           start: ts.start || '',
           finish: ts.finish || '',
           duration: ts.duration || '1',
-          taskCodePhu: ts.taskCodePhu || `#${idx + 1}`,
+          taskCodePhu: ts.taskCodePhu || fallbackCode,
           runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
           approval: ts.approval,
           party: ts.party,
+          parentTaskId: ts.parentTaskId,
           projectCode: project.code,
           projectId: project.id,
           orderIndex: derivedOrderIndex

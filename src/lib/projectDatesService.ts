@@ -146,7 +146,12 @@ export function calculateProjectComputedDates(
   const taskSummaries = sortedProjTasks
     .filter(t => t.start && t.finish && t.name)
     .map((t, idx) => {
-      const summary: Record<string, any> = {
+      const summary: {
+        name: string;
+        start: string;
+        finish: string;
+        [key: string]: any;
+      } = {
         name: t.name || '',
         start: t.start || '',
         finish: t.finish || '',

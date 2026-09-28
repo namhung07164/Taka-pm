@@ -294,6 +294,52 @@ export function getProjectCodeChangePredecessorUpdates(
   };
 }
 
+/**
+ * Extracts a numeric subtask index from any taskCodePhu representation.
+ * Supports "#13", "L3-304#13", "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "Task 13", "13", etc.
+ */
+export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
+  if (!codeOrPhu) return null;
+  const str = String(codeOrPhu).trim();
+  if (!str) return null;
+
+  // 1. Check for '#' followed by digits (e.g., "L3-304#13", "#13", "HN-L3-304#1")
+  const hashMatch = str.match(/#\s*(\d+)/);
+  if (hashMatch) {
+    const num = parseInt(hashMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 2. Check for delimiter (- _ . : /) followed by digits at the end (e.g., "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "B2-B208-1", "L3-304.13")
+  const delimiterMatch = str.match(/[-_.:/\s]+(\d+)\s*$/);
+  if (delimiterMatch) {
+    const num = parseInt(delimiterMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 3. Check if pure numeric string (e.g., "1", "13", "05")
+  if (/^\d+$/.test(str)) {
+    const num = parseInt(str, 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 4. Check for 'Task' or 'Step' or 'No' or 'T' prefix (e.g. "Task 1", "T-13", "No. 5")
+  const prefixMatch = str.match(/(?:task|step|no\.?|t)\s*[-#.:]?\s*(\d+)/i);
+  if (prefixMatch) {
+    const num = parseInt(prefixMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  // 5. Fallback: match any trailing number at end of string
+  const trailingDigitsMatch = str.match(/(\d+)\s*$/);
+  if (trailingDigitsMatch) {
+    const num = parseInt(trailingDigitsMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  return null;
+}
+
 export function sortGroupTasks(tasks: Task[]): Task[] {
   if (!Array.isArray(tasks)) return [];
   return [...tasks].sort((a, b) => {
@@ -301,19 +347,29 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (!a) return 1;
     if (!b) return -1;
 
-    // Prioritize natural subtask sequence numbers like #1, #2, #10 from taskCodePhu
-    const codeA = a.taskCodePhu || a.name || '';
-    const codeB = b.taskCodePhu || b.name || '';
-    const matchA = codeA.match(/#(\d+)/);
-    const matchB = codeB.match(/#(\d+)/);
-    if (matchA && matchB) {
-      const numA = parseInt(matchA[1], 10);
-      const numB = parseInt(matchB[1], 10);
+    // 1. Prioritize natural subtask index extracted from taskCodePhu (e.g. #1, -1, #13, -13)
+    const codeA = a.taskCodePhu || '';
+    const codeB = b.taskCodePhu || '';
+    const numA = extractSubtaskIndex(codeA);
+    const numB = extractSubtaskIndex(codeB);
+
+    if (numA !== null && numB !== null) {
       if (numA !== numB) return numA - numB;
+    } else if (numA !== null && numB === null) {
+      return -1;
+    } else if (numA === null && numB !== null) {
+      return 1;
     }
 
-    const valAOrder = a.orderIndex !== undefined ? a.orderIndex : null;
-    const valBOrder = b.orderIndex !== undefined ? b.orderIndex : null;
+    // 2. If both have taskCodePhu without single trailing number, compare with natural alphanumeric sort
+    if (codeA && codeB && codeA !== codeB) {
+      const codeCmp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+      if (codeCmp !== 0) return codeCmp;
+    }
+
+    // 3. Fallback to orderIndex
+    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? a.orderIndex : null;
+    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? b.orderIndex : null;
 
     if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
       return valAOrder - valBOrder;
@@ -321,6 +377,14 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
 
     if (valAOrder !== null && valBOrder === null) return -1;
     if (valAOrder === null && valBOrder !== null) return 1;
+
+    // 4. Stable sort using name (natural) and then id
+    const nameA = a.name || '';
+    const nameB = b.name || '';
+    if (nameA && nameB && nameA !== nameB) {
+      const nameCmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      if (nameCmp !== 0) return nameCmp;
+    }
 
     return String(a.id || '').localeCompare(String(b.id || ''));
   });
