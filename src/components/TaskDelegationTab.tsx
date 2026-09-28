@@ -1151,7 +1151,7 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
     return (
       <React.Fragment key={group.id}>
         {/* Group Header Row */}
-        <tr id={`delegation-group-${group.id}`} className={cn("border-b border-slate-200 dark:border-[#444446] hover:bg-slate-200 dark:hover:bg-[#333336]/50 transition-colors", isOrphan ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-white dark:bg-[#1e1e20]", plStatus === 'On process' ? "shadow-[inset_4px_0_0_0_#3b82f6]" : "")}>
+        <tr id={`delegation-group-${group.id}`} className={cn("table-row-optimized border-b border-slate-200 dark:border-[#444446] hover:bg-slate-200 dark:hover:bg-[#333336]/50 transition-colors", isOrphan ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-white dark:bg-[#1e1e20]", plStatus === 'On process' ? "shadow-[inset_4px_0_0_0_#3b82f6]" : "")}>
           {visibleColumns.includes('expand') && (
             <td className={cn("px-4 py-3 text-center", !isOrphan && "pl-8")}>
               <button title="Toggle Expand" onClick={() => toggleGroup(group.id)} className="p-1 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded transition-colors text-slate-500 dark:text-[#a3a3a3]">
@@ -1262,7 +1262,7 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
 
           return (
           <React.Fragment key={st.id}>
-          <tr id={`delegation-subtask-${st.id}`} className={`bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50 dark:hover:bg-[#333336]/30 transition-all duration-300 ${focusTarget?.subTaskId === st.id ? 'bg-yellow-50 dark:bg-yellow-900/30 ring-2 ring-yellow-400 dark:ring-yellow-600 inset-0' : ''}`}>
+          <tr id={`delegation-subtask-${st.id}`} className={`table-row-optimized bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50 dark:hover:bg-[#333336]/30 transition-all duration-300 ${focusTarget?.subTaskId === st.id ? 'bg-yellow-50 dark:bg-yellow-900/30 ring-2 ring-yellow-400 dark:ring-yellow-600 inset-0' : ''}`}>
             {visibleColumns.includes('expand') && <td className="px-4 py-3"></td>}
             {visibleColumns.includes('taskName') && (
               <td className="px-4 py-3 pl-8 text-slate-700 dark:text-[#c3c3c3] break-words whitespace-normal">
@@ -1383,7 +1383,7 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
               </td>
             )}
           </tr>
-          <tr className="bg-slate-50 dark:bg-[#1e1e20]/30 border-b border-slate-100 dark:border-[#333336]">
+          <tr className="table-row-optimized bg-slate-50 dark:bg-[#1e1e20]/30 border-b border-slate-100 dark:border-[#333336]">
             <td colSpan={visibleColumns.length} className="px-4 py-3">
               <div className="flex flex-wrap md:flex-nowrap items-stretch gap-4 pl-8">
                 {/* Report */}

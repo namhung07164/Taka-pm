@@ -1053,7 +1053,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
         <tr 
           key={node.id || `${node.code}-${node.year}-${node.store}-${node.no}`} 
           className={cn(
-            "border-b border-slate-100 dark:border-[#333336] transition-all text-xs",
+            "table-row-optimized border-b border-slate-100 dark:border-[#333336] transition-all text-xs",
             rowBgClass
           )}
         >

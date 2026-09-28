@@ -1301,7 +1301,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
               )}
 
               <div 
-                className={`${bgCardTint} ${borderAccentClass} rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3 flex flex-col gap-2 cursor-pointer relative transition-all active:scale-[0.99] touch-manipulation ${
+                className={`table-row-optimized ${bgCardTint} ${borderAccentClass} rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3 flex flex-col gap-2 cursor-pointer relative transition-all active:scale-[0.99] touch-manipulation ${
                   isSource ? 'opacity-40 ring-2 ring-dashed ring-blue-400' : ''
                 } ${isTarget ? 'bg-blue-50/60 dark:bg-blue-950/30' : ''} ${
                   isJustDropped ? 'ring-2 ring-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40' : isPinned ? 'ring-2 ring-blue-500/50' : ''
