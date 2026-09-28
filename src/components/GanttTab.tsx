@@ -115,11 +115,18 @@ interface GanttTabProps {
   onClearFocus?: () => void;
 }
 
-import { GanttProjectRow } from './Gantt/GanttProjectRow';
-import { GanttTaskRow } from './Gantt/GanttTaskRow';
-import { GanttToolbar } from './Gantt/GanttToolbar';
-import { GanttTimelineHeader } from './Gantt/GanttTimelineHeader';
-import { GanttGridOverlay } from './Gantt/GanttGridOverlay';
+import {
+  GanttProjectRow,
+  GanttTaskRow,
+  GanttToolbar,
+  GanttTimelineHeader,
+  GanttGridOverlay,
+  GanttDependencyLinks,
+  GanttTodayLine,
+  GanttSumBadge,
+  GanttExportOverlay,
+  GanttEmptyState,
+} from './Gantt';
 
 export function GanttTab({
   
@@ -1752,289 +1759,6 @@ export function GanttTab({
     document.addEventListener("mouseup", onMouseUp);
   };
 
-  const renderBaseline = (
-    startStr?: string,
-    endStr?: string,
-    type: "project" | "task" = "task",
-  ) => {
-    if (!startStr || !endStr) return null;
-    const s = parseDateTime(startStr);
-    const e = parseDateTime(endStr);
-    if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) return null;
-
-    const leftDays = getExactDays(s, startDate);
-    const widthDays = getExactDays(e, s) + 1;
-
-    const leftPx = leftDays * dayWidth;
-    const widthPx = Math.max(widthDays * dayWidth, 4);
-
-    return (
-      <div
-        className={`absolute bottom-0.5 h-[4px] rounded-sm bg-yellow-400 dark:bg-yellow-400 border-[0.5px] border-yellow-600/80 shadow-[0_2px_4px_rgba(0,0,0,0.3)] pointer-events-none z-[45] ring-1 ring-white/20`}
-        style={{ left: `${leftPx}px`, width: `${widthPx}px` }}
-        title="Baseline Plan"
-      />
-    );
-  };
-
-  const renderBar = (
-    startStr: string | undefined,
-    endStr: string | undefined,
-    status: string,
-    label: string,
-    id: string,
-    extraVars?: {
-      actStatus?: string;
-      actStatusColor?: string;
-      party?: string;
-      actPrg?: number;
-      duration?: string | number;
-      taskCode?: string;
-      predecessors?: string;
-      highlight?: 'assignee' | 'creator' | null;
-      isSimulation?: boolean;
-    },
-  ) => {
-    const s = parseDateTime(startStr);
-    const e = parseDateTime(endStr);
-
-    if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) return null;
-
-    const isTask = id.startsWith("task-");
-    const leftDays = getExactDays(s, startDate);
-    const widthDays = getExactDays(e, s) + 1;
-
-    const isMilestone =
-      extraVars?.duration !== undefined &&
-      extraVars.duration !== "" &&
-      parseFloat(String(extraVars.duration)) === 0;
-
-    const leftPx = leftDays * dayWidth;
-    const widthPx = Math.max(widthDays * dayWidth, isMilestone ? 16 : 4);
-
-    if (isMilestone) {
-      return (
-        <div
-          id={isTask ? `gantt-bar-${id}` : undefined}
-          onMouseMove={(ev) => positionTooltip(ev, ev.currentTarget.querySelector(".gantt-tooltip-global"))} 
-          onClick={(ev) => {
-            ev.stopPropagation();
-            if (isEditMode) return;
-            positionTooltip(ev, ev.currentTarget.querySelector(".gantt-tooltip-global"));
-            setActiveTooltip(activeTooltip === id ? null : id);
-          }}
-          className={`absolute top-0 bottom-0 md:hover:z-[60] group ${isEditMode ? "cursor-default" : "cursor-pointer"} ${activeTooltip === id ? "z-[60]" : ""} ${extraVars?.highlight === 'assignee' ? "ring-2 ring-yellow-400 ring-offset-1 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.7)]" : extraVars?.highlight === 'creator' ? "ring-2 ring-purple-400 ring-offset-1 rounded-full shadow-[0_0_10px_rgba(192,132,252,0.7)]" : ""}`}
-          style={{ left: `${leftPx + dayWidth / 2 - 8}px`, width: "16px" }}
-        >
-          <div
-            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rotate-45 rounded-sm shadow-sm ${getBarColor(status, extraVars?.duration)}`}
-          />
-          <div className="absolute inset-0 flex items-center px-4 overflow-visible z-10 pointer-events-none">
-            <span className="truncate whitespace-nowrap text-[10px] text-slate-700 dark:text-slate-300 ml-1">
-              {label}{" "}
-              {extraVars?.actPrg !== undefined ? `(${extraVars.actPrg}%)` : ""}
-            </span>
-          </div>
-          <div
-            className={`hidden md:group-hover:flex ${activeTooltip === id ? "!flex" : ""} fixed gantt-tooltip-global z-[99999] w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600  flex-col gap-1 pointer-events-none`}
-          >
-            <div className="font-bold border-b border-slate-600 pb-1 mb-0.5 flex items-start flex-wrap gap-1.5">
-              {label}{" "}
-              {extraVars?.taskCode && (
-                <span className="text-slate-300 font-mono text-[10px]">
-                  [{extraVars.taskCode}]
-                </span>
-              )}{" "}
-              ({status})
-              <span className="px-1.5 py-0.5 rounded text-[9px] bg-orange-500 text-white font-bold uppercase tracking-wider">
-                Milestone
-              </span>
-            </div>
-            {(extraVars?.actPrg !== undefined || extraVars?.duration !== undefined) && (
-              <div className="flex justify-between gap-4">
-                {extraVars?.actPrg !== undefined && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400">Prog:</span>
-                    <span>{extraVars.actPrg}%</span>
-                  </div>
-                )}
-                {extraVars?.duration !== undefined && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400">Dur:</span>
-                    <span>{extraVars.duration}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            {(extraVars?.party || extraVars?.predecessors) && (
-              <div className="flex justify-between gap-4">
-                {extraVars?.party && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400">Party:</span>
-                    <span>{extraVars.party}</span>
-                  </div>
-                )}
-                {extraVars?.predecessors && (
-                  <div className="flex gap-2">
-                    <span className="text-slate-400">Pred:</span>
-                    <span className="max-w-[200px] break-words whitespace-normal" title={extraVars.predecessors}>{extraVars.predecessors}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            {extraVars?.actStatus && (
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-400">Status:</span>
-                <span style={{ color: extraVars.actStatusColor }}>
-                  {extraVars.actStatus}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Dates:</span>
-              <span>
-                {formatGanttDate(startStr)} -{" "}
-                {formatGanttDate(endStr)}
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    const isSimulation = !!extraVars?.isSimulation;
-
-    return (
-      <div
-        id={isTask && !isSimulation ? `gantt-bar-${id}` : undefined}
-        onMouseMove={(ev) => !isSimulation && positionTooltip(ev, ev.currentTarget.querySelector(".gantt-tooltip-global"))} 
-        onClick={(ev) => {
-          ev.stopPropagation();
-          if (isEditMode || isSimulation) return;
-          positionTooltip(ev, ev.currentTarget.querySelector(".gantt-tooltip-global"));
-          setActiveTooltip(activeTooltip === id ? null : id);
-        }}
-        className={cn(
-          "absolute top-1.5 bottom-1.5 rounded-sm shadow-sm whitespace-nowrap text-[10px] text-white font-medium select-none",
-          isSimulation
-            ? "!border-2 !border-dashed !border-blue-500 !bg-blue-500/40 !opacity-90 animate-pulse z-[70] pointer-events-none shadow-md"
-            : `md:hover:z-[60] group ${isEditMode ? "cursor-default" : "cursor-pointer"} ${activeTooltip === id ? "z-[60]" : ""} ${extraVars?.highlight === 'assignee' ? "ring-2 ring-yellow-400 ring-offset-1 shadow-[0_0_10px_rgba(250,204,21,0.7)] z-[50]" : extraVars?.highlight === 'creator' ? "ring-2 ring-purple-400 ring-offset-1 shadow-[0_0_10px_rgba(192,132,252,0.7)] z-[50]" : ""}`
-        )}
-        style={{ left: `${leftPx}px`, width: `${widthPx}px` }}
-      >
-        <div
-          className={cn(
-            "absolute inset-0 rounded-sm overflow-hidden",
-            isSimulation ? "bg-blue-500/30" : getBarColor(status, extraVars?.duration)
-          )}
-        >
-          {!isSimulation && extraVars?.actPrg !== undefined && (
-            <div
-              className="absolute left-0 top-0 bottom-0 bg-black/20 dark:bg-white/25 pointer-events-none transition-all duration-300"
-              style={{
-                width: `${Math.min(100, Math.max(0, extraVars.actPrg))}%`,
-              }}
-            />
-          )}
-        </div>
-        <div className="absolute inset-0 flex items-center px-2 overflow-hidden z-10 pointer-events-none">
-          {widthPx > 50 && (
-            <span className={cn("truncate flex-1", isSimulation ? "text-blue-900 dark:text-blue-100 font-bold" : "")}>
-              {label}{" "}
-              {!isSimulation && extraVars?.actPrg !== undefined ? `(${extraVars.actPrg}%)` : ""}
-            </span>
-          )}
-        </div>
-
-        <div
-          className={`hidden md:group-hover:flex ${activeTooltip === id ? "!flex" : ""} fixed gantt-tooltip-global z-[99999] w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600  flex-col gap-1 pointer-events-none`}
-        >
-          <div className="font-bold border-b border-slate-600 pb-1 mb-0.5 flex items-start flex-wrap gap-1.5">
-            <span className="whitespace-normal break-words">{label}</span>
-            {extraVars?.taskCode && (
-              <span className="text-slate-300 font-mono text-[10px] mt-0.5 whitespace-nowrap">
-                [{extraVars.taskCode}]
-              </span>
-            )}
-            <span className="whitespace-nowrap mt-0.5">({status})</span>
-            {isMilestone && (
-              <span className="px-1.5 py-0.5 rounded text-[9px] bg-orange-500 text-white font-bold uppercase tracking-wider">
-                Milestone
-              </span>
-            )}
-          </div>
-          {(extraVars?.actPrg !== undefined || extraVars?.duration !== undefined) && (
-            <div className="flex items-center gap-2">
-              {extraVars?.actPrg !== undefined && (
-                <>
-                  <span className="text-slate-400 dark:text-[#838383] w-10">
-                    Prog:
-                  </span>
-                  <span className="w-8 font-medium text-emerald-400 dark:text-emerald-300">{extraVars.actPrg}%</span>
-                </>
-              )}
-              {extraVars?.duration !== undefined && (
-                <>
-                  <span className={cn("text-slate-400 dark:text-[#838383]", extraVars?.actPrg !== undefined ? "ml-1" : "w-10")}>
-                    Dur:
-                  </span>
-                  <span className="font-medium text-amber-400 dark:text-amber-300">{extraVars.duration}</span>
-                </>
-              )}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="text-sky-400 dark:text-sky-300 font-semibold w-10">
-              Start:
-            </span>
-            <span className="text-sky-300 dark:text-sky-200 font-medium">{formatGanttDate(startStr) || "N/A"}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-pink-400 dark:text-pink-300 font-semibold w-10">
-              Finish:
-            </span>
-            <span className="text-pink-300 dark:text-pink-200 font-medium">{formatGanttDate(endStr) || "N/A"}</span>
-          </div>
-          {extraVars?.actStatus && (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 dark:text-[#838383] w-10">
-                Act:
-              </span>
-              <span
-                className={cn(
-                  "px-2 py-0.5 text-[10px] font-bold rounded-full border whitespace-nowrap",
-                  extraVars.actStatusColor || "",
-                )}
-              >
-                {extraVars.actStatus}
-              </span>
-            </div>
-          )}
-          {(extraVars?.party || extraVars?.predecessors) && (
-            <div className="flex items-center gap-4">
-              {extraVars?.party && (
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-400 dark:text-[#838383]">
-                    Party:
-                  </span>
-                  <span>{extraVars.party}</span>
-                </div>
-              )}
-              {extraVars?.predecessors && (
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-400 dark:text-[#838383]">
-                    Pred:
-                  </span>
-                  <span className="max-w-[200px] break-words whitespace-normal" title={extraVars.predecessors}>{extraVars.predecessors}</span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   const todayLeftPx = getExactDays(customToday, startDate) * dayWidth;
   const showToday = customToday >= startDate && customToday <= endDate;
 
@@ -3244,15 +2968,7 @@ export function GanttTab({
                 );
               })}
               {sortedProjects.length === 0 && (
-                <tr>
-                  <td colSpan={totalColSpan} className="text-center py-20 text-slate-400 dark:text-slate-500">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <Calendar className="w-8 h-8 opacity-30" />
-                      <p className="text-sm font-medium">No accessible projects or tasks found</p>
-                      <p className="text-xs text-slate-400">There are no projects matching your account permissions or filter criteria.</p>
-                    </div>
-                  </td>
-                </tr>
+                <GanttEmptyState colSpan={totalColSpan} />
               )}
               {paddingBottom > 0 && (
                 <tr style={{ height: `${paddingBottom}px` }} className="pointer-events-none select-none">
@@ -3274,52 +2990,25 @@ export function GanttTab({
             timeUnits={timeUnits}
             dayWidth={dayWidth}
           />
-          <svg className="absolute inset-0 pointer-events-none z-[15] overflow-visible print:hidden" width="100%" height="100%">
-            <defs>
-              <marker
-                id="arrowhead"
-                markerWidth="6"
-                markerHeight="6"
-                refX="5"
-                refY="3"
-                orient="auto"
-              >
-                <polygon points="0 0, 6 3, 0 6" fill="#1d4ed8" />
-              </marker>
-            </defs>
-            {dependencyLines.map((line) => (
-              <path
-                key={line.id}
-                d={line.d}
-                fill="none"
-                stroke="#1d4ed8"
-                strokeWidth="1.5"
-                markerEnd="url(#arrowhead)"
-                className="opacity-70"
-              />
-            ))}
-          </svg>
 
-          {/* Absolute Today Line overlaying the whole table body */}
-          {showToday && (
-            <div
-              className={`absolute top-0 bottom-0 w-1 z-20 group/today`}
-              style={{
-                left:
-                  sideWidth +
-                  (showStart ? startColWidth : 0) +
-                  (showFinish ? finishColWidth : 0) +
-                  (showParty ? partyColWidth : 0) +
-                  (showDuration ? durationColWidth : 0) +
-                  todayLeftPx,
-              }}
-            >
-              <div className="absolute inset-y-0 left-0 w-px border-l-2 border-red-500" />
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover/today:opacity-100 transition-opacity whitespace-nowrap">
-                {format(customToday, "dd/MM/yyyy")}
-              </div>
-            </div>
-          )}
+          {/* Predecessor Dependency Links */}
+          <GanttDependencyLinks dependencyLines={dependencyLines} />
+
+          {/* Absolute Today Line */}
+          <GanttTodayLine
+            showToday={showToday}
+            sideWidth={sideWidth}
+            showStart={showStart}
+            startColWidth={startColWidth}
+            showFinish={showFinish}
+            finishColWidth={finishColWidth}
+            showParty={showParty}
+            partyColWidth={partyColWidth}
+            showDuration={showDuration}
+            durationColWidth={durationColWidth}
+            todayLeftPx={todayLeftPx}
+            customToday={customToday}
+          />
         </div>
         {visibleCount < sortedProjects.length && (
           <div className="sticky left-0 right-0 flex justify-center p-4 print:hidden">
@@ -3375,30 +3064,16 @@ export function GanttTab({
       </React.Suspense>
 
       {/* Sum Tooltip */}
-      {isEditMode && sumMode !== "none" && (selectedTaskIds.length > 0 || selectedProjectIds.length > 0) && (
-        <div className="fixed bottom-6 right-6 z-[200] bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-xl shadow-2xl flex items-center gap-4">
-          <div className="p-2 bg-emerald-500 rounded-full">
-            <Calculator className="w-5 h-5 text-white" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs text-slate-300 dark:text-slate-600 font-medium">Calculated Sum</span>
-            <span className="text-xl font-bold">
-              {sumMode === "duration" && `${computedSum} Days`}
-            </span>
-          </div>
-        </div>
-      )}
+      <GanttSumBadge
+        isEditMode={isEditMode}
+        sumMode={sumMode}
+        selectedTaskCount={selectedTaskIds.length}
+        selectedProjectCount={selectedProjectIds.length}
+        computedSum={computedSum}
+      />
 
       {/* Exporting Overlay */}
-      {isExporting && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl p-8 flex flex-col items-center max-w-sm w-full mx-4 border border-slate-200 dark:border-[#444446]">
-            <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-            <h3 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3] mb-2">Exporting Chart</h3>
-            <p className="text-slate-500 dark:text-[#a3a3a3] text-center text-sm">Please wait while we generate your file. This may take a few moments for large charts.</p>
-          </div>
-        </div>
-      )}
+      <GanttExportOverlay isExporting={isExporting} />
     </div>
   );
 }
