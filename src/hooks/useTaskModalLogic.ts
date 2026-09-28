@@ -391,6 +391,17 @@ export function useTaskModalLogic({
         finalFormData.duration = "0";
         finalFormData.finish = finalFormData.start;
       }
+      if (finalFormData.durationManual ?? true) {
+        finalFormData.durationManual = true;
+        if (finalFormData.start && finalFormData.duration !== undefined && finalFormData.duration !== '') {
+          const s = parseDateTime(finalFormData.start);
+          const days = parseFloat(String(finalFormData.duration));
+          if (s && !isNaN(s.getTime()) && !isNaN(days)) {
+            const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+            finalFormData.finish = formatToDatetimeLocal(f);
+          }
+        }
+      }
       if (!finalFormData.party) {
         finalFormData.party = currentProject?.party || 'Takashimaya';
       }

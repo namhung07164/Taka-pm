@@ -240,6 +240,8 @@ Khi bật chế độ **Edit Mode**, hệ thống cho phép chọn nhiều Task 
         * Mốc ngày `Start date`, `Finish date`, `Baseline start`, `Baseline finish` sẽ tự động lấy mặc định là ngày hôm nay.
         * `Duration` (thời lượng) mặc định là `0` ngày.
         * `Party` (đơn vị phụ trách) tự động kế thừa từ thông tin đối tác của dự án mẹ hoặc mặc định là `Takashimaya`.
+        * **Chế độ tự động tính ngày kết thúc (Auto Calculate End Date / Duration Manual)**: Khi tạo mới task hoặc nhập từ file CSV, trường durationManual luôn mặc định là true. Khi nhập Start date và Duration, hệ thống sẽ luôn tự động tính toán chính xác ngày kết thúc Finish date (Finish = Start + Duration).
+        * **Ưu tiên sắp xếp theo Tiền nhiệm (Predecessor-Prioritized Sorting)**: Khi sắp xếp công việc hoặc nhập dữ liệu từ CSV có tiền nhiệm (Predecessor), hệ thống áp dụng thuật toán Topo để ưu tiên xếp công việc tiền nhiệm đứng trước công việc phụ thuộc, đồng thời tự động tính toán chuỗi ngày tháng nối tiếp liền mạch.
     - **Tìm Kiếm & Tự Động Điền Gợi Ý Tiền Nhiệm Thông Minh (Smart Predecessor Suggestion & Auto-Complete)**:
       + Ô nhập tiền nhiệm hỗ trợ đầy đủ ký tự `#` (gõ `Shift + 3`) và phân biệt rõ ràng giữa các năm/chi nhánh khác nhau (ví dụ phân biệt `2026 B2-B208 HCM` với `2027 B2-B208 HCM`).
       + Hệ thống hiển thị danh sách gợi ý theo thuật toán tính điểm ưu tiên tuyệt đối công việc cùng dự án cha, cùng năm, cùng chi nhánh và cùng tầng (`Location`).

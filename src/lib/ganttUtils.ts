@@ -311,6 +311,112 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
   });
 }
 
+/**
+ * Sorts tasks prioritizing predecessor dependency relationships and computed dates.
+ * If Task B depends on Task A, Task A will always be positioned before Task B.
+ */
+export function sortTasksByPredecessorsAndDates(
+  groupTasks: Task[], 
+  projects: Project[] = [], 
+  allTasks: Task[] = []
+): Task[] {
+  if (!Array.isArray(groupTasks) || groupTasks.length <= 1) return groupTasks || [];
+  
+  const pool = allTasks.length > 0 ? allTasks : groupTasks;
+  const taskNoMap = buildTaskNoMap(projects, pool);
+  const taskMap = new Map<string, Task>();
+  groupTasks.forEach(t => { if (t && t.id) taskMap.set(t.id, t); });
+
+  // Directed graph: adjMap[u] = list of tasks v that depend on u (u -> v, so u must come before v)
+  const adjMap = new Map<string, string[]>();
+  const inDegree = new Map<string, number>();
+
+  groupTasks.forEach(t => {
+    adjMap.set(t.id, []);
+    inDegree.set(t.id, 0);
+  });
+
+  groupTasks.forEach(t => {
+    if (t.predecessor && t.predecessor.trim()) {
+      const parsed = parsePredecessors(t.predecessor, taskNoMap, t);
+      parsed.forEach(pObj => {
+        if (pObj?.task && pObj.task.id && pObj.task.id !== t.id && taskMap.has(pObj.task.id)) {
+          const u = pObj.task.id;
+          const v = t.id;
+          const neighbors = adjMap.get(u) || [];
+          if (!neighbors.includes(v)) {
+            neighbors.push(v);
+            adjMap.set(u, neighbors);
+            inDegree.set(v, (inDegree.get(v) || 0) + 1);
+          }
+        }
+      });
+    }
+  });
+
+  // Comparator for picking ready tasks
+  const compareTasks = (a: Task, b: Task) => {
+    const startA = a.start || '9999-12-31';
+    const startB = b.start || '9999-12-31';
+    if (startA !== startB) return startA < startB ? -1 : 1;
+    
+    const finishA = a.finish || '9999-12-31';
+    const finishB = b.finish || '9999-12-31';
+    if (finishA !== finishB) return finishA < finishB ? -1 : 1;
+
+    const ordA = a.orderIndex !== undefined ? a.orderIndex : 0;
+    const ordB = b.orderIndex !== undefined ? b.orderIndex : 0;
+    if (ordA !== ordB) return ordA - ordB;
+
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  };
+
+  // Kahn's algorithm with priority queue
+  const ready: Task[] = [];
+  groupTasks.forEach(t => {
+    if ((inDegree.get(t.id) || 0) === 0) {
+      ready.push(t);
+    }
+  });
+
+  ready.sort(compareTasks);
+
+  const result: Task[] = [];
+  const processed = new Set<string>();
+
+  while (ready.length > 0) {
+    const u = ready.shift()!;
+    result.push(u);
+    processed.add(u.id);
+
+    const neighbors = adjMap.get(u.id) || [];
+    let newlyReady = false;
+    for (const vId of neighbors) {
+      const currentDeg = (inDegree.get(vId) || 0) - 1;
+      inDegree.set(vId, currentDeg);
+      if (currentDeg === 0 && !processed.has(vId)) {
+        const vTask = taskMap.get(vId);
+        if (vTask) {
+          ready.push(vTask);
+          newlyReady = true;
+        }
+      }
+    }
+    if (newlyReady) {
+      ready.sort(compareTasks);
+    }
+  }
+
+  // If there are cycle-locked tasks or remaining tasks, append them sorted by date
+  if (result.length < groupTasks.length) {
+    const remaining = groupTasks.filter(t => !processed.has(t.id));
+    remaining.sort(compareTasks);
+    result.push(...remaining);
+  }
+
+  return result;
+}
+
 export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, Task[]> {
   const map = new Map<string, Task[]>();
   const tasksByProjectCode = new Map<string, Task[]>();

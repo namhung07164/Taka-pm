@@ -21,7 +21,7 @@ import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
-import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
+import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, sortTasksByPredecessorsAndDates, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
 import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/projectDatesService';
 import { 
   saveTaskStateUnified, 
@@ -613,19 +613,7 @@ export function DetailTab({
 
   const handleSortSubTasks = async (p: Project, groupTasks: Task[]) => {
     try {
-      const sorted = [...groupTasks].sort((a, b) => {
-        const valAStart = a.start || '9999-12-31';
-        const valBStart = b.start || '9999-12-31';
-        if (valAStart !== valBStart) {
-          return valAStart < valBStart ? -1 : 1;
-        }
-        const valAFinish = a.finish || '9999-12-31';
-        const valBFinish = b.finish || '9999-12-31';
-        if (valAFinish !== valBFinish) {
-          return valAFinish < valBFinish ? -1 : 1;
-        }
-        return 0;
-      });
+      const sorted = sortTasksByPredecessorsAndDates(groupTasks, projects, tasks);
 
       const oldCodeToNewCode = new Map<string, string>();
       const pCodeParts = String(p.code || '').toLowerCase().split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
@@ -2270,7 +2258,7 @@ export function DetailTab({
           }
 
           const finalTask = existing 
-            ? { ...existing, ...t, comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu, updatedAt: new Date().toISOString() } 
+            ? { ...existing, ...t, comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu, durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString() } 
             : { ...t, id, comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu, durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString() };
           
           if (finalTask.start && finalTask.duration !== undefined && finalTask.duration !== '') {
@@ -2287,7 +2275,12 @@ export function DetailTab({
             if (!isNaN(s.getTime()) && !isNaN(f.getTime())) {
               const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
               finalTask.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+              finalTask.durationManual = true;
             }
+          } else if (finalTask.start) {
+            finalTask.duration = finalTask.duration || "0";
+            finalTask.finish = finalTask.finish || finalTask.start;
+            finalTask.durationManual = true;
           }
 
           processedTasks.set(key, finalTask);
@@ -2299,7 +2292,52 @@ export function DetailTab({
       const simulatedTasks = Array.from(simulatedTasksMap.values());
       const simulatedTaskNoMap = buildTaskNoMap(projects, simulatedTasks);
 
-      for (const finalTask of tasksToImport) {
+      // Group by project to calculate predecessor dates and sort topologically
+      const tasksByProjKey = new Map<string, Task[]>();
+      tasksToImport.forEach(t => {
+        const pKey = `${String(t.projectCode || '').trim().toLowerCase()}-${String(t.projectYear || '').trim().toLowerCase()}-${String(t.projectStore || '').trim().toLowerCase()}`;
+        const list = tasksByProjKey.get(pKey) || [];
+        list.push(t);
+        tasksByProjKey.set(pKey, list);
+      });
+
+      const finalOrderedTasksToImport: Task[] = [];
+
+      tasksByProjKey.forEach((projTasks) => {
+        // 1. Sort project tasks prioritizing predecessor dependency relationships
+        const sortedProjTasks = sortTasksByPredecessorsAndDates(projTasks, projects, simulatedTasks);
+
+        // 2. Cascade predecessor date calculations in topological order
+        sortedProjTasks.forEach((st, idx) => {
+          st.orderIndex = idx;
+          st.taskCodePhu = `${st.projectCode}#${idx + 1}`;
+          st.durationManual = true;
+
+          if (st.predecessor && st.predecessor.trim()) {
+            const parsed = parsePredecessors(st.predecessor, simulatedTaskNoMap, st);
+            const calc = calculateTaskDatesFromPredecessors(st, parsed);
+            if (calc) {
+              st.start = calc.start;
+              st.finish = calc.finish;
+              st.duration = calc.duration;
+              st.durationManual = true;
+            }
+          }
+        });
+
+        // 3. Re-sort with updated dates and finalize order
+        const finalSorted = sortTasksByPredecessorsAndDates(sortedProjTasks, projects, simulatedTasks);
+        finalSorted.forEach((fst, fIdx) => {
+          fst.orderIndex = fIdx;
+          fst.taskCodePhu = `${fst.projectCode}#${fIdx + 1}`;
+          fst.durationManual = true;
+          finalOrderedTasksToImport.push(fst);
+        });
+      });
+
+      const finalTasksList = finalOrderedTasksToImport.length > 0 ? finalOrderedTasksToImport : tasksToImport;
+
+      for (const finalTask of finalTasksList) {
          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', finalTask.id), finalTask);
          if (finalTask.delegation) {
             const now = new Date().toISOString();
@@ -2336,7 +2374,7 @@ export function DetailTab({
          importCount++;
       }
       
-      saveTaskStateUnified(tasksToImport);
+      saveTaskStateUnified(finalTasksList);
       
       if (importCount > 0) {
         undoManager.push({
