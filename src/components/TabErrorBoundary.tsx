@@ -27,7 +27,9 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
     const isChunkError = 
       error?.message?.includes('Importing a module script failed') ||
       error?.message?.includes('Failed to fetch dynamically imported module') ||
-      error?.message?.includes('error loading dynamically imported module');
+      error?.message?.includes('error loading dynamically imported module') ||
+      error?.message?.includes('MIME type') ||
+      error?.message?.includes('is not a valid JavaScript MIME type');
       
     const isIDBError = error?.message?.includes('Connection to Indexed Database server lost');
     
@@ -60,7 +62,9 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
       const isChunkError =
         this.state.error?.message?.includes('Importing a module script failed') ||
         this.state.error?.message?.includes('Failed to fetch dynamically imported module') ||
-        this.state.error?.message?.includes('error loading dynamically imported module');
+        this.state.error?.message?.includes('error loading dynamically imported module') ||
+        this.state.error?.message?.includes('MIME type') ||
+        this.state.error?.message?.includes('is not a valid JavaScript MIME type');
 
       return (
         <div className="flex flex-col items-center justify-center p-8 m-4 bg-slate-50 dark:bg-[#1e1e20] border border-slate-200 dark:border-[#38383a] rounded-2xl text-center shadow-xs">

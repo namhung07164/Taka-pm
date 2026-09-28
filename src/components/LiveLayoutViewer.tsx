@@ -12,8 +12,12 @@ import { extractR2Key, getS3Sdk, downloadR2JsonFile, resolveR2UrlToHttp } from '
 import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn, extractAllProjectCodes, projectMatchesUnitCode } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 
-const LayoutMiniGanttModal = React.lazy(() => import('./LayoutTabParts/LayoutMiniGanttModal'));
+const LayoutMiniGanttModal = lazyWithRetry(
+  () => import('./LayoutTabParts/LayoutMiniGanttModal').then(m => ({ default: m.LayoutMiniGanttModal })),
+  'LayoutMiniGanttModal'
+);
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';

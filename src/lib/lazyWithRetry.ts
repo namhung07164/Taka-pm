@@ -37,6 +37,8 @@ export function lazyWithRetry<T extends ComponentType<any>>(
               errorMsg.includes('error loading dynamically imported module') ||
               errorMsg.includes('dynamically imported module') ||
               errorMsg.includes('Loading chunk') ||
+              errorMsg.includes('MIME type') ||
+              errorMsg.includes('not a valid JavaScript MIME type') ||
               error?.name === 'ChunkLoadError';
 
             if (remaining > 0 && isModuleScriptError) {
