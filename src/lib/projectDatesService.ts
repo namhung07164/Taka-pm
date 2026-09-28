@@ -4,6 +4,7 @@ import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent } from "./utils";
+import { sortGroupTasks } from "./ganttUtils";
 
 export interface ComputedProjectDates {
   computedTakStart?: string;
@@ -140,12 +141,7 @@ export function calculateProjectComputedDates(
     ? computeActProgressPercent(projectTasks, delegationGroups)
     : (project.computedActProgress ?? 0);
 
-  const sortedProjTasks = [...(projectTasks || [])].sort((a, b) => {
-    const valA = a.orderIndex !== undefined ? a.orderIndex : 0;
-    const valB = b.orderIndex !== undefined ? b.orderIndex : 0;
-    if (valA === valB) return String(a.id || '').localeCompare(String(b.id || ''));
-    return valA - valB;
-  });
+  const sortedProjTasks = sortGroupTasks(projectTasks || []);
 
   const taskSummaries = sortedProjTasks
     .filter(t => t.start && t.finish && t.name)

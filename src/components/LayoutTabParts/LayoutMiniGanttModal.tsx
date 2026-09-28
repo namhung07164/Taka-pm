@@ -13,6 +13,7 @@ import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
 import { sortGroupTasks } from '../../lib/ganttUtils';
+import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
 import { QuickNavButton } from '../QuickNavButton';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -67,6 +68,13 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  // Load real tasks for project if not already in Zustand cache
+  useEffect(() => {
+    if (isOpen && project?.code) {
+      ensureProjectTasksLoaded(project.code);
+    }
+  }, [isOpen, project?.code]);
+
   // Raw tasks for this project (Prioritizes Zustand cache, falls back to embedded project.taskSummaries)
   const rawProjectTasks = useMemo(() => {
     if (!project) return [];
@@ -92,20 +100,28 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
     // 0-Read Fallback: Use embedded taskSummaries already present inside the Project document
     if (project.taskSummaries && project.taskSummaries.length > 0) {
-      return project.taskSummaries.map((ts: any, idx: number) => ({
-        id: `ts_${idx}`,
-        name: ts.name || 'Task',
-        start: ts.start || '',
-        finish: ts.finish || '',
-        duration: ts.duration || '1',
-        taskCodePhu: ts.taskCodePhu || `#${idx + 1}`,
-        runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
-        approval: ts.approval,
-        party: ts.party,
-        projectCode: project.code,
-        projectId: project.id,
-        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx
-      })) as Task[];
+      return project.taskSummaries.map((ts: any, idx: number) => {
+        let derivedOrderIndex = ts.orderIndex !== undefined ? ts.orderIndex : idx;
+        const code = ts.taskCodePhu || ts.name || '';
+        const match = code.match(/#(\d+)/);
+        if (match) {
+          derivedOrderIndex = parseInt(match[1], 10) - 1;
+        }
+        return {
+          id: `ts_${idx}`,
+          name: ts.name || 'Task',
+          start: ts.start || '',
+          finish: ts.finish || '',
+          duration: ts.duration || '1',
+          taskCodePhu: ts.taskCodePhu || `#${idx + 1}`,
+          runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
+          approval: ts.approval,
+          party: ts.party,
+          projectCode: project.code,
+          projectId: project.id,
+          orderIndex: derivedOrderIndex
+        } as Task;
+      });
     }
 
     return [];

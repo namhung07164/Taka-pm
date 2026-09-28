@@ -300,14 +300,29 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (!a && !b) return 0;
     if (!a) return 1;
     if (!b) return -1;
-    const valAOrder = a.orderIndex !== undefined ? a.orderIndex : 0;
-    const valBOrder = b.orderIndex !== undefined ? b.orderIndex : 0;
-    
-    if (valAOrder === valBOrder) {
-      // Fallback to stable sorting using id
-      return String(a.id || '').localeCompare(String(b.id || ''));
+
+    // Prioritize natural subtask sequence numbers like #1, #2, #10 from taskCodePhu
+    const codeA = a.taskCodePhu || a.name || '';
+    const codeB = b.taskCodePhu || b.name || '';
+    const matchA = codeA.match(/#(\d+)/);
+    const matchB = codeB.match(/#(\d+)/);
+    if (matchA && matchB) {
+      const numA = parseInt(matchA[1], 10);
+      const numB = parseInt(matchB[1], 10);
+      if (numA !== numB) return numA - numB;
     }
-    return valAOrder - valBOrder;
+
+    const valAOrder = a.orderIndex !== undefined ? a.orderIndex : null;
+    const valBOrder = b.orderIndex !== undefined ? b.orderIndex : null;
+
+    if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
+      return valAOrder - valBOrder;
+    }
+
+    if (valAOrder !== null && valBOrder === null) return -1;
+    if (valAOrder === null && valBOrder !== null) return 1;
+
+    return String(a.id || '').localeCompare(String(b.id || ''));
   });
 }
 
