@@ -152,7 +152,7 @@ export function CommandPaletteModal({
     const items: PaletteItem[] = [];
 
     // New Project
-    if (isAdmin || !!perms.Write?.general) {
+    if (isAdmin || !!(perms as any)?.Write?.general) {
       items.push({
         id: 'action-new-project',
         category: 'actions',
@@ -172,7 +172,7 @@ export function CommandPaletteModal({
     }
 
     // New Task
-    if (isAdmin || !!perms.Write?.detail) {
+    if (isAdmin || !!(perms as any)?.Write?.detail) {
       items.push({
         id: 'action-new-task',
         category: 'actions',
@@ -400,15 +400,16 @@ export function CommandPaletteModal({
   const taskItems: PaletteItem[] = useMemo(() => {
     if (!tasks || tasks.length === 0) return [];
     return tasks.map(t => {
-      const statusLabel = t.status || 'In Progress';
+      const runningStatus = t.runningStatus || 'In Progress';
+      const percent = (t as any).percent ?? (t as any).progress ?? 0;
       return {
         id: `task-${t.id}`,
         category: 'tasks',
         title: t.name || 'Untitled Task',
-        subtitle: `Project ${t.projectCode || ''} • Party: ${t.party || 'Internal'} • ${t.percent || 0}%`,
+        subtitle: `Project ${t.projectCode || ''} • Party: ${t.party || 'Internal'} • Status: ${runningStatus}`,
         code: t.taskCodePhu || t.projectCode,
-        badge: `${t.percent || 0}%`,
-        badgeColor: (t.percent || 0) >= 100
+        badge: `${percent}%`,
+        badgeColor: percent >= 100
           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300'
           : 'bg-slate-100 text-slate-700 dark:bg-[#333336] dark:text-[#c3c3c3]',
         icon: List,

@@ -2530,7 +2530,7 @@ export default function App() {
             isOpen={isCommandPaletteOpen}
             onClose={() => setIsCommandPaletteOpen(false)}
             onTabChange={handleTabChange}
-            onToggleTheme={handleToggleTheme}
+            onToggleTheme={toggleTheme}
             onToggleFocusMode={() => setIsFocusMode(!isFocusMode)}
             onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
           />
