@@ -448,3 +448,22 @@ body.print-preview-active .print\:overflow-hidden {
   contain-intrinsic-size: auto 42px;
 }
 
+@media print {
+  .table-row-optimized,
+  .project-row,
+  .task-row {
+    content-visibility: visible !important;
+    contain-intrinsic-size: none !important;
+  }
+}
+
+.exporting-active .table-row-optimized,
+.exporting-active .project-row,
+.exporting-active .task-row,
+.print-preview-content-active .table-row-optimized,
+.print-preview-content-active .project-row,
+.print-preview-content-active .task-row {
+  content-visibility: visible !important;
+  contain-intrinsic-size: none !important;
+}
+

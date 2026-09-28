@@ -118,7 +118,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   return (
     <tr
       className={cn(
-        "transition-colors group project-row",
+        "table-row-optimized transition-colors group project-row",
         "bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a]",
         getRowVisibilityClass(rowId)
       )}

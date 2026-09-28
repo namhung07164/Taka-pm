@@ -144,7 +144,7 @@ export const GanttTaskRow: React.FC<GanttTaskRowProps> = React.memo(({
                             id={`gantt-task-${t.id}`}
                             key={t.id}
                             className={cn(
-                              "transition-all group task-row select-none",
+                              "table-row-optimized transition-all group task-row select-none",
                               draggingTaskIds.includes(t.id)
                                 ? "opacity-30 bg-blue-50/30 dark:bg-blue-950/20 border-dashed border-2 border-blue-400"
                                 : "bg-slate-50 dark:bg-[#232325] hover:bg-slate-100 dark:hover:bg-[#2d2d30]",
