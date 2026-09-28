@@ -50,7 +50,7 @@ const SettingTab = lazyWithRetry(() => import("./components/SettingTab"), "Setti
 const ManualTab = lazyWithRetry(() => import("./components/ManualTab").then(m => ({ default: m.ManualTab })), "ManualTab");
 const AuditLogTab = lazyWithRetry(() => import("./components/AuditLogTab").then(m => ({ default: m.AuditLogTab })), "AuditLogTab");
 const AppTour = lazyWithRetry(() => import("./components/AppTour").then(m => ({ default: m.AppTour })), "AppTour");
-const ProjectQuickNavModal = lazyWithRetry(() => import("./components/ProjectQuickNavModal").then(m => ({ default: m.ProjectQuickNavModal })), "ProjectQuickNavModal");
+import { ProjectQuickNavModal } from "./components/ProjectQuickNavModal";
 const PrintPreviewOverlay = lazyWithRetry(() => import("./components/PrintPreviewOverlay").then(m => ({ default: m.PrintPreviewOverlay })), "PrintPreviewOverlay");
 import { AppModals } from "./components/AppModals";
 import { PrintOptionsPanel } from "./components/PrintOptionsPanel";
@@ -2505,14 +2505,12 @@ export default function App() {
       />
 
       {quickNavTarget && (
-        <Suspense fallback={null}>
-          <ProjectQuickNavModal
-            target={quickNavTarget}
-            isOpen={!!quickNavTarget}
-            onClose={() => setQuickNavTarget(null)}
-            onNavigate={handleQuickNavigate}
-          />
-        </Suspense>
+        <ProjectQuickNavModal
+          target={quickNavTarget}
+          isOpen={!!quickNavTarget}
+          onClose={() => setQuickNavTarget(null)}
+          onNavigate={handleQuickNavigate}
+        />
       )}
 
       {toast && (
