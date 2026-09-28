@@ -1541,3 +1541,5 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
     </div>
   );
 }
+
+export default GeneralTab;

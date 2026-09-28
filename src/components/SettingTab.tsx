@@ -1283,3 +1283,5 @@ export function SettingTab({ rules}: SettingTabProps) {
   </div>
   );
 }
+
+export default SettingTab;

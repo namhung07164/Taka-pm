@@ -2031,3 +2031,5 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
   );
 }
 
+export default TaskDelegationTab;
+

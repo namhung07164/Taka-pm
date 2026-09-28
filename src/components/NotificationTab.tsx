@@ -393,3 +393,5 @@ export function NotificationTab({
     </div>
   );
 }
+
+export default NotificationTab;

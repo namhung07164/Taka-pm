@@ -1017,93 +1017,91 @@ export default function App() {
     const taskCode = target.taskCode;
     const effectiveFilterCode = taskCode || (task ? (task.taskCodePhu || p?.code) : p?.code) || "";
 
-    startTransition(() => {
-      // 1. Sync Year filter
-      const yearVal = p?.year || (task?.projectYear ? Number(task.projectYear) : null);
-      if (yearVal) {
-        setGlobalYearFilter(String(yearVal));
-      } else {
-        setGlobalYearFilter("all");
-      }
+    // 1. Sync Year filter
+    const yearVal = p?.year || (task?.projectYear ? Number(task.projectYear) : null);
+    if (yearVal) {
+      setGlobalYearFilter(String(yearVal));
+    } else {
+      setGlobalYearFilter("all");
+    }
 
-      // 2. Sync Store filter
-      const storeVal = p?.store || task?.projectStore;
-      if (storeVal) {
-        setGlobalStoreFilter(storeVal);
-        safeSetItemLocal(
-          `taka_store_filter_${currentUser.id}`,
-          String(storeVal),
-        );
-      } else {
-        setGlobalStoreFilter("all");
-        safeSetItemLocal(
-          `taka_store_filter_${currentUser.id}`,
-          "all",
-        );
-      }
+    // 2. Sync Store filter
+    const storeVal = p?.store || task?.projectStore;
+    if (storeVal) {
+      setGlobalStoreFilter(storeVal);
+      safeSetItemLocal(
+        `taka_store_filter_${currentUser.id}`,
+        String(storeVal),
+      );
+    } else {
+      setGlobalStoreFilter("all");
+      safeSetItemLocal(
+        `taka_store_filter_${currentUser.id}`,
+        "all",
+      );
+    }
 
-      // 3. Tab-specific search & filter synchronization
-      switch (targetTab) {
-        case "layout": {
-          setLayoutTabFilters({
-            store: p?.store || task?.projectStore || "all",
-            location: p?.location || "all",
-            projectCode: p?.code || task?.projectCode || "",
-          });
-          handleTabChange("layout");
-          break;
-        }
-        case "gantt": {
-          if (effectiveFilterCode) {
-            safeSetItemSession("taka_gantt_search", effectiveFilterCode);
-          }
-          if (task?.id) {
-            setGanttTabFocusTaskId(task.id);
-          }
-          safeSetItemSession("taka_gantt_trigger_today", "true");
-          triggerGanttToday();
-          handleTabChange("gantt");
-          break;
-        }
-        case "detail": {
-          if (effectiveFilterCode) {
-            setDetailTabFilterCode(effectiveFilterCode);
-          } else {
-            setDetailTabFilterCode("");
-          }
-          if (p?.store || task?.projectStore) {
-            setDetailTabStoreFilter(p?.store || task?.projectStore || "");
-          }
-          if (task?.id) {
-            setDetailTabFocusTaskId(task.id);
-          }
-          handleTabChange("detail");
-          break;
-        }
-        case "budget": {
-          if (effectiveFilterCode) {
-            setBudgetTabSearchTerm(effectiveFilterCode);
-          } else {
-            setBudgetTabSearchTerm("");
-          }
-          handleTabChange("budget");
-          break;
-        }
-        case "cost": {
-          if (effectiveFilterCode) {
-            setCostTabSearchTerm(effectiveFilterCode);
-          } else {
-            setCostTabSearchTerm("");
-          }
-          handleTabChange("cost");
-          break;
-        }
-        default: {
-          handleTabChange(targetTab);
-          break;
-        }
+    // 3. Tab-specific search & filter synchronization
+    switch (targetTab) {
+      case "layout": {
+        setLayoutTabFilters({
+          store: p?.store || task?.projectStore || "all",
+          location: p?.location || "all",
+          projectCode: p?.code || task?.projectCode || "",
+        });
+        handleTabChange("layout");
+        break;
       }
-    });
+      case "gantt": {
+        if (effectiveFilterCode) {
+          safeSetItemSession("taka_gantt_search", effectiveFilterCode);
+        }
+        if (task?.id) {
+          setGanttTabFocusTaskId(task.id);
+        }
+        safeSetItemSession("taka_gantt_trigger_today", "true");
+        triggerGanttToday();
+        handleTabChange("gantt");
+        break;
+      }
+      case "detail": {
+        if (effectiveFilterCode) {
+          setDetailTabFilterCode(effectiveFilterCode);
+        } else {
+          setDetailTabFilterCode("");
+        }
+        if (p?.store || task?.projectStore) {
+          setDetailTabStoreFilter(p?.store || task?.projectStore || "");
+        }
+        if (task?.id) {
+          setDetailTabFocusTaskId(task.id);
+        }
+        handleTabChange("detail");
+        break;
+      }
+      case "budget": {
+        if (effectiveFilterCode) {
+          setBudgetTabSearchTerm(effectiveFilterCode);
+        } else {
+          setBudgetTabSearchTerm("");
+        }
+        handleTabChange("budget");
+        break;
+      }
+      case "cost": {
+        if (effectiveFilterCode) {
+          setCostTabSearchTerm(effectiveFilterCode);
+        } else {
+          setCostTabSearchTerm("");
+        }
+        handleTabChange("cost");
+        break;
+      }
+      default: {
+        handleTabChange(targetTab);
+        break;
+      }
+    }
   };
 
   const handleDataUndo = async () => {

@@ -2092,3 +2092,5 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
     </div>
   );
 }
+
+export default BudgetTab;

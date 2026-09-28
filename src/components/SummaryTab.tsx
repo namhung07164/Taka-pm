@@ -384,3 +384,5 @@ export function SummaryTab({}: SummaryTabProps) {
     </div>
   );
 }
+
+export default SummaryTab;

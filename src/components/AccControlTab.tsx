@@ -700,3 +700,5 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
     </div>
   );
 }
+
+export default AccControlTab;

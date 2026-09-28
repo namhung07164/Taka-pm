@@ -215,8 +215,11 @@ export function ProjectQuickNavModal({
               return (
                 <button
                   key={item.id}
+                  type="button"
                   id={`quick-nav-tab-${item.id}`}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     onNavigate(item.id, target);
                     onClose();
                   }}

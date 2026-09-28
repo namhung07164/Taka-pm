@@ -36,7 +36,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
               errorMsg.includes('Failed to fetch dynamically imported module') ||
               errorMsg.includes('error loading dynamically imported module') ||
               errorMsg.includes('dynamically imported module') ||
-              error?.name === 'TypeError' ||
+              errorMsg.includes('Loading chunk') ||
               error?.name === 'ChunkLoadError';
 
             if (remaining > 0 && isModuleScriptError) {

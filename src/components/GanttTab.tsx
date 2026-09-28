@@ -3402,3 +3402,5 @@ export function GanttTab({
     </div>
   );
 }
+
+export default GanttTab;

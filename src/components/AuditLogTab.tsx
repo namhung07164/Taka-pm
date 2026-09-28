@@ -402,3 +402,5 @@ export function AuditLogTab() {
     </div>
   );
 }
+
+export default AuditLogTab;

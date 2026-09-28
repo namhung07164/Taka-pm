@@ -745,3 +745,5 @@ export function CalendarTab({      onEditTask, onEditProject}: CalendarTabProps)
     </div>
   );
 }
+
+export default CalendarTab;

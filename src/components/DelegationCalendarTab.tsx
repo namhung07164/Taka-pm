@@ -914,3 +914,5 @@ export function DelegationCalendarTab({
     </div>
   );
 }
+
+export default DelegationCalendarTab;

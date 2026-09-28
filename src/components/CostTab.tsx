@@ -1983,3 +1983,5 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
     </div>
   );
 }
+
+export default CostTab;

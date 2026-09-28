@@ -1385,3 +1385,5 @@ export function LayoutTab({
     </>
   );
 }
+
+export default LayoutTab;
