@@ -530,11 +530,30 @@ export async function uploadSingleR2File(
   let lastError = '';
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Attempt Method 1: S3 SDK direct PutObjectCommand with ArrayBuffer
+    try {
+      const { PutObjectCommand } = await getS3Sdk();
+      const arrayBuffer = await file.blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      const command = new PutObjectCommand({
+        Bucket: creds.bucketName.trim(),
+        Key: safeName,
+        Body: uint8Array,
+        ContentType: contentType,
+      });
+
+      await s3.send(command);
+      return { name: safeName, success: true };
+    } catch (s3Err: any) {
+      console.warn(`[R2 Upload] S3 SDK send failed (lần ${attempt}/${maxRetries}), trying presigned URL:`, s3Err);
+    }
+
+    // Attempt Method 2: Presigned PUT URL fetch
     try {
       const { PutObjectCommand, getSignedUrl } = await getS3Sdk();
-      // 1. Try direct S3 presigned PUT URL
       const command = new PutObjectCommand({
-        Bucket: creds.bucketName,
+        Bucket: creds.bucketName.trim(),
         Key: safeName,
         ContentType: contentType,
       });
@@ -559,7 +578,7 @@ export async function uploadSingleR2File(
       }
       throw new Error(`Cloudflare R2 từ chối lưu file (Mã lỗi: HTTP ${res.status}): ${errText.substring(0, 80)}`);
     } catch (directErr: any) {
-      console.warn(`[R2 Upload] Lỗi tải lên trực tiếp (lần ${attempt}/${maxRetries}):`, directErr);
+      console.warn(`[R2 Upload] Lỗi tải lên presigned (lần ${attempt}/${maxRetries}):`, directErr);
       let errMsg = directErr?.message || 'Lỗi mạng khi tải lên R2.';
       if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
         errMsg = 'Lỗi CORS / Mạng: Vui lòng vào Cloudflare R2 > Bucket > Settings > thêm CORS Policy cho phép PUT & GET.';

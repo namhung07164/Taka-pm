@@ -381,7 +381,8 @@ export default function CloudSyncManager({
           const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
           const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3ClientInstance);
           if (!uploadRes.success) {
-            console.warn(`[R2 Upload Warning] ${uploadRes.error}`);
+            console.error(`[R2 Upload Error] ${uploadRes.error}`);
+            throw new Error(`Lỗi tải lên R2 Cloudflare: ${uploadRes.error || 'Không thể ghi file mapping_config.json lên R2 Bucket'}`);
           }
         }
 
@@ -396,7 +397,7 @@ export default function CloudSyncManager({
             reviewLabelColors: configData.reviewLabelColors,
             lastSavedScope: currentScope,
             updatedAt: new Date().toISOString(),
-            timestamp: Date.now(),
+            timestamp: configData.timestamp,
           }, { merge: true });
         } catch (fsErr) {
           console.warn('[Firestore Backup] Error saving backup:', fsErr);
@@ -409,6 +410,7 @@ export default function CloudSyncManager({
             location,
             activeMapVersionId,
             updatedAt: Date.now(),
+            timestamp: configData.timestamp,
           }));
         } catch {}
 

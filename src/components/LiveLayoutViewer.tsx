@@ -162,11 +162,37 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
       });
 
       const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
-      if (!downloadRes.success || !downloadRes.data) {
+      let data: any = (downloadRes.success && downloadRes.data) ? downloadRes.data : null;
+
+      // Parallel check with Firestore backup to ensure newest timestamp is used
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        const { db, APP_ID } = await import('../lib/firebase');
+        const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+        if (snap.exists()) {
+          const fsData = snap.data() as any;
+          if (fsData?.storeLocationData) {
+            const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
+            const r2Timestamp = data?.timestamp || 0;
+            if (fsTimestamp > r2Timestamp || !data) {
+              data = {
+                ...(data || {}),
+                ...fsData,
+                storeLocationData: {
+                  ...(data?.storeLocationData || {}),
+                  ...fsData.storeLocationData,
+                }
+              };
+            }
+          }
+        }
+      } catch (fsErr) {
+        console.warn('Could not check Firestore backup:', fsErr);
+      }
+
+      if (!data) {
         throw new Error(downloadRes.error || 'Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
       }
-      
-      const data = downloadRes.data;
       
       // Resolve R2 URLs in storeLocationData if it exists (New Format)
       if (data.storeLocationData) {
