@@ -250,20 +250,32 @@ export function useDynamicUnitSummary({
     const sMap = new Map<string, DynamicUnitSummaryItem>();
     const sList: DynamicUnitSummaryItem[] = [];
 
-    // Pre-index tasks by code for O(1) matching
+    // Pre-index tasks by code and projectId for O(1) matching
     const tasksByCodeMap = new Map<string, any[]>();
+    const tasksByProjIdMap = new Map<string, any[]>();
     tasks.forEach((t) => {
-      if (!t || !t.name || !t.projectCode) return;
-      const rawCode = String(t.projectCode).trim().toLowerCase();
-      const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
-      codeParts.forEach((c) => {
-        let list = tasksByCodeMap.get(c);
+      if (!t || !t.name) return;
+      if (t.projectId) {
+        const pId = String(t.projectId).trim().toLowerCase();
+        let list = tasksByProjIdMap.get(pId);
         if (!list) {
           list = [];
-          tasksByCodeMap.set(c, list);
+          tasksByProjIdMap.set(pId, list);
         }
         list.push(t);
-      });
+      }
+      if (t.projectCode) {
+        const rawCode = String(t.projectCode).trim().toLowerCase();
+        const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
+        codeParts.forEach((c) => {
+          let list = tasksByCodeMap.get(c);
+          if (!list) {
+            list = [];
+            tasksByCodeMap.set(c, list);
+          }
+          list.push(t);
+        });
+      }
     });
 
     // Pre-index Excel summary data
@@ -354,8 +366,18 @@ export function useDynamicUnitSummary({
       );
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
 
-      // Match tasks for this project
+      // Match tasks for this project (by ID, No, Code, linkCodes, and embedded taskSummaries)
       const matchedTaskSet = new Set<any>();
+      if (p.id) {
+        const pIdLower = String(p.id).trim().toLowerCase();
+        const list = tasksByProjIdMap.get(pIdLower);
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      }
+      if (p.no) {
+        const pNoLower = String(p.no).trim().toLowerCase();
+        const list = tasksByProjIdMap.get(pNoLower);
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      }
       pCodes.forEach((c) => {
         const list = tasksByCodeMap.get(c);
         if (list) list.forEach((t) => matchedTaskSet.add(t));
@@ -364,30 +386,28 @@ export function useDynamicUnitSummary({
         const list = tasksByCodeMap.get(String(p.code).trim().toLowerCase());
         if (list) list.forEach((t) => matchedTaskSet.add(t));
       }
+      if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+        p.taskSummaries.forEach((ts) => matchedTaskSet.add(ts));
+      }
+
+      const allMatchedTasks = Array.from(matchedTaskSet);
+      const allTaskNames = allMatchedTasks.map((t: any) => t.name).filter(Boolean);
 
       const now = new Date();
-      let activeTaskNames: string[] = [];
-      const allMatchedTasks = Array.from(matchedTaskSet);
-      if (allMatchedTasks.length > 0) {
-        const activeTasks = allMatchedTasks.filter((t: any) => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map((t: any) => t.name);
-      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
-        const activeTasks = p.taskSummaries.filter((t: any) => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map((t: any) => t.name);
-      }
-      const taskSummaryStr = activeTaskNames.length > 0 
-        ? activeTaskNames.join('; ')
-        : (allMatchedTasks.map((t: any) => t.name).join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
+      const activeTasks = allMatchedTasks.filter((t: any) => {
+        const startStr = t.start || t.startDate || t.takStart;
+        const finishStr = t.finish || t.end || t.endDate || t.takCompl || t.handover;
+        if (!startStr || !finishStr) return false;
+        const start = new Date(startStr);
+        const finish = new Date(finishStr);
+        return now >= start && now <= finish;
+      });
+      const activeTaskNames = activeTasks.map((t: any) => t.name).filter(Boolean);
+
+      // Full task string contains all sub-tasks so dynamic rules can match any planned, active, or upcoming task
+      const taskSummaryStr = allTaskNames.length > 0 
+        ? allTaskNames.join('; ')
+        : (activeTaskNames.join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
 
       const targetUnitKeys = new Set<string>();
       sList.forEach(item => {

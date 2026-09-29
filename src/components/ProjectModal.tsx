@@ -296,8 +296,9 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
         return;
       }
 
-      if (!formData.code || String(formData.code).trim() === '') {
-        useAppStore.getState().setToast({ title: 'Validation Error', message: 'Project Code is strictly required.', type: 'error' });
+      const cleanCode = String(formData.code || '').replace(/\s+/g, '');
+      if (!cleanCode) {
+        useAppStore.getState().setToast({ title: 'Validation Error', message: 'Project Code is strictly required and cannot contain spaces.', type: 'error' });
         setIsSubmitting(false);
         return;
       }
@@ -917,8 +918,9 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                   inputMode="text"
                   value={formData.code || ''}
                   onChange={(val) => {
+                    const cleanCode = val.replace(/\s+/g, '');
                     setFormData(prev => {
-                      const newCode = val;
+                      const newCode = cleanCode;
                       const currentLink = prev.linkCodes;
                       const oldCode = prev.code || '';
                       const shouldSync = !currentLink || currentLink.trim() === '' || currentLink.trim() === oldCode.trim();
@@ -929,9 +931,15 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                       };
                     });
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.code === 'Space') {
+                      e.preventDefault();
+                    }
+                  }}
                   required 
                   readOnly={!canWrite}
-                  className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  placeholder="e.g. PM-L1-HCM-2026-01"
+                  className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono font-bold uppercase"
                 />
               </div>
 

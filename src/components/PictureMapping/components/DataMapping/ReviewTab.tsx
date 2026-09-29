@@ -8,7 +8,7 @@ import { Layout, Eye, Camera, FileDown, Link as LinkIcon, Check, Copy, X, Tags, 
 import Draggable from 'react-draggable';
 import { UnitShape, MapVersion } from './types';
 import { cn } from '../../lib/utils';
-import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from '../../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../../lib/utils';
 import type { jsPDF } from 'jspdf';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
 import { useDataStore } from '../../DataContext';
@@ -520,12 +520,9 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     const enrichedProjects = enrichProjects(appProjects || [], appTasks || [], appDelegationGroups || []);
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      if (store && (store as string) !== 'all') {
-        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
-        if (pStore && pStore !== store.toUpperCase()) return;
-      }
-      const pYear = String(p.year || (p as any).projectYear || '').trim();
-      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
+
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
 
       const pCodes = extractAllProjectCodes(p);
       const status = getStatus(
@@ -541,23 +538,32 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       const mdStatusStr = p.mdStatus || '';
 
       const targetUnitKeys = new Set<string>();
-      pCodes.forEach(code => {
-        if (dataMap[code]) targetUnitKeys.add(code);
-      });
       Object.keys(dataMap).forEach(uKey => {
-        if (projectMatchesUnitCode(pCodes, uKey)) {
+        const uEntry = dataMap[uKey];
+        if (!uEntry) return;
+        const uStore = (uEntry.store || store || '').toUpperCase().trim();
+        const uLoc = (uEntry.location || location || '').toUpperCase().trim();
+        const uYr = String(uEntry.year || effectiveYear || '').trim();
+
+        if (pMeta.store && uStore && pMeta.store !== uStore) return;
+        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
+        if (pMeta.year && uYr && pMeta.year !== uYr) return;
+
+        const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
+        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
           targetUnitKeys.add(uKey);
         }
       });
 
       targetUnitKeys.forEach((code) => {
         if (dataMap[code]) {
+          dataMap[code].hasAppProject = true;
           dataMap[code].appProjectStatus = status;
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
-          dataMap[code].appProjectCode = String(p.code);
-          dataMap[code].appProjectYear = pYear;
-          dataMap[code].year = pYear || dataMap[code].year;
+          dataMap[code].appProjectCode = String(p.code || code);
+          dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
+          dataMap[code].year = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
 
           dataMap[code].appProjectMdStatus = mdStatusStr;
           dataMap[code].appMdStatus = mdStatusStr;

@@ -1379,14 +1379,19 @@ function LiveCanvas({
       const mdStatusStr = p.mdStatus || '';
 
       const targetUnitKeys = new Set<string>();
-      pCodes.forEach(code => {
-        if (dataMap[code]) targetUnitKeys.add(code);
-      });
       Object.keys(dataMap).forEach(uKey => {
-        if (projectMatchesUnitCode(pCodes, uKey)) {
-          const uEntry = dataMap[uKey];
-          if (pMeta.store && uEntry?.store && uEntry.store.toUpperCase() !== pMeta.store) return;
-          if (pMeta.location && uEntry?.location && uEntry.location.toUpperCase() !== pMeta.location) return;
+        const uEntry = dataMap[uKey];
+        if (!uEntry) return;
+        const uStore = (uEntry.store || storeFilter || '').toUpperCase().trim();
+        const uLoc = (uEntry.location || targetLoc || '').toUpperCase().trim();
+        const uYr = String(uEntry.year || globalYearFilter || '').trim();
+
+        if (pMeta.store && uStore && pMeta.store !== uStore) return;
+        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
+        if (pMeta.year && uYr && pMeta.year !== uYr) return;
+
+        const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
+        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
           targetUnitKeys.add(uKey);
         }
       });
@@ -1560,68 +1565,32 @@ function LiveCanvas({
         return;
       }
 
-      // Step A. Dynamic Rules evaluation match from activeVersion
+      // Dynamic Rules evaluation match from activeVersion
       if (dynamicItem.matchedGroupId && dynamicItem.color) {
         colorMap[u.id] = dynamicItem.color;
         groupMap[u.id] = dynamicItem.matchedGroupId;
         opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
-        return;
-      }
-
-      // Step B. Task Summaries Live Project Status coloring
-      const status = String(dynamicItem.appProjectStatus || '').trim().toLowerCase();
-      if (status === 'completed') {
-        colorMap[u.id] = '#10b981';
-        groupMap[u.id] = 'task_status_completed';
-        opacityMap[u.id] = 0.85;
-      } else if (status === 'on process' || status === 'in progress') {
-        colorMap[u.id] = '#3b82f6';
-        groupMap[u.id] = 'task_status_on_process';
-        opacityMap[u.id] = 0.85;
-      } else if (status === 'delay' || status === 'delayed' || status === 'overdue') {
-        colorMap[u.id] = '#ef4444';
-        groupMap[u.id] = 'task_status_delay';
-        opacityMap[u.id] = 0.85;
-      } else if (status === 'upcoming') {
-        colorMap[u.id] = '#f59e0b';
-        groupMap[u.id] = 'task_status_upcoming';
-        opacityMap[u.id] = 0.85;
       }
     });
 
-    // Step C. Build activeGroups legend stats
+    // Step B. Build activeGroups legend stats (O(N) single pass)
+    const matchedUnitsByGroup = new Map<string, any[]>();
+    units.forEach((u: any) => {
+      const gid = groupMap[u.id];
+      if (gid) {
+        let list = matchedUnitsByGroup.get(gid);
+        if (!list) {
+          list = [];
+          matchedUnitsByGroup.set(gid, list);
+        }
+        list.push({ id: u.id, name: u.name });
+      }
+    });
+
     version.groups.forEach((group: any) => {
-      let matchCount = 0;
-      const matchedUnits: any[] = [];
-      units.forEach((u: any) => {
-        if (groupMap[u.id] === group.id) {
-          matchCount++;
-          matchedUnits.push({ id: u.id, name: u.name });
-        }
-      });
-      if (matchCount > 0) {
-        groupsInUseMap.set(group.id, { ...group, matchCount, matchedUnits });
-      }
-    });
-
-    const taskStatusMeta: Record<string, { name: string; color: string }> = {
-      task_status_completed: { name: 'Completed', color: '#10b981' },
-      task_status_on_process: { name: 'On Process', color: '#3b82f6' },
-      task_status_delay: { name: 'Delay', color: '#ef4444' },
-      task_status_upcoming: { name: 'Upcoming', color: '#f59e0b' },
-    };
-
-    Object.entries(taskStatusMeta).forEach(([gid, meta]) => {
-      let matchCount = 0;
-      const matchedUnits: any[] = [];
-      units.forEach((u: any) => {
-        if (groupMap[u.id] === gid) {
-          matchCount++;
-          matchedUnits.push({ id: u.id, name: u.name });
-        }
-      });
-      if (matchCount > 0 && !groupsInUseMap.has(gid)) {
-        groupsInUseMap.set(gid, { id: gid, name: meta.name, color: meta.color, opacity: 0.85, matchCount, matchedUnits });
+      const matchedUnits = matchedUnitsByGroup.get(group.id) || [];
+      if (matchedUnits.length > 0) {
+        groupsInUseMap.set(group.id, { ...group, matchCount: matchedUnits.length, matchedUnits });
       }
     });
 
@@ -1655,6 +1624,14 @@ function LiveCanvas({
         }
 
         const isFocused = focusedUnitId === unit.id;
+
+        // HIGH-PERFORMANCE RENDERING GUARD:
+        // Skip rendering any unit on Liveview that does not have an active project in the current year/scope
+        const dynamicItem = dynamicSummaryMap.get(unit.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+        const hasProject = Boolean(uData?.hasAppProject || dynamicItem?.hasAppProject);
+        if (!hasProject && !isFocused) {
+          return false;
+        }
 
         // Filter by Alerts toggle
         if (filterOnlyAlerts && !isFocused) {
@@ -1750,7 +1727,7 @@ function LiveCanvas({
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, focusedUnitId, filterOnlyAlerts]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, dynamicSummaryMap, focusedUnitId, filterOnlyAlerts]);
 
   // Focused unit object for Isolated Overlay Highlight Layer
   const focusedUnit = useMemo(() => {
@@ -2767,50 +2744,10 @@ function LiveCanvas({
               )}
             </div>
 
-            {/* Project Status Legend Section */}
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-              <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
-                Quy Chuẩn Màu Trạng Thái Dự Án (Project Status)
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
-                  <div>
-                    <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Completed</div>
-                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400">Đã hoàn thành</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50">
-                  <div className="w-3 h-3 rounded-full bg-blue-500 shrink-0" />
-                  <div>
-                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300">On Process</div>
-                    <div className="text-[10px] text-blue-600 dark:text-blue-400">Đang thi công</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50">
-                  <div className="w-3 h-3 rounded-full bg-amber-500 shrink-0" />
-                  <div>
-                    <div className="text-xs font-bold text-amber-800 dark:text-amber-300">Upcoming</div>
-                    <div className="text-[10px] text-amber-600 dark:text-amber-400">Sắp diễn ra</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50">
-                  <div className="w-3 h-3 rounded-full bg-rose-500 shrink-0" />
-                  <div>
-                    <div className="text-xs font-bold text-rose-800 dark:text-rose-300">Delay</div>
-                    <div className="text-[10px] text-rose-600 dark:text-rose-400">Chậm tiến độ</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2">
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setShowLegendModal(false)}
-                className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors"
+                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors"
               >
                 Đóng
               </button>

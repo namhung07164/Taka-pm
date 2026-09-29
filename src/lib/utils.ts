@@ -332,14 +332,24 @@ export function getStatus(
   return "On process";
 }
 
+const INVALID_UNIT_TOKENS = new Set([
+  'b1', 'b2', 'b3', 'l1', 'l2', 'l3', 'l4', 'l5',
+  '1f', '2f', '3f', '4f', '5f', 'gf', 'ug', 'mz',
+  'f1', 'f2', 'f3', 'f4', 'f5',
+  'hcm', 'hn', 'taka', 'takashimaya', 'pm', 'project',
+  'reserve', 'event', 'common', 'area', 'mall', 'store', 'floor', 'all', 'na', 'null', 'undefined'
+]);
+
 /**
- * Strips common floor/zone prefixes like 'L1-', 'F1-', '1F-', 'B1-', 'GF-', 'UG-', 'Unit '
+ * Strips common floor/zone/PM prefixes like 'PM-L1-HCM-2026-', 'L1-', 'F1-', '1F-', 'B1-', 'GF-', 'UG-', 'Unit '
  */
 function normalizeUnitCodeBase(code: string): string {
   if (!code) return '';
   let str = code.toLowerCase().trim();
   // Remove leading 'unit ' or 'shop ' or 'lot ' or 'booth '
   str = str.replace(/^(unit|shop|lot|booth|kiosk|store)\s*[-_:]?\s*/i, '');
+  // Remove PM prefix like 'pm-l1-hcm-2026-', 'pm-b1-hcm-', 'pm-hcm-l1-'
+  str = str.replace(/^pm-(?:b\d|l\d|\d+f|gf|ug|hcm|hn)-(?:hcm|hn|b\d|l\d|\d+f|gf|ug)(?:-(?:20\d\d|y\d\d))?[-_:]\s*/i, '');
   // Remove floor prefixes like l1-, l2-, f1-, 1f-, 2f-, b1-, b2-, gf-, ug-
   str = str.replace(/^([a-z]?\d+[a-z]?|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
   return str.trim();
@@ -350,28 +360,42 @@ function normalizeUnitCodeBase(code: string): string {
  */
 export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: string | null }): string[] {
   const codeSet = new Set<string>();
-  if (p.code && String(p.code).trim()) {
-    const raw = String(p.code).trim().toLowerCase();
-    codeSet.add(raw);
-    const spaceSub = raw.split(/[\r\n\t,;+/&|]+|\s+/).map(s => s.trim()).filter(Boolean);
-    if (spaceSub.length > 1) {
-      spaceSub.forEach(s => codeSet.add(s));
+
+  const addIfValid = (rawCode: string) => {
+    const trimmed = (rawCode || '').trim().toLowerCase();
+    if (!trimmed || INVALID_UNIT_TOKENS.has(trimmed)) return;
+    codeSet.add(trimmed);
+
+    // If PM standard code e.g. PM-L1-HCM-2026-DC or PM-L1-HCM-DC, also extract DC and L1-DC
+    const pmMatch = trimmed.match(/^pm-(?:b\d|l\d|\d+f|gf|ug|hcm|hn)-(?:hcm|hn|b\d|l\d|\d+f|gf|ug)(?:-(?:20\d\d|y\d\d))?-([a-z0-9_-]+)$/i);
+    if (pmMatch && pmMatch[1]) {
+      const unitPart = pmMatch[1].toLowerCase();
+      if (!INVALID_UNIT_TOKENS.has(unitPart)) {
+        codeSet.add(unitPart);
+        const locMatch = trimmed.match(/(b\d|l\d|\d+f)/i);
+        if (locMatch) {
+          let fl = locMatch[1].toLowerCase();
+          if (fl.endsWith('f')) fl = `l${fl[0]}`;
+          codeSet.add(`${fl}-${unitPart}`);
+        }
+      }
     }
+  };
+
+  if (p.code && String(p.code).trim()) {
+    addIfValid(String(p.code));
   }
+
   if (p.linkCodes && String(p.linkCodes).trim()) {
     String(p.linkCodes)
       .split(/[\r\n\t,;+/&|]+|\s{2,}/)
       .map(c => c.trim().toLowerCase())
       .filter(Boolean)
       .forEach(c => {
-        codeSet.add(c);
-        // Also add space-separated sub-codes if present
-        const spaceSub = c.split(/\s+/).map(s => s.trim()).filter(Boolean);
-        if (spaceSub.length > 1) {
-          spaceSub.forEach(s => codeSet.add(s));
-        }
+        addIfValid(c);
       });
   }
+
   return Array.from(codeSet);
 }
 
@@ -475,39 +499,33 @@ export function projectMatchesScope(
  */
 export function projectMatchesUnitCode(pCodes: string[], unitName: string): boolean {
   const u = (unitName || '').toLowerCase().trim();
-  if (!u) return false;
+  if (!u || INVALID_UNIT_TOKENS.has(u)) return false;
   const uStripped = normalizeUnitCodeBase(u);
 
   for (const rawCode of pCodes) {
     const c = (rawCode || '').toLowerCase().trim();
-    if (!c) continue;
+    if (!c || INVALID_UNIT_TOKENS.has(c)) continue;
 
     // 1. Exact match
     if (u === c) return true;
 
-    // 2. Sub-lot prefix match (e.g. '101-A' matching '101' or 'L1-01_sub' matching 'L1-01')
-    if (u.startsWith(c + '-') || u.startsWith(c + '_') || u.startsWith(c + ' ')) return true;
-    if (c.startsWith(u + '-') || c.startsWith(u + '_') || c.startsWith(u + ' ')) return true;
-
-    // 3. Base code match after stripping floor prefixes (e.g. 'L1-01' matching '01' or 'F1-102' matching 'L1-102')
+    // 2. Base code match after stripping floor prefixes (e.g. 'B1-B114-1' matching 'B114-1' or 'L1-01' matching '01')
     const cStripped = normalizeUnitCodeBase(c);
-    if (uStripped && cStripped && uStripped === cStripped) return true;
-    if (uStripped && cStripped) {
-      if (uStripped.startsWith(cStripped + '-') || uStripped.startsWith(cStripped + '_')) return true;
-      if (cStripped.startsWith(uStripped + '-') || cStripped.startsWith(uStripped + '_')) return true;
+    if (uStripped && cStripped && !INVALID_UNIT_TOKENS.has(uStripped) && !INVALID_UNIT_TOKENS.has(cStripped)) {
+      if (uStripped === cStripped) return true;
+      
+      // Sub-lot match (e.g. '114-1' matching '114' or '101-A' matching '101')
+      // Only allow if base length >= 3 to avoid false positive on single chars
+      if (uStripped.length >= 3 && cStripped.length >= 3) {
+        if (uStripped.startsWith(cStripped + '-') || uStripped.startsWith(cStripped + '_')) return true;
+        if (cStripped.startsWith(uStripped + '-') || cStripped.startsWith(uStripped + '_')) return true;
+      }
     }
 
-    // 4. Pure number match (e.g. unit '101' matching '101' inside 'L1-101')
-    const uNum = u.match(/\d+/)?.[0];
-    const cNum = c.match(/\d+/)?.[0];
-    if (uNum && cNum && uNum === cNum && uNum.length >= 2) {
-      // If stripped text also aligns or numbers are unique
-      if (u === `l1-${c}` || u === `l2-${c}` || u === `l3-${c}` || u === `l4-${c}` || u === `l5-${c}` || u === `b1-${c}` || u === `b2-${c}`) {
-        return true;
-      }
-      if (c === `l1-${u}` || c === `l2-${u}` || c === `l3-${u}` || c === `l4-${u}` || c === `l5-${u}` || c === `b1-${u}` || c === `b2-${u}`) {
-        return true;
-      }
+    // 3. Sub-lot exact prefix (e.g. 'B1-B114-1' matching 'B1-B114')
+    // Ensure c is at least 4 characters and not a floor code (e.g. not 'B1-')
+    if (c.length >= 4 && !INVALID_UNIT_TOKENS.has(c)) {
+      if (u.startsWith(c + '-') || u.startsWith(c + '_')) return true;
     }
   }
   return false;
