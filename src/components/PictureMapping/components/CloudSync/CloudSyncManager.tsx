@@ -3,6 +3,7 @@ import { CloudUpload, CloudDownload, RefreshCw, Sparkles, ChevronDown, Check, La
 import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, getStoredR2CredentialsAsync, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
 import { cleanOrphanR2Files } from '../../../../lib/r2StorageUtils';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
+import { useAppStore } from '../../../../store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { MapVersion } from '../DataMapping/types';
 import R2UploadModal from '../R2UploadModal';
@@ -280,6 +281,7 @@ export default function CloudSyncManager({
 
             pVersionsCloud.push({
               ...v,
+              year: String(v.year || (useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026')),
               store: v.store || pStore,
               location: v.location || pLoc,
               backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
@@ -291,6 +293,7 @@ export default function CloudSyncManager({
 
             pVersionsLocal.push({
               ...v,
+              year: String(v.year || (useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026')),
               store: v.store || pStore,
               location: v.location || pLoc,
               backgroundUrl: displayUrl,
@@ -352,12 +355,16 @@ export default function CloudSyncManager({
         setStatusText(`Đang lưu cấu hình [${getScopeName(currentScope)}] lên Cloud...`);
 
         const activeCloudPartition = cloudStoreLocationData[currentActiveKey] || Object.values(cloudStoreLocationData)[0] || { mapUnits: [], mapVersions: [], activeMapVersionId: null };
+        const currentAppYear = useAppStore.getState().globalYearFilter;
+        const targetYear = (currentAppYear && currentAppYear !== 'all') ? currentAppYear : (activeCloudPartition?.mapVersions?.[0]?.year || '2026');
 
         const configData = {
           ...(existingCloudData || {}),
           storeLocationData: cloudStoreLocationData,
           store,
           location,
+          year: targetYear,
+          globalYearFilter: targetYear,
           activeMapVersionId,
           reviewSelectedLabels: currentScope === 'dynamic' ? (existingCloudData?.reviewSelectedLabels || reviewSelectedLabels) : (reviewSelectedLabels || []),
           reviewLabelColors: currentScope === 'dynamic' ? (existingCloudData?.reviewLabelColors || reviewLabelColors) : (reviewLabelColors || {}),
@@ -397,6 +404,8 @@ export default function CloudSyncManager({
             storeLocationData: cloudStoreLocationData,
             store,
             location,
+            year: targetYear,
+            globalYearFilter: targetYear,
             activeMapVersionId,
             reviewSelectedLabels: configData.reviewSelectedLabels,
             reviewLabelColors: configData.reviewLabelColors,
@@ -419,6 +428,8 @@ export default function CloudSyncManager({
             storeLocationData: cloudStoreLocationData,
             store,
             location,
+            year: targetYear,
+            globalYearFilter: targetYear,
             activeMapVersionId,
             updatedAt: Date.now(),
             timestamp: configData.timestamp,
@@ -609,27 +620,39 @@ export default function CloudSyncManager({
           setStatusText('Đã tải bản vẽ & tọa độ (Tab Edit) từ Cloud!');
 
         } else if (currentScope === 'dynamic') {
-          // Update ONLY dynamic rules and groups, keeping local coordinates
+          // Update ONLY dynamic rules and groups, keeping local coordinates and synchronizing years
           for (const pKey in normalizedStoreLocationData) {
             const cloudPart = normalizedStoreLocationData[pKey];
             const localPart = localMergedStoreLocationData[pKey];
             if (!cloudPart) continue;
 
-            const mergedVersions = (localPart?.mapVersions || cloudPart.mapVersions || []).map((lv) => {
-              const cloudV = cloudPart.mapVersions?.find((cv) => cv.id === lv.id || cv.name === lv.name);
-              return {
-                ...lv,
-                groups: cloudV?.groups || lv.groups || [],
-                groupMappings: cloudV?.groupMappings || lv.groupMappings || {},
-                isDynamicActive: true,
-              };
-            });
+            const cloudVerList = cloudPart.mapVersions || [];
+            const localVerList = localPart?.mapVersions || [];
+
+            // If cloud has versions, prioritize cloud versions to preserve new versions and years
+            const mergedVersions = cloudVerList.length > 0 
+              ? cloudVerList.map((cv) => {
+                  const localV = localVerList.find((lv) => lv.id === cv.id || lv.name === cv.name);
+                  return {
+                    ...(localV || {}),
+                    ...cv,
+                    year: String(cv.year || localV?.year || data.year || data.globalYearFilter || '2026'),
+                    groups: cv.groups || localV?.groups || [],
+                    groupMappings: cv.groupMappings || localV?.groupMappings || {},
+                    isDynamicActive: true,
+                  };
+                })
+              : localVerList.map((lv) => ({ ...lv, isDynamicActive: true }));
 
             localMergedStoreLocationData[pKey] = {
               mapUnits: localPart?.mapUnits || cloudPart.mapUnits || [],
               mapVersions: mergedVersions,
-              activeMapVersionId: localPart?.activeMapVersionId || cloudPart.activeMapVersionId || null,
+              activeMapVersionId: cloudPart.activeMapVersionId || localPart?.activeMapVersionId || null,
             };
+          }
+
+          if (data.globalYearFilter || data.year) {
+            useAppStore.getState().setGlobalYearFilter(data.globalYearFilter || data.year);
           }
 
           loadFullCloudData({
@@ -646,6 +669,9 @@ export default function CloudSyncManager({
 
         } else if (currentScope === 'review') {
           // Update ONLY reviewSelectedLabels and reviewLabelColors
+          if (data.globalYearFilter || data.year) {
+            useAppStore.getState().setGlobalYearFilter(data.globalYearFilter || data.year);
+          }
           loadFullCloudData({
             storeLocationData: storeLocationData,
             store: store,
@@ -660,6 +686,9 @@ export default function CloudSyncManager({
 
         } else {
           // 'all'
+          if (data.globalYearFilter || data.year) {
+            useAppStore.getState().setGlobalYearFilter(data.globalYearFilter || data.year);
+          }
           loadFullCloudData({
             storeLocationData: normalizedStoreLocationData,
             store: data.store || store,
