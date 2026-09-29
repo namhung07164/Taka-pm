@@ -1577,14 +1577,38 @@ function LiveCanvas({
       });
     }
 
-    // Step C. Sync embedded unit.targetColor if present
+    // Step C. Sync embedded unit.targetColor or Task Summaries live project status
     units.forEach((u: any) => {
       const uName = String(u.name || '').toLowerCase().trim();
       if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
-      if (!colorMap[u.id] && u.targetColor) {
-        colorMap[u.id] = u.targetColor;
-        if (u.targetGroupId) groupMap[u.id] = u.targetGroupId;
-        opacityMap[u.id] = u.targetOpacity ?? 0.65;
+      if (!colorMap[u.id]) {
+        if (u.targetColor) {
+          colorMap[u.id] = u.targetColor;
+          if (u.targetGroupId) groupMap[u.id] = u.targetGroupId;
+          opacityMap[u.id] = u.targetOpacity ?? 0.65;
+        } else {
+          // Automatic Task Summaries Live Status Coloring
+          const uData = aggregatedData[uName];
+          const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+          const status = String(dynamicItem?.appProjectStatus || uData?.appProjectStatus || uData?.status || '').trim().toLowerCase();
+          if (status === 'completed') {
+            colorMap[u.id] = '#10b981';
+            groupMap[u.id] = 'task_status_completed';
+            opacityMap[u.id] = 0.85;
+          } else if (status === 'on process' || status === 'in progress') {
+            colorMap[u.id] = '#3b82f6';
+            groupMap[u.id] = 'task_status_on_process';
+            opacityMap[u.id] = 0.85;
+          } else if (status === 'delay' || status === 'delayed' || status === 'overdue') {
+            colorMap[u.id] = '#ef4444';
+            groupMap[u.id] = 'task_status_delay';
+            opacityMap[u.id] = 0.85;
+          } else if (status === 'upcoming') {
+            colorMap[u.id] = '#f59e0b';
+            groupMap[u.id] = 'task_status_upcoming';
+            opacityMap[u.id] = 0.85;
+          }
+        }
       }
     });
 
@@ -1600,6 +1624,27 @@ function LiveCanvas({
       });
       if (matchCount > 0) {
         groupsInUseMap.set(group.id, { ...group, matchCount, matchedUnits });
+      }
+    });
+
+    const taskStatusMeta: Record<string, { name: string; color: string }> = {
+      task_status_completed: { name: 'Completed', color: '#10b981' },
+      task_status_on_process: { name: 'On Process', color: '#3b82f6' },
+      task_status_delay: { name: 'Delay', color: '#ef4444' },
+      task_status_upcoming: { name: 'Upcoming', color: '#f59e0b' },
+    };
+
+    Object.entries(taskStatusMeta).forEach(([gid, meta]) => {
+      let matchCount = 0;
+      const matchedUnits: any[] = [];
+      units.forEach((u: any) => {
+        if (groupMap[u.id] === gid) {
+          matchCount++;
+          matchedUnits.push({ id: u.id, name: u.name });
+        }
+      });
+      if (matchCount > 0 && !groupsInUseMap.has(gid)) {
+        groupsInUseMap.set(gid, { id: gid, name: meta.name, color: meta.color, opacity: 0.85, matchCount, matchedUnits });
       }
     });
 

@@ -27,6 +27,8 @@ export interface DynamicUnitSummaryItem {
   planProgress: number;
   actProgress: number;
   matchedTasksCount: number;
+  task: string;
+  activeTasks?: string[];
   // Excel / Master Business Data
   size: number;
   sales: number;
@@ -95,6 +97,16 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.appProjectParty || '';
     } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
       val = data.hasAppProject ? data.appProjectParty : '';
+    } else if (f === 'budget' || f === 'appbudget' || f === 'appprojectbudget' || f === 'app: budget') {
+      val = data.hasAppProject ? data.appProjectBudget : (data as any).budget || 0;
+    } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
+      val = data.hasAppProject ? data.appProjectActual : (data as any).actual || 0;
+    } else if (f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+      val = data.task || '';
+    } else if (f === 'actprogress' || f === 'act progress') {
+      val = data.actProgress ?? 0;
+    } else if (f === 'planprogress' || f === 'plan progress') {
+      val = data.planProgress ?? 0;
     }
   }
 
@@ -298,6 +310,8 @@ export function useDynamicUnitSummary({
         planProgress: 0,
         actProgress: 0,
         matchedTasksCount: 0,
+        task: '',
+        activeTasks: [],
         size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
         sales: excelItem?.salesAmount || 0,
         salesByCp: excelItem?.salesByCp || 0,
@@ -357,6 +371,30 @@ export function useDynamicUnitSummary({
         if (list) list.forEach((t) => matchedTaskSet.add(t));
       }
 
+      const now = new Date();
+      let activeTaskNames: string[] = [];
+      const allMatchedTasks = Array.from(matchedTaskSet);
+      if (allMatchedTasks.length > 0) {
+        const activeTasks = allMatchedTasks.filter((t: any) => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        activeTaskNames = activeTasks.map((t: any) => t.name);
+      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
+        const activeTasks = p.taskSummaries.filter((t: any) => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        activeTaskNames = activeTasks.map((t: any) => t.name);
+      }
+      const taskSummaryStr = activeTaskNames.length > 0 
+        ? activeTaskNames.join('; ')
+        : (allMatchedTasks.map((t: any) => t.name).join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
+
       const targetUnitKeys = new Set<string>();
       pCodes.forEach(code => {
         if (sMap.has(code)) targetUnitKeys.add(code);
@@ -387,6 +425,8 @@ export function useDynamicUnitSummary({
           item.planProgress = p.computedPlanProgress ?? 0;
           item.actProgress = p.computedActProgress ?? 0;
           item.matchedTasksCount = matchedTaskSet.size;
+          item.task = taskSummaryStr || item.task || '';
+          item.activeTasks = activeTaskNames;
         }
       });
     });

@@ -194,6 +194,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
           displayColor = (unit as any).targetColor;
           displayOpacity = (unit as any).targetOpacity ?? 0.65;
           hasMatchedColor = true;
+        } else if (dynamicItem?.hasAppProject && dynamicItem?.appProjectStatus) {
+          const st = String(dynamicItem.appProjectStatus).toLowerCase().trim();
+          if (st === 'completed') { displayColor = '#10b981'; displayOpacity = 0.85; hasMatchedColor = true; }
+          else if (st === 'on process' || st === 'in progress') { displayColor = '#3b82f6'; displayOpacity = 0.85; hasMatchedColor = true; }
+          else if (st === 'delay' || st === 'delayed' || st === 'overdue') { displayColor = '#ef4444'; displayOpacity = 0.85; hasMatchedColor = true; }
+          else if (st === 'upcoming') { displayColor = '#f59e0b'; displayOpacity = 0.85; hasMatchedColor = true; }
         } else if (unit.fill && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0') && unit.fill !== 'rgba(0, 0, 0, 0.001)') {
           displayColor = unit.fill;
           displayOpacity = unit.opacity ?? 0.65;
@@ -1375,6 +1381,12 @@ const HiddenExportStage = ({ version, units, summaryData, dynamicSummaryMap, sel
           displayColor = (unit as any).targetColor;
           displayOpacity = (unit as any).targetOpacity ?? 0.65;
           hasMatchedColor = true;
+        } else if (dynamicItem?.hasAppProject && dynamicItem?.appProjectStatus) {
+          const st = String(dynamicItem.appProjectStatus).toLowerCase().trim();
+          if (st === 'completed') { displayColor = '#10b981'; displayOpacity = 0.85; hasMatchedColor = true; }
+          else if (st === 'on process' || st === 'in progress') { displayColor = '#3b82f6'; displayOpacity = 0.85; hasMatchedColor = true; }
+          else if (st === 'delay' || st === 'delayed' || st === 'overdue') { displayColor = '#ef4444'; displayOpacity = 0.85; hasMatchedColor = true; }
+          else if (st === 'upcoming') { displayColor = '#f59e0b'; displayOpacity = 0.85; hasMatchedColor = true; }
         }
 
         const uInfo = summaryMap.get(unit.name);
