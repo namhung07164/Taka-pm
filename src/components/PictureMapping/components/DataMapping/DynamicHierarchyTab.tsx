@@ -112,26 +112,27 @@ function DynamicHierarchyTab({
     });
   }, [versions, store, location, effectiveYear]);
 
-  // Ensure strict year tagging for legacy versions without auto-creating deleted versions
+  // Ensure strict year tagging for legacy versions without mutating existing version years
   const normalizedYearVersionIdsRef = useRef<string>('');
   useEffect(() => {
     let hasUntagged = false;
     const normalizedVersions = versions.map(v => {
       if (!v.year || !String(v.year).trim()) {
         hasUntagged = true;
-        return { ...v, year: String(effectiveYear || '2026') };
+        const inferredYear = v.name?.match(/(202\d|203\d)/i)?.[1] || '2026';
+        return { ...v, year: String(inferredYear) };
       }
       return v;
     });
 
     if (hasUntagged) {
-      const currentUntaggedFingerprint = versions.filter(v => !v.year || !String(v.year).trim()).map(v => `${v.id}_${effectiveYear}`).join('|');
+      const currentUntaggedFingerprint = versions.filter(v => !v.year || !String(v.year).trim()).map(v => v.id).join('|');
       if (currentUntaggedFingerprint && currentUntaggedFingerprint !== normalizedYearVersionIdsRef.current) {
         normalizedYearVersionIdsRef.current = currentUntaggedFingerprint;
         setVersions(normalizedVersions);
       }
     }
-  }, [effectiveYear, versions, setVersions]);
+  }, [versions, setVersions]);
 
   const viewVersionId = (activeVersionId && filteredVersions.some(v => v.id === activeVersionId))
     ? activeVersionId

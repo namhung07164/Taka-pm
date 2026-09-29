@@ -279,7 +279,9 @@ export default function CloudSyncManager({
               allValidBgNames.push(r2Key);
             }
 
-            const existingCloudVer = existingCloudPart?.mapVersions?.find((cv: any) => cv.id === v.id || cv.name === v.name);
+            const existingCloudVer = existingCloudPart?.mapVersions?.find((cv: any) => 
+              cv.id === v.id || (cv.name === v.name && String(cv.year || '').trim() === String(v.year || '').trim())
+            );
 
             const rawGroups = (currentScope === 'edit' && existingCloudVer)
               ? (existingCloudVer.groups || v.groups || [])
@@ -614,7 +616,9 @@ export default function CloudSyncManager({
             if (!cloudPart) continue;
 
             const mergedVersions = (cloudPart.mapVersions || []).map((cv) => {
-              const localV = localPart?.mapVersions?.find((lv) => lv.id === cv.id || lv.name === cv.name);
+              const localV = localPart?.mapVersions?.find((lv) => 
+                lv.id === cv.id || (lv.name === cv.name && String(lv.year || '').trim() === String(cv.year || '').trim())
+              );
               return {
                 ...cv,
                 groups: localV?.groups || cv.groups || [],
@@ -654,7 +658,9 @@ export default function CloudSyncManager({
             // If cloud has versions, prioritize cloud versions to preserve new versions and years
             const mergedVersions = cloudVerList.length > 0 
               ? cloudVerList.map((cv) => {
-                  const localV = localVerList.find((lv) => lv.id === cv.id || lv.name === cv.name);
+                  const localV = localVerList.find((lv) => 
+                    lv.id === cv.id || (lv.name === cv.name && String(lv.year || '').trim() === String(cv.year || '').trim())
+                  );
                   const groupsToUse = cv.groups || localV?.groups || [];
                   const deepCopied = Array.isArray(groupsToUse) ? groupsToUse.map((g: any) => ({
                     id: g.id,
