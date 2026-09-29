@@ -102,7 +102,22 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const vis = useAppStore(state => state.layoutTooltipVisibility);
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
-  const p: Project | undefined = (initialP?.id ? projects.find(item => item.id === initialP.id) : undefined) || initialP;
+  const p: Project | undefined = useMemo(() => {
+    if (initialP?.id) {
+      const found = projects.find(item => item.id === initialP.id);
+      if (found) return found;
+    }
+    const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
+    if (targetCode) {
+      const found = projects.find(item => {
+        const pCode = String(item.code || '').trim().toLowerCase();
+        const pCodes = (item.linkCodes ? String(item.linkCodes).split(/[+;,/]/) : []).map(c => c.trim().toLowerCase());
+        return pCode === targetCode || pCodes.includes(targetCode);
+      });
+      if (found) return found;
+    }
+    return initialP;
+  }, [initialP, data.appProjectCode, data.code, hoverInfo.unitName, projects]);
 
   // Draggable State Handling
   const isDraggingRef = useRef(false);
@@ -369,8 +384,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         return lines;
       })();
 
-  const detailText = p?.detail || data.detail || '';
-  const descriptionText = p?.detail || (p as any)?.description || data.appProjectDescription || data.appDescription || data.description || '';
+  const detailText = p?.detail || data.detail || data.appProjectDetail || data.appDetail || '';
+  const descriptionText = (p as any)?.description || (p?.detail !== detailText ? p?.detail : '') || data.appProjectDescription || data.appDescription || data.description || '';
 
   // Dates
   const computedTakStart = p?.computedTakStart || p?.start || data.startDate || '';

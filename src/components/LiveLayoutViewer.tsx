@@ -1318,6 +1318,18 @@ function LiveCanvas({
       });
     });
 
+    // Pre-index projectLink: maps unit name -> list of linked project codes
+    const projectLinkData = useDataStore.getState().projectLink || [];
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    projectLinkData.forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
+      }
+    });
+
     const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
@@ -1390,8 +1402,17 @@ function LiveCanvas({
         if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
         if (pMeta.year && uYr && pMeta.year !== uYr) return;
 
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
+          ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
+          ...(uEntry.id ? (unitToProjectCodesMap.get(uEntry.id.toLowerCase()) || []) : []),
+        ];
+        const isLinkedViaProjectLink = linkedCodes.some(lc => 
+          pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+
         const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
-        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
+        if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
           targetUnitKeys.add(uKey);
         }
       });

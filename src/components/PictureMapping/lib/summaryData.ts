@@ -24,6 +24,10 @@ export interface SummaryDataItem extends UnitInfo {
   party: string;
   startDate: string;
   endDate: string;
+  detail?: string;
+  description?: string;
+  projectCode?: string;
+  projectName?: string;
   salesByHcmcate: number;
   profitByHcmcate: number;
   hcmSalesEffi: number;
@@ -296,6 +300,10 @@ export function calculateSummaryData({
         if (psDate && plDate && psDate !== plDate) return `${psDate} / ${plDate}`;
         return psDate || plDate || "-";
       })(),
+      detail: linkedAppProject?.detail || projectStatusMatch?.detail || "-",
+      description: linkedAppProject?.detail || (linkedAppProject as any)?.description || projectStatusMatch?.description || "-",
+      projectCode: linkedAppProject?.code || (projectLinkMatch?.code || projectLinkMatch?.projectCode || "-"),
+      projectName: linkedAppProject?.name || "-",
       salesByHcmcate,
       profitByHcmcate,
       hcmSalesEffi: finalSalesEffi,
@@ -372,6 +380,10 @@ export const generateSizeLabelLines = (unit: Record<string, any>, uInfo: any, se
     if (selectedLabels.includes('Act: Status') && uInfo?.actStatus) lines.push({ key: 'Act: Status', text: `Act: Status: ${uInfo.actStatus}` });
     if (selectedLabels.includes('Start Date') && uInfo?.startDate) lines.push({ key: 'Start Date', text: `Start Date: ${uInfo.startDate}` });
     if (selectedLabels.includes('End Date') && uInfo?.endDate) lines.push({ key: 'End Date', text: `End Date: ${uInfo.endDate}` });
+    if (selectedLabels.includes('Detail') && uInfo?.detail && uInfo.detail !== '-') lines.push({ key: 'Detail', text: `Detail: ${uInfo.detail}` });
+    if (selectedLabels.includes('Description') && uInfo?.description && uInfo.description !== '-') lines.push({ key: 'Description', text: `Desc: ${uInfo.description}` });
+    if (selectedLabels.includes('Project Code') && uInfo?.projectCode && uInfo.projectCode !== '-') lines.push({ key: 'Project Code', text: `Project: ${uInfo.projectCode}` });
+    if (selectedLabels.includes('Project Name') && uInfo?.projectName && uInfo.projectName !== '-') lines.push({ key: 'Project Name', text: `Project Name: ${uInfo.projectName}` });
     
     if (selectedLabels.includes('Sales') && uInfo?.salesAmount !== undefined) lines.push({ key: 'Sales', text: `Sales: ${formatMoney(uInfo.salesAmount)}` });
     if (selectedLabels.includes('Sales By CP') && uInfo?.salesByCp !== undefined) lines.push({ key: 'Sales By CP', text: `Sales (CP): ${formatMoney(uInfo.salesByCp)}` });
