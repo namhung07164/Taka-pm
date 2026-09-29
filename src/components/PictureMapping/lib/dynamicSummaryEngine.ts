@@ -78,7 +78,7 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
     } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
       val = data.hasAppProject ? (data.appProjectCode || '') : '';
     } else if (f === 'mdstatus') {
-      val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
+      val = data.hasAppProject ? (data.appProjectMdStatus || '') : (data.mdStatus || '');
     } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
       val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
     } else if (f === 'actstatus' || f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
@@ -93,7 +93,7 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
     } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
       val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
-    } else if (f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+    } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
       val = (data.hasAppProject && data.task) ? data.task : '';
     } else if (f === 'actprogress' || f === 'act progress') {
       val = data.hasAppProject ? (data.actProgress ?? 0) : 0;

@@ -47,6 +47,7 @@ interface DynamicHierarchyTabProps {
 
 const normalizeRuleField = (f: string) => {
   if (f === "appStatus" || f === "app: status") return "appProjectStatus";
+  if (f === "appTask" || f === "app: task" || f === "app: task summarize" || f === "app: task summaries" || f === "app: tasks" || f === "taskSummaries" || f === "taskSummarize") return "appTask";
   if (f === "appYear" || f === "app: year") return "appProjectYear";
   if (f === "appCode" || f === "app: project code") return "appProjectCode";
   if (f === "appFloor" || f === "app: floor") return "appProjectFloor";
@@ -404,9 +405,11 @@ function DynamicHierarchyTab({
       let val = data[rule.field];
       const f = String(rule.field || '').toLowerCase().trim();
 
-      // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
+      // 1. Explicit App Data / Real-time Project checks (Strictly from App Projects & Live Task Summaries - ZERO Excel)
       if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
         val = data.hasAppProject ? (data.appProjectStatus || '') : '';
+      } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+        val = data.hasAppProject ? (data.task || '') : '';
       } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
         val = data.hasAppProject ? (data.appProjectYear || '') : '';
       } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
@@ -414,7 +417,7 @@ function DynamicHierarchyTab({
       } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
         val = data.hasAppProject ? (data.location || data.floor || '') : '';
       } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-        val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
+        val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
       } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
         val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
       } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
@@ -427,8 +430,6 @@ function DynamicHierarchyTab({
         val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
       } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
         val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
-      } else if (f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
-        val = data.hasAppProject ? (data.task || '') : '';
       } else if (val === undefined || val === null || String(val).trim() === '') {
         // 2. General attribute fallbacks
         if (f === 'floor' || f === 'location') {
@@ -1125,6 +1126,7 @@ function DynamicHierarchyTab({
                                   <option value="status">Status</option>
                                 </optgroup>
                                 <optgroup label="App Data (Real-time)">
+                                  <option value="appTask">App: Task Summarize (Real-time)</option>
                                   <option value="appProjectStatus">App: Status</option>
                                   <option value="appProjectMdStatus">App: MD Status</option>
                                   <option value="appProjectActStatus">App: Act Status</option>
