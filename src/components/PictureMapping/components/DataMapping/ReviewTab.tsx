@@ -80,9 +80,13 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   const filteredVersions = React.useMemo(() => {
     const sTarget = String(store || 'HCM').toUpperCase().trim();
     const lTarget = String(location || 'L1').toUpperCase().trim();
+    const tokenRegex = new RegExp(`(^|[^a-zA-Z0-9])${lTarget}([^a-zA-Z0-9]|$)`, 'i');
+
     const matched = versions.filter(v => {
       const matchStore = !v.store || v.store.toUpperCase().trim() === sTarget;
-      const matchLoc = !v.location || v.location.toUpperCase().trim() === lTarget;
+      const vLoc = (v.location || '').toUpperCase().trim();
+      const vName = (v.name || '').toUpperCase().trim();
+      const matchLoc = vLoc === lTarget || (vLoc === '' && tokenRegex.test(vName));
       return matchStore && matchLoc;
     });
 
@@ -137,17 +141,65 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
 
     const activeLoc = String(activeVersion.location || location || '').toUpperCase().trim();
 
-    return units
+    // Prefer candidate units from activeVersion.mapUnits if present
+    const candidateUnits = (Array.isArray(activeVersion?.mapUnits) && activeVersion.mapUnits.length > 0)
+      ? activeVersion.mapUnits
+      : units;
+
+    // Pre-index groupMappings from activeVersion
+    const unitToGroupStyle = new Map<string, { color: string; opacity: number; groupId: string }>();
+    if (activeVersion.groups && activeVersion.groupMappings) {
+      activeVersion.groups.forEach((group: any) => {
+        const assignedIds = activeVersion.groupMappings[group.id] || [];
+        assignedIds.forEach((id: string) => {
+          unitToGroupStyle.set(String(id).toLowerCase().trim(), {
+            color: group.color,
+            opacity: typeof group.opacity === 'number' ? group.opacity : 0.65,
+            groupId: group.id
+          });
+        });
+      });
+    }
+
+    return candidateUnits
       .filter(unit => {
         const uLoc = String(unit.location || '').toUpperCase().trim();
         if (activeLoc && uLoc && uLoc !== activeLoc) return false;
         return true;
       })
       .map(unit => {
-        const dynamicItem = dynamicSummaryMap.get(unit.id) || dynamicSummaryMap.get(unit.name?.toLowerCase());
-        const hasMatchedRule = Boolean(dynamicItem?.matchedGroupId && dynamicItem?.color);
-        const displayColor = hasMatchedRule ? dynamicItem!.color : 'rgba(0, 0, 0, 0.001)';
-        const displayOpacity = hasMatchedRule ? (dynamicItem!.opacity ?? 0.85) : 0;
+        const uName = String(unit.name || '').toLowerCase().trim();
+        const uId = String(unit.id || '').toLowerCase().trim();
+        const dynamicItem = dynamicSummaryMap.get(unit.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+        
+        let displayColor = 'rgba(0, 0, 0, 0.001)';
+        let displayOpacity = 0.85;
+        let hasMatchedColor = false;
+
+        if (dynamicItem?.matchedGroupId && dynamicItem?.color) {
+          displayColor = dynamicItem.color;
+          displayOpacity = dynamicItem.opacity ?? 0.85;
+          hasMatchedColor = true;
+        } else if (unitToGroupStyle.has(uId)) {
+          const g = unitToGroupStyle.get(uId)!;
+          displayColor = g.color;
+          displayOpacity = g.opacity;
+          hasMatchedColor = true;
+        } else if (uName && unitToGroupStyle.has(uName)) {
+          const g = unitToGroupStyle.get(uName)!;
+          displayColor = g.color;
+          displayOpacity = g.opacity;
+          hasMatchedColor = true;
+        } else if ((unit as any).targetColor) {
+          displayColor = (unit as any).targetColor;
+          displayOpacity = (unit as any).targetOpacity ?? 0.65;
+          hasMatchedColor = true;
+        } else if (unit.fill && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0') && unit.fill !== 'rgba(0, 0, 0, 0.001)') {
+          displayColor = unit.fill;
+          displayOpacity = unit.opacity ?? 0.65;
+          hasMatchedColor = true;
+        }
+
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels);
@@ -173,13 +225,14 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         return {
           ...unit,
           displayColor,
-          displayOpacity,
+          displayOpacity: hasMatchedColor ? displayOpacity : 0.85,
+          hasMatchedColor,
           sizeLabelLines,
           sizeLabel,
           bbox
         };
       });
-  }, [units, activeVersion, summaryData, dynamicSummaryMap, selectedLabels]);
+  }, [units, activeVersion, summaryData, dynamicSummaryMap, selectedLabels, location]);
 
   const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
 
@@ -851,11 +904,11 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         y={unit.y}
                         width={unit.width}
                         height={unit.height}
-                        fill={displayColor}
+                        fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
                         opacity={displayOpacity}
                         rotation={unit.rotation || 0}
-                        stroke="#ffffff"
-                        strokeWidth={1.5}
+                        stroke={unit.hasMatchedColor ? (selectedReviewUnitId === unit.id ? '#f59e0b' : '#ffffff') : '#64748b'}
+                        strokeWidth={selectedReviewUnitId === unit.id ? 2.5 : 1.2}
                         strokeScaleEnabled={false}
                         perfectDrawEnabled={false}
                         listening={false}
@@ -866,11 +919,11 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         x={unit.x}
                         y={unit.y}
                         radius={unit.radius}
-                        fill={displayColor}
+                        fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
                         opacity={displayOpacity}
                         rotation={unit.rotation || 0}
-                        stroke="#ffffff"
-                        strokeWidth={1.5}
+                        stroke={unit.hasMatchedColor ? (selectedReviewUnitId === unit.id ? '#f59e0b' : '#ffffff') : '#64748b'}
+                        strokeWidth={selectedReviewUnitId === unit.id ? 2.5 : 1.2}
                         strokeScaleEnabled={false}
                         perfectDrawEnabled={false}
                         listening={false}
@@ -881,11 +934,11 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         x={unit.x || 0}
                         y={unit.y || 0}
                         points={unit.points}
-                        fill={displayColor}
+                        fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
                         opacity={displayOpacity}
                         rotation={unit.rotation || 0}
-                        stroke="#ffffff"
-                        strokeWidth={1.5}
+                        stroke={unit.hasMatchedColor ? (selectedReviewUnitId === unit.id ? '#f59e0b' : '#ffffff') : '#64748b'}
+                        strokeWidth={selectedReviewUnitId === unit.id ? 2.5 : 1.2}
                         strokeScaleEnabled={false}
                         perfectDrawEnabled={false}
                         closed
@@ -1107,6 +1160,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
              versions={versions.filter(v => selectedVersionsToExport[v.id])} 
              units={units} 
              summaryData={summaryData} 
+             dynamicSummaryMap={dynamicSummaryMap}
              format={exportAllFormat} 
              paperSize={exportPaperSize}
              quality={exportQuality}
@@ -1264,45 +1318,101 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   );
 }
 
-const HiddenExportStage = ({ version, units, summaryData, selectedLabels, reviewLabelColors, paperSize, onReady, index }: any) => {
+const HiddenExportStage = ({ version, units, summaryData, dynamicSummaryMap, selectedLabels, reviewLabelColors, paperSize, onReady, index }: any) => {
   const styledUnits = React.useMemo(() => {
-    const unitToGroupStyle = new Map<string, { color: string; opacity: number }>();
-    version.groups.forEach((group: any) => {
-      const assignedIds = version.groupMappings[group.id] || [];
-      assignedIds.forEach((id: string) => {
-        unitToGroupStyle.set(id, {
-          color: group.color,
-          opacity: group.opacity ?? 0.6
+    const unitToGroupStyle = new Map<string, { color: string; opacity: number; groupId: string }>();
+    if (version?.groups && version?.groupMappings) {
+      version.groups.forEach((group: any) => {
+        const assignedIds = version.groupMappings[group.id] || [];
+        assignedIds.forEach((id: string) => {
+          unitToGroupStyle.set(String(id).toLowerCase().trim(), {
+            color: group.color,
+            opacity: typeof group.opacity === 'number' ? group.opacity : 0.65,
+            groupId: group.id
+          });
         });
       });
-    });
+    }
 
     const summaryMap = new Map();
     summaryData.forEach((s: any) => summaryMap.set(s.unit, s));
 
-    const vLoc = version?.location;
+    const vLoc = String(version?.location || '').toUpperCase().trim();
+    const candidateUnits = (Array.isArray(version?.mapUnits) && version.mapUnits.length > 0)
+      ? version.mapUnits
+      : units;
 
-    return units
+    return candidateUnits
       .filter((unit: any) => {
-        if (vLoc && unit.location && unit.location !== vLoc) return false;
-        return unitToGroupStyle.has(unit.id);
+        const uLoc = String(unit.location || '').toUpperCase().trim();
+        if (vLoc && uLoc && uLoc !== vLoc) return false;
+        return true;
       })
       .map((unit: any) => {
-        const style = unitToGroupStyle.get(unit.id)!;
+        const uName = String(unit.name || '').toLowerCase().trim();
+        const uId = String(unit.id || '').toLowerCase().trim();
+        const dynamicItem = dynamicSummaryMap?.get?.(unit.id) || (uName ? dynamicSummaryMap?.get?.(uName) : null);
+
+        let displayColor = 'rgba(0, 0, 0, 0.001)';
+        let displayOpacity = 0.85;
+        let hasMatchedColor = false;
+
+        if (dynamicItem?.matchedGroupId && dynamicItem?.color) {
+          displayColor = dynamicItem.color;
+          displayOpacity = dynamicItem.opacity ?? 0.85;
+          hasMatchedColor = true;
+        } else if (unitToGroupStyle.has(uId)) {
+          const g = unitToGroupStyle.get(uId)!;
+          displayColor = g.color;
+          displayOpacity = g.opacity;
+          hasMatchedColor = true;
+        } else if (uName && unitToGroupStyle.has(uName)) {
+          const g = unitToGroupStyle.get(uName)!;
+          displayColor = g.color;
+          displayOpacity = g.opacity;
+          hasMatchedColor = true;
+        } else if ((unit as any).targetColor) {
+          displayColor = (unit as any).targetColor;
+          displayOpacity = (unit as any).targetOpacity ?? 0.65;
+          hasMatchedColor = true;
+        }
+
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels);
         return {
           ...unit,
-          displayColor: style.color,
-          displayOpacity: style.opacity,
+          displayColor,
+          displayOpacity: hasMatchedColor ? displayOpacity : 0.85,
+          hasMatchedColor,
           sizeLabelLines,
           sizeLabel
         };
       });
-  }, [units, version, summaryData, selectedLabels]);
+  }, [units, version, summaryData, dynamicSummaryMap, selectedLabels]);
 
-  const [image, status] = useOffscreenImage(version.backgroundUrl || '', 'anonymous');
+  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    const rawUrl = version?.backgroundUrl || '';
+    if (!rawUrl) {
+      setResolvedBgUrl('');
+      return;
+    }
+    if (rawUrl.startsWith('r2://') || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && !rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:'))) {
+      resolveR2UrlToHttp(rawUrl).then(url => {
+        if (isMounted) setResolvedBgUrl(url || rawUrl);
+      }).catch(() => {
+        if (isMounted) setResolvedBgUrl(rawUrl);
+      });
+    } else {
+      setResolvedBgUrl(rawUrl);
+    }
+    return () => { isMounted = false; };
+  }, [version?.backgroundUrl]);
+
+  const [image, status] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
   const stageRef = useRef<any>(null);
 
   useEffect(() => {
@@ -1657,7 +1767,7 @@ async function captureStageBlob(stage: any, pixelRatio: number, quality: number)
   return null;
 }
 
-export const ExportAllManager = ({ versions, units, summaryData, format, paperSize, quality, selectedLabels, reviewLabelColors, onComplete }: any) => {
+export const ExportAllManager = ({ versions, units, summaryData, dynamicSummaryMap, format, paperSize, quality, selectedLabels, reviewLabelColors, onComplete }: any) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const isProcessingRef = useRef(false);
   const pdfRef = useRef<jsPDF | null>(null);
@@ -1867,6 +1977,7 @@ export const ExportAllManager = ({ versions, units, summaryData, format, paperSi
             version={currentVersion} 
             units={units} 
             summaryData={summaryData} 
+            dynamicSummaryMap={dynamicSummaryMap}
             selectedLabels={selectedLabels}
             reviewLabelColors={reviewLabelColors}
             paperSize={paperSize}

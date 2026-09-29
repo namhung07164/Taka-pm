@@ -28,10 +28,24 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
     const summaryMap = new Map();
     summaryData.forEach((s: any) => summaryMap.set(s.unit, s));
 
-    return mapUnits
-      .filter((unit: any) => unitToGroupStyle.has(unit.id))
+    const vLoc = String(version?.location || '').toUpperCase().trim();
+    const candidateUnits = (Array.isArray(version?.mapUnits) && version.mapUnits.length > 0)
+      ? version.mapUnits
+      : mapUnits;
+
+    return candidateUnits
+      .filter((unit: any) => {
+        const uLoc = String(unit.location || '').toUpperCase().trim();
+        if (vLoc && uLoc && uLoc !== vLoc) return false;
+        return true;
+      })
       .map((unit: any) => {
-        const style = unitToGroupStyle.get(unit.id)!;
+        const uName = String(unit.name || '').toLowerCase().trim();
+        const uId = String(unit.id || '').toLowerCase().trim();
+        const style = unitToGroupStyle.get(uId) || (uName ? unitToGroupStyle.get(uName) : null);
+        const hasMatchedColor = Boolean(style?.color || unit.targetColor);
+        const displayColor = style?.color || unit.targetColor || 'rgba(0, 0, 0, 0.001)';
+        const displayOpacity = style?.opacity ?? unit.targetOpacity ?? 0.85;
         const uInfo = summaryMap.get(unit.name);
         const sizeLabelLines = generateSizeLabelLines(unit, uInfo, selectedLabels || ['Unit ID', 'Size SQM']);
         const sizeLabel = generateSizeLabel(unit, uInfo, selectedLabels || ['Unit ID', 'Size SQM']);
@@ -55,8 +69,9 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
 
         return {
           ...unit,
-          displayColor: style.color,
-          displayOpacity: style.opacity,
+          displayColor,
+          displayOpacity: hasMatchedColor ? displayOpacity : 0.85,
+          hasMatchedColor,
           sizeLabelLines,
           sizeLabel,
           bbox

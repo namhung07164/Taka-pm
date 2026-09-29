@@ -14,7 +14,7 @@ import { useAppStore } from '../../../../store/useAppStore';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 
-import { extractR2Key } from '../../lib/r2Upload';
+import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
@@ -329,8 +329,20 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     if (activeVersion) {
-      setLocalImageUrl(activeVersion.backgroundUrl);
+      const rawUrl = activeVersion.backgroundUrl || '';
+      if (!rawUrl) {
+        setLocalImageUrl(null);
+      } else if (rawUrl.startsWith('r2://') || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && !rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:'))) {
+        resolveR2UrlToHttp(rawUrl).then(url => {
+          if (isMounted) setLocalImageUrl(url || rawUrl);
+        }).catch(() => {
+          if (isMounted) setLocalImageUrl(rawUrl);
+        });
+      } else {
+        setLocalImageUrl(rawUrl);
+      }
       setScale(activeVersion.backgroundScale || 1);
       setPosition(activeVersion.backgroundPos || { x: 0, y: 0 });
       setBgRotation(activeVersion.backgroundRotation || 0);
@@ -346,6 +358,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       setImageScale(1);
       setIsLocked(false);
     }
+    return () => { isMounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVersionId, activeVersion?.backgroundUrl]);
 
