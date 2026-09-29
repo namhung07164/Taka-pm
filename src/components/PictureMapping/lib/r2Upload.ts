@@ -126,11 +126,15 @@ export function getStoredR2Credentials(): R2Credentials | null {
       const cached = localStorage.getItem('taka_cache_r2_config_v1');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed?.accountId && parsed?.accessKeyId && parsed?.secretAccessKey && parsed?.bucketName) {
-          accountId = parsed.accountId.trim();
-          accessKeyId = parsed.accessKeyId.trim();
-          secretAccessKey = parsed.secretAccessKey.trim();
-          bucketName = parsed.bucketName.trim();
+        const a = parsed?.accountId || parsed?.account_id;
+        const k = parsed?.accessKeyId || parsed?.access_key_id || parsed?.accessKey;
+        const s = parsed?.secretAccessKey || parsed?.secret_access_key || parsed?.secretKey;
+        const b = parsed?.bucketName || parsed?.bucket_name;
+        if (a && k && s && b) {
+          accountId = String(a).trim();
+          accessKeyId = String(k).trim();
+          secretAccessKey = String(s).trim();
+          bucketName = String(b).trim();
         }
       }
     } catch {}
@@ -161,12 +165,17 @@ export async function getStoredR2CredentialsAsync(): Promise<R2Credentials | nul
     const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
     if (r2Doc.exists()) {
       const data = r2Doc.data() as any;
-      if (data?.accountId && data?.accessKeyId && data?.secretAccessKey && data?.bucketName) {
+      const acc = (data?.accountId || data?.account_id || '').trim();
+      const bkt = (data?.bucketName || data?.bucket_name || '').trim();
+      const key = (data?.accessKeyId || data?.access_key_id || data?.accessKey || '').trim();
+      const sec = (data?.secretAccessKey || data?.secret_access_key || data?.secretKey || '').trim();
+
+      if (acc && bkt && key && sec) {
         const creds: R2Credentials = {
-          accountId: (data.accountId || '').trim(),
-          accessKeyId: (data.accessKeyId || '').trim(),
-          secretAccessKey: (data.secretAccessKey || '').trim(),
-          bucketName: (data.bucketName || '').trim(),
+          accountId: acc,
+          accessKeyId: key,
+          secretAccessKey: sec,
+          bucketName: bkt,
         };
         try {
           useAppStore.getState().setR2Config(creds);

@@ -286,6 +286,7 @@ export default function CloudSyncManager({
               groups: cloudGroups,
               groupMappings: cloudMappings,
               isDynamicActive: true,
+              mapUnits: (currentScope === 'edit' || currentScope === 'all') ? pUnits : (v.mapUnits || pUnits),
             });
 
             pVersionsLocal.push({
@@ -296,6 +297,7 @@ export default function CloudSyncManager({
               groups: (currentScope === 'edit' && existingCloudVer) ? (existingCloudVer.groups || v.groups || []) : (v.groups || []),
               groupMappings: (currentScope === 'edit' && existingCloudVer) ? (existingCloudVer.groupMappings || v.groupMappings || {}) : (v.groupMappings || {}),
               isDynamicActive: true,
+              mapUnits: (currentScope === 'edit' || currentScope === 'all') ? pUnits : (v.mapUnits || pUnits),
             });
           }
 
@@ -384,6 +386,9 @@ export default function CloudSyncManager({
             console.error(`[R2 Upload Error] ${uploadRes.error}`);
             throw new Error(`Lỗi tải lên R2 Cloudflare: ${uploadRes.error || 'Không thể ghi file mapping_config.json lên R2 Bucket'}`);
           }
+        } else {
+          // Warning if credentials were not present
+          console.warn('[CloudSync] Missing R2 credentials when saving. Data saved to Firestore backup only.');
         }
 
         // Parallel Backup: Always save snapshot to Firestore and LocalStorage for 100% Zero Data Loss
@@ -398,6 +403,12 @@ export default function CloudSyncManager({
             lastSavedScope: currentScope,
             updatedAt: new Date().toISOString(),
             timestamp: configData.timestamp,
+          }, { merge: true });
+
+          // Also update version timestamp to notify LiveLayoutViewer and other clients
+          await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+            r2Version: configData.timestamp,
+            updatedAt: new Date().toISOString()
           }, { merge: true });
         } catch (fsErr) {
           console.warn('[Firestore Backup] Error saving backup:', fsErr);

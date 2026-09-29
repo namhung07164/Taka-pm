@@ -53,4 +53,5 @@ export interface MapVersion {
   store?: string;
   location?: string;
   year?: string;
+  mapUnits?: UnitShape[];
 }

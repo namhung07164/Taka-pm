@@ -669,10 +669,12 @@ function LiveCanvas({
 
   // 3. Resolve active version & units
   const { r2Version, r2Units } = useMemo(() => {
-    const pKey = `${storeFilter}_${targetLoc}`;
+    const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const tLoc = targetLoc.toUpperCase().trim();
+    const pKey = `${targetStoreParam}_${tLoc}`;
     
     const localPart = localStoreLocationData?.[pKey] || (
-      localStore === storeFilter && localLocation === targetLoc
+      localStore === targetStoreParam && String(localLocation).toUpperCase().trim() === tLoc
         ? { mapUnits: localMapUnits, mapVersions: localMapVersions, activeMapVersionId: localActiveMapVersionId }
         : null
     );
@@ -726,131 +728,85 @@ function LiveCanvas({
       }
     }
     const finalVersion = { ...v, backgroundUrl: bgUrl };
-
-    // Resolve units: collect all drawn shapes across all sources so any floor's shapes are readily available
-    const unitsMap = new Map<string, any>();
-
-    const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-
-    // 0. From finalVersion.mapUnits if embedded
-    if (Array.isArray(finalVersion?.mapUnits)) {
-      finalVersion.mapUnits.forEach((u: any) => {
-        if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
-          const existing = unitsMap.get(u.id) || {};
-          unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || targetLoc });
-        }
-      });
-    }
-
-    // 1. From config.storeLocationData across partitions matching storeFilter
-    if (config?.storeLocationData) {
-      Object.entries(config.storeLocationData).forEach(([key, part]: [string, any]) => {
-        if (key.startsWith(`${targetStoreParam}_`)) {
-          const loc = key.split('_')[1] || '';
-          if (Array.isArray(part?.mapUnits)) {
-            part.mapUnits.forEach((u: any) => {
-              if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
-                const existing = unitsMap.get(u.id) || {};
-                unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || loc });
-              }
-            });
-          }
-        }
-      });
-    }
-
-    // 2. From config.mapUnits (root-level drawn shapes - ONLY for HCM legacy fallback)
-    if (targetStoreParam === 'HCM' && !config?.storeLocationData?.[pKey] && Array.isArray(config?.mapUnits)) {
-      config.mapUnits.forEach((u: any) => {
-        if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
-          const existing = unitsMap.get(u.id) || {};
-          unitsMap.set(u.id, { ...existing, ...u, store: 'HCM', location: u.location || existing.location || targetLoc });
-        }
-      });
-    }
-
-    // 3. From local in-memory storeLocationData across partitions matching storeFilter
-    if (localStoreLocationData) {
-      Object.entries(localStoreLocationData).forEach(([key, part]: [string, any]) => {
-        if (key.startsWith(`${targetStoreParam}_`)) {
-          const loc = key.split('_')[1] || '';
-          if (Array.isArray(part?.mapUnits)) {
-            part.mapUnits.forEach((u: any) => {
-              if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
-                const existing = unitsMap.get(u.id) || {};
-                unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || loc });
-              }
-            });
-          }
-        }
-      });
-    }
-
-    // 4. From current active in-memory partition (ONLY if localStore matches targetStoreParam)
-    if (localStore === targetStoreParam && Array.isArray(localMapUnits)) {
-      localMapUnits.forEach((u: any) => {
-        if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
-          const existing = unitsMap.get(u.id) || {};
-          unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || targetLoc });
-        }
-      });
-    }
-
-    // 5. From global store helper
-    try {
-      const storeUnits = getAllStoreUnits(targetStoreParam);
-      if (Array.isArray(storeUnits)) {
-        storeUnits.forEach((u: any) => {
-          if (u?.id && (u?.type || u?.points || (u?.width && u?.height))) {
-            const existing = unitsMap.get(u.id) || {};
-            unitsMap.set(u.id, { ...existing, ...u, store: targetStoreParam, location: u.location || existing.location || targetLoc });
-          }
-        });
-      }
-    } catch (e) {}
-
-    // 6. Gather all unit IDs mapped in finalVersion.groupMappings
-    const mappedUnitIds = new Set<string>();
-    if (finalVersion?.groupMappings) {
-      Object.values(finalVersion.groupMappings).forEach((m: any) => {
-        if (Array.isArray(m)) m.forEach(id => mappedUnitIds.add(String(id)));
-      });
-    }
-
     const vLoc = (finalVersion.location || targetLoc || '').toUpperCase().trim();
-    const tLoc = targetLoc.toUpperCase().trim();
 
-    // 7. Filter units for finalVersion: include mapped units or units strictly matching this store & floor
-    const finalUnitsList = Array.from(unitsMap.values()).filter((u: any) => {
-      // Must match store
-      if (u.store && String(u.store).toUpperCase() !== targetStoreParam) return false;
+    // Source of Truth for partition pKey:
+    // Only resolve units that belong to THIS partition (storeFilter & targetLoc)!
+    // Priority order:
+    // 1. Current in-memory active units (if matching store & location)
+    // 2. Local in-memory partition data for this exact pKey
+    // 3. Cloud config partition data for this exact pKey
+    // 4. Fallback to finalVersion.mapUnits (only if strictly on this floor or unassigned)
+    // 5. Fallback to legacy config.mapUnits / config.units (HCM only)
 
-      // If mapped in this version's groups, ALWAYS include
-      if (mappedUnitIds.has(String(u.id))) return true;
+    let candidateUnits: any[] = [];
+    if (localStore === targetStoreParam && String(localLocation).toUpperCase().trim() === tLoc && Array.isArray(localMapUnits) && localMapUnits.length > 0) {
+      candidateUnits = localMapUnits;
+    } else if (localStoreLocationData?.[pKey]?.mapUnits && Array.isArray(localStoreLocationData[pKey].mapUnits) && localStoreLocationData[pKey].mapUnits.length > 0) {
+      candidateUnits = localStoreLocationData[pKey].mapUnits;
+    } else if (config?.storeLocationData?.[pKey]?.mapUnits && Array.isArray(config.storeLocationData[pKey].mapUnits) && config.storeLocationData[pKey].mapUnits.length > 0) {
+      candidateUnits = config.storeLocationData[pKey].mapUnits;
+    } else if (Array.isArray(finalVersion?.mapUnits) && finalVersion.mapUnits.length > 0) {
+      candidateUnits = finalVersion.mapUnits;
+    } else if (targetStoreParam === 'HCM' && Array.isArray(config?.mapUnits) && config.mapUnits.length > 0) {
+      candidateUnits = config.mapUnits;
+    } else if (targetStoreParam === 'HCM' && Array.isArray(config?.units) && config.units.length > 0) {
+      candidateUnits = config.units;
+    }
 
-      // If unit has location matching this floor or version
-      const uLoc = (u.location || '').toUpperCase().trim();
-      if (uLoc && (uLoc === vLoc || uLoc === tLoc || vLoc.includes(uLoc) || uLoc.includes(vLoc))) return true;
+    // Sanitize, filter to target floor, and deduplicate
+    const unitsMap = new Map<string, any>();
+    const seenCoordinates = new Map<string, string>(); // round(x,y,w,h) -> id to avoid identical overlapping ghost units
 
-      // Fallback: if no location info on shape, include on the active floor
-      if (!uLoc) return true;
+    candidateUnits.forEach((u: any) => {
+      if (!u || (!u.id && !u.name)) return;
+      if (!u.type && !u.points && !(u.width && u.height)) return;
 
-      return false;
+      const uLoc = String(u.location || '').toUpperCase().trim();
+      const uStore = String(u.store || '').toUpperCase().trim();
+
+      // Store check
+      if (uStore && uStore !== targetStoreParam) return;
+
+      // Floor check: if unit specifies another floor (e.g. B2 while we are viewing B1), skip it!
+      if (uLoc && uLoc !== tLoc && uLoc !== vLoc && !vLoc.includes(uLoc) && !uLoc.includes(vLoc)) {
+        return;
+      }
+
+      const id = String(u.id || u.name);
+      const taggedUnit = {
+        ...u,
+        id,
+        store: targetStoreParam,
+        location: uLoc || tLoc,
+      };
+
+      // Coordinate collision check (if two units occupy the exact same spot with same size)
+      if (u.type === 'rect' && u.width > 0 && u.height > 0) {
+        const coordKey = `${Math.round(u.x || 0)}_${Math.round(u.y || 0)}_${Math.round(u.width || 0)}_${Math.round(u.height || 0)}`;
+        if (seenCoordinates.has(coordKey)) {
+          const prevId = seenCoordinates.get(coordKey)!;
+          const prev = unitsMap.get(prevId);
+          // If current unit has a name and previous doesn't, or if current matches search, replace it
+          if (!prev?.name && taggedUnit.name) {
+            unitsMap.delete(prevId);
+            unitsMap.set(id, taggedUnit);
+            seenCoordinates.set(coordKey, id);
+          }
+          return;
+        }
+        seenCoordinates.set(coordKey, id);
+      }
+
+      unitsMap.set(id, taggedUnit);
     });
 
-    // 8. Fallback to config.units if no drawn shapes found at all (ONLY for HCM legacy fallback)
-    if (finalUnitsList.length === 0 && targetStoreParam === 'HCM' && Array.isArray(config?.units)) {
-      config.units.forEach((u: any) => {
-        if (u?.id) unitsMap.set(u.id, { ...u, store: 'HCM', location: u.location || targetLoc });
-      });
-      return { r2Version: finalVersion, r2Units: Array.from(unitsMap.values()) };
-    }
-
+    const finalUnitsList = Array.from(unitsMap.values());
     return { r2Version: finalVersion, r2Units: finalUnitsList };
   }, [
     config, storeFilter, targetLoc, localStoreLocationData, localStore, localLocation,
     localMapUnits, localMapVersions, localActiveMapVersionId, selectedVersionId,
-    locationVersions, availableStoreVersions, getAllStoreUnits
+    locationVersions
   ]);
 
   const version = r2Version;
