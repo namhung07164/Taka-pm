@@ -9,7 +9,7 @@ import { preloadFloorImages } from '../lib/imageDBCache';
 import { useSummaryData } from './PictureMapping/lib/summaryData';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { extractR2Key, getS3Sdk, downloadR2JsonFile, resolveR2UrlToHttp } from './PictureMapping/lib/r2Upload';
-import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn, extractAllProjectCodes, projectMatchesUnitCode } from '../lib/utils';
+import { getStatus, enrichProjects, formatDisplayDateTime, computeProjectActStatus, cn, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../lib/utils';
 import { LayoutUnitTooltip } from './LayoutTabParts/LayoutUnitTooltip';
 import { Project, AppRole } from '../types';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -1321,14 +1321,14 @@ function LiveCanvas({
     const now = new Date();
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      if (storeFilter !== 'all') {
-        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
-        if (pStore && pStore !== String(storeFilter).trim().toUpperCase()) return;
+
+      const pMeta = extractProjectMetadata(p);
+
+      // Strict Scope Matching across all 3 components: Store, Location (Floor), Year
+      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: globalYearFilter })) {
+        return;
       }
-      const pYear = String(p.year || (p as any).projectYear || '').trim();
-      if (globalYearFilter && globalYearFilter !== 'all') {
-        if (pYear && pYear !== String(globalYearFilter)) return;
-      }
+
       const pCodes = extractAllProjectCodes(p);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       
@@ -1384,6 +1384,9 @@ function LiveCanvas({
       });
       Object.keys(dataMap).forEach(uKey => {
         if (projectMatchesUnitCode(pCodes, uKey)) {
+          const uEntry = dataMap[uKey];
+          if (pMeta.store && uEntry?.store && uEntry.store.toUpperCase() !== pMeta.store) return;
+          if (pMeta.location && uEntry?.location && uEntry.location.toUpperCase() !== pMeta.location) return;
           targetUnitKeys.add(uKey);
         }
       });
@@ -1391,12 +1394,13 @@ function LiveCanvas({
       targetUnitKeys.forEach(code => {
          if (dataMap[code]) {
             dataMap[code].matchedProject = p;
+            dataMap[code].hasAppProject = true;
             dataMap[code].appProjectStatus = status;
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
-            dataMap[code].appProjectYear = pYear;
-            dataMap[code].year = pYear || dataMap[code].year || '';
+            dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : '');
+            dataMap[code].year = pMeta.year || (p.year ? String(p.year) : '') || dataMap[code].year || '';
             dataMap[code].floor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
             dataMap[code].appProjectFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
             dataMap[code].appFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
@@ -1521,15 +1525,20 @@ function LiveCanvas({
   }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups, layoutTooltipVisibility]);
 
   // Dynamic Unit Summary Engine (Shared 100% with EditTab & ReviewTab)
+  const effectiveLayoutYear = String((globalYearFilter && globalYearFilter !== 'all') 
+    ? globalYearFilter 
+    : (version?.year || new Date().getFullYear())
+  ).trim();
+
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,
     activeVersion: version,
     store: (version?.store as any) || (storeFilter === 'HN' ? 'HN' : 'HCM'),
     location: version?.location || targetLoc,
-    year: String(version?.year || (globalYearFilter !== 'all' ? globalYearFilter : '') || new Date().getFullYear()),
+    year: effectiveLayoutYear,
   });
 
-  // 3. Evaluate rules on the fly & merge pre-calculated ReviewTab groupMappings to build unitColorMap
+  // 3. Evaluate rules on the fly: STRICTLY depends ONLY on Task Summaries & Projects in active Year, Store, Location!
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
     const groupMap: Record<string, string> = {};
@@ -1538,81 +1547,49 @@ function LiveCanvas({
     
     if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: [] };
 
-    // Step A. Sync from Shared Dynamic Summary Engine (Identical to ReviewTab & EditTab)
+    // STRICT ENTERPRISE RULE:
+    // Layout Liveview colors units ONLY based on Task Summaries / Project Data in the active year, store, and location!
+    // If a unit has NO matching project/task in the current year, it MUST NOT be colored (remains completely empty: no fill, no text).
     units.forEach((u: any) => {
       const uName = String(u.name || '').toLowerCase().trim();
       if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
+
       const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
-      if (dynamicItem?.matchedGroupId && dynamicItem?.color) {
+      if (!dynamicItem?.hasAppProject) {
+        // No project in this year -> do NOT color, leave completely empty!
+        return;
+      }
+
+      // Step A. Dynamic Rules evaluation match from activeVersion
+      if (dynamicItem.matchedGroupId && dynamicItem.color) {
         colorMap[u.id] = dynamicItem.color;
         groupMap[u.id] = dynamicItem.matchedGroupId;
         opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
+        return;
+      }
+
+      // Step B. Task Summaries Live Project Status coloring
+      const status = String(dynamicItem.appProjectStatus || '').trim().toLowerCase();
+      if (status === 'completed') {
+        colorMap[u.id] = '#10b981';
+        groupMap[u.id] = 'task_status_completed';
+        opacityMap[u.id] = 0.85;
+      } else if (status === 'on process' || status === 'in progress') {
+        colorMap[u.id] = '#3b82f6';
+        groupMap[u.id] = 'task_status_on_process';
+        opacityMap[u.id] = 0.85;
+      } else if (status === 'delay' || status === 'delayed' || status === 'overdue') {
+        colorMap[u.id] = '#ef4444';
+        groupMap[u.id] = 'task_status_delay';
+        opacityMap[u.id] = 0.85;
+      } else if (status === 'upcoming') {
+        colorMap[u.id] = '#f59e0b';
+        groupMap[u.id] = 'task_status_upcoming';
+        opacityMap[u.id] = 0.85;
       }
     });
 
-    // Step B. Sync from ReviewTab groupMappings with O(1) pre-indexed lookup
-    if (version.groupMappings && typeof version.groupMappings === 'object') {
-      const unitMapByIdOrName = new Map<string, any>();
-      units.forEach((u: any) => {
-        if (u.id) unitMapByIdOrName.set(u.id, u);
-        if (u.name) unitMapByIdOrName.set(String(u.name).toLowerCase().trim(), u);
-      });
-
-      version.groups.forEach((group: any) => {
-        const mappedUnitIds = version.groupMappings[group.id];
-        if (Array.isArray(mappedUnitIds) && mappedUnitIds.length > 0) {
-          const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
-          mappedUnitIds.forEach((uid: string) => {
-            const targetUnit = unitMapByIdOrName.get(uid) || unitMapByIdOrName.get(String(uid).toLowerCase().trim());
-            if (targetUnit && !colorMap[targetUnit.id]) {
-              const uName = String(targetUnit.name || '').toLowerCase().trim();
-              if (!restrictedProjectCodes.has(uName) && !aggregatedData[uName]?.isRestricted) {
-                colorMap[targetUnit.id] = group.color;
-                groupMap[targetUnit.id] = group.id;
-                opacityMap[targetUnit.id] = groupOpacity;
-              }
-            }
-          });
-        }
-      });
-    }
-
-    // Step C. Sync embedded unit.targetColor or Task Summaries live project status
-    units.forEach((u: any) => {
-      const uName = String(u.name || '').toLowerCase().trim();
-      if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
-      if (!colorMap[u.id]) {
-        if (u.targetColor) {
-          colorMap[u.id] = u.targetColor;
-          if (u.targetGroupId) groupMap[u.id] = u.targetGroupId;
-          opacityMap[u.id] = u.targetOpacity ?? 0.65;
-        } else {
-          // Automatic Task Summaries Live Status Coloring
-          const uData = aggregatedData[uName];
-          const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
-          const status = String(dynamicItem?.appProjectStatus || uData?.appProjectStatus || uData?.status || '').trim().toLowerCase();
-          if (status === 'completed') {
-            colorMap[u.id] = '#10b981';
-            groupMap[u.id] = 'task_status_completed';
-            opacityMap[u.id] = 0.85;
-          } else if (status === 'on process' || status === 'in progress') {
-            colorMap[u.id] = '#3b82f6';
-            groupMap[u.id] = 'task_status_on_process';
-            opacityMap[u.id] = 0.85;
-          } else if (status === 'delay' || status === 'delayed' || status === 'overdue') {
-            colorMap[u.id] = '#ef4444';
-            groupMap[u.id] = 'task_status_delay';
-            opacityMap[u.id] = 0.85;
-          } else if (status === 'upcoming') {
-            colorMap[u.id] = '#f59e0b';
-            groupMap[u.id] = 'task_status_upcoming';
-            opacityMap[u.id] = 0.85;
-          }
-        }
-      }
-    });
-
-    // Step D. Build activeGroups legend stats
+    // Step C. Build activeGroups legend stats
     version.groups.forEach((group: any) => {
       let matchCount = 0;
       const matchedUnits: any[] = [];
@@ -1649,7 +1626,7 @@ function LiveCanvas({
     });
 
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: Array.from(groupsInUseMap.values()) };
-  }, [version?.groups, version?.groupMappings, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes, targetLoc]);
+  }, [version?.groups, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes]);
 
   // Total count of units with alerts on this floor
   const totalFloorAlerts = useMemo(() => {
@@ -3401,10 +3378,10 @@ function LiveCanvas({
                const isDimmed = isLegendColorOn && hasColor && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
                const contrast = isLegendColorOn && hasColor 
                  ? getContrastStyle(fillColor) 
-                 : { text: isDarkMode ? '#f8fafc' : '#0f172a', shapeStroke: isDarkMode ? '#64748b' : '#94a3b8' };
+                 : { text: isDarkMode ? '#94a3b8' : '#64748b', shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)' };
                
                const displayOpacity = !isLegendColorOn || !hasColor
-                 ? (isFocused ? 1.0 : 0.9)
+                 ? (isFocused ? 1.0 : 0.5)
                  : (isFocused 
                      ? 1.0 
                      : isDimmed 
@@ -3416,7 +3393,7 @@ function LiveCanvas({
                   fill: fillColor,
                   opacity: displayOpacity,
                   stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
-                  strokeWidth: isFocused ? 3 : 1.5,
+                  strokeWidth: isFocused ? 3 : (hasColor ? 1.5 : 1),
                   strokeScaleEnabled: false,
                   perfectDrawEnabled: false,
                   x: unit.x || 0,
@@ -3537,7 +3514,7 @@ function LiveCanvas({
                        )
                     )}
 
-                    {unit.name && showTextAndBadge && (
+                    {hasColor && unit.name && showTextAndBadge && (
                        <Text 
                           text={unit.name}
                           x={unit.textX}
@@ -3559,8 +3536,8 @@ function LiveCanvas({
                        />
                     )}
 
-                    {/* Smart Alert Badge (Rendered ONLY when unit has real critical/warning alerts and LOD permits) */}
-                    {hasAlert && unitData?.alerts && showTextAndBadge && (
+                    {/* Smart Alert Badge (Rendered ONLY when unit is colored, has real alerts, and LOD permits) */}
+                    {hasColor && hasAlert && unitData?.alerts && showTextAndBadge && (
                        <Group x={badgeX} y={badgeY} listening={false}>
                           <Circle
                              radius={badgeRadius}

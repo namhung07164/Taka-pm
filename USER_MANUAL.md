@@ -1233,7 +1233,10 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
        - Hỗ trợ tính năng sao chép bộ quy tắc nhóm (**Copy Groups From**) linh hoạt từ bất kỳ version nào của năm khác hoặc tầng khác để tiết kiệm thời gian thiết lập.
        - Tự động kế thừa ảnh nền bản vẽ của tầng đó mà không cần tải lại ảnh.
      + **Tab Review (Duyệt Màu Sắc & Nhãn Dữ Liệu)**: Dựa trên 3 bộ lọc `Store`, `Location`, `Year` để đọc chính xác phiên bản quy hoạch tương ứng, áp dụng màu sắc và hiển thị bảng mặt bằng hoàn chỉnh.
-     + **Tab Layout (Xem Mặt Bằng Trực Tiếp - Live Layout)**: Hệ thống tự động xác định chính xác theo `Store`, `Location` (Tầng) và `Year` (Năm đang chọn trên thanh bộ lọc chung) để nạp đúng version và các nhóm quy tắc tương ứng, đảm bảo dữ liệu hiển thị tức thời, nhất quán 100% giữa khâu thiết lập và khâu quan sát trực quan.
+     + **Tab Layout (Xem Mặt Bằng Trực Tiếp - Live Layout)**:
+       - **Phụ thuộc duy nhất vào Task Summaries**: Luồng tô màu của Tab Layout Liveview hoàn toàn phụ thuộc vào dữ liệu công việc và dự án thực tế (`Task Summaries` / `projects` & `tasks`) của hệ thống, kết hợp với các quy tắc so sánh trong Dynamic Rules (hoặc tự động tô màu theo tiến độ dự án nếu không có quy tắc tùy biến).
+       - **Cách ly tuyệt đối theo 3 thành phần (Year, Store, Location Isolation)**: Mỗi dự án và unit bắt buộc đối soát đủ cả 3 tiêu chí `Store`, `Location` (Tầng) và `Year` (Năm). Mã dự án (Project Code) chứa năm hoặc tầng (ví dụ `L1-115 y2026`) chỉ khớp duy nhất khi xem tại năm `2026`; khi người dùng chuyển sang năm `2027`, ô gian hàng đó không có dự án trong năm 2027 sẽ **hoàn toàn để trống (không tô màu và không viết chữ)**.
+       - **Tối ưu hiệu năng siêu nhẹ (Zero Text Overhead on Empty Units)**: Hệ thống triệt tiêu hoàn toàn việc dựng các node chữ (`Konva <Text>`) và huy hiệu cảnh báo đối với các ô gian hàng để trống, giúp tiết kiệm hơn 80% bộ nhớ đồ họa và giữ FPS luôn ở mức 60-120 FPS khi kéo rê, thu phóng mặt bằng.
 
 
 

@@ -351,7 +351,12 @@ function normalizeUnitCodeBase(code: string): string {
 export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: string | null }): string[] {
   const codeSet = new Set<string>();
   if (p.code && String(p.code).trim()) {
-    codeSet.add(String(p.code).trim().toLowerCase());
+    const raw = String(p.code).trim().toLowerCase();
+    codeSet.add(raw);
+    const spaceSub = raw.split(/[\r\n\t,;+/&|]+|\s+/).map(s => s.trim()).filter(Boolean);
+    if (spaceSub.length > 1) {
+      spaceSub.forEach(s => codeSet.add(s));
+    }
   }
   if (p.linkCodes && String(p.linkCodes).trim()) {
     String(p.linkCodes)
@@ -368,6 +373,93 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
       });
   }
   return Array.from(codeSet);
+}
+
+/**
+ * Extracts normalized Year, Store, Location (Floor) from project properties and code/linkCodes.
+ * Follows enterprise data rules for Takashimaya project codes:
+ * - Year: p.year, or 4-digit/2-digit year (e.g. y2026, 2026, Y26)
+ * - Store: p.store, or HCM / HN in code
+ * - Location: p.floor / p.location, or floor code (B1, B2, L1, L2, L3, L4, L5, 1F..5F)
+ */
+export function extractProjectMetadata(p: any): { year: string; store: string; location: string } {
+  if (!p) return { year: '', store: '', location: '' };
+
+  // 1. Year
+  let year = String(p.year || (p as any).projectYear || '').trim();
+  if (!year || year === 'undefined' || year === 'null') {
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''} ${p.name || ''}`;
+    // Match 2024-2035 with optional y/Y prefix, e.g. y2026, Y2026, 2026
+    const yrMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)?(202\d|203\d)(?:[^0-9a-zA-Z]|$)/i) 
+      || rawSearch.match(/y(202\d|203\d)\b/i)
+      || rawSearch.match(/\b(202\d|203\d)\b/);
+    if (yrMatch) {
+      year = yrMatch[1];
+    } else {
+      const yrShortMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)(2[4-9]|3[0-5])(?:[^0-9a-zA-Z]|$)/i);
+      if (yrShortMatch) {
+        year = `20${yrShortMatch[1]}`;
+      }
+    }
+  }
+
+  // 2. Store
+  let store = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
+  if (!store || store === 'UNDEFINED' || store === 'NULL') {
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''}`;
+    if (/(?:^|[^a-zA-Z])HCM(?:[^a-zA-Z]|$)/i.test(rawSearch)) {
+      store = 'HCM';
+    } else if (/(?:^|[^a-zA-Z])HN(?:[^a-zA-Z]|$)/i.test(rawSearch)) {
+      store = 'HN';
+    }
+  }
+
+  // 3. Location (Floor)
+  let location = String((p as any).floor || p.location || (p as any).projectLocation || '').trim().toUpperCase();
+  if (!location || location === 'UNDEFINED' || location === 'NULL') {
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''}`;
+    const locMatch = rawSearch.match(/(?:^|[^a-zA-Z0-9])(B1|B2|B3|L1|L2|L3|L4|L5|1F|2F|3F|4F|5F)(?:[^a-zA-Z0-9]|$)/i);
+    if (locMatch) {
+      let l = locMatch[1].toUpperCase();
+      if (l.endsWith('F')) l = `L${l[0]}`; // 1F -> L1, 2F -> L2
+      location = l;
+    }
+  }
+
+  return { year, store, location };
+}
+
+/**
+ * Checks if a project matches the requested scope (Store, Location, Year)
+ */
+export function projectMatchesScope(
+  meta: { year: string; store: string; location: string },
+  scope: { store?: string; location?: string; year?: string }
+): boolean {
+  // Store check
+  if (scope.store && scope.store !== 'all') {
+    const targetStore = scope.store.toUpperCase().trim();
+    if (meta.store && meta.store !== targetStore) return false;
+  }
+
+  // Location / Floor check
+  if (scope.location && scope.location !== 'all') {
+    let targetLoc = scope.location.toUpperCase().trim();
+    if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+    if (meta.location) {
+      let pLoc = meta.location;
+      if (pLoc.endsWith('F')) pLoc = `L${pLoc[0]}`;
+      if (pLoc !== targetLoc) return false;
+    }
+  }
+
+  // Year check (Strict Isolation)
+  if (scope.year && scope.year !== 'all') {
+    const targetYear = scope.year.trim();
+    if (meta.year && meta.year !== targetYear) return false;
+  }
+
+  return true;
 }
 
 /**

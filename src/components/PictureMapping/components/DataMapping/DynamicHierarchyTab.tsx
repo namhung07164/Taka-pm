@@ -18,7 +18,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useSummaryData } from "../../lib/summaryData";
 import { useAppStore } from "../../../../store/useAppStore";
-import { getStatus, enrichProjects, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from "../../../../lib/utils";
+import { getStatus, enrichProjects, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from "../../../../lib/utils";
 import Papa from "papaparse";
 import { ColorPicker } from "../ColorPicker";
 import { useDataStore } from "../../DataContext";
@@ -280,15 +280,12 @@ function DynamicHierarchyTab({
       }
     });
 
-    // Merge real Project data synchronized by effectiveYear and store
+    // Merge real Project data synchronized strictly by effectiveYear, location and store
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      if (store && (store as string) !== 'all') {
-        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
-        if (pStore && pStore !== store.toUpperCase()) return;
-      }
-      const pYear = String(p.year || (p as any).projectYear || '').trim();
-      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) return;
+
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
 
       const pCodes = extractAllProjectCodes(p);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
@@ -304,18 +301,22 @@ function DynamicHierarchyTab({
       });
       Object.keys(dataMap).forEach(uKey => {
         if (projectMatchesUnitCode(pCodes, uKey)) {
+          const uEntry = dataMap[uKey];
+          if (pMeta.store && uEntry?.store && uEntry.store.toUpperCase() !== pMeta.store) return;
+          if (pMeta.location && uEntry?.location && uEntry.location.toUpperCase() !== pMeta.location) return;
           targetUnitKeys.add(uKey);
         }
       });
 
       targetUnitKeys.forEach(code => {
          if (dataMap[code]) {
+            dataMap[code].hasAppProject = true;
             dataMap[code].appProjectStatus = status;
             dataMap[code].appProjectBudget = p.budget || 0;
             dataMap[code].appProjectActual = p.actual || 0;
             dataMap[code].appProjectCode = String(p.code);
-            dataMap[code].appProjectYear = pYear;
-            dataMap[code].year = pYear;
+            dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : '');
+            dataMap[code].year = pMeta.year || (p.year ? String(p.year) : '');
 
             dataMap[code].appProjectMdStatus = mdStatusStr;
             dataMap[code].appMdStatus = mdStatusStr;

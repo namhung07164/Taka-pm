@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 
 export interface DynamicUnitSummaryItem {
@@ -341,14 +341,16 @@ export function useDynamicUnitSummary({
       sList.push(item);
     });
 
-    // Step B: Match Real-time App Project & Tasks (Filtered STRICTLY by Store & Year)
+    // Step B: Match Real-time App Project & Tasks (Filtered STRICTLY by Store, Location & Year)
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
-      if (store && pStore && pStore !== store.toUpperCase()) return;
 
-      const pYear = String(p.year || (p as any).projectYear || '').trim();
-      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== effectiveYear) return;
+      const pMeta = extractProjectMetadata(p);
+
+      // Strict Scope Matching across all 3 components: Store, Location (Floor), Year
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) {
+        return;
+      }
 
       const pCodes = extractAllProjectCodes(p);
 
@@ -401,6 +403,9 @@ export function useDynamicUnitSummary({
       });
       sList.forEach(item => {
         if (projectMatchesUnitCode(pCodes, item.unitName || item.unitId)) {
+          // Unit must also match store & location
+          if (pMeta.store && item.store && item.store.toUpperCase() !== pMeta.store) return;
+          if (pMeta.location && item.location && item.location.toUpperCase() !== pMeta.location) return;
           targetUnitKeys.add(item.unitId);
           if (item.unitName) targetUnitKeys.add(item.unitName.toLowerCase());
         }
@@ -413,8 +418,8 @@ export function useDynamicUnitSummary({
           item.appProjectCode = String(p.code || code);
           item.projectName = p.name || '';
           item.appProjectStatus = status || '';
-          item.appProjectYear = pYear || effectiveYear;
-          item.year = pYear || effectiveYear;
+          item.appProjectYear = pMeta.year || effectiveYear;
+          item.year = pMeta.year || effectiveYear;
           item.appProjectMdStatus = p.mdStatus || '';
           item.appProjectActStatus = actStatus || '';
           item.appProjectDetail = p.detail || '';
