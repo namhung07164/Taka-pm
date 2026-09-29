@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { UnitShape, MapVersion } from './components/DataMapping/types';
+import { useAppStore } from '../../store/useAppStore';
 
 export interface StoreLocationRecord {
   mapUnits: UnitShape[];
@@ -284,11 +285,12 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   mapVersions: [],
   setMapVersions: (mapVersions) => {
     const state = get();
+    const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
     const taggedVersions = mapVersions.map(v => ({
       ...v,
       store: v.store || state.store,
       location: v.location || state.location,
-      year: v.year ? String(v.year).trim() : (state.store === 'HCM' ? '2026' : ''),
+      year: v.year ? String(v.year).trim() : appYear,
     }));
     const key = getPartitionKey(state.store, state.location);
     set({
@@ -395,6 +397,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       if (key.startsWith(`${currentStore}_`)) {
         const partition = mergedData[key];
         const loc = key.split('_')[1] || state.location;
+        const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
         if (partition?.mapVersions) {
           for (const v of partition.mapVersions) {
             if (!seenIds.has(v.id)) {
@@ -403,7 +406,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
                 ...v,
                 store: v.store || currentStore,
                 location: v.location || loc,
-                year: v.year ? String(v.year).trim() : (currentStore === 'HCM' ? '2026' : ''),
+                year: v.year ? String(v.year).trim() : appYear,
               });
             }
           }
@@ -458,6 +461,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const state = get();
     const currentStore = targetStore || state.store;
     const currentKey = getPartitionKey(state.store, state.location);
+    const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
 
     const versionsByPartition: Record<string, MapVersion[]> = {};
     for (const v of updatedVersions) {
@@ -469,7 +473,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
         ...v,
         store: vStore,
         location: vLoc,
-        year: v.year ? String(v.year).trim() : (vStore === 'HCM' ? '2026' : ''),
+        year: v.year ? String(v.year).trim() : appYear,
       });
     }
 
