@@ -380,15 +380,14 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const currentStore = targetStore || state.store;
     const currentKey = getPartitionKey(state.store, state.location);
 
-    const mergedData = {
-      ...state.storeLocationData,
-      [currentKey]: {
-        ...(state.storeLocationData[currentKey] || {}),
-        mapUnits: state.mapUnits,
-        mapVersions: state.mapVersions,
+    const mergedData = { ...state.storeLocationData };
+    if (!mergedData[currentKey] && state.mapVersions && state.mapVersions.length > 0) {
+      mergedData[currentKey] = {
+        mapUnits: state.mapUnits || [],
+        mapVersions: state.mapVersions || [],
         activeMapVersionId: state.activeMapVersionId,
-      },
-    };
+      };
+    }
 
     const allVersions: MapVersion[] = [];
     const seenIds = new Set<string>();
@@ -396,17 +395,24 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     for (const key in mergedData) {
       if (key.startsWith(`${currentStore}_`)) {
         const partition = mergedData[key];
-        const loc = key.split('_')[1] || state.location;
+        const loc = key.split('_')[1] || state.location || 'L1';
         const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
         if (partition?.mapVersions) {
           for (const v of partition.mapVersions) {
             if (!seenIds.has(v.id)) {
               seenIds.add(v.id);
+              const resolvedLoc = (v.location && String(v.location).trim()) 
+                ? String(v.location).trim().toUpperCase() 
+                : (v.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || loc);
+              const resolvedYear = (v.year && String(v.year).trim()) 
+                ? String(v.year).trim() 
+                : (v.name?.match(/(202\d|203\d)/i)?.[1] || appYear);
+              
               allVersions.push({
                 ...v,
                 store: v.store || currentStore,
-                location: v.location || loc,
-                year: v.year ? String(v.year).trim() : appYear,
+                location: resolvedLoc,
+                year: resolvedYear,
               });
             }
           }
@@ -424,7 +430,9 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const unitsByPartition: Record<string, UnitShape[]> = {};
     for (const u of updatedUnits) {
       const uStore = u.store || currentStore;
-      const uLoc = u.location || state.location;
+      const uLoc = (u.location && String(u.location).trim()) 
+        ? String(u.location).trim().toUpperCase() 
+        : (u.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || state.location || 'L1');
       const pKey = getPartitionKey(uStore, uLoc);
       if (!unitsByPartition[pKey]) unitsByPartition[pKey] = [];
       unitsByPartition[pKey].push({ ...u, store: uStore, location: uLoc });
@@ -466,14 +474,20 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const versionsByPartition: Record<string, MapVersion[]> = {};
     for (const v of updatedVersions) {
       const vStore = v.store || currentStore;
-      const vLoc = v.location || state.location;
+      const vLoc = (v.location && String(v.location).trim()) 
+        ? String(v.location).trim().toUpperCase() 
+        : (v.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || state.location || 'L1');
+      const vYr = (v.year && String(v.year).trim()) 
+        ? String(v.year).trim() 
+        : (v.name?.match(/(202\d|203\d)/i)?.[1] || appYear);
+
       const pKey = getPartitionKey(vStore, vLoc);
       if (!versionsByPartition[pKey]) versionsByPartition[pKey] = [];
       versionsByPartition[pKey].push({
         ...v,
         store: vStore,
         location: vLoc,
-        year: v.year ? String(v.year).trim() : appYear,
+        year: vYr,
       });
     }
 
