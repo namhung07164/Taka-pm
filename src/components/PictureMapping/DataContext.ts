@@ -188,15 +188,20 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   setLoadedCloudData: (payload: LoadedCloudDataPayload) => {
     const state = get();
     const targetStore = payload.store || state.store;
-    const targetLocation = payload.location || state.location;
+    const targetLocation = (payload.location || state.location).toUpperCase().trim();
     const pKey = getPartitionKey(targetStore, targetLocation);
     
     const storeLocationData = payload.storeLocationData || state.storeLocationData;
     const target = storeLocationData[pKey];
     
-    const mapUnits = payload.mapUnits ?? (target?.mapUnits || []);
-    const mapVersions = payload.mapVersions ?? (target?.mapVersions || []);
-    const activeMapVersionId = payload.activeMapVersionId ?? (target?.activeMapVersionId || (mapVersions[0]?.id ?? null));
+    // Strict priority: use partition data for this exact store & floor first, fallback to root legacy only if partition is empty
+    const mapUnits = (target?.mapUnits && Array.isArray(target.mapUnits) && target.mapUnits.length > 0) 
+      ? target.mapUnits 
+      : (payload.mapUnits || []);
+    const mapVersions = (target?.mapVersions && Array.isArray(target.mapVersions) && target.mapVersions.length > 0) 
+      ? target.mapVersions 
+      : (payload.mapVersions || []);
+    const activeMapVersionId = target?.activeMapVersionId || payload.activeMapVersionId || (mapVersions[0]?.id ?? null);
 
     set({
       store: targetStore,
@@ -349,15 +354,16 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     for (const key in mergedData) {
       if (key.startsWith(`${currentStore}_`)) {
         const partition = mergedData[key];
-        const loc = key.split('_')[1] || state.location;
+        const loc = (key.split('_')[1] || state.location).toUpperCase().trim();
         if (partition?.mapUnits) {
           for (const u of partition.mapUnits) {
-            if (!seenIds.has(u.id)) {
-              seenIds.add(u.id);
+            const compositeKey = `${key}_${u.id || u.name}`;
+            if (!seenIds.has(compositeKey)) {
+              seenIds.add(compositeKey);
               allUnits.push({
                 ...u,
                 store: u.store || currentStore,
-                location: u.location || loc,
+                location: (u.location || loc).toUpperCase().trim(),
               });
             }
           }

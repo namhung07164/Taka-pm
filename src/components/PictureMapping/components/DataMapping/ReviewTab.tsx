@@ -17,7 +17,7 @@ import { applyAllDynamicRulesForStore } from '../../lib/dynamicExportService';
 import { uploadFileToDrive } from '../../lib/drive';
 import { initAuth, googleSignIn, getAccessToken } from '../../lib/auth';
 import R2UploadModal from '../R2UploadModal';
-import { uploadFilesToR2 } from '../../lib/r2Upload';
+import { uploadFilesToR2, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 
@@ -76,14 +76,23 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     ? globalYearFilter
     : (availableYears[0] || new Date().getFullYear().toString());
 
-  // Filter versions strictly by store, location, and effective year
+  // Filter versions strictly by store, location, and effective year (with smart fallback to latest floor drawing)
   const filteredVersions = React.useMemo(() => {
-    return versions.filter(v => {
-      const matchStore = !v.store || v.store === store;
-      const matchLoc = !v.location || v.location === location;
-      const matchYear = String(v.year || '').trim() === String(effectiveYear).trim();
-      return matchStore && matchLoc && matchYear;
+    const sTarget = String(store || 'HCM').toUpperCase().trim();
+    const lTarget = String(location || 'L1').toUpperCase().trim();
+    const matched = versions.filter(v => {
+      const matchStore = !v.store || v.store.toUpperCase().trim() === sTarget;
+      const matchLoc = !v.location || v.location.toUpperCase().trim() === lTarget;
+      return matchStore && matchLoc;
     });
+
+    if (matched.length === 0) return [];
+
+    const yearMatched = matched.filter(v => String(v.year || '').trim() === String(effectiveYear).trim());
+    if (yearMatched.length > 0) return yearMatched;
+
+    // Fallback: if no drawing exists specifically for effectiveYear, fallback to the latest available drawing for this floor
+    return [...matched].sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0));
   }, [versions, store, location, effectiveYear]);
 
   const [activeVersionId, setActiveVersionId] = useState<string | null>(initialActiveVersionId || filteredVersions[0]?.id || null);
@@ -126,11 +135,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     const summaryMap = new Map();
     summaryData.forEach(s => summaryMap.set(s.unit, s));
 
-    const activeLoc = activeVersion.location;
+    const activeLoc = String(activeVersion.location || location || '').toUpperCase().trim();
 
     return units
       .filter(unit => {
-        if (activeLoc && unit.location && unit.location !== activeLoc) return false;
+        const uLoc = String(unit.location || '').toUpperCase().trim();
+        if (activeLoc && uLoc && uLoc !== activeLoc) return false;
         return true;
       })
       .map(unit => {
@@ -171,7 +181,28 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       });
   }, [units, activeVersion, summaryData, dynamicSummaryMap, selectedLabels]);
 
-  const [image] = useOffscreenImage(activeVersion?.backgroundUrl || '', 'anonymous');
+  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    const rawUrl = activeVersion?.backgroundUrl || '';
+    if (!rawUrl) {
+      setResolvedBgUrl('');
+      return;
+    }
+    if (rawUrl.startsWith('r2://') || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && !rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:'))) {
+      resolveR2UrlToHttp(rawUrl).then(url => {
+        if (isMounted) setResolvedBgUrl(url || rawUrl);
+      }).catch(() => {
+        if (isMounted) setResolvedBgUrl(rawUrl);
+      });
+    } else {
+      setResolvedBgUrl(rawUrl);
+    }
+    return () => { isMounted = false; };
+  }, [activeVersion?.backgroundUrl]);
+
+  const [image] = useOffscreenImage(resolvedBgUrl || activeVersion?.backgroundUrl || '', 'anonymous');
   const [scale, setScale] = useState(activeVersion?.backgroundScale || 1);
   const [position, setPosition] = useState(activeVersion?.backgroundPos || { x: 0, y: 0 });
   const [copiedLink, setCopiedLink] = useState(false);

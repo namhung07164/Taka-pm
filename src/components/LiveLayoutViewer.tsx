@@ -22,6 +22,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { executeTriggerExportProcess } from './PictureMapping/lib/dynamicExportService';
 import { useDataStore } from './PictureMapping/DataContext';
+import { useDynamicUnitSummary } from './PictureMapping/lib/dynamicSummaryEngine';
 
 // Performance tuning for older iOS WebKit & high-fps dragging
 Konva.hitOnDragEnabled = false;
@@ -637,10 +638,12 @@ function LiveCanvas({
     if (availableStoreVersions.length === 0) return [];
     
     const tLoc = targetLoc.toUpperCase().trim();
+    const tokenRegex = new RegExp(`(^|[^a-zA-Z0-9])${tLoc}([^a-zA-Z0-9]|$)`, 'i');
+
     const matched = availableStoreVersions.filter(v => {
       const vLoc = (v.location || '').toUpperCase().trim();
       const vName = (v.name || '').toUpperCase().trim();
-      return vLoc === tLoc || vName.includes(tLoc) || vName.startsWith(`PM-${tLoc}`) || vName.startsWith(tLoc);
+      return vLoc === tLoc || (vLoc === '' && tokenRegex.test(vName));
     });
 
     if (matched.length === 0) {
@@ -754,9 +757,10 @@ function LiveCanvas({
       candidateUnits = config.units;
     }
 
-    // Sanitize, filter to target floor, and deduplicate
+    // Sanitize, filter strictly to target floor, and deduplicate overlapping ghost shapes
     const unitsMap = new Map<string, any>();
-    const seenCoordinates = new Map<string, string>(); // round(x,y,w,h) -> id to avoid identical overlapping ghost units
+    const seenCoordinates = new Map<string, string>(); // geometryKey -> id
+    const seenUnitNames = new Map<string, string>(); // lowercase clean unit name -> id
 
     candidateUnits.forEach((u: any) => {
       if (!u || (!u.id && !u.name)) return;
@@ -768,36 +772,72 @@ function LiveCanvas({
       // Store check
       if (uStore && uStore !== targetStoreParam) return;
 
-      // Floor check: if unit specifies another floor (e.g. B2 while we are viewing B1), skip it!
-      if (uLoc && uLoc !== tLoc && uLoc !== vLoc && !vLoc.includes(uLoc) && !uLoc.includes(vLoc)) {
+      // Strict Floor check: only accept units explicitly matching current floor or matching active version floor
+      if (uLoc && uLoc !== tLoc && uLoc !== vLoc) {
         return;
       }
 
       const id = String(u.id || u.name);
+      const cleanName = String(u.name || '').trim();
+      const lowerName = cleanName.toLowerCase();
+
       const taggedUnit = {
         ...u,
         id,
+        name: cleanName,
         store: targetStoreParam,
         location: uLoc || tLoc,
       };
 
-      // Coordinate collision check (if two units occupy the exact same spot with same size)
+      // Geometry hash for deduplication (rect, circle, polygon)
+      let coordKey = '';
       if (u.type === 'rect' && u.width > 0 && u.height > 0) {
-        const coordKey = `${Math.round(u.x || 0)}_${Math.round(u.y || 0)}_${Math.round(u.width || 0)}_${Math.round(u.height || 0)}`;
-        if (seenCoordinates.has(coordKey)) {
-          const prevId = seenCoordinates.get(coordKey)!;
-          const prev = unitsMap.get(prevId);
-          // If current unit has a name and previous doesn't, or if current matches search, replace it
-          if (!prev?.name && taggedUnit.name) {
-            unitsMap.delete(prevId);
-            unitsMap.set(id, taggedUnit);
-            seenCoordinates.set(coordKey, id);
-          }
-          return;
+        coordKey = `rect_${Math.round(u.x || 0)}_${Math.round(u.y || 0)}_${Math.round(u.width || 0)}_${Math.round(u.height || 0)}`;
+      } else if (u.type === 'circle' && u.radius > 0) {
+        coordKey = `circle_${Math.round(u.x || 0)}_${Math.round(u.y || 0)}_${Math.round(u.radius || 0)}`;
+      } else if (u.type === 'polygon' && Array.isArray(u.points) && u.points.length >= 4) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (let i = 0; i < u.points.length; i += 2) {
+          const px = u.points[i];
+          const py = u.points[i + 1];
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
         }
-        seenCoordinates.set(coordKey, id);
+        coordKey = `poly_${Math.round(minX)}_${Math.round(minY)}_${Math.round(maxX - minX)}_${Math.round(maxY - minY)}`;
       }
 
+      // Check Coordinate Collision: If two shapes occupy the exact same geometry spot
+      if (coordKey && seenCoordinates.has(coordKey)) {
+        const prevId = seenCoordinates.get(coordKey)!;
+        const prev = unitsMap.get(prevId);
+        // If current unit has a name and previous doesn't, replace it
+        if (!prev?.name && taggedUnit.name) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenCoordinates.set(coordKey, id);
+          if (lowerName) seenUnitNames.set(lowerName, id);
+        }
+        return;
+      }
+
+      // Check Name Collision: If two units on the same floor have the exact same unit name
+      if (lowerName && seenUnitNames.has(lowerName)) {
+        const prevId = seenUnitNames.get(lowerName)!;
+        const prev = unitsMap.get(prevId);
+        // Replace previous if current has valid geometry and previous didn't
+        if (!prev || (!prev.type && taggedUnit.type)) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenUnitNames.set(lowerName, id);
+          if (coordKey) seenCoordinates.set(coordKey, id);
+        }
+        return;
+      }
+
+      if (coordKey) seenCoordinates.set(coordKey, id);
+      if (lowerName) seenUnitNames.set(lowerName, id);
       unitsMap.set(id, taggedUnit);
     });
 
@@ -1480,6 +1520,15 @@ function LiveCanvas({
     return dataMap;
   }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups, layoutTooltipVisibility]);
 
+  // Dynamic Unit Summary Engine (Shared 100% with EditTab & ReviewTab)
+  const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
+    units,
+    activeVersion: version,
+    store: (version?.store as any) || (storeFilter === 'HN' ? 'HN' : 'HCM'),
+    location: version?.location || targetLoc,
+    year: String(version?.year || (globalYearFilter !== 'all' ? globalYearFilter : '') || new Date().getFullYear()),
+  });
+
   // 3. Evaluate rules on the fly & merge pre-calculated ReviewTab groupMappings to build unitColorMap
   const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
@@ -1489,7 +1538,19 @@ function LiveCanvas({
     
     if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: [] };
 
-    // Step A. Sync from ReviewTab groupMappings & unit.targetColor with O(1) pre-indexed lookup
+    // Step A. Sync from Shared Dynamic Summary Engine (Identical to ReviewTab & EditTab)
+    units.forEach((u: any) => {
+      const uName = String(u.name || '').toLowerCase().trim();
+      if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
+      const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+      if (dynamicItem?.matchedGroupId && dynamicItem?.color) {
+        colorMap[u.id] = dynamicItem.color;
+        groupMap[u.id] = dynamicItem.matchedGroupId;
+        opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
+      }
+    });
+
+    // Step B. Sync from ReviewTab groupMappings with O(1) pre-indexed lookup
     if (version.groupMappings && typeof version.groupMappings === 'object') {
       const unitMapByIdOrName = new Map<string, any>();
       units.forEach((u: any) => {
@@ -1501,27 +1562,22 @@ function LiveCanvas({
         const mappedUnitIds = version.groupMappings[group.id];
         if (Array.isArray(mappedUnitIds) && mappedUnitIds.length > 0) {
           const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
-          const matchedUnits: any[] = [];
           mappedUnitIds.forEach((uid: string) => {
             const targetUnit = unitMapByIdOrName.get(uid) || unitMapByIdOrName.get(String(uid).toLowerCase().trim());
-            if (targetUnit) {
+            if (targetUnit && !colorMap[targetUnit.id]) {
               const uName = String(targetUnit.name || '').toLowerCase().trim();
               if (!restrictedProjectCodes.has(uName) && !aggregatedData[uName]?.isRestricted) {
                 colorMap[targetUnit.id] = group.color;
                 groupMap[targetUnit.id] = group.id;
                 opacityMap[targetUnit.id] = groupOpacity;
-                matchedUnits.push({ id: targetUnit.id, name: targetUnit.name });
               }
             }
           });
-          if (matchedUnits.length > 0) {
-            groupsInUseMap.set(group.id, { ...group, matchCount: matchedUnits.length, matchedUnits });
-          }
         }
       });
     }
 
-    // Step B. Sync embedded unit.targetColor if present
+    // Step C. Sync embedded unit.targetColor if present
     units.forEach((u: any) => {
       const uName = String(u.name || '').toLowerCase().trim();
       if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
@@ -1532,143 +1588,23 @@ function LiveCanvas({
       }
     });
 
-    // Step C. Real-time dynamic rule evaluation for any remaining unmapped units
+    // Step D. Build activeGroups legend stats
     version.groups.forEach((group: any) => {
-        let matchCount = 0;
-        const matchedUnits: any[] = [];
-        const groupOpacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
-        
-        if (!group.rules || !Array.isArray(group.rules) || group.rules.length === 0) {
-            return;
+      let matchCount = 0;
+      const matchedUnits: any[] = [];
+      units.forEach((u: any) => {
+        if (groupMap[u.id] === group.id) {
+          matchCount++;
+          matchedUnits.push({ id: u.id, name: u.name });
         }
-
-        units.forEach((u: any) => {
-            const uName = String(u.name || '').toLowerCase().trim();
-            if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) {
-                return;
-            }
-            if (colorMap[u.id]) {
-                // Already mapped from groupMappings or targetColor
-                matchCount++;
-                matchedUnits.push({ id: u.id, name: u.name });
-                return;
-            }
-
-            let isMatch = false;
-            const data = aggregatedData[u.name?.toLowerCase() || ''];
-            if (data) {
-                const passedRules = group.rules.every((rule: any) => {
-                    let val = data[rule.field];
-                    const f = String(rule.field || '').toLowerCase().trim();
-
-                    // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
-                    if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status') {
-                      val = data.appProjectStatus || '';
-                    } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
-                      val = data.appProjectYear || '';
-                    } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
-                      val = data.appProjectCode || '';
-                    } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
-                      val = data.appProjectFloor || '';
-                    } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-                      val = data.appProjectMdStatus || '';
-                    } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-                      val = data.appProjectActStatus || '';
-                    } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-                      val = data.appProjectDetail || '';
-                    } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-                      val = data.appProjectDescription || '';
-                    } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-                      val = data.appProjectParty || '';
-                    } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget') {
-                      val = data.appProjectBudget ?? 0;
-                    } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual') {
-                      val = data.appProjectActual ?? 0;
-                    } else if (f === 'status' || f === 'projectstatus') {
-                      val = data.appProjectStatus || data.projectStatus || data.status || '';
-                    } else if (f === 'mdstatus') {
-                      val = data.appProjectMdStatus || data.mdStatus || '';
-                    } else if (f === 'actstatus') {
-                      val = data.appProjectActStatus || data.actStatus || '';
-                    } else if (f === 'year') {
-                      val = data.appProjectYear || data.year || '';
-                    } else if (f === 'floor' || f === 'location') {
-                      val = data.floor || u.location || targetLoc || '';
-                    } else if (f === 'detail' || f === 'description (project)') {
-                      val = data.appProjectDetail || data.detail || '';
-                    } else if (f === 'party') {
-                      val = data.appProjectParty || data.party || '';
-                    } else if (f === 'unit' || f === 'code') {
-                      val = data.unit || data.appProjectCode || u.name || '';
-                    } else if (val === undefined || val === null) {
-                      val = '';
-                    }
-                    if (rule.field === "margin" || rule.field === "marginByCp") val = Number(val || 0) * 100;
-                    const numVal = Number(rule.value);
-                    const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== "";
-                    
-                    let compareValStr = String(val || "").toLowerCase().trim();
-                    let compareRuleStr = String(rule.value || "").toLowerCase().trim();
-                    if (compareRuleStr === "in progress") compareRuleStr = "on process";
-                    if (compareValStr === "in progress") compareValStr = "on process";
-
-                    switch (rule.operator) {
-                      case ">": return isNum ? Number(val) > numVal : false;
-                      case "<": return isNum ? Number(val) < numVal : false;
-                      case ">=": return isNum ? Number(val) >= numVal : false;
-                      case "<=": return isNum ? Number(val) <= numVal : false;
-                      case "=": return compareValStr === compareRuleStr;
-                      case "contains": {
-                        const searchTerms = compareRuleStr.split(/\s+/);
-                        return searchTerms.every(term => compareValStr.includes(term));
-                      }
-                      case "or":
-                      case "OR": {
-                        const orTerms = compareRuleStr
-                          .split(/[\r\n\t,;+/&|]+|\s{2,}/)
-                          .map((t) => {
-                            let tr = t.trim();
-                            if (tr === "in progress") tr = "on process";
-                            return tr;
-                          })
-                          .filter(Boolean);
-                        if (orTerms.length === 0) {
-                          const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-                          return spaceTerms.some(term => compareValStr === term || compareValStr.includes(term));
-                        }
-                        return orTerms.some((term) => {
-                          if (compareValStr === term) return true;
-                          if (compareValStr.includes(term)) return true;
-                          if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
-                          return false;
-                        });
-                      }
-                      case "exclude": {
-                        const searchTerms = compareRuleStr.split(/\s+/);
-                        return !searchTerms.some(term => compareValStr.includes(term));
-                      }
-                      default: return false;
-                    }
-                });
-                if (passedRules) isMatch = true;
-            }
-
-            if (isMatch) {
-                colorMap[u.id] = group.color;
-                groupMap[u.id] = group.id;
-                opacityMap[u.id] = groupOpacity;
-                matchCount++;
-                matchedUnits.push({ id: u.id, name: u.name });
-            }
-        });
-        
-        if (matchCount > 0) {
-            groupsInUseMap.set(group.id, { ...group, matchCount, matchedUnits });
-        }
+      });
+      if (matchCount > 0) {
+        groupsInUseMap.set(group.id, { ...group, matchCount, matchedUnits });
+      }
     });
 
     return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: Array.from(groupsInUseMap.values()) };
-  }, [version?.groups, units, aggregatedData, restrictedProjectCodes, targetLoc]);
+  }, [version?.groups, version?.groupMappings, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes, targetLoc]);
 
   // Total count of units with alerts on this floor
   const totalFloorAlerts = useMemo(() => {
@@ -1696,21 +1632,11 @@ function LiveCanvas({
           return false;
         }
 
-        const hasProject = Boolean(uData?.matchedProject || uData?.projectName || uData?.appProjectCode);
-        const isMappedInGroup = Boolean(unitColorMap[unit.id]);
         const isFocused = focusedUnitId === unit.id;
 
         // Filter by Alerts toggle
         if (filterOnlyAlerts && !isFocused) {
           if (!uData?.alerts?.hasAlert) {
-            return false;
-          }
-        }
-
-        // Performance & Clarity Optimization: Only render units that have active projects or custom group classification
-        // (Unless the user is searching or this unit is currently focused/zoomed)
-        if (!deferredSearchQuery.trim() && !isFocused && !filterOnlyAlerts) {
-          if (!hasProject && !isMappedInGroup) {
             return false;
           }
         }

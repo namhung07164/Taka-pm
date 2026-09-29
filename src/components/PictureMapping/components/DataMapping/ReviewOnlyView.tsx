@@ -5,6 +5,7 @@ import useImage from 'use-image';
 import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { useDataStore } from '../../DataContext';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
+import { resolveR2UrlToHttp } from '../../lib/r2Upload';
 
 // Component for a single version stage
 const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLabelColors, windowSize }: any) => {
@@ -63,7 +64,28 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
       });
   }, [mapUnits, version, summaryData, selectedLabels]);
 
-  const [image] = useOffscreenImage(version?.backgroundUrl || '', 'anonymous');
+  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    const rawUrl = version?.backgroundUrl || '';
+    if (!rawUrl) {
+      setResolvedBgUrl('');
+      return;
+    }
+    if (rawUrl.startsWith('r2://') || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && !rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:'))) {
+      resolveR2UrlToHttp(rawUrl).then(url => {
+        if (isMounted) setResolvedBgUrl(url || rawUrl);
+      }).catch(() => {
+        if (isMounted) setResolvedBgUrl(rawUrl);
+      });
+    } else {
+      setResolvedBgUrl(rawUrl);
+    }
+    return () => { isMounted = false; };
+  }, [version?.backgroundUrl]);
+
+  const [image] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
   
   const [scale, setScale] = useState(version?.backgroundScale || 1);
   const [position, setPosition] = useState(version?.backgroundPos || { x: 0, y: 0 });
