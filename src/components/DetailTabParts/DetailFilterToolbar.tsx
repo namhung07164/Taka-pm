@@ -148,9 +148,9 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
         />
       </div>
 
-      {/* Floating Edit Mode Button - z-[9999] top layer cleanly below header bar */}
+      {/* Floating Edit Mode Button - z-[99999] top layer cleanly below header bar */}
       {hasWritePermission && !isEditMode && (
-        <div className="fixed top-[138px] sm:top-[144px] right-4 md:right-8 z-[9999] flex flex-row gap-2 justify-end items-start print:hidden">
+        <div className="fixed top-[154px] sm:top-[160px] right-4 md:right-8 z-[99999] flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
           <button
             onClick={() => setIsEditMode(true)}
             className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
@@ -165,7 +165,7 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
       )}
 
       {hasWritePermission && isEditMode && (
-        <div className="fixed top-[138px] sm:top-[144px] left-1/2 -translate-x-1/2 z-[9999] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden">
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-[99999] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
               <Edit3 className="w-3.5 h-3.5 text-blue-500" />
               <span>Editing Mode</span>
