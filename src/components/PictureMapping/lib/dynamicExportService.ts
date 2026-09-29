@@ -501,13 +501,30 @@ export async function loadStoreFromCloudR2(): Promise<{ success: boolean; messag
           }
         }
 
+        const rawGroups = v.groups || [];
+        const deepCopiedGroups = Array.isArray(rawGroups) ? rawGroups.map((g: any) => ({
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          opacity: g.opacity,
+          rules: Array.isArray(g.rules) ? g.rules.map((r: any) => ({
+            field: r.field,
+            operator: r.operator,
+            value: r.value !== undefined ? String(r.value) : '',
+          })) : [],
+        })) : [];
+
         v.store = v.store || pStore;
         v.location = v.location || pLoc;
-        v.groups = v.groups || [];
+        v.groups = deepCopiedGroups;
         v.groupMappings = v.groupMappings || {};
         v.isDynamicActive = true;
       }
     }
+  }
+
+  if (data.globalYearFilter || data.year) {
+    useAppStore.getState().setGlobalYearFilter(data.globalYearFilter || data.year);
   }
 
   useDataStore.getState().loadFullCloudData({
@@ -595,12 +612,26 @@ export async function saveStoreToCloudR2(
         }
       }
 
+      const rawGroups = v.groups || [];
+      const deepCopiedGroups = Array.isArray(rawGroups) ? rawGroups.map((g: any) => ({
+        id: g.id,
+        name: g.name,
+        color: g.color,
+        opacity: g.opacity,
+        rules: Array.isArray(g.rules) ? g.rules.map((r: any) => ({
+          field: r.field,
+          operator: r.operator,
+          value: r.value !== undefined ? String(r.value) : '',
+        })) : [],
+      })) : [];
+
       pVersionsCloud.push({
         ...v,
+        year: String(v.year || useAppStore.getState().globalYearFilter || '2026'),
         store: v.store || pStore,
         location: v.location || pLoc,
         backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
-        groups: v.groups || [],
+        groups: deepCopiedGroups,
         groupMappings: v.groupMappings || {},
         isDynamicActive: true,
       });
@@ -618,10 +649,15 @@ export async function saveStoreToCloudR2(
     Object.values(cloudStoreLocationData)[0] ||
     { mapUnits: [], mapVersions: [], activeMapVersionId: null };
 
+  const currentAppYear = useAppStore.getState().globalYearFilter;
+  const targetYear = (currentAppYear && currentAppYear !== 'all') ? currentAppYear : (activeCloudPartition?.mapVersions?.[0]?.year || '2026');
+
   const configData = {
     storeLocationData: cloudStoreLocationData,
     store: targetStore,
     location: dataState.location,
+    year: targetYear,
+    globalYearFilter: targetYear,
     activeMapVersionId: dataState.activeMapVersionId,
     reviewSelectedLabels: dataState.reviewSelectedLabels || [],
     reviewLabelColors: dataState.reviewLabelColors || {},

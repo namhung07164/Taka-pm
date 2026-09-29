@@ -169,13 +169,23 @@ export default function CloudSyncManager({
     try {
       const creds = await getStoredR2CredentialsAsync();
       
-      const currentActiveKey = `${store}_${location}`;
-      const updatedStoreLocationData = { ...storeLocationData };
-      updatedStoreLocationData[currentActiveKey] = {
-        mapUnits,
-        mapVersions,
-        activeMapVersionId,
-      };
+      const freshDataState = useDataStore.getState();
+      const currentStore = store || freshDataState.store || 'HCM';
+      const currentLocation = location || freshDataState.location || 'L1';
+      const currentActiveKey = `${currentStore}_${currentLocation}`;
+      const updatedStoreLocationData = { ...freshDataState.storeLocationData };
+
+      if (freshDataState.storeLocationData[currentActiveKey]) {
+        updatedStoreLocationData[currentActiveKey] = {
+          ...freshDataState.storeLocationData[currentActiveKey],
+        };
+      } else if (mapUnits?.length || mapVersions?.length) {
+        updatedStoreLocationData[currentActiveKey] = {
+          mapUnits: mapUnits || freshDataState.mapUnits || [],
+          mapVersions: mapVersions || freshDataState.mapVersions || [],
+          activeMapVersionId: activeMapVersionId || freshDataState.activeMapVersionId || null,
+        };
+      }
 
       if (currentAction === 'upload') {
         setProgress(25);
@@ -271,9 +281,21 @@ export default function CloudSyncManager({
 
             const existingCloudVer = existingCloudPart?.mapVersions?.find((cv: any) => cv.id === v.id || cv.name === v.name);
 
-            const cloudGroups = (currentScope === 'edit' && existingCloudVer)
+            const rawGroups = (currentScope === 'edit' && existingCloudVer)
               ? (existingCloudVer.groups || v.groups || [])
               : (v.groups || []);
+
+            const deepCopiedGroups = Array.isArray(rawGroups) ? rawGroups.map((g: any) => ({
+              id: g.id,
+              name: g.name,
+              color: g.color,
+              opacity: g.opacity,
+              rules: Array.isArray(g.rules) ? g.rules.map((r: any) => ({
+                field: r.field,
+                operator: r.operator,
+                value: r.value !== undefined ? String(r.value) : '',
+              })) : [],
+            })) : [];
 
             const cloudMappings = (currentScope === 'edit' && existingCloudVer)
               ? (existingCloudVer.groupMappings || v.groupMappings || {})
@@ -285,7 +307,7 @@ export default function CloudSyncManager({
               store: v.store || pStore,
               location: v.location || pLoc,
               backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
-              groups: cloudGroups,
+              groups: deepCopiedGroups,
               groupMappings: cloudMappings,
               isDynamicActive: true,
               mapUnits: (currentScope === 'edit' || currentScope === 'all') ? pUnits : (v.mapUnits || pUnits),
@@ -297,7 +319,7 @@ export default function CloudSyncManager({
               store: v.store || pStore,
               location: v.location || pLoc,
               backgroundUrl: displayUrl,
-              groups: (currentScope === 'edit' && existingCloudVer) ? (existingCloudVer.groups || v.groups || []) : (v.groups || []),
+              groups: deepCopiedGroups,
               groupMappings: (currentScope === 'edit' && existingCloudVer) ? (existingCloudVer.groupMappings || v.groupMappings || {}) : (v.groupMappings || {}),
               isDynamicActive: true,
               mapUnits: (currentScope === 'edit' || currentScope === 'all') ? pUnits : (v.mapUnits || pUnits),
@@ -633,11 +655,24 @@ export default function CloudSyncManager({
             const mergedVersions = cloudVerList.length > 0 
               ? cloudVerList.map((cv) => {
                   const localV = localVerList.find((lv) => lv.id === cv.id || lv.name === cv.name);
+                  const groupsToUse = cv.groups || localV?.groups || [];
+                  const deepCopied = Array.isArray(groupsToUse) ? groupsToUse.map((g: any) => ({
+                    id: g.id,
+                    name: g.name,
+                    color: g.color,
+                    opacity: g.opacity,
+                    rules: Array.isArray(g.rules) ? g.rules.map((r: any) => ({
+                      field: r.field,
+                      operator: r.operator,
+                      value: r.value !== undefined ? String(r.value) : '',
+                    })) : [],
+                  })) : [];
+
                   return {
                     ...(localV || {}),
                     ...cv,
                     year: String(cv.year || localV?.year || data.year || data.globalYearFilter || '2026'),
-                    groups: cv.groups || localV?.groups || [],
+                    groups: deepCopied,
                     groupMappings: cv.groupMappings || localV?.groupMappings || {},
                     isDynamicActive: true,
                   };
