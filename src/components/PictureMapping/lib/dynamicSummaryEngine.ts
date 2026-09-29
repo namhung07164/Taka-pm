@@ -284,6 +284,17 @@ export function useDynamicUnitSummary({
       if (s.unit) summaryLookup.set(s.unit.toLowerCase().trim(), s);
     });
 
+    // Pre-index projectLink: maps unit name -> list of linked project codes
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    (projectLink || []).forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
+      }
+    });
+
     // Step A: Initialize summary item for each unit
     units.forEach((u) => {
       const uName = String(u.name || '').trim();
@@ -420,8 +431,16 @@ export function useDynamicUnitSummary({
         if (pMeta.location && itemLoc && pMeta.location !== itemLoc) return;
         if (pMeta.year && itemYear && pMeta.year !== itemYear) return;
 
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(item.unitName.toLowerCase()) || []),
+          ...(unitToProjectCodesMap.get(item.unitId.toLowerCase()) || []),
+        ];
+        const isLinkedViaProjectLink = linkedCodes.some(lc => 
+          pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+
         const isExactCode = pCodes.some(c => c.toLowerCase() === item.unitName.toLowerCase() || c.toLowerCase() === item.unitId.toLowerCase());
-        const isMatch = isExactCode || projectMatchesUnitCode(pCodes, item.unitName || item.unitId);
+        const isMatch = isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, item.unitName || item.unitId);
 
         if (isMatch) {
           targetUnitKeys.add(item.unitId);

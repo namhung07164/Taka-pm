@@ -1,6 +1,8 @@
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from "react";
 import { useDataStore } from '../DataContext';
+import { useAppStore } from '../../../store/useAppStore';
+import { getStatus, computeProjectActStatus, enrichProjects, extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
 import { UnitInfo, SalesInfo } from "../types";
 
 export interface SummaryDataItem extends UnitInfo {
@@ -109,6 +111,11 @@ export function calculateSummaryData({
     if (unit) unitsMap.set(unit, u);
   });
 
+  const appProjects = useAppStore.getState().projects || [];
+  const appTasks = useAppStore.getState().tasks || [];
+  const appDelegations = useAppStore.getState().delegationGroups || [];
+  const enrichedAppProjects = enrichProjects(appProjects, appTasks);
+
   return (unitInfo || []).map((unit) => {
     let salesAmount = 0;
     let salesByCpAmount = 0;
@@ -157,6 +164,38 @@ export function calculateSummaryData({
     const mdStatusMatch = mdStatusMap.get(unit.unit);
     const projectStatusMatch = projectStatusMap.get(unit.unit);
     const projectLinkMatch = projectLinkMap.get(unit.unit);
+
+    let linkedAppProject: any = null;
+    const targetLinkCode = String(projectLinkMatch?.code || projectLinkMatch?.projectCode || projectLinkMatch?.project || '').trim().toLowerCase();
+    
+    if (targetLinkCode && enrichedAppProjects.length > 0) {
+      linkedAppProject = enrichedAppProjects.find((p: any) => {
+        const pCode = String(p.code || '').trim().toLowerCase();
+        const pCodes = extractAllProjectCodes(p).map(c => c.toLowerCase());
+        return pCode === targetLinkCode || pCodes.includes(targetLinkCode) || projectMatchesUnitCode(pCodes, targetLinkCode);
+      });
+    }
+
+    if (!linkedAppProject && enrichedAppProjects.length > 0) {
+      const uKey = String(unit.unit || '').trim().toLowerCase();
+      linkedAppProject = enrichedAppProjects.find((p: any) => {
+        const pCodes = extractAllProjectCodes(p).map(c => c.toLowerCase());
+        return pCodes.includes(uKey) || projectMatchesUnitCode(pCodes, uKey);
+      });
+    }
+
+    const appStatusFromProject = linkedAppProject
+      ? getStatus(
+          linkedAppProject.computedTakStart || linkedAppProject.start,
+          linkedAppProject.computedTakCompl || linkedAppProject.handover,
+          linkedAppProject.computedOpening || linkedAppProject.opening,
+          linkedAppProject.code
+        )
+      : null;
+
+    const appActStatusFromProject = linkedAppProject
+      ? ((linkedAppProject as any).computedActStatus || (linkedAppProject as any).actStatus || computeProjectActStatus(linkedAppProject, appDelegations))
+      : null;
 
     let statusVal = unit.status || "Active";
     if (statusVal === "act") statusVal = "Active";
@@ -219,29 +258,39 @@ export function calculateSummaryData({
       mdStatus: mdStatusMatch ? mdStatusMatch.status : "-",
       mdNotes: mdStatusMatch?.mdNotes || "-",
       task: (() => {
+        if (linkedAppProject?.taskSummaries && linkedAppProject.taskSummaries.length > 0) {
+          return linkedAppProject.taskSummaries.map((t: any) => t.name).join('; ');
+        }
         const psTask = projectStatusMatch?.task;
         const plTask = projectLinkMatch?.task;
         if (psTask && plTask && psTask !== plTask) return `${psTask} + ${plTask}`;
         return psTask || plTask || "-";
       })(),
       projectStatus: (() => {
+        if (appStatusFromProject) return appStatusFromProject;
         const ps = projectStatusMatch?.status;
         const pl = projectLinkMatch?.status;
         if (ps && pl) return `${ps} + ${pl}`;
         return ps || pl || "N/A";
       })(),
       actStatus: 
-        projectLinkMatch?.actStatus || projectStatusMatch?.actStatus || "-",
+        appActStatusFromProject || projectLinkMatch?.actStatus || projectStatusMatch?.actStatus || "-",
       taskDelegation: projectStatusMatch?.delegationStatus || "-",
       flowStatus: projectStatusMatch?.flowStatus || "-",
-      party: projectStatusMatch?.party || "-",
+      party: linkedAppProject?.party || projectStatusMatch?.party || "-",
       startDate: (() => {
+        if (linkedAppProject) {
+          return linkedAppProject.computedTakStart || linkedAppProject.start || linkedAppProject.takStart || "-";
+        }
         const psDate = projectStatusMatch?.startDate;
         const plDate = projectLinkMatch?.startDate;
         if (psDate && plDate && psDate !== plDate) return `${psDate} / ${plDate}`;
         return psDate || plDate || "-";
       })(),
       endDate: (() => {
+        if (linkedAppProject) {
+          return linkedAppProject.computedTakCompl || linkedAppProject.handover || linkedAppProject.opening || "-";
+        }
         const psDate = projectStatusMatch?.endDate;
         const plDate = projectLinkMatch?.endDate;
         if (psDate && plDate && psDate !== plDate) return `${psDate} / ${plDate}`;

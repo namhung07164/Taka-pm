@@ -5,7 +5,7 @@ import { useDataStore } from '../DataContext';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { calculateSummaryData } from './summaryData';
 import { getStoredR2Credentials, getStoredR2CredentialsAsync, uploadSingleR2File, extractR2Key, getS3Sdk } from './r2Upload';
-import { enrichProjects, getStatus, computeProjectActStatus } from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, projectMatchesUnitCode } from '../../../lib/utils';
 
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
 
@@ -249,6 +249,17 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
 
   const normalizedTargetYear = String(targetYear || '').trim();
 
+  // Pre-index projectLink: maps unit name -> list of linked project codes
+  const unitToProjectCodesMap = new Map<string, string[]>();
+  (dataState.projectLink || []).forEach((pl: any) => {
+    const u = String(pl?.unit || '').trim().toLowerCase();
+    const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+    if (u && pCode) {
+      if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+      unitToProjectCodesMap.get(u)!.push(pCode);
+    }
+  });
+
   enrichedProjects.forEach((p) => {
     const pYear = String(p.year || (p as any).projectYear || '').trim();
     if (normalizedTargetYear && normalizedTargetYear !== 'all' && pYear && pYear !== normalizedTargetYear) {
@@ -269,13 +280,34 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
     const partyStr = p.party || (p as any).contractor || '';
     const mdStatusStr = p.mdStatus || '';
 
-    pCodes.forEach((code) => {
+    const targetUnitKeys = new Set<string>();
+    Object.keys(dataMap).forEach((uKey) => {
+      const uEntry = dataMap[uKey];
+      if (!uEntry) return;
+
+      const linkedCodes = [
+        ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
+        ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
+        ...(uEntry.id ? (unitToProjectCodesMap.get(uEntry.id.toLowerCase()) || []) : []),
+      ];
+      const isLinkedViaProjectLink = linkedCodes.some(lc => 
+        pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+      );
+
+      const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
+      if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
+        targetUnitKeys.add(uKey);
+      }
+    });
+
+    targetUnitKeys.forEach((code) => {
       if (dataMap[code]) {
+        dataMap[code].hasAppProject = true;
         dataMap[code].appProjectStatus = status;
         dataMap[code].appProjectBudget = p.budget || 0;
         dataMap[code].appProjectActual = p.actual || 0;
         dataMap[code].appProjectCode = String(p.code);
-        dataMap[code].appProjectYear = pYear;
+        dataMap[code].appProjectYear = pYear || normalizedTargetYear;
 
         dataMap[code].appProjectMdStatus = mdStatusStr;
         dataMap[code].appMdStatus = mdStatusStr;
@@ -292,11 +324,11 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
         dataMap[code].appProjectParty = partyStr;
         dataMap[code].appParty = partyStr;
 
-        if (!dataMap[code].year) dataMap[code].year = pYear;
-        if (!dataMap[code].projectStatus) dataMap[code].projectStatus = status;
+        if (!dataMap[code].year) dataMap[code].year = pYear || normalizedTargetYear;
+        dataMap[code].projectStatus = status;
         if (!dataMap[code].task) dataMap[code].task = (p as any).title || (p as any).name || '';
-        if (!dataMap[code].startDate && (p.computedTakStart || p.start)) dataMap[code].startDate = p.computedTakStart || p.start;
-        if (!dataMap[code].endDate && (p.computedOpening || p.opening)) dataMap[code].endDate = p.computedOpening || p.opening;
+        if (p.computedTakStart || p.start) dataMap[code].startDate = p.computedTakStart || p.start;
+        if (p.computedOpening || p.opening || p.computedTakCompl || p.handover) dataMap[code].endDate = p.computedOpening || p.opening || p.computedTakCompl || p.handover;
       }
     });
   });
