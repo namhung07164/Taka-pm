@@ -399,6 +399,10 @@ export function extractProjectMetadata(p: any): { year: string; store: string; l
       const yrShortMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)(2[4-9]|3[0-5])(?:[^0-9a-zA-Z]|$)/i);
       if (yrShortMatch) {
         year = `20${yrShortMatch[1]}`;
+      } else if (p.start || p.opening || p.handover) {
+        const dStr = p.start || p.opening || p.handover;
+        const dMatch = String(dStr).match(/\b(202\d|203\d)\b/);
+        if (dMatch) year = dMatch[1];
       }
     }
   }
@@ -406,7 +410,7 @@ export function extractProjectMetadata(p: any): { year: string; store: string; l
   // 2. Store
   let store = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
   if (!store || store === 'UNDEFINED' || store === 'NULL') {
-    const rawSearch = `${p.code || ''} ${p.linkCodes || ''}`;
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''} ${p.name || ''}`;
     if (/(?:^|[^a-zA-Z])HCM(?:[^a-zA-Z]|$)/i.test(rawSearch)) {
       store = 'HCM';
     } else if (/(?:^|[^a-zA-Z])HN(?:[^a-zA-Z]|$)/i.test(rawSearch)) {
@@ -417,13 +421,17 @@ export function extractProjectMetadata(p: any): { year: string; store: string; l
   // 3. Location (Floor)
   let location = String((p as any).floor || p.location || (p as any).projectLocation || '').trim().toUpperCase();
   if (!location || location === 'UNDEFINED' || location === 'NULL') {
-    const rawSearch = `${p.code || ''} ${p.linkCodes || ''}`;
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''} ${p.name || ''}`;
     const locMatch = rawSearch.match(/(?:^|[^a-zA-Z0-9])(B1|B2|B3|L1|L2|L3|L4|L5|1F|2F|3F|4F|5F)(?:[^a-zA-Z0-9]|$)/i);
     if (locMatch) {
       let l = locMatch[1].toUpperCase();
       if (l.endsWith('F')) l = `L${l[0]}`; // 1F -> L1, 2F -> L2
       location = l;
     }
+  }
+
+  if (location && location.endsWith('F')) {
+    location = `L${location[0]}`;
   }
 
   return { year, store, location };
@@ -447,7 +455,7 @@ export function projectMatchesScope(
     let targetLoc = scope.location.toUpperCase().trim();
     if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
     if (meta.location) {
-      let pLoc = meta.location;
+      let pLoc = meta.location.toUpperCase().trim();
       if (pLoc.endsWith('F')) pLoc = `L${pLoc[0]}`;
       if (pLoc !== targetLoc) return false;
     }

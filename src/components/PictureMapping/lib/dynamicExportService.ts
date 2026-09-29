@@ -21,44 +21,38 @@ export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | unde
     const f = String(rule.field || '').toLowerCase().trim();
 
     // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
-    if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status') {
-      val = data.appProjectStatus || '';
+    if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
+      val = data.hasAppProject ? (data.appProjectStatus || '') : '';
     } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
-      val = data.appProjectYear || '';
+      val = data.hasAppProject ? (data.appProjectYear || '') : '';
     } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
-      val = data.appProjectCode || '';
+      val = data.hasAppProject ? (data.appProjectCode || '') : '';
     } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
-      val = data.appProjectFloor || '';
+      val = data.hasAppProject ? (data.location || data.floor || '') : '';
     } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-      val = data.appProjectMdStatus || '';
-    } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-      val = data.appProjectActStatus || '';
-    } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-      val = data.appProjectDetail || '';
-    } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-      val = data.appProjectDescription || '';
-    } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-      val = data.appProjectParty || '';
-    } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget') {
-      val = data.appProjectBudget ?? 0;
-    } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual') {
-      val = data.appProjectActual ?? 0;
+      val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
+    } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
+      val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
+    } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
+      val = data.hasAppProject ? (data.appProjectDetail || '') : '';
+    } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)' || f === 'description (project)') {
+      val = data.hasAppProject ? (data.appProjectDescription || '') : '';
+    } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party' || f === 'party') {
+      val = data.hasAppProject ? (data.appProjectParty || '') : '';
+    } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget' || f === 'budget') {
+      val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
+    } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
+      val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+    } else if (f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+      val = data.hasAppProject ? (data.task || '') : '';
     } else if (val === undefined || val === null || String(val).trim() === '') {
       // 2. General attribute fallbacks
       if (f === 'floor' || f === 'location') {
         val = data.floor || unit.location || '';
       } else if (f === 'year') {
-        val = data.appProjectYear || data.year || '';
-      } else if (f === 'status' || f === 'projectstatus') {
-        val = data.appProjectStatus || data.projectStatus || data.status || '';
+        val = data.year || '';
       } else if (f === 'mdstatus') {
-        val = data.appProjectMdStatus || data.mdStatus || '';
-      } else if (f === 'actstatus') {
-        val = data.appProjectActStatus || data.actStatus || '';
-      } else if (f === 'detail' || f === 'description (project)') {
-        val = data.appProjectDetail || data.detail || '';
-      } else if (f === 'party') {
-        val = data.appProjectParty || data.party || '';
+        val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
       } else if (f === 'unit' || f === 'code') {
         val = data.unit || data.appProjectCode || unit.name || '';
       }

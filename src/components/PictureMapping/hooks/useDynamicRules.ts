@@ -3,7 +3,15 @@ import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/type
 import { SummaryDataItem, calculateSummaryData } from '../lib/summaryData';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
+import {
+  enrichProjects,
+  getStatus,
+  computeProjectActStatus,
+  extractAllProjectCodes,
+  projectMatchesUnitCode,
+  extractProjectMetadata,
+  projectMatchesScope,
+} from '../../../lib/utils';
 
 // ============================================================================
 // TIER 1: MEMORY EVALUATION (0ms - 100% RAM EXECUTION)
@@ -15,44 +23,38 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
   const f = String(rule.field || '').toLowerCase().trim();
 
   // 1. Explicit App Data / Real-time Project checks (NO fallback to legacy/static summary data)
-  if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status') {
-    val = (data.appProjectStatus && data.appProjectStatus !== 'Upcoming') ? data.appProjectStatus : (data.appProjectActStatus || data.appProjectStatus || '');
+  if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
+    val = data.hasAppProject ? (data.appProjectStatus || '') : '';
   } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
-    val = data.appProjectYear || '';
+    val = data.hasAppProject ? (data.appProjectYear || '') : '';
   } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
-    val = data.appProjectCode || '';
+    val = data.hasAppProject ? (data.appProjectCode || '') : '';
   } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
-    val = data.appProjectFloor || '';
+    val = data.hasAppProject ? (data.location || data.floor || '') : '';
   } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-    val = data.appProjectMdStatus || '';
-  } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-    val = data.appProjectActStatus || '';
-  } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-    val = data.appProjectDetail || '';
-  } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-    val = data.appProjectDescription || '';
-  } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-    val = data.appProjectParty || '';
-  } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget') {
-    val = data.appProjectBudget ?? 0;
-  } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual') {
-    val = data.appProjectActual ?? 0;
+    val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
+  } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
+    val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
+  } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
+    val = data.hasAppProject ? (data.appProjectDetail || '') : '';
+  } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)' || f === 'description (project)') {
+    val = data.hasAppProject ? (data.appProjectDescription || '') : '';
+  } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party' || f === 'party') {
+    val = data.hasAppProject ? (data.appProjectParty || '') : '';
+  } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget' || f === 'budget') {
+    val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
+  } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
+    val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+  } else if (f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+    val = data.hasAppProject ? (data.task || '') : '';
   } else if (val === undefined || val === null || String(val).trim() === '') {
     // 2. General attribute fallbacks
     if (f === 'floor' || f === 'location') {
       val = data.floor || data.location || '';
     } else if (f === 'year') {
-      val = data.appProjectYear || data.year || '';
-    } else if (f === 'status' || f === 'projectstatus') {
-      val = data.appProjectStatus || data.projectStatus || data.status || '';
+      val = data.year || '';
     } else if (f === 'mdstatus') {
-      val = data.appProjectMdStatus || data.mdStatus || '';
-    } else if (f === 'actstatus') {
-      val = data.appProjectActStatus || data.actStatus || '';
-    } else if (f === 'detail' || f === 'description (project)') {
-      val = data.appProjectDetail || data.detail || '';
-    } else if (f === 'party') {
-      val = data.appProjectParty || data.party || '';
+      val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
     } else if (f === 'unit' || f === 'code') {
       val = data.unit || data.appProjectCode || '';
     }
@@ -140,6 +142,7 @@ export interface UseDynamicRulesOptions {
   setUnits?: (u: UnitShape[]) => void;
   summaryData?: SummaryDataItem[];
   store?: 'HCM' | 'HN';
+  location?: string;
   year?: string;
   autoEvaluate?: boolean;
   onDirtyChange?: () => void;
@@ -163,6 +166,7 @@ export function useDynamicRules(
   const setVersions = options.setVersions;
   const setUnits = options.setUnits;
   const store = options.store || 'HCM';
+  const location = options.location || 'L1';
   const year = options.year;
   const autoEvaluate = options.autoEvaluate ?? false;
   const onDirtyChange = options.onDirtyChange;
@@ -230,6 +234,22 @@ export function useDynamicRules(
   const aggregatedData = useMemo(() => {
     const dataMap: Record<string, any> = {};
 
+    // Pre-index tasks by project code
+    const tasksByCodeMap = new Map<string, any[]>();
+    tasks.forEach((t) => {
+      if (!t || !t.name || !t.projectCode) return;
+      const rawCode = String(t.projectCode).trim().toLowerCase();
+      const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
+      codeParts.forEach((c) => {
+        let list = tasksByCodeMap.get(c);
+        if (!list) {
+          list = [];
+          tasksByCodeMap.set(c, list);
+        }
+        list.push(t);
+      });
+    });
+
     const parsedUnits = JSON.parse(unitNamesStr);
     parsedUnits.forEach((u: any) => {
       const uName = (u.name || '').toLowerCase();
@@ -239,6 +259,10 @@ export function useDynamicRules(
         id: u.id,
         unit: u.name || '',
         year: String(effectiveYear),
+        store: u.store || store || 'HCM',
+        location: u.location || location || 'L1',
+        floor: u.location || location || '',
+        hasAppProject: false,
         size: 0,
         sales: 0,
         salesByCp: 0,
@@ -261,7 +285,6 @@ export function useDynamicRules(
         brandCode: '',
         brandName: '',
         classCode: '',
-        floor: u.location || '',
         appProjectStatus: '',
         appProjectBudget: 0,
         appProjectActual: 0,
@@ -285,30 +308,20 @@ export function useDynamicRules(
         dataMap[key].hcmSalesEffi = sumData.hcmSalesEffi || 0;
         dataMap[key].hcmMargin = sumData.hcmMargin || 0;
         dataMap[key].mdStatus = sumData.mdStatus || '';
-        dataMap[key].task = sumData.task || '';
-        dataMap[key].projectStatus = sumData.projectStatus || '';
-        dataMap[key].actStatus = sumData.actStatus || '';
-        dataMap[key].startDate = sumData.startDate || '';
-        dataMap[key].endDate = sumData.endDate || '';
-        dataMap[key].status = sumData.status || '';
         dataMap[key].vendorCode = sumData.vendorCode || '';
         dataMap[key].brandCode = sumData.brandCode || '';
         dataMap[key].brandName = sumData.brandName || '';
         dataMap[key].classCode = sumData.classCode || '';
         dataMap[key].floor = dataMap[key].floor || (sumData as any).floor || '';
-        dataMap[key].year = (sumData as any).year || dataMap[key].year || String(effectiveYear);
       }
     });
 
     // Merge real-time Project data from Zustand
     enrichedProjects.forEach((p) => {
       if (!p.code && !p.linkCodes) return;
-      if (store && (store as string) !== 'all') {
-        const pStore = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
-        if (pStore && pStore !== store.toUpperCase()) return;
-      }
-      const pYear = String(p.year || (p as any).projectYear || '').trim();
-      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== String(effectiveYear)) {
+
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) {
         return;
       }
 
@@ -326,24 +339,69 @@ export function useDynamicRules(
       const partyStr = p.party || (p as any).contractor || '';
       const mdStatusStr = p.mdStatus || '';
 
-      const targetUnitKeys = new Set<string>();
-      pCodes.forEach(code => {
-        if (dataMap[code]) targetUnitKeys.add(code);
+      // Match tasks for this project
+      const matchedTaskSet = new Set<any>();
+      pCodes.forEach((c) => {
+        const list = tasksByCodeMap.get(c);
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
       });
+      if (p.code) {
+        const list = tasksByCodeMap.get(String(p.code).trim().toLowerCase());
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      }
+
+      const now = new Date();
+      let activeTaskNames: string[] = [];
+      const allMatchedTasks = Array.from(matchedTaskSet);
+      if (allMatchedTasks.length > 0) {
+        const activeTasks = allMatchedTasks.filter((t: any) => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        activeTaskNames = activeTasks.map((t: any) => t.name);
+      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
+        const activeTasks = p.taskSummaries.filter((t: any) => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        activeTaskNames = activeTasks.map((t: any) => t.name);
+      }
+      const taskSummaryStr = activeTaskNames.length > 0 
+        ? activeTaskNames.join('; ')
+        : (allMatchedTasks.map((t: any) => t.name).join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
+
+      const targetUnitKeys = new Set<string>();
       Object.keys(dataMap).forEach(uKey => {
-        if (projectMatchesUnitCode(pCodes, uKey)) {
+        const uEntry = dataMap[uKey];
+        if (!uEntry) return;
+        const uStore = (uEntry.store || store || '').toUpperCase().trim();
+        const uLoc = (uEntry.location || location || '').toUpperCase().trim();
+        const uYr = String(uEntry.year || effectiveYear || '').trim();
+
+        if (pMeta.store && uStore && pMeta.store !== uStore) return;
+        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
+        if (pMeta.year && uYr && pMeta.year !== uYr) return;
+
+        const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
+        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
           targetUnitKeys.add(uKey);
         }
       });
 
       targetUnitKeys.forEach((code) => {
         if (dataMap[code]) {
+          dataMap[code].hasAppProject = true;
           dataMap[code].appProjectStatus = status;
+          dataMap[code].task = taskSummaryStr;
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
-          dataMap[code].appProjectCode = String(p.code);
-          dataMap[code].appProjectYear = pYear;
-          dataMap[code].year = pYear;
+          dataMap[code].appProjectCode = String(p.code || code);
+          dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
+          dataMap[code].year = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
 
           dataMap[code].appProjectMdStatus = mdStatusStr;
           dataMap[code].appMdStatus = mdStatusStr;
@@ -364,7 +422,7 @@ export function useDynamicRules(
     });
 
     return dataMap;
-  }, [unitNamesStr, internalSummaryData, enrichedProjects, store, effectiveYear, delegationGroups]);
+  }, [unitNamesStr, internalSummaryData, enrichedProjects, tasks, store, location, effectiveYear, delegationGroups]);
 
   // Pure in-memory calculation function (< 3ms)
   const calculateNextVersions = useCallback(

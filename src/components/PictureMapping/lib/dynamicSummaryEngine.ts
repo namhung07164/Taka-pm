@@ -66,47 +66,39 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
     if (f === 'floor' || f === 'location') {
       val = data.location || '';
     } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
-      val = data.hasAppProject ? data.location : '';
+      val = data.hasAppProject ? (data.location || '') : '';
     } else if (f === 'year') {
       val = data.year || '';
-    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear' || f === 'year') {
-      val = data.hasAppProject ? data.appProjectYear : data.year;
+    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
+      val = data.hasAppProject ? (data.appProjectYear || '') : '';
     } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
-      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : (data.excelProjectStatus || (data as any).status || '');
+      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : '';
     } else if (f === 'unit' || f === 'code') {
       val = data.unitName || '';
     } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
-      val = data.hasAppProject ? data.appProjectCode : '';
+      val = data.hasAppProject ? (data.appProjectCode || '') : '';
     } else if (f === 'mdstatus') {
-      val = data.mdStatus || '';
+      val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
     } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-      val = data.hasAppProject ? data.appProjectMdStatus : '';
-    } else if (f === 'actstatus') {
-      val = data.appProjectActStatus || '';
-    } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-      val = data.hasAppProject ? data.appProjectActStatus : '';
-    } else if (f === 'detail') {
-      val = data.appProjectDetail || '';
-    } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-      val = data.hasAppProject ? data.appProjectDetail : '';
-    } else if (f === 'description (project)') {
-      val = data.appProjectDescription || '';
-    } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-      val = data.hasAppProject ? data.appProjectDescription : '';
-    } else if (f === 'party') {
-      val = data.appProjectParty || '';
-    } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-      val = data.hasAppProject ? data.appProjectParty : '';
+      val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
+    } else if (f === 'actstatus' || f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+      val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
+    } else if (f === 'detail' || f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+      val = data.hasAppProject ? (data.appProjectDetail || '') : '';
+    } else if (f === 'description (project)' || f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+      val = data.hasAppProject ? (data.appProjectDescription || '') : '';
+    } else if (f === 'party' || f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+      val = data.hasAppProject ? (data.appProjectParty || '') : '';
     } else if (f === 'budget' || f === 'appbudget' || f === 'appprojectbudget' || f === 'app: budget') {
-      val = data.hasAppProject ? data.appProjectBudget : (data as any).budget || 0;
+      val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
     } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
-      val = data.hasAppProject ? data.appProjectActual : (data as any).actual || 0;
+      val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
     } else if (f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
-      val = data.task || '';
+      val = (data.hasAppProject && data.task) ? data.task : '';
     } else if (f === 'actprogress' || f === 'act progress') {
-      val = data.actProgress ?? 0;
+      val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
     } else if (f === 'planprogress' || f === 'plan progress') {
-      val = data.planProgress ?? 0;
+      val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
     }
   }
 
@@ -398,14 +390,20 @@ export function useDynamicUnitSummary({
         : (allMatchedTasks.map((t: any) => t.name).join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
 
       const targetUnitKeys = new Set<string>();
-      pCodes.forEach(code => {
-        if (sMap.has(code)) targetUnitKeys.add(code);
-      });
       sList.forEach(item => {
-        if (projectMatchesUnitCode(pCodes, item.unitName || item.unitId)) {
-          // Unit must also match store & location
-          if (pMeta.store && item.store && item.store.toUpperCase() !== pMeta.store) return;
-          if (pMeta.location && item.location && item.location.toUpperCase() !== pMeta.location) return;
+        // Unit must match store, location, and year
+        const itemStore = (item.store || store || '').toUpperCase().trim();
+        const itemLoc = (item.location || location || '').toUpperCase().trim();
+        const itemYear = String(item.year || effectiveYear || '').trim();
+
+        if (pMeta.store && itemStore && pMeta.store !== itemStore) return;
+        if (pMeta.location && itemLoc && pMeta.location !== itemLoc) return;
+        if (pMeta.year && itemYear && pMeta.year !== itemYear) return;
+
+        const isExactCode = pCodes.some(c => c.toLowerCase() === item.unitName.toLowerCase() || c.toLowerCase() === item.unitId.toLowerCase());
+        const isMatch = isExactCode || projectMatchesUnitCode(pCodes, item.unitName || item.unitId);
+
+        if (isMatch) {
           targetUnitKeys.add(item.unitId);
           if (item.unitName) targetUnitKeys.add(item.unitName.toLowerCase());
         }
