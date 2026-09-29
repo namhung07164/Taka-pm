@@ -481,7 +481,8 @@ export function projectMatchesScope(
     if (meta.location) {
       let pLoc = meta.location.toUpperCase().trim();
       if (pLoc.endsWith('F')) pLoc = `L${pLoc[0]}`;
-      if (pLoc !== targetLoc) return false;
+      const isStorewide = pLoc === 'ALL' || pLoc === 'STORE' || pLoc === 'STOREWIDE' || pLoc === 'WHOLE STORE' || pLoc === 'ALL FLOORS';
+      if (!isStorewide && pLoc !== targetLoc) return false;
     }
   }
 

@@ -393,10 +393,6 @@ export function useDynamicRules(
         const uLoc = (uEntry.location || location || '').toUpperCase().trim();
         const uYr = String(uEntry.year || effectiveYear || '').trim();
 
-        if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
-        if (pMeta.year && uYr && pMeta.year !== uYr) return;
-
         const linkedCodes = [
           ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
           ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
@@ -405,6 +401,13 @@ export function useDynamicRules(
         const isLinkedViaProjectLink = linkedCodes.some(lc => 
           pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
         );
+
+        if (!isLinkedViaProjectLink) {
+          if (pMeta.store && uStore && pMeta.store !== uStore) return;
+          const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+          if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
+          if (pMeta.year && uYr && pMeta.year !== uYr) return;
+        }
 
         const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
         if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
