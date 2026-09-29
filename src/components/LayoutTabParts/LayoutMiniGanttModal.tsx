@@ -101,12 +101,18 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
           : (ts.orderIndex !== undefined && ts.orderIndex !== null ? ts.orderIndex : null);
         const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : (ts.taskCodePhu || '');
 
+        // Determine duration: preserve 0 if ts.duration is 0 or "0"
+        let durStr = '1';
+        if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
+          durStr = String(ts.duration).trim();
+        }
+
         return {
           id: `ts_${idx}`,
           name: ts.name || 'Task',
           start: ts.start || '',
           finish: ts.finish || '',
-          duration: ts.duration || '1',
+          duration: durStr,
           taskCodePhu: fallbackCode,
           runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
           approval: ts.approval,
@@ -504,9 +510,9 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                   {orderedGanttRows.map(({ task: t, isChild, hasChildren }, idx) => {
                     const tStart = parseDateTime(t.start);
                     const tFinish = parseDateTime(t.finish);
-                    const rawDuration = parseFloat(String(t.duration || ''));
+                    const rawDuration = parseFloat(String(t.duration ?? ''));
                     const isMilestone = !isNaN(rawDuration) && rawDuration === 0;
-                    const duration = isNaN(rawDuration) || rawDuration <= 0 ? (isMilestone ? 0 : 1) : rawDuration;
+                    const duration = isMilestone ? 0 : (isNaN(rawDuration) || rawDuration <= 0 ? 1 : rawDuration);
 
                     // Dates in "Dec 20" style with General tab color coding (Start: Blue, Finish: Pink)
                     const sFormatted = formatMonthDay(tStart);
@@ -532,11 +538,14 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                     let leftPercent = 0;
                     let widthPercent = 10;
 
-                    if (tStart && tFinish) {
-                      const offsetDays = Math.max(0, Math.round((tStart.getTime() - timelineBounds.startDate.getTime()) / 86400000));
-                      const taskDays = Math.max(1, Math.round((tFinish.getTime() - tStart.getTime()) / 86400000) + 1);
-                      leftPercent = Math.min(95, Math.max(0, (offsetDays / timelineBounds.totalDays) * 100));
-                      widthPercent = Math.min(100 - leftPercent, Math.max(2.5, (taskDays / timelineBounds.totalDays) * 100));
+                    const effectiveStart = tStart || tFinish;
+                    const effectiveFinish = tFinish || tStart;
+
+                    if (effectiveStart && effectiveFinish) {
+                      const offsetDays = Math.max(0, Math.round((effectiveStart.getTime() - timelineBounds.startDate.getTime()) / 86400000));
+                      const taskDays = isMilestone ? 0 : Math.max(1, Math.round((effectiveFinish.getTime() - effectiveStart.getTime()) / 86400000) + 1);
+                      leftPercent = Math.min(98, Math.max(0, (offsetDays / timelineBounds.totalDays) * 100));
+                      widthPercent = isMilestone ? 0 : Math.min(100 - leftPercent, Math.max(2.5, (taskDays / timelineBounds.totalDays) * 100));
                     }
 
                     return (
@@ -547,7 +556,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                           isChild && "bg-slate-50/40 dark:bg-[#1a1a1c]/40"
                         )}
                       >
-                        {/* Task Info Cell: Name & Dates (Start: Blue, Finish: Pink) */}
+                        {/* Task Info Cell: Name & Dates (Start: Blue, Finish: Pink, Milestone: Orange) */}
                         <div className="w-[240px] sm:w-[270px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             {isChild && (
@@ -566,21 +575,30 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                           {(sFormatted || fFormatted) && (
                             <span 
                               className="font-mono text-[10px] shrink-0 tabular-nums font-semibold flex items-center gap-0.5"
-                              title={`Start: ${t.start || 'N/A'} • Finish: ${t.finish || 'N/A'}`}
+                              title={`Start: ${t.start || 'N/A'} • Finish: ${t.finish || 'N/A'}${isMilestone ? ' • Milestone (0d)' : ''}`}
                             >
-                              {sFormatted && (
-                                <span className="text-blue-600 dark:text-[#8ab4f8]">{sFormatted}</span>
-                              )}
-                              {sFormatted && fFormatted && sFormatted !== fFormatted && (
-                                <span className="text-slate-400 dark:text-slate-500 font-normal">-</span>
-                              )}
-                              {fFormatted && sFormatted !== fFormatted && (
-                                <span className="text-pink-600 dark:text-pink-400">{fFormatted}</span>
-                              )}
-                              {!sFormatted && fFormatted && (
+                              {isMilestone ? (
+                                <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1 font-bold">
+                                  <span className="text-[8px]">◆</span>
+                                  <span>{sFormatted || fFormatted}</span>
+                                </span>
+                              ) : (
                                 <>
-                                  <span className="text-slate-400 dark:text-slate-500 font-normal">→</span>
-                                  <span className="text-pink-600 dark:text-pink-400">{fFormatted}</span>
+                                  {sFormatted && (
+                                    <span className="text-blue-600 dark:text-[#8ab4f8]">{sFormatted}</span>
+                                  )}
+                                  {sFormatted && fFormatted && sFormatted !== fFormatted && (
+                                    <span className="text-slate-400 dark:text-slate-500 font-normal">-</span>
+                                  )}
+                                  {fFormatted && sFormatted !== fFormatted && (
+                                    <span className="text-pink-600 dark:text-pink-400">{fFormatted}</span>
+                                  )}
+                                  {!sFormatted && fFormatted && (
+                                    <>
+                                      <span className="text-slate-400 dark:text-slate-500 font-normal">→</span>
+                                      <span className="text-pink-600 dark:text-pink-400">{fFormatted}</span>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </span>
@@ -609,12 +627,12 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                           {/* Task Bar / Milestone diamond matching GanttTab */}
                           {isMilestone ? (
                             <div 
-                              className="absolute top-1/2 -translate-y-1/2 flex items-center cursor-pointer group/bar"
+                              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center cursor-pointer group/bar z-20"
                               style={{ left: `${leftPercent}%` }}
-                              title={`${t.name}\nMilestone: ${t.start || t.finish || 'N/A'}\nStatus: ${computedStatus}`}
+                              title={`${t.name}\nMilestone (0d): ${t.start || t.finish || 'N/A'}\nStatus: ${computedStatus}${t.party ? `\nParty: ${t.party}` : ''}`}
                             >
-                              <div className="w-3.5 h-3.5 rotate-45 rounded-xs shadow-xs bg-orange-500 hover:bg-orange-600 transition-transform group-hover/bar:scale-110" />
-                              <span className="ml-1.5 text-[9px] font-bold text-orange-600 dark:text-orange-400 whitespace-nowrap">
+                              <div className="w-3.5 h-3.5 rotate-45 rounded-xs shadow-md bg-orange-500 hover:bg-orange-600 transition-transform group-hover/bar:scale-125 border border-white dark:border-[#1a1a1c]" />
+                              <span className="ml-1.5 text-[9px] font-extrabold text-orange-600 dark:text-orange-400 whitespace-nowrap drop-shadow-xs bg-orange-50/80 dark:bg-orange-950/60 px-1 py-0.2 rounded border border-orange-200 dark:border-orange-900/40">
                                 0d
                               </span>
                             </div>
