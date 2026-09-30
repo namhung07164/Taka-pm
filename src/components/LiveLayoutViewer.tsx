@@ -945,13 +945,13 @@ function LiveCanvas({
 
   const handleTriggerExport = async () => {
     if (!canWrite) {
-      alert('⚠️ Bạn không có quyền ghi (Write) để thực hiện Trigger Export.');
+      alert('⚠️ You do not have Write permission to trigger export.');
       return;
     }
     if (isExporting) return;
     try {
       setIsExporting(true);
-      setExportStatus('Bước 1/4: Đang tải dữ liệu từ Cloudflare R2...');
+      setExportStatus('Step 1/4: Loading data from Cloudflare R2...');
       const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
       const res = await executeTriggerExportProcess(targetStore, (status) => {
         setExportStatus(status);
@@ -2267,10 +2267,10 @@ function LiveCanvas({
           <ShieldAlert className="w-8 h-8 text-amber-600 dark:text-amber-400 opacity-80" />
         </div>
         <p className="text-base font-bold text-slate-700 dark:text-slate-200">
-          Không có dự án hoặc công việc được phân quyền ({globalYearFilter || 'Năm này'})
+          No authorized projects or tasks found ({globalYearFilter || 'Selected Year'})
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
-          Mặt bằng và dữ liệu trực tiếp được bảo mật và ẩn đối với tài khoản không có nhiệm vụ trong giai đoạn này.
+          Floor layout and live metrics are restricted and hidden for accounts without active assignments in this timeframe.
         </p>
       </div>
     );
@@ -2703,14 +2703,14 @@ function LiveCanvas({
                     onClick={() => setSelectedLegendGroupId(null)}
                     className="text-xs text-purple-600 dark:text-purple-400 hover:underline font-medium"
                   >
-                    Bỏ lọc nhóm
+                    Clear group filter
                   </button>
                 )}
               </div>
 
               {activeGroups.length === 0 ? (
                 <div className="text-xs text-slate-400 italic py-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
-                  Bản đồ hiện đang hiển thị màu theo trạng thái tiến độ dự án hoặc chưa có nhóm phân loại.
+                  Map colors currently reflect project progress status or have no custom classification groups.
                 </div>
               ) : (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">

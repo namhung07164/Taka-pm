@@ -304,10 +304,10 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
       }
 
       if (linkCodesError) {
-        const yearDetail = linkCodesError.duplicateProjectYear ? ` năm ${linkCodesError.duplicateProjectYear}` : '';
+        const yearDetail = linkCodesError.duplicateProjectYear ? ` (Year ${linkCodesError.duplicateProjectYear})` : '';
         useAppStore.getState().setToast({
-          title: 'Mã dự án trùng lặp',
-          message: `Mã "${linkCodesError.invalidCode}" đã thuộc về dự án "${linkCodesError.duplicateProjectCode}"${yearDetail} (${linkCodesError.duplicateProjectName}). Không thể dùng mã dự án khác làm Project Code Link.`,
+          title: 'Duplicate Project Code',
+          message: `Code "${linkCodesError.invalidCode}" is already assigned to project "${linkCodesError.duplicateProjectCode}"${yearDetail} (${linkCodesError.duplicateProjectName}). Another project's code cannot be used as Project Code Link.`,
           type: 'error'
         });
         setIsSubmitting(false);
@@ -621,10 +621,10 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           }
 
           useAppStore.getState().setToast({
-            title: "Tạo dự án thành công",
+            title: "Project Created Successfully",
             message: filterChangedNotice
-              ? `Đã tạo dự án ${formData.code} (${yearNum} - ${formData.store}) và tự động chuyển bộ lọc sang${filterChangedNotice}.`
-              : `Đã tạo dự án ${formData.code} thành công.`,
+              ? `Created project ${formData.code} (${yearNum} - ${formData.store}) and automatically switched active filter to${filterChangedNotice}.`
+              : `Created project ${formData.code} successfully.`,
             type: "success"
           });
         }
@@ -946,7 +946,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
               <div className="sm:col-span-7">
                 <label className="block text-[11px] font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 flex items-center justify-between">
                   <span>Project Code Link</span>
-                  <span className="text-[10px] text-slate-400 font-normal lowercase">(multi, cách nhau ",")</span>
+                  <span className="text-[10px] text-slate-400 font-normal lowercase">(multi, separated by ",")</span>
                 </label>
                 <FastInput 
                   type="text" 
@@ -965,7 +965,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
                 {linkCodesError && (
                   <p className="mt-1.5 text-[11px] text-rose-500 dark:text-rose-400 font-medium flex items-start gap-1 leading-tight">
                     <span className="shrink-0">⚠️</span>
-                    <span>Mã "<strong>{linkCodesError.invalidCode}</strong>" đã thuộc về dự án khác (<strong>{linkCodesError.duplicateProjectCode}</strong>{linkCodesError.duplicateProjectYear ? ` - ${linkCodesError.duplicateProjectYear}` : ''} - {linkCodesError.duplicateProjectName}). Không thể nhập.</span>
+                    <span>Code "<strong>{linkCodesError.invalidCode}</strong>" already belongs to project "<strong>{linkCodesError.duplicateProjectCode}</strong>"{linkCodesError.duplicateProjectYear ? ` (${linkCodesError.duplicateProjectYear})` : ''} - {linkCodesError.duplicateProjectName}. Cannot be used as link.</span>
                   </p>
                 )}
               </div>
