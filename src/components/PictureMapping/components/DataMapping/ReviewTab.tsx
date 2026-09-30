@@ -546,7 +546,8 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         const uYr = String(uEntry.year || effectiveYear || '').trim();
 
         if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
+        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
         if (pMeta.year && uYr && pMeta.year !== uYr) return;
 
         const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));

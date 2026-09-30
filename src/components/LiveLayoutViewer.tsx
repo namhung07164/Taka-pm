@@ -1302,20 +1302,32 @@ function LiveCanvas({
       }
     });
 
-    // Pre-index tasks by code map for O(1) lookup to eliminate O(N*M) loop
+    // Pre-index tasks by code map and projectId for O(1) lookup to eliminate O(N*M) loop
     const tasksByCodeMap = new Map<string, any[]>();
+    const tasksByProjIdMap = new Map<string, any[]>();
     tasks.forEach(t => {
-      if (!t || !t.name || !t.projectCode) return;
-      const rawCode = String(t.projectCode).trim().toLowerCase();
-      const codeParts = rawCode.split(/[+;,/]/).map(c => c.trim()).filter(Boolean);
-      codeParts.forEach(c => {
-        let list = tasksByCodeMap.get(c);
+      if (!t || !t.name) return;
+      if (t.projectId) {
+        const pId = String(t.projectId).trim().toLowerCase();
+        let list = tasksByProjIdMap.get(pId);
         if (!list) {
           list = [];
-          tasksByCodeMap.set(c, list);
+          tasksByProjIdMap.set(pId, list);
         }
         list.push(t);
-      });
+      }
+      if (t.projectCode) {
+        const rawCode = String(t.projectCode).trim().toLowerCase();
+        const codeParts = rawCode.split(/[+;,/]/).map(c => c.trim()).filter(Boolean);
+        codeParts.forEach(c => {
+          let list = tasksByCodeMap.get(c);
+          if (!list) {
+            list = [];
+            tasksByCodeMap.set(c, list);
+          }
+          list.push(t);
+        });
+      }
     });
 
     // Pre-index projectLink: maps unit name -> list of linked project codes
@@ -1344,8 +1356,18 @@ function LiveCanvas({
       const pCodes = extractAllProjectCodes(p);
       const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       
-      // Match tasks directly from pre-indexed map for O(1) lookup
+      // Match tasks for this project (by ID, No, Code, linkCodes, and embedded taskSummaries)
       const matchedTaskSet = new Set<any>();
+      if (p.id) {
+        const pIdLower = String(p.id).trim().toLowerCase();
+        const list = tasksByProjIdMap.get(pIdLower);
+        if (list) list.forEach(t => matchedTaskSet.add(t));
+      }
+      if (p.no) {
+        const pNoLower = String(p.no).trim().toLowerCase();
+        const list = tasksByProjIdMap.get(pNoLower);
+        if (list) list.forEach(t => matchedTaskSet.add(t));
+      }
       pCodes.forEach(c => {
         const list = tasksByCodeMap.get(c);
         if (list) list.forEach(t => matchedTaskSet.add(t));
@@ -1355,34 +1377,38 @@ function LiveCanvas({
         const list = tasksByCodeMap.get(pCodeLower);
         if (list) list.forEach(t => matchedTaskSet.add(t));
       }
-      const matchedTasks = Array.from(matchedTaskSet);
+      if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+        p.taskSummaries.forEach(ts => matchedTaskSet.add(ts));
+      }
+      const allMatchedTasks = Array.from(matchedTaskSet);
+      const allTaskNames = allMatchedTasks.map((t: any) => t.name).filter(Boolean);
 
       // Match active tasks following STRICTLY the same logic as General Tab (Project General Table):
       // Only tasks that are currently active right now (now >= start && now <= finish).
-      // If no tasks are currently active, activeTaskNames is empty [].
-      let activeTaskNames: string[] = [];
-      if (matchedTasks.length > 0) {
-        const activeTasks = matchedTasks.filter(t => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map(t => t.name);
-      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
-        const activeTasks = p.taskSummaries.filter(t => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map(t => t.name);
-      }
+      const activeTasks = allMatchedTasks.filter((t: any) => {
+        const startStr = t.start || t.startDate || t.takStart;
+        const finishStr = t.finish || t.end || t.endDate || t.takCompl || t.handover;
+        if (!startStr || !finishStr) return false;
+        const start = new Date(startStr);
+        const finish = new Date(finishStr);
+        return now >= start && now <= finish;
+      });
+      const activeTaskNames = activeTasks.map(t => t.name).filter(Boolean);
+
+      // Full task string contains all sub-tasks so dynamic rules / filters can match planned, active, or upcoming task
+      const taskSummaryStr = allTaskNames.length > 0 
+        ? allTaskNames.join('; ')
+        : (activeTaskNames.join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
 
       let taskLines: string[] = [];
       activeTaskNames.forEach(name => {
         taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
       });
+      if (taskLines.length === 0 && allTaskNames.length > 0) {
+        allTaskNames.forEach(name => {
+          taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
+        });
+      }
 
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
       const detailStr = p.detail || '';
@@ -1398,11 +1424,6 @@ function LiveCanvas({
         const uLoc = (uEntry.location || targetLoc || '').toUpperCase().trim();
         const uYr = String(uEntry.year || globalYearFilter || '').trim();
 
-        if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-        if (pMeta.year && uYr && pMeta.year !== uYr) return;
-
         const linkedCodes = [
           ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
           ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
@@ -1411,6 +1432,13 @@ function LiveCanvas({
         const isLinkedViaProjectLink = linkedCodes.some(lc => 
           pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
         );
+
+        if (!isLinkedViaProjectLink) {
+          if (pMeta.store && uStore && pMeta.store !== uStore) return;
+          const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+          if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
+          if (pMeta.year && uYr && pMeta.year !== uYr) return;
+        }
 
         const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
         if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
@@ -1436,7 +1464,10 @@ function LiveCanvas({
             dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";
             dataMap[code].openingDate = p.opening || p.computedOpening || "";
             dataMap[code].detail = detailStr;
+            dataMap[code].task = taskSummaryStr;
             dataMap[code].taskLines = taskLines;
+            dataMap[code].taskSummaries = allMatchedTasks;
+            dataMap[code].activeTasks = activeTaskNames;
             dataMap[code].mdStatus = mdStatusStr || dataMap[code].mdStatus || "";
             dataMap[code].actStatus = actStatus || dataMap[code].actStatus || "";
             dataMap[code].party = partyStr;
@@ -1458,8 +1489,8 @@ function LiveCanvas({
             dataMap[code].appProjectParty = partyStr;
             dataMap[code].appParty = partyStr;
 
-            dataMap[code].matchedTasks = matchedTasks;
-            dataMap[code].subTasks = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
+            dataMap[code].matchedTasks = allMatchedTasks;
+            dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
             dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
             dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
 
@@ -1474,7 +1505,7 @@ function LiveCanvas({
 
             if (layoutTooltipVisibility?.notifications !== false && !isProjectCompleted) {
               // 1. Overdue tasks check
-              const subTasksList = matchedTasks.length > 0 ? matchedTasks : (p.taskSummaries || []);
+              const subTasksList = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
               let overdueCount = 0;
               if (layoutTooltipVisibility?.alertOverdue !== false) {
                 subTasksList.forEach((st: any) => {
