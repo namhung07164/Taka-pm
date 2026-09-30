@@ -66,8 +66,10 @@ export function useEnrichedData() {
       if (["md-b1", "md-l1", "md-l2", "md-l3", "md-l4"].includes(permLoc)) {
         permLoc = permLoc.replace("md-", "");
       }
+      const isStorewideLoc = loc === 'store' || loc === 'all' || loc === 'storewide' || loc === 'whole store' || loc === 'all floors';
       const hasLocPerm =
         currentUser.locationPermissions?.all ||
+        isStorewideLoc ||
         (currentUser.locationPermissions?.[permLoc] ?? false);
 
       // Party check for project

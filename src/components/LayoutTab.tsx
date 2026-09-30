@@ -1296,6 +1296,7 @@ export function LayoutTab({
           <LiveLayoutViewer 
             storeFilter={activeStore} 
             locationFilter={locFilterStr} 
+            yearFilter={effectiveYear}
             targetUnitSearch={targetUnitSearch}
             onUnitSelected={(unit) => {
               if (unit?.name) {

@@ -32,6 +32,7 @@ Konva.dragButtons = [0];
 interface LiveLayoutViewerProps {
   storeFilter: string;
   locationFilter: string;
+  yearFilter?: string;
   targetUnitSearch?: string | null;
   onUnitSelected?: (unit: any) => void;
   onClearFocus?: () => void;
@@ -74,7 +75,7 @@ function getContrastStyle(hexColor: string) {
   }
 }
 
-export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch, onUnitSelected, onClearFocus }: LiveLayoutViewerProps) {
+export function LiveLayoutViewer({ storeFilter, locationFilter, yearFilter, targetUnitSearch, onUnitSelected, onClearFocus }: LiveLayoutViewerProps) {
   const r2Config = useAppStore(state => state.r2Config);
   const setR2Config = useAppStore(state => state.setR2Config);
   const currentUser = useAppStore(state => state.currentUser);
@@ -483,6 +484,7 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, targetUnitSearch
       config={config} 
       storeFilter={storeFilter} 
       locationFilter={locationFilter} 
+      yearFilter={yearFilter}
       targetUnitSearch={targetUnitSearch}
       onUnitSelected={onUnitSelected}
       onClearFocus={onClearFocus}
@@ -496,6 +498,7 @@ function LiveCanvas({
   config, 
   storeFilter, 
   locationFilter, 
+  yearFilter,
   targetUnitSearch,
   onUnitSelected,
   onClearFocus,
@@ -505,6 +508,7 @@ function LiveCanvas({
   config: any; 
   storeFilter: string; 
   locationFilter: string; 
+  yearFilter?: string;
   targetUnitSearch?: string | null;
   onUnitSelected?: (unit: any) => void;
   onClearFocus?: () => void;
@@ -547,6 +551,12 @@ function LiveCanvas({
   const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
   const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
   const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1'; 
+
+  const activeYear = (
+    (yearFilter && yearFilter !== 'all' ? yearFilter : '') ||
+    (globalYearFilter && globalYearFilter !== 'all' ? globalYearFilter : '') ||
+    (storeFilter === 'HN' ? '2027' : '2026')
+  ).trim();
 
   // 1. Gather all store versions across all sources (Zustand helper, local partitions, cloud partitions, and root config)
   const availableStoreVersions = useMemo(() => {
@@ -650,9 +660,9 @@ function LiveCanvas({
       return [];
     }
 
-    // Filter by year if globalYearFilter is active (synced with Picture tab / Review tab)
-    if (globalYearFilter && globalYearFilter !== 'all') {
-      const targetYear = String(globalYearFilter).trim();
+    // Filter by year if activeYear is active (synced with Picture tab / Review tab)
+    if (activeYear && activeYear !== 'all') {
+      const targetYear = String(activeYear).trim();
       const yearMatched = matched.filter(v => String(v.year || '').trim() === targetYear);
       if (yearMatched.length > 0) {
         return yearMatched;
@@ -668,7 +678,7 @@ function LiveCanvas({
     }
 
     return matched;
-  }, [availableStoreVersions, targetLoc, globalYearFilter]);
+  }, [availableStoreVersions, targetLoc, activeYear]);
 
   // 3. Resolve active version & units
   const { r2Version, r2Units } = useMemo(() => {
@@ -770,10 +780,11 @@ function LiveCanvas({
       const uStore = String(u.store || '').toUpperCase().trim();
 
       // Store check
-      if (uStore && uStore !== targetStoreParam) return;
+      if (uStore && uStore !== 'ALL' && uStore !== targetStoreParam) return;
 
-      // Strict Floor check: only accept units explicitly matching current floor or matching active version floor
-      if (uLoc && uLoc !== tLoc && uLoc !== vLoc) {
+      // Strict Floor check: accept units explicitly matching current floor, matching active version floor, or storewide
+      const isStorewideUnit = uLoc === 'STORE' || uLoc === 'ALL' || uLoc === 'STOREWIDE' || uLoc === 'ALL FLOORS';
+      if (uLoc && !isStorewideUnit && uLoc !== tLoc && uLoc !== vLoc) {
         return;
       }
 
@@ -1255,6 +1266,13 @@ function LiveCanvas({
     return restrictedSet;
   }, [allProjects, enrichedProjects, currUser]);
 
+  // Dynamic Unit Summary Engine & Layout Year (Shared 100% with EditTab & ReviewTab)
+  const effectiveLayoutYear = String(
+    version?.year || 
+    activeYear || 
+    (storeFilter === 'HN' ? '2027' : '2026')
+  ).trim();
+
   // 2. Build aggregatedData
   const aggregatedData = useMemo(() => {
     const dataMap: Record<string, any> = {};
@@ -1268,7 +1286,7 @@ function LiveCanvas({
         id: u.id,
         unit: u.name || '',
         isRestricted,
-        year: globalYearFilter || '2026',
+        year: effectiveLayoutYear,
         size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
         profit: 0, profitByCp: 0, profitByHcmcate: 0,
         margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
@@ -1349,7 +1367,7 @@ function LiveCanvas({
       const pMeta = extractProjectMetadata(p);
 
       // Strict Scope Matching across all 3 components: Store, Location (Floor), Year
-      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: globalYearFilter })) {
+      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) {
         return;
       }
 
@@ -1422,7 +1440,7 @@ function LiveCanvas({
         if (!uEntry) return;
         const uStore = (uEntry.store || storeFilter || '').toUpperCase().trim();
         const uLoc = (uEntry.location || targetLoc || '').toUpperCase().trim();
-        const uYr = String(uEntry.year || globalYearFilter || '').trim();
+        const uYr = String(uEntry.year || effectiveLayoutYear || '').trim();
 
         const linkedCodes = [
           ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
@@ -1434,10 +1452,10 @@ function LiveCanvas({
         );
 
         if (!isLinkedViaProjectLink) {
-          if (pMeta.store && uStore && pMeta.store !== uStore) return;
+          if (pMeta.store && uStore && uStore !== 'all' && pMeta.store !== uStore) return;
           const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
           if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-          if (pMeta.year && uYr && pMeta.year !== uYr) return;
+          if (pMeta.year && uYr && uYr !== 'all' && pMeta.year !== uYr) return;
         }
 
         const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
@@ -1580,13 +1598,7 @@ function LiveCanvas({
     });
 
     return dataMap;
-  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, globalYearFilter, delegationGroups, layoutTooltipVisibility]);
-
-  // Dynamic Unit Summary Engine (Shared 100% with EditTab & ReviewTab)
-  const effectiveLayoutYear = String((globalYearFilter && globalYearFilter !== 'all') 
-    ? globalYearFilter 
-    : (version?.year || new Date().getFullYear())
-  ).trim();
+  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility]);
 
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,
@@ -1677,14 +1689,6 @@ function LiveCanvas({
         }
 
         const isFocused = focusedUnitId === unit.id;
-
-        // HIGH-PERFORMANCE RENDERING GUARD:
-        // Skip rendering any unit on Liveview that does not have an active project in the current year/scope
-        const dynamicItem = dynamicSummaryMap.get(unit.id) || (uName ? dynamicSummaryMap.get(uName) : null);
-        const hasProject = Boolean(uData?.hasAppProject || dynamicItem?.hasAppProject);
-        if (!hasProject && !isFocused) {
-          return false;
-        }
 
         // Filter by Alerts toggle
         if (filterOnlyAlerts && !isFocused) {
@@ -2271,7 +2275,7 @@ function LiveCanvas({
       return true;
     }
 
-    const yr = String(globalYearFilter || '2026').trim();
+    const yr = effectiveLayoutYear;
     if (yr === 'all') return true;
     const hasProj = enrichedProjects.some(p => {
       if (storeFilter !== 'all') {
@@ -2291,7 +2295,7 @@ function LiveCanvas({
       return tYear === yr;
     });
     return hasTask;
-  }, [currUser, enrichedProjects, tasks, storeFilter, globalYearFilter]);
+  }, [currUser, enrichedProjects, tasks, storeFilter, effectiveLayoutYear]);
 
   if (!hasUserAccessInStoreYear) {
     return (
