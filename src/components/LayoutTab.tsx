@@ -294,7 +294,7 @@ export function LayoutTab({
     const isFloorName = (name: string) => {
       if (!name) return false;
       const n = name.toUpperCase().trim();
-      const nonFloors = ['BUDGET', 'COST', 'OTHER', 'STORE', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
+      const nonFloors = ['BUDGET', 'COST', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
       if (nonFloors.includes(n)) return false;
       return true;
     };
