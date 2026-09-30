@@ -738,13 +738,13 @@ export function GanttTab({
 
       return matchesAdvancedSearch(
         term,
-        [p.code, p.name, p.store, p.location],
+        [p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.store, p.location],
         [],
         (tTerm, andTerms) => {
           const taskSource = projectTasks.length > 0 ? projectTasks : (p.taskSummaries || []);
           if (taskSource.length === 0) {
             return andTerms.every((andT) =>
-              [p.code, p.name, p.store, p.location].some((v) =>
+              [p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.store, p.location].some((v) =>
                 String(v || "")
                   .toLowerCase()
                   .includes(andT)
@@ -829,13 +829,13 @@ export function GanttTab({
       if (deferredSearchTerm) {
         return matchesAdvancedSearch(
           deferredSearchTerm,
-          [p.code, p.name, p.store, p.location],
+          [p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.store, p.location],
           [],
           (term, andTerms) => {
             const taskSource = projectTasks.length > 0 ? projectTasks : (p.taskSummaries || []);
             if (taskSource.length === 0) {
               return andTerms.every((tTerm) =>
-                [p.code, p.name, p.store, p.location].some((v) =>
+                [p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.store, p.location].some((v) =>
                   String(v || "")
                     .toLowerCase()
                     .includes(tTerm)
@@ -844,7 +844,7 @@ export function GanttTab({
             }
             return taskSource.some((t: any) => {
               return andTerms.every((tTerm) => {
-                const inProject = [p.code, p.name, p.store, p.location].some(
+                const inProject = [p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.store, p.location].some(
                   (v) =>
                     String(v || "")
                       .toLowerCase()

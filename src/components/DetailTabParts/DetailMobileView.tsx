@@ -191,7 +191,7 @@ export const DetailMobileView = memo(function DetailMobileView({
           const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
 
           const isProjectMatch = lowerSearchTerm
-            ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.name])
+            ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
             : true;
           const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
             const taskFields = [

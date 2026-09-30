@@ -374,12 +374,13 @@ export function CommandPaletteModal({
     if (!projects || projects.length === 0) return [];
     return projects.map(p => {
       const isHCM = (p.store || '').toUpperCase() === 'HCM';
+      const desc = p.detail || (p as any).description || p.note || '';
       return {
         id: `proj-${p.id || p.code}`,
         category: 'projects',
         title: p.name || 'Untitled Project',
-        subtitle: `${p.year || ''} • ${p.store || 'HCM'} • Floor ${p.location || 'N/A'}`,
-        code: p.code,
+        subtitle: `${p.year || ''} • ${p.store || 'HCM'} • Floor ${p.location || 'N/A'}${desc ? ` • ${desc.length > 80 ? desc.slice(0, 80) + '...' : desc}` : ''}`,
+        code: `${p.code || ''} ${p.linkCodes || ''} ${desc}`,
         badge: p.store || 'HCM',
         badgeColor: isHCM
           ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'

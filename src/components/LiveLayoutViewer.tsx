@@ -1399,7 +1399,8 @@ function LiveCanvas({
         const uYr = String(uEntry.year || globalYearFilter || '').trim();
 
         if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
+        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
         if (pMeta.year && uYr && pMeta.year !== uYr) return;
 
         const linkedCodes = [
@@ -1667,7 +1668,8 @@ function LiveCanvas({
           const matchBrand = (uData.brandName || '').toLowerCase().includes(q);
           const matchProject = (uData.projectName || '').toLowerCase().includes(q);
           const matchCode = (uData.appProjectCode || '').toLowerCase().includes(q);
-          if (!matchName && !matchBrand && !matchProject && !matchCode) {
+          const matchDesc = (uData.appProjectDescription || uData.appDescription || uData.appProjectDetail || uData.appDetail || uData.detail || uData.description || '').toLowerCase().includes(q);
+          if (!matchName && !matchBrand && !matchProject && !matchCode && !matchDesc) {
             return false;
           }
         }

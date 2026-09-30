@@ -295,7 +295,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
       const isMatch = matchesAdvancedSearch(
         term,
-        [p.store, p.location, p.year, p.code, p.name],
+        [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note],
         [],
         (tLower) => {
           return groupCosts.some(c => {
@@ -895,7 +895,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
       if (deferredSearchTerm) {
         const isMatch = matchesAdvancedSearch(
           deferredSearchTerm,
-          [p.store, p.location, p.year, p.code, p.name],
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note],
           [],
           (term) => {
             return matchingGroupCosts.some(c => {

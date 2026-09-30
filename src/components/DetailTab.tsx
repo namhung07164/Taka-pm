@@ -2458,7 +2458,7 @@ export function DetailTab({
 
       const isMatch = matchesAdvancedSearch(
         term,
-        [p.store, p.location, p.year, p.code, p.name],
+        [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
         [],
         (tLower) => {
           const summariesMatch = p.taskSummaries?.some(ts =>
@@ -2690,7 +2690,7 @@ export function DetailTab({
       if (deferredSearchTerm) {
         const isMatch = matchesAdvancedSearch(
           deferredSearchTerm,
-          [p.store, p.location, p.year, p.code, p.name],
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
           [],
           (term) => {
             const summariesMatch = p.taskSummaries?.some(ts =>
@@ -2850,7 +2850,7 @@ export function DetailTab({
       const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
 
       const isProjectMatch = deferredSearchTerm
-        ? matchesAdvancedSearch(deferredSearchTerm, [p.store, p.location, p.year, p.code, p.name])
+        ? matchesAdvancedSearch(deferredSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
         : true;
       const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
         const taskFields = [

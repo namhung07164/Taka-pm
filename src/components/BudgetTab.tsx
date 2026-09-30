@@ -751,6 +751,8 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
       node.store,
       node.location,
       node.type,
+      node.detail,
+      node.description,
       node.note,
       node.year,
       node.totalBudget,

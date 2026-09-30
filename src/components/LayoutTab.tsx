@@ -424,7 +424,7 @@ export function LayoutTab({
   // Aggregate all known units in active store for rapid autocomplete suggestions (Unit code, Project Name, Brand Name)
   const unitSuggestions = React.useMemo(() => {
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
-    const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string; code?: string }>();
+    const map = new globalThis.Map<string, { unit: string; location?: string; brand?: string; project?: string; code?: string; description?: string }>();
     const allowedLocsSet = new Set(availableLocations.map(l => String(l).toLowerCase().trim()));
 
     // 1. Index storeUnits (only if location is accessible for this user)
@@ -462,20 +462,22 @@ export function LayoutTab({
           const primaryCode = String(p.unit || p.code || p.name || '').trim();
           if (primaryCode) {
             const key = `${primaryCode.toLowerCase()}_${(p.code || '').toLowerCase().trim()}_${loc.toLowerCase().trim()}`;
-            const existing = map.get(key) || { unit: primaryCode, location: loc, brand: '', project: '', code: '' };
+            const existing = map.get(key) || { unit: primaryCode, location: loc, brand: '', project: '', code: '', description: '' };
+            const desc = p.detail || (p as any).description || p.note || '';
             map.set(key, {
               unit: primaryCode,
               location: loc || existing.location || '',
               brand: p.brandName || existing.brand || '',
               project: p.name || existing.project || '',
-              code: p.code || existing.code || primaryCode
+              code: p.code || existing.code || primaryCode,
+              description: desc || existing.description || ''
             });
           }
         }
       }
     });
 
-    return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string; code?: string }>;
+    return Array.from(map.values()) as Array<{ unit: string; location?: string; brand?: string; project?: string; code?: string; description?: string }>;
   }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin]);
 
   const filteredUnitSuggestions = React.useMemo(() => {
@@ -504,12 +506,14 @@ export function LayoutTab({
       const pRaw = (item.project || '').toLowerCase().trim();
       const cRaw = (item.code || '').toLowerCase().trim();
       const lRaw = (item.location || '').toLowerCase().trim();
+      const dRaw = (item.description || '').toLowerCase().trim();
 
       const uNorm = norm(item.unit);
       const bNorm = norm(item.brand || '');
       const pNorm = norm(item.project || '');
       const cNorm = norm(item.code || '');
       const lNorm = norm(item.location || '');
+      const dNorm = norm(item.description || '');
 
       let score = 0;
 
@@ -531,17 +535,20 @@ export function LayoutTab({
         const uWords = uNorm.split(/[\s\-_\/.,;]+/);
         const cWords = cNorm.split(/[\s\-_\/.,;]+/);
         const pWords = pNorm.split(/[\s\-_\/.,;]+/);
+        const dWords = dNorm.split(/[\s\-_\/.,;]+/);
 
         if (bWords.some(w => w.startsWith(q))) score = 4000;
         else if (uWords.some(w => w.startsWith(q))) score = 3500;
         else if (cWords.some(w => w.startsWith(q))) score = 3000;
         else if (pWords.some(w => w.startsWith(q))) score = 2500;
+        else if (dWords.some(w => w.startsWith(q))) score = 2200;
 
         // 4. Substring contains (1000 - 2000)
         else if (bNorm.includes(q) || bRaw.includes(qRaw)) score = 2000;
         else if (uNorm.includes(q) || uRaw.includes(qRaw)) score = 1700;
         else if (cNorm.includes(q) || cRaw.includes(qRaw)) score = 1400;
         else if (pNorm.includes(q) || pRaw.includes(qRaw)) score = 1100;
+        else if (dNorm.includes(q) || dRaw.includes(qRaw)) score = 900;
         else if (lNorm.includes(q) || lRaw.includes(qRaw)) score = 600;
       }
 

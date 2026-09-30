@@ -77,7 +77,8 @@ Nơi hiển thị toàn bộ danh sách các dự án thi công, cải tạo c�
 2. **Lọc theo Năm**: Chọn ô chọn Year (`2026`, `2027`, hoặc `All Years`).
 3. **Lọc theo Trạng thái**: Chọn Trạng thái (`On process`, `Upcoming`, `Completed`, `Handover`, `Canceled`).
 4. **Tìm kiếm nhanh & Tự động nhảy vị trí (Smart Search & Location Auto-Jump)**:
-   - Gõ tên dự án, mã dự án, mã công việc, nhà thầu hoặc vị trí gian hàng vào ô Search (hoặc bấm phím tắt `/`).
+   - Gõ tên dự án, mã dự án, nội dung mô tả dự án (`Description`/`Detail`), mã công việc, nhà thầu hoặc vị trí gian hàng vào ô Search (hoặc bấm phím tắt `/`).
+   - **Hỗ trợ tìm kiếm theo Description**: Tìm kiếm từ khóa xuất hiện trong phần mô tả chi tiết của dự án trên toàn bộ các phân hệ (**General**, **Task Detail**, **Gantt Chart**, **Cost**, **Budget**, **Floor Layout**, và **Command Palette `Ctrl+K`**).
    - **Tự động chuyển Location**: Trên các tab **General**, **Task detail**, **Cost**, **Budget**, **Gantt**, khi nhập nội dung tìm kiếm, hệ thống sẽ tự động quét và chuyển bộ lọc `Location` sang đúng tầng/vị trí tương ứng chứa kết quả tìm kiếm đó.
    - **Hoàn trả bộ lọc khi xóa/hủy tìm kiếm**: Khi bấm nút xóa ô tìm kiếm (X) hoặc xóa hết nội dung, hệ thống sẽ tự động khôi phục lại chính xác bộ lọc `Location` và bộ lọc `Status` toàn cục đã chọn trước khi tìm kiếm.
    - **Phím tắt `Esc` xóa nhanh tìm kiếm**: Khi ô search đang có nội dung, người dùng chỉ cần bấm phím `Esc` (ngay cả khi con trỏ không nằm trong ô search) để tự động xóa sạch ô tìm kiếm và hoàn trả lại trạng thái bộ lọc toàn cục trước đó.
@@ -85,6 +86,8 @@ Nơi hiển thị toàn bộ danh sách các dự án thi công, cải tạo c�
 #### 🔹 Hướng dẫn Tạo Mới / Chỉnh Sửa Dự Án:
 * **Tạo mới**: Nhấp nút **"+ New Project"** (hoặc bấm phím tắt `P`):
   - **Bước 1**: Nhập Mã dự án (`Code` - *lưu ý: mã dự án không cho phép nhập khoảng trắng, viết hoa chuẩn Enterprise*), Tên dự án (`Project Name`), Chi nhánh (`Store`), Tầng/Vị trí (`Location`).
+    + **Project Code Link (Mã liên kết mặt bằng)**: Cho phép liên kết dự án với một hoặc nhiều ô Unit cụ thể trên bản đồ mặt bằng (ví dụ: `L2-219-3-2` hoặc nhập nhiều ô phân cách bằng dấu phẩy: `L3-303-1, L3-303-2`).
+    + **Quy tắc cô lập Unit độc lập (Strict Unit Isolation)**: Khi nhập mã liên kết cụ thể (như `L2-219-3-2`), hệ thống sẽ **chỉ gắn và tô màu chính xác ô Unit đó**, tuyệt đối không tự động lan truyền hay nhận nhầm sang ô cha (`L2-219`) hoặc các lô con khác. Nếu để trống, hệ thống sẽ tự động dùng mã `Code` của dự án làm mặc định.
   - **Bước 2**: Chọn Chế độ tính ngày (`Auto` - Tự động tính từ các task con, hoặc `Manual` - Nhập ngày cố định).
   - **Bước 3**: Nhập Ngày bắt đầu thi công (`Tak Start`), Ngày hoàn thành (`Tak Compl`), Ngày bàn giao (`Handover`), Ngày khai trương (`Opening`).
   - **Bước 4**: Bấm **"Save Project"** để lưu vào hệ thống.
@@ -1148,9 +1151,15 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Tự động nhận diện và hiển thị màu sắc theo từng tầng (Floor-Aware Thematic Mapping)**: Khi chuyển sang tầng L2 (hoặc bất kỳ tầng nào), hệ thống tự động tìm nạp đúng phiên bản bản vẽ của tầng đó (ví dụ `pm-l2-hcm`), tập hợp toàn bộ gian hàng và áp dụng đầy đủ quy tắc tô màu theo phân nhóm hoặc ánh xạ thủ công tương đương như ở Tab Review của Picture Mapping.
      + **Bộ chuyển đổi phiên bản trực tiếp (Layout Version Switcher)**: Tại góc trên bên trái của Live Layout Viewer, hệ thống tích hợp sẵn huy hiệu định vị Chi nhánh • Tầng (`HCM • L2`) cùng danh sách chọn phiên bản (`Version Selector`) nếu tầng đó có nhiều phiên bản mặt bằng khác nhau, cho phép người dùng chuyển đổi xem các kịch bản bố trí ngay lập tức.
 3. **Đồng Bộ Đầy Đủ Tất Cả Các Tab & Phân Vùng Lên Cloudflare R2 (Full Cloud Sync)**:
-   - **Đồng bộ toàn diện (Complete Multi-Tab Synchronization)**:
-     - Khi nhấn **Save Cloud**, hệ thống sẽ đóng gói và sao lưu toàn bộ trạng thái của phân hệ Picture Mapping lên file `mapping_config.json`:
+   - **Đồng bộ toàn diện & Bảo toàn 100% tất cả Version và Unit (Comprehensive Version & Unit Preservation)**:
+     - Khi nhấn **Save Cloud** (kể cả khi đang ở chế độ xem Dynamic, Edit hay Review), hệ thống sẽ đóng gói và sao lưu toàn bộ trạng thái của phân hệ Picture Mapping lên file `mapping_config.json`:
+       + **Bảo toàn 100% tất cả các Versions**: Hệ thống tự động hợp nhất (union) toàn bộ các phiên bản bản vẽ trên Cloud và ở máy cục bộ theo ID, bảo đảm không bao giờ bị ghi đè, mất phiên bản cũ của các năm hoặc phiên bản do người khác tạo.
+       + **Bảo toàn 100% tất cả các Units**: Toàn bộ danh sách các hình khối gian hàng (`mapUnits`) trên tầng đang xem và mọi tầng khác đều được lưu trữ đầy đủ, không bị ghi đè thành rỗng.
        + **Toàn bộ chi nhánh & tầng**: Lưu giữ cấu trúc phân vùng `storeLocationData` đầy đủ cho cả HCM và HN trên mọi tầng (B2, B1, L1, L2, L3, L4, L5,...), không bị ghi đè hay mất dữ liệu giữa các tầng.
+       + **Chống từ chối ghi (Zero Rejection Guarantee)**: 
+         * Cơ chế bảo vệ trần dung lượng 1MB của Firestore: Tự động lọc bỏ các chuỗi base64 nặng trong bản vẽ để Firestore không bao giờ báo lỗi `Document exceeds maximum allowed size`, đồng thời lưu trữ toàn vẹn file JSON đầy đủ trên Cloudflare R2 và LocalStorage.
+         * Tự động làm sạch khoảng trắng (trim) thông tin xác thực R2, hỗ trợ 2 cơ chế tải lên (S3 SDK direct + Presigned URL fallback).
+         * Hiển thị thông báo Toast nổi với số lượng chính xác: `Successfully saved X units and Y versions across all floors to Cloud!`.
        + **Tab Vẽ & Chỉnh Sửa (Edit Tab)**: Lưu đầy đủ các hình khối gian hàng (`mapUnits`), đồng bộ ngay lập tức vào thuộc tính `mapUnits` của các phiên bản bản vẽ (`mapVersions`), loại bỏ hoàn toàn tình trạng unit bị giữ tên cũ trong phiên bản khi xem Live Layout.
        + **Đồng bộ tự động khóa kết nối R2 (R2 Credentials Auto-Sync)**: Khóa R2 lưu trên Firestore được tự động nạp ngầm vào mọi tài khoản người dùng (bao gồm các tài khoản CP như CP-Hung, CP-Quynh) mà không cần cấu hình thủ công lại trên từng máy.
         + **Chống rò rỉ dữ liệu và chống trùng lặp giữa các tầng (Floor Boundary Matching & Geometry Deduplication)**: Trong tab Live Layout Viewer, hệ thống cách ly tuyệt đối gian hàng theo từng tầng (Store_Floor) bằng chuẩn khớp từ vựng chính xác (Regex Word Boundary), loại bỏ 100% việc trộn lẫn bản vẽ/unit của các tầng khác (như B11, B12 vào B1; hay L10, L11 vào L1), đồng thời tự động băm tọa độ hình học đa giác & hình chữ nhật (Geometry Hashing) để khử trùng hoàn toàn nét vẽ đè chập, bóng mờ hoặc chữ chồng lấn khi người dùng sửa/tách gian hàng.

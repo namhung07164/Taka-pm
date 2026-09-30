@@ -67,7 +67,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
 
     const matchedProjects = projects.filter(p => {
       const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
-      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, status, p.year];
+      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
       const matchesSearch = matchesAdvancedSearch(term, searchFields);
       const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
       const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
@@ -404,7 +404,7 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
 
   const filteredProjects = projects.filter(p=> {
     const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
-    const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, status, p.year];
+    const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
     const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
     const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
     const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
