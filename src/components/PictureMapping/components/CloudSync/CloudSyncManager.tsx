@@ -251,8 +251,8 @@ export default function CloudSyncManager({
           const pStore = (pKey.split('_')[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
           const pLoc = pKey.split('_')[1] || 'L1';
 
-          // Preserve all units: use local if available, otherwise retain cloud units
-          const sourceUnits = (localPart?.mapUnits && localPart.mapUnits.length > 0)
+          // Authoritative Units: If local partition exists, local units are 100% authoritative
+          const sourceUnits = (localPart && localPart.mapUnits !== undefined)
             ? localPart.mapUnits
             : (cloudPart?.mapUnits || []);
 
@@ -265,34 +265,10 @@ export default function CloudSyncManager({
             fill: (u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' && u.fill !== 'transparent') ? u.fill : '#3b82f6',
           }));
 
-          // Preserve all versions across all years: union local and cloud versions by version ID
-          const localVersions = localPart?.mapVersions || [];
-          const cloudVersions = cloudPart?.mapVersions || [];
-
-          const versionMap = new Map<string, MapVersion>();
-
-          // Base on existing cloud versions
-          for (const cv of cloudVersions) {
-            if (cv && cv.id) {
-              versionMap.set(cv.id, { ...cv });
-            }
-          }
-
-          // Overlay local versions (capturing new versions, edited names, background URLs, and dynamic rules)
-          for (const lv of localVersions) {
-            if (lv && lv.id) {
-              const existingCv = versionMap.get(lv.id);
-              versionMap.set(lv.id, {
-                ...(existingCv || {}),
-                ...lv,
-                groups: (lv.groups && lv.groups.length > 0) ? lv.groups : (existingCv?.groups || []),
-                groupMappings: lv.groupMappings || existingCv?.groupMappings || {},
-              });
-            }
-          }
-
-          const rawVersions = Array.from(versionMap.values());
-          const finalVersionsList = rawVersions.length > 0 ? rawVersions : localVersions;
+          // Authoritative Versions: If local partition exists, local versions are 100% authoritative
+          const finalVersionsList: MapVersion[] = (localPart && localPart.mapVersions !== undefined)
+            ? localPart.mapVersions
+            : (cloudPart?.mapVersions || []);
 
           const pVersionsCloud: MapVersion[] = [];
           const pVersionsLocal: MapVersion[] = [];
@@ -549,6 +525,20 @@ export default function CloudSyncManager({
           reviewSelectedLabels: reviewSelectedLabels || [],
           reviewLabelColors: reviewLabelColors || {},
         });
+
+        // Broadcast to LiveLayoutViewer, ReviewTab, etc.
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('taka_cloud_sync_updated', {
+              detail: {
+                timestamp: configData.timestamp,
+                store,
+                location,
+                storeLocationData: localStoreLocationData,
+              }
+            }));
+          }
+        } catch (evtErr) {}
 
         setProgress(100);
         const totalVersions = Object.values(cloudStoreLocationData).reduce((acc, p) => acc + (p.mapVersions?.length || 0), 0);

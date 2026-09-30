@@ -359,6 +359,35 @@ export function LiveLayoutViewer({ storeFilter, locationFilter, yearFilter, targ
 
   useEffect(() => {
     loadConfig();
+
+    const handleSyncUpdate = () => {
+      loadConfig();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('taka_cloud_sync_updated', handleSyncUpdate);
+    }
+
+    // Realtime snapshot listener on taka_config/versions
+    let unsubSnapshot: (() => void) | null = null;
+    (async () => {
+      try {
+        const { doc, onSnapshot } = await import('firebase/firestore');
+        const { db, APP_ID } = await import('../lib/firebase');
+        unsubSnapshot = onSnapshot(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), (snap) => {
+          if (snap.exists()) {
+            loadConfig();
+          }
+        });
+      } catch (e) {}
+    })();
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('taka_cloud_sync_updated', handleSyncUpdate);
+      }
+      if (unsubSnapshot) unsubSnapshot();
+    };
   }, [r2Config]);
 
   if (loading) {
@@ -597,10 +626,10 @@ function LiveCanvas({
                   ? v.backgroundUrl
                   : (existing.backgroundUrl || v.backgroundUrl);
               versionsMap.set(v.id, { 
-                ...existing, 
                 ...v, 
+                ...existing, 
                 backgroundUrl: resolvedBg,
-                location: v.location || existing.location || key.split('_')[1] 
+                location: existing.location || v.location || key.split('_')[1] 
               });
             }
           });
@@ -619,10 +648,10 @@ function LiveCanvas({
               ? v.backgroundUrl
               : (existing.backgroundUrl || v.backgroundUrl);
           versionsMap.set(v.id, { 
-            ...existing, 
             ...v, 
+            ...existing, 
             backgroundUrl: resolvedBg,
-            store: v.store || 'HCM' 
+            store: existing.store || v.store || 'HCM' 
           });
         }
       });

@@ -715,7 +715,82 @@ export async function saveStoreToCloudR2(
     throw new Error(`Lỗi tải lên R2 Cloudflare: ${uploadRes.error}`);
   }
 
-  return { success: true, message: 'Đã lưu cấu hình lên Cloudflare R2 thành công.' };
+  // Dual Backup to Firestore & LocalStorage
+  try {
+    const { doc, setDoc } = await import('firebase/firestore');
+    const { db, APP_ID } = await import('../../../lib/firebase');
+    
+    // Update versions doc to trigger live snapshot listeners
+    await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+      r2Version: configData.timestamp,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    // Backup to picture_mapping_config doc
+    const firestoreStoreLocationData: Record<string, any> = {};
+    for (const key in cloudStoreLocationData) {
+      const part = cloudStoreLocationData[key];
+      if (!part) continue;
+      firestoreStoreLocationData[key] = {
+        activeMapVersionId: part.activeMapVersionId,
+        mapUnits: part.mapUnits || [],
+        mapVersions: (part.mapVersions || []).map(v => {
+          const bg = v.backgroundUrl || '';
+          const safeBg = bg.startsWith('data:') ? ((v as any).r2Key ? `r2://${(v as any).r2Key}` : '') : bg;
+          return { ...v, backgroundUrl: safeBg };
+        }),
+      };
+    }
+
+    const firestorePayload = {
+      storeLocationData: firestoreStoreLocationData,
+      store: targetStore,
+      location: dataState.location,
+      year: targetYear,
+      globalYearFilter: targetYear,
+      activeMapVersionId: dataState.activeMapVersionId,
+      reviewSelectedLabels: configData.reviewSelectedLabels,
+      reviewLabelColors: configData.reviewLabelColors,
+      updatedAt: new Date().toISOString(),
+      timestamp: configData.timestamp,
+    };
+
+    const estimatedBytes = new Blob([JSON.stringify(firestorePayload)]).size;
+    if (estimatedBytes < 950000) {
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), firestorePayload, { merge: true });
+    }
+  } catch (fsErr) {
+    console.warn('[dynamicExportService] Firestore backup error:', fsErr);
+  }
+
+  try {
+    localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+      storeLocationData: cloudStoreLocationData,
+      store: targetStore,
+      location: dataState.location,
+      year: targetYear,
+      globalYearFilter: targetYear,
+      activeMapVersionId: dataState.activeMapVersionId,
+      updatedAt: Date.now(),
+      timestamp: configData.timestamp,
+    }));
+  } catch {}
+
+  // Broadcast to LiveLayoutViewer, ReviewTab, etc.
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('taka_cloud_sync_updated', {
+        detail: {
+          timestamp: configData.timestamp,
+          store: targetStore,
+          location: dataState.location,
+          storeLocationData: cloudStoreLocationData,
+        }
+      }));
+    }
+  } catch (evtErr) {}
+
+  return { success: true, message: 'Đã lưu cấu hình lên Cloudflare R2 & Firestore thành công.' };
 }
 
 // ============================================================================

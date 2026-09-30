@@ -32,6 +32,23 @@ export interface LoadedCloudDataPayload {
 
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
 
+let backupTimeout: any = null;
+export function autoBackupStoreLocationData(data: Record<string, StoreLocationRecord>, store: string, location: string, activeMapVersionId?: string | null) {
+  if (typeof window === 'undefined') return;
+  if (backupTimeout) clearTimeout(backupTimeout);
+  backupTimeout = setTimeout(() => {
+    try {
+      localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+        storeLocationData: data,
+        store,
+        location,
+        activeMapVersionId,
+        updatedAt: Date.now(),
+      }));
+    } catch (e) {}
+  }, 200);
+}
+
 interface DataStoreState {
   store: 'HCM' | 'HN';
   setStore: (store: 'HCM' | 'HN') => void;
@@ -170,6 +187,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       mapVersions: newVersions,
       activeMapVersionId: newActiveVersionId,
     });
+    autoBackupStoreLocationData(updatedStoreLocationData, newStore, newLocation, newActiveVersionId);
   },
 
   setStoreLocationData: (data) => {
@@ -184,6 +202,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
         activeMapVersionId: target.activeMapVersionId || (target.mapVersions?.[0]?.id ?? null),
       } : {}),
     });
+    autoBackupStoreLocationData(data, state.store, state.location, state.activeMapVersionId);
   },
 
   setLoadedCloudData: (payload: LoadedCloudDataPayload) => {
@@ -270,16 +289,18 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       location: u.location || state.location,
     }));
     const key = getPartitionKey(state.store, state.location);
+    const newStoreLocationData = {
+      ...state.storeLocationData,
+      [key]: {
+        ...(state.storeLocationData[key] || { mapVersions: state.mapVersions, activeMapVersionId: state.activeMapVersionId }),
+        mapUnits: taggedUnits,
+      },
+    };
     set({
       mapUnits: taggedUnits,
-      storeLocationData: {
-        ...state.storeLocationData,
-        [key]: {
-          ...(state.storeLocationData[key] || { mapVersions: state.mapVersions, activeMapVersionId: state.activeMapVersionId }),
-          mapUnits: taggedUnits,
-        },
-      },
+      storeLocationData: newStoreLocationData,
     });
+    autoBackupStoreLocationData(newStoreLocationData, state.store, state.location, state.activeMapVersionId);
   },
 
   mapVersions: [],
@@ -293,16 +314,18 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       year: v.year ? String(v.year).trim() : appYear,
     }));
     const key = getPartitionKey(state.store, state.location);
+    const newStoreLocationData = {
+      ...state.storeLocationData,
+      [key]: {
+        ...(state.storeLocationData[key] || { mapUnits: state.mapUnits, activeMapVersionId: state.activeMapVersionId }),
+        mapVersions: taggedVersions,
+      },
+    };
     set({
       mapVersions: taggedVersions,
-      storeLocationData: {
-        ...state.storeLocationData,
-        [key]: {
-          ...(state.storeLocationData[key] || { mapUnits: state.mapUnits, activeMapVersionId: state.activeMapVersionId }),
-          mapVersions: taggedVersions,
-        },
-      },
+      storeLocationData: newStoreLocationData,
     });
+    autoBackupStoreLocationData(newStoreLocationData, state.store, state.location, state.activeMapVersionId);
   },
 
   activeMapVersionId: null,
@@ -463,6 +486,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       storeLocationData: updatedStoreLocationData,
       mapUnits: activeUnits,
     });
+    autoBackupStoreLocationData(updatedStoreLocationData, state.store, state.location, state.activeMapVersionId);
   },
 
   updateStoreVersionsAcrossLocations: (updatedVersions, targetStore) => {
@@ -530,6 +554,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       mapVersions: activeVersions,
       activeMapVersionId: activeVersionId,
     });
+    autoBackupStoreLocationData(updatedStoreLocationData, state.store, state.location, activeVersionId);
   },
 
   syncGroupsToAllStoreLocations: (groups, targetStore) => {
