@@ -720,45 +720,36 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* 5. Details & Description Section */}
-      {((v.detail && (taskLines.length > 0 || detailText)) || (v.description && descriptionText)) && (
-        <div className="bg-slate-50 dark:bg-[#1e1e20]/60 rounded-lg p-2 sm:p-2.5 border border-slate-200/80 dark:border-[#444446] text-xs shadow-sm flex flex-col gap-1.5 mt-0.5">
-          {v.detail && (taskLines.length > 0 || detailText) && (
+      {/* 5. Details & Description Section (Strictly matching General Tab) */}
+      {((v.detail && (taskLines.length > 0 || detailText)) || (v.description && (descriptionText || detailText))) && (
+        <div className="bg-slate-50/90 dark:bg-[#161618] rounded-lg p-2 sm:p-2.5 border border-slate-200/80 dark:border-[#2e2e32] text-xs shadow-2xs flex flex-col gap-1.5 mt-0.5">
+          {/* Active Subtasks / Detail */}
+          {v.detail && taskLines.length > 0 && (
             <div className="flex flex-col gap-0.5">
-              <div className="text-[9.5px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
+              <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                 Detail
               </div>
-              {taskLines.length > 0 ? (
-                <div className="flex flex-col gap-0.5">
-                  {taskLines.map((line, idx) => (
-                    <div 
-                      key={idx} 
-                      className={`font-semibold text-xs leading-snug ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
-                    >
-                      {line}
-                    </div>
-                  ))}
-                  {detailText && (
-                    <div className="text-slate-600 dark:text-[#a3a3a3] text-[11px] font-normal whitespace-pre-wrap leading-relaxed pt-1 mt-0.5 border-t border-slate-200/60 dark:border-slate-700/60">
-                      {detailText}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-blue-600 dark:text-[#8ab4f8] font-semibold text-xs whitespace-pre-wrap leading-snug">
-                  {detailText}
-                </div>
-              )}
+              <div className="flex flex-col gap-0.5">
+                {taskLines.map((line, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`font-medium text-xs leading-tight ${idx % 2 === 0 ? 'text-blue-600 dark:text-[#8ab4f8]' : 'text-orange-600 dark:text-orange-400'}`}
+                  >
+                    • {line}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {v.description && descriptionText && (
-            <div className={cn("flex flex-col gap-0.5", v.detail && (taskLines.length > 0 || detailText) ? "pt-1 border-t border-slate-200/60 dark:border-slate-700/60" : "")}>
-              <div className="text-[9.5px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-wider">
-                Description / Note
+          {/* Description (p.detail or descriptionText) */}
+          {(taskLines.length === 0 ? (v.detail && detailText) : (v.description && (detailText || descriptionText))) && (
+            <div className={cn("flex flex-col gap-0.5", v.detail && taskLines.length > 0 ? "pt-1 border-t border-slate-200/60 dark:border-[#2e2e32]" : "")}>
+              <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                {taskLines.length > 0 ? 'Description' : 'Detail'}
               </div>
-              <div className="text-slate-700 dark:text-slate-200 font-medium text-xs whitespace-pre-wrap leading-relaxed">
-                {descriptionText}
+              <div className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">
+                {detailText || descriptionText}
               </div>
             </div>
           )}

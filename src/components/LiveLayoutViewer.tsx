@@ -1451,11 +1451,6 @@ function LiveCanvas({
       activeTaskNames.forEach(name => {
         taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
       });
-      if (taskLines.length === 0 && allTaskNames.length > 0) {
-        allTaskNames.forEach(name => {
-          taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
-        });
-      }
 
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
       const detailStr = p.detail || '';
