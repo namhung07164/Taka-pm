@@ -353,7 +353,8 @@ function DynamicHierarchyTab({
         const uYr = String(uEntry.year || effectiveYear || '').trim();
 
         if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        if (pMeta.location && uLoc && pMeta.location !== uLoc) return;
+        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
         if (pMeta.year && uYr && pMeta.year !== uYr) return;
 
         const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
@@ -1006,8 +1007,9 @@ function DynamicHierarchyTab({
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {activeGroups.map((group) => {
+                  const groupMatchedItems = summaryList.filter((item) => item.matchedGroupId === group.id);
                   const assignedUnits = (group.rules && group.rules.length > 0)
-                    ? units.filter((u) => matchRules(u, group.rules)).map((u) => u.id)
+                    ? groupMatchedItems.map((item) => item.unitId)
                     : (activeVersion.groupMappings[group.id] || []);
                   return (
                     <div
@@ -1196,7 +1198,7 @@ function DynamicHierarchyTab({
                               </span>
                               <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
                                 {assignedUnits.map((uid) => {
-                                  const u = units.find((x) => x.id === uid);
+                                  const u = units.find((x) => x.id === uid || (x.name && x.name.toLowerCase() === uid.toLowerCase()));
                                   return u ? (
                                     <div
                                       key={uid}
@@ -1207,9 +1209,16 @@ function DynamicHierarchyTab({
                                           {u.location}
                                         </span>
                                       )}
-                                      <span>{u.name}</span>
+                                      <span className="font-semibold">{u.name}</span>
                                     </div>
-                                  ) : null;
+                                  ) : (
+                                    <div
+                                      key={uid}
+                                      className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-300 flex items-center gap-1.5"
+                                    >
+                                      <span className="font-semibold">{uid}</span>
+                                    </div>
+                                  );
                                 })}
                               </div>
                             </div>
