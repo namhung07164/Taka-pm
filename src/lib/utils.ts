@@ -350,8 +350,8 @@ function normalizeUnitCodeBase(code: string): string {
   str = str.replace(/^(unit|shop|lot|booth|kiosk|store)\s*[-_:]?\s*/i, '');
   // Remove PM prefix like 'pm-l1-hcm-2026-', 'pm-b1-hcm-', 'pm-hcm-l1-'
   str = str.replace(/^pm-(?:b\d|l\d|\d+f|gf|ug|hcm|hn)-(?:hcm|hn|b\d|l\d|\d+f|gf|ug)(?:-(?:20\d\d|y\d\d))?[-_:]\s*/i, '');
-  // Remove floor prefixes like l1-, l2-, f1-, 1f-, 2f-, b1-, b2-, gf-, ug-
-  str = str.replace(/^([a-z]?\d+[a-z]?|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
+  // Remove floor prefixes like l1-, l2-, f1-, 1f-, 2f-, b1-, b2-, gf-, ug- (strictly 1-2 digits to avoid stripping unit numbers like 219-)
+  str = str.replace(/^(?:[blf]\d{1,2}|\d{1,2}f|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
   return str.trim();
 }
 
@@ -365,6 +365,12 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
     const trimmed = (rawCode || '').trim().toLowerCase();
     if (!trimmed || INVALID_UNIT_TOKENS.has(trimmed)) return;
     codeSet.add(trimmed);
+
+    // Also extract base code without floor prefix (e.g. for 'l2-219-3-2' add '219-3-2')
+    const baseCode = normalizeUnitCodeBase(trimmed);
+    if (baseCode && !INVALID_UNIT_TOKENS.has(baseCode)) {
+      codeSet.add(baseCode);
+    }
 
     // If PM standard code e.g. PM-L1-HCM-2026-DC or PM-L1-HCM-DC, also extract DC and L1-DC
     const pmMatch = trimmed.match(/^pm-(?:b\d|l\d|\d+f|gf|ug|hcm|hn)-(?:hcm|hn|b\d|l\d|\d+f|gf|ug)(?:-(?:20\d\d|y\d\d))?-([a-z0-9_-]+)$/i);
@@ -382,11 +388,11 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
     }
   };
 
-  if (p.code && String(p.code).trim()) {
-    addIfValid(String(p.code));
-  }
+  // When project code link is explicitly provided, ONLY use the linkCodes to define linked units!
+  // This cleanly isolates linked units and prevents leaking into p.code (which could be a parent unit or different code).
+  const hasCustomLinkCodes = Boolean(p.linkCodes && String(p.linkCodes).trim());
 
-  if (p.linkCodes && String(p.linkCodes).trim()) {
+  if (hasCustomLinkCodes) {
     String(p.linkCodes)
       .split(/[\r\n\t,;+/&|]+|\s{2,}/)
       .map(c => c.trim().toLowerCase())
@@ -394,6 +400,8 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
       .forEach(c => {
         addIfValid(c);
       });
+  } else if (p.code && String(p.code).trim()) {
+    addIfValid(String(p.code));
   }
 
   return Array.from(codeSet);
@@ -496,7 +504,8 @@ export function projectMatchesScope(
 }
 
 /**
- * Checks if a project's codes match a given unit name (exact, stripped prefix, or subdiv/lot prefix)
+ * Checks if a project's codes match a given unit name (exact or normalized floor-prefix match).
+ * Strictly isolates parent-lot and sub-lots so that e.g. L2-219-3-2 never matches L2-219 or vice-versa.
  */
 export function projectMatchesUnitCode(pCodes: string[], unitName: string): boolean {
   const u = (unitName || '').toLowerCase().trim();
@@ -510,23 +519,10 @@ export function projectMatchesUnitCode(pCodes: string[], unitName: string): bool
     // 1. Exact match
     if (u === c) return true;
 
-    // 2. Base code match after stripping floor prefixes (e.g. 'B1-B114-1' matching 'B114-1' or 'L1-01' matching '01')
+    // 2. Base code match after stripping floor prefixes (e.g. 'L2-219-3-2' matching '219-3-2' or 'L1-01' matching '01')
     const cStripped = normalizeUnitCodeBase(c);
     if (uStripped && cStripped && !INVALID_UNIT_TOKENS.has(uStripped) && !INVALID_UNIT_TOKENS.has(cStripped)) {
       if (uStripped === cStripped) return true;
-      
-      // Sub-lot match (e.g. '114-1' matching '114' or '101-A' matching '101')
-      // Only allow if base length >= 3 to avoid false positive on single chars
-      if (uStripped.length >= 3 && cStripped.length >= 3) {
-        if (uStripped.startsWith(cStripped + '-') || uStripped.startsWith(cStripped + '_')) return true;
-        if (cStripped.startsWith(uStripped + '-') || cStripped.startsWith(uStripped + '_')) return true;
-      }
-    }
-
-    // 3. Sub-lot exact prefix (e.g. 'B1-B114-1' matching 'B1-B114')
-    // Ensure c is at least 4 characters and not a floor code (e.g. not 'B1-')
-    if (c.length >= 4 && !INVALID_UNIT_TOKENS.has(c)) {
-      if (u.startsWith(c + '-') || u.startsWith(c + '_')) return true;
     }
   }
   return false;

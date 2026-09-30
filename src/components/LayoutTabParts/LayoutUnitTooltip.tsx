@@ -9,7 +9,7 @@ import {
   BarChartHorizontal
 } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
-import { cn, parseDateTime } from '../../lib/utils';
+import { cn, parseDateTime, extractAllProjectCodes, projectMatchesUnitCode } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
@@ -107,17 +107,20 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       const found = projects.find(item => item.id === initialP.id);
       if (found) return found;
     }
+    // Only resolve project if unit actually has an associated app project
+    if (!data.hasAppProject && !data.matchedProject && !data.appProjectCode) {
+      return initialP;
+    }
     const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
     if (targetCode) {
       const found = projects.find(item => {
-        const pCode = String(item.code || '').trim().toLowerCase();
-        const pCodes = (item.linkCodes ? String(item.linkCodes).split(/[+;,/]/) : []).map(c => c.trim().toLowerCase());
-        return pCode === targetCode || pCodes.includes(targetCode);
+        const itemUnitCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+        return itemUnitCodes.includes(targetCode) || projectMatchesUnitCode(itemUnitCodes, targetCode);
       });
       if (found) return found;
     }
     return initialP;
-  }, [initialP, data.appProjectCode, data.code, hoverInfo.unitName, projects]);
+  }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, hoverInfo.unitName, projects]);
 
   // Draggable State Handling
   const isDraggingRef = useRef(false);
