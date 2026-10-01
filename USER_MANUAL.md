@@ -1452,3 +1452,11 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Hệ thống lập tức tính toán lại toàn bộ thông số dự án cha tương ứng: `taskCount` (tổng số lượng task), `taskSummaries` (danh sách tóm tắt mã phụ, tên, ngày bắt đầu và kết thúc), `computedTakStart` (ngày bắt đầu sớm nhất), `computedTakCompl` (ngày hoàn thành muộn nhất), `computedOpening` và tỷ lệ tiến độ thực tế / kế hoạch.
      + Cập nhật ngay lập tức vào bộ nhớ Zustand (0ms) và đồng bộ trực tiếp lên tài liệu dự án trên Firestore (`taka_projects`) bằng phương thức an toàn `setDoc({ merge: true })`.
      + Đảm bảo khi đóng/thu gọn dự án (collapsed), hàng dự án luôn hiển thị đầy đủ số lượng task `(33)`, ngày bắt đầu và ngày kết thúc chuẩn xác mà không cần phải mở rộng mới cập nhật.
+
+20. **Kiến Trúc Module Hóa Chuẩn Enterprise & Tối Ưu Hiệu Năng (DetailTab & LiveLayoutViewer Modular Architecture)**:
+   - **Tối Ưu Phân Tách Sub-components & Hooks Dưới 500 Dòng**:
+     + **Detail Tab**: Chia nhỏ thành các component độc lập (`DetailFilterToolbar`, `DetailTableView`, `DetailTableHeader`, `DetailProjectRow`, `DetailTaskRow`, `DetailMobileView`, `DetailMobileTaskItem`, `DetailFloatingActionBar`), đảm bảo khả năng mở rộng và chống re-render diện rộng.
+     + **Live Layout Viewer**: Đã tách rời từ file nguyên khối thành các module chuyên biệt (`LiveLayoutMainView`, `LiveLayoutCanvas`, `LiveLayoutTopControls`, `LiveLayoutFloorSelector`, `LiveLayoutLegendBar`, `LiveLayoutLegendModal`, `LiveLayoutSettingsDrawer`, `LiveLayoutBottomActions`, `LiveLayoutPrintLegend`) cùng các custom hooks xử lý cử chỉ (`useLiveLayoutGestures`), đồng bộ Cloud R2 (`useLiveLayoutR2Config`), phân giải dữ liệu tầng (`useLiveLayoutData`) và sự kiện cửa sổ (`useLiveLayoutWindowEvents`).
+   - **Bảo Toàn Nghiệp Vụ & An Toàn Bộ Nhớ**:
+     + Giữ nguyên 100% logic kinh doanh tài chính, WBS, liên kết Predecessor, phân quyền RBAC và cơ chế kéo thả mượt mà 60fps.
+     + Tự động quản lý giải phóng bộ nhớ (cleanup event listeners, animation frames, WebGL/Canvas context) chống tràn RAM trên các thiết bị máy tính bảng và POS di động.

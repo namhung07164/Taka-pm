@@ -52,6 +52,7 @@ interface DetailMobileViewProps {
   taskCodeMap?: Map<string, string>;
   taskActualStatusMap?: Map<string, { label: string; color: string }>;
   onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
+  onNavigateToDelegation?: (groupId: string, sourceTaskId?: string) => void;
 }
 
 export const DetailMobileView = memo(function DetailMobileView({

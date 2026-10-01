@@ -101,8 +101,8 @@ describe('Predecessor Resolution and Subtask Index Matching', () => {
       location: 'B2',
       name: 'Handover',
       orderIndex: 2,
-      start: '2027-04-01T09:00',
-      finish: '2027-04-01T18:00',
+      start: '2027-04-06T09:00',
+      finish: '2027-04-06T18:00',
       duration: '0',
       durationManual: true,
       finishManual: false
