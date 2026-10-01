@@ -164,6 +164,8 @@ export default function CloudSyncManager({
     const currentAction = forceAction || actionType;
     const currentScope = forceScope || selectedScope;
     setIsModalOpen(false);
+    setSyncing(true);
+    setBackgroundSyncing(currentAction);
 
     // 1. INSTANT 0ms OPTIMISTIC COMMIT TO ZUSTAND & LOCALSTORAGE
     const freshDataState = useDataStore.getState();
@@ -175,17 +177,10 @@ export default function CloudSyncManager({
     };
 
     // Guarantee the active partition contains the user's latest on-screen units and versions
-    const currentActiveUnits = (freshDataState.mapUnits && freshDataState.mapUnits.length > 0)
-      ? freshDataState.mapUnits
-      : (mapUnits && mapUnits.length > 0 ? mapUnits : (updatedStoreLocationData[currentActiveKey]?.mapUnits || []));
-
-    const currentActiveVersions = (freshDataState.mapVersions && freshDataState.mapVersions.length > 0)
-      ? freshDataState.mapVersions
-      : (mapVersions && mapVersions.length > 0 ? mapVersions : (updatedStoreLocationData[currentActiveKey]?.mapVersions || []));
-
+    const currentActiveUnits = Array.isArray(freshDataState.mapUnits) ? freshDataState.mapUnits : (updatedStoreLocationData[currentActiveKey]?.mapUnits || []);
+    const currentActiveVersions = Array.isArray(freshDataState.mapVersions) ? freshDataState.mapVersions : (updatedStoreLocationData[currentActiveKey]?.mapVersions || []);
     const currentActiveVersionId = freshDataState.activeMapVersionId 
       || activeMapVersionId 
-      || updatedStoreLocationData[currentActiveKey]?.activeMapVersionId 
       || (currentActiveVersions[0]?.id ?? null);
 
     updatedStoreLocationData[currentActiveKey] = {
@@ -195,8 +190,13 @@ export default function CloudSyncManager({
     };
 
     if (currentAction === 'upload') {
-      // 0ms Commit to Zustand
-      useDataStore.getState().setStoreLocationData(updatedStoreLocationData);
+      // Synchronously write to Zustand and LocalStorage
+      useDataStore.setState({
+        storeLocationData: updatedStoreLocationData,
+        mapUnits: currentActiveUnits,
+        mapVersions: currentActiveVersions,
+        activeMapVersionId: currentActiveVersionId,
+      });
       try {
         localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
           storeLocationData: updatedStoreLocationData,
@@ -204,35 +204,17 @@ export default function CloudSyncManager({
           location: currentLocation,
           activeMapVersionId: currentActiveVersionId,
           updatedAt: Date.now(),
+          timestamp: Date.now(),
         }));
       } catch {}
-
-      setBackgroundSyncing('upload');
-      if (!isAuto) {
-        useAppStore.getState().setToast({
-          title: "Save Cloud (0ms)",
-          message: `Đã lưu [${getScopeName(currentScope)}] vào bộ nhớ tức thời! Đang sao lưu ngầm lên Cloudflare R2 & Firestore.`,
-          type: "info",
-        });
-      }
-    } else {
-      setBackgroundSyncing('download');
-      if (!isAuto) {
-        useAppStore.getState().setToast({
-          title: "Load Cloud (0ms)",
-          message: `Đang kiểm tra và tải phiên bản mới nhất từ Cloud trong nền...`,
-          type: "info",
-        });
-      }
     }
 
-    // 2. RUN HEAVY ASYNC NETWORK SYNC COMPLETELY IN BACKGROUND
-    (async () => {
-      try {
-        const creds = await getStoredR2CredentialsAsync();
+    // 2. NETWORK ASYNC CLOUD SYNC (R2 & FIRESTORE)
+    try {
+      const creds = await getStoredR2CredentialsAsync();
 
-        if (currentAction === 'upload') {
-          let existingCloudData: any = null;
+      if (currentAction === 'upload') {
+        let existingCloudData: any = null;
 
         let s3ClientInstance: any = null;
         if (creds) {
@@ -902,8 +884,7 @@ export default function CloudSyncManager({
       setBackgroundSyncing(null);
       setSyncing(false);
     }
-  })();
-};
+  };
 
   const handleCleanR2Garbage = async () => {
     const creds = getStoredR2Credentials();
