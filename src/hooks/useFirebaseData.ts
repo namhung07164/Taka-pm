@@ -12,7 +12,7 @@ import { useAppStore } from "../store/useAppStore";
 import { usePerformanceStore } from "../store/usePerformanceStore";
 import {   auth, db, APP_ID , writeBatch , setDoc } from "../lib/firebase";
 import { getPendingUpdates, clearPendingUpdates } from "../lib/syncQueue";
-import { getEffectiveStoreFilter, ACTIVE_YEARS } from "../lib/utils";
+import { getEffectiveStoreFilter, ACTIVE_YEARS, PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../lib/utils";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { collection, onSnapshot, query, where, doc, getDocs, getDoc, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
 import {
@@ -390,11 +390,10 @@ export function useFirebaseData() {
       prevSigProjects.current = querySignature;
     }
 
-    const targetYears = (globalYearFilter === 'all' || globalYearFilter === 'ALL')
-      ? ACTIVE_YEARS
-      : [globalYearFilter];
+    const isAllYears = globalYearFilter === 'all' || globalYearFilter === 'ALL';
+    const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
-    targetYears.forEach(year => {
+    liveTargetYears.forEach(year => {
       if (!projectsPool.current.has(year)) {
         const qProjects = buildStoreAndYearQuery(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), "store", "year", year);
         
@@ -435,6 +434,50 @@ export function useFirebaseData() {
         projectsPool.current.set(year, unsub);
       }
     });
+
+    // When "All Years" is chosen, secondary future years (2028-2030) are hydrated via zero-read Cache-First
+    // instead of creating wasteful long-lived WebSocket listeners.
+    if (isAllYears) {
+      SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
+        if (projectsPool.current.has(year)) return;
+        try {
+          const qProjects = buildStoreAndYearQuery(
+            collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"),
+            "store",
+            "year",
+            year
+          );
+          let snapshot;
+          try {
+            snapshot = await getDocsFromCache(qProjects);
+            if (snapshot.empty) {
+              snapshot = await getDocsFromServer(qProjects);
+            }
+          } catch {
+            snapshot = await getDocsFromServer(qProjects);
+          }
+
+          if (snapshot && !snapshot.empty) {
+            const currentProjects = useAppStore.getState().projects || [];
+            const projectMap = new Map<string, Project>();
+            currentProjects.forEach(p => projectMap.set(p.id, p));
+
+            snapshot.forEach((docSnap) => {
+              const data = { id: docSnap.id, ...docSnap.data() } as Project;
+              if (!data.isDeleted) {
+                projectMap.set(docSnap.id, data);
+              }
+            });
+
+            const updatedList = Array.from(projectMap.values());
+            updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
+            useAppStore.getState().setProjects(updatedList);
+          }
+        } catch {
+          // Ignore cache misses
+        }
+      });
+    }
 
   }, [querySignature, buildStoreAndYearQuery, globalYearFilter]);
 
@@ -767,13 +810,12 @@ export function useFirebaseData() {
       prevSigCosts.current = querySignature;
     }
 
-    const targetYears = (globalYearFilter === 'all' || globalYearFilter === 'ALL')
-      ? ACTIVE_YEARS
-      : [globalYearFilter];
+    const isAllYears = globalYearFilter === 'all' || globalYearFilter === 'ALL';
+    const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
     setIsCostsLoading(true);
 
-    targetYears.forEach(year => {
+    liveTargetYears.forEach(year => {
       if (!costsPool.current.has(year)) {
         const qCosts = buildStoreAndYearQuery(
           collection(db, "artifacts", APP_ID, "public", "data", "taka_costs"),
@@ -816,6 +858,45 @@ export function useFirebaseData() {
       }
     });
 
+    if (isAllYears) {
+      SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
+        if (costsPool.current.has(year)) return;
+        try {
+          const qCosts = buildStoreAndYearQuery(
+            collection(db, "artifacts", APP_ID, "public", "data", "taka_costs"),
+            "projectStore",
+            "projectYear",
+            year
+          );
+          let snapshot;
+          try {
+            snapshot = await getDocsFromCache(qCosts);
+            if (snapshot.empty) {
+              snapshot = await getDocsFromServer(qCosts);
+            }
+          } catch {
+            snapshot = await getDocsFromServer(qCosts);
+          }
+
+          if (snapshot && !snapshot.empty) {
+            const currentCosts = useAppStore.getState().costs || [];
+            const costMap = new Map<string, Cost>();
+            currentCosts.forEach(c => costMap.set(c.id, c));
+
+            snapshot.forEach((docSnap) => {
+              const data = { id: docSnap.id, ...docSnap.data() } as Cost;
+              if (!data.isDeleted) {
+                costMap.set(docSnap.id, data);
+              }
+            });
+
+            const updatedList = Array.from(costMap.values());
+            useAppStore.getState().setCosts(updatedList);
+          }
+        } catch {}
+      });
+    }
+
   }, [querySignature, isCostsRequested, buildStoreAndYearQuery, globalYearFilter]);
 
   // 2.5 Delta Sync for Delegation Groups (Native Firebase Cache with TTL)
@@ -835,7 +916,10 @@ export function useFirebaseData() {
   useEffect(() => {
     if (!querySignature) return;
 
-    const targetYears = isDelegationsRequested ? (globalYearFilter === 'all' || globalYearFilter === 'ALL' ? ACTIVE_YEARS : [globalYearFilter]) : [];
+    const isAllYears = globalYearFilter === 'all' || globalYearFilter === 'ALL';
+    const targetYears = isDelegationsRequested 
+      ? (isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter]) 
+      : [];
     const currentSig = `${querySignature}_${targetYears.join(',')}_${isDelegationsRequested}`;
 
     if (prevSigDelegations.current !== currentSig) {

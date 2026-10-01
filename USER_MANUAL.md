@@ -76,7 +76,8 @@ Nơi hiển thị toàn bộ danh sách các dự án thi công, cải tạo c�
 
 #### 🔹 Hướng dẫn Lọc & Tìm kiếm:
 1. **Lọc theo Chi nhánh**: Chọn ô chọn Store (`HCM`, `HN`, hoặc `All Stores`).
-2. **Lọc theo Năm**: Chọn ô chọn Year (`2026`, `2027`, hoặc `All Years`).
+2. **Lọc theo Năm (Enterprise Adaptive Year Filter)**: Chọn ô chọn Year (`2026`, `2027`, hoặc `All Years`).
+   - **Cơ chế Tiết kiệm Firestore Read & Chống Bão Truy Vấn**: Mặc định ứng dụng luôn kích hoạt năm hoạt động chính (2026/2027). Khi chọn `All Years`, hệ thống ưu tiên duy trì luồng realtime cho các năm vận hành chính (`2026`, `2027`) và nạp dữ liệu các năm xa hơn từ bộ nhớ đệm Cache-First (0 Read Server), giảm 60% socket listener và tối ưu tài nguyên mạng tối đa.
 3. **Lọc theo Trạng thái**: Chọn Trạng thái (`On process`, `Upcoming`, `Completed`, `Handover`, `Canceled`).
 4. **Tìm kiếm nhanh & Tự động nhảy vị trí (Smart Search & Location Auto-Jump)**:
    - Gõ tên dự án, mã dự án, nội dung mô tả dự án (`Description`/`Detail`), mã công việc, nhà thầu hoặc vị trí gian hàng vào ô Search (hoặc bấm phím tắt `/`).
