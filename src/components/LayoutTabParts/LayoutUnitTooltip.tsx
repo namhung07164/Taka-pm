@@ -889,14 +889,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               <span>Chưa có hình ảnh. Bấm nút <b>+ Thêm</b> ở trên để dán link ảnh/bài viết.</span>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-0.5">
+            <div className="flex flex-col gap-2.5 max-h-[70vh] sm:max-h-[460px] overflow-y-auto custom-scrollbar pr-0.5">
               {allUnitImages.map((img) => (
                 <div 
                   key={img.id}
                   className="bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#333336] p-2 flex flex-col gap-1.5 shadow-2xs group hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
                 >
-                  {/* Thumbnail Image Container */}
-                  <div className="relative rounded-md overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 aspect-video max-h-32 flex items-center justify-center group/thumb">
+                  {/* Thumbnail Image Container - Full A4 Proportions & Zero Crop */}
+                  <div className="relative rounded-md overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 aspect-[1.414/1] min-h-[180px] max-h-[360px] w-full flex items-center justify-center group/thumb">
                     <img 
                       src={img.url} 
                       alt={img.title}
@@ -910,17 +910,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                           parent.appendChild(div);
                         }
                       }}
-                      className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-200"
+                      className="w-full h-full object-contain cursor-pointer hover:scale-[1.02] transition-transform duration-200"
                       onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
                     />
                     <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-90 group-hover/thumb:opacity-100 transition-opacity">
                       <button
                         type="button"
                         onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
-                        className="p-1 bg-black/60 hover:bg-black/80 text-white rounded backdrop-blur-xs transition-colors cursor-pointer"
-                        title="Phóng to xem ảnh"
+                        className="p-1 bg-black/60 hover:bg-black/80 text-white rounded backdrop-blur-xs transition-colors cursor-pointer shadow-xs"
+                        title="Phóng to xem ảnh HD"
                       >
-                        <Maximize2 className="w-3 h-3" />
+                        <Maximize2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
