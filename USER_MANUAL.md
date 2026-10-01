@@ -56,6 +56,8 @@ Thanh Menu điều hướng được thiết kế tối giản, hiện đại v�
   - **Trên iOS điện thoại & iPad**: Ô báo tên tab con này được đặt ngay **cùng dòng với nút Undo và canh lề phải**, với màu sắc rực rỡ, icon đồng bộ và chữ in đậm `On [Tên tab con]`, giúp người dùng thiết bị di động/máy tính bảng luôn biết mình đang xem phân hệ nào ngay trên thanh tác vụ trên cùng.
 * ⚙️ **CÁC TIỆN ÍCH HỆ THỐNG (Góc trên bên phải Header)**:
   - 📌 **Cài đặt trang mặc định (Set 1st page)**: Cho phép từng người dùng tự chọn bất kỳ Tab nào (General, Calendar, Gantt Chart, Budget, Detail, v.v.) làm trang mở đầu tiên khi đăng nhập hoặc tải lại trang web. Chỉ cần chuyển đến Tab mong muốn, bấm nút **"Set 1st page"** trên thanh Header. Hệ thống sẽ lưu cấu hình vào tài khoản Firestore và bộ nhớ trình duyệt, đảm bảo mỗi lần mở ứng dụng đều vào ngay đúng trang bạn đã chọn mà không bị nhảy sang các tab khác.
+  - 🖥️ **Tùy chọn hiển thị Ribbon (Ribbon Display Options)**: Đặt trực tiếp trên thanh Header (cạnh ô đồng hồ Today) trên Desktop và trong Navigation Drawer trên Mobile. Hỗ trợ 3 chế độ: `Full-screen mode` (Toàn màn hình), `Show tabs only` (Chỉ hiện thanh Tab) và `Always show Ribbon` (Luôn hiển thị đầy đủ Header & Tab).
+  - 🕒 **Đồng hồ / Ngày giờ Today (Compact Realtime Clock)**: Hiển thị thời gian thực theo định dạng nhỏ gọn `DD MMM YYYY HH:MM:SS` chống tràn dòng Header trên Desktop, kèm tooltip chi tiết khi di chuột.
   - 🔔 Thông báo (Notification).
   - 🛡️ Phân quyền tài khoản (Account Control / RBAC) *(Dành cho Admin)*.
   - ⚙️ Cài đặt hệ thống (Settings).
@@ -563,6 +565,15 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
           - Tự động phân màu thanh Gantt và biểu tượng đồng bộ 100% với Tab Gantt chuẩn: Xanh lá (`Completed / bg-green-500`), Xanh dương (`On process / bg-blue-500`), Xám Slate (`Upcoming / bg-slate-700 dark:bg-slate-500`), và Xám nhạt (`Canceled / bg-slate-400`). Đặc biệt, mọi hạng mục có **`duration = 0` (hoặc 0 ngày)** sẽ tự động hiển thị dưới dạng **Hình thoi Milestone màu Cam (`rotate-45 bg-orange-500`)** căn giữa ngày mốc, kèm nhãn `0d` nổi bật và tính riêng vào huy hiệu thống kê `Milestone` ở header.
         * **Zero-Read & Tự động Sắp xếp Chuẩn xác theo Mã Task Phụ (Rule 8, 9 & 12)**: Tải lười qua `React.lazy`, chỉ mount khi mở (`{showMiniGantt && <LayoutMiniGanttModal />}`) và đọc trực tiếp từ dữ liệu nhúng `taskSummaries` (0 Read Firestore). Hệ thống tự động trích xuất và sắp xếp theo số thứ tự của mã task phụ (`taskCodePhu` ví dụ `#1`, `#2`, `-1`, `-13`...) đảm bảo thứ tự các dòng công việc luôn chuẩn xác 100% từ task #1 đến task cuối cùng.
         * **Nút Chuyển nhanh sang Full Gantt Tab**: Góc dưới cửa sổ có nút `[ Full Gantt View ]` (biểu tượng ↗) giúp người dùng chuyển ngay sang biểu đồ Gantt toàn diện với đúng dự án đang chọn khi cần thao tác chi tiết. Bấm phím `Escape` hoặc nút `X` để đóng nhanh cửa sổ.
+       - **Bảng Hình Ảnh & Link Thumbnail Liên Kết (Interactive Image & Link Gallery Panel)**:
+         * **Biểu tượng Hình Ảnh (`ImageIcon`)**: Thay thế biểu tượng kéo thả cũ ở góc phải trên cùng của Tooltip bằng biểu tượng **Hình Ảnh** kèm huy hiệu hiển thị số lượng ảnh/link có sẵn của ô gian hàng.
+         * **Bảng Thumbnail Khớp Chuẩn Chiều Ngang Tooltip (`w-full`)**: Nhấp vào biểu tượng hình ảnh để mở Bảng hình ảnh với chiều ngang bằng đúng với chiều ngang của Tooltip, không làm vỡ bố cục hay tràn ra ngoài màn hình.
+         * **Tự Động Trích Xuất & Hiển Thị Đa Nguồn**:
+           - Tự động hiển thị các file ảnh đính kèm từ bình luận tiến độ (`project.comments.attachments`).
+           - Tự động nhận diện ảnh/thumbnail từ dữ liệu mặt bằng (`data.imageUrl`, `data.thumbnail`).
+           - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào.
+         * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`) và nút **Phóng to xem ảnh HD** (`Lightbox Zoom`).
+         * **Dán & Thêm Link Mới Tức Thì**: Có sẵn ô nhập URL để người dùng dán link ảnh/bài viết bất kỳ và lưu nhanh chóng vào ô gian hàng.
 5. **Chế độ Bản đồ Trực quan (Live View), Bảng Chú Thích Màu & Cấu Hình Hiển Thị Labels Appear (Tooltip Visibility)**:
    - **Kiến trúc Đồ họa Đa tầng (Multi-Layer Canvas), Lướt Quán tính (Kinetic Inertia) & Hiệu năng 60 FPS**: 
      * **Tách Layer Độc lập (Multi-Layer Split)**: Tách bản vẽ CAD nền vào `FastLayer` tĩnh hoàn toàn, các khối gian hàng vào `UnitsLayer` và vòng hào quang chọn gian hàng (`Focused Unit Golden Ring`) vào `OverlayHighlightLayer`. Khi hover hoặc chọn gian hàng, GPU không cần vẽ lại toàn bộ các khối mặt bằng.

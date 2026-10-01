@@ -1,12 +1,19 @@
-import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef } from 'react';
+import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { 
   MessageSquare, 
   X,
   AlertTriangle,
   Bell,
-  GripHorizontal,
   ChevronRight,
-  BarChartHorizontal
+  BarChartHorizontal,
+  Image as ImageIcon,
+  Link as LinkIcon,
+  ExternalLink,
+  Copy,
+  Plus,
+  Trash2,
+  Maximize2,
+  Check
 } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
 import { cn, parseDateTime, extractAllProjectCodes, projectMatchesUnitCode } from '../../lib/utils';
@@ -411,6 +418,133 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     location: floorValue ? String(floorValue) : undefined,
   } as Project);
 
+  // Image & Link Gallery State
+  const [showImagePanel, setShowImagePanel] = useState(false);
+  const [newLinkInput, setNewLinkInput] = useState('');
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string } | null>(null);
+  const [customUnitImages, setCustomUnitImages] = useState<Array<{ id: string; url: string; title?: string; createdAt?: string }>>([]);
+
+  const activeUnitStorageKey = `taka_unit_images_${data.code || unitCode || 'default'}`;
+
+  // Load custom images from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(activeUnitStorageKey);
+      if (saved) {
+        setCustomUnitImages(JSON.parse(saved));
+      } else {
+        setCustomUnitImages([]);
+      }
+    } catch {
+      setCustomUnitImages([]);
+    }
+  }, [activeUnitStorageKey]);
+
+  const handleAddCustomImage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newLinkInput.trim();
+    if (!trimmed) return;
+    const newEntry = {
+      id: `img_${Date.now()}`,
+      url: trimmed,
+      title: `Link ${customUnitImages.length + 1}`,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [newEntry, ...customUnitImages];
+    setCustomUnitImages(updated);
+    setNewLinkInput('');
+    try {
+      localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleDeleteCustomImage = (id: string) => {
+    const updated = customUnitImages.filter(item => item.id !== id);
+    setCustomUnitImages(updated);
+    try {
+      localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleCopyLink = (url: string) => {
+    try {
+      navigator.clipboard?.writeText(url);
+      setCopiedLink(url);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch {}
+  };
+
+  // Consolidate all image items (user-added links, layout image/thumbnail, project attachments)
+  const allUnitImages = useMemo(() => {
+    const list: Array<{ id: string; url: string; title: string; source: string; isCustom?: boolean }> = [];
+    const seenUrls = new Set<string>();
+
+    // 1. Custom user-posted links
+    customUnitImages.forEach((c) => {
+      if (c.url && !seenUrls.has(c.url)) {
+        seenUrls.add(c.url);
+        list.push({
+          id: c.id,
+          url: c.url,
+          title: c.title || 'Attached Link',
+          source: 'User Link',
+          isCustom: true,
+        });
+      }
+    });
+
+    // 2. Unit image from layout data
+    if (data.imageUrl && typeof data.imageUrl === 'string' && !seenUrls.has(data.imageUrl)) {
+      seenUrls.add(data.imageUrl);
+      list.push({
+        id: 'data_image',
+        url: data.imageUrl,
+        title: 'Unit Layout Image',
+        source: 'Layout Data',
+      });
+    }
+    if (data.thumbnail && typeof data.thumbnail === 'string' && !seenUrls.has(data.thumbnail)) {
+      seenUrls.add(data.thumbnail);
+      list.push({
+        id: 'data_thumb',
+        url: data.thumbnail,
+        title: 'Unit Thumbnail',
+        source: 'Layout Data',
+      });
+    }
+    if (data.image && typeof data.image === 'string' && !seenUrls.has(data.image)) {
+      seenUrls.add(data.image);
+      list.push({
+        id: 'data_img',
+        url: data.image,
+        title: 'Floor Image',
+        source: 'Layout Data',
+      });
+    }
+
+    // 3. Project comments attachments
+    if (p?.comments && Array.isArray(p.comments)) {
+      p.comments.forEach((c, cIdx) => {
+        if (c.attachments && Array.isArray(c.attachments)) {
+          c.attachments.forEach((att, aIdx) => {
+            if (att.url && !seenUrls.has(att.url)) {
+              seenUrls.add(att.url);
+              list.push({
+                id: `comm_${cIdx}_${aIdx}`,
+                url: att.url,
+                title: att.name || `Attachment ${list.length + 1}`,
+                source: `Comment by ${c.userName || 'User'}`,
+              });
+            }
+          });
+        }
+      });
+    }
+
+    return list;
+  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.comments]);
+
   // Safe fallback if vis is undefined
   const v = vis || {
     projectCode: true,
@@ -483,14 +617,30 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           )}
         </div>
 
-        {/* Right: Actions (Drag Handle, Quick Nav, Close) */}
+        {/* Right: Actions (Image Gallery Toggle, Quick Nav, Close) */}
         <div className="flex items-center gap-1 shrink-0 ml-auto">
-          <div
-            title="Drag to move tooltip"
-            className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          {/* Image & Link Thumbnail Gallery Button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowImagePanel(prev => !prev);
+            }}
+            className={cn(
+              "p-1 rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1",
+              showImagePanel 
+                ? "bg-blue-100 text-blue-600 dark:bg-blue-900/60 dark:text-[#8ab4f8] border-blue-300 dark:border-blue-700 shadow-2xs" 
+                : "bg-slate-50 text-slate-500 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-[#8ab4f8] border-slate-200 dark:border-[#444446] hover:bg-slate-100"
+            )}
+            title={showImagePanel ? "Đóng bảng hình ảnh (Close image gallery)" : "Mở bảng hình ảnh & link thumbnail (View image & thumbnail gallery)"}
           >
-            <GripHorizontal className="w-4 h-4" />
-          </div>
+            <ImageIcon className="w-3.5 h-3.5" />
+            {allUnitImages.length > 0 && (
+              <span className="text-[9px] font-bold font-mono px-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-[#8ab4f8]">
+                {allUnitImages.length}
+              </span>
+            )}
+          </button>
           <QuickNavButton 
             project={targetProject} 
             title={`Quick Navigator (${unitCode})`}
@@ -535,6 +685,148 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           )}
         </div>
       </div>
+
+      {/* Image & Link Thumbnail Gallery Panel (Full Width matching Tooltip) */}
+      {showImagePanel && (
+        <div className="w-full bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150 my-1">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
+            <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200">
+              <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8]" />
+              <span>Hình ảnh & Thumbnail liên kết</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8] font-mono">
+                {allUnitImages.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowImagePanel(false)}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
+              title="Đóng bảng ảnh"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Add / Post Link Input Row */}
+          <form onSubmit={handleAddCustomImage} className="flex gap-1.5 items-center w-full">
+            <div className="relative flex-1 min-w-0">
+              <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input 
+                type="url"
+                value={newLinkInput}
+                onChange={(e) => setNewLinkInput(e.target.value)}
+                placeholder="Dán link ảnh hoặc link bài viết (URL)..."
+                className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-1 focus:ring-blue-500 transition-all font-mono"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!newLinkInput.trim()}
+              className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation shrink-0 cursor-pointer shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Thêm</span>
+            </button>
+          </form>
+
+          {/* Image & Link Thumbnail List */}
+          {allUnitImages.length === 0 ? (
+            <div className="text-center py-3.5 px-2 bg-white/60 dark:bg-[#1e1e20]/60 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs flex flex-col items-center gap-1.5">
+              <ImageIcon className="w-6 h-6 text-slate-300 dark:text-slate-600" />
+              <span>Chưa có hình ảnh. Dán link ảnh vào ô trên để hiển thị thumbnail.</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-0.5">
+              {allUnitImages.map((img) => (
+                <div 
+                  key={img.id}
+                  className="bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#333336] p-2 flex flex-col gap-1.5 shadow-2xs group hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
+                >
+                  {/* Thumbnail Image Container */}
+                  <div className="relative rounded-md overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 aspect-video max-h-32 flex items-center justify-center group/thumb">
+                    <img 
+                      src={img.url} 
+                      alt={img.title}
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                        const parent = (e.target as HTMLElement).parentElement;
+                        if (parent && !parent.querySelector('.img-fallback')) {
+                          const div = document.createElement('div');
+                          div.className = 'img-fallback flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-2 text-center';
+                          div.innerHTML = `<span class="font-semibold text-slate-600 dark:text-slate-300">Web Link / Article Preview</span><span class="truncate max-w-[200px] text-[9px] font-mono text-blue-500">${img.url}</span>`;
+                          parent.appendChild(div);
+                        }
+                      }}
+                      className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-200"
+                      onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
+                    />
+                    <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-90 group-hover/thumb:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
+                        className="p-1 bg-black/60 hover:bg-black/80 text-white rounded backdrop-blur-xs transition-colors cursor-pointer"
+                        title="Phóng to xem ảnh"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Link Address and Action Buttons */}
+                  <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                    <div className="flex items-center gap-1 min-w-0 flex-1">
+                      <LinkIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                      <a 
+                        href={img.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-mono text-blue-600 dark:text-[#8ab4f8] hover:underline truncate"
+                        title={img.url}
+                      >
+                        {img.url}
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink(img.url)}
+                        className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title={copiedLink === img.url ? "Đã sao chép link!" : "Sao chép link"}
+                      >
+                        {copiedLink === img.url ? (
+                          <Check className="w-3 h-3 text-green-500" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                      <a
+                        href={img.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Mở link trong tab mới"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      {img.isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomImage(img.id)}
+                          className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Xóa link này"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Smart Alert Notification Banner (Click-to-Action) */}
       {data.alerts?.hasAlert && vis?.notifications !== false && (
@@ -753,6 +1045,74 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Enlarged Image Lightbox Modal */}
+      {enlargedImage && (
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            e.stopPropagation();
+            setEnlargedImage(null);
+          }}
+        >
+          <div 
+            className="relative max-w-2xl w-full max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900/90 text-white">
+              <div className="flex items-center gap-2 min-w-0">
+                <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
+                <span className="font-bold text-xs truncate">{enlargedImage.title || 'Image Preview'}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleCopyLink(enlargedImage.url)}
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  title="Sao chép link"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+                <a
+                  href={enlargedImage.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  title="Mở tab mới"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setEnlargedImage(null)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  title="Đóng"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 p-2 flex items-center justify-center bg-black/50 overflow-hidden min-h-[200px]">
+              <img 
+                src={enlargedImage.url} 
+                alt={enlargedImage.title || 'Enlarged Preview'} 
+                className="max-w-full max-h-[70vh] object-contain rounded-lg"
+              />
+            </div>
+            <div className="p-2.5 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+              <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <a 
+                href={enlargedImage.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-[11px] font-mono text-blue-400 hover:underline truncate flex-1"
+              >
+                {enlargedImage.url}
+              </a>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -144,18 +144,27 @@ export function Header({
     };
   }, []);
 
-  const formatTime = (date: Date) => {
-    const opt: Intl.DateTimeFormatOptions = {
-      weekday: "long",
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+  const formatCompactTime = (date: Date) => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = date.toLocaleString('en-US', { month: 'short' });
+    const year = date.getFullYear();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    const secs = date.getSeconds().toString().padStart(2, '0');
+    return `${day} ${month} ${year} ${hours}:${mins}:${secs}`;
+  };
+
+  const formatFullTime = (date: Date) => {
+    return date.toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
       hour12: false,
-    };
-    return new Intl.DateTimeFormat("en-US", opt).format(date);
+    });
   };
 
   const statusColors = {
@@ -165,7 +174,7 @@ export function Header({
   };
 
   return (
-    <div className="sticky top-0 z-50 bg-white/95 dark:bg-[#1e1e20]/95 pb-3 mb-4 flex flex-wrap xl:flex-nowrap gap-3 sm:gap-4 justify-between items-center pt-3 px-3 -mx-3 -mt-3 border-b border-slate-100 dark:border-[#333336] lg:pt-4 lg:-mt-4 lg:px-6 lg:-mx-6 rounded-t-xl transition-colors min-w-0">
+    <div className="sticky top-0 z-50 bg-white/95 dark:bg-[#1e1e20]/95 pb-2.5 mb-3 flex flex-nowrap gap-2 sm:gap-3 justify-between items-center pt-2.5 px-3 -mx-3 -mt-3 border-b border-slate-100 dark:border-[#333336] lg:pt-3 lg:-mt-4 lg:px-6 lg:-mx-6 rounded-t-xl transition-colors min-w-0">
       <div className="flex flex-wrap gap-2 sm:gap-3 items-center relative min-w-0 shrink">
         <div ref={menuRef} className="relative shrink-0">
           <button title="Menu"
@@ -500,7 +509,7 @@ export function Header({
         </div>
       </div>
 
-      <div className="flex flex-wrap justify-end items-center gap-1 sm:gap-2 shrink-0 ml-auto">
+      <div className="flex flex-nowrap justify-end items-center gap-1 sm:gap-1.5 shrink-0 ml-auto min-w-0">
         {showQuickAccessToolbar && (
           <>
             <button
@@ -591,9 +600,12 @@ export function Header({
                 <span className="hidden xl:inline">Read-only</span>
               </span>
             )}
-            <div className="hidden xl:flex bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] px-3 sm:px-4 py-1.5 rounded-lg text-xs font-mono border border-blue-100 dark:border-[#444446] items-center gap-2 shadow-sm transition-colors shrink-0">
-              <Clock className="w-3.5 h-3.5" />
-              <span>{formatTime(currentTime)}</span>
+            <div 
+              title={`Today: ${formatFullTime(currentTime)}`}
+              className="hidden lg:flex bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] px-2 sm:px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold border border-blue-100 dark:border-[#444446] items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
+            >
+              <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-[#8ab4f8]" />
+              <span>{formatCompactTime(currentTime)}</span>
             </div>
 
             {/* Ribbon Display Options on Header next to Today clock (Desktop) */}
