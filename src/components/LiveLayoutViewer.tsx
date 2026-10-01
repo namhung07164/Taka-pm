@@ -1446,14 +1446,35 @@ function LiveCanvas({
       });
       const activeTaskNames = activeTasks.map(t => t.name).filter(Boolean);
 
+      const isUrlOrImageLine = (str: string | undefined | null) => {
+        if (!str || typeof str !== 'string') return false;
+        const lower = str.toLowerCase().trim();
+        return (
+          lower.startsWith('http://') ||
+          lower.startsWith('https://') ||
+          lower.startsWith('link / photo:') ||
+          lower.startsWith('link:') ||
+          lower.startsWith('photo:') ||
+          lower.startsWith('image:') ||
+          lower.includes('.jpg') ||
+          lower.includes('.jpeg') ||
+          lower.includes('.png') ||
+          lower.includes('.webp') ||
+          lower.includes('.gif')
+        );
+      };
+
+      const cleanAllTaskNames = allTaskNames.filter(t => !isUrlOrImageLine(t));
+      const cleanActiveTaskNames = activeTaskNames.filter(t => !isUrlOrImageLine(t));
+
       // Full task string contains all sub-tasks so dynamic rules / filters can match planned, active, or upcoming task
-      const taskSummaryStr = allTaskNames.length > 0 
-        ? allTaskNames.join('; ')
-        : (activeTaskNames.join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
+      const taskSummaryStr = cleanAllTaskNames.length > 0 
+        ? cleanAllTaskNames.join('; ')
+        : (cleanActiveTaskNames.join('; ') || (p.taskSummaries?.map((t: any) => t.name).filter((n: string) => !isUrlOrImageLine(n)).join('; ') || ''));
 
       let taskLines: string[] = [];
-      activeTaskNames.forEach(name => {
-        taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
+      cleanActiveTaskNames.forEach(name => {
+        taskLines.push(...name.split('\n').map((l: string) => l.trim()).filter((l: string) => l !== '' && !isUrlOrImageLine(l)));
       });
 
       const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
@@ -1542,10 +1563,18 @@ function LiveCanvas({
 
             // Check if project has attached images/thumbnails (task summaries, comments, or project fields)
             const hasProjectImages = Boolean(
+              (p.thumbnail && typeof p.thumbnail === 'string' && p.thumbnail.trim()) ||
+              (p.imageUrl && typeof p.imageUrl === 'string' && p.imageUrl.trim()) ||
+              ((p as any).image && typeof (p as any).image === 'string' && (p as any).image.trim()) ||
+              ((p as any).photo && typeof (p as any).photo === 'string' && (p as any).photo.trim()) ||
               (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' && ts.name.match(/https?:\/\/[^\s]+/)))) ||
               (p.comments && Array.isArray(p.comments) && p.comments.some((c: any) => c.attachments && c.attachments.length > 0)) ||
               (p as any).imageUrl || (p as any).thumbnail || (p as any).image ||
-              dataMap[code].imageUrl || dataMap[code].thumbnail || dataMap[code].image
+              dataMap[code].imageUrl || dataMap[code].thumbnail || dataMap[code].image ||
+              (typeof window !== 'undefined' && (
+                Boolean(localStorage.getItem(`taka_unit_images_${code}`)) ||
+                Boolean(localStorage.getItem(`taka_unit_images_${p.code}`))
+              ))
             );
             dataMap[code].hasImage = hasProjectImages || dataMap[code].hasImage;
 
@@ -3527,26 +3556,30 @@ function LiveCanvas({
                const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
 
                // Badge placement coordinates
-               let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 2;
-               let badgeY = (unit.textY || unit.y || 0) + 2;
-               let imgBadgeX = (unit.textX || unit.x || 0) + 2;
-               let imgBadgeY = (unit.textY || unit.y || 0) + 2;
+               let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
+               let badgeY = (unit.textY || unit.y || 0) + 8;
+               let imgBadgeX = (unit.textX || unit.x || 0) + 8;
+               let imgBadgeY = (unit.textY || unit.y || 0) + 8;
                if (unit.type === 'circle') {
                  const r = unit.radius || 20;
-                 badgeX = (unit.x || 0) + r * 0.7;
-                 badgeY = (unit.y || 0) - r * 0.7;
-                 imgBadgeX = (unit.x || 0) - r * 0.7;
-                 imgBadgeY = (unit.y || 0) - r * 0.7;
+                 badgeX = (unit.x || 0) + r * 0.6;
+                 badgeY = (unit.y || 0) - r * 0.6;
+                 imgBadgeX = (unit.x || 0) - r * 0.6;
+                 imgBadgeY = (unit.y || 0) - r * 0.6;
                }
-               const uName = (unit.name || '').toLowerCase();
-               const unitData = (uName && aggregatedData[uName]) ? aggregatedData[uName] : null;
+               const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase();
+               const unitData = (uCode && aggregatedData[uCode]) ? aggregatedData[uCode] : null;
                const hasAlert = Boolean(unitData?.alerts?.hasAlert);
                const hasImage = Boolean(
                  unitData?.hasImage || 
                  unit.imageUrl || 
                  unit.thumbnail || 
                  unit.image || 
-                 (typeof window !== 'undefined' && Boolean(localStorage.getItem(`taka_unit_images_${unit.name || unit.id}`)))
+                 (typeof window !== 'undefined' && (
+                   Boolean(localStorage.getItem(`taka_unit_images_${unit.name || ''}`)) ||
+                   Boolean(localStorage.getItem(`taka_unit_images_${unit.id || ''}`)) ||
+                   Boolean(localStorage.getItem(`taka_unit_images_${unit.code || ''}`))
+                 ))
                );
                const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
                const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
@@ -3627,7 +3660,7 @@ function LiveCanvas({
                     )}
 
                     {/* Thumbnail / Image Indicator Badge (Rendered when project has attached photos/thumbnails) */}
-                    {hasColor && hasImage && showTextAndBadge && (
+                    {hasImage && showTextAndBadge && (
                        <Group x={imgBadgeX} y={imgBadgeY} listening={false}>
                           <Circle
                              radius={badgeRadius}

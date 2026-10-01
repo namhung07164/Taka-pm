@@ -73,6 +73,9 @@ export interface Project {
   parentId?: string;
   financial?: ProjectFinancialSummary;
   isDeleted?: boolean;
+  imageUrl?: string;
+  thumbnail?: string;
+  imageLinks?: any[];
 }
 
 export interface TaskNote {

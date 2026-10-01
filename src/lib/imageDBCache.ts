@@ -14,7 +14,7 @@ import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/l
 const DB_NAME = 'taka_cad_images_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'cad_blobs';
-const MAX_MEMORY_CACHE = 15; // Safe in-memory cache limit for active floorplan images
+const MAX_MEMORY_CACHE = 20; // Safe in-memory cache limit for active floorplan images
 
 // In-Memory LRU Cache for decoded ImageBitmap / HTMLImageElement
 const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();

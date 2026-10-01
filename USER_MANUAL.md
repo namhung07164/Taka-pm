@@ -566,15 +566,16 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
         * **Zero-Read & Tự động Sắp xếp Chuẩn xác theo Mã Task Phụ (Rule 8, 9 & 12)**: Tải lười qua `React.lazy`, chỉ mount khi mở (`{showMiniGantt && <LayoutMiniGanttModal />}`) và đọc trực tiếp từ dữ liệu nhúng `taskSummaries` (0 Read Firestore). Hệ thống tự động trích xuất và sắp xếp theo số thứ tự của mã task phụ (`taskCodePhu` ví dụ `#1`, `#2`, `-1`, `-13`...) đảm bảo thứ tự các dòng công việc luôn chuẩn xác 100% từ task #1 đến task cuối cùng.
         * **Nút Chuyển nhanh sang Full Gantt Tab**: Góc dưới cửa sổ có nút `[ Full Gantt View ]` (biểu tượng ↗) giúp người dùng chuyển ngay sang biểu đồ Gantt toàn diện với đúng dự án đang chọn khi cần thao tác chi tiết. Bấm phím `Escape` hoặc nút `X` để đóng nhanh cửa sổ.
        - **Bảng Hình Ảnh & Link Thumbnail Liên Kết (Interactive Image & Link Gallery Panel)**:
-         * **Biểu tượng Hình Ảnh (`ImageIcon`)**: Thay thế biểu tượng kéo thả cũ ở góc phải trên cùng của Tooltip bằng biểu tượng **Hình Ảnh** kèm huy hiệu hiển thị số lượng ảnh/link có sẵn của ô gian hàng.
-         * **Bảng Thumbnail Khớp Chuẩn Chiều Ngang Tooltip (`w-full`)**: Nhấp vào biểu tượng hình ảnh để mở Bảng hình ảnh với chiều ngang bằng đúng với chiều ngang của Tooltip, không làm vỡ bố cục hay tràn ra ngoài màn hình.
+         * **Hiển Thị Hình Ảnh & Thumbnail Trực Quan Ngay Dưới Ô Detail**: Toàn bộ hình ảnh và thumbnail của gian hàng được tự động sắp xếp gọn gàng ngay bên dưới khung nội dung **Detail / Description**, giúp người xem quan sát nhanh chóng hình ảnh thực tế mà không cần phải bấm thêm nút mở rộng.
+         * **Bảo Vệ Tính Toàn Vẹn Ô Detail**: Tuyệt đối không tự ý chèn các đường dẫn URL (`http://...`, `https://...`) hay chuỗi thô vào nội dung ô Detail/Description. Ô Detail giữ đúng chức năng hiển thị danh sách đầu việc và mô tả nghiệp vụ chuẩn, trong khi các link ảnh được quản lý và hiển thị riêng biệt trong khu vực hình ảnh.
          * **Tự Động Trích Xuất & Hiển Thị Đa Nguồn**:
            - Tự động hiển thị và đồng bộ các link ảnh/thumbnail được lưu trong **Task Summarize (`project.taskSummaries`)** trên toàn bộ hệ thống Firestore và bộ nhớ Zustand.
+           - Tự động nhận diện ảnh/thumbnail từ trường dữ liệu dự án (`project.thumbnail`, `project.imageUrl`, `project.image`, `project.photo`).
            - Tự động hiển thị các file ảnh đính kèm từ bình luận tiến độ (`project.comments.attachments`).
            - Tự động nhận diện ảnh/thumbnail từ dữ liệu mặt bằng (`data.imageUrl`, `data.thumbnail`).
-           - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào.
+           - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào qua nút **`+ Thêm`**.
          * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`) và nút **Phóng to xem ảnh HD** (`Lightbox Zoom`).
-         * **Dán & Lưu Link Vào Task Summaries Tức Thì**: Nút **`+ Thêm`** trên thanh tiêu đề mở ô nhập link; khi bấm **OK**, đường link sẽ tự động được ghi nhận và lưu đồng bộ trực tiếp vào mảng **Task Summarize (`taskSummaries`)** của dự án trên đám mây Firestore, đồng thời tự động ẩn ô nhập link.
+         * **Dán & Lưu Link Nhanh Chóng**: Nút **`+ Thêm`** trên thanh tiêu đề mở ô nhập link; khi bấm **OK**, đường link sẽ tự động được ghi nhận và lưu đồng bộ trực tiếp mà không gây xáo trộn ô Detail của dự án.
          * **Tối Ưu Hiển Thị & Phóng To Toàn Màn Hình Trên iPad / Tablet (iOS Safari Portal & Sticky Header)**:
            - **Thanh Tiêu Đề Cố Định (Sticky Header)**: Giữ nguyên thanh tiêu đề tooltip luôn ghim ở trên cùng (`sticky top-0 z-30`) khi cuộn xem hình ảnh lớn, đảm bảo các huy hiệu trạng thái, tên dự án, nút Thêm và nút Đóng `[X]` không bao giờ bị trôi khỏi màn hình.
            - **Xem Ảnh Phóng To Độc Lập (Full-Screen Lightbox Portal)**: Trình xem ảnh phóng to được gắn trực tiếp vào `document.body` qua React Portal, loại bỏ hoàn toàn lỗi kẹt/cắt xén khung nhìn trên iPad Safari, cho phép quan sát bản vẽ chi tiết toàn màn hình sắc nét.
