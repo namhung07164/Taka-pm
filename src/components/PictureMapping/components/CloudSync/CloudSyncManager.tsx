@@ -149,6 +149,8 @@ export default function CloudSyncManager({
     executeSync(type, false, effScope);
   };
 
+  const [backgroundSyncing, setBackgroundSyncing] = useState<'upload' | 'download' | null>(null);
+
   const getScopeName = (sc: CloudSyncScope) => {
     switch (sc) {
       case 'edit': return 'Edit';
@@ -162,44 +164,75 @@ export default function CloudSyncManager({
     const currentAction = forceAction || actionType;
     const currentScope = forceScope || selectedScope;
     setIsModalOpen(false);
-    setSyncing(true);
-    setProgress(10);
-    setStatusText(currentAction === 'upload' ? `Đang lưu [${getScopeName(currentScope)}]...` : `Đang tải [${getScopeName(currentScope)}] từ Cloud...`);
 
-    try {
-      const creds = await getStoredR2CredentialsAsync();
-      
-      const freshDataState = useDataStore.getState();
-      const currentStore = (freshDataState.store || store || 'HCM') as 'HCM' | 'HN';
-      const currentLocation = (freshDataState.location || location || 'L1').toUpperCase().trim();
-      const currentActiveKey = `${currentStore}_${currentLocation}`;
-      const updatedStoreLocationData: Record<string, StoreLocationRecord> = {
-        ...(freshDataState.storeLocationData || {})
-      };
+    // 1. INSTANT 0ms OPTIMISTIC COMMIT TO ZUSTAND & LOCALSTORAGE
+    const freshDataState = useDataStore.getState();
+    const currentStore = (freshDataState.store || store || 'HCM') as 'HCM' | 'HN';
+    const currentLocation = (freshDataState.location || location || 'L1').toUpperCase().trim();
+    const currentActiveKey = `${currentStore}_${currentLocation}`;
+    const updatedStoreLocationData: Record<string, StoreLocationRecord> = {
+      ...(freshDataState.storeLocationData || {})
+    };
 
-      // Guarantee the active partition contains the user's latest on-screen units and versions
-      const currentActiveUnits = (freshDataState.mapUnits && freshDataState.mapUnits.length > 0)
-        ? freshDataState.mapUnits
-        : (mapUnits && mapUnits.length > 0 ? mapUnits : (updatedStoreLocationData[currentActiveKey]?.mapUnits || []));
+    // Guarantee the active partition contains the user's latest on-screen units and versions
+    const currentActiveUnits = (freshDataState.mapUnits && freshDataState.mapUnits.length > 0)
+      ? freshDataState.mapUnits
+      : (mapUnits && mapUnits.length > 0 ? mapUnits : (updatedStoreLocationData[currentActiveKey]?.mapUnits || []));
 
-      const currentActiveVersions = (freshDataState.mapVersions && freshDataState.mapVersions.length > 0)
-        ? freshDataState.mapVersions
-        : (mapVersions && mapVersions.length > 0 ? mapVersions : (updatedStoreLocationData[currentActiveKey]?.mapVersions || []));
+    const currentActiveVersions = (freshDataState.mapVersions && freshDataState.mapVersions.length > 0)
+      ? freshDataState.mapVersions
+      : (mapVersions && mapVersions.length > 0 ? mapVersions : (updatedStoreLocationData[currentActiveKey]?.mapVersions || []));
 
-      const currentActiveVersionId = freshDataState.activeMapVersionId 
-        || activeMapVersionId 
-        || updatedStoreLocationData[currentActiveKey]?.activeMapVersionId 
-        || (currentActiveVersions[0]?.id ?? null);
+    const currentActiveVersionId = freshDataState.activeMapVersionId 
+      || activeMapVersionId 
+      || updatedStoreLocationData[currentActiveKey]?.activeMapVersionId 
+      || (currentActiveVersions[0]?.id ?? null);
 
-      updatedStoreLocationData[currentActiveKey] = {
-        mapUnits: currentActiveUnits,
-        mapVersions: currentActiveVersions,
-        activeMapVersionId: currentActiveVersionId,
-      };
+    updatedStoreLocationData[currentActiveKey] = {
+      mapUnits: currentActiveUnits,
+      mapVersions: currentActiveVersions,
+      activeMapVersionId: currentActiveVersionId,
+    };
 
-      if (currentAction === 'upload') {
-        setProgress(25);
-        let existingCloudData: any = null;
+    if (currentAction === 'upload') {
+      // 0ms Commit to Zustand
+      useDataStore.getState().setStoreLocationData(updatedStoreLocationData);
+      try {
+        localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+          storeLocationData: updatedStoreLocationData,
+          store: currentStore,
+          location: currentLocation,
+          activeMapVersionId: currentActiveVersionId,
+          updatedAt: Date.now(),
+        }));
+      } catch {}
+
+      setBackgroundSyncing('upload');
+      if (!isAuto) {
+        useAppStore.getState().setToast({
+          title: "Save Cloud (0ms)",
+          message: `Đã lưu [${getScopeName(currentScope)}] vào bộ nhớ tức thời! Đang sao lưu ngầm lên Cloudflare R2 & Firestore.`,
+          type: "info",
+        });
+      }
+    } else {
+      setBackgroundSyncing('download');
+      if (!isAuto) {
+        useAppStore.getState().setToast({
+          title: "Load Cloud (0ms)",
+          message: `Đang kiểm tra và tải phiên bản mới nhất từ Cloud trong nền...`,
+          type: "info",
+        });
+      }
+    }
+
+    // 2. RUN HEAVY ASYNC NETWORK SYNC COMPLETELY IN BACKGROUND
+    (async () => {
+      try {
+        const creds = await getStoredR2CredentialsAsync();
+
+        if (currentAction === 'upload') {
+          let existingCloudData: any = null;
 
         let s3ClientInstance: any = null;
         if (creds) {
@@ -856,24 +889,21 @@ export default function CloudSyncManager({
           });
         }
       }
-
-      setTimeout(() => setSyncing(false), 2500);
-
     } catch (err: any) {
       if (!isAuto) {
-        console.error('Cloud Sync Error:', err);
-        setStatusText(`Lỗi: ${err.message}`);
+        console.error('[CloudSync Background Error]', err);
         useAppStore.getState().setToast({
           title: "Cloud Sync Error",
-          message: err?.message || "Failed to sync with Cloud.",
-          type: "error"
+          message: `Lỗi đồng bộ Cloud: ${err.message || err}. Dữ liệu trên máy vẫn an toàn.`,
+          type: "warning",
         });
-        setTimeout(() => setSyncing(false), 4000);
-      } else {
-        setSyncing(false);
       }
+    } finally {
+      setBackgroundSyncing(null);
+      setSyncing(false);
     }
-  };
+  })();
+};
 
   const handleCleanR2Garbage = async () => {
     const creds = getStoredR2Credentials();
@@ -920,48 +950,58 @@ export default function CloudSyncManager({
 
   return (
     <div className={cn("flex items-center gap-1.5 relative", className)}>
-      {syncing ? (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 shadow-md">
-           <RefreshCw className="animate-spin text-brand-400 shrink-0" size={13} />
-           <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wide truncate max-w-[240px]">{statusText}</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Main Save Button */}
-          <button 
-            onClick={() => handleOpenSync('upload')}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-brand-400 hover:text-brand-300 transition-all shadow-sm active:scale-95 cursor-pointer",
-              compact ? "text-[10px] px-2 py-1" : "text-[11px]"
-            )}
-            title={`Lưu dữ liệu (${getScopeName(selectedScope)}) lên Cloudflare R2 & Firestore`}
-          >
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Main Save Button with non-blocking progress */}
+        <button 
+          onClick={() => handleOpenSync('upload')}
+          disabled={backgroundSyncing === 'upload'}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-brand-400 hover:text-brand-300 transition-all shadow-sm active:scale-95 touch-manipulation cursor-pointer",
+            backgroundSyncing === 'upload' && "opacity-90 cursor-wait",
+            compact ? "text-[10px] px-2 py-1" : "text-[11px]"
+          )}
+          title={`Lưu dữ liệu (${getScopeName(selectedScope)}) lên Cloudflare R2 & Firestore`}
+        >
+          {backgroundSyncing === 'upload' ? (
+            <RefreshCw size={13} className="shrink-0 animate-spin text-brand-400" />
+          ) : (
             <CloudUpload size={13} className="shrink-0" />
-            <span className="font-bold uppercase tracking-wider">Save Cloud</span>
-            {selectedScope !== 'all' && (
-              <span className={cn("text-[9px] font-extrabold uppercase px-1 py-0.2 rounded border", scopeBadgeColor)}>
-                {selectedScope}
-              </span>
-            )}
-          </button>
-          
-          {/* Main Load Button */}
-          <button 
-            onClick={() => handleOpenSync('download')}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 transition-all shadow-sm active:scale-95 cursor-pointer",
-              compact ? "text-[10px] px-2 py-1" : "text-[11px]"
-            )}
-            title={`Tải dữ liệu (${getScopeName(selectedScope)}) từ Cloudflare R2`}
-          >
+          )}
+          <span className="font-bold uppercase tracking-wider">
+            {backgroundSyncing === 'upload' ? 'Saving Cloud...' : 'Save Cloud'}
+          </span>
+          {selectedScope !== 'all' && (
+            <span className={cn("text-[9px] font-extrabold uppercase px-1 py-0.2 rounded border", scopeBadgeColor)}>
+              {selectedScope}
+            </span>
+          )}
+        </button>
+        
+        {/* Main Load Button with non-blocking progress */}
+        <button 
+          onClick={() => handleOpenSync('download')}
+          disabled={backgroundSyncing === 'download'}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 transition-all shadow-sm active:scale-95 touch-manipulation cursor-pointer",
+            backgroundSyncing === 'download' && "opacity-90 cursor-wait",
+            compact ? "text-[10px] px-2 py-1" : "text-[11px]"
+          )}
+          title={`Tải dữ liệu (${getScopeName(selectedScope)}) từ Cloudflare R2`}
+        >
+          {backgroundSyncing === 'download' ? (
+            <RefreshCw size={13} className="shrink-0 animate-spin text-purple-400" />
+          ) : (
             <CloudDownload size={13} className="shrink-0" />
-            <span className="font-bold uppercase tracking-wider">Load Cloud</span>
-            {selectedScope !== 'all' && (
-              <span className={cn("text-[9px] font-extrabold uppercase px-1 py-0.2 rounded border", scopeBadgeColor)}>
-                {selectedScope}
-              </span>
-            )}
-          </button>
+          )}
+          <span className="font-bold uppercase tracking-wider">
+            {backgroundSyncing === 'download' ? 'Loading Cloud...' : 'Load Cloud'}
+          </span>
+          {selectedScope !== 'all' && (
+            <span className={cn("text-[9px] font-extrabold uppercase px-1 py-0.2 rounded border", scopeBadgeColor)}>
+              {selectedScope}
+            </span>
+          )}
+        </button>
 
           {/* Scope Selector Dropdown Button */}
           <div className="relative">
@@ -1060,7 +1100,6 @@ export default function CloudSyncManager({
             </button>
           )}
         </div>
-      )}
 
       <R2UploadModal 
         isOpen={isModalOpen}
