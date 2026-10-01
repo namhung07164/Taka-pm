@@ -261,8 +261,8 @@ export function Navigation({
   return (
     <>
       {/* Desktop Navigation (Hidden on mobile) */}
-      <div className="hidden lg:block border-b border-slate-200 dark:border-[#444446] mb-4 shrink-0 sticky top-[88px] z-40 bg-white/95 dark:bg-[#1e1e20]/95 pt-2 -mt-2 pb-3 transition-colors">
-        <nav className="flex items-center gap-3 relative flex-wrap" aria-label="Parent Tabs">
+      <div className="hidden lg:block border-b border-slate-200 dark:border-[#444446] mb-3 shrink-0 sticky top-[48px] z-40 bg-white/95 dark:bg-[#1e1e20]/95 pt-1.5 pb-2 transition-colors">
+        <nav className="flex items-center gap-2.5 relative flex-wrap" aria-label="Parent Tabs">
           {visibleParentTabs.map((pt) => {
             const parentChildTabs = childTabMap[pt.id as ParentTabId]
               .map((childId) => tabs.find((t) => t.id === childId))
