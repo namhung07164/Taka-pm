@@ -39,6 +39,7 @@ const QRScannerModal = lazyWithRetry(() => import("./QRScannerModal").then(m => 
 import { AppUser, TabId, AppRole } from "../types";
 import { cn } from "../lib/utils";
 import { useLanguage } from "../lib/LanguageContext";
+import { RibbonDisplayMenu } from "./RibbonDisplayMenu";
 
 interface HeaderProps {
   cloudStatus: "online" | "syncing" | "offline";
@@ -594,6 +595,9 @@ export function Header({
               <Clock className="w-3.5 h-3.5" />
               <span>{formatTime(currentTime)}</span>
             </div>
+
+            {/* Ribbon Display Options on Header next to Today clock (Desktop) */}
+            <RibbonDisplayMenu variant="header" className="hidden lg:inline-flex shrink-0" />
           </>
         )}
       </div>

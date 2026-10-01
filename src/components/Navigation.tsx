@@ -359,11 +359,6 @@ export function Navigation({
               </button>
             </div>
           )}
-
-          {/* Ribbon Display Options Button (Excel style) */}
-          <div className="ml-auto flex items-center shrink-0">
-            <RibbonDisplayMenu variant="navbar" />
-          </div>
         </nav>
       </div>
 

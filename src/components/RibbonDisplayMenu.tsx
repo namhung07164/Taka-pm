@@ -41,15 +41,17 @@ export function RibbonDisplayMenu({ className = '', variant = 'navbar' }: Ribbon
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border shadow-sm cursor-pointer select-none ${
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border shadow-sm cursor-pointer select-none active:scale-95 touch-manipulation ${
           variant === 'floating'
             ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 border-slate-700 dark:border-slate-300 hover:bg-slate-700'
-            : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] border-slate-200 dark:border-[#444446]'
+            : variant === 'header'
+              ? 'bg-slate-50 hover:bg-slate-100 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] border-slate-200 dark:border-[#444446]'
+              : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] border-slate-200 dark:border-[#444446]'
         }`}
         title="Ribbon Display Options"
       >
         <PanelTop className="w-4 h-4 text-slate-600 dark:text-[#a3a3a3]" />
-        <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
