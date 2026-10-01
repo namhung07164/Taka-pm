@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useDeferredValue } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useDeferredValue, Suspense } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { Layers, ShieldAlert } from 'lucide-react';
 import { useOffscreenImage } from '../../hooks/useOffscreenImage';
@@ -279,16 +279,16 @@ export function LiveLayoutMainView({
     }
   }, [deferredSearchQuery, units, zoomAndPanToUnit]);
 
-  // Fit to screen on initial floor change
+  // Fit to screen on initial mount, floor/version change, and when background image finishes loading
   const lastFloorVersionKeyRef = useRef<string>('');
   useEffect(() => {
-    const curKey = `${storeFilter}_${targetLoc}_${version?.id || ''}`;
+    const curKey = `${storeFilter}_${targetLoc}_${version?.id || ''}_${bgImage ? 'loaded' : 'pending'}`;
     if (lastFloorVersionKeyRef.current !== curKey) {
       lastFloorVersionKeyRef.current = curKey;
-      const timer = setTimeout(() => fitToScreen(false), 80);
+      const timer = setTimeout(() => fitToScreen(false), 50);
       return () => clearTimeout(timer);
     }
-  }, [storeFilter, targetLoc, version?.id, fitToScreen]);
+  }, [storeFilter, targetLoc, version?.id, bgImage, fitToScreen]);
 
   // Security Defense: Check Access
   const hasUserAccessInStoreYear = useMemo(() => {
@@ -454,12 +454,13 @@ export function LiveLayoutMainView({
 
       {/* Mini Gantt Modal */}
       {Boolean(miniGanttProject) && (
-        <LayoutMiniGanttModal
-          isOpen={Boolean(miniGanttProject)}
-          onClose={() => setMiniGanttProject(null)}
-          project={miniGanttProject}
-          canWrite={canWrite}
-        />
+        <Suspense fallback={null}>
+          <LayoutMiniGanttModal
+            isOpen={Boolean(miniGanttProject)}
+            onClose={() => setMiniGanttProject(null)}
+            project={miniGanttProject!}
+          />
+        </Suspense>
       )}
 
       {/* Canvas Viewport */}

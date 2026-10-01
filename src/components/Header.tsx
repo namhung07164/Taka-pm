@@ -258,6 +258,44 @@ export function Header({
                   <span>Đồng bộ Apple Calendar (iOS)</span>
                 </button>
 
+                {/* Mobile Quick Utilities in Menu */}
+                <div className="md:hidden py-1 border-b border-slate-100 dark:border-[#444446]">
+                  <div className="grid grid-cols-3 gap-1 px-3 py-1">
+                    {onToggleTheme && (
+                      <button
+                        onClick={() => {
+                          onToggleTheme();
+                          setIsMenuOpen(false);
+                        }}
+                        className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] transition-colors"
+                      >
+                        {theme === "dark" ? <Sun className="w-4 h-4 mb-1 text-amber-500" /> : <Moon className="w-4 h-4 mb-1 text-slate-600" />}
+                        <span>{theme === "dark" ? "Light" : "Dark"}</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setLanguage(language === 'en' ? 'ja' : 'en');
+                        setIsMenuOpen(false);
+                      }}
+                      className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] transition-colors"
+                    >
+                      <span className="text-base leading-none mb-1">{language === 'en' ? '🇬🇧' : '🇯🇵'}</span>
+                      <span>{language === 'en' ? 'English' : '日本語'}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleCurrencyClick();
+                        setIsMenuOpen(false);
+                      }}
+                      className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-mono font-bold text-slate-700 dark:text-[#e3e3e3] transition-colors"
+                    >
+                      <span className="text-xs mb-1 text-blue-600 dark:text-[#8ab4f8]">{currency === 'VND' ? 'VND' : currency}</span>
+                      <span className="text-[10px]">{currency === 'VND' ? "'000" : currency}</span>
+                    </button>
+                  </div>
+                </div>
+
                 {activeTab === 'layout' && (
                   <button 
                     onClick={() => {
@@ -525,7 +563,7 @@ export function Header({
       </div>
 
       {/* Right: Quick Access & Controls Toolbar */}
-      <div className="flex items-center justify-end gap-1.5 shrink-0 ml-auto min-w-0">
+      <div className="hidden md:flex items-center justify-end gap-1.5 shrink-0 ml-auto min-w-0">
         {showQuickAccessToolbar && (
           <>
             {/* Search Command Palette */}
@@ -535,8 +573,8 @@ export function Header({
               title="Open Command Palette (Ctrl+K)"
             >
               <Search className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="hidden md:inline font-medium">Search...</span>
-              <kbd className="hidden lg:inline-block text-[9px] font-mono font-bold bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] px-1 py-0.2 rounded text-slate-500 dark:text-[#a3a3a3]">
+              <span className="hidden lg:inline font-medium">Search...</span>
+              <kbd className="hidden xl:inline-block text-[9px] font-mono font-bold bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] px-1 py-0.2 rounded text-slate-500 dark:text-[#a3a3a3]">
                 ⌘K
               </kbd>
             </button>

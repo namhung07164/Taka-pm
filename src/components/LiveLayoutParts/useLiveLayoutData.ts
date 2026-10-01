@@ -221,9 +221,30 @@ export function useLiveLayoutData({
         const isFocused = focusedUnitId === unit.id;
         if (isFocused) return true;
 
+        // 4/ Bỏ render các unit nếu không có map với task summarize / dự án
+        const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase().trim();
+        const uId = String(unit.id || '').toLowerCase().trim();
+        const uData = (uCode && aggregatedData[uCode]) 
+          ? aggregatedData[uCode] 
+          : (uId && aggregatedData[uId] ? aggregatedData[uId] : null);
+
+        const hasMappedTaskSummary = Boolean(
+          (uData?.task && uData.task.trim().length > 0) ||
+          (uData?.taskLines && uData.taskLines.length > 0) ||
+          (uData?.allTasks && uData.allTasks.length > 0) ||
+          (uData?.activeTasks && uData.activeTasks.length > 0) ||
+          (uData?.matchedProject?.taskSummaries && uData.matchedProject.taskSummaries.length > 0) ||
+          (uData?.matchedProject && (uData.matchedProject.code || uData.matchedProject.name)) ||
+          uData?.hasAppProject ||
+          (unit.taskSummaries && unit.taskSummaries.length > 0) ||
+          unit.task
+        );
+
+        if (!hasMappedTaskSummary) {
+          return false;
+        }
+
         if (filterOnlyAlerts) {
-          const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase();
-          const uData = (uCode && aggregatedData[uCode]) ? aggregatedData[uCode] : null;
           if (!uData?.alerts?.hasAlert) return false;
         }
 
