@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { cn, parseDateTime } from '../../lib/utils';
 import { positionTooltip, formatGanttDate } from './GanttUtils';
 import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
 import { Task, Project } from '../../types';
+import { X, GripHorizontal, Pin } from 'lucide-react';
 
 export interface GanttBarProps {
   startStr: string | undefined;
@@ -75,8 +76,40 @@ export const GanttBar = React.memo(function GanttBar({
   const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
+  const isDraggingTooltipRef = useRef(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const tooltipStartPos = useRef({ x: 0, y: 0 });
+
+  const isPinned = activeTooltip === id || isEditingPredecessor;
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!tooltipRef.current) return;
+    isDraggingTooltipRef.current = true;
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+    const rect = tooltipRef.current.getBoundingClientRect();
+    tooltipStartPos.current = { x: rect.left, y: rect.top };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingTooltipRef.current || !tooltipRef.current) return;
+    const dx = e.clientX - dragStartPos.current.x;
+    const dy = e.clientY - dragStartPos.current.y;
+    const newX = Math.max(10, Math.min(window.innerWidth - 100, tooltipStartPos.current.x + dx));
+    const newY = Math.max(10, Math.min(window.innerHeight - 80, tooltipStartPos.current.y + dy));
+    tooltipRef.current.style.left = `${newX}px`;
+    tooltipRef.current.style.top = `${newY}px`;
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    isDraggingTooltipRef.current = false;
+    try {
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    } catch (_) {}
+  };
 
   const handleMouseMove = (ev: React.MouseEvent) => {
+    if (isPinned) return; // Keep tooltip frozen in place when pinned
     lastMousePos.current = { x: ev.clientX, y: ev.clientY };
     if (tooltipRef.current) {
       positionTooltip(ev, tooltipRef.current);
@@ -84,15 +117,63 @@ export const GanttBar = React.memo(function GanttBar({
   };
 
   const handleMouseEnter = (ev: React.MouseEvent) => {
-    lastMousePos.current = { x: ev.clientX, y: ev.clientY };
+    if (!isPinned) {
+      lastMousePos.current = { x: ev.clientX, y: ev.clientY };
+    }
     setIsHovered(true);
   };
 
+  const handleMouseLeave = () => {
+    if (!isPinned) {
+      setIsHovered(false);
+    }
+  };
+
+  const handleBarClick = (ev: React.MouseEvent) => {
+    ev.stopPropagation();
+    if (isEditMode) return;
+    if (onBarClick) {
+      onBarClick(ev);
+      return;
+    }
+    if (activeTooltip === id) {
+      setActiveTooltip(null);
+      setIsHovered(false);
+    } else {
+      lastMousePos.current = { x: ev.clientX, y: ev.clientY };
+      if (tooltipRef.current) {
+        positionTooltip(ev, tooltipRef.current);
+      }
+      setActiveTooltip(id);
+      setIsHovered(true);
+    }
+  };
+
   React.useEffect(() => {
-    if ((isHovered || activeTooltip === id) && tooltipRef.current) {
+    if (!isPinned && isHovered && tooltipRef.current) {
       positionTooltip({ clientX: lastMousePos.current.x, clientY: lastMousePos.current.y } as any, tooltipRef.current);
     }
-  }, [isHovered, activeTooltip, id]);
+  }, [isHovered, isPinned]);
+
+  useEffect(() => {
+    if (activeTooltip !== id) return;
+    const handleGlobalClick = (e: MouseEvent) => {
+      if (tooltipRef.current && tooltipRef.current.contains(e.target as Node)) {
+        return;
+      }
+      if (!isEditingPredecessor) {
+        setActiveTooltip(null);
+        setIsHovered(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      window.addEventListener('click', handleGlobalClick);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('click', handleGlobalClick);
+    };
+  }, [activeTooltip, id, isEditingPredecessor, setActiveTooltip]);
 
   if (!dStart || !dEnd) return null;
 
@@ -112,17 +193,8 @@ export const GanttBar = React.memo(function GanttBar({
         id={isTask ? `gantt-bar-${id}` : undefined}
         onMouseMove={handleMouseMove}
         onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setIsHovered(false)}
-        onClick={(ev) => {
-          ev.stopPropagation();
-          if (isEditMode) return;
-          if (onBarClick) {
-            onBarClick(ev);
-            return;
-          }
-          if (tooltipRef.current) positionTooltip(ev, tooltipRef.current);
-          setActiveTooltip(activeTooltip === id ? null : id);
-        }}
+        onMouseLeave={handleMouseLeave}
+        onClick={handleBarClick}
         className={`absolute top-0 bottom-0 md:hover:z-[60] group ${isEditMode ? "cursor-default" : "cursor-pointer"} ${activeTooltip === id ? "z-[60]" : ""} ${extraVars?.highlight === 'assignee' ? "ring-2 ring-yellow-400 ring-offset-1 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.7)]" : extraVars?.highlight === 'creator' ? "ring-2 ring-purple-400 ring-offset-1 rounded-full shadow-[0_0_10px_rgba(192,132,252,0.7)]" : ""}`}
         style={{ left: `${leftPx + dayWidth / 2 - 8}px`, width: "16px" }}
       >
@@ -141,22 +213,57 @@ export const GanttBar = React.memo(function GanttBar({
             ref={tooltipRef}
             style={{ top: -9999, left: -9999 }}
             onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onMouseLeave={() => {
+              if (!isPinned) setIsHovered(false);
+            }}
             onClick={(e) => e.stopPropagation()}
             className="fixed gantt-tooltip-global z-[99999] flex w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600 flex-col gap-1 pointer-events-auto select-text"
           >
-            <div className="font-bold border-b border-slate-600 pb-1 mb-0.5 flex items-start flex-wrap gap-1.5">
-              {label}{" "}
-              {extraVars?.taskCode && (
-                <span className="text-slate-300 font-mono text-[10px]">
-                  [{extraVars.taskCode}]
+            {/* Header with Drag Handle and Close button */}
+            <div className="flex items-center justify-between pb-1 mb-0.5 border-b border-slate-600/80 gap-1.5 select-none">
+              <div 
+                className="flex items-center gap-1.5 text-[10px] text-slate-300 font-bold modal-handle cursor-grab active:cursor-grabbing hover:text-white transition-colors flex-1 min-w-0"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                title="Drag to reposition tooltip"
+              >
+                <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="truncate font-bold text-white text-xs">{label}</span>
+                {extraVars?.taskCode && (
+                  <span className="text-slate-300 font-mono text-[9px] shrink-0">
+                    [{extraVars.taskCode}]
+                  </span>
+                )}
+                {isPinned && (
+                  <span className="flex items-center gap-0.5 text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
+                    <Pin className="w-2.5 h-2.5 rotate-45" />
+                    PINNED
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="px-1.5 py-0.2 rounded text-[9px] bg-orange-500 text-white font-bold uppercase tracking-wider">
+                  Milestone
                 </span>
-              )}{" "}
-              ({status})
-              <span className="px-1.5 py-0.5 rounded text-[9px] bg-orange-500 text-white font-bold uppercase tracking-wider">
-                Milestone
-              </span>
+                {isPinned && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveTooltip(null);
+                      setIsHovered(false);
+                    }}
+                    className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-600 transition-colors cursor-pointer"
+                    title="Close Tooltip (Esc / Click outside)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
+
             {(extraVars?.actPrg !== undefined || extraVars?.duration !== undefined) && (
               <div className="flex justify-between gap-4">
                 {extraVars?.actPrg !== undefined && (
@@ -275,17 +382,8 @@ export const GanttBar = React.memo(function GanttBar({
       id={isTask ? `gantt-bar-${id}` : undefined}
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={(ev) => {
-        ev.stopPropagation();
-        if (isEditMode) return;
-        if (onBarClick) {
-          onBarClick(ev);
-          return;
-        }
-        if (tooltipRef.current) positionTooltip(ev, tooltipRef.current);
-        setActiveTooltip(activeTooltip === id ? null : id);
-      }}
+      onMouseLeave={handleMouseLeave}
+      onClick={handleBarClick}
       className={`absolute top-1/2 -translate-y-1/2 h-6 md:hover:z-[60] group rounded-sm shadow-sm ${isEditMode ? "cursor-default" : "cursor-pointer"} ${activeTooltip === id ? "z-[60]" : ""} ${extraVars?.highlight === 'assignee' ? "ring-2 ring-yellow-400 ring-offset-1 shadow-[0_0_10px_rgba(250,204,21,0.5)]" : extraVars?.highlight === 'creator' ? "ring-2 ring-purple-400 ring-offset-1 shadow-[0_0_10px_rgba(192,132,252,0.5)]" : ""}`}
       style={{ left: `${leftPx}px`, width: `${widthPx}px` }}
     >
@@ -318,19 +416,55 @@ export const GanttBar = React.memo(function GanttBar({
           ref={tooltipRef}
           style={{ top: -9999, left: -9999 }}
           onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
+          onMouseLeave={() => {
+            if (!isPinned) setIsHovered(false);
+          }}
           onClick={(e) => e.stopPropagation()}
           className="fixed gantt-tooltip-global z-[99999] flex w-max max-w-xs md:max-w-sm bg-slate-800 dark:bg-slate-700 text-white text-xs px-2.5 py-2 rounded shadow-lg dark:border dark:border-slate-600 flex-col gap-1 pointer-events-auto select-text"
         >
-          <div className="font-bold border-b border-slate-600 pb-1 mb-0.5 flex items-start flex-wrap gap-1.5">
-            <span className="whitespace-normal break-words">{label}</span>
-            {extraVars?.taskCode && (
-              <span className="text-slate-300 font-mono text-[10px] mt-0.5 whitespace-nowrap">
-                [{extraVars.taskCode}]
-              </span>
-            )}
-            <span className="whitespace-nowrap mt-0.5">({status})</span>
+          {/* Header with Drag Handle and Close button */}
+          <div className="flex items-center justify-between pb-1 mb-0.5 border-b border-slate-600/80 gap-1.5 select-none">
+            <div 
+              className="flex items-center gap-1.5 text-[10px] text-slate-300 font-bold modal-handle cursor-grab active:cursor-grabbing hover:text-white transition-colors flex-1 min-w-0"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              title="Drag to reposition tooltip"
+            >
+              <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="truncate font-bold text-white text-xs">{label}</span>
+              {extraVars?.taskCode && (
+                <span className="text-slate-300 font-mono text-[9px] shrink-0">
+                  [{extraVars.taskCode}]
+                </span>
+              )}
+              {isPinned && (
+                <span className="flex items-center gap-0.5 text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
+                  <Pin className="w-2.5 h-2.5 rotate-45" />
+                  PINNED
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-slate-300 text-[10px]">({status})</span>
+              {isPinned && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTooltip(null);
+                    setIsHovered(false);
+                  }}
+                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-600 transition-colors cursor-pointer"
+                  title="Close Tooltip (Esc / Click outside)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
+
           {(extraVars?.actPrg !== undefined || extraVars?.duration !== undefined) && (
             <div className="flex items-center gap-2">
               {extraVars?.actPrg !== undefined && (
