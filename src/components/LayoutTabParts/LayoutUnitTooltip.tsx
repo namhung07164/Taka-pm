@@ -744,18 +744,52 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               setShowImagePanel(prev => !prev);
             }}
             className={cn(
-              "p-1 rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1",
+              "rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1",
+              allUnitImages.length > 0 ? "p-0.5" : "p-1",
               showImagePanel 
-                ? "bg-blue-100 text-blue-600 dark:bg-blue-900/60 dark:text-[#8ab4f8] border-blue-300 dark:border-blue-700 shadow-2xs" 
-                : "bg-slate-50 text-slate-500 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-[#8ab4f8] border-slate-200 dark:border-[#444446] hover:bg-slate-100"
+                ? "bg-blue-100 text-blue-600 dark:bg-blue-900/60 dark:text-[#8ab4f8] border-blue-400 dark:border-blue-600 shadow-2xs ring-1 ring-blue-400/40" 
+                : allUnitImages.length > 0
+                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-[#8ab4f8] border-blue-300 dark:border-blue-700/80 shadow-2xs hover:border-blue-400"
+                  : "bg-slate-50 text-slate-500 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-[#8ab4f8] border-slate-200 dark:border-[#444446] hover:bg-slate-100"
             )}
-            title={showImagePanel ? "Đóng bảng hình ảnh (Close image gallery)" : "Mở bảng hình ảnh & link thumbnail (View image & thumbnail gallery)"}
+            title={
+              showImagePanel 
+                ? "Đóng bảng hình ảnh" 
+                : allUnitImages.length > 0 
+                  ? `Có ${allUnitImages.length} hình ảnh/thumbnail. Bấm để xem chi tiết.` 
+                  : "Mở bảng hình ảnh & link thumbnail"
+            }
           >
-            <ImageIcon className="w-3.5 h-3.5" />
-            {allUnitImages.length > 0 && (
-              <span className="text-[9px] font-bold font-mono px-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-[#8ab4f8]">
-                {allUnitImages.length}
-              </span>
+            {allUnitImages.length > 0 ? (
+              <div className="relative flex items-center gap-1">
+                {/* Mini Image Thumbnail Preview */}
+                <div className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center">
+                  <img 
+                    src={allUnitImages[0].url} 
+                    alt="Thumbnail" 
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                      const parent = (e.target as HTMLElement).parentElement;
+                      if (parent && !parent.querySelector('.img-fallback-icon')) {
+                        const iconSpan = document.createElement('span');
+                        iconSpan.className = 'img-fallback-icon flex items-center justify-center text-[10px] text-blue-500 font-bold';
+                        iconSpan.innerText = '🖼️';
+                        parent.appendChild(iconSpan);
+                      }
+                    }}
+                  />
+                </div>
+                {allUnitImages.length > 1 ? (
+                  <span className="text-[9px] font-bold font-mono text-blue-600 dark:text-[#8ab4f8] pr-1">
+                    +{allUnitImages.length - 1}
+                  </span>
+                ) : (
+                  <div className="w-1" />
+                )}
+              </div>
+            ) : (
+              <ImageIcon className="w-3.5 h-3.5" />
             )}
           </button>
           <QuickNavButton 
@@ -925,54 +959,56 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                     </div>
                   </div>
 
-                  {/* Link Address and Action Buttons */}
-                  <div className="flex items-center justify-between gap-1.5 pt-0.5">
-                    <div className="flex items-center gap-1 min-w-0 flex-1">
-                      <LinkIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                      <a 
-                        href={img.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-[10px] font-mono text-blue-600 dark:text-[#8ab4f8] hover:underline truncate"
-                        title={img.url}
-                      >
-                        {img.url}
-                      </a>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(img.url)}
-                        className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        title={copiedLink === img.url ? "Đã sao chép link!" : "Sao chép link"}
-                      >
-                        {copiedLink === img.url ? (
-                          <Check className="w-3 h-3 text-green-500" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                      </button>
-                      <a
-                        href={img.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        title="Mở link trong tab mới"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                      {img.isCustom && (
+                  {/* Link Address and Action Buttons (Only shown when clicking "+ Thêm") */}
+                  {showAddLinkInput && (
+                    <div className="flex items-center justify-between gap-1.5 pt-0.5 border-t border-slate-100 dark:border-slate-800/80 animate-in fade-in duration-150">
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                        <LinkIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                        <a 
+                          href={img.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-mono text-blue-600 dark:text-[#8ab4f8] hover:underline truncate"
+                          title={img.url}
+                        >
+                          {img.url}
+                        </a>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => handleDeleteCustomImage(img.id, img.url)}
-                          className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          title="Xóa link này"
+                          onClick={() => handleCopyLink(img.url)}
+                          className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title={copiedLink === img.url ? "Đã sao chép link!" : "Sao chép link"}
                         >
-                          <Trash2 className="w-3 h-3" />
+                          {copiedLink === img.url ? (
+                            <Check className="w-3 h-3 text-green-500" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
                         </button>
-                      )}
+                        <a
+                          href={img.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Mở link trong tab mới"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        {img.isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomImage(img.id, img.url)}
+                            className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Xóa link này"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>
