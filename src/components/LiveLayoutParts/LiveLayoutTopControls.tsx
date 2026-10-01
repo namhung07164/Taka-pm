@@ -55,8 +55,8 @@ export const LiveLayoutTopControls: React.FC<LiveLayoutTopControlsProps> = ({
 }) => {
   return (
     <div className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 z-20 flex items-center gap-1.5 sm:gap-2">
-      {/* Quick Search */}
-      <div className="relative">
+      {/* Quick Search - Hidden on small mobile screens to keep toolbar compact and prevent overlap */}
+      <div className="relative hidden md:block">
         <input
           type="text"
           value={searchQuery}

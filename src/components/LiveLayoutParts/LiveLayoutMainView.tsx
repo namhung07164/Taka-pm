@@ -100,6 +100,27 @@ export function LiveLayoutMainView({
   const isPinnedRef = useRef(false);
   const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
 
+  // Dynamic Container Dimensions
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
+    width: typeof window !== 'undefined' ? (window.innerWidth || 800) : 800,
+    height: typeof window !== 'undefined' ? (window.innerHeight || 600) : 600,
+  });
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const { clientWidth, clientHeight } = containerRef.current;
+        if (clientWidth > 0 && clientHeight > 0) {
+          setDimensions({ width: clientWidth, height: clientHeight });
+        }
+      }
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   // 1. Data Engine Hook
   const {
     targetLoc,
@@ -127,7 +148,7 @@ export function LiveLayoutMainView({
     focusedUnitId,
     stageScale: stageRef.current ? stageRef.current.scaleX() : 1,
     stagePos: stageRef.current ? { x: stageRef.current.x(), y: stageRef.current.y() } : { x: 0, y: 0 },
-    dimensions: { width: 800, height: 600 },
+    dimensions,
   });
 
   // 2. Background Image Resolution
@@ -196,7 +217,7 @@ export function LiveLayoutMainView({
     bgImage,
     version,
     units,
-    dimensions: { width: 800, height: 600 },
+    dimensions,
     isProjectModalOpen,
     hasMiniGantt: Boolean(miniGanttProject),
     onClearHoverInfo: () => setHoverInfo(null),
@@ -208,7 +229,6 @@ export function LiveLayoutMainView({
   // 4. Window Events & Resize Hook
   const {
     tooltipRef,
-    dimensions,
     isExporting,
     exportStatus,
     updateTooltipPos,
@@ -386,14 +406,6 @@ export function LiveLayoutMainView({
         filterOnlyAlerts={filterOnlyAlerts}
         totalFloorAlerts={totalFloorAlerts}
         onClearFilter={() => setFilterOnlyAlerts(false)}
-      />
-
-      {/* Bottom Actions */}
-      <LiveLayoutBottomActions
-        onOpenLegendModal={() => setShowLegendModal(true)}
-        showMenu={showMenu}
-        setShowMenu={setShowMenu}
-        onFitToScreen={() => fitToScreen(true)}
       />
 
       {/* Legend Modal */}

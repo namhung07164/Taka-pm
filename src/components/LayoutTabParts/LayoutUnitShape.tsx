@@ -86,10 +86,46 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
   };
 
   const unitNameText = unit.name || unit.code || unit.id || '';
-  const textPosX = unit.textX !== undefined ? unit.textX : (unit.x || 0);
-  const textPosY = unit.textY !== undefined ? unit.textY : (unit.y || 0);
-  const unitW = unit.textWidth || unit.width || (unit.radius ? unit.radius * 2 : 90);
-  const unitH = unit.textHeight || unit.height || (unit.radius ? unit.radius * 2 : 30);
+  
+  let textPosX = unit.textX !== undefined ? unit.textX : (unit.x || 0);
+  let textPosY = unit.textY !== undefined ? unit.textY : (unit.y || 0);
+  let unitW = unit.textWidth || unit.width || 90;
+  let unitH = unit.textHeight || unit.height || 30;
+
+  if (unit.type === 'polygon') {
+    if (unit.bounds && unit.bounds.minX !== Infinity && unit.bounds.maxX !== -Infinity) {
+      const bMinX = unit.bounds.minX;
+      const bMaxX = unit.bounds.maxX;
+      const bMinY = unit.bounds.minY;
+      const bMaxY = unit.bounds.maxY;
+      textPosX = unit.textX !== undefined ? unit.textX : bMinX;
+      textPosY = unit.textY !== undefined ? unit.textY : bMinY;
+      unitW = unit.textWidth || (bMaxX - bMinX) || 90;
+      unitH = unit.textHeight || (bMaxY - bMinY) || 30;
+    } else if (Array.isArray(unit.points) && unit.points.length >= 2) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (let i = 0; i < unit.points.length; i += 2) {
+        const px = unit.points[i];
+        const py = unit.points[i + 1];
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+      }
+      textPosX = unit.textX !== undefined ? unit.textX : minX;
+      textPosY = unit.textY !== undefined ? unit.textY : minY;
+      unitW = unit.textWidth || (maxX - minX) || 90;
+      unitH = unit.textHeight || (maxY - minY) || 30;
+    }
+  } else if (unit.type === 'circle') {
+    const r = unit.radius || 20;
+    const cx = unit.x || 0;
+    const cy = unit.y || 0;
+    textPosX = unit.textX !== undefined ? unit.textX : (cx - r);
+    textPosY = unit.textY !== undefined ? unit.textY : (cy - r);
+    unitW = unit.textWidth || (r * 2);
+    unitH = unit.textHeight || (r * 2);
+  }
   
   const baseFont = Math.max(11, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.2)));
   const currentZoom = stageScale || 1;
@@ -101,10 +137,12 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
   let imgBadgeY = textPosY + 8;
   if (unit.type === 'circle') {
     const r = unit.radius || 20;
-    badgeX = (unit.x || 0) + r * 0.6;
-    badgeY = (unit.y || 0) - r * 0.6;
-    imgBadgeX = (unit.x || 0) - r * 0.6;
-    imgBadgeY = (unit.y || 0) - r * 0.6;
+    const cx = unit.x || 0;
+    const cy = unit.y || 0;
+    badgeX = cx + r * 0.6;
+    badgeY = cy - r * 0.6;
+    imgBadgeX = cx - r * 0.6;
+    imgBadgeY = cy - r * 0.6;
   }
 
   const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase().trim();

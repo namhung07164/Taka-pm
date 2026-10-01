@@ -130,16 +130,18 @@ export function useLiveLayoutGestures({
 
     const contentW = Math.max(maxX - minX, 100);
     const contentH = Math.max(maxY - minY, 100);
-    const containerW = dimensions.width || (containerRef.current ? containerRef.current.clientWidth : 800);
-    const containerH = dimensions.height || (containerRef.current ? containerRef.current.clientHeight : 600);
+    const containerW = containerRef.current?.clientWidth || dimensions.width || (typeof window !== 'undefined' ? window.innerWidth : 800);
+    const containerH = containerRef.current?.clientHeight || dimensions.height || (typeof window !== 'undefined' ? window.innerHeight : 600);
 
-    const padding = 28;
+    const padding = 16;
     const scaleX = (containerW - padding * 2) / contentW;
     const scaleY = (containerH - padding * 2) / contentH;
     const newScale = Math.min(scaleX, scaleY, 2.5);
 
-    const newX = (containerW - contentW * newScale) / 2 - minX * newScale;
-    const newY = (containerH - contentH * newScale) / 2 - minY * newScale;
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+    const newX = containerW / 2 - contentCenterX * newScale;
+    const newY = containerH / 2 - contentCenterY * newScale;
 
     if (animated) {
       new Konva.Tween({
@@ -368,27 +370,41 @@ export function useLiveLayoutGestures({
       centerY = foundUnit.y || 0;
       unitW = r * 2;
       unitH = r * 2;
-    } else if (foundUnit.type === 'polygon' && Array.isArray(foundUnit.points) && foundUnit.points.length >= 2) {
+    } else if (foundUnit.type === 'polygon') {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (let i = 0; i < foundUnit.points.length; i += 2) {
-        const px = foundUnit.points[i];
-        const py = foundUnit.points[i + 1];
-        if (px < minX) minX = px;
-        if (px > maxX) maxX = px;
-        if (py < minY) minY = py;
-        if (py > maxY) maxY = py;
+      if (Array.isArray(foundUnit.points) && foundUnit.points.length >= 2) {
+        for (let i = 0; i < foundUnit.points.length; i += 2) {
+          const px = foundUnit.points[i];
+          const py = foundUnit.points[i + 1];
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
+        }
+      } else if (foundUnit.bounds) {
+        minX = foundUnit.bounds.minX;
+        maxX = foundUnit.bounds.maxX;
+        minY = foundUnit.bounds.minY;
+        maxY = foundUnit.bounds.maxY;
       }
-      centerX = (minX + maxX) / 2;
-      centerY = (minY + maxY) / 2;
-      unitW = maxX - minX;
-      unitH = maxY - minY;
+      if (minX !== Infinity && maxX !== -Infinity) {
+        centerX = (minX + maxX) / 2;
+        centerY = (minY + maxY) / 2;
+        unitW = maxX - minX;
+        unitH = maxY - minY;
+      } else {
+        centerX = (foundUnit.textX || foundUnit.x || 0) + 50;
+        centerY = (foundUnit.textY || foundUnit.y || 0) + 20;
+      }
     } else {
-      centerX = (foundUnit.x || 0) + unitW / 2;
-      centerY = (foundUnit.y || 0) + unitH / 2;
+      const posX = foundUnit.textX !== undefined ? foundUnit.textX : (foundUnit.x || 0);
+      const posY = foundUnit.textY !== undefined ? foundUnit.textY : (foundUnit.y || 0);
+      centerX = posX + unitW / 2;
+      centerY = posY + unitH / 2;
     }
 
-    const containerW = dimensions.width || (containerRef.current ? containerRef.current.clientWidth : 800);
-    const containerH = dimensions.height || (containerRef.current ? containerRef.current.clientHeight : 600);
+    const containerW = containerRef.current?.clientWidth || dimensions.width || (typeof window !== 'undefined' ? window.innerWidth : 800);
+    const containerH = containerRef.current?.clientHeight || dimensions.height || (typeof window !== 'undefined' ? window.innerHeight : 600);
     const targetScale = 0.70; // 70% Zoom as specified
 
     const targetX = containerW / 2 - centerX * targetScale;
