@@ -20,6 +20,8 @@ import { cn, parseDateTime, extractAllProjectCodes, projectMatchesUnitCode } fro
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
 
 interface LayoutUnitTooltipProps {
   hoverInfo: {
@@ -446,6 +448,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     if (e) e.preventDefault();
     const trimmed = newLinkInput.trim();
     if (!trimmed) return;
+
     const newEntry = {
       id: `img_${Date.now()}`,
       url: trimmed,
@@ -456,17 +459,112 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     setCustomUnitImages(updated);
     setNewLinkInput('');
     setShowAddLinkInput(false);
+
     try {
       localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
     } catch {}
+
+    // 🌟 Persist link into project.taskSummaries (in Zustand Store & Firestore)
+    try {
+      const allProjects = useAppStore.getState().projects;
+      const targetProj = p || allProjects.find(item => {
+        if (item.id === p?.id) return true;
+        const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+        const targetCode = String(data.code || unitCode || '').toLowerCase();
+        return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+      });
+
+      if (targetProj) {
+        const existingSummaries = targetProj.taskSummaries ? [...targetProj.taskSummaries] : [];
+        const existingIdx = existingSummaries.findIndex(
+          ts => ts.link === trimmed || ts.imageUrl === trimmed || (typeof ts.name === 'string' && ts.name.includes(trimmed))
+        );
+
+        let updatedSummaries: any[];
+        if (existingIdx >= 0) {
+          existingSummaries[existingIdx] = {
+            ...existingSummaries[existingIdx],
+            link: trimmed,
+            imageUrl: trimmed,
+            thumbnail: trimmed,
+            updatedAt: new Date().toISOString(),
+          };
+          updatedSummaries = existingSummaries;
+        } else {
+          const newSummaryItem = {
+            id: `ts_${Date.now()}`,
+            name: `Link / Photo: ${trimmed}`,
+            start: targetProj.computedTakStart || targetProj.start || new Date().toISOString().slice(0, 10),
+            finish: targetProj.computedTakCompl || targetProj.handover || targetProj.start || new Date().toISOString().slice(0, 10),
+            link: trimmed,
+            imageUrl: trimmed,
+            thumbnail: trimmed,
+            createdAt: new Date().toISOString(),
+          };
+          updatedSummaries = [newSummaryItem, ...existingSummaries];
+        }
+
+        const updatedProject: Project = {
+          ...targetProj,
+          taskSummaries: updatedSummaries,
+        };
+
+        // 1. Instant Zustand 0ms optimistic update
+        useAppStore.getState().setProjects(
+          allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
+        );
+
+        // 2. Cloud Firestore persistence
+        if (targetProj.id) {
+          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), {
+            taskSummaries: updatedSummaries,
+          }, { merge: true }).catch(err => {
+            console.error("Failed to sync taskSummaries to Firestore:", err);
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Error updating project taskSummaries:", err);
+    }
   };
 
-  const handleDeleteCustomImage = (id: string) => {
-    const updated = customUnitImages.filter(item => item.id !== id);
+  const handleDeleteCustomImage = (id: string, urlToDelete?: string) => {
+    const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
     setCustomUnitImages(updated);
     try {
       localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
     } catch {}
+
+    // Clean up from project.taskSummaries
+    try {
+      const allProjects = useAppStore.getState().projects;
+      const targetProj = p || allProjects.find(item => {
+        if (item.id === p?.id) return true;
+        const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+        const targetCode = String(data.code || unitCode || '').toLowerCase();
+        return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+      });
+
+      if (targetProj && targetProj.taskSummaries && urlToDelete) {
+        const filteredSummaries = targetProj.taskSummaries.filter(
+          ts => ts.link !== urlToDelete && ts.imageUrl !== urlToDelete && !ts.name?.includes(urlToDelete)
+        );
+        const updatedProject: Project = {
+          ...targetProj,
+          taskSummaries: filteredSummaries,
+        };
+        useAppStore.getState().setProjects(
+          allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
+        );
+        if (targetProj.id) {
+          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), {
+            taskSummaries: filteredSummaries,
+          }, { merge: true }).catch(console.error);
+        }
+      }
+    } catch (err) {
+      console.error("Error removing from project taskSummaries:", err);
+    }
   };
 
   const handleCopyLink = (url: string) => {
@@ -477,12 +575,29 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     } catch {}
   };
 
-  // Consolidate all image items (user-added links, layout image/thumbnail, project attachments)
+  // Consolidate all image items (user-added links, taskSummaries, layout image/thumbnail, project attachments)
   const allUnitImages = useMemo(() => {
     const list: Array<{ id: string; url: string; title: string; source: string; isCustom?: boolean }> = [];
     const seenUrls = new Set<string>();
 
-    // 1. Custom user-posted links
+    // 1. Project taskSummaries links (Prioritized cloud-backed task summarize)
+    if (p?.taskSummaries && Array.isArray(p.taskSummaries)) {
+      p.taskSummaries.forEach((ts, tsIdx) => {
+        const url = ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' ? ts.name.match(/https?:\/\/[^\s]+/)?.[0] : null);
+        if (url && typeof url === 'string' && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          list.push({
+            id: `ts_${ts.id || tsIdx}_${url.slice(-8)}`,
+            url: url,
+            title: ts.name || `Task Summary Link ${list.length + 1}`,
+            source: 'Task Summarize',
+            isCustom: true,
+          });
+        }
+      });
+    }
+
+    // 2. Custom user-posted links from localStorage
     customUnitImages.forEach((c) => {
       if (c.url && !seenUrls.has(c.url)) {
         seenUrls.add(c.url);
@@ -496,7 +611,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       }
     });
 
-    // 2. Unit image from layout data
+    // 3. Unit image from layout data
     if (data.imageUrl && typeof data.imageUrl === 'string' && !seenUrls.has(data.imageUrl)) {
       seenUrls.add(data.imageUrl);
       list.push({
@@ -525,7 +640,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       });
     }
 
-    // 3. Project comments attachments
+    // 4. Project comments attachments
     if (p?.comments && Array.isArray(p.comments)) {
       p.comments.forEach((c, cIdx) => {
         if (c.attachments && Array.isArray(c.attachments)) {
@@ -545,7 +660,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     }
 
     return list;
-  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.comments]);
+  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.comments, p?.taskSummaries]);
 
   // Safe fallback if vis is undefined
   const v = vis || {
@@ -849,7 +964,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                       {img.isCustom && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteCustomImage(img.id)}
+                          onClick={() => handleDeleteCustomImage(img.id, img.url)}
                           className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                           title="Xóa link này"
                         >

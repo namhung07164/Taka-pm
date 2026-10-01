@@ -569,11 +569,12 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
          * **Biểu tượng Hình Ảnh (`ImageIcon`)**: Thay thế biểu tượng kéo thả cũ ở góc phải trên cùng của Tooltip bằng biểu tượng **Hình Ảnh** kèm huy hiệu hiển thị số lượng ảnh/link có sẵn của ô gian hàng.
          * **Bảng Thumbnail Khớp Chuẩn Chiều Ngang Tooltip (`w-full`)**: Nhấp vào biểu tượng hình ảnh để mở Bảng hình ảnh với chiều ngang bằng đúng với chiều ngang của Tooltip, không làm vỡ bố cục hay tràn ra ngoài màn hình.
          * **Tự Động Trích Xuất & Hiển Thị Đa Nguồn**:
+           - Tự động hiển thị và đồng bộ các link ảnh/thumbnail được lưu trong **Task Summarize (`project.taskSummaries`)** trên toàn bộ hệ thống Firestore và bộ nhớ Zustand.
            - Tự động hiển thị các file ảnh đính kèm từ bình luận tiến độ (`project.comments.attachments`).
            - Tự động nhận diện ảnh/thumbnail từ dữ liệu mặt bằng (`data.imageUrl`, `data.thumbnail`).
            - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào.
          * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`) và nút **Phóng to xem ảnh HD** (`Lightbox Zoom`).
-         * **Dán & Thêm Link Mới Tức Thì**: Có sẵn ô nhập URL để người dùng dán link ảnh/bài viết bất kỳ và lưu nhanh chóng vào ô gian hàng.
+         * **Dán & Lưu Link Vào Task Summaries Tức Thì**: Nút **`+ Thêm`** trên thanh tiêu đề mở ô nhập link; khi bấm **OK**, đường link sẽ tự động được ghi nhận và lưu đồng bộ trực tiếp vào mảng **Task Summarize (`taskSummaries`)** của dự án trên đám mây Firestore, đồng thời tự động ẩn ô nhập link.
 5. **Chế độ Bản đồ Trực quan (Live View), Bảng Chú Thích Màu & Cấu Hình Hiển Thị Labels Appear (Tooltip Visibility)**:
    - **Kiến trúc Đồ họa Đa tầng (Multi-Layer Canvas), Lướt Quán tính (Kinetic Inertia) & Hiệu năng 60 FPS**: 
      * **Tách Layer Độc lập (Multi-Layer Split)**: Tách bản vẽ CAD nền vào `FastLayer` tĩnh hoàn toàn, các khối gian hàng vào `UnitsLayer` và vòng hào quang chọn gian hàng (`Focused Unit Golden Ring`) vào `OverlayHighlightLayer`. Khi hover hoặc chọn gian hàng, GPU không cần vẽ lại toàn bộ các khối mặt bằng.

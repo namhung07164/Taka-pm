@@ -17,6 +17,18 @@ export interface ProjectFinancialSummary extends FinancialMetric {
   };
 }
 
+export interface TaskSummaryItem {
+  id?: string;
+  name: string;
+  start: string;
+  finish: string;
+  link?: string;
+  imageUrl?: string;
+  thumbnail?: string;
+  attachments?: any[];
+  [key: string]: any;
+}
+
 export interface Project {
   id?: string;
   no: number;
@@ -49,7 +61,7 @@ export interface Project {
   computedActProgress?: number;
   computedActStatus?: string;
   taskCount?: number;
-  taskSummaries?: { name: string; start: string; finish: string; }[];
+  taskSummaries?: TaskSummaryItem[];
   realtimeUpdate?: boolean;
   delegation?: boolean;
   updatedAt?: string;
