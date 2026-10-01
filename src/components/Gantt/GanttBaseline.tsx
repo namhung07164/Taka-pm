@@ -16,7 +16,7 @@ export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({ startSt
   const e = parseDateTime(endStr);
   if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) return null;
 
-  const leftDays = getExactDays(s, startDate);
+  const leftDays = getExactDays(startDate, s);
   const widthDays = getExactDays(e, s) + 1;
 
   const leftPx = leftDays * dayWidth;

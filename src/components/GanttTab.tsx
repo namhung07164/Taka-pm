@@ -1759,7 +1759,71 @@ export function GanttTab({
     document.addEventListener("mouseup", onMouseUp);
   };
 
-  const todayLeftPx = getExactDays(customToday, startDate) * dayWidth;
+  const calculateDateOffsetPx = useCallback((targetDate: Date | null | undefined): number => {
+    if (!targetDate || isNaN(targetDate.getTime()) || !timeUnits || timeUnits.length === 0) return 0;
+    const tTime = targetDate.getTime();
+    const firstTime = timeUnits[0].date.getTime();
+
+    if (tTime <= firstTime) {
+      const diffDays = (tTime - firstTime) / (1000 * 60 * 60 * 24);
+      return diffDays * dayWidth;
+    }
+
+    let accumulatedDays = 0;
+    for (let i = 0; i < timeUnits.length; i++) {
+      const unit = timeUnits[i];
+      const unitStartTime = unit.date.getTime();
+      const nextUnit = timeUnits[i + 1];
+      const unitEndTime = nextUnit
+        ? nextUnit.date.getTime()
+        : (unitStartTime + unit.days * 24 * 60 * 60 * 1000);
+
+      if (tTime >= unitStartTime && tTime < unitEndTime) {
+        const unitDurationMs = Math.max(unitEndTime - unitStartTime, 1);
+        const progressInUnit = (tTime - unitStartTime) / unitDurationMs;
+        const daysInUnit = progressInUnit * unit.days;
+        return (accumulatedDays + daysInUnit) * dayWidth;
+      }
+
+      accumulatedDays += unit.days;
+    }
+
+    const lastUnit = timeUnits[timeUnits.length - 1];
+    const lastEndTime = lastUnit.date.getTime() + lastUnit.days * 24 * 60 * 60 * 1000;
+    const diffDaysAfter = (tTime - lastEndTime) / (1000 * 60 * 60 * 24);
+    return (accumulatedDays + diffDaysAfter) * dayWidth;
+  }, [timeUnits, dayWidth]);
+
+  const getDateFromOffsetPx = useCallback((offsetPx: number): Date => {
+    if (!timeUnits || timeUnits.length === 0) return new Date();
+    const totalDaysOffset = offsetPx / dayWidth;
+
+    if (totalDaysOffset <= 0) {
+      return new Date(timeUnits[0].date.getTime() + totalDaysOffset * 24 * 60 * 60 * 1000);
+    }
+
+    let accumulatedDays = 0;
+    for (let i = 0; i < timeUnits.length; i++) {
+      const unit = timeUnits[i];
+      if (totalDaysOffset <= accumulatedDays + unit.days) {
+        const daysIntoUnit = totalDaysOffset - accumulatedDays;
+        const unitStartTime = unit.date.getTime();
+        const nextUnit = timeUnits[i + 1];
+        const unitEndTime = nextUnit ? nextUnit.date.getTime() : (unitStartTime + unit.days * 24 * 60 * 60 * 1000);
+        const unitDurationMs = unitEndTime - unitStartTime;
+        const msIntoUnit = (daysIntoUnit / unit.days) * unitDurationMs;
+        return new Date(unitStartTime + msIntoUnit);
+      }
+      accumulatedDays += unit.days;
+    }
+
+    const lastUnit = timeUnits[timeUnits.length - 1];
+    const lastEndTime = lastUnit.date.getTime() + lastUnit.days * 24 * 60 * 60 * 1000;
+    const daysBeyond = totalDaysOffset - accumulatedDays;
+    return new Date(lastEndTime + daysBeyond * 24 * 60 * 60 * 1000);
+  }, [timeUnits, dayWidth]);
+
+  const todayLeftPx = calculateDateOffsetPx(customToday);
   const showToday = customToday >= startDate && customToday <= endDate;
 
   const scrollToToday = useCallback(
@@ -1777,7 +1841,7 @@ export function GanttTab({
         (showParty ? partyColWidth : 0) +
         (showDuration ? durationColWidth : 0);
 
-      const targetTodayPx = getExactDays(customToday, startDate) * dayWidth;
+      const targetTodayPx = calculateDateOffsetPx(customToday);
       const targetLeft = sideWidth + dateColsWidth + targetTodayPx;
       const halfWidth = clientWidth / 2;
       const scrollPos = Math.max(0, targetLeft - halfWidth);
@@ -1796,8 +1860,7 @@ export function GanttTab({
     },
     [
       customToday,
-      startDate,
-      dayWidth,
+      calculateDateOffsetPx,
       sideWidth,
       showStart,
       startColWidth,
@@ -1887,10 +1950,8 @@ export function GanttTab({
         (showParty ? partyColWidth : 0) +
         (showDuration ? durationColWidth : 0);
 
-      const daysFromStart = (x - sideWidth - dateColsWidth) / dayWidth;
-      const newDate = new Date(
-        startDate.getTime() + daysFromStart * 24 * 60 * 60 * 1000,
-      );
+      const dateOffsetPx = x - sideWidth - dateColsWidth;
+      const newDate = getDateFromOffsetPx(dateOffsetPx);
 
       setCustomToday(newDate);
     };
@@ -1910,7 +1971,7 @@ export function GanttTab({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDraggingToday, startDate, dayWidth, customToday]);
+  }, [isDraggingToday, getDateFromOffsetPx, customToday, sideWidth, showStart, startColWidth, showFinish, finishColWidth, showParty, partyColWidth, showDuration, durationColWidth]);
 
   // Calculate total width for the top scrollbar
   const dateColsWidth =
