@@ -21,7 +21,7 @@ import { cn, parseDateTime, extractAllProjectCodes, projectMatchesUnitCode } fro
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 
 interface LayoutUnitTooltipProps {
@@ -241,19 +241,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       const left = pad;
       const right = pad;
       
-      // Vertical placement: Smart non-obstruction calculation
-      let top: number;
-      if (bounds) {
-        // If unit is in lower half of screen, place tooltip at safeTop (upper half)
-        if (bounds.centerY > viewportHeight * 0.48) {
-          top = safeTop;
-        } else {
-          // Unit is in upper half of screen, place tooltip at lower half
-          top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
-        }
-      } else {
-        const clientY = hoverInfo.clientY !== undefined ? hoverInfo.clientY : viewportHeight / 2;
-        if (clientY > viewportHeight * 0.52) {
+      // Vertical placement: When adding link or expanding panel on mobile, always anchor at safeTop
+      // to guarantee header and input form are NEVER pushed off the top of the iPhone screen
+      let top = safeTop;
+      if (!showAddLinkInput && bounds) {
+        if (bounds.centerY > viewportHeight * 0.52) {
           top = safeTop;
         } else {
           top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
@@ -263,7 +255,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.position = 'fixed';
       el.style.left = `${left}px`;
       el.style.right = `${right}px`;
-      el.style.top = `${top}px`;
+      el.style.top = `${Math.max(safeTop, top)}px`;
       el.style.width = `calc(100vw - ${pad * 2}px)`;
       el.style.maxWidth = '420px';
       el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
@@ -574,21 +566,46 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
       });
 
-      if (targetProj && targetProj.taskSummaries && urlToDelete) {
-        const filteredSummaries = targetProj.taskSummaries.filter(
-          ts => ts.link !== urlToDelete && ts.imageUrl !== urlToDelete && !ts.name?.includes(urlToDelete) && !ts.name?.startsWith('Link / Photo:')
+      if (targetProj) {
+        const filteredSummaries = (targetProj.taskSummaries || []).filter(
+          ts => ts.link !== urlToDelete && ts.imageUrl !== urlToDelete && !ts.name?.includes(urlToDelete || '') && !ts.name?.startsWith('Link / Photo:')
         );
+        const newImageUrl = targetProj.imageUrl === urlToDelete ? '' : targetProj.imageUrl;
+        const newThumbnail = targetProj.thumbnail === urlToDelete ? '' : targetProj.thumbnail;
+        const newPhoto = (targetProj as any).photo === urlToDelete ? '' : (targetProj as any).photo;
+        const newImage = (targetProj as any).image === urlToDelete ? '' : (targetProj as any).image;
+
         const updatedProject: Project = {
           ...targetProj,
           taskSummaries: filteredSummaries,
-        };
+          imageUrl: newImageUrl,
+          thumbnail: newThumbnail,
+          photo: newPhoto,
+          image: newImage,
+        } as Project;
+
         useAppStore.getState().setProjects(
           allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
         );
+
         if (targetProj.id) {
-          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), {
+          const firestoreUpdate: Record<string, any> = {
             taskSummaries: filteredSummaries,
-          }, { merge: true }).catch(console.error);
+          };
+          if (targetProj.imageUrl === urlToDelete) {
+            firestoreUpdate.imageUrl = deleteField();
+          }
+          if (targetProj.thumbnail === urlToDelete) {
+            firestoreUpdate.thumbnail = deleteField();
+          }
+          if ((targetProj as any).photo === urlToDelete) {
+            firestoreUpdate.photo = deleteField();
+          }
+          if ((targetProj as any).image === urlToDelete) {
+            firestoreUpdate.image = deleteField();
+          }
+
+          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), firestoreUpdate, { merge: true }).catch(console.error);
         }
       }
     } catch (err) {
@@ -1178,7 +1195,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input 
                   type="url"
-                  autoFocus
                   value={newLinkInput}
                   onChange={(e) => setNewLinkInput(e.target.value)}
                   placeholder="Dán link ảnh hoặc link bài viết (URL)..."
@@ -1291,11 +1307,18 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                         {img.isCustom && (
                           <button
                             type="button"
-                            onClick={() => handleDeleteCustomImage(img.id, img.url)}
-                            className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteCustomImage(img.id, img.url);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer active:scale-95 touch-manipulation flex items-center justify-center"
                             title="Xóa link này"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5 text-red-500 hover:text-red-600" />
                           </button>
                         )}
                       </div>
