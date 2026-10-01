@@ -7,6 +7,8 @@ import {
   ChevronUp,
   RotateCcw,
   Check,
+  Edit3,
+  ExternalLink,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -30,8 +32,16 @@ export const LiveLayoutSettingsDrawer: React.FC<LiveLayoutSettingsDrawerProps> =
   const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
   const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility);
   const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
+  const setActiveTab = useAppStore(state => state.setActiveTab);
 
   if (!isOpen) return null;
+
+  const handleOpenEditView = () => {
+    onClose();
+    if (setActiveTab) {
+      setActiveTab('picture_mapping');
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -40,7 +50,7 @@ export const LiveLayoutSettingsDrawer: React.FC<LiveLayoutSettingsDrawerProps> =
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
             <Menu className="w-5 h-5 text-brand-600 dark:text-brand-400" />
-            Lớp hiển thị & Cấu hình nhãn (Edit Mode)
+            Lớp hiển thị & Cấu hình nhãn (Edit View)
           </div>
           <button
             onClick={onClose}
@@ -51,6 +61,27 @@ export const LiveLayoutSettingsDrawer: React.FC<LiveLayoutSettingsDrawerProps> =
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          {/* Item 4: Edit View Quick-Switch Action Card */}
+          <div className="p-3.5 bg-brand-50/80 dark:bg-brand-950/30 rounded-xl border border-brand-200 dark:border-brand-900/50 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-brand-800 dark:text-brand-200 flex items-center gap-1.5">
+                <Edit3 className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
+                Chế độ Chỉnh sửa Mặt bằng (Edit View)
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                Mở trình vẽ, căn chỉnh vị trí gian hàng và gán dữ liệu CAD/Hình ảnh
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenEditView}
+              className="shrink-0 flex items-center gap-1 px-3 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95"
+            >
+              <span>Mở Edit View</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           {/* Search Input */}
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">

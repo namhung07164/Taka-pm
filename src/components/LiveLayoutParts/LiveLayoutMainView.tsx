@@ -100,48 +100,7 @@ export function LiveLayoutMainView({
   const isPinnedRef = useRef(false);
   const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
 
-  // Background Image Resolution
-  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
-  const r2Config = useAppStore(state => state.r2Config);
-
-  // Gestures Hook
-  const {
-    stageScale,
-    setStageScale,
-    stagePos,
-    setStagePos,
-    isInteractingRef,
-    touchStateRef,
-    pendingTouchRef,
-    rafTouchIdRef,
-    wheelTimeoutRef,
-    pendingWheelDeltaRef,
-    rafWheelIdRef,
-    lastWheelPointerRef,
-    stopInertia,
-    fitToScreen,
-    zoomIn,
-    zoomOut,
-    handleDragStart,
-    handleDragMove,
-    handleDragEnd,
-    zoomAndPanToUnit,
-  } = useLiveLayoutGestures({
-    containerRef,
-    stageRef,
-    bgImage: null,
-    version: null,
-    units: [],
-    dimensions: { width: 800, height: 600 },
-    isProjectModalOpen,
-    hasMiniGantt: Boolean(miniGanttProject),
-    onClearHoverInfo: () => setHoverInfo(null),
-    setFocusedUnitId,
-    focusedTimerRef,
-    onUnitSelected,
-  });
-
-  // Data Engine Hook
+  // 1. Data Engine Hook
   const {
     targetLoc,
     effectiveLayoutYear,
@@ -171,34 +130,9 @@ export function LiveLayoutMainView({
     dimensions: { width: 800, height: 600 },
   });
 
-  // Window Events & Resize Hook
-  const {
-    tooltipRef,
-    dimensions,
-    isExporting,
-    exportStatus,
-    updateTooltipPos,
-    hasStoredUnitImages,
-    handleTriggerExport,
-  } = useLiveLayoutWindowEvents({
-    stageRef,
-    containerRef,
-    fitToScreen,
-    setStageScale,
-    setStagePos,
-    targetUnitSearch,
-    zoomAndPanToUnit,
-    setFocusedUnitId,
-    focusedUnitId,
-    onClearFocus,
-    isPinnedRef,
-    setHoverInfo,
-    isPrintPreview,
-    storeFilter,
-    targetLoc,
-    effectiveLayoutYear,
-    onRefreshConfig,
-  });
+  // 2. Background Image Resolution
+  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
+  const r2Config = useAppStore(state => state.r2Config);
 
   useEffect(() => {
     let isMounted = true;
@@ -233,6 +167,97 @@ export function LiveLayoutMainView({
   }, [version?.backgroundUrl, r2Config]);
 
   const [bgImage] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
+
+  // 3. Gestures Hook
+  const {
+    stageScale,
+    setStageScale,
+    stagePos,
+    setStagePos,
+    isInteractingRef,
+    touchStateRef,
+    pendingTouchRef,
+    rafTouchIdRef,
+    wheelTimeoutRef,
+    pendingWheelDeltaRef,
+    rafWheelIdRef,
+    lastWheelPointerRef,
+    stopInertia,
+    fitToScreen,
+    zoomIn,
+    zoomOut,
+    handleDragStart,
+    handleDragMove,
+    handleDragEnd,
+    zoomAndPanToUnit,
+  } = useLiveLayoutGestures({
+    containerRef,
+    stageRef,
+    bgImage,
+    version,
+    units,
+    dimensions: { width: 800, height: 600 },
+    isProjectModalOpen,
+    hasMiniGantt: Boolean(miniGanttProject),
+    onClearHoverInfo: () => setHoverInfo(null),
+    setFocusedUnitId,
+    focusedTimerRef,
+    onUnitSelected,
+  });
+
+  // 4. Window Events & Resize Hook
+  const {
+    tooltipRef,
+    dimensions,
+    isExporting,
+    exportStatus,
+    updateTooltipPos,
+    hasStoredUnitImages,
+    handleTriggerExport,
+  } = useLiveLayoutWindowEvents({
+    stageRef,
+    containerRef,
+    fitToScreen,
+    setStageScale,
+    setStagePos,
+    targetUnitSearch,
+    zoomAndPanToUnit,
+    setFocusedUnitId,
+    focusedUnitId,
+    onClearFocus,
+    isPinnedRef,
+    setHoverInfo,
+    isPrintPreview,
+    storeFilter,
+    targetLoc,
+    effectiveLayoutYear,
+    onRefreshConfig,
+  });
+
+  // Auto-focus when targetUnitSearch prop changes
+  useEffect(() => {
+    if (targetUnitSearch && units && units.length > 0) {
+      const timer = setTimeout(() => {
+        zoomAndPanToUnit(targetUnitSearch);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [targetUnitSearch, units, zoomAndPanToUnit]);
+
+  // Auto-focus when search query matches exactly 1 unit
+  useEffect(() => {
+    if (deferredSearchQuery && deferredSearchQuery.length >= 2 && units && units.length > 0) {
+      const clean = deferredSearchQuery.toLowerCase().trim();
+      const matched = units.filter((u: any) =>
+        String(u.id || '').toLowerCase() === clean ||
+        String(u.name || '').toLowerCase().trim() === clean ||
+        String(u.code || '').toLowerCase().trim() === clean
+      );
+      if (matched.length === 1) {
+        zoomAndPanToUnit(matched[0]);
+      }
+    }
+  }, [deferredSearchQuery, units, zoomAndPanToUnit]);
 
   // Fit to screen on initial floor change
   const lastFloorVersionKeyRef = useRef<string>('');
@@ -324,7 +349,7 @@ export function LiveLayoutMainView({
         setSelectedVersionId={setSelectedVersionId}
       />
 
-      {/* Top Controls */}
+      {/* Top Controls: Includes Search, Refresh, Alerts, Export, Palette (Item 5), Settings & Zoom */}
       <LiveLayoutTopControls
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -339,6 +364,7 @@ export function LiveLayoutMainView({
         onTriggerExport={handleTriggerExport}
         showMenu={showMenu}
         setShowMenu={setShowMenu}
+        onOpenLegendModal={() => setShowLegendModal(true)}
         layoutTooltipVisibility={layoutTooltipVisibility}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
@@ -381,7 +407,7 @@ export function LiveLayoutMainView({
         unitColorMap={unitColorMap}
       />
 
-      {/* Settings / Edit Mode Drawer */}
+      {/* Settings / Edit Mode Drawer (Item 4) */}
       <LiveLayoutSettingsDrawer
         isOpen={showMenu}
         onClose={() => setShowMenu(false)}

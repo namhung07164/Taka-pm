@@ -43,22 +43,22 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
   const isDimmed = isLegendColorOn && hasColor && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
   const contrast = isLegendColorOn && hasColor 
     ? getContrastStyle(fillColor) 
-    : { text: isDarkMode ? '#94a3b8' : '#64748b', shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)' };
+    : { text: isDarkMode ? '#e2e8f0' : '#1e293b', shapeStroke: isDarkMode ? 'rgba(148, 163, 184, 0.5)' : 'rgba(100, 116, 139, 0.6)' };
   
   const displayOpacity = !isLegendColorOn || !hasColor
-    ? (isFocused ? 1.0 : 0.5)
+    ? (isFocused ? 1.0 : 0.6)
     : (isFocused 
         ? 1.0 
         : isDimmed 
         ? 0.2 
-        : Math.max(0.82, unit.targetOpacity ?? 0.85));
+        : Math.max(0.85, unit.targetOpacity ?? 0.88));
   
   const commonProps = {
     id: unit.id,
     fill: fillColor,
     opacity: displayOpacity,
-    stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
-    strokeWidth: isFocused ? 3 : (hasColor ? 1.5 : 1),
+    stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : (hasColor ? contrast.shapeStroke : (isDarkMode ? '#64748b' : '#94a3b8'))),
+    strokeWidth: isFocused ? 3.5 : (hasColor ? 1.8 : 1.2),
     strokeScaleEnabled: false,
     perfectDrawEnabled: false,
     x: unit.x || 0,
@@ -85,16 +85,20 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
     },
   };
 
-  const unitW = unit.textWidth || 100;
-  const unitH = unit.textHeight || 30;
-  const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
+  const unitNameText = unit.name || unit.code || unit.id || '';
+  const textPosX = unit.textX !== undefined ? unit.textX : (unit.x || 0);
+  const textPosY = unit.textY !== undefined ? unit.textY : (unit.y || 0);
+  const unitW = unit.textWidth || unit.width || (unit.radius ? unit.radius * 2 : 90);
+  const unitH = unit.textHeight || unit.height || (unit.radius ? unit.radius * 2 : 30);
+  
+  const baseFont = Math.max(11, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.2)));
   const currentZoom = stageScale || 1;
-  const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
+  const dynamicFontSize = Math.max(9.5, Math.min(20, baseFont / Math.max(0.6, Math.min(currentZoom, 1.8))));
 
-  let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
-  let badgeY = (unit.textY || unit.y || 0) + 8;
-  let imgBadgeX = (unit.textX || unit.x || 0) + 8;
-  let imgBadgeY = (unit.textY || unit.y || 0) + 8;
+  let badgeX = textPosX + unitW - 8;
+  let badgeY = textPosY + 8;
+  let imgBadgeX = textPosX + 8;
+  let imgBadgeY = textPosY + 8;
   if (unit.type === 'circle') {
     const r = unit.radius || 20;
     badgeX = (unit.x || 0) + r * 0.6;
@@ -103,24 +107,36 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
     imgBadgeY = (unit.y || 0) - r * 0.6;
   }
 
-  const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase();
-  const unitData = (uCode && aggregatedData[uCode]) ? aggregatedData[uCode] : null;
-  const hasAlert = Boolean(unitData?.alerts?.hasAlert);
+  const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase().trim();
+  const unitData = (uCode && aggregatedData[uCode]) 
+    ? aggregatedData[uCode] 
+    : (unit.id && aggregatedData[String(unit.id).toLowerCase().trim()]);
+    
+  const hasAlert = Boolean(
+    unitData?.alerts?.hasAlert || 
+    unitData?.hasAlert || 
+    unit.hasAlert ||
+    (unitData?.activeTasks && unitData.activeTasks.length > 0) ||
+    (unitData?.appProjectStatus === 'Delay' || unitData?.appProjectStatus === 'Overdue')
+  );
+  
   const hasImage = Boolean(
     unitData?.hasImage || 
     unit.imageUrl || 
     unit.thumbnail || 
     unit.image || 
+    unit.photos?.length ||
     hasStoredUnitImages(unit.name) ||
     hasStoredUnitImages(unit.id) ||
-    hasStoredUnitImages(unit.code)
+    hasStoredUnitImages(unit.code) ||
+    hasStoredUnitImages(uCode)
   );
 
-  const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-  const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+  const badgeRadius = Math.max(5.0, Math.min(9.0, 7.0 / Math.sqrt(Math.max(0.35, stageScale || 1))));
+  const badgeFontSize = Math.max(7.0, Math.min(11.0, 9.0 / Math.sqrt(Math.max(0.35, stageScale || 1))));
   const imgPathScale = (badgeRadius * 1.3) / 24;
 
-  const showTextAndBadge = isFocused || (stageScale || 1) >= 0.22;
+  const showTextAndBadge = isFocused || (stageScale || 1) >= 0.08;
 
   return (
     <React.Fragment>
@@ -138,20 +154,24 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
         )
       )}
 
-      {hasColor && unit.name && showTextAndBadge && (
+      {/* Unit Name / Number Label (Always rendered for identification) */}
+      {unitNameText && showTextAndBadge && (
         <Text 
-          text={unit.name}
-          x={unit.textX}
-          y={unit.textY}
-          width={unit.textWidth}
-          height={unit.textHeight}
+          text={unitNameText}
+          x={textPosX}
+          y={textPosY}
+          width={unitW}
+          height={unitH}
           rotation={unit.rotation || 0}
           align="center"
           verticalAlign="middle"
           fontSize={dynamicFontSize}
           fontStyle="bold"
           fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-          fill={contrast.text}
+          fill={isLegendColorOn && hasColor ? contrast.text : (isDarkMode ? '#f1f5f9' : '#0f172a')}
+          shadowColor={isLegendColorOn && hasColor ? 'transparent' : (isDarkMode ? '#000000' : '#ffffff')}
+          shadowBlur={isLegendColorOn && hasColor ? 0 : 3}
+          shadowOpacity={0.8}
           strokeScaleEnabled={false}
           perfectDrawEnabled={false}
           wrap="none"
@@ -160,19 +180,19 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
         />
       )}
 
-      {/* Alert Badge */}
+      {/* Alert Warning Badge (!) */}
       {hasAlert && showTextAndBadge && (
         <Group x={badgeX} y={badgeY} listening={false}>
           <Circle
             radius={badgeRadius}
             fill="#ef4444"
             stroke="#ffffff"
-            strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+            strokeWidth={Math.max(1.2, 1.8 / Math.sqrt(Math.max(0.35, stageScale || 1)))}
             strokeScaleEnabled={false}
             perfectDrawEnabled={false}
             shadowColor="#000000"
-            shadowBlur={3}
-            shadowOpacity={0.4}
+            shadowBlur={4}
+            shadowOpacity={0.5}
           />
           <Text
             text="!"
@@ -192,19 +212,19 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
         </Group>
       )}
 
-      {/* Image Attachment Badge */}
+      {/* Image Attachment / Photo Link Badge */}
       {hasImage && showTextAndBadge && (
         <Group x={imgBadgeX} y={imgBadgeY} listening={false}>
           <Circle
             radius={badgeRadius}
             fill="#2563eb"
             stroke="#ffffff"
-            strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+            strokeWidth={Math.max(1.2, 1.8 / Math.sqrt(Math.max(0.35, stageScale || 1)))}
             strokeScaleEnabled={false}
             perfectDrawEnabled={false}
             shadowColor="#000000"
-            shadowBlur={3}
-            shadowOpacity={0.35}
+            shadowBlur={4}
+            shadowOpacity={0.4}
           />
           <Path
             data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"

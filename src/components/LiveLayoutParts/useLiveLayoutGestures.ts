@@ -23,8 +23,8 @@ export function useLiveLayoutGestures({
   version,
   units,
   dimensions,
-  isProjectModalOpen,
-  hasMiniGantt,
+  isProjectModalOpen: _isProjectModalOpen,
+  hasMiniGantt: _hasMiniGantt,
   onClearHoverInfo,
   setFocusedUnitId,
   focusedTimerRef,
@@ -75,62 +75,65 @@ export function useLiveLayoutGestures({
     };
   }, [stopInertia]);
 
+  // Fit to screen: Zooms so the ENTIRE background image & all units are 100% visible in view
   const fitToScreen = useCallback((animated: boolean = false) => {
     const stage = stageRef.current;
-    if (!stage || !containerRef.current) return;
+    if (!stage) return;
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     if (bgImage) {
-      const bgW = (bgImage as any).width || 1000;
-      const bgH = (bgImage as any).height || 1000;
-      const posX = version.imagePos?.x || 0;
-      const posY = version.imagePos?.y || 0;
-      const scale = version.imageScale || 1;
+      const bgW = (bgImage as any).naturalWidth || (bgImage as any).width || 1200;
+      const bgH = (bgImage as any).naturalHeight || (bgImage as any).height || 800;
+      const posX = version?.imagePos?.x || 0;
+      const posY = version?.imagePos?.y || 0;
+      const scale = version?.imageScale || 1;
       minX = posX;
       minY = posY;
       maxX = posX + bgW * scale;
       maxY = posY + bgH * scale;
     }
 
-    units.forEach((u: any) => {
-      let uMinX = u.x || 0;
-      let uMinY = u.y || 0;
-      let uMaxX = uMinX + (u.width || 0);
-      let uMaxY = uMinY + (u.height || 0);
+    if (units && units.length > 0) {
+      units.forEach((u: any) => {
+        let uMinX = u.x || 0;
+        let uMinY = u.y || 0;
+        let uMaxX = uMinX + (u.width || u.textWidth || 60);
+        let uMaxY = uMinY + (u.height || u.textHeight || 30);
 
-      if (u.type === 'circle') {
-        const r = u.radius || 0;
-        uMinX = (u.x || 0) - r;
-        uMaxX = (u.x || 0) + r;
-        uMinY = (u.y || 0) - r;
-        uMaxY = (u.y || 0) + r;
-      } else if (u.type === 'polygon' && Array.isArray(u.points)) {
-        for (let i = 0; i < u.points.length; i += 2) {
-          const px = u.points[i];
-          const py = u.points[i + 1];
-          if (px < uMinX) uMinX = px;
-          if (px > uMaxX) uMaxX = px;
-          if (py < uMinY) uMinY = py;
-          if (py > uMaxY) uMaxY = py;
+        if (u.type === 'circle') {
+          const r = u.radius || 20;
+          uMinX = (u.x || 0) - r;
+          uMaxX = (u.x || 0) + r;
+          uMinY = (u.y || 0) - r;
+          uMaxY = (u.y || 0) + r;
+        } else if (u.type === 'polygon' && Array.isArray(u.points)) {
+          for (let i = 0; i < u.points.length; i += 2) {
+            const px = u.points[i];
+            const py = u.points[i + 1];
+            if (px < uMinX) uMinX = px;
+            if (px > uMaxX) uMaxX = px;
+            if (py < uMinY) uMinY = py;
+            if (py > uMaxY) uMaxY = py;
+          }
         }
-      }
-      if (uMinX < minX) minX = uMinX;
-      if (uMinY < minY) minY = uMinY;
-      if (uMaxX > maxX) maxX = uMaxX;
-      if (uMaxY > maxY) maxY = uMaxY;
-    });
+        if (uMinX < minX) minX = uMinX;
+        if (uMinY < minY) minY = uMinY;
+        if (uMaxX > maxX) maxX = uMaxX;
+        if (uMaxY > maxY) maxY = uMaxY;
+      });
+    }
 
-    if (minX === Infinity) {
+    if (minX === Infinity || maxX === -Infinity) {
       minX = 0; minY = 0; maxX = 1200; maxY = 800;
     }
 
-    const contentW = maxX - minX;
-    const contentH = maxY - minY;
-    const containerW = dimensions.width || 800;
-    const containerH = dimensions.height || 600;
+    const contentW = Math.max(maxX - minX, 100);
+    const contentH = Math.max(maxY - minY, 100);
+    const containerW = dimensions.width || (containerRef.current ? containerRef.current.clientWidth : 800);
+    const containerH = dimensions.height || (containerRef.current ? containerRef.current.clientHeight : 600);
 
-    const padding = 40;
+    const padding = 28;
     const scaleX = (containerW - padding * 2) / contentW;
     const scaleY = (containerH - padding * 2) / contentH;
     const newScale = Math.min(scaleX, scaleY, 2.5);
@@ -161,7 +164,7 @@ export function useLiveLayoutGestures({
     }
   }, [bgImage, version, units, dimensions, containerRef, stageRef]);
 
-  // Inertia momentum panning handlers
+  // Inertia and drag listeners
   const handleDragStart = useCallback(() => {
     stopInertia();
     isInteractingRef.current = true;
@@ -314,7 +317,7 @@ export function useLiveLayoutGestures({
     }
   }, [stageRef, containerRef]);
 
-  // Zoom & Pan smoothly to target unit and highlight it
+  // Zoom & Pan smoothly to target unit and highlight it with 70% Zoom (0.70 scale)
   const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
     if (!targetUnitOrName || !stageRef.current) return;
     const stage = stageRef.current;
@@ -322,10 +325,26 @@ export function useLiveLayoutGestures({
     let foundUnit: any = null;
     if (typeof targetUnitOrName === 'string') {
       const cleanTarget = targetUnitOrName.toLowerCase().trim();
+      if (!cleanTarget) return;
+
+      // 1. Exact ID, Name or Code match
       foundUnit = units.find((u: any) =>
-        u.id?.toLowerCase() === cleanTarget ||
-        u.name?.toLowerCase().trim() === cleanTarget
+        String(u.id || '').toLowerCase() === cleanTarget ||
+        String(u.name || '').toLowerCase().trim() === cleanTarget ||
+        String(u.code || '').toLowerCase().trim() === cleanTarget
       );
+
+      // 2. Partial match if no exact match
+      if (!foundUnit) {
+        foundUnit = units.find((u: any) => {
+          const uName = String(u.name || '').toLowerCase();
+          const uId = String(u.id || '').toLowerCase();
+          const uCode = String(u.code || '').toLowerCase();
+          return uName.includes(cleanTarget) || cleanTarget.includes(uName) ||
+                 uId.includes(cleanTarget) || cleanTarget.includes(uId) ||
+                 uCode.includes(cleanTarget) || cleanTarget.includes(uCode);
+        });
+      }
     } else {
       foundUnit = targetUnitOrName;
     }
@@ -336,12 +355,12 @@ export function useLiveLayoutGestures({
     if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
     focusedTimerRef.current = setTimeout(() => {
       setFocusedUnitId(null);
-    }, 12000);
+    }, 15000);
 
     let centerX = foundUnit.x || 0;
     let centerY = foundUnit.y || 0;
-    let unitW = foundUnit.width || 100;
-    let unitH = foundUnit.height || 100;
+    let unitW = foundUnit.width || foundUnit.textWidth || 100;
+    let unitH = foundUnit.height || foundUnit.textHeight || 100;
 
     if (foundUnit.type === 'circle') {
       const r = foundUnit.radius || 30;
@@ -368,9 +387,9 @@ export function useLiveLayoutGestures({
       centerY = (foundUnit.y || 0) + unitH / 2;
     }
 
-    const containerW = dimensions.width || 800;
-    const containerH = dimensions.height || 600;
-    const targetScale = 0.70;
+    const containerW = dimensions.width || (containerRef.current ? containerRef.current.clientWidth : 800);
+    const containerH = dimensions.height || (containerRef.current ? containerRef.current.clientHeight : 600);
+    const targetScale = 0.70; // 70% Zoom as specified
 
     const targetX = containerW / 2 - centerX * targetScale;
     const targetY = containerH / 2 - centerY * targetScale;
@@ -392,7 +411,7 @@ export function useLiveLayoutGestures({
     if (onUnitSelected) {
       onUnitSelected(foundUnit);
     }
-  }, [units, dimensions, stageRef, setFocusedUnitId, focusedTimerRef, onUnitSelected]);
+  }, [units, dimensions, stageRef, containerRef, setFocusedUnitId, focusedTimerRef, onUnitSelected]);
 
   return {
     stageScale,

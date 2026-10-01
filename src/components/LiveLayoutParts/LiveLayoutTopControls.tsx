@@ -5,6 +5,7 @@ import {
   RefreshCw,
   Bell,
   FolderOutput,
+  Palette,
   Menu,
   ZoomIn,
   ZoomOut,
@@ -25,6 +26,7 @@ interface LiveLayoutTopControlsProps {
   onTriggerExport: () => void;
   showMenu: boolean;
   setShowMenu: React.Dispatch<React.SetStateAction<boolean>>;
+  onOpenLegendModal: () => void;
   layoutTooltipVisibility: any;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -43,9 +45,10 @@ export const LiveLayoutTopControls: React.FC<LiveLayoutTopControlsProps> = ({
   isExporting,
   exportStatus,
   onTriggerExport,
-  showMenu,
+  showMenu: _showMenu,
   setShowMenu,
-  layoutTooltipVisibility,
+  onOpenLegendModal,
+  layoutTooltipVisibility: _layoutTooltipVisibility,
   onZoomIn,
   onZoomOut,
   onFitToScreen,
@@ -117,21 +120,23 @@ export const LiveLayoutTopControls: React.FC<LiveLayoutTopControlsProps> = ({
         </button>
       )}
 
-      {/* Layers & Settings / Edit Mode Toggle Button */}
+      {/* Item 5: Bảng Màu (Color Palette button placed next to zoom controls) */}
+      <button
+        onClick={onOpenLegendModal}
+        className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/30 rounded-xl shadow-lg border border-slate-200 dark:border-slate-800 transition-all text-xs font-bold active:scale-95"
+        title="Mở Bảng Chú giải Màu sắc (Color Palette)"
+      >
+        <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-600 dark:text-brand-400" />
+        <span className="hidden sm:inline">Bảng màu</span>
+      </button>
+
+      {/* Layers & Settings Drawer Button */}
       <button
         onClick={() => setShowMenu(prev => !prev)}
-        className={`flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-lg border transition-all text-xs font-bold active:scale-95 ${
-          showMenu
-            ? 'bg-brand-600 text-white border-brand-500'
-            : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
-        }`}
-        title="Bật/Tắt Lớp hiển thị & Cấu hình nhãn (Edit Mode)"
+        className="p-1.5 sm:p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl shadow-lg border border-slate-200 dark:border-slate-800 transition-all active:scale-95"
+        title="Cấu hình nhãn & Lớp hiển thị (Edit View)"
       >
         <Menu className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        <span className="hidden sm:inline">Lớp hiển thị</span>
-        {Object.values(layoutTooltipVisibility || {}).filter(v => v === false).length > 0 && (
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-        )}
       </button>
 
       {/* Zoom / Fit Controls */}

@@ -1457,6 +1457,19 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Tối Ưu Phân Tách Sub-components & Hooks Dưới 500 Dòng**:
      + **Detail Tab**: Chia nhỏ thành các component độc lập (`DetailFilterToolbar`, `DetailTableView`, `DetailTableHeader`, `DetailProjectRow`, `DetailTaskRow`, `DetailMobileView`, `DetailMobileTaskItem`, `DetailFloatingActionBar`), đảm bảo khả năng mở rộng và chống re-render diện rộng.
      + **Live Layout Viewer**: Đã tách rời từ file nguyên khối thành các module chuyên biệt (`LiveLayoutMainView`, `LiveLayoutCanvas`, `LiveLayoutTopControls`, `LiveLayoutFloorSelector`, `LiveLayoutLegendBar`, `LiveLayoutLegendModal`, `LiveLayoutSettingsDrawer`, `LiveLayoutBottomActions`, `LiveLayoutPrintLegend`) cùng các custom hooks xử lý cử chỉ (`useLiveLayoutGestures`), đồng bộ Cloud R2 (`useLiveLayoutR2Config`), phân giải dữ liệu tầng (`useLiveLayoutData`) và sự kiện cửa sổ (`useLiveLayoutWindowEvents`).
+     + **Cải Tiến Trải Nghiệm Mặt Bằng LiveView**: Nút **Bảng màu** được đưa lên thanh điều khiển trên cùng đặt cạnh cụm Zoom. Tính năng tìm kiếm tự động phóng to đúng 70% (`targetScale = 0.70`) và căn giữa gian hàng mục tiêu. Nút **Vừa màn hình (Fit to Screen)** tự động tính toán trọn vẹn toàn bộ hình nền background và tất cả gian hàng. Tên số hiệu Unit và các huy hiệu ảnh/cảnh báo được hiển thị sắc nét với độ tương phản cao trên mọi chế độ màu.
    - **Bảo Toàn Nghiệp Vụ & An Toàn Bộ Nhớ**:
      + Giữ nguyên 100% logic kinh doanh tài chính, WBS, liên kết Predecessor, phân quyền RBAC và cơ chế kéo thả mượt mà 60fps.
      + Tự động quản lý giải phóng bộ nhớ (cleanup event listeners, animation frames, WebGL/Canvas context) chống tràn RAM trên các thiết bị máy tính bảng và POS di động.
+
+21. **Hệ Thống Khóa An Toàn Logic Nghiệp Vụ Tự Động (Automated Unit Test Safety Lock - Vitest)**:
+   - **Khóa An Toàn Công Thức Tài Chính (`src/lib/financialService.test.ts`)**:
+     + Kiểm soát chặt chẽ công thức số dư ngân sách (`Remaining = Budget - Actual + SupportingFee`), ranh giới cảnh báo sức khỏe 20% (`Normal > 20%`, `Warning <= 20%`, `Danger < 0`).
+     + Kiểm soát phân kỳ 3 đợt thanh toán, bóc tách thực chi/dự chi (`Actual` vs `Forecast`), số dư khoản chi `Balance = Actual - (firstPaid + secondPaid + thirdPaid)`.
+     + Kiểm soát làm tròn số nguyên chuẩn `Math.round()` khi tính thuế VAT (10%, 8%, 0%) chống trôi số thực (floating-point drift).
+     + Kiểm thử Rollup ngân sách 3 cấp (Parent Self-node + Sub-Projects) và cờ `hasForc`.
+   - **Khóa An Toàn Tính Toán Tiến Độ & Mốc Ngày (`src/lib/progressRollup.test.ts` & `src/lib/projectDatesService.test.ts`)**:
+     + Tính toán tỷ lệ tiến độ kế hoạch (`computePlanProgressPercent`) theo thời gian thực (nội suy thời gian trôi qua, mốc quá khứ/tương lai/cùng ngày).
+     + Tính toán tỷ lệ tiến độ thực tế (`computeActProgressPercent`) kết hợp trạng thái hoàn thành trực tiếp và trọng số ủy quyền (In Progress 0.33, Pending Approval 0.66).
+     + Tự động tính mốc ngày dự án (`computedTakStart`, `computedTakCompl`, `computedOpening`) từ danh sách công việc con theo Rule 9 (In-Memory Computed Rollup).
+     + Toàn bộ 9 bộ kiểm thử với 76 Test Cases tự động chạy và bảo vệ 100% logic nghiệp vụ mỗi khi có thay đổi mã nguồn (`npm test`).
