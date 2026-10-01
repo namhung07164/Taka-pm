@@ -575,6 +575,10 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
            - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào.
          * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`) và nút **Phóng to xem ảnh HD** (`Lightbox Zoom`).
          * **Dán & Lưu Link Vào Task Summaries Tức Thì**: Nút **`+ Thêm`** trên thanh tiêu đề mở ô nhập link; khi bấm **OK**, đường link sẽ tự động được ghi nhận và lưu đồng bộ trực tiếp vào mảng **Task Summarize (`taskSummaries`)** của dự án trên đám mây Firestore, đồng thời tự động ẩn ô nhập link.
+         * **Tối Ưu Hiển Thị & Phóng To Toàn Màn Hình Trên iPad / Tablet (iOS Safari Portal & Sticky Header)**:
+           - **Thanh Tiêu Đề Cố Định (Sticky Header)**: Giữ nguyên thanh tiêu đề tooltip luôn ghim ở trên cùng (`sticky top-0 z-30`) khi cuộn xem hình ảnh lớn, đảm bảo các huy hiệu trạng thái, tên dự án, nút Thêm và nút Đóng `[X]` không bao giờ bị trôi khỏi màn hình.
+           - **Xem Ảnh Phóng To Độc Lập (Full-Screen Lightbox Portal)**: Trình xem ảnh phóng to được gắn trực tiếp vào `document.body` qua React Portal, loại bỏ hoàn toàn lỗi kẹt/cắt xén khung nhìn trên iPad Safari, cho phép quan sát bản vẽ chi tiết toàn màn hình sắc nét.
+           - **Khung Thumbnail Tỷ Lệ Tự Nhiên (Flexible Fit & Zero-Crop)**: Tự động điều chỉnh vừa vặn cả ảnh khổ đứng (Portrait) lẫn khổ ngang (Landscape), giữ nguyên vẹn 100% chi tiết không bị cắt đầu cắt đuôi.
 5. **Chế độ Bản đồ Trực quan (Live View), Bảng Chú Thích Màu & Cấu Hình Hiển Thị Labels Appear (Tooltip Visibility)**:
    - **Kiến trúc Đồ họa Đa tầng (Multi-Layer Canvas), Lướt Quán tính (Kinetic Inertia) & Hiệu năng 60 FPS**: 
      * **Tách Layer Độc lập (Multi-Layer Split)**: Tách bản vẽ CAD nền vào `FastLayer` tĩnh hoàn toàn, các khối gian hàng vào `UnitsLayer` và vòng hào quang chọn gian hàng (`Focused Unit Golden Ring`) vào `OverlayHighlightLayer`. Khi hover hoặc chọn gian hàng, GPU không cần vẽ lại toàn bộ các khối mặt bằng.

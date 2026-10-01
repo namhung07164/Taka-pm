@@ -1024,6 +1024,8 @@ function LiveCanvas({
   const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingWheelDeltaRef = useRef<number>(0);
   const rafWheelIdRef = useRef<number | null>(null);
+  const rafTouchIdRef = useRef<number | null>(null);
+  const pendingTouchRef = useRef<{ dist: number; center: { x: number; y: number } } | null>(null);
   const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
 
   // Smooth kinetic inertia momentum panning refs
@@ -1055,6 +1057,7 @@ function LiveCanvas({
       if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
       if (rafWheelIdRef.current !== null) cancelAnimationFrame(rafWheelIdRef.current);
       if (rafInertiaIdRef.current !== null) cancelAnimationFrame(rafInertiaIdRef.current);
+      if (rafTouchIdRef.current !== null) cancelAnimationFrame(rafTouchIdRef.current);
     };
   }, []);
 
@@ -3273,37 +3276,51 @@ function LiveCanvas({
                   x: (touch1.clientX + touch2.clientX) / 2,
                   y: (touch1.clientY + touch2.clientY) / 2,
                 };
-                const { lastDist, lastCenter } = touchStateRef.current;
-                const stage = stageRef.current;
-                if (stage && lastDist > 0 && lastCenter) {
-                  const oldScale = stage.scaleX();
-                  const scaleDelta = dist / lastDist;
-                  const newScale = Math.max(0.04, Math.min(oldScale * scaleDelta, 20));
-                  
-                  const stageBox = stage.container().getBoundingClientRect();
-                  const lastPointerX = lastCenter.x - stageBox.left;
-                  const lastPointerY = lastCenter.y - stageBox.top;
-                  const currentPointerX = center.x - stageBox.left;
-                  const currentPointerY = center.y - stageBox.top;
+                pendingTouchRef.current = { dist, center };
 
-                  const worldPointX = (lastPointerX - stage.x()) / oldScale;
-                  const worldPointY = (lastPointerY - stage.y()) / oldScale;
+                if (rafTouchIdRef.current === null) {
+                  rafTouchIdRef.current = requestAnimationFrame(() => {
+                    rafTouchIdRef.current = null;
+                    if (!pendingTouchRef.current) return;
+                    const { dist: curDist, center: curCenter } = pendingTouchRef.current;
+                    const { lastDist, lastCenter } = touchStateRef.current;
+                    const stage = stageRef.current;
+                    if (stage && lastDist > 0 && lastCenter) {
+                      const oldScale = stage.scaleX();
+                      const scaleDelta = curDist / lastDist;
+                      const newScale = Math.max(0.04, Math.min(oldScale * scaleDelta, 20));
+                      
+                      const stageBox = stage.container().getBoundingClientRect();
+                      const lastPointerX = lastCenter.x - stageBox.left;
+                      const lastPointerY = lastCenter.y - stageBox.top;
+                      const currentPointerX = curCenter.x - stageBox.left;
+                      const currentPointerY = curCenter.y - stageBox.top;
 
-                  const newPos = {
-                    x: currentPointerX - worldPointX * newScale,
-                    y: currentPointerY - worldPointY * newScale,
-                  };
+                      const worldPointX = (lastPointerX - stage.x()) / oldScale;
+                      const worldPointY = (lastPointerY - stage.y()) / oldScale;
 
-                  stage.scale({ x: newScale, y: newScale });
-                  stage.position(newPos);
-                  stage.batchDraw();
+                      const newPos = {
+                        x: currentPointerX - worldPointX * newScale,
+                        y: currentPointerY - worldPointY * newScale,
+                      };
 
-                  touchStateRef.current.lastDist = dist;
-                  touchStateRef.current.lastCenter = center;
+                      stage.scale({ x: newScale, y: newScale });
+                      stage.position(newPos);
+                      stage.batchDraw();
+
+                      touchStateRef.current.lastDist = curDist;
+                      touchStateRef.current.lastCenter = curCenter;
+                    }
+                  });
                 }
               }
             }}
             onTouchEnd={() => {
+              if (rafTouchIdRef.current !== null) {
+                cancelAnimationFrame(rafTouchIdRef.current);
+                rafTouchIdRef.current = null;
+              }
+              pendingTouchRef.current = null;
               touchStateRef.current.lastDist = 0;
               touchStateRef.current.lastCenter = null;
               const stage = stageRef.current;

@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   MessageSquare, 
   X,
@@ -444,6 +445,25 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     }
   }, [activeUnitStorageKey]);
 
+  // Auto-scroll tooltip to top when image panel expands to keep header visible
+  useEffect(() => {
+    if (showImagePanel && tooltipRef.current) {
+      tooltipRef.current.scrollTop = 0;
+    }
+  }, [showImagePanel, tooltipRef]);
+
+  // Close enlarged image modal with Escape key
+  useEffect(() => {
+    if (!enlargedImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setEnlargedImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [enlargedImage]);
+
   const handleAddCustomImage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = newLinkInput.trim();
@@ -711,7 +731,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing select-none pb-1 border-b border-slate-100 dark:border-slate-800/80"
+        className="sticky top-0 z-30 bg-white/95 dark:bg-[#1e1e20]/95 backdrop-blur-md pb-1.5 pt-0.5 -mt-1 -mx-1 px-1 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing select-none"
       >
         {/* Left: MD Status & Project Status Badges */}
         <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
@@ -929,8 +949,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                   key={img.id}
                   className="bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#333336] p-2 flex flex-col gap-1.5 shadow-2xs group hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
                 >
-                  {/* Thumbnail Image Container - Full A4 Proportions & Zero Crop */}
-                  <div className="relative rounded-md overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 aspect-[1.414/1] min-h-[180px] max-h-[360px] w-full flex items-center justify-center group/thumb">
+                  {/* Thumbnail Image Container - Full Natural Proportions & Zero Crop */}
+                  <div className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[320px] sm:max-h-[360px] flex items-center justify-center group/thumb p-1">
                     <img 
                       src={img.url} 
                       alt={img.title}
@@ -944,17 +964,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                           parent.appendChild(div);
                         }
                       }}
-                      className="w-full h-full object-contain cursor-pointer hover:scale-[1.02] transition-transform duration-200"
+                      className="w-full h-auto max-h-[310px] sm:max-h-[350px] object-contain cursor-pointer hover:scale-[1.01] transition-transform duration-200 rounded-md"
                       onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
                     />
-                    <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-90 group-hover/thumb:opacity-100 transition-opacity">
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-90 group-hover/thumb:opacity-100 transition-opacity">
                       <button
                         type="button"
                         onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
-                        className="p-1 bg-black/60 hover:bg-black/80 text-white rounded backdrop-blur-xs transition-colors cursor-pointer shadow-xs"
-                        title="Phóng to xem ảnh HD"
+                        className="p-1.5 bg-black/70 hover:bg-black/90 text-white rounded-md backdrop-blur-xs transition-colors cursor-pointer shadow-md"
+                        title="Phóng to xem ảnh HD toàn màn hình"
                       >
-                        <Maximize2 className="w-3.5 h-3.5" />
+                        <Maximize2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -1236,25 +1256,26 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* Enlarged Image Lightbox Modal */}
-      {enlargedImage && (
+      {/* Enlarged Image Lightbox Modal (Rendered via Portal to document.body for iPad/Safari compatibility) */}
+      {enlargedImage && typeof document !== 'undefined' && createPortal(
         <div 
-          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150"
           onClick={(e) => {
             e.stopPropagation();
             setEnlargedImage(null);
           }}
+          onTouchMove={(e) => e.stopPropagation()}
         >
           <div 
-            className="relative max-w-2xl w-full max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col"
+            className="relative max-w-4xl w-full max-h-[92vh] bg-slate-900/95 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900/90 text-white">
+            <div className="flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900 text-white shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
                 <span className="font-bold text-xs truncate">{enlargedImage.title || 'Image Preview'}</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleCopyLink(enlargedImage.url)}
@@ -1275,21 +1296,21 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 <button
                   type="button"
                   onClick={() => setEnlargedImage(null)}
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                   title="Đóng"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
-            <div className="flex-1 p-2 flex items-center justify-center bg-black/50 overflow-hidden min-h-[200px]">
+            <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/60 overflow-hidden min-h-[220px]">
               <img 
                 src={enlargedImage.url} 
                 alt={enlargedImage.title || 'Enlarged Preview'} 
-                className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                className="max-w-full max-h-[75vh] object-contain rounded-xl select-none"
               />
             </div>
-            <div className="p-2.5 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+            <div className="p-2.5 bg-slate-900 border-t border-slate-800 flex items-center gap-2 shrink-0">
               <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <a 
                 href={enlargedImage.url} 
@@ -1301,7 +1322,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               </a>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -14,7 +14,13 @@ import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/l
 const DB_NAME = 'taka_cad_images_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'cad_blobs';
-const MAX_MEMORY_CACHE = 30; // Keep up to 30 decoded floorplan images in RAM
+
+// Memory protection for iOS / iPadOS WebKit (Rule 3 & 7 in AGENTS.md)
+const isIOS = typeof navigator !== 'undefined' && (
+  /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+);
+const MAX_MEMORY_CACHE = isIOS ? 3 : 8; // Limit to 3 CAD floorplans on iPad to stay strictly below WebKit 40MB limit
 
 // In-Memory LRU Cache for decoded ImageBitmap / HTMLImageElement
 const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();
@@ -69,8 +75,12 @@ function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement
     const firstKey = memoryCache.keys().next().value;
     if (firstKey) {
       const oldImg = memoryCache.get(firstKey);
-      if (oldImg && 'close' in oldImg && typeof (oldImg as ImageBitmap).close === 'function') {
-        try { (oldImg as ImageBitmap).close(); } catch (_) {}
+      if (oldImg) {
+        if ('close' in oldImg && typeof (oldImg as ImageBitmap).close === 'function') {
+          try { (oldImg as ImageBitmap).close(); } catch (_) {}
+        } else if ('src' in oldImg && typeof (oldImg as HTMLImageElement).src === 'string') {
+          try { (oldImg as HTMLImageElement).src = ''; } catch (_) {}
+        }
       }
       memoryCache.delete(firstKey);
     }
