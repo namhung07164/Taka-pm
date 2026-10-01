@@ -1318,6 +1318,7 @@ function LiveCanvas({
         id: u.id,
         unit: u.name || '',
         isRestricted,
+        hasImage: Boolean(u.imageUrl || u.thumbnail || u.image),
         year: effectiveLayoutYear,
         size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
         profit: 0, profitByCp: 0, profitByHcmcate: 0,
@@ -1538,6 +1539,15 @@ function LiveCanvas({
             dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
             dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
             dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
+
+            // Check if project has attached images/thumbnails (task summaries, comments, or project fields)
+            const hasProjectImages = Boolean(
+              (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' && ts.name.match(/https?:\/\/[^\s]+/)))) ||
+              (p.comments && Array.isArray(p.comments) && p.comments.some((c: any) => c.attachments && c.attachments.length > 0)) ||
+              (p as any).imageUrl || (p as any).thumbnail || (p as any).image ||
+              dataMap[code].imageUrl || dataMap[code].thumbnail || dataMap[code].image
+            );
+            dataMap[code].hasImage = hasProjectImages || dataMap[code].hasImage;
 
             // Compute Smart Alert for this unit based on notification preferences
             const todayStr = now.toISOString().split('T')[0];
@@ -3519,16 +3529,28 @@ function LiveCanvas({
                // Badge placement coordinates
                let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 2;
                let badgeY = (unit.textY || unit.y || 0) + 2;
+               let imgBadgeX = (unit.textX || unit.x || 0) + 2;
+               let imgBadgeY = (unit.textY || unit.y || 0) + 2;
                if (unit.type === 'circle') {
                  const r = unit.radius || 20;
                  badgeX = (unit.x || 0) + r * 0.7;
                  badgeY = (unit.y || 0) - r * 0.7;
+                 imgBadgeX = (unit.x || 0) - r * 0.7;
+                 imgBadgeY = (unit.y || 0) - r * 0.7;
                }
                const uName = (unit.name || '').toLowerCase();
                const unitData = (uName && aggregatedData[uName]) ? aggregatedData[uName] : null;
                const hasAlert = Boolean(unitData?.alerts?.hasAlert);
+               const hasImage = Boolean(
+                 unitData?.hasImage || 
+                 unit.imageUrl || 
+                 unit.thumbnail || 
+                 unit.image || 
+                 (typeof window !== 'undefined' && Boolean(localStorage.getItem(`taka_unit_images_${unit.name || unit.id}`)))
+               );
                const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
                const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+               const imgPathScale = (badgeRadius * 1.3) / 24;
 
                // Dynamic Level of Detail (LOD) threshold:
                // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
@@ -3598,6 +3620,33 @@ function LiveCanvas({
                              fontStyle="bold"
                              fill="#ffffff"
                              fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                             strokeScaleEnabled={false}
+                             perfectDrawEnabled={false}
+                          />
+                       </Group>
+                    )}
+
+                    {/* Thumbnail / Image Indicator Badge (Rendered when project has attached photos/thumbnails) */}
+                    {hasColor && hasImage && showTextAndBadge && (
+                       <Group x={imgBadgeX} y={imgBadgeY} listening={false}>
+                          <Circle
+                             radius={badgeRadius}
+                             fill="#2563eb"
+                             stroke="#ffffff"
+                             strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                             strokeScaleEnabled={false}
+                             perfectDrawEnabled={false}
+                             shadowColor="#000000"
+                             shadowBlur={3}
+                             shadowOpacity={0.35}
+                          />
+                          <Path
+                             data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"
+                             fill="#ffffff"
+                             scaleX={imgPathScale}
+                             scaleY={imgPathScale}
+                             x={-badgeRadius * 0.65}
+                             y={-badgeRadius * 0.65}
                              strokeScaleEnabled={false}
                              perfectDrawEnabled={false}
                           />
