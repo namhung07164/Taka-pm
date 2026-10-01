@@ -468,6 +468,12 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     }
   }, [activeUnitStorageKey]);
 
+  // Reset panel open state when unit changes
+  useEffect(() => {
+    setShowImagePanel(false);
+    setShowAddLinkInput(false);
+  }, [data.code, unitCode]);
+
   // Auto-scroll tooltip to top when image panel expands to keep header visible
   useEffect(() => {
     if (showImagePanel && tooltipRef.current) {
@@ -1122,8 +1128,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* 6. Image & Link Thumbnail Gallery Panel (Placed cleanly BELOW Detail Box) */}
-      {(allUnitImages.length > 0 || showImagePanel || showAddLinkInput) && (
+      {/* 6. Image & Link Thumbnail Gallery Panel (Only opened when user clicks the image icon button) */}
+      {(showImagePanel || showAddLinkInput) && (
         <div className="w-full bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150 my-1">
           {/* Panel Header */}
           <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
@@ -1149,6 +1155,18 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               >
                 <Plus className="w-3 h-3" />
                 <span>Thêm</span>
+              </button>
+              {/* Close Image Panel Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImagePanel(false);
+                  setShowAddLinkInput(false);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Đóng bảng ảnh"
+              >
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
