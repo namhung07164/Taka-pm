@@ -190,7 +190,6 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
     isUrlOrImageString(pData?.detail) ||
     isUrlOrImageString(pData?.note) ||
     (pData?.taskSummaries && pData.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (ts as any).photo || (ts.attachments && ts.attachments.length > 0) || isUrlOrImageString(ts.name))) ||
-    (pData?.comments && pData.comments.some((c: any) => (c.attachments && c.attachments.length > 0) || isUrlOrImageString(c.text))) ||
     (unitData?.allTasks && unitData.allTasks.some((t: any) => t.link || t.imageUrl || t.thumbnail || t.photo || (t.attachments && t.attachments.length > 0) || isUrlOrImageString(t.name)))
   );
     

@@ -273,7 +273,6 @@ export function buildLiveLayoutAggregatedData({
       (typeof p.detail === 'string' && isUrlOrImageLine(p.detail)) ||
       (typeof p.note === 'string' && isUrlOrImageLine(p.note)) ||
       (p.taskSummaries && p.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (ts as any).photo || (ts.attachments && ts.attachments.length > 0) || isUrlOrImageLine(ts.name))) ||
-      (p.comments && p.comments.some((c: any) => (c.attachments && c.attachments.length > 0) || isUrlOrImageLine(c.text))) ||
       allMatchedTasks.some((t: any) => t.link || t.imageUrl || t.thumbnail || t.photo || (t.attachments && t.attachments.length > 0) || isUrlOrImageLine(t.name))
     );
 

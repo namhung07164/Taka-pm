@@ -279,16 +279,44 @@ export function LiveLayoutMainView({
     }
   }, [deferredSearchQuery, units, zoomAndPanToUnit]);
 
-  // Fit to screen on initial mount, floor/version change, and when background image finishes loading
-  const lastFloorVersionKeyRef = useRef<string>('');
+  // Fit to screen whenever ANY filter state changes or search is cleared
+  const lastFilterKeyRef = useRef<string>('');
   useEffect(() => {
-    const curKey = `${storeFilter}_${targetLoc}_${version?.id || ''}_${bgImage ? 'loaded' : 'pending'}`;
-    if (lastFloorVersionKeyRef.current !== curKey) {
-      lastFloorVersionKeyRef.current = curKey;
-      const timer = setTimeout(() => fitToScreen(false), 50);
-      return () => clearTimeout(timer);
+    const isSearching = Boolean(searchQuery && searchQuery.trim().length >= 2);
+    const filterKey = [
+      storeFilter,
+      targetLoc,
+      effectiveLayoutYear,
+      version?.id || '',
+      selectedVersionId || '',
+      filterOnlyAlerts ? 'alerts' : 'all',
+      selectedLegendGroupId || 'all_groups',
+      isSearching ? 'searching' : 'idle',
+      bgImage ? 'bg_loaded' : 'bg_pending',
+    ].join('::');
+
+    if (lastFilterKeyRef.current !== filterKey) {
+      lastFilterKeyRef.current = filterKey;
+      if (!isSearching && !targetUnitSearch) {
+        const timer = setTimeout(() => {
+          fitToScreen(false);
+        }, 50);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [storeFilter, targetLoc, version?.id, bgImage, fitToScreen]);
+  }, [
+    storeFilter,
+    targetLoc,
+    effectiveLayoutYear,
+    version?.id,
+    selectedVersionId,
+    filterOnlyAlerts,
+    selectedLegendGroupId,
+    searchQuery,
+    targetUnitSearch,
+    bgImage,
+    fitToScreen,
+  ]);
 
   // Security Defense: Check Access
   const hasUserAccessInStoreYear = useMemo(() => {

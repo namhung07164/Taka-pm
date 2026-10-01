@@ -743,27 +743,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       });
     }
 
-    // 5. Project comments attachments
-    if (p?.comments && Array.isArray(p.comments)) {
-      p.comments.forEach((c, cIdx) => {
-        if (c.attachments && Array.isArray(c.attachments)) {
-          c.attachments.forEach((att, aIdx) => {
-            if (att.url && !seenUrls.has(att.url)) {
-              seenUrls.add(att.url);
-              list.push({
-                id: `comm_${cIdx}_${aIdx}`,
-                url: att.url,
-                title: att.name || `Attachment ${list.length + 1}`,
-                source: `Comment by ${c.userName || 'User'}`,
-              });
-            }
-          });
-        }
-      });
-    }
-
     return list;
-  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.comments, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
+  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
 
   // Safe fallback if vis is undefined
   const v = vis || {

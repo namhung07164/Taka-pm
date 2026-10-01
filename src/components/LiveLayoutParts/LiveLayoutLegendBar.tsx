@@ -19,7 +19,7 @@ export const LiveLayoutLegendBar: React.FC<LiveLayoutLegendBarProps> = ({
   onOpenLegendModal,
 }) => {
   return (
-    <div className="hidden sm:flex absolute bottom-4 left-4 z-20 max-w-[85vw] sm:max-w-xl pointer-events-auto">
+    <div className="hidden lg:flex absolute bottom-4 left-4 z-20 max-w-[85vw] sm:max-w-xl pointer-events-auto">
       <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-3 py-2 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 transition-all flex flex-col gap-1.5 w-full">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 dark:border-slate-800/80">
