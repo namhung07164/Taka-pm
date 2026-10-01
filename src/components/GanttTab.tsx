@@ -1823,7 +1823,7 @@ export function GanttTab({
     return new Date(lastEndTime + daysBeyond * 24 * 60 * 60 * 1000);
   }, [timeUnits, dayWidth]);
 
-  const todayLeftPx = calculateDateOffsetPx(customToday);
+  const todayLeftPx = calculateDateOffsetPx(customToday) + (dayWidth / 2);
   const showToday = customToday >= startDate && customToday <= endDate;
 
   const scrollToToday = useCallback(
@@ -1841,7 +1841,7 @@ export function GanttTab({
         (showParty ? partyColWidth : 0) +
         (showDuration ? durationColWidth : 0);
 
-      const targetTodayPx = calculateDateOffsetPx(customToday);
+      const targetTodayPx = calculateDateOffsetPx(customToday) + (dayWidth / 2);
       const targetLeft = sideWidth + dateColsWidth + targetTodayPx;
       const halfWidth = clientWidth / 2;
       const scrollPos = Math.max(0, targetLeft - halfWidth);
