@@ -165,9 +165,6 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
     return () => {
       isMounted = false;
-      if (createdBlobUrl) {
-        URL.revokeObjectURL(createdBlobUrl);
-      }
     };
   }, [url, crossOrigin]);
 

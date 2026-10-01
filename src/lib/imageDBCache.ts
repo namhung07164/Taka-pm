@@ -14,13 +14,7 @@ import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/l
 const DB_NAME = 'taka_cad_images_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'cad_blobs';
-
-// Memory protection for iOS / iPadOS WebKit (Rule 3 & 7 in AGENTS.md)
-const isIOS = typeof navigator !== 'undefined' && (
-  /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-);
-const MAX_MEMORY_CACHE = isIOS ? 3 : 8; // Limit to 3 CAD floorplans on iPad to stay strictly below WebKit 40MB limit
+const MAX_MEMORY_CACHE = 15; // Safe in-memory cache limit for active floorplan images
 
 // In-Memory LRU Cache for decoded ImageBitmap / HTMLImageElement
 const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();
@@ -74,14 +68,6 @@ function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement
     // Evict oldest item
     const firstKey = memoryCache.keys().next().value;
     if (firstKey) {
-      const oldImg = memoryCache.get(firstKey);
-      if (oldImg) {
-        if ('close' in oldImg && typeof (oldImg as ImageBitmap).close === 'function') {
-          try { (oldImg as ImageBitmap).close(); } catch (_) {}
-        } else if ('src' in oldImg && typeof (oldImg as HTMLImageElement).src === 'string') {
-          try { (oldImg as HTMLImageElement).src = ''; } catch (_) {}
-        }
-      }
       memoryCache.delete(firstKey);
     }
   }
@@ -93,7 +79,7 @@ export function getMemoryCachedImage(url: string): ImageBitmap | HTMLImageElemen
   if (!key) return null;
   const img = memoryCache.get(key);
   if (img) {
-    // Cold freeze / GPU context loss protection: check if ImageBitmap was detached
+    // Cold freeze / GPU context loss protection: check if ImageBitmap was detached or image broken
     if ('width' in img && img.width === 0) {
       memoryCache.delete(key);
       return null;
@@ -286,16 +272,8 @@ export function preloadFloorImages(urls: (string | undefined | null)[]): void {
 
   const runPreload = async () => {
     for (const url of validUrls) {
-      const key = normalizeImageCacheKey(url);
-      if (memoryCache.has(key)) continue;
-
       try {
-        const blob = await fetchAndCacheImageBlob(url);
-        if (blob && typeof createImageBitmap === 'function') {
-          createImageBitmap(blob).then((bitmap) => {
-            setMemoryCachedImage(url, bitmap);
-          }).catch(() => {});
-        }
+        await fetchAndCacheImageBlob(url);
       } catch (_e) {}
     }
   };
