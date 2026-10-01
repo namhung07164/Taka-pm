@@ -41,12 +41,26 @@ export function buildLiveLayoutAggregatedData({
     const uName = (u?.name || '').toLowerCase().trim();
     if (!uName) return;
     const isRestricted = restrictedProjectCodes.has(uName);
-    dataMap[uName] = {
+    const hasUnitDirectImage = Boolean(
+      u.imageUrl || 
+      u.thumbnail || 
+      u.image || 
+      u.photo || 
+      (u.photos && u.photos.length > 0) || 
+      u.link || 
+      u.url || 
+      u.linkUrl || 
+      (u.imageLinks && u.imageLinks.length > 0) ||
+      (u.attachments && u.attachments.length > 0) ||
+      (u.images && u.images.length > 0)
+    );
+    const entry = {
       name: u.name || '',
       id: u.id,
+      code: u.code || u.name || '',
       unit: u.name || '',
       isRestricted,
-      hasImage: Boolean(u.imageUrl || u.thumbnail || u.image),
+      hasImage: hasUnitDirectImage,
       year: effectiveLayoutYear,
       size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
       profit: 0, profitByCp: 0, profitByHcmcate: 0,
@@ -57,6 +71,15 @@ export function buildLiveLayoutAggregatedData({
       appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", appProjectYear: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
       appProjectMdStatus: "", appMdStatus: "", appProjectActStatus: "", appActStatus: "", appProjectDetail: "", appDetail: "", appProjectDescription: "", appDescription: "", appProjectParty: "", appParty: ""
     };
+    dataMap[uName] = entry;
+    if (u.id) {
+      const uIdLower = String(u.id).toLowerCase().trim();
+      if (!dataMap[uIdLower]) dataMap[uIdLower] = entry;
+    }
+    if (u.code) {
+      const uCodeLower = String(u.code).toLowerCase().trim();
+      if (!dataMap[uCodeLower]) dataMap[uCodeLower] = entry;
+    }
   });
 
   summaryData.forEach((sumData) => {
@@ -234,10 +257,33 @@ export function buildLiveLayoutAggregatedData({
       }
     });
 
+    const projectHasImage = Boolean(
+      p.thumbnail ||
+      p.imageUrl ||
+      (p as any).image ||
+      (p as any).photo ||
+      ((p as any).photos && (p as any).photos.length > 0) ||
+      (p.imageLinks && p.imageLinks.length > 0) ||
+      ((p as any).attachments && (p as any).attachments.length > 0) ||
+      ((p as any).customImages && (p as any).customImages.length > 0) ||
+      ((p as any).images && (p as any).images.length > 0) ||
+      (typeof (p as any).link === 'string' && isUrlOrImageLine((p as any).link)) ||
+      (typeof (p as any).url === 'string' && isUrlOrImageLine((p as any).url)) ||
+      (typeof (p as any).linkUrl === 'string' && isUrlOrImageLine((p as any).linkUrl)) ||
+      (typeof p.detail === 'string' && isUrlOrImageLine(p.detail)) ||
+      (typeof p.note === 'string' && isUrlOrImageLine(p.note)) ||
+      (p.taskSummaries && p.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (ts as any).photo || (ts.attachments && ts.attachments.length > 0) || isUrlOrImageLine(ts.name))) ||
+      (p.comments && p.comments.some((c: any) => (c.attachments && c.attachments.length > 0) || isUrlOrImageLine(c.text))) ||
+      allMatchedTasks.some((t: any) => t.link || t.imageUrl || t.thumbnail || t.photo || (t.attachments && t.attachments.length > 0) || isUrlOrImageLine(t.name))
+    );
+
     targetUnitKeys.forEach(code => {
       if (dataMap[code]) {
         dataMap[code].matchedProject = p;
         dataMap[code].hasAppProject = true;
+        if (projectHasImage) {
+          dataMap[code].hasImage = true;
+        }
         dataMap[code].appProjectStatus = status;
         dataMap[code].appProjectBudget = p.budget || 0;
         dataMap[code].appProjectActual = p.actual || 0;

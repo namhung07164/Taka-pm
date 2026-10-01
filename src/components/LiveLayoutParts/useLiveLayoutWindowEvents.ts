@@ -47,19 +47,49 @@ export function useLiveLayoutWindowEvents({
   const [exportStatus, setExportStatus] = useState('');
   const lastHandledSearchRef = useRef<string | null>(null);
 
-  // Check stored unit images
+  // Listen to unit image changes from Tooltip
+  const [unitImagesVersion, setUnitImagesVersion] = useState(0);
+  useEffect(() => {
+    const handleImagesChanged = () => {
+      setUnitImagesVersion(v => v + 1);
+    };
+    window.addEventListener('taka_unit_images_changed', handleImagesChanged);
+    return () => window.removeEventListener('taka_unit_images_changed', handleImagesChanged);
+  }, []);
+
+  // Check stored unit images (Support both taka_ and custom prefixes)
   const hasStoredUnitImages = useCallback((key: string | undefined | null): boolean => {
     if (!key) return false;
     try {
-      const cleanKey = key.trim().toLowerCase();
-      const stored = localStorage.getItem(`unit_images_${cleanKey}`);
-      if (!stored) return false;
-      const parsed = JSON.parse(stored);
-      return Array.isArray(parsed) && parsed.length > 0;
+      const rawKey = String(key).trim();
+      const cleanKey = rawKey.toLowerCase();
+      const cleanNoDash = cleanKey.replace(/[-_ ]/g, '');
+      const keysToCheck = [
+        `taka_unit_images_${rawKey}`,
+        `taka_unit_images_${cleanKey}`,
+        `taka_unit_images_${rawKey.toUpperCase()}`,
+        `taka_unit_images_${cleanNoDash}`,
+        `unit_images_${cleanKey}`,
+        `unit_images_${rawKey}`,
+        `unit_images_${cleanNoDash}`,
+        `unit_custom_images_${cleanKey}`,
+        `unit_custom_images_${rawKey}`,
+        `unit_custom_images_${cleanNoDash}`,
+        `taka_unit_photos_${cleanKey}`,
+        `taka_unit_links_${cleanKey}`,
+      ];
+      for (const k of keysToCheck) {
+        const stored = localStorage.getItem(k);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
-  }, []);
+  }, [unitImagesVersion]);
 
   // Container Resize Observer
   useEffect(() => {

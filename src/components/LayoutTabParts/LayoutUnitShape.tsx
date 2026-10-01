@@ -150,6 +150,50 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
     ? aggregatedData[uCode] 
     : (unit.id && aggregatedData[String(unit.id).toLowerCase().trim()]);
     
+  const pData = unitData?.matchedProject;
+
+  const isUrlOrImageString = (str: any) => {
+    if (!str || typeof str !== 'string') return false;
+    const lower = str.toLowerCase().trim();
+    return (
+      lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('data:image') ||
+      lower.startsWith('blob:') ||
+      lower.startsWith('link / photo:') ||
+      lower.startsWith('link:') ||
+      lower.startsWith('photo:') ||
+      lower.startsWith('image:') ||
+      lower.includes('drive.google.com') ||
+      lower.includes('photos.app.goo.gl') ||
+      lower.includes('.jpg') ||
+      lower.includes('.jpeg') ||
+      lower.includes('.png') ||
+      lower.includes('.webp') ||
+      lower.includes('.gif')
+    );
+  };
+
+  const hasProjectImage = Boolean(
+    pData?.thumbnail ||
+    pData?.imageUrl ||
+    (pData as any)?.image ||
+    (pData as any)?.photo ||
+    ((pData as any)?.photos && (pData as any).photos.length > 0) ||
+    (pData?.imageLinks && pData.imageLinks.length > 0) ||
+    ((pData as any)?.attachments && (pData as any).attachments.length > 0) ||
+    ((pData as any)?.customImages && (pData as any).customImages.length > 0) ||
+    ((pData as any)?.images && (pData as any).images.length > 0) ||
+    isUrlOrImageString((pData as any)?.link) ||
+    isUrlOrImageString((pData as any)?.url) ||
+    isUrlOrImageString((pData as any)?.linkUrl) ||
+    isUrlOrImageString(pData?.detail) ||
+    isUrlOrImageString(pData?.note) ||
+    (pData?.taskSummaries && pData.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (ts as any).photo || (ts.attachments && ts.attachments.length > 0) || isUrlOrImageString(ts.name))) ||
+    (pData?.comments && pData.comments.some((c: any) => (c.attachments && c.attachments.length > 0) || isUrlOrImageString(c.text))) ||
+    (unitData?.allTasks && unitData.allTasks.some((t: any) => t.link || t.imageUrl || t.thumbnail || t.photo || (t.attachments && t.attachments.length > 0) || isUrlOrImageString(t.name)))
+  );
+    
   const hasAlert = Boolean(
     unitData?.alerts?.hasAlert || 
     unitData?.hasAlert || 
@@ -160,21 +204,37 @@ export const LayoutUnitShape: React.FC<LayoutUnitShapeProps> = React.memo(functi
   
   const hasImage = Boolean(
     unitData?.hasImage || 
+    hasProjectImage ||
     unit.imageUrl || 
     unit.thumbnail || 
     unit.image || 
-    unit.photos?.length ||
+    unit.photo ||
+    (unit.photos && unit.photos.length > 0) ||
+    unit.link ||
+    unit.url ||
+    unit.linkUrl ||
+    (unit.imageLinks && unit.imageLinks.length > 0) ||
+    (unit.attachments && unit.attachments.length > 0) ||
+    (unit.images && unit.images.length > 0) ||
+    isUrlOrImageString(unit.note) ||
+    isUrlOrImageString(unit.detail) ||
     hasStoredUnitImages(unit.name) ||
     hasStoredUnitImages(unit.id) ||
     hasStoredUnitImages(unit.code) ||
-    hasStoredUnitImages(uCode)
+    hasStoredUnitImages(uCode) ||
+    (pData?.code && hasStoredUnitImages(pData.code)) ||
+    (pData?.name && hasStoredUnitImages(pData.name)) ||
+    (pData?.id && hasStoredUnitImages(pData.id)) ||
+    (unitData?.appProjectCode && hasStoredUnitImages(unitData.appProjectCode)) ||
+    (unitData?.name && hasStoredUnitImages(unitData.name)) ||
+    (unitData?.code && hasStoredUnitImages(unitData.code))
   );
 
   const badgeRadius = Math.max(5.0, Math.min(9.0, 7.0 / Math.sqrt(Math.max(0.35, stageScale || 1))));
   const badgeFontSize = Math.max(7.0, Math.min(11.0, 9.0 / Math.sqrt(Math.max(0.35, stageScale || 1))));
   const imgPathScale = (badgeRadius * 1.3) / 24;
 
-  const showTextAndBadge = isFocused || (stageScale || 1) >= 0.08;
+  const showTextAndBadge = isFocused || (stageScale || 1) >= 0.04;
 
   return (
     <React.Fragment>
