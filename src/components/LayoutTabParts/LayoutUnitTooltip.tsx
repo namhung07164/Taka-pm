@@ -420,6 +420,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 
   // Image & Link Gallery State
   const [showImagePanel, setShowImagePanel] = useState(false);
+  const [showAddLinkInput, setShowAddLinkInput] = useState(false);
   const [newLinkInput, setNewLinkInput] = useState('');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string } | null>(null);
@@ -454,6 +455,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     const updated = [newEntry, ...customUnitImages];
     setCustomUnitImages(updated);
     setNewLinkInput('');
+    setShowAddLinkInput(false);
     try {
       localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
     } catch {}
@@ -688,53 +690,88 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 
       {/* Image & Link Thumbnail Gallery Panel (Full Width matching Tooltip) */}
       {showImagePanel && (
-        <div className="w-full bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150 my-1">
+        <div className="w-full bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150 my-1">
           {/* Panel Header */}
-          <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
-            <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200">
-              <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8]" />
-              <span>Hình ảnh & Thumbnail liên kết</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8] font-mono">
+          <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
+            <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200 min-w-0">
+              <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8] shrink-0" />
+              <span className="truncate">Hình ảnh & Thumbnail liên kết</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8] font-mono shrink-0">
                 {allUnitImages.length}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowImagePanel(false)}
-              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
-              title="Đóng bảng ảnh"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Top "+ Thêm" Button */}
+              <button
+                type="button"
+                onClick={() => setShowAddLinkInput(prev => !prev)}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
+                  showAddLinkInput 
+                    ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                )}
+                title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
+              >
+                <Plus className="w-3 h-3" />
+                <span>Thêm</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImagePanel(false);
+                  setShowAddLinkInput(false);
+                }}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
+                title="Đóng bảng ảnh"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
-          {/* Add / Post Link Input Row */}
-          <form onSubmit={handleAddCustomImage} className="flex gap-1.5 items-center w-full">
-            <div className="relative flex-1 min-w-0">
-              <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input 
-                type="url"
-                value={newLinkInput}
-                onChange={(e) => setNewLinkInput(e.target.value)}
-                placeholder="Dán link ảnh hoặc link bài viết (URL)..."
-                className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-1 focus:ring-blue-500 transition-all font-mono"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={!newLinkInput.trim()}
-              className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation shrink-0 cursor-pointer shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Thêm</span>
-            </button>
-          </form>
+          {/* Add / Post Link Input Row (Only visible when clicking "+ Thêm") */}
+          {showAddLinkInput && (
+            <form onSubmit={handleAddCustomImage} className="flex gap-1.5 items-center w-full animate-in fade-in slide-in-from-top-1 duration-150 py-0.5">
+              <div className="relative flex-1 min-w-0">
+                <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input 
+                  type="url"
+                  autoFocus
+                  value={newLinkInput}
+                  onChange={(e) => setNewLinkInput(e.target.value)}
+                  placeholder="Dán link ảnh hoặc link bài viết (URL)..."
+                  className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-white dark:bg-[#1e1e20] border border-blue-400 dark:border-blue-500 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!newLinkInput.trim()}
+                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation shrink-0 cursor-pointer shadow-xs"
+                title="Xác nhận thêm link"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>OK</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewLinkInput('');
+                  setShowAddLinkInput(false);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors shrink-0"
+                title="Hủy"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          )}
 
           {/* Image & Link Thumbnail List */}
           {allUnitImages.length === 0 ? (
             <div className="text-center py-3.5 px-2 bg-white/60 dark:bg-[#1e1e20]/60 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs flex flex-col items-center gap-1.5">
               <ImageIcon className="w-6 h-6 text-slate-300 dark:text-slate-600" />
-              <span>Chưa có hình ảnh. Dán link ảnh vào ô trên để hiển thị thumbnail.</span>
+              <span>Chưa có hình ảnh. Bấm nút <b>+ Thêm</b> ở trên để dán link ảnh/bài viết.</span>
             </div>
           ) : (
             <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-0.5">
