@@ -915,6 +915,33 @@ function LiveCanvas({
 
   const [bgImage] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
   
+  // Helper to accurately check if unit has user-attached images in localStorage
+  const hasStoredUnitImages = (key: string | undefined | null): boolean => {
+    if (typeof window === 'undefined' || !key) return false;
+    try {
+      const raw = localStorage.getItem(`taka_unit_images_${key}`);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  // Realtime image change subscription to update canvas badges instantly upon add/delete in Tooltip
+  const [unitImagesRev, setUnitImagesRev] = useState(0);
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setUnitImagesRev(prev => prev + 1);
+    };
+    window.addEventListener('taka_unit_images_changed', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('taka_unit_images_changed', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -1571,10 +1598,8 @@ function LiveCanvas({
               (p.comments && Array.isArray(p.comments) && p.comments.some((c: any) => c.attachments && c.attachments.length > 0)) ||
               (p as any).imageUrl || (p as any).thumbnail || (p as any).image ||
               dataMap[code].imageUrl || dataMap[code].thumbnail || dataMap[code].image ||
-              (typeof window !== 'undefined' && (
-                Boolean(localStorage.getItem(`taka_unit_images_${code}`)) ||
-                Boolean(localStorage.getItem(`taka_unit_images_${p.code}`))
-              ))
+              hasStoredUnitImages(code) ||
+              hasStoredUnitImages(p.code)
             );
             dataMap[code].hasImage = hasProjectImages || dataMap[code].hasImage;
 
@@ -1664,7 +1689,7 @@ function LiveCanvas({
     });
 
     return dataMap;
-  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility]);
+  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, unitImagesRev]);
 
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,
@@ -3575,11 +3600,9 @@ function LiveCanvas({
                  unit.imageUrl || 
                  unit.thumbnail || 
                  unit.image || 
-                 (typeof window !== 'undefined' && (
-                   Boolean(localStorage.getItem(`taka_unit_images_${unit.name || ''}`)) ||
-                   Boolean(localStorage.getItem(`taka_unit_images_${unit.id || ''}`)) ||
-                   Boolean(localStorage.getItem(`taka_unit_images_${unit.code || ''}`))
-                 ))
+                 hasStoredUnitImages(unit.name) ||
+                 hasStoredUnitImages(unit.id) ||
+                 hasStoredUnitImages(unit.code)
                );
                const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
                const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));

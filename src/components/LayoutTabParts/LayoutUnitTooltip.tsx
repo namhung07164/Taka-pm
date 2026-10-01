@@ -505,6 +505,10 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
     } catch {}
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
+    }
+
     // 🌟 Persist link without polluting taskSummaries with fake tasks
     try {
       const allProjects = useAppStore.getState().projects;
@@ -553,8 +557,19 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
     setCustomUnitImages(updated);
     try {
-      localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
+      if (updated.length === 0) {
+        localStorage.removeItem(activeUnitStorageKey);
+        localStorage.removeItem(`taka_unit_images_${data.code || ''}`);
+        localStorage.removeItem(`taka_unit_images_${unitCode || ''}`);
+        if (p?.code) localStorage.removeItem(`taka_unit_images_${p.code}`);
+      } else {
+        localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
+      }
     } catch {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
+    }
 
     // Clean up from project.taskSummaries
     try {
