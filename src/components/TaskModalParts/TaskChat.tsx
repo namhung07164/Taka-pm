@@ -582,29 +582,6 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                 {task.name || 'Delegated Sub-tasks'}
               </h4>
               <div className="flex items-center gap-2 flex-wrap">
-                {(() => {
-                  const proStatus = planStatus || 'On process';
-                  let proStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold';
-                  if (proStatus === 'Completed') {
-                    proStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold';
-                  } else if (proStatus === 'Upcoming') {
-                    proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
-                  } else if (proStatus === 'Delay') {
-                    proStatusColorClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white border-rose-500 font-extrabold';
-                  }
-                  const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
-                  const isDupStatus = actualStatus.label.toLowerCase() === proStatus.toLowerCase();
-                  return (
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
-                        Pro: {proStatus}
-                      </span>
-                      <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
-                        Act: {actualStatus.label}
-                      </span>
-                    </div>
-                  );
-                })()}
                 <a 
                   href={`https://tracker.taka-pm.org/?search=${encodeURIComponent((linkedGroup.projectCode ? linkedGroup.projectCode + ' ' : '') + linkedGroup.name)}`}
                   target="_blank"
