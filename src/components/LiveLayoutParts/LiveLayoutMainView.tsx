@@ -310,10 +310,17 @@ export function LiveLayoutMainView({
 
     if (lastFilterKeyRef.current !== filterKey) {
       lastFilterKeyRef.current = filterKey;
+      // Close all tooltips, reset pinned state and focused unit on filter change
+      isPinnedRef.current = false;
+      setHoverInfo(null);
+      setFocusedUnitId(null);
+
       if (!isSearching && !targetUnitSearch) {
+        // Return view to fit full screen
+        fitToScreen(false);
         const timer = setTimeout(() => {
-          fitToScreen(false);
-        }, 50);
+          fitToScreen(true);
+        }, 60);
         return () => clearTimeout(timer);
       }
     }
