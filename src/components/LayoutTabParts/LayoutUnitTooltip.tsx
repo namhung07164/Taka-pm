@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ZoomableImageViewer } from '../ZoomableImageViewer';
 import { 
   MessageSquare, 
   X,
@@ -1327,74 +1328,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* Enlarged Image Lightbox Modal (Rendered via Portal to document.body for iPad/Safari compatibility) */}
-      {enlargedImage && typeof document !== 'undefined' && createPortal(
-        <div 
-          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150"
-          onClick={(e) => {
-            e.stopPropagation();
-            setEnlargedImage(null);
-          }}
-          onTouchMove={(e) => e.stopPropagation()}
-        >
-          <div 
-            className="relative max-w-4xl w-full max-h-[92vh] bg-slate-900/95 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900 text-white shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
-                <span className="font-bold text-xs truncate">{enlargedImage.title || 'Image Preview'}</span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleCopyLink(enlargedImage.url)}
-                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                  title="Sao chép link"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-                <a
-                  href={enlargedImage.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                  title="Mở tab mới"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setEnlargedImage(null)}
-                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                  title="Đóng"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/60 overflow-hidden min-h-[220px]">
-              <img 
-                src={enlargedImage.url} 
-                alt={enlargedImage.title || 'Enlarged Preview'} 
-                className="max-w-full max-h-[75vh] object-contain rounded-xl select-none"
-              />
-            </div>
-            <div className="p-2.5 bg-slate-900 border-t border-slate-800 flex items-center gap-2 shrink-0">
-              <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <a 
-                href={enlargedImage.url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-[11px] font-mono text-blue-400 hover:underline truncate flex-1"
-              >
-                {enlargedImage.url}
-              </a>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {/* Enlarged Image Lightbox Modal with Pinch-to-zoom & Mouse wheel zoom */}
+      {enlargedImage && (
+        <ZoomableImageViewer
+          url={enlargedImage.url}
+          title={enlargedImage.title}
+          onClose={() => setEnlargedImage(null)}
+          onCopyLink={handleCopyLink}
+        />
       )}
     </div>
   );

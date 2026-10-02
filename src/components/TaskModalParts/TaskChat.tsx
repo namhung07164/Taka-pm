@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLanguage } from "../../lib/LanguageContext";
+import { ZoomableImageViewer } from '../ZoomableImageViewer';
 import { X, Pin, FileText, Paperclip, Edit2, Image as ImageIcon, Loader2, Trash2, Link as LinkIcon, ExternalLink, Target, Info, Send, MoreVertical, MessageSquare } from 'lucide-react';
 import { Project, Task, AppUser, DelegationGroup } from '../../types';
 import { calculateDays, formatToDatetimeLocal, parseDateTime, cn, getDefaultDatetimeLocal, ensureUrlProtocol, getSuggestedCompletionTime, getTaskStatus, resolveActualStatus, formatDisplayDateTime } from '../../lib/utils';
@@ -56,6 +57,7 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
   const [editingText, setEditingText] = useState('');
 
   const [localComments, setLocalComments] = useState(task.comments || []);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const projectTasks = React.useMemo(() => {
     return tasks.filter(t => 
@@ -511,9 +513,14 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
             return (
                <span key={i} className="inline-flex flex-col gap-2 mt-1 mb-1 w-full">
                  {link}
-                 <a href={chunk} target="_blank" rel="noopener noreferrer" className="block max-w-[200px]" onClick={e => e.stopPropagation()}>
+                 <button
+                   type="button"
+                   onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(imgSrc); }}
+                   className="block max-w-[200px] text-left cursor-pointer group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 hover:ring-2 hover:ring-blue-500 transition-all active:scale-95"
+                   title="Click to zoom image"
+                 >
                    <LazyImage src={imgSrc} alt="Attachment" />
-                 </a>
+                 </button>
                </span>
             );
          }
@@ -1023,6 +1030,14 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
       </div>
       
       <ChatInput ref={chatInputRef} onSend={handleSendFromInput} appUsers={appUsers} projectTasks={projectTasks} linkedGroup={linkedGroup} />
+
+      {previewImageUrl && (
+        <ZoomableImageViewer
+          url={previewImageUrl}
+          title="Attachment Image Preview"
+          onClose={() => setPreviewImageUrl(null)}
+        />
+      )}
     </div>
   );
 });

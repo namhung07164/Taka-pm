@@ -1464,6 +1464,10 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
         - **Thêm Lại Pro Status Ở Bên Phải Task Mẹ & Tối Ưu Bỏ Trạng Thái Trùng**:
           + **Bổ Sung Pro Status Cho Task Mẹ**: Hiển thị lại huy hiệu Program/Plan Status (**`Pro: ON PROCESS`**, **`Pro: COMPLETED`**, **`Pro: UPCOMING`**, **`Pro: DELAY`**) ở khu vực bên tay phải góc header task mẹ (`TaskChat` & `DelegationTab`), đồng bộ màu sắc chuẩn với giao diện General Tab.
           + **Tự Động Loại Bỏ Status Trùng Lặp**: Tự động ẩn các huy hiệu trạng thái trùng lặp khi trạng thái thực tế `Act:` trùng với `Pro:`, hoặc khi bảng chọn trạng thái subtask đã hiển thị nhãn thao tác trực tiếp. Mang lại giao diện gọn gàng, tinh tế và chuyên nghiệp.
+        - **Trải Nghiệm Xem & Phóng To Hình Ảnh Linh Hoạt (`ZoomableImageViewer`)**:
+          + **Phóng To Bằng Ngón Tay (Pinch-to-Zoom)**: Hỗ trợ ngón tay vuốt/pinch thu phóng đa điểm 2 ngón mượt mà trên thiết bị di động, iPad, iPhone và Android (từ `80%` đến `600%`). Double tap 2 chạm nhanh để phóng to 2.5x hoặc đặt lại kích thước.
+          + **Phóng To Bằng Con Lăn Chuột & Kéo Drag**: Hỗ trợ cuộn chuột (wheel) để zoom in/out chính xác theo tọa độ con trỏ, nhấp giữ chuột và kéo để di chuyển khung hình (panning) linh hoạt.
+          + **Thanh Công Cụ Thao Tác Trực Quan**: Bổ sung thanh công cụ nổi tinh tế phía dưới hình ảnh gồm các nút bấm Phóng to (`+`), Thu nhỏ (`-`), Xoay góc 90° (`↻`), Đặt lại (`Reset / 100%`) và hiển thị tỷ lệ zoom thời gian thực.
    - **Bảo Toàn Nghiệp Vụ & An Toàn Bộ Nhớ**:
      + Giữ nguyên 100% logic kinh doanh tài chính, WBS, liên kết Predecessor, phân quyền RBAC và cơ chế kéo thả mượt mà 60fps.
      + Tự động quản lý giải phóng bộ nhớ (cleanup event listeners, animation frames, WebGL/Canvas context) chống tràn RAM trên các thiết bị máy tính bảng và POS di động.
