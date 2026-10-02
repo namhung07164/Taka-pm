@@ -55,7 +55,6 @@ export const ProjectChat = React.memo(function ProjectChat({
   const { t } = useLanguage();
   const focusCommentId = useAppStore((state) => state.focusCommentId);
   const setFocusCommentId = useAppStore((state) => state.setFocusCommentId);
-  const setZoomableImageSrc = useAppStore((state) => state.setZoomableImageSrc);
 
   const [localComments, setLocalComments] = useState<TaskComment[]>(project.comments || []);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -311,16 +310,15 @@ export const ProjectChat = React.memo(function ProjectChat({
           return (
             <span key={i} className="inline-flex flex-col gap-2 mt-1 mb-1 w-full">
               {link}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setZoomableImageSrc(chunk);
-                }}
-                className="block max-w-[200px] text-left hover:opacity-90 transition active:scale-95 cursor-pointer"
+              <a
+                href={chunk}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block max-w-[200px]"
+                onClick={(e) => e.stopPropagation()}
               >
                 <LazyImage src={imgSrc} alt="Attachment" />
-              </button>
+              </a>
             </span>
           );
         }

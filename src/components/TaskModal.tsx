@@ -116,7 +116,6 @@ export function TaskModal(props: TaskModalProps) {
               handleOpenProjectComments={handleOpenProjectComments}
               onClose={onClose}
               t={t}
-              delegationGroups={delegationGroups}
             />
           
             {activeTab === 'details' && (

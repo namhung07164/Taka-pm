@@ -57,21 +57,7 @@
 ## 11. Universal Draggable Modals & Tooltips
 - Mọi modal (`ProjectModal`, `TaskModal`, `UserModal`, `ConfirmModal`, `CalendarSync`, `QuickNav`...) và modular tooltip bắt buộc hỗ trợ kéo thả (Draggable/Pointer Drag) với handle (`.modal-handle`, `cursor-grab active:cursor-grabbing` hoặc icon `GripHorizontal`).
 
-## 12. Modal Performance, Code Splitting & Modular Architecture
-- **Trần Giới Hạn File (Hard File Size Cap < 500 lines)**: Mỗi component / file `.tsx` / `.ts` **tuyệt đối không vượt quá 500 dòng code**. Khi nâng cấp hoặc thêm tính năng mới làm file vượt quá ranh giới này, AI **bắt buộc** phải băm nhỏ/tách submodule vào thư mục tương ứng (`src/components/<TabName>Parts/`).
-- **Mô Hình Module Hóa Tiêu Chuẩn (Modular Directory Standard)**: Mọi Tab và Module phức tạp bắt buộc tuân theo mô hình phân tách 4 lớp:
-  ```
-  src/components/<TabName>Parts/
-  ├── <TabName>FilterToolbar.tsx   (Thanh công cụ, bộ lọc, tìm kiếm, xuất/nhập)
-  ├── <TabName>TableView.tsx       (Giao diện View chính: Bảng/Lưới/Cây)
-  ├── <TabName>MobileView.tsx      (Giao diện tối ưu di động iOS/Android)
-  ├── <TabName>RowItem.tsx         (Hàng dữ liệu con bọc React.memo)
-  ├── <TabName>Modal.tsx           (Modal phụ bọc React.lazy & JIT Mounting)
-  ├── <tabName>Types.ts            (Type/Interface riêng của module)
-  └── use<TabName>Data.ts          (Custom Hook xử lý tính toán/memo/filter)
-  ```
-- **Container Orchestrator**: Container file chính (`<TabName>.tsx`) chỉ giữ vai trò điều phối (dưới 300-400 dòng), đọc state từ Zustand (`useAppStore`) và truyền props phẳng xuống submodules.
-- **Cấm Tái Tạo File Nguyên Khối (Zero Monolithic Logic)**: Tuyệt đối cấm gộp lại hoặc nhồi code mới trực tiếp vào file chính. Mọi nâng cấp mới phải là mở rộng submodule độc lập hoặc viết hook riêng (Additive/Modular Pattern).
+## 12. Modal Performance, Code Splitting & JIT
 - **JIT Mounting**: Modal nặng bắt buộc dùng Dynamic Import (`React.lazy`), bọc `<Suspense fallback={null}>` và chỉ mount khi mở (`{isOpen && <Modal />}`). Cấm DOM ẩn chạy ngầm.
 - **Thư Viện Nặng & Code Splitting**: Cấm import tĩnh các thư viện nặng (`xlsx`, `html2canvas`, `konva`, `jspdf`) vào bundle chính. Bắt buộc dùng `await import(...)` hoặc `React.lazy` để file bundle chính luôn dưới 1MB, tối ưu thời gian khởi động (FCP) trên máy POS/di động.
 - **Form Sub-Components**: Form phức tạp tách thành các component con bọc `React.memo` để gõ phím không re-render cả modal.

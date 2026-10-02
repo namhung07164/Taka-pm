@@ -26,11 +26,9 @@ const firebaseConfigDev = {
 
 // Tự động nhận diện môi trường
 const isDevMode = (import.meta as any).env?.DEV || (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev')));
+const firebaseConfig = isDevMode ? firebaseConfigDev : firebaseConfigProd;
 
-// Sử dụng cấu hình đồng nhất để tránh lỗi phân biệt môi trường làm mất quyền ghi dữ liệu
-const firebaseConfig = firebaseConfigProd;
-
-console.log(`🔥 Firebase Initialized with Project: ${firebaseConfig.projectId}`);
+console.log(`🔥 Firebase Initialized in ${isDevMode ? 'DEVELOPMENT' : 'PRODUCTION'} mode. Project: ${firebaseConfig.projectId}`);
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

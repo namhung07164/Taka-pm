@@ -103,28 +103,15 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
       seenParentTaskIds.add(g.parentTaskId);
 
       const t = tasks.find(x => x && x.id === g.parentTaskId);
-      const isMatchingProject = 
-        (t && t.projectCode === project.code) ||
-        (g.projectCode === project.code) ||
-        (g.parentTaskId === project.code);
-
-      const isMatchingYear = 
-        !project.year || !g.projectYear || String(g.projectYear) === String(project.year) || (t && String(t.projectYear) === String(project.year));
-
-      const isMatchingStore = 
-        !project.store || !g.projectStore || String(g.projectStore).toLowerCase() === String(project.store).toLowerCase() || (t && String(t.projectStore).toLowerCase() === String(project.store).toLowerCase());
-
-      return isMatchingProject && isMatchingYear && isMatchingStore;
+      return t?.projectCode === project?.code && 
+             (t?.projectYear == project?.year || (!t?.projectYear && !project?.year)) &&
+             (t?.projectStore == project?.store || (!t?.projectStore && !project?.store));
     }).map(g => {
       const parentTask = tasks.find(t => t && t.id === g.parentTaskId);
-      const isChildTask = parentTask ? Boolean(parentTask.parentTaskId) : false;
-      const rootParentTask = isChildTask ? tasks.find(t => t.id === parentTask?.parentTaskId) : null;
       return {
         ...g,
-        _taskCode: parentTask ? computeTaskCode(projects, tasks, parentTask) : (g.projectCode || ''),
-        _taskName: parentTask?.name || g.name || 'Delegated Sub-tasks',
-        _isChildTask: isChildTask,
-        _parentTaskName: rootParentTask?.name || null
+        _taskCode: parentTask ? computeTaskCode(projects, tasks, parentTask) : '',
+        _taskName: parentTask?.name || 'Task'
       };
     }).sort((a, b) => (a._taskCode || '').localeCompare(b._taskCode || '', undefined, { numeric: true, sensitivity: 'base' }));
   }, [delegationGroups, tasks, project, projects]);
@@ -153,7 +140,7 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
   }, [projectGroups, searchQuery]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-slate-50 dark:bg-[#1e1e20]/50 relative overflow-y-auto p-4 md:p-6 pb-20 sm:pb-24 overscroll-contain">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#1e1e20]/50 relative flex-grow overflow-y-auto p-4 md:p-6">
        <div className="relative w-full mb-4 flex-shrink-0">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-500">
             <Search className="w-4 h-4" />
@@ -231,36 +218,17 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
                   <div className="flex flex-col">
                     <h4 className={cn("text-sm font-bold flex items-center gap-2", groupTitleColor)}>
                       <FileText className={cn("w-4 h-4", groupIconColor)} />
-                      <span>{linkedGroup._taskName || linkedGroup.name || 'Delegated Sub-tasks'}</span>
-                      {linkedGroup._isChildTask && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-mono">
-                          ↳ SUB {linkedGroup._parentTaskName ? `(Cha: ${linkedGroup._parentTaskName})` : ''}
-                        </span>
-                      )}
+                      {linkedGroup._taskName || linkedGroup.name || 'Delegated Sub-tasks'}
                     </h4>
                     <span className={cn("text-[10px] font-mono mt-1", groupSubTitleColor)}>Task Code: {linkedGroup._taskCode}</span>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
                     {(() => {
-                      const proStatus = planStatus || 'On process';
-                      let proStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold';
-                      if (proStatus === 'Completed') {
-                        proStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold';
-                      } else if (proStatus === 'Upcoming') {
-                        proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
-                      } else if (proStatus === 'Delay') {
-                        proStatusColorClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white border-rose-500 font-extrabold';
-                      }
                       const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
                       return (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
-                            Pro: {proStatus}
-                          </span>
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
-                            Act: {actualStatus.label}
-                          </span>
-                        </div>
+                        <span className={`text-[10px] px-2 py-1 rounded-full font-bold border whitespace-nowrap ${actualStatus.color}`}>
+                          Act: {actualStatus.label}
+                        </span>
                       );
                     })()}
                     <a 
@@ -407,6 +375,9 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
                           </div>
                           <div className="flex flex-col gap-1 mt-1">
                             <div className="flex items-center gap-2">
+                              <span className={cn("px-1.5 py-0 rounded text-[10px] leading-none h-5 flex items-center font-bold border shrink-0", flowColor)}>
+                                {flowTxt}
+                              </span>
                               <select
                                 value={selectValue === 'None' ? 'None' : selectValue}
                                 onChange={async (e) => {
