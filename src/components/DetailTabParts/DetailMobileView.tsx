@@ -11,7 +11,8 @@ import {
   computePlanProgressPercent, 
   computeActProgressPercent,
   matchesAdvancedSearch,
-  parseDateTime
+  parseDateTime,
+  getStatus
 } from '../../lib/utils';
 
 function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
@@ -52,6 +53,7 @@ interface DetailMobileViewProps {
   taskCodeMap?: Map<string, string>;
   taskActualStatusMap?: Map<string, { label: string; color: string }>;
   onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
+  onNavigateToDelegation?: (groupId: string, sourceTaskId?: string) => void;
 }
 
 export const DetailMobileView = memo(function DetailMobileView({
@@ -142,27 +144,30 @@ export const DetailMobileView = memo(function DetailMobileView({
             return 0;
           }) : sortedTasks;
 
-          const computedTakStart = pInfo.computedTakStart;
-          const computedTakCompl = pInfo.computedTakCompl;
-          const status = pInfo.status;
+          const computedTakStart = pInfo.computedTakStart || p.computedTakStart || p.start;
+          const computedTakCompl = pInfo.computedTakCompl || p.computedTakCompl || p.handover;
+          const computedOpening = p.computedOpening || p.opening;
+          const rawStatus = pInfo.status || getStatus(computedTakStart, computedTakCompl, computedOpening, p.code) || p.mdStatus || (p as any).status;
+          const status = (!rawStatus || rawStatus === '—' || rawStatus === '-') ? getStatus(computedTakStart, computedTakCompl, computedOpening, p.code) || 'On process' : rawStatus;
+          const statusUpper = String(status || 'ON PROCESS').toUpperCase();
           
-          let statusBadgeClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
-          let borderAccentClass = 'border-l-4 border-l-slate-400';
-          let bgCardTint = 'bg-white dark:bg-[#1e1e20]';
+          let statusBadgeClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white shadow-2xs font-extrabold border-amber-400';
+          let borderAccentClass = 'border-l-[5px] border-l-amber-500';
+          let bgCardTint = 'bg-amber-50/30 dark:bg-amber-950/20';
 
-          if (status === 'Completed') {
+          if (status === 'Completed' || statusUpper === 'COMPLETED') {
             statusBadgeClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white shadow-2xs font-extrabold border-emerald-500';
             borderAccentClass = 'border-l-[5px] border-l-emerald-500';
             bgCardTint = 'bg-emerald-50/25 dark:bg-emerald-950/15';
-          } else if (status === 'Handover') {
+          } else if (status === 'Handover' || statusUpper === 'HANDOVER') {
             statusBadgeClass = 'bg-blue-600 text-white dark:bg-blue-600 dark:text-white shadow-2xs font-extrabold border-blue-500';
             borderAccentClass = 'border-l-[5px] border-l-blue-500';
             bgCardTint = 'bg-blue-50/25 dark:bg-blue-950/15';
-          } else if (status === 'On process') {
+          } else if (status === 'On process' || statusUpper === 'ON PROCESS') {
             statusBadgeClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white shadow-2xs font-extrabold border-amber-400';
             borderAccentClass = 'border-l-[5px] border-l-amber-500';
             bgCardTint = 'bg-amber-50/30 dark:bg-amber-950/20';
-          } else if (status === 'Canceled') {
+          } else if (status === 'Canceled' || statusUpper === 'CANCELED') {
             statusBadgeClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white shadow-2xs font-extrabold border-rose-500';
             borderAccentClass = 'border-l-[5px] border-l-rose-500';
             bgCardTint = 'bg-rose-50/25 dark:bg-rose-950/15';
@@ -252,8 +257,8 @@ export const DetailMobileView = memo(function DetailMobileView({
                 </div>
 
                 <div className="shrink-0">
-                  <div className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-md border whitespace-nowrap ${statusBadgeClass}`}>
-                    {status}
+                  <div className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md border font-extrabold whitespace-nowrap shadow-2xs ${statusBadgeClass}`}>
+                    {statusUpper === 'ON PROCESS' ? 'ON PROCESS' : (statusUpper === 'UPCOMING' ? 'UPCOMING' : (statusUpper === 'COMPLETED' ? 'COMPLETED' : statusUpper))}
                   </div>
                 </div>
               </div>

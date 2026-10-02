@@ -493,17 +493,13 @@ export function useTaskModalLogic({
             delete (data as any)[key];
           }
         });
-        if (tasks.find(t => t.id === depTask.id)) {
-           batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data);
-        } else {
-           batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data);
-        }
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data, { merge: true });
         mappedDepUpdates.add(depTask.id);
       });
 
       predecessorUpdates.forEach(pu => {
         if (!mappedDepUpdates.has(pu.id)) {
-           batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+           batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
         }
       });
 

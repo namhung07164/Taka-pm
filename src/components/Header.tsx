@@ -168,20 +168,22 @@ export function Header({
   };
 
   const statusColors = {
-    online: "text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-[#1a3821] dark:border-[#265330] dark:text-emerald-400",
-    syncing: "text-blue-600 bg-blue-50 border-blue-200 dark:bg-[#28282a] dark:border-[#444446] dark:text-[#8ab4f8]",
-    offline: "text-red-600 bg-red-50 border-red-200 dark:bg-[#3b1a1a] dark:border-[#5c2424] dark:text-red-400",
+    online: "text-emerald-700 bg-emerald-50/90 border-emerald-200 dark:bg-[#1a3821] dark:border-[#265330] dark:text-emerald-400",
+    syncing: "text-blue-700 bg-blue-50/90 border-blue-200 dark:bg-[#28282a] dark:border-[#444446] dark:text-[#8ab4f8]",
+    offline: "text-red-700 bg-red-50/90 border-red-200 dark:bg-[#3b1a1a] dark:border-[#5c2424] dark:text-red-400",
   };
 
   return (
-    <div className="sticky top-0 z-50 bg-white/95 dark:bg-[#1e1e20]/95 pb-2.5 mb-3 flex flex-nowrap gap-2 sm:gap-3 justify-between items-center pt-2.5 px-3 -mx-3 -mt-3 border-b border-slate-100 dark:border-[#333336] lg:pt-3 lg:-mt-4 lg:px-6 lg:-mx-6 rounded-t-xl transition-colors min-w-0">
-      <div className="flex flex-wrap gap-2 sm:gap-3 items-center relative min-w-0 shrink">
+    <header className="sticky top-0 z-50 bg-white/95 dark:bg-[#1e1e20]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-[#333336] py-2 px-3 sm:px-4 mb-2.5 rounded-t-xl transition-all min-w-0 flex items-center justify-between gap-2 sm:gap-3">
+      {/* Left: Brand Identity & Menu */}
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink">
         <div ref={menuRef} className="relative shrink-0">
-          <button title="Menu"
+          <button
+            title="Menu"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors outline-none"
+            className="h-8 w-8 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors outline-none cursor-pointer active:scale-95 touch-manipulation"
           >
-            <Menu className="w-6 h-6 sm:w-7 sm:h-7 text-slate-700 dark:text-[#c3c3c3]" />
+            <Menu className="w-5 h-5" />
           </button>
 
           {isMenuOpen && (
@@ -190,14 +192,14 @@ export function Header({
                 className="fixed inset-0 z-[9998] bg-black/20 backdrop-blur-[0.5px]"
                 onClick={() => setIsMenuOpen(false)}
               />
-              <div className="absolute top-12 left-0 w-60 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="py-2">
+              <div className="absolute top-10 left-0 w-64 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="py-1.5">
                 <button onClick={() => {
                     if (currentUser.role === "guest") onLoginClick();
                     else onLogoutClick();
                     setIsMenuOpen(false);
                   }}
-                  className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-bold hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1"
+                  className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-bold hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1"
                 >
                   <span
                     className={cn(
@@ -216,9 +218,9 @@ export function Header({
                       onTabChange("setting");
                       setIsMenuOpen(false);
                     }}
-                    className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1"
+                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1"
                   >
-                    <Settings className="w-4 h-4 text-slate-500 dark:text-[#a3a3a3]" />
+                    <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-[#a3a3a3]" />
                     {t("Settings")}
                   </button>
                 )}
@@ -228,18 +230,18 @@ export function Header({
                       onTabChange("accControl");
                       setIsMenuOpen(false);
                     }}
-                    className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446]"
+                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
                   >
                     {t("Acc control")}
                   </button>
                 )}
 
-{currentUser.role === "admin" && (
+                {currentUser.role === "admin" && (
                   <button onClick={() => {
                       onTabChange("audit");
                       setIsMenuOpen(false);
                     }}
-                    className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446]"
+                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
                   >
                     Audit Log
                   </button>
@@ -250,21 +252,51 @@ export function Header({
                     useAppStore.getState().setIsCalendarSyncModalOpen(true);
                     setIsMenuOpen(false);
                   }}
-                  className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446]"
+                  className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
                 >
-                  <Calendar className="w-4 h-4 text-red-600 dark:text-red-400" />
+                  <Calendar className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                   <span>Đồng bộ Apple Calendar (iOS)</span>
                 </button>
+
+                {/* Mobile Quick Utilities in Menu */}
+                <div className="md:hidden py-1 border-b border-slate-100 dark:border-[#444446]">
+                  <div className="grid grid-cols-2 gap-1 px-3 py-1">
+                    {onToggleTheme && (
+                      <button
+                        onClick={() => {
+                          onToggleTheme();
+                          setIsMenuOpen(false);
+                        }}
+                        className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] transition-colors"
+                      >
+                        {theme === "dark" ? <Sun className="w-4 h-4 mb-1 text-amber-500" /> : <Moon className="w-4 h-4 mb-1 text-slate-600" />}
+                        <span>{theme === "dark" ? "Light" : "Dark"}</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setLanguage(language === 'en' ? 'ja' : 'en');
+                        setIsMenuOpen(false);
+                      }}
+                      className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] transition-colors"
+                    >
+                      <span className="text-base leading-none mb-1">{language === 'en' ? '🇬🇧' : '🇯🇵'}</span>
+                      <span>{language === 'en' ? 'English' : '日本語'}</span>
+                    </button>
+                  </div>
+                </div>
 
                 {activeTab === 'layout' && (
                   <button 
                     onClick={() => {
-                      window.dispatchEvent(new CustomEvent("open-layout-edit-mode"));
                       setIsMenuOpen(false);
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent("open-layout-edit-mode"));
+                      }, 50);
                     }}
-                    className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-[#444446]"
+                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
                   >
-                    <SlidersHorizontal className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                     <span className="font-semibold text-purple-700 dark:text-purple-300">Edit Mode</span>
                   </button>
                 )}
@@ -272,35 +304,35 @@ export function Header({
                 {currentUser.role !== "guest" && activeTab === 'detail' && (
                   <>
                     {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('detail-import-projects-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                        <Upload className="w-4 h-4 text-slate-500" />
+                      <button onClick={() => { document.getElementById('detail-import-projects-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-slate-500" />
                         Import Project
                       </button>
                     )}
-                    <button onClick={() => { document.getElementById('detail-export-projects-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                      <Download className="w-4 h-4 text-slate-500" />
+                    <button onClick={() => { document.getElementById('detail-export-projects-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
                       Export Project
                     </button>
                     {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('detail-full-import-projects-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3 transition-colors">
-                        <ShieldAlert className="w-4 h-4" />
+                      <button onClick={() => { document.getElementById('detail-full-import-projects-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
+                        <ShieldAlert className="w-3.5 h-3.5" />
                         Full Import Project
                       </button>
                     )}
                     <div className="h-px bg-slate-100 dark:bg-[#444446]"></div>
                     {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('detail-import-tasks-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                        <Upload className="w-4 h-4 text-slate-500" />
+                      <button onClick={() => { document.getElementById('detail-import-tasks-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-slate-500" />
                         Import Task
                       </button>
                     )}
-                    <button onClick={() => { document.getElementById('detail-export-tasks-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                      <Download className="w-4 h-4 text-slate-500" />
+                    <button onClick={() => { document.getElementById('detail-export-tasks-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
                       Export Task
                     </button>
                     {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('detail-full-import-tasks-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3 transition-colors">
-                        <ShieldAlert className="w-4 h-4" />
+                      <button onClick={() => { document.getElementById('detail-full-import-tasks-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
+                        <ShieldAlert className="w-3.5 h-3.5" />
                         Full Import Task
                       </button>
                     )}
@@ -310,18 +342,18 @@ export function Header({
                 {currentUser.role !== "guest" && activeTab === 'budget' && (
                   <>
                     {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('budget-import-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                        <Upload className="w-4 h-4 text-slate-500" />
+                      <button onClick={() => { document.getElementById('budget-import-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-slate-500" />
                         Import Budget
                       </button>
                     )}
-                    <button onClick={() => { document.getElementById('budget-export-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                      <Download className="w-4 h-4 text-slate-500" />
+                    <button onClick={() => { document.getElementById('budget-export-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
                       Export Budget
                     </button>
                     {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('budget-full-import-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3 transition-colors">
-                        <ShieldAlert className="w-4 h-4" />
+                      <button onClick={() => { document.getElementById('budget-full-import-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
+                        <ShieldAlert className="w-3.5 h-3.5" />
                         Full Import Budget
                       </button>
                     )}
@@ -330,18 +362,18 @@ export function Header({
                 {currentUser.role !== "guest" && activeTab === 'cost' && (
                   <>
                     {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('cost-import-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                        <Upload className="w-4 h-4 text-slate-500" />
+                      <button onClick={() => { document.getElementById('cost-import-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-slate-500" />
                         Import Cost
                       </button>
                     )}
-                    <button onClick={() => { document.getElementById('cost-export-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors">
-                      <Download className="w-4 h-4 text-slate-500" />
+                    <button onClick={() => { document.getElementById('cost-export-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
                       Export Cost
                     </button>
                     {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('cost-full-import-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-5 py-3 text-sm text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3 transition-colors">
-                        <ShieldAlert className="w-4 h-4" />
+                      <button onClick={() => { document.getElementById('cost-full-import-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
+                        <ShieldAlert className="w-3.5 h-3.5" />
                         Full Import Cost
                       </button>
                     )}
@@ -360,9 +392,9 @@ export function Header({
                         }
                         setIsMenuOpen(false); 
                       }} 
-                      className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors"
+                      className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors"
                     >
-                      <Printer className="w-4 h-4 text-slate-500" />
+                      <Printer className="w-3.5 h-3.5 text-slate-500" />
                       {isPrintPreview ? 'Exit Print Preview' : 'Print Preview'}
                     </button>
 
@@ -372,9 +404,9 @@ export function Header({
                           window.dispatchEvent(new CustomEvent("export-png"));
                           setIsMenuOpen(false); 
                         }} 
-                        className="w-full text-left px-5 py-3 text-sm text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-3 transition-colors"
+                        className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors"
                       >
-                        <Download className="w-4 h-4 text-slate-500" />
+                        <Download className="w-3.5 h-3.5 text-slate-500" />
                         Export as PNG
                       </button>
                     )}
@@ -386,9 +418,10 @@ export function Header({
           )}
         </div>
 
-        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white dark:bg-[#1e1e20] border border-slate-100 dark:border-[#444446] rounded-xl flex items-center justify-center shadow-sm shrink-0 transition-colors">
+        {/* Japanese Takashimaya Logo */}
+        <div className="w-8 h-8 sm:w-8.5 sm:h-8.5 bg-white dark:bg-[#28282a] border border-slate-200/90 dark:border-[#444446] rounded-lg flex items-center justify-center shadow-2xs shrink-0 transition-colors">
           <svg
-            className="w-7 h-7 sm:w-9 sm:h-9 text-red-600 dark:text-red-500"
+            className="w-5.5 h-5.5 sm:w-6 sm:h-6 text-red-600 dark:text-red-500"
             viewBox="0 0 100 100"
             fill="currentColor"
           >
@@ -414,27 +447,22 @@ export function Header({
           </svg>
         </div>
 
-        <button onClick={() => onTabChange("notification")}
-          className="relative p-1.5 sm:p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-600 dark:hover:text-slate-300 rounded-full transition-colors focus:outline-none shrink-0"
-        >
-          <Bell className="w-5 h-5 sm:w-6 sm:h-6" />
-          {notificationCount > 0 && (
-            <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 text-[8px] font-bold text-white flex items-center justify-center">
-              {notificationCount > 9 ? "9+" : notificationCount}
-            </span>
-          )}
-        </button>
-
-        <div className="min-w-0">
-          <h1 className="text-sm sm:text-base md:text-xl lg:text-2xl font-bold text-slate-800 dark:text-[#f3f3f3] leading-tight flex items-center gap-1.5 sm:gap-2 truncate">
-            <span className="hidden sm:inline">{t("Takashimaya Project")}</span>
-            <span className="sm:hidden">{t("Taka PM")}</span>
+        {/* Title & Status Badge Lockup */}
+        <div className="min-w-0 flex flex-col justify-center shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+            <h1 className="text-xs sm:text-sm md:text-base font-extrabold text-slate-900 dark:text-[#f3f3f3] leading-tight shrink-0 whitespace-nowrap">
+              T-Project
+            </h1>
             <span
               className={cn(
-                "text-[10px] uppercase font-bold px-1.5 sm:px-2 py-0.5 rounded-full border hidden md:inline-block",
+                "text-[10px] uppercase font-bold px-1.5 py-0.2 rounded-md border hidden md:inline-flex items-center gap-1",
                 statusColors[cloudStatus],
               )}
             >
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                cloudStatus === "online" ? "bg-emerald-500 animate-pulse" : cloudStatus === "syncing" ? "bg-blue-500 animate-pulse" : "bg-red-500"
+              )} />
               {cloudStatus === "online"
                 ? t("Cloud Online")
                 : cloudStatus === "syncing"
@@ -443,33 +471,36 @@ export function Header({
             </span>
             <span
               className={cn(
-                "w-2 h-2 rounded-full md:hidden",
+                "w-2 h-2 rounded-full md:hidden shrink-0",
                 cloudStatus === "online"
                   ? "bg-emerald-500"
                   : cloudStatus === "syncing"
                     ? "bg-blue-500"
                     : "bg-red-500",
               )}
+              title={`Cloud status: ${cloudStatus}`}
             />
-          </h1>
-          <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 flex-wrap">
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
             <span
               className={cn(
-                "px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                "px-1.5 py-0.2 rounded text-[9px] sm:text-[10px] font-bold uppercase tracking-wider",
                 currentUser.role === "admin"
                   ? "bg-blue-600 text-white"
                   : currentUser.role === "user"
                     ? "bg-emerald-600 text-white dark:bg-emerald-700"
-                    : "bg-slate-100 dark:bg-[#1e1e20] text-slate-700 dark:text-[#c3c3c3]",
+                    : "bg-slate-100 dark:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3]",
               )}
             >
               {currentUser.role === "admin"
                 ? t("ADMIN")
                 : String(currentUser.username || t("GUEST")).toUpperCase()}
             </span>
-            <span className="hidden lg:inline text-[10px] sm:text-xs text-slate-500 dark:text-[#a3a3a3]">{t("Cloud Sync Enabled")}</span>
+            <span className="hidden xl:inline text-[10px] font-medium text-slate-400 dark:text-[#838383]">
+              • {t("Cloud Sync Enabled")}
+            </span>
 
-            {/* Active Child Tab Indicator on Mobile & iPad (Placed directly under Cloud Online) */}
+            {/* Active Child Tab Indicator on iPad/Tablet */}
             {(() => {
               const tabInfoMap: Partial<Record<TabId, { label: string; icon: React.ElementType }>> = {
                 calendar: { label: t("Calendar"), icon: Calendar },
@@ -495,10 +526,10 @@ export function Header({
                 <button
                   type="button"
                   onClick={() => onTabChange(activeTab)}
-                  className="lg:hidden px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 dark:text-white shadow-sm flex items-center gap-1 transition-all ring-2 ring-blue-400/30 active:scale-95 cursor-pointer select-none shrink-0"
-                  title={`Đang mở tab: ${currentTabInfo.label}`}
+                  className="hidden sm:inline-flex lg:hidden px-2 py-0.2 rounded-md text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 shadow-2xs items-center gap-1 transition-all active:scale-95 cursor-pointer select-none shrink-0"
+                  title={`Active tab: ${currentTabInfo.label}`}
                 >
-                  <ActiveIcon className="w-3 h-3 shrink-0 text-white" />
+                  <ActiveIcon className="w-2.5 h-2.5 shrink-0 text-white" />
                   <span className="font-extrabold tracking-wide whitespace-nowrap">
                     On {currentTabInfo.label}
                   </span>
@@ -507,108 +538,137 @@ export function Header({
             })()}
           </div>
         </div>
+
+        {/* Right Header Controls Group (Always visible on Mobile, iPad & Desktop) */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
+          {/* Back / Undo Action Button */}
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs disabled:opacity-30 disabled:hover:bg-slate-50 relative active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            title={undoDescription || "Nothing to undo"}
+          >
+            <Undo2 className="w-4 h-4" />
+            {hasDataToUndo && (
+              <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white dark:border-slate-900"></span>
+            )}
+          </button>
+
+          {/* Currency Selector (Visible on Main Header) */}
+          <button 
+            onClick={handleCurrencyClick}
+            onContextMenu={handleCurrencyContextMenu}
+            className="h-8 px-2 sm:px-2.5 min-w-[50px] sm:min-w-[64px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-[10px] sm:text-xs font-bold font-mono flex items-center justify-center active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            title={
+              currency === 'VND'
+                ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
+                : (currentUser.role === 'admin'
+                    ? `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND - Right-click to set exchange rates)`
+                    : `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND)`
+                  )
+            }
+          >
+            {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
+          </button>
+
+          {/* QR Scanner Button */}
+          <button
+            onClick={() => setIsQRScannerOpen(true)}
+            className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            title="Scan QR Code"
+          >
+            <ScanQrCode className="w-4 h-4" />
+          </button>
+
+          {/* Notification Bell */}
+          <button
+            onClick={() => onTabChange("notification")}
+            className="relative h-8 w-8 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors focus:outline-none shrink-0"
+            title="Notifications"
+          >
+            <Bell className="w-4.5 h-4.5" />
+            {notificationCount > 0 && (
+              <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8px] font-bold text-white flex items-center justify-center">
+                {notificationCount > 9 ? "9+" : notificationCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-nowrap justify-end items-center gap-1 sm:gap-1.5 shrink-0 ml-auto min-w-0">
+      {/* Right: Quick Access & Controls Toolbar */}
+      <div className="hidden md:flex items-center justify-end gap-1.5 shrink-0 ml-auto min-w-0">
         {showQuickAccessToolbar && (
           <>
+            {/* Search Command Palette */}
             <button
               onClick={() => useAppStore.getState().setIsCommandPaletteOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation"
+              className="h-8 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-xs font-semibold cursor-pointer active:scale-95 touch-manipulation flex items-center gap-1.5"
               title="Open Command Palette (Ctrl+K)"
             >
               <Search className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="hidden sm:inline font-medium">Search...</span>
-              <kbd className="hidden md:inline-block text-[9px] font-mono font-bold bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] px-1 py-0.2 rounded text-slate-500 dark:text-[#a3a3a3]">
+              <span className="hidden lg:inline font-medium">Search...</span>
+              <kbd className="hidden xl:inline-block text-[9px] font-mono font-bold bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] px-1 py-0.2 rounded text-slate-500 dark:text-[#a3a3a3]">
                 ⌘K
               </kbd>
             </button>
-            <button
-              onClick={() => setIsQRScannerOpen(true)}
-              className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400"
-              title="Quét mã QR (Scan QR Code)"
-            >
-              <ScanQrCode className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            {onToggleTheme && (
-              <button
-                onClick={onToggleTheme}
-                className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] text-slate-500 dark:text-[#a3a3a3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm"
-                title="Toggle Theme"
-              >
-                {theme === "dark" ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
-              </button>
+
+            {/* Currency Rates Indicator */}
+            {currency === 'JPY' && (
+              <span className="h-8 px-2 text-[11px] font-mono font-medium text-slate-500 dark:text-[#a3a3a3] bg-slate-50/60 dark:bg-[#28282a]/60 border border-slate-200/60 dark:border-[#444446]/60 rounded-lg hidden 2xl:flex items-center whitespace-nowrap">
+                1 JPY = {jpyRate.toLocaleString('en-US')} VND
+              </span>
             )}
-            
-            <div className="flex items-center gap-1">
-              <button 
-                onClick={handleCurrencyClick}
-                onContextMenu={handleCurrencyContextMenu}
-                className="flex items-center justify-center p-1.5 min-w-[68px] sm:min-w-[76px] bg-slate-50 hover:bg-slate-100 dark:bg-[#1e1e20] dark:hover:bg-[#28282a] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm text-xs font-bold"
-                title={
-                  currency === 'VND'
-                    ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
-                    : (currentUser.role === 'admin'
-                        ? `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND - Right-click to set exchange rates)`
-                        : `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND)`
-                      )
-                }
-              >
-                {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
-              </button>
-              {currency === 'JPY' && (
-                <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-[#838383] px-1 hidden 2xl:inline-block whitespace-nowrap">
-                  (1 JPY = {jpyRate.toLocaleString('en-US')} VND)
-                </span>
-              )}
-              {currency === 'USD' && (
-                <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-[#838383] px-1 hidden 2xl:inline-block whitespace-nowrap">
-                  (1 USD = {usdRate.toLocaleString('en-US')} VND)
-                </span>
-              )}
-            </div>
+            {currency === 'USD' && (
+              <span className="h-8 px-2 text-[11px] font-mono font-medium text-slate-500 dark:text-[#a3a3a3] bg-slate-50/60 dark:bg-[#28282a]/60 border border-slate-200/60 dark:border-[#444446]/60 rounded-lg hidden 2xl:flex items-center whitespace-nowrap">
+                1 USD = {usdRate.toLocaleString('en-US')} VND
+              </span>
+            )}
 
-            <button onClick={() => setLanguage(language === 'en' ? 'ja' : 'en')}
-              className="flex items-center justify-center p-1.5 hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-sm"
-              title="Toggle Language"
-            >
-              {language === 'en' ? (
-                <span className="text-base sm:text-lg leading-none" role="img" aria-label="English">🇬🇧</span>
-              ) : (
-                <span className="text-base sm:text-lg leading-none" role="img" aria-label="Japanese">🇯🇵</span>
-              )}
-            </button>
-
-            <button
-              onClick={onUndo}
-              disabled={!canUndo}
-              className="p-1.5 sm:p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-[#333336] rounded-lg transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500 relative"
-              title={undoDescription || "Nothing to undo"}
-            >
-              <Undo2 className="w-4 h-4 sm:w-5 sm:h-5" />
-              {hasDataToUndo && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white dark:border-slate-900"></span>
-              )}
-            </button>
-
+            {/* Read-only Lock Indicator */}
             {currency !== 'VND' && (
               <span 
                 title={`Converted to ${currency}. Switch to VND to edit numbers.`}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 sm:px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-sm shrink-0 cursor-default"
+                className="h-8 px-2 inline-flex items-center gap-1 text-[11px] font-semibold rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-2xs shrink-0 cursor-default"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span className="hidden xl:inline">Read-only</span>
               </span>
             )}
+
+            {/* Theme Toggle */}
+            {onToggleTheme && (
+              <button
+                onClick={onToggleTheme}
+                className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-500 dark:text-[#a3a3a3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs active:scale-95 touch-manipulation"
+                title="Toggle Theme"
+              >
+                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            )}
+
+            {/* Language Switcher */}
+            <button onClick={() => setLanguage(language === 'en' ? 'ja' : 'en')}
+              className="h-8 px-2 bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs active:scale-95 touch-manipulation flex items-center justify-center"
+              title="Toggle Language"
+            >
+              {language === 'en' ? (
+                <span className="text-sm leading-none" role="img" aria-label="English">🇬🇧</span>
+              ) : (
+                <span className="text-sm leading-none" role="img" aria-label="Japanese">🇯🇵</span>
+              )}
+            </button>
+
+            {/* Realtime Clock Widget */}
             <div 
               title={`Today: ${formatFullTime(currentTime)}`}
-              className="hidden lg:flex bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] px-2 sm:px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold border border-blue-100 dark:border-[#444446] items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
+              className="h-8 px-2.5 bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] rounded-lg text-xs font-mono font-bold border border-blue-100 dark:border-[#444446] hidden lg:flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
             >
               <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-[#8ab4f8]" />
               <span>{formatCompactTime(currentTime)}</span>
             </div>
 
-            {/* Ribbon Display Options on Header next to Today clock (Desktop) */}
+            {/* Ribbon Display Options on Header */}
             <RibbonDisplayMenu variant="header" className="hidden lg:inline-flex shrink-0" />
           </>
         )}
@@ -630,6 +690,6 @@ export function Header({
           />
         </Suspense>
       )}
-    </div>
+    </header>
   );
 }

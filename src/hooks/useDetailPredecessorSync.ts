@@ -55,7 +55,7 @@ export function useDetailPredecessorSync({
               const updatePayload: any = { updatedAt: u.updatedAt };
               if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
               if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
-              batch.update(tRef, updatePayload);
+              batch.set(tRef, updatePayload, { merge: true });
             });
             await batch.commit();
           }
@@ -124,7 +124,7 @@ export function useDetailPredecessorSync({
               const updatePayload: any = { updatedAt: u.updatedAt };
               if (u.predecessor !== undefined) updatePayload.predecessor = u.predecessor;
               if (u.taskCodePhu !== undefined) updatePayload.taskCodePhu = u.taskCodePhu;
-              batch.update(tRef, updatePayload);
+              batch.set(tRef, updatePayload, { merge: true });
             });
             await batch.commit();
           }

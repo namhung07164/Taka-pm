@@ -136,9 +136,11 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
           <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${taskStatusColorClass}`}>
             Pl: {taskStatus}
           </div>
-          <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
-            Act: {delStatusText}
-          </div>
+          {delStatusText && delStatusText !== 'Pending' && delStatusText.toLowerCase() !== taskStatus.toLowerCase() && (
+            <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
+              Act: {delStatusText}
+            </div>
+          )}
         </div>
       </div>
     </div>

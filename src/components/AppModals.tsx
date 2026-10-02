@@ -10,6 +10,7 @@ const ProjectModal = lazyWithRetry(() => import('./ProjectModal').then(m => ({ d
 const TaskModal = lazyWithRetry(() => import('./TaskModal').then(m => ({ default: m.TaskModal })), 'TaskModal');
 const UserModal = lazyWithRetry(() => import('./UserModal').then(m => ({ default: m.UserModal })), 'UserModal');
 const CalendarSyncModal = lazyWithRetry(() => import('./CalendarSyncModal').then(m => ({ default: m.CalendarSyncModal })), 'CalendarSyncModal');
+const ZoomableImageViewer = lazyWithRetry(() => import('./ZoomableImageViewer').then(m => ({ default: m.ZoomableImageViewer })), 'ZoomableImageViewer');
 
 interface AppModalsProps {
   onLogin: (appUser: AppUser) => void;
@@ -44,6 +45,8 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
   const prefillProjectCode = useAppStore(state => state.prefillProjectCode);
   const prefillProjectYear = useAppStore(state => state.prefillProjectYear);
   const prefillProjectStore = useAppStore(state => state.prefillProjectStore);
+  const zoomableImageSrc = useAppStore(state => state.zoomableImageSrc);
+  const setZoomableImageSrc = useAppStore(state => state.setZoomableImageSrc);
 
   const { filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
 
@@ -113,6 +116,13 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
       )}
 
       {isCalendarSyncModalOpen && <CalendarSyncModal />}
+
+      {zoomableImageSrc && (
+        <ZoomableImageViewer
+          src={zoomableImageSrc}
+          onClose={() => setZoomableImageSrc(null)}
+        />
+      )}
     </Suspense>
   );
 });

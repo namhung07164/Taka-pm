@@ -45,7 +45,7 @@ interface DetailFilterToolbarProps {
   handleImportProjects: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleExportTasks: () => void;
   handleImportTasks: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  parseCSVDate: (d: any) => string;
+  parseCSVDate?: (d: any) => string;
 }
 
 export const DetailFilterToolbar = memo(function DetailFilterToolbar({

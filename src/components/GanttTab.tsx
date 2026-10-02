@@ -413,10 +413,10 @@ export function GanttTab({
       const batch = writeBatch(db);
       finalChildTaskIds.forEach((tId) => {
         const ref = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tId);
-        batch.update(ref, {
+        batch.set(ref, {
           parentTaskId,
           updatedAt: nowIso,
-        });
+        }, { merge: true });
       });
       batch.commit().catch((err) => console.error("Batch update modular tasks error:", err));
     } catch (err) {
@@ -448,10 +448,10 @@ export function GanttTab({
       const batch = writeBatch(db);
       childTaskIds.forEach((tId) => {
         const ref = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tId);
-        batch.update(ref, {
+        batch.set(ref, {
           parentTaskId: deleteField(),
           updatedAt: new Date().toISOString(),
-        });
+        }, { merge: true });
       });
       batch.commit().catch((err) => console.error("Batch unlink modular tasks error:", err));
     } catch (err) {
@@ -2003,7 +2003,7 @@ export function GanttTab({
           (proj) => String(proj.no) === id || proj.id === id,
         );
         if (p && p.id) {
-          batch.update(
+          batch.set(
             doc(
               db,
               "artifacts",
@@ -2014,6 +2014,7 @@ export function GanttTab({
               p.id,
             ),
             { realtimeUpdate: newToggleState },
+            { merge: true }
           );
         }
       }
@@ -2021,9 +2022,10 @@ export function GanttTab({
       for (const id of selectedTaskIds) {
         const t = tasks.find((tsk) => tsk.id === id);
         if (t) {
-          batch.update(
+          batch.set(
             doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", t.id),
             { realtimeUpdate: newToggleState },
+            { merge: true }
           );
         }
       }
