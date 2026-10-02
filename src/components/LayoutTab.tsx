@@ -274,6 +274,20 @@ export function LayoutTab({
     }
   }, [globalStoreFilter, allowedStores, setGlobalStoreFilter]);
 
+  // Listen to Edit Mode event triggered from Hamburger Menu
+  useEffect(() => {
+    const handleOpenEditMode = () => {
+      setIsLiveMapMode(true);
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("open-layout-settings-drawer"));
+      }, 50);
+    };
+    window.addEventListener("open-layout-edit-mode", handleOpenEditMode);
+    return () => {
+      window.removeEventListener("open-layout-edit-mode", handleOpenEditMode);
+    };
+  }, []);
+
   // Helper check xem một url có hợp lệ (không phải null, undefined, '', '0', '_')
   const isValidUrl = (val: any): boolean => {
     if (val === null || val === undefined) return false;

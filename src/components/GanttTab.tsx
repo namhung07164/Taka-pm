@@ -289,6 +289,17 @@ export function GanttTab({
   }, [hiddenRows]);
   const [isHideMode, setIsHideMode] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+
+  useEffect(() => {
+    const handleToggle = () => setIsEditMode(prev => !prev);
+    const handleOpen = () => setIsEditMode(true);
+    window.addEventListener("open-gantt-edit-mode", handleOpen);
+    window.addEventListener("toggle-edit-mode", handleToggle);
+    return () => {
+      window.removeEventListener("open-gantt-edit-mode", handleOpen);
+      window.removeEventListener("toggle-edit-mode", handleToggle);
+    };
+  }, []);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   useEffect(() => {

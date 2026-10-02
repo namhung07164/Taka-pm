@@ -260,7 +260,7 @@ export function Header({
 
                 {/* Mobile Quick Utilities in Menu */}
                 <div className="md:hidden py-1 border-b border-slate-100 dark:border-[#444446]">
-                  <div className="grid grid-cols-3 gap-1 px-3 py-1">
+                  <div className="grid grid-cols-2 gap-1 px-3 py-1">
                     {onToggleTheme && (
                       <button
                         onClick={() => {
@@ -283,24 +283,16 @@ export function Header({
                       <span className="text-base leading-none mb-1">{language === 'en' ? '🇬🇧' : '🇯🇵'}</span>
                       <span>{language === 'en' ? 'English' : '日本語'}</span>
                     </button>
-                    <button
-                      onClick={() => {
-                        handleCurrencyClick();
-                        setIsMenuOpen(false);
-                      }}
-                      className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-mono font-bold text-slate-700 dark:text-[#e3e3e3] transition-colors"
-                    >
-                      <span className="text-xs mb-1 text-blue-600 dark:text-[#8ab4f8]">{currency === 'VND' ? 'VND' : currency}</span>
-                      <span className="text-[10px]">{currency === 'VND' ? "'000" : currency}</span>
-                    </button>
                   </div>
                 </div>
 
                 {activeTab === 'layout' && (
                   <button 
                     onClick={() => {
-                      window.dispatchEvent(new CustomEvent("open-layout-edit-mode"));
                       setIsMenuOpen(false);
+                      setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent("open-layout-edit-mode"));
+                      }, 50);
                     }}
                     className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
                   >
@@ -456,11 +448,10 @@ export function Header({
         </div>
 
         {/* Title & Status Badge Lockup */}
-        <div className="min-w-0 flex flex-col justify-center">
-          <div className="flex items-center gap-2 min-w-0">
-            <h1 className="text-xs sm:text-sm md:text-base font-extrabold text-slate-900 dark:text-[#f3f3f3] leading-tight truncate">
-              <span className="hidden sm:inline">Takashimaya Project</span>
-              <span className="sm:hidden">Taka PM</span>
+        <div className="min-w-0 flex flex-col justify-center shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+            <h1 className="text-xs sm:text-sm md:text-base font-extrabold text-slate-900 dark:text-[#f3f3f3] leading-tight shrink-0 whitespace-nowrap">
+              T-Project
             </h1>
             <span
               className={cn(
@@ -487,6 +478,7 @@ export function Header({
                     ? "bg-blue-500"
                     : "bg-red-500",
               )}
+              title={`Cloud status: ${cloudStatus}`}
             />
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
@@ -508,7 +500,7 @@ export function Header({
               • {t("Cloud Sync Enabled")}
             </span>
 
-            {/* Active Child Tab Indicator on Mobile & iPad */}
+            {/* Active Child Tab Indicator on iPad/Tablet */}
             {(() => {
               const tabInfoMap: Partial<Record<TabId, { label: string; icon: React.ElementType }>> = {
                 calendar: { label: t("Calendar"), icon: Calendar },
@@ -534,7 +526,7 @@ export function Header({
                 <button
                   type="button"
                   onClick={() => onTabChange(activeTab)}
-                  className="lg:hidden px-2 py-0.2 rounded-md text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 shadow-2xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer select-none shrink-0"
+                  className="hidden sm:inline-flex lg:hidden px-2 py-0.2 rounded-md text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 shadow-2xs items-center gap-1 transition-all active:scale-95 cursor-pointer select-none shrink-0"
                   title={`Active tab: ${currentTabInfo.label}`}
                 >
                   <ActiveIcon className="w-2.5 h-2.5 shrink-0 text-white" />
@@ -547,19 +539,61 @@ export function Header({
           </div>
         </div>
 
-        {/* Notification Bell */}
-        <button
-          onClick={() => onTabChange("notification")}
-          className="relative h-8 w-8 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors focus:outline-none shrink-0"
-          title="Notifications"
-        >
-          <Bell className="w-4.5 h-4.5" />
-          {notificationCount > 0 && (
-            <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8px] font-bold text-white flex items-center justify-center">
-              {notificationCount > 9 ? "9+" : notificationCount}
-            </span>
-          )}
-        </button>
+        {/* Right Header Controls Group (Always visible on Mobile, iPad & Desktop) */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
+          {/* Back / Undo Action Button */}
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs disabled:opacity-30 disabled:hover:bg-slate-50 relative active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            title={undoDescription || "Nothing to undo"}
+          >
+            <Undo2 className="w-4 h-4" />
+            {hasDataToUndo && (
+              <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white dark:border-slate-900"></span>
+            )}
+          </button>
+
+          {/* Currency Selector (Visible on Main Header) */}
+          <button 
+            onClick={handleCurrencyClick}
+            onContextMenu={handleCurrencyContextMenu}
+            className="h-8 px-2 sm:px-2.5 min-w-[50px] sm:min-w-[64px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-[10px] sm:text-xs font-bold font-mono flex items-center justify-center active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            title={
+              currency === 'VND'
+                ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
+                : (currentUser.role === 'admin'
+                    ? `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND - Right-click to set exchange rates)`
+                    : `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND)`
+                  )
+            }
+          >
+            {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
+          </button>
+
+          {/* QR Scanner Button */}
+          <button
+            onClick={() => setIsQRScannerOpen(true)}
+            className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            title="Scan QR Code"
+          >
+            <ScanQrCode className="w-4 h-4" />
+          </button>
+
+          {/* Notification Bell */}
+          <button
+            onClick={() => onTabChange("notification")}
+            className="relative h-8 w-8 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors focus:outline-none shrink-0"
+            title="Notifications"
+          >
+            <Bell className="w-4.5 h-4.5" />
+            {notificationCount > 0 && (
+              <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8px] font-bold text-white flex items-center justify-center">
+                {notificationCount > 9 ? "9+" : notificationCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Right: Quick Access & Controls Toolbar */}
@@ -579,43 +613,17 @@ export function Header({
               </kbd>
             </button>
 
-            {/* QR Scanner */}
-            <button
-              onClick={() => setIsQRScannerOpen(true)}
-              className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation"
-              title="Scan QR Code"
-            >
-              <ScanQrCode className="w-4 h-4" />
-            </button>
-
-            {/* Currency Selector */}
-            <div className="flex items-center gap-1">
-              <button 
-                onClick={handleCurrencyClick}
-                onContextMenu={handleCurrencyContextMenu}
-                className="h-8 px-2.5 min-w-[64px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-xs font-bold font-mono flex items-center justify-center active:scale-95 touch-manipulation"
-                title={
-                  currency === 'VND'
-                    ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
-                    : (currentUser.role === 'admin'
-                        ? `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND - Right-click to set exchange rates)`
-                        : `Currency: ${currency} (1 ${currency} = ${currency === 'JPY' ? jpyRate.toLocaleString('en-US') : usdRate.toLocaleString('en-US')} VND)`
-                      )
-                }
-              >
-                {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
-              </button>
-              {currency === 'JPY' && (
-                <span className="h-8 px-2 text-[11px] font-mono font-medium text-slate-500 dark:text-[#a3a3a3] bg-slate-50/60 dark:bg-[#28282a]/60 border border-slate-200/60 dark:border-[#444446]/60 rounded-lg hidden 2xl:flex items-center whitespace-nowrap">
-                  1 JPY = {jpyRate.toLocaleString('en-US')} VND
-                </span>
-              )}
-              {currency === 'USD' && (
-                <span className="h-8 px-2 text-[11px] font-mono font-medium text-slate-500 dark:text-[#a3a3a3] bg-slate-50/60 dark:bg-[#28282a]/60 border border-slate-200/60 dark:border-[#444446]/60 rounded-lg hidden 2xl:flex items-center whitespace-nowrap">
-                  1 USD = {usdRate.toLocaleString('en-US')} VND
-                </span>
-              )}
-            </div>
+            {/* Currency Rates Indicator */}
+            {currency === 'JPY' && (
+              <span className="h-8 px-2 text-[11px] font-mono font-medium text-slate-500 dark:text-[#a3a3a3] bg-slate-50/60 dark:bg-[#28282a]/60 border border-slate-200/60 dark:border-[#444446]/60 rounded-lg hidden 2xl:flex items-center whitespace-nowrap">
+                1 JPY = {jpyRate.toLocaleString('en-US')} VND
+              </span>
+            )}
+            {currency === 'USD' && (
+              <span className="h-8 px-2 text-[11px] font-mono font-medium text-slate-500 dark:text-[#a3a3a3] bg-slate-50/60 dark:bg-[#28282a]/60 border border-slate-200/60 dark:border-[#444446]/60 rounded-lg hidden 2xl:flex items-center whitespace-nowrap">
+                1 USD = {usdRate.toLocaleString('en-US')} VND
+              </span>
+            )}
 
             {/* Read-only Lock Indicator */}
             {currency !== 'VND' && (
@@ -648,19 +656,6 @@ export function Header({
                 <span className="text-sm leading-none" role="img" aria-label="English">🇬🇧</span>
               ) : (
                 <span className="text-sm leading-none" role="img" aria-label="Japanese">🇯🇵</span>
-              )}
-            </button>
-
-            {/* Undo Action */}
-            <button
-              onClick={onUndo}
-              disabled={!canUndo}
-              className="h-8 w-8 flex items-center justify-center text-slate-500 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-[#28282a] rounded-lg transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500 relative active:scale-95 touch-manipulation"
-              title={undoDescription || "Nothing to undo"}
-            >
-              <Undo2 className="w-4 h-4" />
-              {hasDataToUndo && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white dark:border-slate-900"></span>
               )}
             </button>
 

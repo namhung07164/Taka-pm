@@ -364,19 +364,17 @@ export function Navigation({
 
       {/* Mobile Navigation - Hamburger Menu */}
       <div className="lg:hidden">
-        {/* Floating Menu Pill - Hidden on Layout tab to prevent overlapping floor map */}
-        {activeTab !== 'layout' && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] print:hidden">
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 px-5 py-2.5 rounded-full shadow-lg shadow-black/10 hover:bg-slate-700 dark:hover:bg-slate-300 transition-colors flex items-center gap-2 font-medium text-sm border border-slate-700 dark:border-slate-300"
-              aria-label="Open Navigation Menu"
-            >
-              <Menu className="w-4 h-4" />
-              <span>{t("Menu")}</span>
-            </button>
-          </div>
-        )}
+        {/* Floating Menu Pill - Main Tab Switcher Menu */}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] print:hidden">
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="bg-slate-800/95 dark:bg-slate-200/95 text-white dark:text-slate-900 px-5 py-2.5 rounded-full shadow-2xl hover:bg-slate-700 dark:hover:bg-white transition-all flex items-center gap-2 font-semibold text-sm border border-slate-600/30 dark:border-slate-300 active:scale-95 touch-manipulation cursor-pointer pointer-events-auto"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="w-4 h-4" />
+            <span>{t("Menu")}</span>
+          </button>
+        </div>
 
         {/* Slide-out Drawer */}
         {isMobileMenuOpen && (

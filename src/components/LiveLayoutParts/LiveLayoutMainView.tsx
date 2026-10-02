@@ -78,6 +78,19 @@ export function LiveLayoutMainView({
   const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
   const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
   const [showMenu, setShowMenu] = useState(false);
+
+  // Listen to Edit Mode event triggered from Hamburger Menu or Header
+  useEffect(() => {
+    const handleOpenEditMode = () => {
+      setShowMenu(true);
+    };
+    window.addEventListener("open-layout-edit-mode", handleOpenEditMode);
+    window.addEventListener("open-layout-settings-drawer", handleOpenEditMode);
+    return () => {
+      window.removeEventListener("open-layout-edit-mode", handleOpenEditMode);
+      window.removeEventListener("open-layout-settings-drawer", handleOpenEditMode);
+    };
+  }, []);
   const [showLegendModal, setShowLegendModal] = useState(false);
   const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(false);
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);

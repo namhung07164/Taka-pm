@@ -577,10 +577,21 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
               <div className="flex items-center gap-2">
                 {(() => {
                   const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
+                  let planColorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-bold';
+                  if (planStatus === 'Completed') {
+                    planColorClass = 'bg-emerald-600 text-white border-emerald-500 font-extrabold shadow-2xs';
+                  } else if (planStatus === 'On process') {
+                    planColorClass = 'bg-amber-500 text-white border-amber-400 font-extrabold shadow-2xs';
+                  }
                   return (
-                    <span className={`text-[10px] px-2 py-1 rounded-full font-bold border whitespace-nowrap ${actualStatus.color}`}>
-                      Act: {actualStatus.label}
-                    </span>
+                    <>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border whitespace-nowrap uppercase ${planColorClass}`}>
+                        Pl: {planStatus}
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border whitespace-nowrap uppercase ${actualStatus.color}`}>
+                        Act: {actualStatus.label}
+                      </span>
+                    </>
                   );
                 })()}
                 <a 

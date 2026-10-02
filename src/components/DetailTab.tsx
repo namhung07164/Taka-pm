@@ -138,6 +138,17 @@ export function DetailTab({
   const [isEditMode, setIsEditMode] = useState(false);
   const canWrite = hasWritePermission && isEditMode;
 
+  useEffect(() => {
+    const handleToggle = () => setIsEditMode(prev => !prev);
+    const handleOpen = () => setIsEditMode(true);
+    window.addEventListener("open-detail-edit-mode", handleOpen);
+    window.addEventListener("toggle-edit-mode", handleToggle);
+    return () => {
+      window.removeEventListener("open-detail-edit-mode", handleOpen);
+      window.removeEventListener("toggle-edit-mode", handleToggle);
+    };
+  }, []);
+
   const years = useMemo(() => {
     const projYears = projects.map(p => p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null)).filter(Boolean) as string[];
     const taskYears = tasks.map(t => t.projectYear ? String(t.projectYear) : (t.start ? String(t.start).substring(0, 4) : null)).filter(Boolean) as string[];
