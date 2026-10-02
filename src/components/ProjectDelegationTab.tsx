@@ -252,17 +252,14 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
                         proStatusColorClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white border-rose-500 font-extrabold';
                       }
                       const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
-                      const isDupStatus = actualStatus.label.toLowerCase() === proStatus.toLowerCase();
                       return (
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
                             Pro: {proStatus}
                           </span>
-                          {!isDupStatus && (
-                            <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
-                              Act: {actualStatus.label}
-                            </span>
-                          )}
+                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
+                            Act: {actualStatus.label}
+                          </span>
                         </div>
                       );
                     })()}

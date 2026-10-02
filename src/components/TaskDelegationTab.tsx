@@ -1077,17 +1077,14 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
                     proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
                   }
                   const actObj = resolveActualStatus(plStatus, group.subTasks);
-                  const isDup = actObj.label.toLowerCase() === proStatus.toLowerCase();
                   return (
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className={`text-[10px] leading-tight font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${proStatusColorClass}`}>
                         Pro: {proStatus}
                       </span>
-                      {!isDup && (
-                        <span className={`text-[10px] leading-tight font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${actObj.color}`}>
-                          Act: {actObj.label}
-                        </span>
-                      )}
+                      <span className={`text-[10px] leading-tight font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${actObj.color}`}>
+                        Act: {actObj.label}
+                      </span>
                     </div>
                   );
                 })()}

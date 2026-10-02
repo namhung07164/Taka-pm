@@ -599,11 +599,9 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                       <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
                         Pro: {proStatus}
                       </span>
-                      {!isDupStatus && (
-                        <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
-                          Act: {actualStatus.label}
-                        </span>
-                      )}
+                      <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
+                        Act: {actualStatus.label}
+                      </span>
                     </div>
                   );
                 })()}
