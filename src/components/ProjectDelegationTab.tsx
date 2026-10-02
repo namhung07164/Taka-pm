@@ -103,15 +103,28 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
       seenParentTaskIds.add(g.parentTaskId);
 
       const t = tasks.find(x => x && x.id === g.parentTaskId);
-      return t?.projectCode === project?.code && 
-             (t?.projectYear == project?.year || (!t?.projectYear && !project?.year)) &&
-             (t?.projectStore == project?.store || (!t?.projectStore && !project?.store));
+      const isMatchingProject = 
+        (t && t.projectCode === project.code) ||
+        (g.projectCode === project.code) ||
+        (g.parentTaskId === project.code);
+
+      const isMatchingYear = 
+        !project.year || !g.projectYear || String(g.projectYear) === String(project.year) || (t && String(t.projectYear) === String(project.year));
+
+      const isMatchingStore = 
+        !project.store || !g.projectStore || String(g.projectStore).toLowerCase() === String(project.store).toLowerCase() || (t && String(t.projectStore).toLowerCase() === String(project.store).toLowerCase());
+
+      return isMatchingProject && isMatchingYear && isMatchingStore;
     }).map(g => {
       const parentTask = tasks.find(t => t && t.id === g.parentTaskId);
+      const isChildTask = parentTask ? Boolean(parentTask.parentTaskId) : false;
+      const rootParentTask = isChildTask ? tasks.find(t => t.id === parentTask?.parentTaskId) : null;
       return {
         ...g,
-        _taskCode: parentTask ? computeTaskCode(projects, tasks, parentTask) : '',
-        _taskName: parentTask?.name || 'Task'
+        _taskCode: parentTask ? computeTaskCode(projects, tasks, parentTask) : (g.projectCode || ''),
+        _taskName: parentTask?.name || g.name || 'Delegated Sub-tasks',
+        _isChildTask: isChildTask,
+        _parentTaskName: rootParentTask?.name || null
       };
     }).sort((a, b) => (a._taskCode || '').localeCompare(b._taskCode || '', undefined, { numeric: true, sensitivity: 'base' }));
   }, [delegationGroups, tasks, project, projects]);
@@ -140,7 +153,7 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
   }, [projectGroups, searchQuery]);
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#1e1e20]/50 relative flex-grow overflow-y-auto p-4 md:p-6">
+    <div className="flex flex-col flex-1 min-h-0 bg-slate-50 dark:bg-[#1e1e20]/50 relative overflow-y-auto p-4 md:p-6 pb-20 sm:pb-24 overscroll-contain">
        <div className="relative w-full mb-4 flex-shrink-0">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-500">
             <Search className="w-4 h-4" />
@@ -218,7 +231,12 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
                   <div className="flex flex-col">
                     <h4 className={cn("text-sm font-bold flex items-center gap-2", groupTitleColor)}>
                       <FileText className={cn("w-4 h-4", groupIconColor)} />
-                      {linkedGroup._taskName || linkedGroup.name || 'Delegated Sub-tasks'}
+                      <span>{linkedGroup._taskName || linkedGroup.name || 'Delegated Sub-tasks'}</span>
+                      {linkedGroup._isChildTask && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-mono">
+                          ↳ SUB {linkedGroup._parentTaskName ? `(Cha: ${linkedGroup._parentTaskName})` : ''}
+                        </span>
+                      )}
                     </h4>
                     <span className={cn("text-[10px] font-mono mt-1", groupSubTitleColor)}>Task Code: {linkedGroup._taskCode}</span>
                   </div>

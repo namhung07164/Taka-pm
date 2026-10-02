@@ -744,11 +744,6 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
 <Portal>
     <div 
       className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4 overscroll-contain"
-      onWheel={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
     >
       <React.Suspense fallback={null}>
         {confirmModal.isOpen && (
@@ -764,11 +759,7 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
       <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
         <div 
           ref={nodeRef} 
-          className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-2xl overflow-hidden relative flex flex-col pointer-events-auto overscroll-contain"
-          onWheel={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-[92vh] md:h-[88vh] max-h-[96vh] md:max-h-[90vh] max-w-3xl overflow-hidden relative flex flex-col pointer-events-auto overscroll-contain"
         >
           <div className="modal-handle cursor-move px-4 md:px-6 py-4 border-b border-slate-100 dark:border-[#333336] flex justify-between items-center bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0 pt-[env(safe-area-inset-top)] md:pt-4">
           {project ? (
@@ -1125,15 +1116,17 @@ export function ProjectModal({ isOpen, onClose, project, isReadOnly = false, ini
           />
         )}
         {activeTab === 'delegation' && project && (
-          <ProjectDelegationTab
-              project={project}
-              projects={projects}
-              tasks={tasks}
-              currentUser={currentUser}
-              appUsers={appUsers}
-              delegationGroups={delegationGroups}
-              setConfirmModal={setConfirmModal}
-          />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <ProjectDelegationTab
+                project={project}
+                projects={projects}
+                tasks={tasks}
+                currentUser={currentUser}
+                appUsers={appUsers}
+                delegationGroups={delegationGroups}
+                setConfirmModal={setConfirmModal}
+            />
+          </div>
         )}
       </div>
       </Draggable>
