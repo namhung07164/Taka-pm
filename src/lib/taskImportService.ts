@@ -1,0 +1,315 @@
+import { Task, Project, DelegationGroup } from '../types';
+import { 
+  parsePredecessors, 
+  buildTaskNoMap, 
+  calculateTaskDatesFromPredecessors, 
+  addDays 
+} from './ganttUtils';
+import { parseDateTime, formatToDatetimeLocal, generateId } from './utils';
+import { calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
+import { findAffectedProjects } from './taskStateService';
+import { doc } from 'firebase/firestore';
+import { db, APP_ID, writeBatch } from './firebase';
+import { useAppStore } from '../store/useAppStore';
+
+/**
+ * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
+ */
+export function cleanDurationString(val: any): string {
+  if (val === undefined || val === null) return '0';
+  const str = String(val).trim().replace(/d(ays?)?$/i, '').trim();
+  const num = parseFloat(str);
+  return isNaN(num) || num < 0 ? '0' : String(Number(num.toFixed(2)));
+}
+
+/**
+ * Prioritizes assigned predecessors and duration to recalculate start date and end date
+ * across a set of tasks (with full cascade to dependent tasks).
+ */
+export function calculateDatesFromPredecessorsAndDuration(
+  tasksToProcess: Task[],
+  allContextTasks: Task[],
+  projects: Project[]
+): Task[] {
+  if (!tasksToProcess.length) return [];
+
+  // Create mutable working map of all tasks
+  const workingMap = new Map<string, Task>();
+  allContextTasks.forEach(t => workingMap.set(t.id, { ...t }));
+  tasksToProcess.forEach(t => workingMap.set(t.id, { ...t }));
+
+  // Index taskNoMap for resolving predecessors
+  const currentAllTasks = Array.from(workingMap.values());
+  const taskNoMap = buildTaskNoMap(projects, currentAllTasks);
+
+  // Relax dependencies iteratively (topological convergence with cycle limit)
+  const maxIterations = Math.max(10, tasksToProcess.length + 5);
+  let hasChanges = true;
+  let iteration = 0;
+
+  while (hasChanges && iteration < maxIterations) {
+    hasChanges = false;
+    iteration++;
+
+    for (const t of tasksToProcess) {
+      const current = workingMap.get(t.id);
+      if (!current) continue;
+
+      const predString = current.predecessor ? String(current.predecessor).trim() : '';
+      if (!predString) {
+        // If no predecessor, ensure finish is consistent with start and duration if finish is missing or invalid
+        if (current.start && (!current.finish || current.finish === current.start)) {
+          const durNum = parseFloat(cleanDurationString(current.duration));
+          if (durNum > 0) {
+            const calculatedFinish = addDays(current.start, durNum);
+            if (calculatedFinish !== current.finish) {
+              current.finish = calculatedFinish;
+              workingMap.set(current.id, current);
+              hasChanges = true;
+            }
+          }
+        }
+        continue;
+      }
+
+      // Task has predecessor: parse and compute dates
+      const parsedPreds = parsePredecessors(predString, taskNoMap, current);
+      if (!parsedPreds.length) continue;
+
+      const calcResult = calculateTaskDatesFromPredecessors(
+        current,
+        parsedPreds,
+        (id) => workingMap.get(id)
+      );
+
+      if (calcResult) {
+        const { start: newStart, finish: newFinish, duration: newDuration, durationManual: newDurationManual } = calcResult;
+        if (newStart !== current.start || newFinish !== current.finish || newDuration !== current.duration) {
+          current.start = newStart;
+          current.finish = newFinish;
+          current.duration = newDuration;
+          current.durationManual = newDurationManual;
+          current.realtimeUpdate = true;
+          current.updatedAt = new Date().toISOString();
+          workingMap.set(current.id, current);
+          hasChanges = true;
+        }
+      }
+    }
+  }
+
+  return tasksToProcess.map(t => workingMap.get(t.id) || t);
+}
+
+/**
+ * Rolls up start date, end date, and duration for Parent Tasks ("Task mẹ") from their Child Tasks.
+ * In accordance with business rules:
+ * - Parent start = earliest start of children
+ * - Parent finish = latest finish of children
+ * - Parent duration = duration in days between parent start and finish
+ * - Updates upward through hierarchy with circular dependency protection.
+ */
+export function rollupParentTaskDates(
+  allTasks: Task[],
+  targetParentIds?: string[]
+): { updatedParents: Task[]; allTasksMap: Map<string, Task> } {
+  const taskMap = new Map<string, Task>();
+  allTasks.forEach(t => taskMap.set(t.id, { ...t }));
+
+  // Index child tasks for every parent ID or taskCodePhu
+  const parentToChildrenMap = new Map<string, Task[]>();
+  taskMap.forEach(t => {
+    if (t.parentTaskId) {
+      const pKey = String(t.parentTaskId).trim();
+      if (!parentToChildrenMap.has(pKey)) {
+        parentToChildrenMap.set(pKey, []);
+      }
+      parentToChildrenMap.get(pKey)!.push(t);
+    }
+  });
+
+  // Determine which parent tasks need recalculation
+  const parentIdsToProcess = new Set<string>();
+  if (targetParentIds && targetParentIds.length > 0) {
+    targetParentIds.forEach(id => parentIdsToProcess.add(String(id).trim()));
+  } else {
+    // Process all parent keys found
+    parentToChildrenMap.forEach((_, pKey) => parentIdsToProcess.add(pKey));
+  }
+
+  const updatedParentsMap = new Map<string, Task>();
+  const visited = new Set<string>();
+
+  // Process parent tasks (leaf-most parents first, then upwards)
+  for (const pKey of parentIdsToProcess) {
+    if (visited.has(pKey)) continue;
+    visited.add(pKey);
+
+    // Find parent task either by id or taskCodePhu
+    let parentTask = taskMap.get(pKey);
+    if (!parentTask) {
+      for (const t of taskMap.values()) {
+        if (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pKey.toLowerCase()) {
+          parentTask = t;
+          break;
+        }
+      }
+    }
+
+    if (!parentTask) continue;
+
+    // Direct children of this parent
+    const children = Array.from(taskMap.values()).filter(t => 
+      t.id !== parentTask!.id && 
+      (t.parentTaskId === parentTask!.id || (parentTask!.taskCodePhu && t.parentTaskId === parentTask!.taskCodePhu))
+    );
+
+    if (children.length === 0) continue;
+
+    const validStarts = children
+      .map(c => c.start)
+      .filter(Boolean)
+      .sort();
+
+    const validFinishes = children
+      .map(c => c.finish)
+      .filter(Boolean)
+      .sort((a, b) => (b || '').localeCompare(a || ''));
+
+    if (validStarts.length > 0 && validFinishes.length > 0) {
+      const earliestStart = validStarts[0];
+      const latestFinish = validFinishes[0];
+
+      const sDate = parseDateTime(earliestStart);
+      const fDate = parseDateTime(latestFinish);
+      let durationDays = '0';
+      if (sDate && fDate && !isNaN(sDate.getTime()) && !isNaN(fDate.getTime())) {
+        const diffMs = fDate.getTime() - sDate.getTime();
+        durationDays = diffMs >= 0 ? String(Number((diffMs / (1000 * 60 * 60 * 24)).toFixed(2))) : '0';
+      }
+
+      if (
+        parentTask.start !== earliestStart ||
+        parentTask.finish !== latestFinish ||
+        parentTask.duration !== durationDays
+      ) {
+        parentTask.start = earliestStart;
+        parentTask.finish = latestFinish;
+        parentTask.duration = durationDays;
+        parentTask.durationManual = false;
+        parentTask.updatedAt = new Date().toISOString();
+
+        taskMap.set(parentTask.id, parentTask);
+        updatedParentsMap.set(parentTask.id, parentTask);
+
+        // If parent task itself has a parentTaskId, enqueue ancestor for rollup
+        if (parentTask.parentTaskId && !visited.has(String(parentTask.parentTaskId))) {
+          parentIdsToProcess.add(String(parentTask.parentTaskId));
+        }
+      }
+    }
+  }
+
+  return {
+    updatedParents: Array.from(updatedParentsMap.values()),
+    allTasksMap: taskMap,
+  };
+}
+
+/**
+ * Saves tasks to Firestore in safe chunks (max 400 operations per batch).
+ */
+export async function batchSaveTasksToFirestore(
+  tasksToSave: Task[],
+  currentUser?: { id?: string; username?: string }
+): Promise<void> {
+  if (!tasksToSave || tasksToSave.length === 0) return;
+
+  const BATCH_LIMIT = 400;
+  for (let i = 0; i < tasksToSave.length; i += BATCH_LIMIT) {
+    const chunk = tasksToSave.slice(i, i + BATCH_LIMIT);
+    const batch = writeBatch(db);
+
+    chunk.forEach(t => {
+      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      batch.set(tRef, t, { merge: true });
+
+      if (t.delegation) {
+        const now = new Date().toISOString();
+        const dateStr = now.substring(0, 10);
+        const activeUserId = currentUser?.id && currentUser.id !== 'guest' 
+          ? currentUser.id 
+          : (currentUser?.username || 'system');
+        const rawParty = (t.party && t.party.trim()) ? t.party.trim() : (currentUser?.username || '');
+        const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+        const deterministicGroupId = `del_${t.id}`;
+
+        const delGroup: DelegationGroup = {
+          id: deterministicGroupId,
+          parentTaskId: t.id,
+          name: t.name || 'Delegated Task',
+          projectCode: t.projectCode,
+          projectStore: t.projectStore,
+          projectYear: t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear)) 
+            ? Number(t.projectYear) 
+            : new Date().getFullYear(),
+          subTasks: [{
+            id: generateId(),
+            name: '',
+            comments: '',
+            status: 'Assigned',
+            delegationStatus: 'Assigned',
+            priority: 'Mid',
+            party: parsedParty,
+            startAct: dateStr,
+            finishAct: dateStr,
+            updatedAt: now
+          }],
+          updatedAt: now,
+          createdBy: activeUserId
+        };
+
+        const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+        batch.set(delRef, delGroup, { merge: true });
+      }
+    });
+
+    await batch.commit();
+  }
+}
+
+/**
+ * Recalculates and synchronizes project summarize (`taskSummaries`, `computedTakStart`,
+ * `computedTakCompl`, `taskCount`, `computedPlanProgress`, `computedActProgress`)
+ * to Zustand store (0ms) and Firestore for all affected projects.
+ */
+export async function syncAffectedProjectSummaries(
+  affectedProjects: Project[],
+  allTasks: Task[],
+  delegationGroups: DelegationGroup[] = []
+): Promise<void> {
+  if (!affectedProjects.length) return;
+
+  for (const project of affectedProjects) {
+    if (!project.id) continue;
+    const projectTasks = allTasks.filter(t => {
+      if (!t.projectCode) return false;
+      const tCode = String(t.projectCode).trim().toLowerCase();
+      const pCode = String(project.code || '').trim().toLowerCase();
+      if (tCode !== pCode) return false;
+
+      const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+      if (pStore && tStore && pStore !== tStore) return false;
+
+      const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+      const pYear = project.year ? String(project.year).trim() : '';
+      if (pYear && tYear && pYear !== tYear) return false;
+
+      return true;
+    });
+
+    const computed = calculateProjectComputedDates(project, projectTasks, delegationGroups);
+    await syncProjectDatesToFirestore(project.id, computed);
+  }
+}

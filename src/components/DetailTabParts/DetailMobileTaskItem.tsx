@@ -2,6 +2,8 @@ import React, { memo } from 'react';
 import { ChevronUp, ChevronDown, Maximize2, Trash2 } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { FastToggle } from './FastToggle';
+import { EditableCell } from './EditableCell';
+import { cleanDurationString } from '../../lib/taskImportService';
 import { cn, formatDisplayDateMain, calculateDays, getTaskStatus } from '../../lib/utils';
 
 export interface DetailMobileTaskItemProps {
@@ -86,7 +88,22 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
         <div className="flex flex-col w-20 shrink-0 text-xs text-slate-500 dark:text-[#a3a3a3] gap-1 border-r border-slate-200 dark:border-[#444446] pr-2">
           <div className="font-mono text-blue-700 dark:text-[#8ab4f8] font-bold">{formatDisplayDateMain(t.start)}</div>
           <div className="font-mono text-pink-700 dark:text-pink-400 font-bold">{formatDisplayDateMain(t.finish)}</div>
-          <div className="text-[10px] italic mt-1">{calculateDays(t.start, t.finish)}</div>
+          <div className="text-[10px] mt-1">
+            {canWrite ? (
+              <EditableCell
+                value={t.duration !== undefined && t.duration !== null ? t.duration : calculateDays(t.start, t.finish).replace('d', '')}
+                type="number"
+                className="text-slate-700 dark:text-[#c3c3c3] font-mono font-medium text-[10px] px-0.5 py-0"
+                onSave={(val) => {
+                  const cleanVal = cleanDurationString(val);
+                  handleUpdateTask(t, { duration: cleanVal, durationManual: true });
+                }}
+                canWrite={canWrite}
+              />
+            ) : (
+              <span className="italic">{t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}</span>
+            )}
+          </div>
         </div>
         <div className="flex-grow flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">

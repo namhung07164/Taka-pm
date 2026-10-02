@@ -21,8 +21,14 @@ import { FullReplaceImport } from './FullReplaceImport';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
-import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, sortTasksByPredecessorsAndDates, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
-import { syncProjectDatesByCode, backfillMissingProjectDates } from '../lib/projectDatesService';
+import { scheduleDependentTasks, buildTaskNoMap, sortGroupTasks, sortTasksByPredecessorsAndDates, parsePredecessors, reorderAndCalculateTasks, calculateTaskDatesFromPredecessors, splitPredecessors, updatePredecessorsStrings, computeTaskCode, getProjectCodeChangePredecessorUpdates, normalizeAndHealTaskPredecessors, healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash, addDays } from '../lib/ganttUtils';
+import { syncProjectDatesByCode, backfillMissingProjectDates, getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../lib/projectDatesService';
+import { 
+  calculateDatesFromPredecessorsAndDuration, 
+  rollupParentTaskDates, 
+  cleanDurationString,
+  batchSaveTasksToFirestore
+} from '../lib/taskImportService';
 import { 
   saveTaskStateUnified, 
   deleteTaskStateUnified, 
@@ -1082,10 +1088,12 @@ export function DetailTab({
           }
         }
       } else if (updates.duration !== undefined) {
-        if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+        newT.duration = cleanDurationString(updates.duration);
+        newT.durationManual = true;
+        if (newT.start && newT.duration !== '') {
           const s = parseDateTime(newT.start);
           if (s && !isNaN(s.getTime())) {
-            const days = parseFloat(String(newT.duration));
+            const days = parseFloat(newT.duration);
             if (!isNaN(days) && days >= 0) {
               const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
               newT.finish = formatToDatetimeLocal(f);
@@ -1126,7 +1134,26 @@ export function DetailTab({
         newT = scheduledUpdatedTask as any;
       }
 
+      // Roll up parent task dates if newT or any of its dependents is a child task
+      const allCurrentTasksWithScheduled = tasks.map(tsk => {
+        if (tsk.id === newT.id) return newT;
+        const dep = updatesToDependents.find(d => d.id === tsk.id);
+        return dep || tsk;
+      });
+      if (!allCurrentTasksWithScheduled.some(tsk => tsk.id === newT.id)) {
+        allCurrentTasksWithScheduled.push(newT);
+      }
+      const { updatedParents } = rollupParentTaskDates(allCurrentTasksWithScheduled);
+
       batch.set(tRef, newT);
+
+      // Save updated parents to Firestore batch
+      updatedParents.forEach(pt => {
+        if (pt.id !== newT.id && !updatesToDependents.some(d => d.id === pt.id)) {
+          const ptRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pt.id);
+          batch.set(ptRef, { ...pt, updatedAt: new Date().toISOString() });
+        }
+      });
 
       if (updates.delegation === true) {
          const deterministicGroupId = `del_${t.id}`;
@@ -1180,6 +1207,7 @@ export function DetailTab({
       const allUpdatesToSave = [
         newT,
         ...depUpdates,
+        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
         ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
       ];
       saveTaskStateUnified(allUpdatesToSave);
@@ -1588,11 +1616,16 @@ export function DetailTab({
           if (h === 'comments' || h === 'comment') {
             key = 'importComment';
           }
+          if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parenttask' || h === 'parent task' || h === 'task mẹ' || h === 'task me' || h === 'parent' || h === 'parent id') {
+            key = 'parentTaskId';
+          }
           
-          if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment'].includes(key)) {
+          if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId'].includes(key)) {
             let val: any = row[i];
             if (key === 'start' || key === 'finish') {
               val = parseCSVDate(val);
+            } else if (key === 'duration') {
+              val = cleanDurationString(val);
             } else if (key === 'delegation' || key === 'realtimeUpdate') {
               const strVal = String(val || '').trim().toLowerCase();
               val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
@@ -1778,47 +1811,60 @@ export function DetailTab({
         });
       });
 
-      for (const finalTask of tasksToImport) {
-         setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', finalTask.id), finalTask);
-         if (finalTask.delegation) {
-            const now = new Date().toISOString();
-            const dateStr = now.substring(0, 10);
-            const activeUser = useAppStore.getState().currentUser || currentUser;
-            const activeUserId = activeUser?.id && activeUser.id !== 'guest' ? activeUser.id : (activeUser?.username || 'system');
-            const rawParty = (finalTask.party && finalTask.party.trim()) ? finalTask.party.trim() : (activeUser?.username || '');
-            const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
-            const deterministicGroupId = `del_${finalTask.id}`;
-            const newGroup = {
-              id: deterministicGroupId,
-              parentTaskId: finalTask.id,
-              name: finalTask.name || 'Delegated Task',
-              projectCode: finalTask.projectCode,
-              projectStore: finalTask.projectStore,
-              projectYear: (finalTask.projectYear !== undefined && finalTask.projectYear !== null && !isNaN(Number(finalTask.projectYear))) ? Number(finalTask.projectYear) : (Number(projects.find(p => p.code === finalTask.projectCode)?.year) || new Date().getFullYear()),
-              subTasks: [{ 
-                 id: generateId(), 
-                 name: '', 
-                 comments: '', 
-                 status: 'Assigned', 
-                 delegationStatus: 'Assigned', 
-                 priority: 'Mid', 
-                 party: parsedParty, 
-                 startAct: dateStr, 
-                 finishAct: dateStr, 
-                 updatedAt: now 
-              }],
-              updatedAt: now,
-              createdBy: activeUserId
-            };
-            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId), newGroup, { merge: true });
-         }
-         importCount++;
-      }
-      
-      await saveTaskStateUnified(tasksToImport);
-      const affectedProjects = findAffectedProjects(tasksToImport);
+      // 1. Tạm thời đọc start date, end date vào Zustand (Optimistic UI - Rule 2)
+      useAppStore.getState().optimisticUpdateTasks(tasksToImport);
+
+      // 2. Ưu tiên theo predecessor được gán, duration để tính lại các ngày start date, end date theo logic
       const allCurrentTasks = useAppStore.getState().tasks;
-      await syncAffectedProjects(affectedProjects, allCurrentTasks);
+      const calculatedTasks = calculateDatesFromPredecessorsAndDuration(
+        tasksToImport,
+        allCurrentTasks,
+        projects
+      );
+
+      // 3. Cập nhật lại ngày start date, end date của task mẹ sau khi tính toán xong, rồi cập nhật lên task summarize, project summarize,…
+      const tasksMapAfterCalc = new Map<string, Task>();
+      allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+      calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+      const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
+
+      const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc);
+
+      // Danh sách task cuối cùng cần lưu (bao gồm tasks được import và tasks mẹ được rollup)
+      const tasksToSaveMap = new Map<string, Task>();
+      calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));
+      updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
+      const finalTasksToSave = Array.from(tasksToSaveMap.values());
+
+      // Cập nhật Optimistic tức thì vào Zustand tasks (0ms)
+      useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
+
+      // Cập nhật task summarize, project summarize cho toàn bộ các dự án liên quan
+      const finalFullTasksList = Array.from(allTasksMap.values());
+      const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
+      const delegationGroups = useAppStore.getState().delegationGroups;
+
+      const currentProjects = useAppStore.getState().projects;
+      const updatedProjects = currentProjects.map(proj => {
+        const isAffected = affectedProjects.some(ap => ap.id === proj.id);
+        if (!isAffected) return proj;
+        const pTasks = getTasksForProject(proj, finalFullTasksList);
+        const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
+        return { ...proj, ...computed };
+      });
+      useAppStore.getState().setProjects(updatedProjects);
+
+      // 4. Cập nhật lên Firestore
+      const activeUser = useAppStore.getState().currentUser || currentUser;
+      await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
+
+      for (const p of affectedProjects) {
+        const pTasks = getTasksForProject(p, finalFullTasksList);
+        const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
+        await syncProjectDatesToFirestore(p.id, computed);
+      }
+
+      importCount = finalTasksToSave.length;
       
       if (importCount > 0) {
         undoManager.push({

@@ -7,6 +7,7 @@ import { EditableCell } from './EditableCell';
 import { PredecessorEditableCell } from './PredecessorEditableCell';
 import { FastToggle } from './FastToggle';
 import { QuickNavButton } from '../QuickNavButton';
+import { cleanDurationString } from '../../lib/taskImportService';
 
 interface DetailTaskRowProps {
   item: DetailTableRow & { type: 'task' };
@@ -184,8 +185,23 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('duration') && (
-        <td className="px-3 py-2 text-slate-500 dark:text-[#a3a3a3] italic font-mono text-xs">
-          {t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}
+        <td className="px-3 py-2 text-slate-500 dark:text-[#a3a3a3] font-mono text-xs">
+          {canWrite ? (
+            <EditableCell
+              value={t.duration !== undefined && t.duration !== null ? t.duration : calculateDays(t.start, t.finish).replace('d', '')}
+              type="number"
+              className="text-slate-700 dark:text-[#c3c3c3] font-mono font-medium"
+              onSave={(val) => {
+                const cleanVal = cleanDurationString(val);
+                onUpdateTask(t, { duration: cleanVal, durationManual: true });
+              }}
+              canWrite={canWrite}
+            />
+          ) : (
+            <span className="italic">
+              {t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}
+            </span>
+          )}
         </td>
       )}
       {visibleColumns.includes('start') && (

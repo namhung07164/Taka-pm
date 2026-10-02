@@ -2,23 +2,27 @@ import React, { memo } from 'react';
 import { Trash2, X } from 'lucide-react';
 
 interface DetailFloatingActionBarProps {
-  selectedCount: number;
+  selectedCount?: number;
+  selectedTaskIds?: Set<string>;
   canWrite?: boolean;
-  onBulkAction: (action: string) => void;
+  onBulkAction: (action: any) => void;
   onClearSelection: () => void;
+  onSelectAll?: () => void;
 }
 
 export const DetailFloatingActionBar = memo(function DetailFloatingActionBar({
   selectedCount,
+  selectedTaskIds,
   onBulkAction,
   onClearSelection
 }: DetailFloatingActionBarProps) {
-  if (selectedCount === 0) return null;
+  const count = selectedCount !== undefined ? selectedCount : (selectedTaskIds ? selectedTaskIds.size : 0);
+  if (count === 0) return null;
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white dark:bg-[#1e1e20] shadow-2xl border border-slate-200 dark:border-[#444446] rounded-full px-4 py-2 flex flex-wrap justify-center items-center gap-3 animate-in fade-in slide-in-from-bottom-4 print:hidden">
       <span className="text-sm font-bold text-slate-700 dark:text-[#e3e3e3] bg-slate-100 dark:bg-[#28282a] px-3 py-1.5 rounded-full shrink-0">
-        {selectedCount} selected
+        {count} selected
       </span>
       
       <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-[#333336]" />

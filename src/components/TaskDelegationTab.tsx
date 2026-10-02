@@ -195,6 +195,7 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
   const role = currentUser.role as AppRole;
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setZoomableImageSrc = useAppStore(state => state.setZoomableImageSrc);
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.taskDelegation) && !isArchiveYear;
 
@@ -1249,41 +1250,73 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
                   <span className="text-[10px] font-bold text-blue-800 dark:text-[#8ab4f8] tracking-wider block mb-2 opacity-80">Attached file(s)</span>
                   {st.attachments && st.attachments.length > 0 ? (
                     <div className="flex flex-col gap-2">
-                      {st.attachments.map((att, iIdx) => (
-                        <a key={iIdx} onClick={(e) => e.stopPropagation()} href={ensureUrlProtocol(att.url)} target="_blank" rel="noreferrer" className="flex items-center gap-2 group w-full">
-                          <div className="w-8 h-8 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
-                            {att.url?.match(/\.(jpeg|jpg|gif|png|webp|bmp)($|\?)/i) ? (
-                              <img src={att.url} alt="Attached preview" className="w-full h-full object-cover" />
-                            ) : (
-                              <Paperclip className="w-4 h-4 text-blue-500" />
-                            )}
-                            <div className="absolute inset-0 bg-black/40 items-center justify-center hidden group-hover:flex transition-opacity">
-                              <ExternalLink className="w-3 h-3 text-white" />
+                      {st.attachments.map((att, iIdx) => {
+                        const isImg = att.url?.match(/\.(jpeg|jpg|gif|png|webp|bmp)($|\?)/i);
+                        return (
+                          <a 
+                            key={iIdx} 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isImg) {
+                                e.preventDefault();
+                                setZoomableImageSrc(att.url);
+                              }
+                            }} 
+                            href={ensureUrlProtocol(att.url)} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="flex items-center gap-2 group w-full"
+                          >
+                            <div className="w-8 h-8 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
+                              {isImg ? (
+                                <img src={att.url} alt="Attached preview" className="w-full h-full object-cover" />
+                              ) : (
+                                <Paperclip className="w-4 h-4 text-blue-500" />
+                              )}
+                              <div className="absolute inset-0 bg-black/40 items-center justify-center hidden group-hover:flex transition-opacity">
+                                <ExternalLink className="w-3 h-3 text-white" />
+                              </div>
                             </div>
-                          </div>
-                          <span className="text-xs font-medium text-blue-700 dark:text-[#8ab4f8] group-hover:text-blue-800 dark:text-[#8ab4f8] hover:underline truncate" title={att.name || att.url || 'Download Attached File'}>
-                            {att.name || att.url || 'Attached Link'}
-                          </span>
-                        </a>
-                      ))}
+                            <span className="text-xs font-medium text-blue-700 dark:text-[#8ab4f8] group-hover:text-blue-800 dark:text-[#8ab4f8] hover:underline truncate" title={att.name || att.url || 'Download Attached File'}>
+                              {att.name || att.url || 'Attached Link'}
+                            </span>
+                          </a>
+                        );
+                      })}
                     </div>
-                  ) : (st.fileUrl || st.childFileUrl) ? (
-                    <a onClick={(e) => e.stopPropagation()} href={ensureUrlProtocol(st.fileUrl || st.childFileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-2 group w-full">
-                      <div className="w-10 h-10 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
-                        {(st.fileUrl || st.childFileUrl)?.match(/\.(jpeg|jpg|gif|png|webp|bmp)($|\?)/i) ? (
-                          <img src={st.fileUrl || st.childFileUrl} alt="Attached preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <Paperclip className="w-5 h-5 text-blue-500" />
-                        )}
-                        <div className="absolute inset-0 bg-black/40 items-center justify-center hidden group-hover:flex transition-opacity">
-                          <ExternalLink className="w-4 h-4 text-white" />
+                  ) : (st.fileUrl || st.childFileUrl) ? (() => {
+                    const fileUrl = st.fileUrl || st.childFileUrl;
+                    const isImg = fileUrl?.match(/\.(jpeg|jpg|gif|png|webp|bmp)($|\?)/i);
+                    return (
+                      <a 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isImg) {
+                            e.preventDefault();
+                            setZoomableImageSrc(fileUrl);
+                          }
+                        }} 
+                        href={ensureUrlProtocol(fileUrl)} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="flex items-center gap-2 group w-full"
+                      >
+                        <div className="w-10 h-10 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
+                          {isImg ? (
+                            <img src={fileUrl} alt="Attached preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <Paperclip className="w-5 h-5 text-blue-500" />
+                          )}
+                          <div className="absolute inset-0 bg-black/40 items-center justify-center hidden group-hover:flex transition-opacity">
+                            <ExternalLink className="w-4 h-4 text-white" />
+                          </div>
                         </div>
-                      </div>
-                      <span className="text-sm font-medium text-blue-700 dark:text-[#8ab4f8] group-hover:text-blue-800 dark:text-[#8ab4f8] hover:underline truncate" title={st.fileName || st.childFileName || 'Download Attached File'}>
-                        {st.fileName || st.childFileName || 'Download Attached File'}
-                      </span>
-                    </a>
-                  ) : (
+                        <span className="text-sm font-medium text-blue-700 dark:text-[#8ab4f8] group-hover:text-blue-800 dark:text-[#8ab4f8] hover:underline truncate" title={st.fileName || st.childFileName || 'Download Attached File'}>
+                          {st.fileName || st.childFileName || 'Download Attached File'}
+                        </span>
+                      </a>
+                    );
+                  })() : (
                     <span className="text-xs text-slate-400 dark:text-[#838383] italic flex items-center gap-1"><Paperclip className="w-3 h-3" /> No file attached</span>
                   )}
                 </div>
