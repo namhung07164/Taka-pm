@@ -2,7 +2,7 @@ import React from 'react';
 import { Project, Task } from '../../types';
 import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays } from '../../lib/utils';
 import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown } from 'lucide-react';
-import { DetailTableRow } from '../DetailTab';
+import { DetailTableRow } from './detailTypes';
 import { EditableCell } from './EditableCell';
 import { PredecessorEditableCell } from './PredecessorEditableCell';
 import { FastToggle } from './FastToggle';
