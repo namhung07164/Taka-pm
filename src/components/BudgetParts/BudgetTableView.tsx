@@ -109,7 +109,7 @@ export function BudgetTableView({
   return (
     <div 
       onScroll={handleBudgetScroll}
-      className="hidden md:block flex-grow overflow-auto border-t border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] relative min-h-0"
+      className="hidden xl:block flex-grow overflow-auto border-t border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] relative min-h-0"
     >
       <table className="w-full text-left border-collapse table-fixed">
         <thead className="sticky top-0 z-30 bg-slate-100 dark:bg-[#28282b] text-slate-700 dark:text-[#c3c3c3] font-bold shadow-xs text-xs border-b border-slate-200 dark:border-[#38383a]">

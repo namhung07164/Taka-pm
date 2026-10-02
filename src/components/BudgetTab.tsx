@@ -144,7 +144,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = '' }: BudgetTabProps
       />
 
       {/* Mobile Summary Cards & List View */}
-      <div className="md:hidden flex flex-col gap-3 p-3 bg-slate-50 dark:bg-[#121214] border-t border-slate-200 dark:border-[#444446]">
+      <div className="xl:hidden flex flex-col gap-3 p-3 bg-slate-50 dark:bg-[#121214] border-t border-slate-200 dark:border-[#444446]">
         <BudgetSummaryCard
           totalGlobalBudget={totalGlobalBudget}
           totalGlobalActual={totalGlobalActual}

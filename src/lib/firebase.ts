@@ -1,8 +1,25 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, persistentSingleTabManager, CACHE_SIZE_UNLIMITED } from "firebase/firestore";
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager, 
+  persistentSingleTabManager, 
+  CACHE_SIZE_UNLIMITED,
+  writeBatch as firestoreWriteBatch, 
+  WriteBatch, 
+  setDoc as firestoreSetDoc, 
+  updateDoc as firestoreUpdateDoc, 
+  deleteDoc as firestoreDeleteDoc, 
+  collection, 
+  doc 
+} from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported, getToken } from "firebase/messaging";
+import { addPendingUpdate } from "./syncQueue";
+import { validateFirestoreData } from "./validation";
+
+export const APP_ID = 'taka-projects-app-v1';
 
 const firebaseConfigProd = {
     apiKey: "AIzaSyCsL4MZ76PLxV5-n0BHHLyb5dR_p5UmvTc",
@@ -63,7 +80,6 @@ export const messaging = async () => {
 };
 
 export { getToken };
-export const APP_ID = 'taka-projects-app-v1';
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive.file');
@@ -112,10 +128,6 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
-
-import { writeBatch as firestoreWriteBatch, WriteBatch, setDoc as firestoreSetDoc, updateDoc as firestoreUpdateDoc, deleteDoc as firestoreDeleteDoc, collection, doc } from "firebase/firestore";
-import { addPendingUpdate } from "./syncQueue";
-
 
 function cleanDataForAudit(data: any) {
   if (!data) return null;
@@ -246,8 +258,6 @@ function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, da
     data: data || {}
   } as any);
 }
-
-import { validateFirestoreData } from './validation';
 
 export function setDoc(docRef: any, data: any, options?: any) {
   validateFirestoreData(docRef.path, data, options?.merge === true);

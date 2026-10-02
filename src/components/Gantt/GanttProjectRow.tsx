@@ -11,36 +11,40 @@ import { GanttBaseline } from './GanttBaseline';
 export interface GanttProjectRowProps {
   p: Project;
   pIdx: number;
-  projectTasks: Task[];
+  projectTasks?: Task[];
   isExpanded: boolean;
-  expandedModularTasks: string[];
-  setExpandedModularTasks: React.Dispatch<React.SetStateAction<string[]>>;
-  isEditMode: boolean;
-  canWrite: boolean;
-  selectedProjectSet: Set<string>;
-  selectedProjectIds: string[];
-  setSelectedProjectIds: (ids: string[]) => void;
-  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
-  toggleProject: (id: string) => void;
-  isResizingSide: boolean;
-  startResizingSide: (e: React.MouseEvent) => void;
+  expandedModularTasks?: string[];
+  setExpandedModularTasks?: React.Dispatch<React.SetStateAction<string[]>>;
+  isEditMode?: boolean;
+  canWrite?: boolean;
+  selectedProjectSet?: Set<string>;
+  selectedProjectIds?: string[];
+  setSelectedProjectIds?: (ids: string[]) => void;
+  setSelectedTaskIds?: React.Dispatch<React.SetStateAction<string[]>>;
+  toggleProject?: (id: string) => void;
+  toggleProjectExpansion?: (id: string) => void;
+  isResizingSide?: boolean;
+  startResizingSide?: (e: React.MouseEvent) => void;
   sideWidth: number;
-  showStart: boolean;
-  startColWidth: number;
-  showFinish: boolean;
-  finishColWidth: number;
-  showParty: boolean;
-  partyColWidth: number;
-  showDuration: boolean;
-  durationColWidth: number;
-  timeUnits: any[];
-  delegationGroups: any[];
-  getRowVisibilityClass: (id: string) => string;
+  showStart?: boolean;
+  startColWidth?: number;
+  showFinish?: boolean;
+  finishColWidth?: number;
+  showParty?: boolean;
+  partyColWidth?: number;
+  showDuration?: boolean;
+  durationColWidth?: number;
+  timeUnits?: any[];
+  delegationGroups?: any[];
+  getRowVisibilityClass?: (id: string) => string;
   startDate: Date;
   dayWidth: number;
   activeTooltip: string | null;
   setActiveTooltip: (id: string | null) => void;
-  getBarColor: (status: string, duration?: string | number) => string;
+  getBarColor?: (status: string, duration?: string | number) => string;
+  isHideMode?: boolean;
+  toggleHideRow?: (id: string, e: React.MouseEvent) => void;
+  handleTogglePin?: (p: any) => void | Promise<void>;
   onNavigateToLayout?: (
     store: string,
     location: string,
@@ -50,14 +54,15 @@ export interface GanttProjectRowProps {
 }
 
 export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
-  p, pIdx, projectTasks, isExpanded, expandedModularTasks, setExpandedModularTasks, isEditMode, canWrite,
-  selectedProjectSet, selectedProjectIds, setSelectedProjectIds, setSelectedTaskIds,
-  toggleProject, isResizingSide, startResizingSide,
-  sideWidth, showStart, startColWidth, showFinish, finishColWidth, showParty, partyColWidth, showDuration, durationColWidth,
-  timeUnits, delegationGroups, getRowVisibilityClass, startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor,
-  onNavigateToLayout
+  p, pIdx, projectTasks = [], isExpanded, expandedModularTasks = [], setExpandedModularTasks, isEditMode = false, canWrite = false,
+  selectedProjectSet = new Set(), selectedProjectIds = [], setSelectedProjectIds, setSelectedTaskIds,
+  toggleProject, toggleProjectExpansion, isResizingSide = false, startResizingSide,
+  sideWidth, showStart = false, startColWidth = 80, showFinish = false, finishColWidth = 80, showParty = false, partyColWidth = 70, showDuration = false, durationColWidth = 50,
+  timeUnits = [], delegationGroups = [], getRowVisibilityClass = () => '', startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor = () => 'bg-blue-500',
+  isHideMode = false, toggleHideRow, handleTogglePin, onNavigateToLayout
 }) => {
   const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
+  const handleToggle = toggleProjectExpansion || toggleProject;
   const pStart = p.computedTakStart || p.start;
   const pEnd = p.computedTakCompl || p.handover;
 
@@ -110,25 +115,26 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
         Array.from(new Set([...prev, ...projectModularParentIds]))
       );
       if (!isExpanded) {
-        toggleProject(p.id!);
+        if (handleToggle) handleToggle(p.id!);
       }
     }
   };
 
   return (
-    <tr
+    <div
+      id={`gantt-project-row-${p.no}`}
       className={cn(
-        "table-row-optimized transition-colors group project-row",
+        "flex h-10 border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
         "bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a]",
         getRowVisibilityClass(rowId)
       )}
     >
-      <td
+      <div
         className={cn(
-          "print-sticky-x sticky left-0 z-30 border-b border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] p-2",
+          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] p-2 flex items-center shrink-0",
           "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:group-hover:bg-[#28282a]"
         )}
-        style={{ position: "sticky", left: 0, zIndex: 30, width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
+        style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
       >
         <div className="flex items-center gap-1 w-full relative">
           {isEditMode && (
@@ -138,15 +144,15 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
             >
               <input
                 type="checkbox"
-                checked={selectedProjectSet.has(String(p.no))}
+                checked={selectedProjectSet?.has(String(p.no)) || false}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
-                    setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
+                    if (setSelectedProjectIds) setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
+                    if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
                   } else {
-                    setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
+                    if (setSelectedProjectIds) setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
                     const pTasksIds = new Set(projectTasks.map((t) => t.id));
-                    setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
+                    if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
                   }
                 }}
                 className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
@@ -158,8 +164,8 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (canToggle) {
-                  toggleProject(p.id!);
+                if (canToggle && handleToggle) {
+                  handleToggle(p.id!);
                 }
               }}
               disabled={!canToggle}
@@ -221,7 +227,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
             }}
             onDoubleClick={(e) => {
               e.stopPropagation();
-              toggleProject(p.id!);
+              if (handleToggle) handleToggle(p.id!);
             }}
             className={cn(
               "flex items-center gap-1.5 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1.5 rounded transition-colors group/pname",
@@ -260,59 +266,67 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
             </div>
           </button>
         </div>
+        {startResizingSide && (
+          <div
+            className={cn(
+              "absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-40 transition-colors pointer-events-auto",
+              isResizingSide ? "bg-blue-500" : "bg-transparent group-hover/header:bg-slate-200 dark:group-hover/header:bg-slate-600"
+            )}
+            onMouseDown={startResizingSide}
+          />
+        )}
+      </div>
+
+      {showStart && (
         <div
           className={cn(
-            "absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-40 transition-colors pointer-events-auto",
-            isResizingSide ? "bg-blue-500" : "bg-transparent group-hover/header:bg-slate-200 dark:group-hover/header:bg-slate-600"
-          )}
-          onMouseDown={startResizingSide}
-        />
-      </td>
-      {showStart && (
-        <td
-          className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-blue-700 dark:text-[#8ab4f8] font-bold border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
+            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-blue-700 dark:text-[#8ab4f8] font-bold border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
             "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
           )}
-          style={{ position: "sticky", left: sideWidth, zIndex: 30, width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
+          style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
         >
           {formatGanttDate(pStart)}
-        </td>
+        </div>
       )}
+
       {showFinish && (
-        <td
+        <div
           className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-pink-700 dark:text-pink-400 font-bold border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
+            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-pink-700 dark:text-pink-400 font-bold border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
             "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
           )}
-          style={{ position: "sticky", left: sideWidth + (showStart ? startColWidth : 0), zIndex: 30, width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
+          style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
         >
           {formatGanttDate(pEnd)}
-        </td>
+        </div>
       )}
+
       {showParty && (
-        <td
+        <div
           className={cn(
-            "print-sticky-x sticky z-30 text-xs text-slate-500 dark:text-[#838383] border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center",
+            "print-sticky-x sticky z-30 text-xs text-slate-500 dark:text-[#838383] border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0",
             "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
           )}
-          style={{ position: "sticky", left: sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0), zIndex: 30, width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
+          style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
         >
           {p.party || "-"}
-        </td>
+        </div>
       )}
+
       {showDuration && (
-        <td
+        <div
           className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-b border-r border-slate-200 dark:border-[#444446] p-2 text-center font-bold",
+            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center font-bold shrink-0",
             "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
           )}
-          style={{ position: "sticky", left: sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0), zIndex: 30, width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
+          style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
         >
           {projectDuration}
-        </td>
+        </div>
       )}
-      <td colSpan={timeUnits.length} className="border-b border-slate-200 dark:border-[#444446] relative p-0 h-10">
+
+      {/* Right Timeline Area */}
+      <div className="flex-1 relative h-full flex items-center">
         <GanttBar
           startStr={pStart}
           endStr={pEnd}
@@ -334,18 +348,21 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
           startDate={startDate}
           dayWidth={dayWidth}
         />
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }, (prev, next) => {
-  const prevModularExpanded = prev.projectTasks?.some(t => prev.expandedModularTasks.includes(String(t.id)));
-  const nextModularExpanded = next.projectTasks?.some(t => next.expandedModularTasks.includes(String(t.id)));
+  const prevModularExpanded = prev.projectTasks?.some(t => prev.expandedModularTasks?.includes(String(t.id)));
+  const nextModularExpanded = next.projectTasks?.some(t => next.expandedModularTasks?.includes(String(t.id)));
   if (prevModularExpanded !== nextModularExpanded) return false;
+
+  const prevSelected = prev.selectedProjectSet ? prev.selectedProjectSet.has(String(prev.p.no)) : false;
+  const nextSelected = next.selectedProjectSet ? next.selectedProjectSet.has(String(next.p.no)) : false;
 
   return prev.isExpanded === next.isExpanded &&
          prev.isEditMode === next.isEditMode &&
          prev.canWrite === next.canWrite &&
-         prev.selectedProjectSet.has(String(prev.p.no)) === next.selectedProjectSet.has(String(next.p.no)) &&
+         prevSelected === nextSelected &&
          prev.sideWidth === next.sideWidth &&
          prev.startColWidth === next.startColWidth &&
          prev.finishColWidth === next.finishColWidth &&
@@ -355,10 +372,10 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
          prev.showFinish === next.showFinish &&
          prev.showParty === next.showParty &&
          prev.showDuration === next.showDuration &&
-         prev.timeUnits.length === next.timeUnits.length &&
+         prev.timeUnits?.length === next.timeUnits?.length &&
          prev.p === next.p &&
          prev.projectTasks === next.projectTasks &&
-         prev.startDate.getTime() === next.startDate.getTime() &&
+         prev.startDate?.getTime() === next.startDate?.getTime() &&
          prev.dayWidth === next.dayWidth &&
          (prev.activeTooltip === `project-${prev.p.no}` || next.activeTooltip === `project-${next.p.no}` ? prev.activeTooltip === next.activeTooltip : true);
 });

@@ -4,58 +4,89 @@ import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 
 export interface GanttTimelineHeaderProps {
-  isEditMode: boolean;
-  isAllSelected: boolean;
-  onToggleSelectAll: (checked: boolean) => void;
-  hasAnyExpanded: boolean;
-  hasAnyModularExpanded: boolean;
-  toggleAll: () => void;
-  toggleAllModular: () => void;
-  isResizingSide: boolean;
-  startResizingSide: (e: React.MouseEvent) => void;
-  sideWidth: number;
-  showStart: boolean;
-  startColWidth: number;
-  showFinish: boolean;
-  finishColWidth: number;
-  showParty: boolean;
-  partyColWidth: number;
-  showDuration: boolean;
-  durationColWidth: number;
-  handleToggleColumn: (columnId: string) => void;
+  isEditMode?: boolean;
+  isAllSelected?: boolean;
+  onToggleSelectAll?: (checked: boolean) => void;
+  hasAnyExpanded?: boolean;
+  hasAnyModularExpanded?: boolean;
+  toggleAll?: () => void;
+  toggleAllModular?: () => void;
+  isResizingSide?: boolean;
+  startResizingSide?: (e: React.MouseEvent) => void;
+  sideWidth?: number;
+  showStart?: boolean;
+  startColWidth?: number;
+  showFinish?: boolean;
+  finishColWidth?: number;
+  showParty?: boolean;
+  partyColWidth?: number;
+  showDuration?: boolean;
+  durationColWidth?: number;
+  handleToggleColumn?: (columnId: string) => void;
   timeUnits: Array<{
     date: Date;
     days: number;
-    labelPrimary: string;
-    labelSecondary: string;
+    label?: string;
+    labelPrimary?: string;
+    labelSecondary?: string;
   }>;
   dayWidth: number;
 }
 
 export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.memo(({
-  isEditMode,
-  isAllSelected,
+  isEditMode = false,
+  isAllSelected = false,
   onToggleSelectAll,
-  hasAnyExpanded,
-  hasAnyModularExpanded,
+  hasAnyExpanded = false,
+  hasAnyModularExpanded = false,
   toggleAll,
   toggleAllModular,
-  isResizingSide,
+  isResizingSide = false,
   startResizingSide,
   sideWidth,
-  showStart,
-  startColWidth,
-  showFinish,
-  finishColWidth,
-  showParty,
-  partyColWidth,
-  showDuration,
-  durationColWidth,
+  showStart = false,
+  startColWidth = 80,
+  showFinish = false,
+  finishColWidth = 80,
+  showParty = false,
+  partyColWidth = 70,
+  showDuration = false,
+  durationColWidth = 50,
   handleToggleColumn,
   timeUnits,
   dayWidth,
 }) => {
   const { t } = useLanguage();
+
+  if (sideWidth === undefined) {
+    return (
+      <div className="flex h-full">
+        {timeUnits.map((unit) => {
+          const width = unit.days * dayWidth;
+          return (
+            <div
+              key={unit.date.getTime()}
+              className="flex flex-col justify-center items-center border-r border-slate-200 dark:border-slate-800 text-center shrink-0 px-1 py-1"
+              style={{
+                width: `${width}px`,
+                minWidth: `${width}px`,
+                maxWidth: `${width}px`,
+              }}
+            >
+              <div className="text-xs font-bold text-slate-700 dark:text-[#e3e3e3] truncate">
+                {unit.labelPrimary || unit.label}
+              </div>
+              {unit.labelSecondary && (
+                <div className="text-[10px] text-slate-400 dark:text-[#838383] truncate">
+                  {unit.labelSecondary}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <thead>

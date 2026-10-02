@@ -122,7 +122,7 @@ export function BudgetFilterToolbar({
           title="Export Filtered CSV"
         >
           <Download className="w-4 h-4" />
-          <span className="hidden md:inline">{t('Export CSV')}</span>
+          <span className="hidden sm:inline">{t('Export CSV')}</span>
         </button>
         
         {canWrite && (
@@ -140,7 +140,7 @@ export function BudgetFilterToolbar({
               title="Import Budget CSV (Updates matching projects)"
             >
               <Upload className="w-4 h-4" />
-              <span className="hidden md:inline">{t('Import CSV')}</span>
+              <span className="hidden sm:inline">{t('Import CSV')}</span>
             </button>
           </>
         )}

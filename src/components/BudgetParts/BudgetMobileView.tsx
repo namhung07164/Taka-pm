@@ -74,7 +74,7 @@ export function BudgetMobileView({
   const paginatedRoots = filteredRoots.slice(0, visibleCount);
 
   return (
-    <div className="md:hidden flex-grow overflow-y-auto flex flex-col gap-3 p-3 bg-slate-50 dark:bg-[#121214] relative min-h-0">
+    <div className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-3 p-3 bg-slate-50 dark:bg-[#121214] relative min-h-0">
       {/* Expand / Collapse All Parents for Mobile */}
       <div className="flex justify-between items-center px-1">
         <span className="text-xs text-slate-500 font-medium">

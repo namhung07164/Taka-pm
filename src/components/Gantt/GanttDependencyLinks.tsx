@@ -1,10 +1,5 @@
 import React from 'react';
-
-export interface DependencyLine {
-  id: string;
-  d: string;
-  arrowDir: string;
-}
+import { DependencyLine } from './ganttTypes';
 
 export interface GanttDependencyLinksProps {
   dependencyLines: DependencyLine[];
@@ -29,15 +24,15 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
           <polygon points="0 0, 6 3, 0 6" fill="#1d4ed8" />
         </marker>
       </defs>
-      {dependencyLines.map((line) => (
+      {dependencyLines.map((line, idx) => (
         <path
-          key={line.id}
+          key={line.id || `dep-${idx}`}
           d={line.d}
           fill="none"
-          stroke="#1d4ed8"
+          stroke={line.color || "#1d4ed8"}
           strokeWidth="1.5"
           markerEnd="url(#arrowhead)"
-          className="opacity-70"
+          className={line.isAnimated ? "opacity-90 animate-pulse" : "opacity-70"}
         />
       ))}
     </svg>

@@ -21,6 +21,8 @@ interface GanttTooltipPredecessorProps {
   tasks: Task[];
   projects: Project[];
   canWrite: boolean;
+  isEditing?: boolean;
+  setIsEditing?: (val: boolean) => void;
   onEditingChange?: (isEditing: boolean) => void;
   compact?: boolean;
 }
@@ -30,10 +32,19 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
   tasks,
   projects,
   canWrite,
+  isEditing: controlledIsEditing,
+  setIsEditing: controlledSetIsEditing,
   onEditingChange,
   compact = false,
 }: GanttTooltipPredecessorProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  const [internalIsEditing, setInternalIsEditing] = useState(false);
+  const isEditing = controlledIsEditing !== undefined ? controlledIsEditing : internalIsEditing;
+  const setIsEditing = (val: boolean) => {
+    if (controlledSetIsEditing) controlledSetIsEditing(val);
+    else setInternalIsEditing(val);
+    if (onEditingChange) onEditingChange(val);
+  };
+
   const [val, setVal] = useState(task.predecessor || '');
   const [isSaving, setIsSaving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
