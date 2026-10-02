@@ -1461,6 +1461,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
       + **Khôi Phục & Tối Ưu Quản Lý Delegation Task Con / Task Modular**:
         - **Cuộn Trôi Trải Nghiệm Tracker Trong Project Modal**: Tối ưu lại khung Modal Tracker/Delegation với độ cao động (`h-[92vh] md:h-[88vh] flex flex-col`) và khoảng đệm cuộn trượt (`pb-20 sm:pb-24 overscroll-contain`), loại bỏ hoàn toàn hiện tượng bị cắt/xén thẻ delegation khi cuộn xuống xem danh sách task con modular. Tự động nhận diện và hiển thị huy hiệu **`↳ SUB (Cha: [Tên Task Mẹ])`** trực quan.
         - **Khôi Phục Ô Bật/Tắt Delegation Trong Task Con Modular**: Khôi phục ô bật/tắt công tắc Delegation (`FastToggle`) và nút truy cập Tracker trực tiếp ngay trong cửa sổ chỉnh sửa task (`TaskBasicInfo` / `TaskModal`). Bổ sung huy hiệu **`Delegation: ON`** và chỉ báo **`↳ Sub-task Modular`** đầy đủ trên mọi giao diện danh sách và modal nhóm task.
+        - **Thêm Lại Pro Status Ở Bên Phải Task Mẹ & Tối Ưu Bỏ Trạng Thái Trùng**:
+          + **Bổ Sung Pro Status Cho Task Mẹ**: Hiển thị lại huy hiệu Program/Plan Status (**`Pro: ON PROCESS`**, **`Pro: COMPLETED`**, **`Pro: UPCOMING`**, **`Pro: DELAY`**) ở khu vực bên tay phải góc header task mẹ (`TaskChat` & `DelegationTab`), đồng bộ màu sắc chuẩn với giao diện General Tab.
+          + **Tự Động Loại Bỏ Status Trùng Lặp**: Tự động ẩn các huy hiệu trạng thái trùng lặp khi trạng thái thực tế `Act:` trùng với `Pro:`, hoặc khi bảng chọn trạng thái subtask đã hiển thị nhãn thao tác trực tiếp. Mang lại giao diện gọn gàng, tinh tế và chuyên nghiệp.
    - **Bảo Toàn Nghiệp Vụ & An Toàn Bộ Nhớ**:
      + Giữ nguyên 100% logic kinh doanh tài chính, WBS, liên kết Predecessor, phân quyền RBAC và cơ chế kéo thả mượt mà 60fps.
      + Tự động quản lý giải phóng bộ nhớ (cleanup event listeners, animation frames, WebGL/Canvas context) chống tràn RAM trên các thiết bị máy tính bảng và POS di động.

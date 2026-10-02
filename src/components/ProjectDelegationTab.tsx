@@ -240,13 +240,30 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
                     </h4>
                     <span className={cn("text-[10px] font-mono mt-1", groupSubTitleColor)}>Task Code: {linkedGroup._taskCode}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {(() => {
+                      const proStatus = planStatus || 'On process';
+                      let proStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold';
+                      if (proStatus === 'Completed') {
+                        proStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold';
+                      } else if (proStatus === 'Upcoming') {
+                        proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
+                      } else if (proStatus === 'Delay') {
+                        proStatusColorClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white border-rose-500 font-extrabold';
+                      }
                       const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
+                      const isDupStatus = actualStatus.label.toLowerCase() === proStatus.toLowerCase();
                       return (
-                        <span className={`text-[10px] px-2 py-1 rounded-full font-bold border whitespace-nowrap ${actualStatus.color}`}>
-                          Act: {actualStatus.label}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
+                            Pro: {proStatus}
+                          </span>
+                          {!isDupStatus && (
+                            <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
+                              Act: {actualStatus.label}
+                            </span>
+                          )}
+                        </div>
                       );
                     })()}
                     <a 
@@ -393,9 +410,6 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({ p
                           </div>
                           <div className="flex flex-col gap-1 mt-1">
                             <div className="flex items-center gap-2">
-                              <span className={cn("px-1.5 py-0 rounded text-[10px] leading-none h-5 flex items-center font-bold border shrink-0", flowColor)}>
-                                {flowTxt}
-                              </span>
                               <select
                                 value={selectValue === 'None' ? 'None' : selectValue}
                                 onChange={async (e) => {

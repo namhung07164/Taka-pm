@@ -574,24 +574,30 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                 <FileText className={cn("w-4 h-4", groupIconColor)} />
                 {task.name || 'Delegated Sub-tasks'}
               </h4>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {(() => {
-                  const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
-                  let planColorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-bold';
-                  if (planStatus === 'Completed') {
-                    planColorClass = 'bg-emerald-600 text-white border-emerald-500 font-extrabold shadow-2xs';
-                  } else if (planStatus === 'On process') {
-                    planColorClass = 'bg-amber-500 text-white border-amber-400 font-extrabold shadow-2xs';
+                  const proStatus = planStatus || 'On process';
+                  let proStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold';
+                  if (proStatus === 'Completed') {
+                    proStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold';
+                  } else if (proStatus === 'Upcoming') {
+                    proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
+                  } else if (proStatus === 'Delay') {
+                    proStatusColorClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white border-rose-500 font-extrabold';
                   }
+                  const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
+                  const isDupStatus = actualStatus.label.toLowerCase() === proStatus.toLowerCase();
                   return (
-                    <>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border whitespace-nowrap uppercase ${planColorClass}`}>
-                        Pl: {planStatus}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
+                        Pro: {proStatus}
                       </span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border whitespace-nowrap uppercase ${actualStatus.color}`}>
-                        Act: {actualStatus.label}
-                      </span>
-                    </>
+                      {!isDupStatus && (
+                        <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
+                          Act: {actualStatus.label}
+                        </span>
+                      )}
+                    </div>
                   );
                 })()}
                 <a 
@@ -722,9 +728,6 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                   </div>
                   <div className="flex flex-col gap-1 mt-1">
                     <div className="flex items-center gap-2">
-                      <span className={cn("px-1.5 py-0 rounded text-[10px] leading-none h-5 flex items-center font-bold border shrink-0", flowColor)}>
-                        {flowTxt}
-                      </span>
                       <select
                         value={selectValue === 'None' ? 'None' : selectValue}
                         onChange={async (e) => {
@@ -925,8 +928,7 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                  <span className="text-xs font-bold text-slate-500">{st.party} (Report)</span>
                </div>
                <div className="flex flex-col gap-1 bg-blue-50/40 dark:bg-[#28282a] rounded-xl rounded-tl-none border border-blue-100 p-3 max-w-[85%]">
-                  <span className="text-[9px] font-bold text-blue-600 dark:text-[#8ab4f8] uppercase tracking-wider">Report for {st.name || st.party}</span>
-                  <div className="text-sm text-slate-700 dark:text-[#c3c3c3] font-medium whitespace-pre-wrap">{st.report || st.childReport || <span className="italic text-slate-400 dark:text-[#838383] font-normal">No report yet</span>}</div>
+                   <div className="text-sm text-slate-700 dark:text-[#c3c3c3] font-medium whitespace-pre-wrap">{st.report || st.childReport || <span className="italic text-slate-400 dark:text-[#838383] font-normal">No report yet</span>}</div>
                   {st.attachments && st.attachments.length > 0 ? (
                      <div className="mt-2 flex flex-col gap-1.5 text-[10px]">
                        {st.attachments.map((att, iIdx) => (
