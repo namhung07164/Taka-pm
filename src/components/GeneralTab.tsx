@@ -392,6 +392,15 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
   const stores = allowedStores;
   const locationOptions = useLocationOptions();
 
+  useEffect(() => {
+    if (locationOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
+
   const statusWeight: Record<string, number> = {
     'On process': 1,
     'Upcoming': 2,
@@ -406,9 +415,9 @@ export function GeneralTab({      onProjectClick}: GeneralTabProps) {
     const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
     const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
     const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
-    const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
-    const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
-    const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
+    const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+    const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+    const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
     const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
     let matchesStatus = true;
     if (statusFilter === 'On process + Upcoming 3 days') {

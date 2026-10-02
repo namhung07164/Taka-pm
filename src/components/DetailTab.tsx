@@ -480,14 +480,20 @@ export function DetailTab({
   });
 
   const allowedStoreOptions = useMemo(() => {
-    if (currentUser.role === 'admin') return [{label: 'HCM', value: 'HCM'}, {label: 'HN', value: 'HN'}];
-    const options = [];
-    if (currentUser.storePermissions?.hcm) options.push({label: 'HCM', value: 'HCM'});
-    if (currentUser.storePermissions?.hn) options.push({label: 'HN', value: 'HN'});
-    return options;
+    const allowed = getUserAllowedStores(currentUser);
+    return allowed.map(s => ({ label: s, value: s }));
   }, [currentUser]);
 
   const locationFilterOptions = useLocationOptions();
+
+  useEffect(() => {
+    if (locationFilterOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationFilterOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationFilterOptions, globalLocationFilter, setGlobalLocationFilter]);
   const allowedLocationOptions = useMemo(() => {
     if (currentUser.role === 'admin') return Array.from(new Set(locations));
     return Array.from(new Set(locations)).filter(loc=> currentUser.locationPermissions?.['all'] || currentUser.locationPermissions?.[loc.toLowerCase()]);
@@ -2265,9 +2271,9 @@ export function DetailTab({
     return sortedProjects.filter(p => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
       const info = projectInfoMap.get(pKey) || getProjectInfo(p);
-      const pYear = p.year ? String(p.year) : (info.computedTakStart ? String(info.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+      const pYear = p.year ? String(p.year).trim() : (info.computedTakStart ? String(info.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
       if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
       let matchesStatus = true;
       if (statusFilter === 'On process + Upcoming 3 days') {

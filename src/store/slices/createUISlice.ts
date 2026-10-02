@@ -9,7 +9,7 @@ const getInitialActiveTab = (): TabId => {
   return "general";
 };
 
-export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
+export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get) => ({
   isFocusMode: false,
   setIsFocusMode: (val) => set({ isFocusMode: val }),
   ribbonDisplayMode: (safeGetItemLocal("taka_ribbon_display_mode") as "always_show" | "tabs_only" | "fullscreen") || "always_show",
@@ -202,7 +202,14 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
   })(),
   setGlobalStoreFilter: (filter) => {
     safeSetItemLocal("taka_store_filter", filter);
-    set({ globalStoreFilter: filter });
+    const prev = get().globalStoreFilter;
+    if (prev !== filter) {
+      // Switching store (e.g. HCM -> HN or HN -> HCM): reset location filter to avoid stale floor filters blocking new store
+      safeSetItemLocal("taka_location_filter", JSON.stringify([]));
+      set({ globalStoreFilter: filter, globalLocationFilter: [] });
+    } else {
+      set({ globalStoreFilter: filter });
+    }
   },
   globalYearFilter: (() => {
     const direct = safeGetItemLocal("taka_year_filter");
@@ -347,6 +354,4 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => (
     safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(defaultVal));
     return { layoutTooltipVisibility: defaultVal };
   }),
-  zoomableImageSrc: null,
-  setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
 });

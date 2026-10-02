@@ -413,10 +413,10 @@ export function GanttTab({
       const batch = writeBatch(db);
       finalChildTaskIds.forEach((tId) => {
         const ref = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tId);
-        batch.set(ref, {
+        batch.update(ref, {
           parentTaskId,
           updatedAt: nowIso,
-        }, { merge: true });
+        });
       });
       batch.commit().catch((err) => console.error("Batch update modular tasks error:", err));
     } catch (err) {
@@ -448,10 +448,10 @@ export function GanttTab({
       const batch = writeBatch(db);
       childTaskIds.forEach((tId) => {
         const ref = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tId);
-        batch.set(ref, {
+        batch.update(ref, {
           parentTaskId: deleteField(),
           updatedAt: new Date().toISOString(),
-        }, { merge: true });
+        });
       });
       batch.commit().catch((err) => console.error("Batch unlink modular tasks error:", err));
     } catch (err) {
@@ -786,9 +786,9 @@ export function GanttTab({
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+      const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
       if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
 
       if (filterProjectStatus && filterProjectStatus !== "all") {
@@ -2003,7 +2003,7 @@ export function GanttTab({
           (proj) => String(proj.no) === id || proj.id === id,
         );
         if (p && p.id) {
-          batch.set(
+          batch.update(
             doc(
               db,
               "artifacts",
@@ -2014,7 +2014,6 @@ export function GanttTab({
               p.id,
             ),
             { realtimeUpdate: newToggleState },
-            { merge: true }
           );
         }
       }
@@ -2022,10 +2021,9 @@ export function GanttTab({
       for (const id of selectedTaskIds) {
         const t = tasks.find((tsk) => tsk.id === id);
         if (t) {
-          batch.set(
+          batch.update(
             doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", t.id),
             { realtimeUpdate: newToggleState },
-            { merge: true }
           );
         }
       }

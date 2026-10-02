@@ -808,9 +808,9 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
   const [visibleCount, setVisibleCount] = useState(30);
 
   const filterNode = (node: any): boolean => {
-    const pYear = node.year ? String(node.year) : (node.start ? String(node.start).substring(0, 4) : null);
-    const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
-    const matchesStore = effectiveStore === 'all' || node.store === effectiveStore;
+    const pYear = node.year ? String(node.year).trim() : (node.start ? String(node.start).substring(0, 4) : null);
+    const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+    const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
     const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location));
     
     const hasBudget = (node.totalBudget || 0) !== 0;
@@ -825,9 +825,9 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = ''}: BudgetTabProps)
 
     if (node.children && node.children.length > 0) {
       const validChildren = node.children.filter((child: any) => {
-        const cYear = child.year ? String(child.year) : null;
-        const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === globalYearFilter;
-        const cMatchesStore = effectiveStore === 'all' || !child.store || child.store === effectiveStore;
+        const cYear = child.year ? String(child.year).trim() : null;
+        const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === String(globalYearFilter).trim();
+        const cMatchesStore = effectiveStore === 'all' || !child.store || String(child.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim();
         const cMatchesLocation = globalLocationFilter.length === 0 || (!child.location) || globalLocationFilter.includes(child.location);
         
         const cHasBudget = (child.budget || 0) !== 0;

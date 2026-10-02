@@ -57,7 +57,7 @@ import { AppModals } from "./components/AppModals";
 import { PrintOptionsPanel } from "./components/PrintOptionsPanel";
 import { Toast } from "./components/Toast";
 import { initAuth } from './lib/firebase';
-import { enrichProjects, calculateActiveNotifications } from "./lib/utils";
+import { enrichProjects, calculateActiveNotifications, getUserAllowedStores } from "./lib/utils";
 import { findProjectLayoutUnit } from "./lib/layoutUnitFinder";
 import { undoManager, UndoAction } from "./lib/undoManager";
 import { useAppStore } from "./store/useAppStore";
@@ -402,16 +402,15 @@ export default function App() {
     let visibleEnriched = enriched.filter((p) => {
       // Store check
       const store = String(p.store || "").toUpperCase().trim();
-      let hasStorePerm = false;
+      const allowedStores = getUserAllowedStores(currentUser);
+      let hasStorePerm = allowedStores.includes(store);
+      if (!hasStorePerm && (store === "HCM" || store === "HN")) {
+        hasStorePerm = allowedStores.includes(store);
+      } else if (!hasStorePerm && store !== "HCM" && store !== "HN") {
+        hasStorePerm = currentUser.role === "admin" || allowedStores.length >= 2;
+      }
       const hasLocAll = currentUser.locationPermissions?.all === true;
       const hasPartyAll = currentUser.partyPermissions?.all === true;
-      if (store === "HCM" && currentUser.storePermissions?.hcm)
-        hasStorePerm = true;
-      else if (store === "HN" && currentUser.storePermissions?.hn)
-        hasStorePerm = true;
-      else if (store !== "HCM" && store !== "HN") {
-        hasStorePerm = currentUser.role === "admin" || !!(currentUser.storePermissions?.hcm && currentUser.storePermissions?.hn);
-      }
 
       // Location check (Dynamic)
       const loc = String(p.location || "").toLowerCase().trim();
@@ -631,14 +630,15 @@ export default function App() {
 
     return enriched.filter((p) => {
       const store = String(p.store || "").toUpperCase().trim();
-      let hasStorePerm = false;
+      const allowedStores = getUserAllowedStores(currentUser);
+      let hasStorePerm = allowedStores.includes(store);
+      if (!hasStorePerm && (store === "HCM" || store === "HN")) {
+        hasStorePerm = allowedStores.includes(store);
+      } else if (!hasStorePerm && store !== "HCM" && store !== "HN") {
+        hasStorePerm = currentUser.role === "admin" || allowedStores.length >= 2;
+      }
       const hasLocAll = currentUser.locationPermissions?.all === true;
       const hasPartyAll = currentUser.partyPermissions?.all === true;
-      if (store === "HCM" && currentUser.storePermissions?.hcm) hasStorePerm = true;
-      else if (store === "HN" && currentUser.storePermissions?.hn) hasStorePerm = true;
-      else if (store !== "HCM" && store !== "HN") {
-        hasStorePerm = currentUser.role === "admin" || !!(currentUser.storePermissions?.hcm && currentUser.storePermissions?.hn);
-      }
 
       const loc = String(p.location || "").toLowerCase().trim();
       let permLoc = loc;

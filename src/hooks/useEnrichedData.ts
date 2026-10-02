@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { enrichProjects } from '../lib/utils';
+import { enrichProjects, getUserAllowedStores } from '../lib/utils';
 import { Task, DelegationGroup } from '../types';
 
 export function useEnrichedData() {
@@ -48,16 +48,15 @@ export function useEnrichedData() {
     };
 
     // 2. Filter enrichedProjects with O(1) task lookup
+    const allowedStores = getUserAllowedStores(currentUser);
     const enrichedProjects = enriched.filter((p) => {
       // Store check
       const store = String(p.store || "").toUpperCase().trim();
-      let hasStorePerm = false;
-      if (store === "HCM" && currentUser.storePermissions?.hcm)
-        hasStorePerm = true;
-      else if (store === "HN" && currentUser.storePermissions?.hn)
-        hasStorePerm = true;
-      else if (store !== "HCM" && store !== "HN") {
-        hasStorePerm = !!(currentUser.storePermissions?.hcm && currentUser.storePermissions?.hn);
+      let hasStorePerm = allowedStores.includes(store);
+      if (!hasStorePerm && (store === "HCM" || store === "HN")) {
+        hasStorePerm = allowedStores.includes(store);
+      } else if (!hasStorePerm && store !== "HCM" && store !== "HN") {
+        hasStorePerm = allowedStores.length >= 2;
       }
 
       // Location check (Dynamic)

@@ -288,8 +288,8 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
     const matchedProjects = projects.filter(p => {
       const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : null);
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
 
       const groupCosts = getGroupCostsForProject(p);
 
@@ -877,8 +877,8 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
     return projects.filter(p=> {
       const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : null);
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
       if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
 
       const groupCosts = getGroupCostsForProject(p);

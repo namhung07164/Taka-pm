@@ -12,7 +12,7 @@ import { useAppStore } from "../store/useAppStore";
 import { usePerformanceStore } from "../store/usePerformanceStore";
 import {   auth, db, APP_ID , writeBatch , setDoc } from "../lib/firebase";
 import { getPendingUpdates, clearPendingUpdates } from "../lib/syncQueue";
-import { getEffectiveStoreFilter, ACTIVE_YEARS, PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../lib/utils";
+import { getEffectiveStoreFilter, getUserAllowedStores, ACTIVE_YEARS, PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../lib/utils";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { collection, onSnapshot, query, where, doc, getDocs, getDoc, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
 import {
@@ -324,8 +324,7 @@ export function useFirebaseData() {
   // Stable permission indicators to prevent re-querying Firestore on every profile/readNotifs change
   const userCanSee = currentUser?.role === "admin" || !!currentUser?.canSee;
   const userRole = currentUser?.role;
-  const userHcmPerm = !!currentUser?.storePermissions?.hcm;
-  const userHnPerm = !!currentUser?.storePermissions?.hn;
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
 
   // 3. Stable Query Signature (Đóng băng Chữ ký Truy vấn)
   // Ensures that fast rehydration of store variables doesn't trigger multiple duplicate Firebase queries.
@@ -333,8 +332,8 @@ export function useFirebaseData() {
   // Incremental Keep-Alive Pool (projectsPool, tasksPool, costsPool) instead of unmounting and refetching.
   const querySignature = useMemo(() => {
     if (!user?.uid || !userCanSee) return null;
-    return `${user.uid}_${userRole}_${userHcmPerm}_${userHnPerm}`;
-  }, [user?.uid, userCanSee, userRole, userHcmPerm, userHnPerm]);
+    return `${user.uid}_${userRole}_${allowedStores.slice().sort().join('-')}`;
+  }, [user?.uid, userCanSee, userRole, allowedStores]);
 
   // Layer 1 Security & Optimization: Build query to fetch only allowed stores AND selected year
   const buildStoreAndYearQuery = useCallback((colRef: any, storeField: string, yearField: string, yearValue: string) => {
@@ -350,17 +349,13 @@ export function useFirebaseData() {
     
     // 2. Store Filter
     if (userRole !== 'admin') {
-      const stores: string[] = [];
-
-      if (userHcmPerm) stores.push('HCM');
-      if (userHnPerm) stores.push('HN');
-      
-      if (stores.length === 0) {
+      if (allowedStores.length === 0) {
         // No access
         q = query(q, where(storeField, '==', 'NONE_NO_ACCESS'));
-      } else if (stores.length === 1) {
-        // Single store access -> safe to use == along with year == (index merging handles it automatically)
-        q = query(q, where(storeField, '==', stores[0]));
+      } else if (allowedStores.length === 1) {
+        // Single store access -> safe to support both uppercase and lowercase values
+        const singleStore = allowedStores[0];
+        q = query(q, where(storeField, 'in', [singleStore, singleStore.toLowerCase()]));
       } else {
         // Has both HCM and HN -> No need to filter by store field since those are the only 2 options.
         // This avoids using 'in' combined with '==', preventing "Missing composite index" errors!
@@ -368,7 +363,7 @@ export function useFirebaseData() {
     }
     
     return q;
-  }, [userRole, userHcmPerm, userHnPerm]);
+  }, [userRole, allowedStores]);
 
   // 2.1 Unified Global Delta Sync for Projects (Native Firebase Cache)
   const projectsPool = useRef<Map<string, () => void>>(new Map());

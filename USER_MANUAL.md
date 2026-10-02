@@ -1461,3 +1461,18 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Hệ thống lập tức tính toán lại toàn bộ thông số dự án cha tương ứng: `taskCount` (tổng số lượng task), `taskSummaries` (danh sách tóm tắt mã phụ, tên, ngày bắt đầu và kết thúc), `computedTakStart` (ngày bắt đầu sớm nhất), `computedTakCompl` (ngày hoàn thành muộn nhất), `computedOpening` và tỷ lệ tiến độ thực tế / kế hoạch.
      + Cập nhật ngay lập tức vào bộ nhớ Zustand (0ms) và đồng bộ trực tiếp lên tài liệu dự án trên Firestore (`taka_projects`) bằng phương thức an toàn `setDoc({ merge: true })`.
      + Đảm bảo khi đóng/thu gọn dự án (collapsed), hàng dự án luôn hiển thị đầy đủ số lượng task `(33)`, ngày bắt đầu và ngày kết thúc chuẩn xác mà không cần phải mở rộng mới cập nhật.
+
+20. **Tối Ưu Tải Dữ Liệu Chi Nhánh Hà Nội (HN) & Niên Độ 2027 Trên Desktop**:
+   - **Khắc Phục Tự Động Xung Đột Bộ Lọc Vị Trí (Location Filter Auto-Reset)**: Khi người dùng chuyển đổi chi nhánh (Store) từ HCM sang HN (hoặc ngược lại) trên Desktop/Mobile, hệ thống tự động reset bộ lọc vị trí (`globalLocationFilter: []`) về "All Locations" để ngăn chặn các tầng của HCM (như B1, B2, L1...) làm ẩn toàn bộ dự án của chi nhánh HN.
+   - **Đồng Bộ Quyền Truy Cập Chi Nhánh Cho Toàn Bộ User (RBAC Store Resolution)**: Hệ thống sử dụng hàm chuẩn hóa `getUserAllowedStores` thay vì kiểm tra thủ công cờ cứng, đảm bảo các tài khoản Manager, CP, Staff hoặc tài khoản mặc định đều có thể truy cập và tải đầy đủ dữ liệu dự án, công việc và chi phí của chi nhánh HN và niên độ 2027.
+   - **Chuẩn Hóa So Khớp Không Phân Biệt Hoa Thường**: Toàn bộ các bộ lọc chi nhánh và năm trên các Tab (General, Detail, Gantt, Cost, Budget, Layout) đều so khớp chuỗi không phân biệt chữ hoa/thường (`'hn'` và `'HN'`), đồng thời hỗ trợ cả kiểu số `2027` lẫn kiểu chuỗi `'2027'` trên Firestore.
+
+21. **Nâng Cấp Trình Xem Ảnh Phóng To Toàn Màn Hình Trong Tooltip Bản Đồ (Tooltip Lightbox Modal)**:
+   - **Hỗ Trợ Tự Động Chuyển Đổi Link Google Drive & Dropbox**: Khi người dùng đính kèm link hình ảnh từ Google Drive (dạng `drive.google.com/file/d/.../view` hoặc `open?id=...`), hệ thống tự động chuyển đổi sang đường dẫn thumbnail chất lượng cao (`&sz=w1600`) để trình duyệt hiển thị ảnh trực tiếp mà không bị lỗi trang trắng/ảnh hỏng.
+   - **Phóng To Nhanh 1-Chạm Ngay Trên Header Tooltip**: Nhấp trực tiếp vào ảnh thumbnail nhỏ ở góc phải thanh tiêu đề tooltip sẽ lập tức mở modal phóng to ảnh HD toàn màn hình.
+   - **Nút Đóng "X" Nổi Bật & Phím Tắt Escape**:
+     + Trang bị nút đóng tròn "X" kích thước lớn, màu sắc tương phản cao nổi cố định ở góc trên bên phải màn hình (`fixed top-3 right-3 sm:top-5 sm:right-5`), luôn hiển thị rõ ràng trên mọi kích thước màn hình và thiết bị (Desktop, iPad, Mobile).
+     + Nút đóng rõ ràng kèm nhãn `Đóng (Esc)` trên thanh công cụ của modal.
+     + Nhấn phím `Escape` trên bàn phím hoặc nhấp vào vùng đen nền mờ (Backdrop) sẽ lập tức đóng trình xem ảnh.
+     + Hỗ trợ giao diện thông báo và nút "Mở liên kết trong tab mới" nếu đường dẫn là tài liệu/trang web không cho phép tải trực tiếp dạng thẻ ảnh.
+

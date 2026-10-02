@@ -1,6 +1,5 @@
 import React, { useMemo, useCallback, useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ZoomableImageViewer } from '../ZoomableImageViewer';
 import { 
   MessageSquare, 
   X,
@@ -24,6 +23,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { doc, setDoc, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
+import { LayoutUnitLightboxModal, normalizeImageUrl } from './LayoutUnitLightboxModal';
 
 interface LayoutUnitTooltipProps {
   hoverInfo: {
@@ -253,14 +253,13 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         }
       }
 
-      const finalTop = Math.max(safeTop, top);
       el.style.position = 'fixed';
       el.style.left = `${left}px`;
       el.style.right = `${right}px`;
-      el.style.top = `${finalTop}px`;
+      el.style.top = `${Math.max(safeTop, top)}px`;
       el.style.width = `calc(100vw - ${pad * 2}px)`;
       el.style.maxWidth = '420px';
-      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - finalTop - bottomMargin)}px)`;
+      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
       el.style.margin = '0 auto';
       el.style.transform = 'none';
     } else {
@@ -305,7 +304,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.top = `${top}px`;
       el.style.width = '370px';
       el.style.maxWidth = `calc(100vw - ${pad * 2}px)`;
-      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - top - bottomMargin)}px)`;
+      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
       el.style.margin = '0';
       el.style.transform = 'none';
     }
@@ -745,8 +744,27 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       });
     }
 
+    // 5. Project comments attachments
+    if (p?.comments && Array.isArray(p.comments)) {
+      p.comments.forEach((c, cIdx) => {
+        if (c.attachments && Array.isArray(c.attachments)) {
+          c.attachments.forEach((att, aIdx) => {
+            if (att.url && !seenUrls.has(att.url)) {
+              seenUrls.add(att.url);
+              list.push({
+                id: `comm_${cIdx}_${aIdx}`,
+                url: att.url,
+                title: att.name || `Attachment ${list.length + 1}`,
+                source: `Comment by ${c.userName || 'User'}`,
+              });
+            }
+          });
+        }
+      });
+    }
+
     return list;
-  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
+  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.comments, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
 
   // Safe fallback if vis is undefined
   const v = vis || {
@@ -848,10 +866,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           >
             {allUnitImages.length > 0 ? (
               <div className="relative flex items-center gap-1">
-                {/* Mini Image Thumbnail Preview */}
-                <div className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center">
+                {/* Mini Image Thumbnail Preview - Click to enlarge directly */}
+                <div 
+                  className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEnlargedImage({ url: allUnitImages[0].url, title: allUnitImages[0].title });
+                  }}
+                  title="Bấm để xem ảnh phóng to toàn màn hình"
+                >
                   <img 
-                    src={allUnitImages[0].url} 
+                    src={normalizeImageUrl(allUnitImages[0].url)} 
                     alt="Thumbnail" 
                     className="w-full h-full object-cover"
                     onError={(e) => {
@@ -1238,7 +1263,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                   {/* Thumbnail Image Container - Full Natural Proportions & Zero Crop */}
                   <div className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[320px] sm:max-h-[360px] flex items-center justify-center group/thumb p-1">
                     <img 
-                      src={img.url} 
+                      src={normalizeImageUrl(img.url)} 
                       alt={img.title}
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
@@ -1329,13 +1354,13 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         </div>
       )}
 
-      {/* Enlarged Image Lightbox Modal with Pinch-to-zoom & Mouse wheel zoom */}
+      {/* Enlarged Image Lightbox Modal */}
       {enlargedImage && (
-        <ZoomableImageViewer
-          url={enlargedImage.url}
-          title={enlargedImage.title}
+        <LayoutUnitLightboxModal
+          enlargedImage={enlargedImage}
           onClose={() => setEnlargedImage(null)}
           onCopyLink={handleCopyLink}
+          copiedLink={copiedLink}
         />
       )}
     </div>
