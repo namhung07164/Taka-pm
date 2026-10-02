@@ -1,0 +1,308 @@
+import React, { useState, useEffect, useRef, useDeferredValue, useMemo } from 'react';
+import { Project, Task, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getStatus, 
+  parseDateTime, 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { SortConfig } from './generalTypes';
+
+interface UseGeneralDataParams {
+  projects: Project[];
+  tasks: Task[];
+  currentUser: AppUser;
+}
+
+const statusWeight: Record<string, number> = {
+  'On process': 1,
+  'Upcoming': 2,
+  'Completed': 3,
+  'Handover': 4,
+  'Canceled': 5
+};
+
+export function useGeneralData({
+  projects,
+  tasks,
+  currentUser
+}: UseGeneralDataParams) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const pinnedProjects = useAppStore(state => state.pinnedProjects);
+  const setPinnedProjects = useAppStore(state => state.setPinnedProjects);
+  const theme = useAppStore(state => state.theme);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(false);
+
+  const [flashToggle, setFlashToggle] = useState(true);
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  // Status and Location Filter Preservation when Searching
+  useEffect(() => {
+    const isSearching = !!searchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (statusFilter !== 'all') {
+        lastSelectedStatusFilterRef.current = statusFilter;
+        safeSetItemSession("taka_general_status_filter", statusFilter);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setStatusFilter('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days';
+      setStatusFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, statusFilter]);
+
+  // Auto-jump to matched project location(s) when searching
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+    const matchedProjects = projects.filter(p => {
+      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
+      const matchesSearch = matchesAdvancedSearch(term, searchFields);
+      const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
+      const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
+      const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
+      return matchesSearch && matchesYear && matchesStore;
+    });
+    const matchedLocations = Array.from(
+      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+    );
+    if (matchedLocations.length > 0) {
+      const currentLocs = globalLocationFilter || [];
+      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+      if (!isSame) {
+        setGlobalLocationFilter(matchedLocations);
+      }
+    }
+  }, [searchTerm, projects, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  // Handle Escape key globally to clear search when not in modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && searchTerm) {
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+        e.preventDefault();
+        const activeElement = document.activeElement;
+        if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+          (activeElement as HTMLElement).blur();
+        }
+        setSearchTerm("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [searchTerm]);
+
+  const years = useMemo(() => {
+    const projYears = projects.map(p => {
+      if (p.year) return String(p.year);
+      if (p.computedTakStart) return String(p.computedTakStart).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const taskYears = tasks.map(t => {
+      if (t.projectYear) return String(t.projectYear);
+      if (t.start) return String(t.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const baseYears = ['2026', '2027'];
+    const unique = Array.from(new Set([...projYears, ...taskYears, ...baseYears])).filter(Boolean).sort();
+    return unique.length > 0 ? unique : ['2026', '2027'];
+  }, [projects, tasks, currentUser?.role]);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const stores = allowedStores;
+  const locationOptions = useLocationOptions();
+
+  useEffect(() => {
+    if (locationOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
+      const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
+      const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+      const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+      const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
+
+      let matchesStatus = true;
+      if (statusFilter === 'On process + Upcoming 3 days') {
+        if (status === 'On process') {
+          matchesStatus = true;
+        } else if (status === 'Upcoming') {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const dStart = parseDateTime(p.computedTakStart);
+          if (dStart) {
+            dStart.setHours(0, 0, 0, 0);
+            const diffTime = dStart.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            matchesStatus = diffDays <= 3 && diffDays >= 0;
+          } else {
+            matchesStatus = false;
+          }
+        } else {
+          matchesStatus = false;
+        }
+      } else {
+        matchesStatus = statusFilter === 'all' || status === statusFilter;
+      }
+
+      return matchesSearch && matchesYear && matchesStore && matchesLocation && matchesStatus;
+    }).sort((a, b) => {
+      const isPinnedA = a.id && pinnedProjects.includes(a.id);
+      const isPinnedB = b.id && pinnedProjects.includes(b.id);
+      
+      if (isPinnedA !== isPinnedB) {
+        return isPinnedA ? -1 : 1;
+      }
+      if (isPinnedA && isPinnedB) {
+        const orderA = pinnedProjects.indexOf(a.id as string);
+        const orderB = pinnedProjects.indexOf(b.id as string);
+        if (orderA !== orderB) return orderA - orderB;
+      }
+
+      if (sortConfig) {
+        let valA = '';
+        let valB = '';
+        if (sortConfig.key === 'start') {
+          valA = a.computedTakStart || '9999-12-31';
+          valB = b.computedTakStart || '9999-12-31';
+        } else if (sortConfig.key === 'handover') {
+          valA = a.computedTakCompl || '9999-12-31';
+          valB = b.computedTakCompl || '9999-12-31';
+        } else if (sortConfig.key === 'opening') {
+          valA = a.computedOpening || a.opening || '9999-12-31';
+          valB = b.computedOpening || b.opening || '9999-12-31';
+        }
+        
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      }
+
+      const statusA = getStatus(a.computedTakStart, a.computedTakCompl, a.computedOpening || a.opening, a.code);
+      const statusB = getStatus(b.computedTakStart, b.computedTakCompl, b.computedOpening || b.opening, b.code);
+      
+      const weightA = statusWeight[statusA] || 99;
+      const weightB = statusWeight[statusB] || 99;
+      if (weightA !== weightB) {
+        return weightA - weightB;
+      }
+
+      // Special sorting for 'On process' : prioritize finish date proximity to today
+      if (statusA === 'On process') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const finishA = parseDateTime(a.computedTakCompl || a.handover || a.computedOpening || a.opening);
+        const finishB = parseDateTime(b.computedTakCompl || b.handover || b.computedOpening || b.opening);
+        
+        if (finishA && finishB) {
+          const diffA = Math.abs(finishA.getTime() - today.getTime());
+          const diffB = Math.abs(finishB.getTime() - today.getTime());
+          if (diffA !== diffB) {
+            return diffA - diffB;
+          }
+        } else if (finishA) {
+          return -1;
+        } else if (finishB) {
+          return 1;
+        }
+      }
+
+      const startA = a.computedTakStart || '9999-12-31';
+      const startB = b.computedTakStart || '9999-12-31';
+      if (startA !== startB) {
+        return startA.localeCompare(startB);
+      }
+
+      const complA = a.computedTakCompl || '9999-12-31';
+      const complB = b.computedTakCompl || '9999-12-31';
+      if (complA !== complB) {
+        return complA.localeCompare(complB);
+      }
+
+      const openA = a.computedOpening || a.opening || '9999-12-31';
+      const openB = b.computedOpening || b.opening || '9999-12-31';
+      if (openA !== openB) {
+        return openA.localeCompare(openB);
+      }
+      
+      return a.code.localeCompare(b.code) || String(a.year || '').localeCompare(String(b.year || ''));
+    });
+  }, [projects, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setFlashToggle(prev => !prev), 600);
+    return () => clearInterval(interval);
+  }, []);
+
+  const paginatedProjects = useMemo(() => {
+    return filteredProjects.slice(0, visibleCount);
+  }, [filteredProjects, visibleCount]);
+
+  return {
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    pinnedProjects,
+    setPinnedProjects,
+    theme,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    flashToggle,
+    sortConfig,
+    setSortConfig,
+    visibleCount,
+    setVisibleCount,
+    years,
+    stores,
+    locationOptions,
+    filteredProjects,
+    paginatedProjects
+  };
+}
