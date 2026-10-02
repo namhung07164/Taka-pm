@@ -208,7 +208,16 @@ export function GanttTab({
   } = useGanttDependencies({
     tasks,
     projects,
-    delegationGroups
+    delegationGroups,
+    visibleGanttRows,
+    startDate,
+    dayWidth,
+    sideWidth,
+    paddingTop,
+    showStart: visibleColumns.includes('start'),
+    showFinish: visibleColumns.includes('finish'),
+    showParty: visibleColumns.includes('party'),
+    showDuration: visibleColumns.includes('duration')
   });
 
   // 6. Drag & Drop Task Reordering

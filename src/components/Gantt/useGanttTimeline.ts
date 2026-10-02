@@ -88,6 +88,8 @@ export function useGanttTimeline({
         units.push({
           date: new Date(curr),
           label: `W${Math.ceil(curr.getDate() / 7)} - ${curr.getMonth() + 1}/${curr.getFullYear()}`,
+          labelPrimary: `W${Math.ceil(curr.getDate() / 7)}`,
+          labelSecondary: `${curr.getMonth() + 1}/${curr.getFullYear()}`,
           days: 7
         });
         curr.setDate(curr.getDate() + 7);
@@ -98,6 +100,8 @@ export function useGanttTimeline({
         units.push({
           date: new Date(curr),
           label: `Q${q} ${curr.getFullYear()}`,
+          labelPrimary: `Q${q}`,
+          labelSecondary: String(curr.getFullYear()),
           days: 90
         });
         curr.setMonth(curr.getMonth() + 3);
@@ -109,6 +113,8 @@ export function useGanttTimeline({
         units.push({
           date: new Date(curr),
           label: `${curr.toLocaleString('en-US', { month: 'short' })} ${curr.getFullYear()}`,
+          labelPrimary: curr.toLocaleString('en-US', { month: 'short' }),
+          labelSecondary: String(curr.getFullYear()),
           days: daysInMonth
         });
         curr.setMonth(curr.getMonth() + 1, 1);

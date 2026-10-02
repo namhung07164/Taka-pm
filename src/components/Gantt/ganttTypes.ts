@@ -18,6 +18,8 @@ export type ViewMode = 'weekly' | 'monthly' | 'quarterly';
 export interface TimeUnit {
   date: Date;
   label: string;
+  labelPrimary?: string;
+  labelSecondary?: string;
   days: number;
 }
 
@@ -27,6 +29,8 @@ export interface DependencyLine {
   arrowDir?: string;
   color?: string;
   isAnimated?: boolean;
+  fromTaskId?: string;
+  toTaskId?: string;
 }
 
 export type GanttTableRow = 
