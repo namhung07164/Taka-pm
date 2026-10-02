@@ -45,8 +45,6 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
   const prefillProjectCode = useAppStore(state => state.prefillProjectCode);
   const prefillProjectYear = useAppStore(state => state.prefillProjectYear);
   const prefillProjectStore = useAppStore(state => state.prefillProjectStore);
-  const zoomableImageSrc = useAppStore(state => state.zoomableImageSrc);
-  const setZoomableImageSrc = useAppStore(state => state.setZoomableImageSrc);
 
   const { filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
 
@@ -116,13 +114,7 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
       )}
 
       {isCalendarSyncModalOpen && <CalendarSyncModal />}
-
-      {zoomableImageSrc && (
-        <ZoomableImageViewer
-          src={zoomableImageSrc}
-          onClose={() => setZoomableImageSrc(null)}
-        />
-      )}
+      <ZoomableImageViewer />
     </Suspense>
   );
 });

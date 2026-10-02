@@ -584,7 +584,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
            - Tự động hiển thị các file ảnh đính kèm từ bình luận tiến độ (`project.comments.attachments`).
            - Tự động nhận diện ảnh/thumbnail từ dữ liệu mặt bằng (`data.imageUrl`, `data.thumbnail`).
            - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào qua nút **`+ Thêm`**.
-         * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`) và nút **Phóng to xem ảnh HD** (`Lightbox Zoom`).
+         * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm & Phóng To Trực Tiếp**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`), nút **Phóng to xem ảnh HD** (`Lightbox Zoom`) và cho phép nhấp trực tiếp vào thumbnail mini ở header để mở hộp thoại phóng to chuẩn Enterprise (`LayoutUnitLightboxModal`) với đầy đủ nút đóng `[X]` đa lớp, thao tác phóng to/thu nhỏ và phím `Escape`.
          * **Dán & Lưu Link Nhanh Chóng**: Nút **`+ Thêm`** trên thanh tiêu đề mở ô nhập link; khi bấm **OK**, đường link sẽ tự động được ghi nhận và lưu đồng bộ trực tiếp mà không gây xáo trộn ô Detail của dự án.
          * **Tối Ưu Hiển Thị & Phóng To Toàn Màn Hình Trên iPad / Tablet (iOS Safari Portal & Sticky Header)**:
            - **Thanh Tiêu Đề Cố Định (Sticky Header)**: Giữ nguyên thanh tiêu đề tooltip luôn ghim ở trên cùng (`sticky top-0 z-30`) khi cuộn xem hình ảnh lớn, đảm bảo các huy hiệu trạng thái, tên dự án, nút Thêm và nút Đóng `[X]` không bao giờ bị trôi khỏi màn hình.
