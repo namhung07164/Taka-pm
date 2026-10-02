@@ -605,9 +605,9 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
           const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
           delete (newT as any)._isAutoActualized;
           const batch = writeBatch(db);
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', newT.id), newT, { merge: true });
+          batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', newT.id), newT);
           for (const u of updatesToDependents) {
-            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u as any, { merge: true });
+            batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u as any);
           }
           try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
@@ -1068,26 +1068,9 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
           {visibleColumns.includes('actions') && (
             <td className="px-4 py-3 text-center">
               <div className="flex items-center justify-center gap-2">
-                {(() => {
-                  const proStatus = plStatus || 'On process';
-                  let proStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold';
-                  if (proStatus === 'Completed') {
-                    proStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold';
-                  } else if (proStatus === 'Upcoming') {
-                    proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
-                  }
-                  const actObj = resolveActualStatus(plStatus, group.subTasks);
-                  return (
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <span className={`text-[10px] leading-tight font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${proStatusColorClass}`}>
-                        Pro: {proStatus}
-                      </span>
-                      <span className={`text-[10px] leading-tight font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${actObj.color}`}>
-                        Act: {actObj.label}
-                      </span>
-                    </div>
-                  );
-                })()}
+                <div className={`text-[10px] leading-tight font-bold px-2 py-1 rounded-full border whitespace-nowrap ${resolveActualStatus(plStatus, group.subTasks).color}`}>
+                  Act: {resolveActualStatus(plStatus, group.subTasks).label}
+                </div>
                 <button type="button" onClick={() => setMultiSearchTerm((parentProject?.code ? parentProject.code + ' ' : '') + group.name)} className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] p-1 rounded hover:bg-blue-50 dark:hover:bg-[#333336] transition-colors" title="Filter by Tracker"><Search className="w-4 h-4" /></button>
                 {canWrite && (
                   <>
@@ -1560,7 +1543,8 @@ export function TaskDelegationTab({       onBackFromFocus}: TaskDelegationTabPro
 
                    <div className="flex flex-col gap-2 mb-3 bg-blue-50/30 dark:bg-[#1e1e20] p-2 rounded-lg border border-blue-50">
                       <div className="flex gap-2">
-                        <div className="w-full flex flex-col items-stretch">
+                        <span className={`text-[11px] leading-snug w-1/2 text-center break-words py-1.5 px-2 font-bold border rounded flex items-center justify-center ${flowColor}`}>Flow: {flowTxt}</span>
+                        <div className="w-1/2 flex flex-col items-end">
                           <select
                             value={selectValue}
                             onChange={(e) => {

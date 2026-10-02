@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLanguage } from "../../lib/LanguageContext";
-import { ZoomableImageViewer } from '../ZoomableImageViewer';
 import { X, Pin, FileText, Paperclip, Edit2, Image as ImageIcon, Loader2, Trash2, Link as LinkIcon, ExternalLink, Target, Info, Send, MoreVertical, MessageSquare } from 'lucide-react';
 import { Project, Task, AppUser, DelegationGroup } from '../../types';
 import { calculateDays, formatToDatetimeLocal, parseDateTime, cn, getDefaultDatetimeLocal, ensureUrlProtocol, getSuggestedCompletionTime, getTaskStatus, resolveActualStatus, formatDisplayDateTime } from '../../lib/utils';
@@ -57,7 +56,6 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
   const [editingText, setEditingText] = useState('');
 
   const [localComments, setLocalComments] = useState(task.comments || []);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const projectTasks = React.useMemo(() => {
     return tasks.filter(t => 
@@ -513,14 +511,9 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
             return (
                <span key={i} className="inline-flex flex-col gap-2 mt-1 mb-1 w-full">
                  {link}
-                 <button
-                   type="button"
-                   onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(imgSrc); }}
-                   className="block max-w-[200px] text-left cursor-pointer group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 hover:ring-2 hover:ring-blue-500 transition-all active:scale-95"
-                   title="Click to zoom image"
-                 >
+                 <a href={chunk} target="_blank" rel="noopener noreferrer" className="block max-w-[200px]" onClick={e => e.stopPropagation()}>
                    <LazyImage src={imgSrc} alt="Attachment" />
-                 </button>
+                 </a>
                </span>
             );
          }
@@ -581,7 +574,15 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                 <FileText className={cn("w-4 h-4", groupIconColor)} />
                 {task.name || 'Delegated Sub-tasks'}
               </h4>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
+                  return (
+                    <span className={`text-[10px] px-2 py-1 rounded-full font-bold border whitespace-nowrap ${actualStatus.color}`}>
+                      Act: {actualStatus.label}
+                    </span>
+                  );
+                })()}
                 <a 
                   href={`https://tracker.taka-pm.org/?search=${encodeURIComponent((linkedGroup.projectCode ? linkedGroup.projectCode + ' ' : '') + linkedGroup.name)}`}
                   target="_blank"
@@ -710,6 +711,9 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                   </div>
                   <div className="flex flex-col gap-1 mt-1">
                     <div className="flex items-center gap-2">
+                      <span className={cn("px-1.5 py-0 rounded text-[10px] leading-none h-5 flex items-center font-bold border shrink-0", flowColor)}>
+                        {flowTxt}
+                      </span>
                       <select
                         value={selectValue === 'None' ? 'None' : selectValue}
                         onChange={async (e) => {
@@ -910,7 +914,8 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
                  <span className="text-xs font-bold text-slate-500">{st.party} (Report)</span>
                </div>
                <div className="flex flex-col gap-1 bg-blue-50/40 dark:bg-[#28282a] rounded-xl rounded-tl-none border border-blue-100 p-3 max-w-[85%]">
-                   <div className="text-sm text-slate-700 dark:text-[#c3c3c3] font-medium whitespace-pre-wrap">{st.report || st.childReport || <span className="italic text-slate-400 dark:text-[#838383] font-normal">No report yet</span>}</div>
+                  <span className="text-[9px] font-bold text-blue-600 dark:text-[#8ab4f8] uppercase tracking-wider">Report for {st.name || st.party}</span>
+                  <div className="text-sm text-slate-700 dark:text-[#c3c3c3] font-medium whitespace-pre-wrap">{st.report || st.childReport || <span className="italic text-slate-400 dark:text-[#838383] font-normal">No report yet</span>}</div>
                   {st.attachments && st.attachments.length > 0 ? (
                      <div className="mt-2 flex flex-col gap-1.5 text-[10px]">
                        {st.attachments.map((att, iIdx) => (
@@ -1005,14 +1010,6 @@ export const TaskChat = React.memo(function TaskChat({ task, projects, tasks, cu
       </div>
       
       <ChatInput ref={chatInputRef} onSend={handleSendFromInput} appUsers={appUsers} projectTasks={projectTasks} linkedGroup={linkedGroup} />
-
-      {previewImageUrl && (
-        <ZoomableImageViewer
-          url={previewImageUrl}
-          title="Attachment Image Preview"
-          onClose={() => setPreviewImageUrl(null)}
-        />
-      )}
     </div>
   );
 });

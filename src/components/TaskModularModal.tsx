@@ -271,11 +271,6 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
                             {t.duration}d
                           </span>
                         )}
-                        {t.delegation && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-green-100 dark:bg-green-950/60 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800">
-                            Delegation: ON
-                          </span>
-                        )}
                         {currentParent && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                             Đang thuộc: {currentParent.name}
