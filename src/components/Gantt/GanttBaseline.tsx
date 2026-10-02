@@ -5,26 +5,15 @@ import { getExactDays } from './GanttBar';
 export interface GanttBaselineProps {
   startStr?: string;
   endStr?: string;
-  baselineStart?: string;
-  baselineFinish?: string;
   type?: "project" | "task";
   startDate: Date;
   dayWidth: number;
 }
 
-export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({ 
-  startStr, 
-  endStr, 
-  baselineStart, 
-  baselineFinish, 
-  startDate, 
-  dayWidth 
-}) => {
-  const effectiveStart = baselineStart || startStr;
-  const effectiveEnd = baselineFinish || endStr;
-  if (!effectiveStart || !effectiveEnd) return null;
-  const s = parseDateTime(effectiveStart);
-  const e = parseDateTime(effectiveEnd);
+export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({ startStr, endStr, startDate, dayWidth }) => {
+  if (!startStr || !endStr) return null;
+  const s = parseDateTime(startStr);
+  const e = parseDateTime(endStr);
   if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) return null;
 
   const leftDays = getExactDays(startDate, s);
@@ -41,12 +30,8 @@ export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({
     />
   );
 }, (prev, next) => {
-  const prevStart = prev.baselineStart || prev.startStr;
-  const prevEnd = prev.baselineFinish || prev.endStr;
-  const nextStart = next.baselineStart || next.startStr;
-  const nextEnd = next.baselineFinish || next.endStr;
-  return prevStart === nextStart &&
-         prevEnd === nextEnd &&
+  return prev.startStr === next.startStr &&
+         prev.endStr === next.endStr &&
          prev.dayWidth === next.dayWidth &&
          prev.startDate.getTime() === next.startDate.getTime();
 });

@@ -1,10 +1,10 @@
 import React from 'react';
 
 export interface GanttExportOverlayProps {
-  isExporting?: boolean;
+  isExporting: boolean;
 }
 
-export const GanttExportOverlay: React.FC<GanttExportOverlayProps> = React.memo(({ isExporting = true }) => {
+export const GanttExportOverlay: React.FC<GanttExportOverlayProps> = React.memo(({ isExporting }) => {
   if (!isExporting) return null;
 
   return (
