@@ -494,18 +494,18 @@ export function useDetailTaskCrud({
 
       depUpdates.forEach(depTask => {
         const dRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
-        batch.update(dRef, {
+        batch.set(dRef, {
           start: depTask.start,
           finish: depTask.finish,
           duration: depTask.duration,
           updatedAt: depTask.updatedAt
-        });
+        }, { merge: true });
       });
 
       predecessorUpdates.forEach(pu => {
         if (pu.id !== t.id && !depUpdates.some(d => d.id === pu.id)) {
           const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
-          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+          batch.set(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
         }
       });
       

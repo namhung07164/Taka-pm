@@ -1468,6 +1468,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
           + **Phóng To Bằng Ngón Tay (Pinch-to-Zoom)**: Hỗ trợ ngón tay vuốt/pinch thu phóng đa điểm 2 ngón mượt mà trên thiết bị di động, iPad, iPhone và Android (từ `80%` đến `600%`). Double tap 2 chạm nhanh để phóng to 2.5x hoặc đặt lại kích thước.
           + **Phóng To Bằng Con Lăn Chuột & Kéo Drag**: Hỗ trợ cuộn chuột (wheel) để zoom in/out chính xác theo tọa độ con trỏ, nhấp giữ chuột và kéo để di chuyển khung hình (panning) linh hoạt.
           + **Thanh Công Cụ Thao Tác Trực Quan**: Bổ sung thanh công cụ nổi tinh tế phía dưới hình ảnh gồm các nút bấm Phóng to (`+`), Thu nhỏ (`-`), Xoay góc 90° (`↻`), Đặt lại (`Reset / 100%`) và hiển thị tỷ lệ zoom thời gian thực.
+        - **Tự Động Tính Toán & Điều Chỉnh Chiều Cao Tooltip Mặt Bằng (`LayoutUnitTooltip`)**:
+          + **Thuật toán Tự Thích Ứng Chiều Cao (Dynamic Max-Height)**: Tự động tính toán chiều cao tối đa của ô Tooltip mặt bằng dựa trên vị trí hiển thị thực tế (`finalTop` / `top`) và khoảng cách tới cạnh dưới của màn hình thiết bị (`viewportHeight - top - bottomMargin`).
+          + **Ngăn chặn Mất / Trôi Thông Tin**: Nếu thông tin trong ô quá dài (nhiều liên kết, ảnh, ngày tháng, mô tả), Tooltip sẽ tự động kích hoạt thanh cuộn nội bộ (`overflow-y-auto`) thay vì bị tràn hoặc cắt khuất dưới cạnh màn hình. Đảm bảo 100% dữ liệu luôn nằm trong vùng hiển thị an toàn và rõ ràng.
    - **Bảo Toàn Nghiệp Vụ & An Toàn Bộ Nhớ**:
      + Giữ nguyên 100% logic kinh doanh tài chính, WBS, liên kết Predecessor, phân quyền RBAC và cơ chế kéo thả mượt mà 60fps.
      + Tự động quản lý giải phóng bộ nhớ (cleanup event listeners, animation frames, WebGL/Canvas context) chống tràn RAM trên các thiết bị máy tính bảng và POS di động.

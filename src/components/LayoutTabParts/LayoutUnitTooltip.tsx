@@ -253,13 +253,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         }
       }
 
+      const finalTop = Math.max(safeTop, top);
       el.style.position = 'fixed';
       el.style.left = `${left}px`;
       el.style.right = `${right}px`;
-      el.style.top = `${Math.max(safeTop, top)}px`;
+      el.style.top = `${finalTop}px`;
       el.style.width = `calc(100vw - ${pad * 2}px)`;
       el.style.maxWidth = '420px';
-      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
+      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - finalTop - bottomMargin)}px)`;
       el.style.margin = '0 auto';
       el.style.transform = 'none';
     } else {
@@ -304,7 +305,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.top = `${top}px`;
       el.style.width = '370px';
       el.style.maxWidth = `calc(100vw - ${pad * 2}px)`;
-      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - safeTop - bottomMargin)}px)`;
+      el.style.maxHeight = `calc(${Math.max(160, viewportHeight - top - bottomMargin)}px)`;
       el.style.margin = '0';
       el.style.transform = 'none';
     }
