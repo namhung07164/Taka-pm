@@ -2,21 +2,30 @@ import React from 'react';
 import { Calculator } from 'lucide-react';
 
 export interface GanttSumBadgeProps {
-  isEditMode: boolean;
-  sumMode: 'none' | 'duration';
-  selectedTaskCount: number;
-  selectedProjectCount: number;
-  computedSum: number;
+  isEditMode?: boolean;
+  sumMode?: 'none' | 'duration';
+  selectedTaskCount?: number;
+  selectedProjectCount?: number;
+  computedSum?: number | null;
+  sumDuration?: number | null;
 }
 
 export const GanttSumBadge: React.FC<GanttSumBadgeProps> = React.memo(({
-  isEditMode,
-  sumMode,
+  isEditMode = true,
+  sumMode = 'duration',
   selectedTaskCount,
   selectedProjectCount,
   computedSum,
+  sumDuration,
 }) => {
-  if (!isEditMode || sumMode === 'none' || (selectedTaskCount === 0 && selectedProjectCount === 0)) {
+  const finalSum = sumDuration !== undefined ? sumDuration : computedSum;
+  if (finalSum === null || finalSum === undefined) {
+    return null;
+  }
+  if (!isEditMode && sumDuration === undefined) {
+    return null;
+  }
+  if (sumMode === 'none' && sumDuration === undefined) {
     return null;
   }
 
@@ -28,7 +37,7 @@ export const GanttSumBadge: React.FC<GanttSumBadgeProps> = React.memo(({
       <div className="flex flex-col">
         <span className="text-xs text-slate-300 dark:text-slate-600 font-medium">Calculated Sum</span>
         <span className="text-xl font-bold">
-          {sumMode === 'duration' && `${computedSum} Days`}
+          {finalSum} Days
         </span>
       </div>
     </div>

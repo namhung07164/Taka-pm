@@ -11,36 +11,40 @@ import { GanttBaseline } from './GanttBaseline';
 export interface GanttProjectRowProps {
   p: Project;
   pIdx: number;
-  projectTasks: Task[];
+  projectTasks?: Task[];
   isExpanded: boolean;
-  expandedModularTasks: string[];
-  setExpandedModularTasks: React.Dispatch<React.SetStateAction<string[]>>;
-  isEditMode: boolean;
-  canWrite: boolean;
-  selectedProjectSet: Set<string>;
-  selectedProjectIds: string[];
-  setSelectedProjectIds: (ids: string[]) => void;
-  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
-  toggleProject: (id: string) => void;
-  isResizingSide: boolean;
-  startResizingSide: (e: React.MouseEvent) => void;
+  expandedModularTasks?: string[];
+  setExpandedModularTasks?: React.Dispatch<React.SetStateAction<string[]>>;
+  isEditMode?: boolean;
+  canWrite?: boolean;
+  selectedProjectSet?: Set<string>;
+  selectedProjectIds?: string[];
+  setSelectedProjectIds?: (ids: string[]) => void;
+  setSelectedTaskIds?: React.Dispatch<React.SetStateAction<string[]>>;
+  toggleProject?: (id: string) => void;
+  toggleProjectExpansion?: (id: string) => void;
+  isResizingSide?: boolean;
+  startResizingSide?: (e: React.MouseEvent) => void;
   sideWidth: number;
-  showStart: boolean;
-  startColWidth: number;
-  showFinish: boolean;
-  finishColWidth: number;
-  showParty: boolean;
-  partyColWidth: number;
-  showDuration: boolean;
-  durationColWidth: number;
-  timeUnits: any[];
-  delegationGroups: any[];
-  getRowVisibilityClass: (id: string) => string;
+  showStart?: boolean;
+  startColWidth?: number;
+  showFinish?: boolean;
+  finishColWidth?: number;
+  showParty?: boolean;
+  partyColWidth?: number;
+  showDuration?: boolean;
+  durationColWidth?: number;
+  timeUnits?: any[];
+  delegationGroups?: any[];
+  getRowVisibilityClass?: (id: string) => string;
   startDate: Date;
   dayWidth: number;
   activeTooltip: string | null;
   setActiveTooltip: (id: string | null) => void;
-  getBarColor: (status: string, duration?: string | number) => string;
+  getBarColor?: (status: string, duration?: string | number) => string;
+  isHideMode?: boolean;
+  toggleHideRow?: (id: string, e: React.MouseEvent) => void;
+  handleTogglePin?: (p: any) => void | Promise<void>;
   onNavigateToLayout?: (
     store: string,
     location: string,
@@ -50,14 +54,15 @@ export interface GanttProjectRowProps {
 }
 
 export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
-  p, pIdx, projectTasks, isExpanded, expandedModularTasks, setExpandedModularTasks, isEditMode, canWrite,
-  selectedProjectSet, selectedProjectIds, setSelectedProjectIds, setSelectedTaskIds,
-  toggleProject, isResizingSide, startResizingSide,
-  sideWidth, showStart, startColWidth, showFinish, finishColWidth, showParty, partyColWidth, showDuration, durationColWidth,
-  timeUnits, delegationGroups, getRowVisibilityClass, startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor,
-  onNavigateToLayout
+  p, pIdx, projectTasks = [], isExpanded, expandedModularTasks = [], setExpandedModularTasks, isEditMode = false, canWrite = false,
+  selectedProjectSet = new Set(), selectedProjectIds = [], setSelectedProjectIds, setSelectedTaskIds,
+  toggleProject, toggleProjectExpansion, isResizingSide = false, startResizingSide,
+  sideWidth, showStart = false, startColWidth = 80, showFinish = false, finishColWidth = 80, showParty = false, partyColWidth = 70, showDuration = false, durationColWidth = 50,
+  timeUnits = [], delegationGroups = [], getRowVisibilityClass = () => '', startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor = () => 'bg-blue-500',
+  isHideMode = false, toggleHideRow, handleTogglePin, onNavigateToLayout
 }) => {
   const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
+  const handleToggle = toggleProjectExpansion || toggleProject;
   const pStart = p.computedTakStart || p.start;
   const pEnd = p.computedTakCompl || p.handover;
 
@@ -110,7 +115,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
         Array.from(new Set([...prev, ...projectModularParentIds]))
       );
       if (!isExpanded) {
-        toggleProject(p.id!);
+        if (handleToggle) handleToggle(p.id!);
       }
     }
   };
@@ -141,12 +146,12 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 checked={selectedProjectSet.has(String(p.no))}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
-                    setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
+                    if (setSelectedProjectIds) setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
+                    if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
                   } else {
-                    setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
+                    if (setSelectedProjectIds) setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
                     const pTasksIds = new Set(projectTasks.map((t) => t.id));
-                    setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
+                    if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
                   }
                 }}
                 className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
@@ -158,8 +163,8 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (canToggle) {
-                  toggleProject(p.id!);
+                if (canToggle && handleToggle) {
+                  handleToggle(p.id!);
                 }
               }}
               disabled={!canToggle}
