@@ -77,24 +77,35 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
   const format = printPaperSize.toLowerCase();
   const isDark = document.documentElement.classList.contains('dark');
 
-  // Fast path for Layout Plan Canvas
+  // Fast path for Layout Plan Canvas (Fit to full page)
   if (activeTab === 'layout') {
-    const stage = (window as any).__taka_layout_stage;
-    const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
-
     let dataUrl: string | null = null;
     let imgW = 1200;
     let imgH = 800;
 
-    if (stage && typeof stage.toDataURL === 'function') {
-      const exportRatio = Math.min(2.0, Math.max(1.0, printDpi / 96));
-      dataUrl = stage.toDataURL({ pixelRatio: exportRatio, mimeType: 'image/jpeg', quality: 0.88 });
-      imgW = (stage.width ? stage.width() : 1200) * exportRatio;
-      imgH = (stage.height ? stage.height() : 800) * exportRatio;
-    } else if (stageCanvas) {
-      dataUrl = stageCanvas.toDataURL('image/jpeg', 0.88);
-      imgW = stageCanvas.width;
-      imgH = stageCanvas.height;
+    const exportFn = (window as any).__taka_layout_export;
+    if (typeof exportFn === 'function') {
+      const res = exportFn(printDpi || 200);
+      if (res && res.dataUrl) {
+        dataUrl = res.dataUrl;
+        imgW = res.width;
+        imgH = res.height;
+      }
+    }
+
+    if (!dataUrl) {
+      const stage = (window as any).__taka_layout_stage;
+      const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
+      if (stage && typeof stage.toDataURL === 'function') {
+        const exportRatio = Math.min(2.0, Math.max(1.0, printDpi / 96));
+        dataUrl = stage.toDataURL({ pixelRatio: exportRatio, mimeType: 'image/jpeg', quality: 0.90 });
+        imgW = (stage.width ? stage.width() : 1200) * exportRatio;
+        imgH = (stage.height ? stage.height() : 800) * exportRatio;
+      } else if (stageCanvas) {
+        dataUrl = stageCanvas.toDataURL('image/jpeg', 0.90);
+        imgW = stageCanvas.width;
+        imgH = stageCanvas.height;
+      }
     }
 
     if (dataUrl) {
@@ -103,19 +114,21 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
       const pdfPageWidth = pdf.internal.pageSize.getWidth();
       const pdfPageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 10;
+      
+      // Tight 4mm margin for maximum drawing area coverage (Fit full page)
+      const margin = 4;
       const usableWidth = pdfPageWidth - margin * 2;
       let usableHeight = pdfPageHeight - margin * 2;
       let topOffset = margin;
 
       if (printFilterHeader) {
         drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
-        topOffset += 14;
-        usableHeight -= 14;
+        topOffset += 11;
+        usableHeight -= 11;
       }
 
       if (printDate) {
-        usableHeight -= 8;
+        usableHeight -= 4;
       }
 
       const imgAspect = imgW / imgH;
@@ -125,9 +138,11 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       let targetH = usableHeight;
 
       if (imgAspect > pageAspect) {
+        // Fits width exactly
         targetW = usableWidth;
         targetH = usableWidth / imgAspect;
       } else {
+        // Fits height exactly
         targetH = usableHeight;
         targetW = usableHeight * imgAspect;
       }
@@ -141,7 +156,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       if (printWatermark && printWatermark !== 'none') {
         try {
           pdf.saveGraphicsState();
-          pdf.setGState(new (pdf as any).GState({ opacity: 0.15 }));
+          pdf.setGState(new (pdf as any).GState({ opacity: 0.12 }));
           pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(150, 150, 150);
@@ -158,7 +173,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       }
 
       // Footer
-      const footerY = pdfPageHeight - 4;
+      const footerY = pdfPageHeight - 3;
       pdf.setFontSize(7.5);
       pdf.setTextColor(130, 130, 130);
       let footerText = `Takashimaya PM • Layout Plan (${printFilterContext?.storeDisplay || 'HCM'} - ${printFilterContext?.yearDisplay || 'All'})`;

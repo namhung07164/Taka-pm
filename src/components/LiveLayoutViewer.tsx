@@ -804,9 +804,79 @@ function LiveCanvas({
 
   useEffect(() => {
     (window as any).__taka_layout_stage = stageRef.current;
+    (window as any).__taka_layout_export = (dpi: number = 200) => {
+      const stage = stageRef.current;
+      if (!stage) return null;
+
+      let contentX = 0;
+      let contentY = 0;
+      let contentW = 1000;
+      let contentH = 800;
+
+      if (bgImage) {
+        const imgNaturalW = (bgImage as HTMLImageElement).naturalWidth || bgImage.width || 1000;
+        const imgNaturalH = (bgImage as HTMLImageElement).naturalHeight || bgImage.height || 800;
+        const imgScale = version?.imageScale || 1;
+        contentW = imgNaturalW * imgScale;
+        contentH = imgNaturalH * imgScale;
+        contentX = version?.imagePos?.x || 0;
+        contentY = version?.imagePos?.y || 0;
+      } else if (units && units.length > 0) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        units.forEach((u: any) => {
+          const ux = u.x || 0;
+          const uy = u.y || 0;
+          const uw = u.width || 100;
+          const uh = u.height || 100;
+          minX = Math.min(minX, ux);
+          minY = Math.min(minY, uy);
+          maxX = Math.max(maxX, ux + uw);
+          maxY = Math.max(maxY, uy + uh);
+        });
+        if (minX !== Infinity && maxX > minX) {
+          contentX = minX;
+          contentY = minY;
+          contentW = Math.max(100, maxX - minX);
+          contentH = Math.max(100, maxY - minY);
+        }
+      }
+
+      const oldScaleX = stage.scaleX();
+      const oldScaleY = stage.scaleY();
+      const oldX = stage.x();
+      const oldY = stage.y();
+
+      // Temporarily frame content tightly at 1:1 scale
+      stage.scale({ x: 1, y: 1 });
+      stage.position({ x: -contentX, y: -contentY });
+
+      const exportRatio = Math.min(2.5, Math.max(1.0, dpi / 96));
+      const dataUrl = stage.toDataURL({
+        x: 0,
+        y: 0,
+        width: Math.round(contentW),
+        height: Math.round(contentH),
+        pixelRatio: exportRatio,
+        mimeType: 'image/jpeg',
+        quality: 0.92
+      });
+
+      // Restore user stage
+      stage.scale({ x: oldScaleX, y: oldScaleY });
+      stage.position({ x: oldX, y: oldY });
+      stage.batchDraw();
+
+      return {
+        dataUrl,
+        width: Math.round(contentW * exportRatio),
+        height: Math.round(contentH * exportRatio),
+      };
+    };
+
     return () => {
       if ((window as any).__taka_layout_stage === stageRef.current) {
         (window as any).__taka_layout_stage = null;
+        (window as any).__taka_layout_export = null;
       }
     };
   });
