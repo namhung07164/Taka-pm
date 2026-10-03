@@ -70,69 +70,69 @@ export function GanttToolbarDateFilter({
   };
 
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+    <div className="flex items-center gap-2.5 flex-wrap">
       {/* Date Range Popover */}
       <div className="relative" ref={dateFilterRef}>
         <button
           type="button"
           onClick={() => setIsDateFilterOpen(!isDateFilterOpen)}
           className={cn(
-            "p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all active:scale-95",
+            "px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer",
             tempStartDate || tempEndDate
-              ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-600 dark:text-[#8ab4f8]"
-              : "bg-white dark:bg-[#1e1e20] border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] hover:bg-slate-50"
+              ? "bg-[#182338] border-blue-600 text-blue-400"
+              : "bg-[#1c1c1e] dark:bg-[#1a1a1c] border-slate-700/80 text-slate-200 hover:bg-[#252528]"
           )}
           title={t('Filter Date Range')}
         >
-          <Calendar className="w-3.5 h-3.5 text-blue-500" />
-          <span className="hidden xl:inline">{t('Dates')}</span>
+          <Calendar className="w-3.5 h-3.5 text-blue-400" />
+          <span>{t('Date Filter')}</span>
         </button>
 
         {isDateFilterOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl p-3 z-50 flex flex-col gap-2.5 w-64 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between font-bold text-xs text-slate-800 dark:text-slate-200">
+          <div className="absolute top-full left-0 mt-1.5 bg-[#1e1e20] border border-slate-700 rounded-xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 w-64 animate-in fade-in zoom-in-95 text-slate-100">
+            <div className="flex items-center justify-between font-bold text-xs text-slate-200">
               <span>{t('Filter Timeline Range')}</span>
               <button
                 type="button"
                 onClick={() => setIsDateFilterOpen(false)}
-                className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="p-0.5 text-slate-400 hover:text-slate-200"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
             <div className="flex flex-col gap-1 text-xs">
-              <label className="text-[11px] font-semibold text-slate-500">{t('From Date')}:</label>
+              <label className="text-[11px] font-semibold text-slate-400">{t('From Date')}:</label>
               <input
                 type="date"
                 value={tempStartDate}
                 onChange={(e) => setTempStartDate(e.target.value)}
-                className="bg-slate-50 dark:bg-[#18181a] border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-[#e3e3e3] outline-none focus:ring-2 focus:ring-blue-500"
+                className="bg-[#141416] border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div className="flex flex-col gap-1 text-xs">
-              <label className="text-[11px] font-semibold text-slate-500">{t('To Date')}:</label>
+              <label className="text-[11px] font-semibold text-slate-400">{t('To Date')}:</label>
               <input
                 type="date"
                 value={tempEndDate}
                 onChange={(e) => setTempEndDate(e.target.value)}
-                className="bg-slate-50 dark:bg-[#18181a] border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-[#e3e3e3] outline-none focus:ring-2 focus:ring-blue-500"
+                className="bg-[#141416] border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-800">
               <button
                 type="button"
                 onClick={handleResetDateRange}
-                className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium"
+                className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200 font-medium cursor-pointer"
               >
                 {t('Reset')}
               </button>
               <button
                 type="button"
                 onClick={handleApplyDateRange}
-                className="px-3 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
+                className="px-3 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
               >
                 {t('Apply')}
               </button>
@@ -145,56 +145,59 @@ export function GanttToolbarDateFilter({
       <button
         type="button"
         onClick={handleTodayClick}
-        className="p-1.5 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 shadow-xs flex items-center gap-1 active:scale-95 transition-all"
+        className="px-3 py-1.5 bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-slate-200 text-xs font-semibold rounded-xl hover:bg-[#252528] shadow-xs flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
         title="Jump timeline to Today"
       >
-        <Target className="w-3.5 h-3.5 text-blue-500" />
-        <span className="hidden xl:inline">{t('Today')}</span>
+        <Calendar className="w-3.5 h-3.5 text-rose-500" />
+        <span>{t('Today')}</span>
       </button>
 
-      {/* View Mode Selector (Weekly, Monthly, Quarterly) */}
-      <div className="flex items-center bg-slate-100 dark:bg-[#18181a] p-0.5 rounded-lg border border-slate-200 dark:border-[#444446] text-xs">
-        {(['weekly', 'monthly', 'quarterly'] as ViewMode[]).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => setViewMode(mode)}
-            className={cn(
-              "px-2 py-1 rounded-md capitalize font-semibold transition-all text-xs",
-              viewMode === mode
-                ? "bg-white dark:bg-[#28282b] text-blue-600 dark:text-[#8ab4f8] shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-            )}
-          >
-            {mode === 'weekly' ? 'W' : mode === 'monthly' ? 'M' : 'Q'}
-          </button>
-        ))}
+      {/* View Switch */}
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+        <span className="uppercase tracking-wider text-[11px] text-slate-400 font-bold">{t('VIEW')}</span>
+        <button
+          type="button"
+          onClick={() => {
+            const nextMode = viewMode === 'monthly' ? 'weekly' : viewMode === 'weekly' ? 'quarterly' : 'monthly';
+            setViewMode(nextMode);
+          }}
+          className="relative inline-flex h-5 w-10 items-center rounded-full bg-blue-600 transition-colors focus:outline-none"
+        >
+          <span className="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform translate-x-5.5" />
+        </button>
+        <span className="text-xs font-medium text-slate-200 capitalize">
+          {viewMode === 'monthly' ? 'Monthly' : viewMode === 'weekly' ? 'Weekly' : 'Quarterly'}
+        </span>
       </div>
 
-      {/* Day Width Scale Input */}
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          min="5"
-          max="120"
-          value={scaleInput}
-          onChange={(e) => {
-            const val = e.target.value;
-            setScaleInput(val);
-            const num = Number(val);
-            if (!isNaN(num) && num >= 5 && num <= 120) {
-              setDayWidth(num);
-              setIsWidthChanged(true);
-            }
-          }}
-          className="w-12 px-1.5 py-1 text-xs text-center font-mono bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-          title="Custom day width px"
-        />
+      {/* Scale Input */}
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+        <span className="uppercase tracking-wider text-[11px] text-slate-400 font-bold">{t('SCALE')}</span>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="5"
+            max="150"
+            value={scaleInput}
+            onChange={(e) => {
+              const val = e.target.value;
+              setScaleInput(val);
+              const num = Number(val);
+              if (!isNaN(num) && num >= 5 && num <= 150) {
+                const calculatedDayWidth = Math.max(4, Math.round((num / 75) * 8));
+                setDayWidth(calculatedDayWidth);
+                setIsWidthChanged(true);
+              }
+            }}
+            className="w-12 px-2 py-1 text-xs text-center font-mono font-bold bg-[#1c1c1e] border border-slate-700/80 text-white rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <span className="text-slate-400 font-bold">%</span>
+        </div>
         {isWidthChanged && (
           <button
             type="button"
             onClick={saveDayWidth}
-            className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded transition-colors"
+            className="p-1 text-emerald-400 hover:bg-emerald-950/40 rounded transition-colors"
             title="Save zoom width as default"
           >
             <Save className="w-3.5 h-3.5" />

@@ -45,20 +45,10 @@ export function ColumnAdder({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold shadow-xs transition-all cursor-pointer active:scale-95",
-            hiddenCols.length > 0
-              ? "bg-white dark:bg-[#1e1e20] border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] hover:bg-slate-50"
-              : "bg-slate-50 dark:bg-[#1e1e20]/40 border-slate-200 dark:border-[#444446] text-slate-500 dark:text-slate-400"
-          )}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-slate-200 rounded-xl hover:bg-[#252528] transition-all text-xs font-semibold shadow-xs cursor-pointer active:scale-95"
         >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
-          <span>{t('Columns')}</span>
-          {hiddenCols.length > 0 && (
-            <span className="w-4 h-4 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold flex items-center justify-center">
-              +{hiddenCols.length}
-            </span>
-          )}
+          <Plus className="w-3.5 h-3.5 text-slate-400" />
+          <span>{t('Add Column')}</span>
         </button>
       )}
 

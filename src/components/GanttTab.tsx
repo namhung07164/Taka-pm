@@ -268,6 +268,14 @@ export function GanttTab({
     window.addEventListener('mouseup', onMouseUp);
   }, [sideWidth]);
 
+  // Auto-scroll to Today on tab mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleTodayClick();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [handleTodayClick]);
+
   const handleClearFocus = useCallback(() => {
     setGanttTabFocusTaskId(null);
     if (onClearFocus) onClearFocus();

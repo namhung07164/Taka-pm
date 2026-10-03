@@ -155,155 +155,193 @@ export function GanttToolbar({
   const { t } = useLanguage();
 
   return (
-    <div className="px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-[#1e1e20]/60 border-b border-slate-200 dark:border-[#333336] flex flex-col xl:flex-row gap-2.5 justify-between items-stretch xl:items-center shrink-0 print:hidden rounded-t-xl">
-      {/* Filters Left Section */}
-      <div className="flex flex-wrap items-center gap-2 flex-grow max-w-5xl">
-        {/* Year Filter */}
-        <select
-          value={globalYearFilter}
-          onChange={(e) => setGlobalYearFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs rounded-lg p-2 outline-none shadow-xs min-w-[80px]"
-        >
-          <option value="all">{t('All Years')}</option>
-          {uniqueYears.map((y) => (
-            <option key={y} value={y}>{t('Year')} {y}</option>
-          ))}
-        </select>
+    <div className="p-2 sm:p-3 bg-[#141416] dark:bg-[#121214] border-b border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Years')}</option>
+            {uniqueYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
 
-        {/* Store Filter */}
-        <select
-          value={effectiveStore}
-          onChange={(e) => setGlobalStoreFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs rounded-lg p-2 outline-none shadow-xs min-w-[80px]"
-        >
-          {uniqueStores.length > 1 && <option value="all">{t('All Stores')}</option>}
-          {uniqueStores.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+          {/* Col 2: Store */}
+          <select
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {uniqueStores.length > 1 && <option value="all">{t('All Stores')}</option>}
+            {uniqueStores.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
 
-        {/* Location Filter */}
-        <MultiCheckboxSelect
-          value={globalLocationFilter}
-          onChange={setGlobalLocationFilter}
-          options={locationOptions}
-          placeholder={t('All Locations')}
-          className="min-w-[95px]"
-        />
-
-        {/* Status Filter */}
-        <select
-          value={filterProjectStatus}
-          onChange={(e) => onStatusFilterChange(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs rounded-lg p-2 outline-none shadow-xs min-w-[95px]"
-        >
-          <option value="all">{t('All Statuses')}</option>
-          <option value="On process">{t('On process')}</option>
-          <option value="On process + Upcoming 3 days">{t('On process + Upcoming 3 days')}</option>
-          <option value="Upcoming">{t('Upcoming')}</option>
-          <option value="Completed">{t('Completed')}</option>
-          <option value="Handover">{t('Handover')}</option>
-          <option value="Canceled">{t('Canceled')}</option>
-        </select>
-
-        {/* Search Input */}
-        <div className="relative min-w-[150px] flex-1 max-w-xs">
-          <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-slate-400">
-            <Search className="w-3.5 h-3.5" />
-          </div>
-          <DebouncedSearchInput
-            value={searchTerm}
-            onChange={setSearchTerm}
-            placeholder={t('Search Gantt...')}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs rounded-lg pl-8 pr-2.5 py-1.5 outline-none w-full shadow-xs focus:ring-2 focus:ring-blue-500"
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationOptions}
+            placeholder={t('All Locations')}
+            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 rounded-lg text-xs"
           />
+
+          {/* Col 4: Status */}
+          <select
+            value={filterProjectStatus}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Statuses')}</option>
+            <option value="On process & Upcoming">{t('On Process & Upcoming')}</option>
+            <option value="On process">{t('On process')}</option>
+            <option value="On process + Upcoming 3 days">{t('On process + Upcoming 3 days')}</option>
+            <option value="Upcoming">{t('Upcoming')}</option>
+            <option value="Completed">{t('Completed')}</option>
+            <option value="Handover">{t('Handover')}</option>
+            <option value="Canceled">{t('Canceled')}</option>
+          </select>
         </div>
 
-        {/* Task loading spinner */}
-        {isTasksLoading && (
-          <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 font-semibold animate-pulse">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span className="hidden sm:inline">{t('Syncing tasks...')}</span>
-          </div>
-        )}
-
-        {/* Focused Task clear button */}
-        {(initialFocusTaskId || ganttTabFocusTaskId) && (
+        {/* Action Buttons: Highlight Me & Edit Mode */}
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
-            onClick={handleClearFocus}
-            className="flex items-center gap-1 px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 font-bold rounded-lg text-xs transition-colors"
+            onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
+            className={cn(
+              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
+              isHighlightDelegationOn
+                ? "bg-[#2d2415] border-amber-500 text-amber-300 ring-1 ring-amber-500/50"
+                : "bg-[#1c1c1e] border-slate-700/80 text-amber-400 hover:bg-[#252528]"
+            )}
+            title={t('Highlight My Tasks')}
           >
-            <span>Focus Active</span>
-            <X className="w-3 h-3" />
+            <span className="text-amber-400 text-xs">🎯</span>
+            <span>Highlight Me</span>
           </button>
-        )}
-      </div>
 
-      {/* Right Controls: Timeline & Batch Actions */}
-      <div className="flex flex-wrap items-center gap-2 justify-end">
-        {/* Date Filter & View Mode Controls */}
-        <GanttToolbarDateFilter
-          handleTodayClick={handleTodayClick}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          scaleInput={scaleInput}
-          setScaleInput={setScaleInput}
-          dayWidth={dayWidth}
-          setDayWidth={setDayWidth}
-          isWidthChanged={isWidthChanged}
-          setIsWidthChanged={setIsWidthChanged}
-          saveDayWidth={saveDayWidth}
-          tempStartDate={tempStartDate}
-          setTempStartDate={setTempStartDate}
-          tempEndDate={tempEndDate}
-          setTempEndDate={setTempEndDate}
-          setFilterStartDate={setFilterStartDate}
-          setFilterEndDate={setFilterEndDate}
-        />
-
-        {/* Edit Mode & Batch Actions */}
-        {canWrite && (
           <button
             type="button"
             onClick={() => setIsEditMode(!isEditMode)}
             className={cn(
-              "p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all active:scale-95",
+              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
               isEditMode
-                ? "bg-blue-600 border-blue-600 text-white shadow-xs"
-                : "bg-white dark:bg-[#1e1e20] border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] hover:bg-slate-50"
+                ? "bg-blue-600 border-blue-500 text-white shadow-md ring-1 ring-blue-400"
+                : "bg-[#1c1c1e] border-slate-700/80 text-blue-400 hover:bg-[#252528]"
             )}
             title={t('Toggle Edit / Batch Actions Mode')}
           >
-            <Edit2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{isEditMode ? t('Editing') : t('Edit')}</span>
+            <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+            <span>Edit Mode</span>
           </button>
-        )}
+        </div>
+      </div>
 
-        {isEditMode && canWrite && (
-          <GanttToolbarActions
-            selectedProjectIds={selectedProjectIds}
-            selectedTaskIds={selectedTaskIds}
-            handleSetTextColor={handleSetTextColor}
-            handleSetBaselineSelected={handleSetBaselineSelected}
-            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
-            sumMode={sumMode}
-            setSumMode={setSumMode}
-            handleDeleteSelected={handleDeleteSelected}
-            isHideMode={isHideMode}
-            setIsHideMode={setIsHideMode}
-            hiddenRows={hiddenRows}
-            setHiddenRows={setHiddenRows}
-            handleExportToPDF={handleExportToPDF}
-            isExporting={isExporting}
+      {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today, View Toggle, Scale input & slider) */}
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+          <div className="flex flex-wrap items-center gap-2">
+            <GanttToolbarDateFilter
+              handleTodayClick={handleTodayClick}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              scaleInput={scaleInput}
+              setScaleInput={setScaleInput}
+              dayWidth={dayWidth}
+              setDayWidth={setDayWidth}
+              isWidthChanged={isWidthChanged}
+              setIsWidthChanged={setIsWidthChanged}
+              saveDayWidth={saveDayWidth}
+              tempStartDate={tempStartDate}
+              setTempStartDate={setTempStartDate}
+              tempEndDate={tempEndDate}
+              setTempEndDate={setTempEndDate}
+              setFilterStartDate={setFilterStartDate}
+              setFilterEndDate={setFilterEndDate}
+            />
+
+            <ColumnAdder
+              availableColumns={GANTT_AVAILABLE_COLUMNS}
+              visibleColumns={visibleColumns}
+              onAddColumn={handleToggleColumn}
+            />
+          </div>
+
+          {/* Edit Mode Batch Actions (Color, Baseline, Modular group, Sum, Hide, Delete, Export) */}
+          {isEditMode && (
+            <GanttToolbarActions
+              selectedProjectIds={selectedProjectIds}
+              selectedTaskIds={selectedTaskIds}
+              handleSetTextColor={handleSetTextColor}
+              handleSetBaselineSelected={handleSetBaselineSelected}
+              setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+              sumMode={sumMode}
+              setSumMode={setSumMode}
+              handleDeleteSelected={handleDeleteSelected}
+              isHideMode={isHideMode}
+              setIsHideMode={setIsHideMode}
+              hiddenRows={hiddenRows}
+              setHiddenRows={setHiddenRows}
+              handleExportToPDF={handleExportToPDF}
+              isExporting={isExporting}
+            />
+          )}
+
+          {/* Task loading spinner */}
+          {isTasksLoading && (
+            <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{t('Syncing...')}</span>
+            </div>
+          )}
+
+          {/* Focused Task clear button */}
+          {(initialFocusTaskId || ganttTabFocusTaskId) && (
+            <button
+              type="button"
+              onClick={handleClearFocus}
+              className="flex items-center gap-1 px-2 py-1 bg-amber-950/70 text-amber-300 border border-amber-800/80 font-bold rounded-lg text-xs transition-colors"
+            >
+              <span>Focus Active</span>
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Zoom Slider below Date Filter & Add Column */}
+        <div className="flex items-center gap-2 pl-0.5">
+          <input
+            type="range"
+            min="4"
+            max="40"
+            value={dayWidth}
+            onChange={(e) => {
+              const num = Number(e.target.value);
+              setDayWidth(num);
+              setScaleInput(String(Math.round((num / 8) * 75)));
+              setIsWidthChanged(true);
+            }}
+            className="w-24 sm:w-32 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
-        )}
+        </div>
+      </div>
 
-        {/* Column Adder */}
-        <ColumnAdder
-          availableColumns={GANTT_AVAILABLE_COLUMNS}
-          visibleColumns={visibleColumns}
-          onAddColumn={handleToggleColumn}
+      {/* Row 3: Full-width Search Bar */}
+      <div className="relative w-full">
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 z-10">
+          <Search className="w-3.5 h-3.5" />
+        </div>
+        <DebouncedSearchInput
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder="Search or ... ( + AND, , OR )"
+          className="w-full bg-[#18181a] dark:bg-[#161618] border border-slate-700/80 text-white placeholder-slate-400 text-xs rounded-lg pl-8 pr-8 py-1.5 outline-none shadow-inner focus:ring-1 focus:ring-blue-500 focus:border-blue-500 h-8 font-medium"
         />
       </div>
     </div>

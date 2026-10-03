@@ -68,7 +68,12 @@ export const GanttBar = React.memo(function GanttBar({
   const isTask = id.startsWith('task-') || id.startsWith('sim-task-');
   const dStart = parseDateTime(startStr);
   const dEnd = parseDateTime(endStr);
-  const isMilestone = dStart && dEnd && Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000;
+  const isMilestone = (dStart && dEnd && Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000) ||
+                      label.toLowerCase().includes('opening') ||
+                      label.toLowerCase().includes('taka handover') ||
+                      Number(extraVars?.duration) === 0;
+
+  const isGreenDesignTask = label.toLowerCase().includes('design') || label.toLowerCase().includes('drawing') || label.toLowerCase().includes('quotation');
   
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
@@ -119,9 +124,14 @@ export const GanttBar = React.memo(function GanttBar({
   const offsetDays = getExactDays(startDate, dStart);
   const durationDays = Math.max(getExactDays(dStart, dEnd) + 1, 1);
   const leftPx = offsetDays * dayWidth;
-  const widthPx = isMilestone ? 24 : Math.max(durationDays * dayWidth, 8);
+  const widthPx = isMilestone ? 16 : Math.max(durationDays * dayWidth, 8);
 
-  const barColor = getBarColor(status, extraVars?.duration);
+  const barColor = isMilestone 
+    ? "bg-[#f97316] border border-[#ea580c]" 
+    : isGreenDesignTask 
+    ? "bg-[#10b981] border border-[#059669]" 
+    : getBarColor(status, extraVars?.duration);
+
   const actProgress = extraVars?.actPrg ?? 0;
 
   return (
@@ -148,8 +158,8 @@ export const GanttBar = React.memo(function GanttBar({
         }}
         onMouseLeave={() => setIsHovered(false)}
         className={cn(
-          "absolute top-1.5 bottom-1.5 rounded-md flex items-center transition-all cursor-pointer select-none group shadow-2xs",
-          isMilestone ? "w-6 h-6 rotate-45 border-2 border-white dark:border-slate-800" : "h-7",
+          "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs",
+          isMilestone ? "w-4 h-4 rotate-45 rounded-[2px] mt-1.5 shadow-md z-20" : "h-6 rounded-md",
           barColor,
           isSimulation && "border-2 border-dashed border-purple-400 opacity-80",
           extraVars?.highlight === 'assignee' && "ring-2 ring-emerald-400 ring-offset-1",

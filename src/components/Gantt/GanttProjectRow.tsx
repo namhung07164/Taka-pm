@@ -239,29 +239,29 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 : p.name
             }
           >
-            <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex flex-col min-w-0 flex-1 gap-0.5">
               <span 
                 className={cn(
-                  "font-bold text-xs truncate text-slate-800 dark:text-[#e3e3e3]",
-                  !isEditMode && "group-hover/pname:text-blue-600 dark:group-hover/pname:text-[#8ab4f8] group-hover/pname:underline transition-colors"
+                  "font-bold text-xs sm:text-sm truncate text-white dark:text-white",
+                  !isEditMode && "group-hover/pname:text-blue-400 transition-colors"
                 )} 
                 title={p.name}
               >
                 {p.name}
               </span>
-              <span className="text-[10px] text-slate-500 dark:text-[#838383] truncate font-mono flex items-center gap-1.5 flex-wrap">
-                <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0">{p.code}</span>
-                <span className={cn(
-                  "px-1.5 py-0.2 text-[9px] font-bold rounded border uppercase shrink-0",
-                  p.store?.toLowerCase() === 'hcm' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200/80 dark:border-blue-800' :
-                  p.store?.toLowerCase() === 'hn' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800' : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                )}>{p.store}</span>
+              <span className="text-[10px] text-slate-400 truncate font-mono flex items-center gap-1.5 flex-wrap">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] shrink-0">
+                  {p.code}
+                </span>
+                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] uppercase shrink-0">
+                  {p.store}
+                </span>
                 {p.location && (
-                  <>
-                    <span className="text-slate-400">•</span>
-                    <span className="font-semibold text-slate-600 dark:text-slate-300">{p.location}</span>
-                  </>
+                  <span className="text-slate-400 text-[11px] font-medium">
+                    • {p.location}
+                  </span>
                 )}
+                <span className="text-amber-400 text-[10px] font-bold">●</span>
               </span>
             </div>
           </button>

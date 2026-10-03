@@ -5,7 +5,7 @@ import { computeTaskCode } from '../../lib/ganttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { GanttTaskLeftColumns } from './GanttTaskLeftColumns';
-import { cn } from '../../lib/utils';
+import { cn, formatGanttDate } from './GanttUtils';
 
 export interface GanttTaskRowProps {
   t: Task;
@@ -177,19 +177,47 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           handleTaskCheckboxChange={handleTaskCheckboxChange}
           isHideMode={isHideMode}
           toggleHideRow={toggleHideRow}
-          showStart={showStart}
-          startColWidth={startColWidth}
-          showFinish={showFinish}
-          finishColWidth={finishColWidth}
-          showParty={showParty}
-          partyColWidth={partyColWidth}
-          showDuration={showDuration}
-          durationColWidth={durationColWidth}
           isDragging={isDragging}
           handleTaskDragStart={handleTaskDragStart}
           handleTaskDragEnd={handleTaskDragEnd}
         />
       </div>
+
+      {showStart && (
+        <div
+          className="print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 bg-white dark:bg-[#1e1e20]"
+          style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
+        >
+          {formatGanttDate(t.start)}
+        </div>
+      )}
+
+      {showFinish && (
+        <div
+          className="print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 bg-white dark:bg-[#1e1e20]"
+          style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
+        >
+          {formatGanttDate(t.finish)}
+        </div>
+      )}
+
+      {showParty && (
+        <div
+          className="print-sticky-x sticky z-30 text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 bg-white dark:bg-[#1e1e20]"
+          style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
+        >
+          {t.party || "-"}
+        </div>
+      )}
+
+      {showDuration && (
+        <div
+          className="print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center font-bold shrink-0 bg-white dark:bg-[#1e1e20]"
+          style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
+        >
+          {t.duration ? `${t.duration}d` : "-"}
+        </div>
+      )}
 
       {/* Right Timeline Area */}
       <div className="flex-1 relative h-full flex items-center">
