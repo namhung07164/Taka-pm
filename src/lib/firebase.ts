@@ -41,11 +41,11 @@ const firebaseConfigDev = {
   appId: "1:855584353883:web:8819bcbf8c58a28fb8997e"
 };
 
-// Tự động nhận diện môi trường
+// Tự động nhận diện môi trường (Sandbox ais-dev / localhost vs Production ais-pre)
 const isDevMode = (import.meta as any).env?.DEV || (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev')));
 
-// Sử dụng cấu hình đồng nhất để tránh lỗi phân biệt môi trường làm mất quyền ghi dữ liệu
-const firebaseConfig = firebaseConfigProd;
+// Sandbox kết nối database tak-project---ver1, Production kết nối taka---projec-1
+const firebaseConfig = isDevMode ? firebaseConfigDev : firebaseConfigProd;
 
 console.log(`🔥 Firebase Initialized with Project: ${firebaseConfig.projectId}`);
 
