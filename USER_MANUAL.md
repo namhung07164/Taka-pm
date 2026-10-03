@@ -1559,6 +1559,19 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Bảng thư viện hình ảnh & link thumbnail (`Image & Link Gallery Panel`) luôn nằm ở **phía dưới ô mô tả / chi tiết dự án (Description)**.
      - Khi người dùng nhấp nút biểu tượng hình ảnh trên thanh tiêu đề, bảng thư viện hình ảnh mở rộng mượt mà xuống bên dưới ô mô tả và tự động cuộn nhẹ hiển thị toàn bộ nội dung hình ảnh một cách trực quan, rõ ràng.
 
+32. **Phóng To & Cuộn Chuột Thu Phóng Hình Ảnh Trong Cửa Sổ Xem Ảnh (Lightbox Zoom & Wheel Scroll Controls)**:
+   - **Thao Tác Thu Phóng Đa Năng**:
+     - Trong cửa sổ xem ảnh phóng to (`LayoutUnitLightboxModal`), người dùng có thể **cuộn con trỏ chuột (`Mouse Wheel Scroll`)** lên/ลง để phóng to hoặc thu nhỏ ảnh linh hoạt.
+     - Tích hợp thêm các nút điều khiển nhanh trên thanh tiêu đề: **Phóng to (`+`)**, **Thu nhỏ (`-`)**, và **Đặt lại tỷ lệ (`1:1`)**.
+     - Hỗ trợ thao tác chụm 2 ngón tay (`Pinch-to-zoom`) trên màn hình cảm ứng di động, nhấp cúi đúp (`Double click`) để phóng to/thu nhỏ nhanh, và giữ rê chuột (`Drag to Pan`) để di chuyển hình ảnh dễ dàng.
+
+33. **Tự Động Đẩy Đỉnh Bảng Tooltip Tránh Bị Che Nút Menu (Tooltip Smart Clearance & Height Clamping)**:
+   - **Tối Ưu Vùng Nhìn Trên Di Động**:
+     - Khi mở rộng bảng hình ảnh trong Tooltip gian hàng trên màn hình di động, bảng Tooltip tự động đẩy vị trí mép trên (`top = safeTop`) lên ngay sát dưới thanh điều hướng chính.
+     - Tối ưu kích thước xem trước hình ảnh ở mức vừa vặn (`max-h-[190px]`), giúp toàn bộ khung thông tin và hình ảnh nằm gọn gàng phía trên nút Menu điều hướng (`≡ Menu`), tuyệt đối không bị che khuất hay chìm xuống dưới mép màn hình.
+
+
+
 
 
 

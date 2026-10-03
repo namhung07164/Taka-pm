@@ -241,7 +241,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       const right = pad;
       
       let top = safeTop;
-      if (bounds) {
+      if (!showImagePanel && bounds) {
         if (bounds.centerY > viewportHeight * 0.52) {
           top = safeTop;
         } else {
@@ -453,19 +453,22 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     setShowAddLinkInput(false);
   }, [data.code, unitCode]);
 
-  // Smoothly scroll tooltip down to reveal image panel expanding below description box when image button is pressed
+  // Re-evaluate position & smoothly scroll tooltip down to reveal image panel expanding below description box when image button is pressed
   useEffect(() => {
-    if (showImagePanel && tooltipRef.current) {
-      setTimeout(() => {
-        if (tooltipRef.current) {
-          tooltipRef.current.scrollTo({
-            top: tooltipRef.current.scrollHeight,
-            behavior: 'smooth'
-          });
-        }
-      }, 50);
+    if (tooltipRef.current) {
+      if (showImagePanel) {
+        positionTooltip(true);
+        setTimeout(() => {
+          if (tooltipRef.current) {
+            tooltipRef.current.scrollTo({
+              top: tooltipRef.current.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        }, 50);
+      }
     }
-  }, [showImagePanel, tooltipRef]);
+  }, [showImagePanel, positionTooltip, tooltipRef]);
 
   // Close enlarged image modal with Escape key
   useEffect(() => {
@@ -1251,7 +1254,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                   className="bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#333336] p-2 flex flex-col gap-1.5 shadow-2xs group hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
                 >
                   {/* Thumbnail Image Container - Full Natural Proportions & Zero Crop */}
-                  <div className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[320px] sm:max-h-[360px] flex items-center justify-center group/thumb p-1">
+                  <div className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[190px] sm:max-h-[280px] flex items-center justify-center group/thumb p-1">
                     <img 
                       src={normalizeImageUrl(img.url)} 
                       alt={img.title}
@@ -1265,7 +1268,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                           parent.appendChild(div);
                         }
                       }}
-                      className="w-full h-auto max-h-[310px] sm:max-h-[350px] object-contain cursor-pointer hover:scale-[1.01] transition-transform duration-200 rounded-md"
+                      className="w-full h-auto max-h-[180px] sm:max-h-[270px] object-contain cursor-pointer hover:scale-[1.01] transition-transform duration-200 rounded-md"
                       onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
                     />
                     <div className="absolute top-2 right-2 flex gap-1 opacity-90 group-hover/thumb:opacity-100 transition-opacity">

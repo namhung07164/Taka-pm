@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -8,8 +8,12 @@ import {
   Link as LinkIcon, 
   Check, 
   Loader2, 
-  AlertCircle 
+  AlertCircle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -49,6 +53,7 @@ export function LayoutUnitLightboxModal({
 }: LayoutUnitLightboxModalProps) {
   const [imageError, setImageError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const transformRef = useRef<any>(null);
 
   const rawUrl = enlargedImage?.url || '';
   const resolvedUrl = normalizeImageUrl(rawUrl);
@@ -115,7 +120,37 @@ export function LayoutUnitLightboxModal({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Zoom Control Buttons */}
+            {!imageError && (
+              <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
+                <button
+                  type="button"
+                  onClick={() => transformRef.current?.zoomIn()}
+                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
+                  title="Phóng to (+ / Cuộn chuột lên)"
+                >
+                  <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => transformRef.current?.zoomOut()}
+                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
+                  title="Thu nhỏ (- / Cuộn chuột xuống)"
+                >
+                  <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => transformRef.current?.resetTransform()}
+                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
+                  title="Đặt lại tỉ lệ (1:1)"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => onCopyLink(rawUrl)}
@@ -158,8 +193,8 @@ export function LayoutUnitLightboxModal({
           </div>
         </div>
 
-        {/* Content Body: Image or Fallback */}
-        <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/70 overflow-hidden min-h-[260px] sm:min-h-[380px] relative">
+        {/* Content Body: Zoomable Image or Fallback */}
+        <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/70 overflow-hidden min-h-[280px] sm:min-h-[420px] relative">
           {isLoading && !imageError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10">
               <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
@@ -168,18 +203,34 @@ export function LayoutUnitLightboxModal({
           )}
 
           {!imageError ? (
-            <img
-              src={resolvedUrl}
-              alt={enlargedImage.title || 'Enlarged Preview'}
-              onLoad={() => setIsLoading(false)}
-              onError={() => {
-                setIsLoading(false);
-                setImageError(true);
-              }}
-              className={`max-w-full max-h-[75vh] object-contain rounded-xl select-none transition-opacity duration-200 ${
-                isLoading ? 'opacity-0' : 'opacity-100'
-              }`}
-            />
+            <TransformWrapper
+              ref={transformRef}
+              initialScale={1}
+              minScale={0.5}
+              maxScale={8}
+              centerOnInit
+              wheel={{ step: 0.1 }}
+              doubleClick={{ mode: 'toggle' }}
+            >
+              <TransformComponent
+                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing"
+                contentClass="!w-full !h-full flex items-center justify-center"
+              >
+                <img
+                  src={resolvedUrl}
+                  alt={enlargedImage.title || 'Enlarged Preview'}
+                  onLoad={() => setIsLoading(false)}
+                  onError={() => {
+                    setIsLoading(false);
+                    setImageError(true);
+                  }}
+                  className={`max-w-full max-h-[75vh] object-contain rounded-xl select-none transition-opacity duration-200 ${
+                    isLoading ? 'opacity-0' : 'opacity-100'
+                  }`}
+                  draggable={false}
+                />
+              </TransformComponent>
+            </TransformWrapper>
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900/90 rounded-2xl border border-slate-700/60 shadow-xl">
               <AlertCircle className="w-10 h-10 text-amber-400" />
