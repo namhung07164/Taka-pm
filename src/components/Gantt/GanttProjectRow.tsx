@@ -34,6 +34,8 @@ export interface GanttProjectRowProps {
   partyColWidth?: number;
   showDuration?: boolean;
   durationColWidth?: number;
+  showPredecessor?: boolean;
+  predecessorColWidth?: number;
   timeUnits?: any[];
   delegationGroups?: any[];
   getRowVisibilityClass?: (id: string) => string;
@@ -57,7 +59,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   p, pIdx, projectTasks = [], isExpanded, expandedModularTasks = [], setExpandedModularTasks, isEditMode = false, canWrite = false,
   selectedProjectSet = new Set(), selectedProjectIds = [], setSelectedProjectIds, setSelectedTaskIds,
   toggleProject, toggleProjectExpansion, isResizingSide = false, startResizingSide,
-  sideWidth, showStart = false, startColWidth = 80, showFinish = false, finishColWidth = 80, showParty = false, partyColWidth = 70, showDuration = false, durationColWidth = 50,
+  sideWidth, showStart = false, startColWidth = 80, showFinish = false, finishColWidth = 80, showParty = false, partyColWidth = 70, showDuration = false, durationColWidth = 50, showPredecessor = false, predecessorColWidth = 90,
   timeUnits = [], delegationGroups = [], getRowVisibilityClass = () => '', startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor = () => 'bg-blue-500',
   isHideMode = false, toggleHideRow, handleTogglePin, onNavigateToLayout
 }) => {
@@ -307,6 +309,15 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
           </div>
         )}
 
+        {showPredecessor && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-indigo-700 dark:text-indigo-400 font-bold border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: predecessorColWidth, minWidth: predecessorColWidth, maxWidth: predecessorColWidth }}
+          >
+            -
+          </div>
+        )}
+
         {startResizingSide && (
           <div
             className={cn(
@@ -365,6 +376,8 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
          prev.showFinish === next.showFinish &&
          prev.showParty === next.showParty &&
          prev.showDuration === next.showDuration &&
+         prev.showPredecessor === next.showPredecessor &&
+         prev.predecessorColWidth === next.predecessorColWidth &&
          prev.timeUnits?.length === next.timeUnits?.length &&
          prev.p === next.p &&
          prev.projectTasks === next.projectTasks &&

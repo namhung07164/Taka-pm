@@ -260,7 +260,8 @@ export function GanttTab({
     showStart: visibleColumns.includes('start'),
     showFinish: visibleColumns.includes('finish'),
     showParty: visibleColumns.includes('party'),
-    showDuration: visibleColumns.includes('duration')
+    showDuration: visibleColumns.includes('duration'),
+    showPredecessor: visibleColumns.includes('predecessor')
   });
 
   // 6. Drag & Drop Task Reordering
@@ -419,6 +420,7 @@ export function GanttTab({
         setActiveTooltip={setActiveTooltip}
         getBarColor={getBarColor}
         visibleColumns={visibleColumns}
+        handleToggleColumn={handleToggleColumn}
         projects={projects}
         tasks={tasks}
         delegationGroups={delegationGroups}

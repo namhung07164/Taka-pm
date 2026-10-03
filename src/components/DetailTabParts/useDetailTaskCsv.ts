@@ -33,7 +33,23 @@ export function useDetailTaskCsv({
   currentUser,
 }: UseDetailTaskCsvParams) {
   const handleExportTasks = () => {
-    const headers = ['store', 'location', 'projectYear', 'projectCode', 'Sub-task code', 'Task name', 'start', 'finish', 'duration', 'party', 'predecessor', 'delegation', 'task flexible', 'comments'];
+    const headers = [
+      'store',
+      'location',
+      'projectYear',
+      'projectCode',
+      'Sub-task code',
+      'Task name',
+      'Parent task code',
+      'start',
+      'finish',
+      'duration',
+      'party',
+      'predecessor',
+      'delegation',
+      'task flexible',
+      'comments'
+    ];
     
     // Flatten filtered belonging to filtered
     const filteredTasksToExport: Task[] = [];
@@ -53,6 +69,8 @@ export function useDetailTaskCsv({
         (t.projectStore == proj.store || (!t.projectStore && !proj.store))
       );
       const subTaskCode = t.taskCodePhu || (p ? `${p.code}#${t.orderIndex !== undefined ? t.orderIndex + 1 : idx + 1}` : '');
+      const parentTask = t.parentTaskId ? tasks.find(pt => String(pt.id) === String(t.parentTaskId)) : null;
+
       const commentsText = t.comments && t.comments.length > 0 
         ? t.comments.map(c => {
             const author = appUsers.find(u => 
@@ -71,6 +89,7 @@ export function useDetailTaskCsv({
         t.projectCode || '', 
         subTaskCode,
         t.name || '', 
+        parentTask ? (parentTask.taskCodePhu || parentTask.name || '') : '',
         formatToCSVDate(t.start), 
         formatToCSVDate(t.finish), 
         t.duration !== undefined ? t.duration : '',
@@ -181,11 +200,23 @@ export function useDetailTaskCsv({
           if (h === 'comments' || h === 'comment') {
             key = 'importComment';
           }
-          if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parenttask' || h === 'parent task' || h === 'task mẹ' || h === 'task me' || h === 'parent' || h === 'parent id') {
+          if (h === 'parent task code' || h === 'parenttaskcode' || h === 'parent_task_code' || h === 'parent code' || h === 'parent_code' || h === 'task mẹ code' || h === 'task me code') {
+            key = 'parentTaskCode';
+          }
+          if (h === 'parent task name' || h === 'parenttaskname' || h === 'parent_task_name' || h === 'parent name' || h === 'parent_name' || h === 'task mẹ name' || h === 'task me name' || h === 'task mẹ' || h === 'task me' || h === 'parent task' || h === 'parenttask') {
+            key = 'parentTaskName';
+          }
+          if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parent id' || h === 'parentid') {
             key = 'parentTaskId';
           }
+          if (h === 'is parent' || h === 'is_parent' || h === 'isparent') {
+            key = 'isParent';
+          }
+          if (h === 'level' || h === 'wbs level' || h === 'wbs_level') {
+            key = 'level';
+          }
           
-          if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId'].includes(key)) {
+          if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
             let val: any = row[i];
             if (key === 'start' || key === 'finish') {
               val = parseCSVDate(val);
@@ -373,6 +404,83 @@ export function useDetailTaskCsv({
           tasksToImport.push(finalTask as Task);
         });
       });
+
+      // Resolve parent-child hierarchy (Mẹ - Con) across imported tasks and existing tasks
+      const lookupTaskMap = new Map<string, Task>();
+      tasks.forEach(t => lookupTaskMap.set(t.id, t));
+      tasksToImport.forEach(t => lookupTaskMap.set(t.id, t));
+
+      tasksToImport.forEach(t => {
+        let resolvedParentId: string | undefined = undefined;
+
+        // 1. Direct parentTaskId match
+        if (t.parentTaskId && lookupTaskMap.has(t.parentTaskId)) {
+          resolvedParentId = t.parentTaskId;
+        }
+        // 2. By parentTaskCode (e.g. PJ-01#1, #1, 1) within the same project
+        else if ((t as any).parentTaskCode) {
+          const pCode = String((t as any).parentTaskCode).trim().toLowerCase();
+          const cleanNumMatch = pCode.match(/^#?(\d+)$/);
+          const targetIndex = cleanNumMatch ? parseInt(cleanNumMatch[1], 10) - 1 : -1;
+
+          const matchedParent = Array.from(lookupTaskMap.values()).find(
+            pt => pt.projectCode === t.projectCode &&
+                  (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
+                  (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
+                  (
+                    String(pt.taskCodePhu || '').trim().toLowerCase() === pCode ||
+                    String(pt.id).toLowerCase() === pCode ||
+                    (cleanNumMatch && String(pt.taskCodePhu || '').trim().toLowerCase().endsWith(`#${cleanNumMatch[1]}`)) ||
+                    (targetIndex >= 0 && pt.orderIndex === targetIndex)
+                  )
+          );
+          if (matchedParent && matchedParent.id !== t.id) {
+            resolvedParentId = matchedParent.id;
+          }
+        }
+        // 3. By parentTaskName within the same project
+        else if ((t as any).parentTaskName) {
+          const pName = String((t as any).parentTaskName).trim().toLowerCase();
+          const matchedParent = Array.from(lookupTaskMap.values()).find(
+            pt => pt.projectCode === t.projectCode &&
+                  (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
+                  (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
+                  String(pt.name || '').trim().toLowerCase() === pName
+          );
+          if (matchedParent && matchedParent.id !== t.id) {
+            resolvedParentId = matchedParent.id;
+          }
+        }
+
+        if (resolvedParentId && resolvedParentId !== t.id) {
+          t.parentTaskId = resolvedParentId;
+          (t as any).parentId = resolvedParentId;
+        } else if (resolvedParentId === t.id) {
+          delete t.parentTaskId;
+          delete (t as any).parentId;
+        }
+
+        delete (t as any).parentTaskCode;
+        delete (t as any).parentTaskName;
+        delete (t as any).isParent;
+        delete (t as any).level;
+      });
+
+      // Auto-expand any parent tasks in Gantt view
+      try {
+        const parentIdsToExpand = new Set<string>();
+        tasksToImport.forEach(t => {
+          if (t.parentTaskId) parentIdsToExpand.add(String(t.parentTaskId));
+        });
+        if (parentIdsToExpand.size > 0) {
+          const saved = sessionStorage.getItem("taka_gantt_modular_expanded");
+          const existingList: string[] = saved ? JSON.parse(saved) : [];
+          parentIdsToExpand.forEach(id => {
+            if (!existingList.includes(id)) existingList.push(id);
+          });
+          sessionStorage.setItem("taka_gantt_modular_expanded", JSON.stringify(existingList));
+        }
+      } catch (_) {}
 
       // 1. Tạm thời đọc start date, end date vào Zustand (Optimistic UI - Rule 2)
       useAppStore.getState().optimisticUpdateTasks(tasksToImport);

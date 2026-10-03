@@ -12,6 +12,8 @@ export interface GanttTodayLineProps {
   partyColWidth?: number;
   showDuration?: boolean;
   durationColWidth?: number;
+  showPredecessor?: boolean;
+  predecessorColWidth?: number;
   todayLeftPx?: number;
   customToday: Date;
   setCustomToday?: (d: Date) => void;
@@ -33,6 +35,8 @@ export const GanttTodayLine: React.FC<GanttTodayLineProps> = React.memo(({
   partyColWidth = 0,
   showDuration = false,
   durationColWidth = 0,
+  showPredecessor = false,
+  predecessorColWidth = 0,
   todayLeftPx,
   customToday,
   setCustomToday,
@@ -56,6 +60,7 @@ export const GanttTodayLine: React.FC<GanttTodayLineProps> = React.memo(({
     (showFinish ? finishColWidth : 0) +
     (showParty ? partyColWidth : 0) +
     (showDuration ? durationColWidth : 0) +
+    (showPredecessor ? predecessorColWidth : 0) +
     (calculatedTodayLeft || 0);
 
   const formattedDate = format(customToday, 'dd/MM/yyyy');

@@ -1505,6 +1505,18 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Chống Tràn & Không Bị Ngắt Chữ (Zero Awkward Line Wrapping)**:
      + Tự động chống ngắt dòng giữa chừng (`whitespace-nowrap`), căn giữa tuyệt đối trong ô (width 80–110px), đem lại giao diện báo cáo chuyên nghiệp chuẩn Enterprise.
 
+25. **Cột Predecessor Trên Biểu Đồ Gantt & Đồng Bộ Phân Cấp Mẹ - Con Khi Xuất / Nhập CSV (Gantt Predecessors & Parent-Child CSV Synchronization)**:
+   - **Bổ Sung Cột Predecessor Trong Menu `+ Add Column` (Gantt Tab)**:
+     + Người dùng có thể bật/tắt cột **Predecessor** trực tiếp từ nút menu `+ Add Column` trên thanh công cụ Gantt hoặc ẩn nhanh bằng biểu tượng con mắt `EyeOff` trên tiêu đề cột.
+     + Hiển thị trực quan toàn bộ chuỗi tiền nhiệm liên kết (ví dụ: `1FS`, `2SS+3d`, `PJ-01#2FF`) với phông Monospace màu tím đặc trưng (`text-indigo-600 dark:text-indigo-400`), tự động căn chuẩn vị trí đường dây liên kết SVG (Dependency Lines) và mốc thời gian thực tế `Today Indicator Line`.
+   - **Tối Ưu Tối Giản 1 Trường Cột Duy Nhất Cho Công Việc Mẹ (`Parent task code`)**:
+     + **Khi Xuất File CSV / Excel (`Export Tasks`)**: Chỉ xuất duy nhất 1 cột đại diện cho công việc mẹ:
+       * `Parent task code`: Mã sub-task / ID của công việc mẹ (ví dụ: `PJ-01#1`). Để trống nếu không thuộc công việc mẹ nào.
+     + **Khi Nhập File CSV / Excel (`Import Tasks`)**:
+       * Tự động đọc cột `Parent task code` (hoặc các định danh tên cột tương đương như `Parent task code`, `Parent task name`, `Task mẹ`, `Parent task ID`, `Parent`).
+       * Tự động liên kết công việc con vào đúng công việc mẹ trong cùng dự án, sau đó kích hoạt bộ máy **Rollup Engine** để tính toán tự động ngày bắt đầu (Start), ngày kết thúc (Finish) và thời lượng (Duration) cho toàn bộ cây công việc.
+
+
 
 
 

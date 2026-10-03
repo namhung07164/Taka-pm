@@ -38,6 +38,8 @@ export interface GanttTaskRowProps {
   partyColWidth: number;
   showDuration: boolean;
   durationColWidth: number;
+  showPredecessor?: boolean;
+  predecessorColWidth?: number;
   timeUnits: any[];
   startDate: Date;
   dayWidth: number;
@@ -90,6 +92,8 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   partyColWidth,
   showDuration,
   durationColWidth,
+  showPredecessor = false,
+  predecessorColWidth = 90,
   timeUnits,
   startDate,
   dayWidth,
@@ -218,6 +222,16 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
             style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
           >
             {t.duration ? `${t.duration}d` : "-"}
+          </div>
+        )}
+
+        {showPredecessor && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-indigo-600 dark:text-indigo-400 font-semibold border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
+            style={{ width: predecessorColWidth, minWidth: predecessorColWidth, maxWidth: predecessorColWidth }}
+            title={t.predecessor || ""}
+          >
+            <span className="truncate">{t.predecessor || "-"}</span>
           </div>
         )}
       </div>

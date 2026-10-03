@@ -75,12 +75,27 @@ export function useGanttVirtualization({
       const parentTasks: Task[] = [];
       const childTasksMap = new Map<string, Task[]>();
 
+      // Index tasks in project by ID and taskCodePhu for robust parent matching
+      const projectTaskById = new Map<string, Task>();
+      const projectTaskByCode = new Map<string, Task>();
       pTasks.forEach(t => {
-        if (t.parentTaskId) {
-          if (!childTasksMap.has(t.parentTaskId)) {
-            childTasksMap.set(t.parentTaskId, []);
+        if (t.id) projectTaskById.set(String(t.id), t);
+        if (t.taskCodePhu) {
+          projectTaskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        }
+      });
+
+      pTasks.forEach(t => {
+        const rawParentId = t.parentTaskId || (t as any).parentId;
+        if (rawParentId) {
+          const parentKey = String(rawParentId).trim().toLowerCase();
+          const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
+          const effectiveParentId = matchedParent ? matchedParent.id : String(rawParentId);
+
+          if (!childTasksMap.has(effectiveParentId)) {
+            childTasksMap.set(effectiveParentId, []);
           }
-          childTasksMap.get(t.parentTaskId)!.push(t);
+          childTasksMap.get(effectiveParentId)!.push(t);
         } else {
           parentTasks.push(t);
         }

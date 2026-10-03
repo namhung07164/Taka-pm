@@ -15,6 +15,7 @@ const GANTT_AVAILABLE_COLUMNS = [
   { id: 'finish', label: 'Finish' },
   { id: 'party', label: 'Party' },
   { id: 'duration', label: 'Duration' },
+  { id: 'predecessor', label: 'Predecessor' },
 ];
 
 export interface GanttToolbarProps {

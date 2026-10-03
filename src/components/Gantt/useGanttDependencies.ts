@@ -21,6 +21,8 @@ interface UseGanttDependenciesParams {
   partyColWidth?: number;
   showDuration?: boolean;
   durationColWidth?: number;
+  showPredecessor?: boolean;
+  predecessorColWidth?: number;
 }
 
 export function useGanttDependencies({
@@ -40,6 +42,8 @@ export function useGanttDependencies({
   partyColWidth = 70,
   showDuration = false,
   durationColWidth = 50,
+  showPredecessor = false,
+  predecessorColWidth = 90,
 }: UseGanttDependenciesParams) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
@@ -89,7 +93,7 @@ export function useGanttDependencies({
 
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
     let currentY = paddingTop;
-    const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0);
+    const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
 
     visibleGanttRows.forEach((row) => {
       const rowHeight = row.type === 'project' ? 40 : 36;
@@ -171,6 +175,8 @@ export function useGanttDependencies({
     partyColWidth,
     showDuration,
     durationColWidth,
+    showPredecessor,
+    predecessorColWidth,
     projects,
     tasks,
   ]);
