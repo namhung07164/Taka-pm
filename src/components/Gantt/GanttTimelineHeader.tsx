@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, X, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 
@@ -167,7 +167,7 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
         </th>
         {showStart && (
           <th
-            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-3 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
+            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-2 sm:p-2.5 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
             style={{
               position: "sticky",
               left: sideWidth,
@@ -179,22 +179,29 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
             }}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase tracking-wider">
-                Start Date
+              <span className="text-[11px] font-bold text-slate-600 dark:text-[#c3c3c3] uppercase tracking-wider truncate">
+                {t('Start')}
               </span>
-              <button
-                onClick={() => handleToggleColumn("start")}
-                className="text-slate-400 hover:text-slate-600 dark:text-[#838383] dark:hover:text-[#a3a3a3] opacity-0 group-hover/col:opacity-100 transition-opacity print:hidden"
-                title="Hide Start Date"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              {handleToggleColumn && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleColumn("start");
+                  }}
+                  className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer opacity-70 hover:opacity-100 active:scale-90 print:hidden shrink-0"
+                  title="Hide Start Date column"
+                  aria-label="Hide Start Date"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </th>
         )}
         {showFinish && (
           <th
-            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-3 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
+            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-2 sm:p-2.5 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
             style={{
               position: "sticky",
               left: sideWidth + (showStart ? startColWidth : 0),
@@ -206,22 +213,29 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
             }}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase tracking-wider">
-                End Date
+              <span className="text-[11px] font-bold text-slate-600 dark:text-[#c3c3c3] uppercase tracking-wider truncate">
+                {t('Finish')}
               </span>
-              <button
-                onClick={() => handleToggleColumn("finish")}
-                className="text-slate-400 hover:text-slate-600 dark:text-[#838383] dark:hover:text-[#a3a3a3] opacity-0 group-hover/col:opacity-100 transition-opacity print:hidden"
-                title="Hide End Date"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              {handleToggleColumn && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleColumn("finish");
+                  }}
+                  className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer opacity-70 hover:opacity-100 active:scale-90 print:hidden shrink-0"
+                  title="Hide Finish Date column"
+                  aria-label="Hide Finish Date"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </th>
         )}
         {showParty && (
           <th
-            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-3 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
+            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-2 sm:p-2.5 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
             style={{
               position: "sticky",
               left:
@@ -236,20 +250,29 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
             }}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase tracking-wider">{t("Party")}</span>
-              <button
-                onClick={() => handleToggleColumn("party")}
-                className="text-slate-400 hover:text-slate-600 dark:text-[#838383] dark:hover:text-[#a3a3a3] opacity-0 group-hover/col:opacity-100 transition-opacity print:hidden"
-                title="Hide Party"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              <span className="text-[11px] font-bold text-slate-600 dark:text-[#c3c3c3] uppercase tracking-wider truncate">
+                {t("Party")}
+              </span>
+              {handleToggleColumn && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleColumn("party");
+                  }}
+                  className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer opacity-70 hover:opacity-100 active:scale-90 print:hidden shrink-0"
+                  title="Hide Party column"
+                  aria-label="Hide Party"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </th>
         )}
         {showDuration && (
           <th
-            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-3 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
+            className="print-sticky-x sticky top-0 z-50 bg-white dark:bg-[#1e1e20] border-b border-r border-slate-200 dark:border-[#444446] p-2 sm:p-2.5 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group/col"
             style={{
               position: "sticky",
               left:
@@ -265,16 +288,23 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
             }}
           >
             <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase tracking-wider w-full text-center">
-                Dur
+              <span className="text-[11px] font-bold text-slate-600 dark:text-[#c3c3c3] uppercase tracking-wider truncate">
+                {t('Dur')}
               </span>
-              <button
-                onClick={() => handleToggleColumn("duration")}
-                className="text-slate-400 hover:text-slate-600 dark:text-[#838383] dark:hover:text-[#a3a3a3] opacity-0 group-hover/col:opacity-100 transition-opacity print:hidden"
-                title="Hide Duration"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              {handleToggleColumn && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleColumn("duration");
+                  }}
+                  className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer opacity-70 hover:opacity-100 active:scale-90 print:hidden shrink-0"
+                  title="Hide Duration column"
+                  aria-label="Hide Duration"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </th>
         )}

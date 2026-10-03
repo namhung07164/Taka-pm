@@ -3,23 +3,32 @@ import { useAppStore } from '../../store/useAppStore';
 import { parseDateTime } from '../../lib/utils';
 import { ViewMode, TimeUnit } from './ganttTypes';
 import { useSyncScroll } from './GanttHooks';
+import { Project, Task } from '../../types';
 
 interface UseGanttTimelineParams {
   filterStartDate: string;
   filterEndDate: string;
   printDateRangeOverride?: { start: Date; end: Date };
+  paginatedProjects?: Project[];
+  tasks?: Task[];
+  getGroupTasksForProject?: (p: Project) => Task[];
+  globalYearFilter?: string;
 }
 
 export function useGanttTimeline({
   filterStartDate,
   filterEndDate,
-  printDateRangeOverride
+  printDateRangeOverride,
+  paginatedProjects,
+  tasks,
+  getGroupTasksForProject,
+  globalYearFilter
 }: UseGanttTimelineParams) {
   const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   
   const [dayWidth, setDayWidth] = useState<number>(() => {
     const saved = localStorage.getItem("taka_gantt_day_width");
-    return saved ? Math.max(5, Math.min(120, Number(saved))) : 24;
+    return saved ? Math.max(4, Math.min(120, Number(saved))) : 8;
   });
 
   const [isWidthChanged, setIsWidthChanged] = useState(false);
@@ -68,13 +77,63 @@ export function useGanttTimeline({
     let start = filterStartDate ? parseDateTime(filterStartDate) : null;
     let end = filterEndDate ? parseDateTime(filterEndDate) : null;
 
-    if (!start) {
-      start = new Date();
-      start.setFullYear(start.getFullYear() - 1, 0, 1);
-    }
-    if (!end) {
-      end = new Date();
-      end.setFullYear(end.getFullYear() + 2, 11, 31);
+    if (!start || !end) {
+      let minFound: Date | null = null;
+      let maxFound: Date | null = null;
+
+      if (paginatedProjects && paginatedProjects.length > 0) {
+        paginatedProjects.forEach((p) => {
+          const pStart = p.start ? parseDateTime(p.start) : (p.computedTakStart ? parseDateTime(p.computedTakStart) : null);
+          const pEnd = p.opening ? parseDateTime(p.opening) : (p.computedOpening ? parseDateTime(p.computedOpening) : (p.handover ? parseDateTime(p.handover) : (p.computedTakCompl ? parseDateTime(p.computedTakCompl) : null)));
+
+          if (pStart) {
+            if (!minFound || pStart < minFound) minFound = pStart;
+          }
+          if (pEnd) {
+            if (!maxFound || pEnd > maxFound) maxFound = pEnd;
+          }
+
+          if (getGroupTasksForProject) {
+            const groupTasks = getGroupTasksForProject(p);
+            groupTasks.forEach((t) => {
+              const tStart = t.start ? parseDateTime(t.start) : null;
+              const tEnd = t.finish ? parseDateTime(t.finish) : null;
+              if (tStart) {
+                if (!minFound || tStart < minFound) minFound = tStart;
+              }
+              if (tEnd) {
+                if (!maxFound || tEnd > maxFound) maxFound = tEnd;
+              }
+            });
+          }
+        });
+      }
+
+      if (minFound && maxFound) {
+        // Expand start to 1st day of month
+        const s = new Date(minFound);
+        s.setDate(1);
+        s.setHours(0, 0, 0, 0);
+
+        // Expand end to last day of month
+        const e = new Date(maxFound);
+        e.setMonth(e.getMonth() + 1, 0);
+        e.setHours(23, 59, 59, 999);
+
+        if (!start) start = s;
+        if (!end) end = e;
+      } else {
+        const targetYear = globalYearFilter && globalYearFilter !== 'all' && !isNaN(parseInt(globalYearFilter, 10))
+          ? parseInt(globalYearFilter, 10)
+          : new Date().getFullYear();
+
+        if (!start) {
+          start = new Date(targetYear, 0, 1);
+        }
+        if (!end) {
+          end = new Date(targetYear, 11, 31);
+        }
+      }
     }
 
     start.setHours(0, 0, 0, 0);
@@ -132,7 +191,7 @@ export function useGanttTimeline({
       endDate: end,
       totalDays: totalDaysCount
     };
-  }, [filterStartDate, filterEndDate, printDateRangeOverride, viewMode]);
+  }, [filterStartDate, filterEndDate, printDateRangeOverride, paginatedProjects, getGroupTasksForProject, globalYearFilter, viewMode]);
 
   const calculateDateOffsetPx = useCallback(
     (targetDate: Date | null | undefined): number => {

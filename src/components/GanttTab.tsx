@@ -136,7 +136,11 @@ export function GanttTab({
   } = useGanttTimeline({
     filterStartDate,
     filterEndDate,
-    printDateRangeOverride
+    printDateRangeOverride,
+    paginatedProjects,
+    tasks,
+    getGroupTasksForProject,
+    globalYearFilter
   });
 
   // 3. Batch Operations & Selection
