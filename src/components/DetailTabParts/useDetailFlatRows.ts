@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Project, DelegationGroup } from '../../types';
+import { matchesAdvancedSearch } from '../../lib/utils';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
 
@@ -84,22 +85,28 @@ export function useDetailFlatRows({
       const isExpanded = expandedCodes.includes(String(p.id!));
       const isProjDelegationOn = !!p.delegation || delegationGroups.some(g => g.projectCode === p.code);
 
-      const tasksToRender = lowerSearchTerm 
-        ? groupTasks.filter(t => {
-            const code = taskCodeMap.get(t.id) || '';
-            const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
-            const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
-            return (
-              String(t.name || '').toLowerCase().includes(lowerSearchTerm) ||
-              code.toLowerCase().includes(lowerSearchTerm) ||
-              String(t.party || '').toLowerCase().includes(lowerSearchTerm) ||
-              commentsMatch ||
-              notesMatch
-            );
-          })
-        : groupTasks;
+      const isProjectMatch = lowerSearchTerm
+        ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
+        : true;
 
-      const effectiveTaskCount = lowerSearchTerm ? tasksToRender.length : groupTasks.length;
+      const tasksToRender = isProjectMatch
+        ? groupTasks
+        : lowerSearchTerm 
+          ? groupTasks.filter(t => {
+              const code = taskCodeMap.get(t.id) || '';
+              const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
+              return (
+                String(t.name || '').toLowerCase().includes(lowerSearchTerm) ||
+                code.toLowerCase().includes(lowerSearchTerm) ||
+                String(t.party || '').toLowerCase().includes(lowerSearchTerm) ||
+                commentsMatch ||
+                notesMatch
+              );
+            })
+          : groupTasks;
+
+      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : groupTasks.length;
       const planProgressPercent = (p as any).planProgressPercent !== undefined ? (p as any).planProgressPercent : 0;
       const actProgressPercent = (p as any).actProgressPercent !== undefined ? (p as any).actProgressPercent : 0;
 

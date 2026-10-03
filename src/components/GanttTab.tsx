@@ -297,7 +297,14 @@ export function GanttTab({
     if (onClearFocus) onClearFocus();
   }, [onClearFocus, setGanttTabFocusTaskId]);
 
-  const canWrite = currentUser.role === 'admin' || !!permissionMatrix[currentUser.role]?.Write?.gantt;
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = (
+    currentUser.role === 'admin' || 
+    currentUser.canWrite === true || 
+    !!permissionMatrix[currentUser.role]?.Write?.detail || 
+    !!permissionMatrix[currentUser.role]?.Write?.report ||
+    !!(permissionMatrix[currentUser.role]?.Write as any)?.gantt
+  ) && !isArchiveYear;
 
   return (
     <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm min-h-0">
