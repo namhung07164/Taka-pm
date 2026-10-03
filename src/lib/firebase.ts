@@ -47,10 +47,15 @@ const isDevMode = (import.meta as any).env?.DEV || (typeof window !== 'undefined
 // Sandbox kết nối database tak-project---ver1, Production kết nối taka---projec-1
 const firebaseConfig = isDevMode ? firebaseConfigDev : firebaseConfigProd;
 
+import { checkAndCleanStorageQuota } from './storage';
+
 console.log(`🔥 Firebase Initialized with Project: ${firebaseConfig.projectId}`);
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Proactively clear bloated localStorage keys so persistentLocalCache does not fail on Chrome quota
+checkAndCleanStorageQuota();
 
 // Using SingleTabManager with forceOwnership ensures that when a desktop PC or mobile wakes up
 // from sleep or restarts after 1 hour, it immediately seizes the IndexedDB lock and reuses the local

@@ -198,15 +198,22 @@ export default function CloudSyncManager({
         activeMapVersionId: currentActiveVersionId,
       });
       try {
-        localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+        const payload = JSON.stringify({
           storeLocationData: updatedStoreLocationData,
           store: currentStore,
           location: currentLocation,
           activeMapVersionId: currentActiveVersionId,
           updatedAt: Date.now(),
           timestamp: Date.now(),
-        }));
-      } catch {}
+        });
+        if (payload.length < 1000000) {
+          localStorage.setItem('taka_mapping_config_backup', payload);
+        } else {
+          localStorage.removeItem('taka_mapping_config_backup');
+        }
+      } catch {
+        try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
+      }
     }
 
     // 2. NETWORK ASYNC CLOUD SYNC (R2 & FIRESTORE)
@@ -519,7 +526,7 @@ export default function CloudSyncManager({
         }
 
         try {
-          localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+          const payload = JSON.stringify({
             storeLocationData: cloudStoreLocationData,
             store,
             location,
@@ -528,8 +535,15 @@ export default function CloudSyncManager({
             activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId,
             updatedAt: Date.now(),
             timestamp: configData.timestamp,
-          }));
-        } catch {}
+          });
+          if (payload.length < 1000000) {
+            localStorage.setItem('taka_mapping_config_backup', payload);
+          } else {
+            localStorage.removeItem('taka_mapping_config_backup');
+          }
+        } catch {
+          try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
+        }
 
         // 4. Update local React store
         loadFullCloudData({

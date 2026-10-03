@@ -38,14 +38,22 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
   if (backupTimeout) clearTimeout(backupTimeout);
   backupTimeout = setTimeout(() => {
     try {
-      localStorage.setItem('taka_mapping_config_backup', JSON.stringify({
+      const payload = JSON.stringify({
         storeLocationData: data,
         store,
         location,
         activeMapVersionId,
         updatedAt: Date.now(),
-      }));
-    } catch (e) {}
+      });
+      // Safety guard: Chrome localStorage limit is ~5MB. Cap single backup at 1MB to prevent QuotaExceededError
+      if (payload.length < 1000000) {
+        localStorage.setItem('taka_mapping_config_backup', payload);
+      } else {
+        localStorage.removeItem('taka_mapping_config_backup');
+      }
+    } catch (e) {
+      try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
+    }
   }, 200);
 }
 
