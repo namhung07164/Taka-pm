@@ -191,6 +191,10 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = '' }: BudgetTabProps
         getProjectFinancials={getProjectFinancials}
         handleLinkParent={handleLinkParent}
         formatCurrency={formatCurrency}
+        projects={projects}
+        initialYear={globalYearFilter}
+        initialStore={effectiveStore}
+        initialLocation={globalLocationFilter[0] || 'all'}
       />
     </div>
   );

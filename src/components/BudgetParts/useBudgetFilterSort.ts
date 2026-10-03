@@ -109,6 +109,12 @@ export function useBudgetFilterSort({
     const pYear = node.year ? String(node.year).trim() : (node.start ? String(node.start).substring(0, 4) : null);
     const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
     const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+    
+    // Strict Scope Guard: A parent project that does not belong to the selected Year or Store scope MUST NOT be displayed
+    if (!matchesYear || !matchesStore) {
+      return false;
+    }
+
     const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location));
     
     const hasBudget = (node.totalBudget || 0) !== 0;
@@ -118,14 +124,15 @@ export function useBudgetFilterSort({
     else if (moneyFilter === 'has_budget') matchesMoney = hasBudget;
     else if (moneyFilter === 'has_act_forc') matchesMoney = hasActForc;
     
-    const baseParentMatch = matchesYear && matchesStore && matchesLocation && matchesMoney;
+    const baseParentMatch = matchesLocation && matchesMoney;
     const parentMatchesSearch = !deferredSearchTerm || isParentMatchSearch(node, deferredSearchTerm);
 
     if (node.children && node.children.length > 0) {
       const validChildren = node.children.filter((child: any) => {
-        const cYear = child.year ? String(child.year).trim() : null;
+        const cYear = child.year ? String(child.year).trim() : (child.start ? String(child.start).substring(0, 4) : pYear);
         const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === String(globalYearFilter).trim();
-        const cMatchesStore = effectiveStore === 'all' || !child.store || String(child.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim();
+        const cStore = child.store ? String(child.store).toUpperCase().trim() : (node.store ? String(node.store).toUpperCase().trim() : '');
+        const cMatchesStore = effectiveStore === 'all' || !cStore || cStore === effectiveStore.toUpperCase().trim();
         const cMatchesLocation = globalLocationFilter.length === 0 || (!child.location) || globalLocationFilter.includes(child.location);
         
         const cHasBudget = (child.budget || 0) !== 0;

@@ -180,6 +180,17 @@ export function useBudgetData({
       if (selectedParentProject && (pId === parentId || pCode === parentCode)) return false;
       if (selectedParentProject?.parentId && String(selectedParentProject.parentId).trim().toUpperCase() === pCode) return false;
 
+      // Restrict candidate children to same fiscal year and store as selected parent
+      if (selectedParentProject) {
+        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+        const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : (selectedParentProject.start ? String(selectedParentProject.start).substring(0, 4) : '');
+        if (pYear && parentYear && pYear !== parentYear) return false;
+
+        const pStore = String(p.store || '').trim().toUpperCase();
+        const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
+        if (pStore && parentStore && pStore !== parentStore) return false;
+      }
+
       if (!term) return true;
       const searchPool = [
         p.code,
@@ -208,7 +219,17 @@ export function useBudgetData({
   const linkedChildrenCount = useMemo(() => {
     if (!selectedParentProject) return 0;
     const parentCode = String(selectedParentProject.code || '').trim().toUpperCase();
-    return projects.filter(p => p.parentId && String(p.parentId).trim().toUpperCase() === parentCode).length;
+    const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : (selectedParentProject.start ? String(selectedParentProject.start).substring(0, 4) : '');
+    const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
+
+    return projects.filter(p => {
+      if (!p.parentId || String(p.parentId).trim().toUpperCase() !== parentCode) return false;
+      const cYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+      const cStore = String(p.store || '').trim().toUpperCase();
+      if (parentYear && cYear && cYear !== parentYear) return false;
+      if (parentStore && cStore && cStore !== parentStore) return false;
+      return true;
+    }).length;
   }, [projects, selectedParentProject]);
 
   // Handle Escape key

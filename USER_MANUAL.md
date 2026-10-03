@@ -407,6 +407,8 @@ Quản lý định mức ngân sách được duyệt và dòng tiền dự án 
 1. **Mở modal liên kết (Quy trình chọn Dự án Cha trước & Tự động điền tìm kiếm)**:
    - Nhấp nút **"Project Modular"** (biểu tượng lớp xếp chồng ☶ `Layers`) trên thanh công cụ hoặc nhấp biểu tượng **Modular** trên dòng/thẻ của dự án bạn muốn **chọn làm Dự án Cha (Parent Project)**.
    - **Tự Động Điền Mã Dự Án (Auto-fill Search)**: Cửa sổ **Project Modular (Link Budget)** sẽ mở ra, đồng thời ô tìm kiếm của bảng **Dự Án Chính (Choose Main Project)** sẽ **tự động điền chính xác Mã của dự án được nhấn nút Link đó**, giúp bạn tìm thấy ngay lập tức dự án tương ứng mà không cần phải gõ lại.
+   - **Bộ Lọc Phạm Vi Linh Hoạt (Year, Store, Location Filters)**: Ngay dưới thanh tiêu đề của cửa sổ Project Modular, hệ thống trang bị thanh công cụ bộ lọc tích hợp cho phép lọc nhanh đồng bộ cả 2 bảng dự án theo **Năm (Year)**, **Chi nhánh (Store: HCM / HN)** và **Khu vực/Tầng (Location: B1, L1, L2, L3,...)** kèm nút **Reset Filters** quay về mặc định. Cửa sổ cũng tự động kế thừa bộ lọc đang chọn ngoài bảng Budget khi vừa mở lên.
+   - **Lớp Hiển Thị Nổi Bật Tuyệt Đối (z-index cao hơn Header)**: Cửa sổ được thiết lập chỉ số tầng `z-[1000]`, đảm bảo luôn nổi hoàn toàn trên thanh Header và thanh điều hướng chính, không bao giờ bị che khuất tiêu đề hay nút đóng modal.
    - Bảng hiển thị đầy đủ thông số tài chính **Budget**, **Cost**, **Supporting Fee**, **Remaining** và số lượng dự án con hiện có.
    - **Bố cục Thích ứng (Responsive Layout)**:
      - **Trên Máy tính (Desktop)**: **Bảng Cha** nằm ở **bên Trái**, **Bảng Con** nằm ở **bên Phải**.

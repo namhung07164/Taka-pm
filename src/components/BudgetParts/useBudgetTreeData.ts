@@ -8,10 +8,9 @@ interface UseBudgetTreeDataParams {
   costs: Cost[];
 }
 
-export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams): BudgetTreeNode[] {
-  return useMemo(() => {
-    const projectMap = new Map<string, any>();
-    const codeToProjects = new Map<string, any[]>();
+export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetTreeNode[] {
+  const projectMap = new Map<string, any>();
+  const codeToProjects = new Map<string, any[]>();
 
     projects.forEach(p => {
       const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
@@ -61,20 +60,39 @@ export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams):
       codeToProjects.get(codeKey)!.push(pData);
     });
 
-    // Map linked children to parent codes
+    const getProjectYear = (p: any): string => 
+      p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+
+    const getProjectStore = (p: any): string => 
+      String(p.store || '').trim().toUpperCase();
+
+    // Map linked children to parent codes, scoped by parentCode + year + store
     const parentToChildrenMap = new Map<string, any[]>();
     const linkedChildIds = new Set<string>();
 
     projects.forEach(p => {
       if (p.parentId && String(p.parentId).trim()) {
         const parentCode = String(p.parentId).trim().toUpperCase();
-        if (codeToProjects.has(parentCode)) {
-          if (!parentToChildrenMap.has(parentCode)) {
-            parentToChildrenMap.set(parentCode, []);
+        const candidateParents = codeToProjects.get(parentCode);
+        if (candidateParents && candidateParents.length > 0) {
+          let childYear = getProjectYear(p);
+          let childStore = getProjectStore(p);
+
+          // If child year/store missing, inherit from candidate parent if unambiguous
+          if (!childYear && candidateParents.length === 1) {
+            childYear = getProjectYear(candidateParents[0]);
+          }
+          if (!childStore && candidateParents.length === 1) {
+            childStore = getProjectStore(candidateParents[0]);
+          }
+
+          const scopedKey = `${parentCode}_${childYear}_${childStore}`;
+          if (!parentToChildrenMap.has(scopedKey)) {
+            parentToChildrenMap.set(scopedKey, []);
           }
           const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
           const pData = projectMap.get(key) || p;
-          parentToChildrenMap.get(parentCode)!.push(pData);
+          parentToChildrenMap.get(scopedKey)!.push(pData);
           linkedChildIds.add(p.id || `${p.code}-${p.year}-${p.store}-${p.no}`);
         }
       }
@@ -93,6 +111,9 @@ export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams):
       const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
       const pData = projectMap.get(key) || p;
       const parentCode = String(p.code).trim().toUpperCase();
+      const pYear = getProjectYear(p);
+      const pStore = getProjectStore(p);
+      const scopedKey = `${parentCode}_${pYear}_${pStore}`;
 
       // Child 1: Self-Child of this project (its own budget)
       const selfBudget = pData.ownBudget ?? 0;
@@ -123,8 +144,9 @@ export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams):
         children: [],
       };
 
-      // Child 2+: Any other projects linked as children under this parent
-      const linkedProjects: BudgetTreeNode[] = (parentToChildrenMap.get(parentCode) || []).map((childP: any) => {
+      // Child 2+: Any other projects linked as children under this parent in the same year and store
+      const matchedChildren = parentToChildrenMap.get(scopedKey) || [];
+      const linkedProjects: BudgetTreeNode[] = matchedChildren.map((childP: any) => {
         const childId = childP.id || `${childP.code}-${childP.year}-${childP.store}-${childP.no}`;
         const cBudget = childP.ownBudget ?? 0;
         const cActual = childP.ownActual ?? 0;
@@ -180,5 +202,8 @@ export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams):
     });
 
     return roots;
-  }, [projects, costs]);
+}
+
+export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams): BudgetTreeNode[] {
+  return useMemo(() => buildBudgetTreeData(projects, costs), [projects, costs]);
 }

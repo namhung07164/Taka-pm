@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, useDragControls } from 'motion/react';
-import { Layers, X, Check, Link as LinkIcon, Unlink, Sparkles } from 'lucide-react';
+import { Layers, X, Check, Link as LinkIcon, Unlink, Sparkles, Filter, RotateCcw } from 'lucide-react';
 import { Project } from '../../types';
 import { ProjectFinancials } from './budgetTypes';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
@@ -22,6 +22,10 @@ interface BudgetLinkModalProps {
   getProjectFinancials: (p: Project) => ProjectFinancials;
   handleLinkParent: (childProject: Project, parentCode: string | null) => Promise<void>;
   formatCurrency: (val: number | undefined) => string;
+  projects?: Project[];
+  initialYear?: string;
+  initialStore?: string;
+  initialLocation?: string;
 }
 
 export function BudgetLinkModal({
@@ -38,10 +42,136 @@ export function BudgetLinkModal({
   linkedChildrenCount,
   getProjectFinancials,
   handleLinkParent,
-  formatCurrency
+  formatCurrency,
+  projects,
+  initialYear,
+  initialStore,
+  initialLocation
 }: BudgetLinkModalProps) {
   const { t } = useLanguage();
   const dragControls = useDragControls();
+
+  const [modalYearFilter, setModalYearFilter] = useState<string>(initialYear || 'all');
+  const [modalStoreFilter, setModalStoreFilter] = useState<string>(initialStore || 'all');
+  const [modalLocationFilter, setModalLocationFilter] = useState<string>(initialLocation || 'all');
+
+  useEffect(() => {
+    if (isOpen) {
+      if (selectedParentProject) {
+        if (selectedParentProject.year) setModalYearFilter(String(selectedParentProject.year));
+        if (selectedParentProject.store) setModalStoreFilter(String(selectedParentProject.store).toUpperCase());
+      } else {
+        setModalYearFilter(initialYear || 'all');
+        setModalStoreFilter(initialStore || 'all');
+        setModalLocationFilter(initialLocation || 'all');
+      }
+    }
+  }, [isOpen, selectedParentProject, initialYear, initialStore, initialLocation]);
+
+  const allProjects = projects && projects.length > 0 ? projects : candidateParentProjects;
+
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    allProjects.forEach(p => {
+      if (p.year) set.add(String(p.year).trim());
+      else if (p.start) set.add(String(p.start).substring(0, 4));
+    });
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [allProjects]);
+
+  const availableLocations = useMemo(() => {
+    const set = new Set<string>();
+    allProjects.forEach(p => {
+      if (p.location && p.location.trim()) {
+        set.add(p.location.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [allProjects]);
+
+  const filteredParentProjects = useMemo(() => {
+    const term = parentSearchTerm.trim().toLowerCase();
+    return allProjects.filter(p => {
+      if (modalYearFilter !== 'all') {
+        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+        if (pYear && pYear !== modalYearFilter) return false;
+      }
+      if (modalStoreFilter !== 'all') {
+        const pStore = String(p.store || '').trim().toUpperCase();
+        if (pStore && pStore !== modalStoreFilter.toUpperCase()) return false;
+      }
+      if (modalLocationFilter !== 'all') {
+        if (p.location !== modalLocationFilter) return false;
+      }
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      return searchPool.some(val => val.includes(term));
+    }).slice(0, 100);
+  }, [allProjects, parentSearchTerm, modalYearFilter, modalStoreFilter, modalLocationFilter]);
+
+  const filteredChildProjects = useMemo(() => {
+    const parentCode = selectedParentProject ? String(selectedParentProject.code || '').trim().toUpperCase() : '';
+    const parentId = selectedParentProject?.id || (selectedParentProject ? `${selectedParentProject.code}-${selectedParentProject.year}-${selectedParentProject.store}-${selectedParentProject.no}` : '');
+    const term = childSearchTerm.trim().toLowerCase();
+
+    const filtered = allProjects.filter(p => {
+      const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+      const pCode = String(p.code || '').trim().toUpperCase();
+
+      if (selectedParentProject && (pId === parentId || pCode === parentCode)) return false;
+      if (selectedParentProject?.parentId && String(selectedParentProject.parentId).trim().toUpperCase() === pCode) return false;
+
+      const targetYear = selectedParentProject?.year 
+        ? String(selectedParentProject.year).trim() 
+        : (modalYearFilter !== 'all' ? modalYearFilter : '');
+      if (targetYear) {
+        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+        if (pYear && pYear !== targetYear) return false;
+      }
+
+      const targetStore = selectedParentProject?.store 
+        ? String(selectedParentProject.store).trim().toUpperCase() 
+        : (modalStoreFilter !== 'all' ? modalStoreFilter.toUpperCase() : '');
+      if (targetStore) {
+        const pStore = String(p.store || '').trim().toUpperCase();
+        if (pStore && pStore !== targetStore) return false;
+      }
+
+      if (modalLocationFilter !== 'all') {
+        if (p.location !== modalLocationFilter) return false;
+      }
+
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      return searchPool.some(val => val.includes(term));
+    });
+
+    if (parentCode) {
+      filtered.sort((a, b) => {
+        const aIsChild = a.parentId && String(a.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        const bIsChild = b.parentId && String(b.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+    }
+
+    return filtered.slice(0, 100);
+  }, [allProjects, selectedParentProject, childSearchTerm, modalYearFilter, modalStoreFilter, modalLocationFilter]);
 
   if (!isOpen && !selectedParentProject) return null;
 
@@ -49,7 +179,7 @@ export function BudgetLinkModal({
   const parentStore = selectedParentProject ? String(selectedParentProject.store || '').toLowerCase() : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto">
       <motion.div
         drag
         dragControls={dragControls}
@@ -73,11 +203,80 @@ export function BudgetLinkModal({
           <div className="flex items-center gap-2">
             <button 
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
+
+        {/* Modal Scope Filter Toolbar: Year, Store, Location */}
+        <div className="px-3.5 sm:px-4 py-2 bg-slate-50 dark:bg-[#18181a] border-b border-slate-200 dark:border-[#333336] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 mr-1">
+              <Filter className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8]" />
+              <span>{t('Filter Scope')}:</span>
+            </div>
+
+            {/* Year Selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('Year')}:</span>
+              <select
+                value={modalYearFilter}
+                onChange={(e) => setModalYearFilter(e.target.value)}
+                className="text-xs bg-white dark:bg-[#222225] border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-2xs"
+              >
+                <option value="all">{t('All Years')}</option>
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Store Selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('Store')}:</span>
+              <select
+                value={modalStoreFilter}
+                onChange={(e) => setModalStoreFilter(e.target.value)}
+                className="text-xs bg-white dark:bg-[#222225] border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-2xs"
+              >
+                <option value="all">{t('All Stores')}</option>
+                <option value="HCM">HCM</option>
+                <option value="HN">HN</option>
+              </select>
+            </div>
+
+            {/* Location Selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('Location')}:</span>
+              <select
+                value={modalLocationFilter}
+                onChange={(e) => setModalLocationFilter(e.target.value)}
+                className="text-xs bg-white dark:bg-[#222225] border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-2xs min-w-[90px]"
+              >
+                <option value="all">{t('All Locations')}</option>
+                {availableLocations.map(loc => (
+                  <option key={loc} value={loc}>{loc}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Reset Filters */}
+          {(modalYearFilter !== 'all' || modalStoreFilter !== 'all' || modalLocationFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setModalYearFilter('all');
+                setModalStoreFilter('all');
+                setModalLocationFilter('all');
+              }}
+              className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-[#8ab4f8] flex items-center gap-1 hover:underline cursor-pointer transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>{t('Reset Filters')}</span>
+            </button>
+          )}
         </div>
 
         {/* Side-by-side 2 Column Layout (Desktop: Main left, Sub right | Mobile: Top, Bottom) */}
@@ -92,7 +291,7 @@ export function BudgetLinkModal({
                   <span>{t('Choose Main Project')}</span>
                 </label>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                  {candidateParentProjects.length} {t('projects')}
+                  {filteredParentProjects.length} {t('projects')}
                 </span>
               </div>
               {/* Search Input */}
@@ -109,15 +308,15 @@ export function BudgetLinkModal({
             {/* Parent Candidates Scrollable List */}
             <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                {t('Main Project List')} ({candidateParentProjects.length}) — {t('Click to select')}
+                {t('Main Project List')} ({filteredParentProjects.length}) — {t('Click to select')}
               </div>
-              {candidateParentProjects.length === 0 ? (
+              {filteredParentProjects.length === 0 ? (
                 <div className="py-16 text-center text-slate-400 dark:text-slate-500">
                   <p className="text-sm font-medium">{t('No matching project found')}</p>
                   <p className="text-xs mt-1">{t('Please adjust your search.')}</p>
                 </div>
               ) : (
-                candidateParentProjects.map(p => {
+                filteredParentProjects.map(p => {
                   const isSelected = selectedParentProject && (selectedParentProject.id === p.id || selectedParentProject.code === p.code);
                   const pStore = (p.store || '').toLowerCase();
                   return (
@@ -235,13 +434,13 @@ export function BudgetLinkModal({
                   <p className="text-sm font-semibold">{t('Please choose a Main Project on the left panel first')}</p>
                   <p className="text-xs mt-1">{t('Then manage its sub-projects here.')}</p>
                 </div>
-              ) : candidateChildProjects.length === 0 ? (
+              ) : filteredChildProjects.length === 0 ? (
                 <div className="py-16 text-center text-slate-400 dark:text-slate-500">
                   <p className="text-sm font-medium">{t('No projects available to link')}</p>
                   <p className="text-xs mt-1">{t('Try adjusting your search query.')}</p>
                 </div>
               ) : (
-                candidateChildProjects.map(childP => {
+                filteredChildProjects.map(childP => {
                   const isLinkedToCurrent = childP.parentId && String(childP.parentId).trim().toUpperCase() === String(selectedParentProject.code || '').trim().toUpperCase();
                   const isLinkedToOther = childP.parentId && !isLinkedToCurrent;
                   const cStore = (childP.store || '').toLowerCase();
@@ -292,7 +491,7 @@ export function BudgetLinkModal({
                           {isLinkedToCurrent ? (
                             <button
                               onClick={() => handleLinkParent(childP, null)}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 rounded-lg border border-red-200 dark:border-red-900/60 shadow-2xs transition-colors active:scale-95"
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/50 rounded-lg border border-red-200 dark:border-red-900/60 shadow-2xs transition-colors active:scale-95 cursor-pointer"
                               title="Unlink from this main project"
                             >
                               <Unlink className="w-3.5 h-3.5" />
@@ -301,7 +500,7 @@ export function BudgetLinkModal({
                           ) : (
                             <button
                               onClick={() => handleLinkParent(childP, selectedParentProject.code)}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 rounded-lg border border-blue-200 dark:border-blue-900/60 shadow-2xs transition-colors active:scale-95"
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 rounded-lg border border-blue-200 dark:border-blue-900/60 shadow-2xs transition-colors active:scale-95 cursor-pointer"
                               title={isLinkedToOther ? `Change link from ${childP.parentId} to ${selectedParentProject.code}` : "Link as sub-project"}
                             >
                               <LinkIcon className="w-3.5 h-3.5" />
@@ -343,3 +542,4 @@ export function BudgetLinkModal({
     </div>
   );
 }
+
