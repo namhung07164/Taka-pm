@@ -123,6 +123,9 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     return initialP;
   }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, hoverInfo.unitName, projects]);
 
+  // Image & Link Gallery State
+  const [showAddLinkInput, setShowAddLinkInput] = useState(false);
+
   // Draggable State Handling
   const isDraggingRef = useRef(false);
   const hasUserDraggedRef = useRef(false);
@@ -179,14 +182,19 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     }
   };
 
-  // Reset user dragged flag whenever a new unit is searched/focused
+  const hasInitialPositionRef = useRef(false);
+
+  // Reset user dragged flag and initial position flag whenever a new unit is searched/focused
   useEffect(() => {
     hasUserDraggedRef.current = false;
+    hasInitialPositionRef.current = false;
   }, [hoverInfo.unitName, hoverInfo.clientX, hoverInfo.clientY]);
 
   // Auto Anti-Collision & Obstruction-Proof Positioning Engine
-  const positionTooltip = useCallback(() => {
+  const positionTooltip = useCallback((forceRecalculate = false) => {
     if (!tooltipRef.current || hasUserDraggedRef.current) return;
+    if (hasInitialPositionRef.current && !forceRecalculate) return;
+
     const el = tooltipRef.current;
     const rect = el.getBoundingClientRect();
     const tooltipWidth = rect.width > 0 ? rect.width : 350;
@@ -298,32 +306,23 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       el.style.margin = '0';
       el.style.transform = 'none';
     }
-  }, [hoverInfo.clientX, hoverInfo.clientY, hoverInfo.unitScreenBounds, tooltipRef, containerRef]);
+
+    hasInitialPositionRef.current = true;
+  }, [hoverInfo.clientX, hoverInfo.clientY, hoverInfo.unitScreenBounds, tooltipRef, containerRef, showAddLinkInput]);
 
   useLayoutEffect(() => {
     positionTooltip();
   }, [positionTooltip]);
 
-  // Continuously listen to size changes of the tooltip, window resize, and visualViewport changes
+  // Handle browser window resize cleanly without jumping on internal input focus or size changes
   useEffect(() => {
     if (!tooltipRef.current) return;
-    const el = tooltipRef.current;
-    const ro = new ResizeObserver(() => {
-      positionTooltip();
-    });
-    ro.observe(el);
-    window.addEventListener('resize', positionTooltip);
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', positionTooltip);
-      window.visualViewport.addEventListener('scroll', positionTooltip);
-    }
+    const handleWindowResize = () => {
+      positionTooltip(true);
+    };
+    window.addEventListener('resize', handleWindowResize);
     return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', positionTooltip);
-      if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', positionTooltip);
-        window.visualViewport.removeEventListener('scroll', positionTooltip);
-      }
+      window.removeEventListener('resize', handleWindowResize);
     };
   }, [positionTooltip, tooltipRef]);
 
@@ -429,7 +428,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 
   // Image & Link Gallery State
   const [showImagePanel, setShowImagePanel] = useState(false);
-  const [showAddLinkInput, setShowAddLinkInput] = useState(false);
   const [newLinkInput, setNewLinkInput] = useState('');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string } | null>(null);
@@ -457,10 +455,17 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     setShowAddLinkInput(false);
   }, [data.code, unitCode]);
 
-  // Auto-scroll tooltip to top when image panel expands to keep header visible
+  // Smoothly scroll tooltip down to reveal image panel expanding below description box when image button is pressed
   useEffect(() => {
     if (showImagePanel && tooltipRef.current) {
-      tooltipRef.current.scrollTop = 0;
+      setTimeout(() => {
+        if (tooltipRef.current) {
+          tooltipRef.current.scrollTo({
+            top: tooltipRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+      }, 50);
     }
   }, [showImagePanel, tooltipRef]);
 

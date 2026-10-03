@@ -1548,6 +1548,19 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Hệ thống tính toán thông báo (`calculateActiveNotifications`) đã được cập nhật để **trích xuất và đồng bộ tự động dữ liệu từ danh sách `taskSummaries` (Task Summarize)** đính kèm trong từng hồ sơ dự án.
      - Giúp toàn bộ thông báo về thời hạn công việc (Start/Finish/Handover deadline), thông báo nhắc nhở công việc tồn đọng giữa các năm (Cross-Year Rollover) và thông báo nhắc tên (`@mention`) hoạt động chính xác 100% ngay cả khi ứng dụng chưa tải chi tiết toàn bộ bảng task (Tri-Gate Lazy Loading / Zero-Read optimization).
 
+30. **Cố Định Vị Trí Bảng Tooltip Gian Hàng Trên Mặt Bằng (Tooltip Stable Position Locking)**:
+   - **Khóa Vị Trí Chuẩn (Cố Định Tuyệt Đối Khi Thao Tác)**:
+     - Khi mở bảng thông tin chi tiết gian hàng (`LayoutUnitTooltip`) trên sơ đồ mặt bằng, vị trí tọa độ ban đầu (`top`/`left`) được xác định và **khóa cố định tuyệt đối** cho gian hàng đó.
+     - Thao tác nhấp nút **"Thêm hình" (+ Link / Image)** hay nhấp con trỏ vào ô nhập link (`Input Focus`) sẽ **giữ nguyên vị trí bảng**, tuyệt đối không bị nhảy hay giật vị trí khi kích thước bảng thay đổi hoặc bàn phím xuất hiện.
+     - Vị trí chỉ được tính toán lại khi người dùng nhấp chọn sang một gian hàng mới hoặc thay đổi kích thước cửa sổ trình duyệt (`Window Resize`).
+
+31. **Hiển Thị Bảng Hình Ảnh Nằm Bên Dưới Ô Mô Tả (Layout Tooltip Image Gallery Below Description)**:
+   - **Thứ Tự Trực Quan Chuẩn**:
+     - Bảng thư viện hình ảnh & link thumbnail (`Image & Link Gallery Panel`) luôn nằm ở **phía dưới ô mô tả / chi tiết dự án (Description)**.
+     - Khi người dùng nhấp nút biểu tượng hình ảnh trên thanh tiêu đề, bảng thư viện hình ảnh mở rộng mượt mà xuống bên dưới ô mô tả và tự động cuộn nhẹ hiển thị toàn bộ nội dung hình ảnh một cách trực quan, rõ ràng.
+
+
+
 
 
 
