@@ -1969,24 +1969,9 @@ function LiveCanvas({
     const unitScreenTop = targetScreenCenterY - (uH / 2) * targetScale;
     const unitScreenBottom = targetScreenCenterY + (uH / 2) * targetScale;
 
-    // Open detailed info tooltip for unit positioned intelligently to never cover the unit
-    const uName = (targetUnit.name || '').toLowerCase();
-    isPinnedRef.current = true;
-    setHoverInfo({
-      visible: true,
-      data: (uName && aggregatedData[uName]) ? aggregatedData[uName] : {},
-      unitName: targetUnit.name || 'Unknown',
-      clientX: isDesktop ? Math.min(containerW - 360, unitScreenRight + 24) : containerW / 2,
-      clientY: isDesktop ? Math.max(115, Math.min(unitScreenTop, containerH - 320)) : containerH * 0.65,
-      unitScreenBounds: {
-        left: unitScreenLeft,
-        right: unitScreenRight,
-        top: unitScreenTop,
-        bottom: unitScreenBottom,
-        centerX: targetScreenCenterX,
-        centerY: targetScreenCenterY,
-      }
-    });
+    // Do NOT open tooltip on search or cross-tab link navigation (only zoom and highlight unit)
+    isPinnedRef.current = false;
+    setHoverInfo(null);
 
     onUnitSelected?.(targetUnit);
     return true;

@@ -1526,6 +1526,14 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Khi ở Edit Mode, tay cầm kéo thả (`GripVertical`) xuất hiện rõ ràng trên từng hàng công việc. Cho phép người dùng nhấp giữ và kéo bất kỳ công việc nào (cả công việc chính và công việc con) di chuyển lên/xuống để thay đổi thứ tự.
      + Ở chế độ xem thông thường (Edit Mode tắt), cột đầu tiên hiển thị số thứ tự công việc `#` rõ ràng, vô hiệu hóa hoàn toàn tính năng kéo thả để tránh thao tác nhầm lẫn ngoài ý muốn.
 
+27. **Tối Ưu Trải Nghiệm Tìm Kiếm & Chuyển Tab Sang Mặt Bằng Layout (Layout Search & Link Focus Zoom)**:
+   - **Tập Trung Zoom Vào Unit (Tắt Tự Động Mở Tooltip)**:
+     - Khi người dùng gõ ô tìm kiếm gian hàng/dự án (`Search unit`) hoặc nhấp liên kết chuyển từ Tab khác (Task Detail / Gantt) sang Tab Layout:
+     - Bản đồ sơ đồ mặt bằng tự động chuyển tầng, định vị và **phóng to (Zoom & Pan)** chính xác đến vị trí gian hàng/unit được chọn, kèm hiệu ứng phát sáng nhấp nháy (`Pulse Glow`).
+     - Bảng thông tin chi tiết (Tooltip Popover) sẽ **không tự động mở đè lên màn hình**, giữ cho mặt bằng thông thoáng và toàn diện.
+     - Khi cần xem chi tiết dự án/thông tin gian hàng, người dùng chỉ cần nhấp trực tiếp vào ô gian hàng tương ứng trên bản đồ.
+
+
 
 
 

@@ -212,65 +212,76 @@ export function GanttToolbar({
           </select>
         </div>
 
-        {/* Action Buttons: Highlight Me (hidden in Edit Mode) & Floating Sticky Edit Mode */}
-        <div className={cn(
-          "transition-all duration-200",
-          isEditMode
-            ? "sticky top-1 z-[60] p-1.5 rounded-xl bg-white/95 dark:bg-[#1a1a1c]/95 border border-blue-500/60 shadow-xl backdrop-blur-md flex flex-wrap items-center justify-between gap-2 shrink-0"
-            : "flex items-center gap-1.5 shrink-0"
-        )}>
-          {!isEditMode && (
-            <button
-              type="button"
-              onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
-              className={cn(
-                "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
-                isHighlightDelegationOn
-                  ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50"
-                  : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
-              )}
-              title={t('Highlight My Tasks')}
-            >
-              <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
-              <span>Highlight Me</span>
-            </button>
-          )}
-
+      {/* Floating Sticky Edit Mode Button & Floating Edit Mode Panel (Matches Task Detail) */}
+      {canWrite && !isEditMode && (
+        <div className="fixed top-[154px] sm:top-[160px] right-4 md:right-8 z-[99999] flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
           <button
             type="button"
-            onClick={() => setIsEditMode(!isEditMode)}
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit2 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {canWrite && isEditMode && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-[99999] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+            <Edit2 className="w-3.5 h-3.5 text-blue-500" />
+            <span>Editing Mode</span>
+          </div>
+
+          {/* Highlight Me Button INSIDE Edit Mode Panel */}
+          <button
+            type="button"
+            onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
             className={cn(
               "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8 shrink-0",
-              isEditMode
-                ? "bg-blue-600 border-blue-500 text-white shadow-md ring-1 ring-blue-400 font-extrabold"
-                : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
+              isHighlightDelegationOn
+                ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50 font-extrabold"
+                : "bg-slate-100 dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-[#252528]"
             )}
-            title={t('Toggle Edit / Batch Actions Mode')}
+            title={t('Highlight My Tasks')}
           >
-            <Edit2 className="w-3.5 h-3.5 text-white dark:text-white" />
-            <span>Edit Mode</span>
+            <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
+            <span>Highlight Me</span>
           </button>
 
-          {/* Edit Mode Batch Actions (Color, Baseline, Modular group, Sum, Hide, Delete, Export) */}
-          {isEditMode && (
-            <GanttToolbarActions
-              selectedProjectIds={selectedProjectIds}
-              selectedTaskIds={selectedTaskIds}
-              handleSetTextColor={handleSetTextColor}
-              handleSetBaselineSelected={handleSetBaselineSelected}
-              setIsTaskModularModalOpen={setIsTaskModularModalOpen}
-              sumMode={sumMode}
-              setSumMode={setSumMode}
-              handleDeleteSelected={handleDeleteSelected}
-              isHideMode={isHideMode}
-              setIsHideMode={setIsHideMode}
-              hiddenRows={hiddenRows}
-              setHiddenRows={setHiddenRows}
-              handleExportToPDF={handleExportToPDF}
-              isExporting={isExporting}
-            />
-          )}
+          {/* Edit Mode Batch Actions */}
+          <GanttToolbarActions
+            selectedProjectIds={selectedProjectIds}
+            selectedTaskIds={selectedTaskIds}
+            handleSetTextColor={handleSetTextColor}
+            handleSetBaselineSelected={handleSetBaselineSelected}
+            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+            sumMode={sumMode}
+            setSumMode={setSumMode}
+            handleDeleteSelected={handleDeleteSelected}
+            isHideMode={isHideMode}
+            setIsHideMode={setIsHideMode}
+            hiddenRows={hiddenRows}
+            setHiddenRows={setHiddenRows}
+            handleExportToPDF={handleExportToPDF}
+            isExporting={isExporting}
+          />
+
+          {/* Close Edit Mode button */}
+          <button
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-[#38383c] dark:hover:bg-[#444448] text-slate-700 dark:text-slate-200 font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer active:scale-95"
+            title="Done / Exit Edit Mode"
+          >
+            <span>Done</span>
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
+      )}
       </div>
 
       {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today) */}
