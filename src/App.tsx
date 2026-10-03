@@ -1,4 +1,4 @@
-import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "./lib/storage";
+import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession, safeGetDeviceItemLocal } from "./lib/storage";
 import { useFirebaseData } from "./hooks/useFirebaseData";
 import { useDeepLinkLogic } from "./hooks/useDeepLinkLogic";
 import { useNotificationActions } from "./hooks/useNotificationActions";
@@ -79,11 +79,13 @@ export default function App() {
   const printScaleCustom = useAppStore(state => state.printScaleCustom);
   const printDpi = useAppStore(state => state.printDpi);
   const printWatermark = useAppStore(state => state.printWatermark);
+  const printTarget = useAppStore(state => state.printTarget);
   const showTour = useAppStore(state => state.showTour);
   const setShowTour = useAppStore(state => state.setShowTour);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const setIsExportingPDF = useAppStore(state => state.setIsExportingPDF);
   const triggerGanttToday = useAppStore(state => state.triggerGanttToday);
+  const ganttViewMode = useAppStore(state => state.ganttViewMode);
   const isCommandPaletteOpen = useAppStore(state => state.isCommandPaletteOpen);
   const setIsCommandPaletteOpen = useAppStore(state => state.setIsCommandPaletteOpen);
   
@@ -1684,90 +1686,73 @@ export default function App() {
     return { minDate, maxDate };
   }, [printFilteredData, printRangeType, printStartDate, printEndDate]);
 
+  const [measuredContentSize, setMeasuredContentSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!isPrintPreview) return;
+    const updateSize = () => {
+      const wrapper = document.querySelector('.print-content-wrapper') as HTMLElement;
+      if (wrapper) {
+        const w = Math.max(100, wrapper.scrollWidth || wrapper.offsetWidth);
+        const h = Math.max(100, wrapper.scrollHeight || wrapper.offsetHeight);
+        setMeasuredContentSize(prev => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+      }
+    };
+    const t = setTimeout(updateSize, 80);
+    return () => clearTimeout(t);
+  }, [isPrintPreview, activeTab, printOrientation, printPaperSize, ganttViewMode]);
+
   const printScale = useMemo(() => {
     if (printScaleMode === "default") return 100;
     if (printScaleMode === "custom") return printScaleCustom;
 
-    const { sortedProjects, tasksByProj, expanded } = printFilteredData;
-    const { minDate, maxDate } = printDates;
+    const targetWidthPx = (printWidth - 20) * 3.779527559;
+    const targetHeightPx = (printHeight - 20) * 3.779527559;
 
-    let estimatedGanttWidth = 0;
-    let estimatedGanttHeight = 0;
+    let contentW = measuredContentSize.width;
+    let contentH = measuredContentSize.height;
 
-    if (printScaleMode === "fit-cols" || printScaleMode === "fit-page") {
-       const savedDayWidth = safeGetItemLocal("taka_gantt_day_width");
-       const currentDayWidth = savedDayWidth ? Math.round(parseFloat(savedDayWidth)) : 4;
-       
-       const savedSideWidth = safeGetItemLocal("taka_gantt_side_width");
-       const currentSideWidth = savedSideWidth ? parseInt(savedSideWidth, 10) : 300;
-       
-       const savedCols = safeGetItemLocal("taka_gantt_columns");
-       let visibleCols: string[] = [];
-       try { visibleCols = savedCols ? JSON.parse(savedCols) : []; } catch (e) {}
-       const safeColumns = visibleCols || [];
-       
-       const startColWidth = safeGetItemLocal("taka_gantt_start_width") ? parseInt(safeGetItemLocal("taka_gantt_start_width")!, 10) : 110;
-       const finishColWidth = safeGetItemLocal("taka_gantt_finish_width") ? parseInt(safeGetItemLocal("taka_gantt_finish_width")!, 10) : 110;
-       const partyColWidth = safeGetItemLocal("taka_gantt_party_width") ? parseInt(safeGetItemLocal("taka_gantt_party_width")!, 10) : 95;
-       const durationColWidth = safeGetItemLocal("taka_gantt_duration_width") ? parseInt(safeGetItemLocal("taka_gantt_duration_width")!, 10) : 60;
-       
-       const dateColsWidth = 
-         (safeColumns.includes("start") ? startColWidth : 0) +
-         (safeColumns.includes("finish") ? finishColWidth : 0) +
-         (safeColumns.includes("party") ? partyColWidth : 0) +
-         (safeColumns.includes("duration") ? durationColWidth : 0);
-         
-       const leftAreaWidth = currentSideWidth + dateColsWidth;
-
-       const totalDays = Math.round((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-       estimatedGanttWidth = leftAreaWidth + (totalDays * currentDayWidth);
-    }
-    
-    if (printScaleMode === "fit-rows" || printScaleMode === "fit-page") {
-       estimatedGanttHeight = 160; 
-       sortedProjects.forEach(p => {
-         const pKey = `${p.code || ""}-${p.year || ""}-${p.store || ""}`;
-         let itemHeight = 44; 
-         if (expanded.includes(String(p.no))) {
-            const tCount = (tasksByProj.get(pKey) || []).length;
-            itemHeight += (tCount * 32); 
-         }
-         estimatedGanttHeight += itemHeight;
-       });
+    if (contentW <= 0 || contentH <= 0) {
+      if (activeTab === "gantt") {
+        const { sortedProjects } = printFilteredData;
+        const { minDate, maxDate } = printDates;
+        const savedDayWidth = safeGetDeviceItemLocal("taka_gantt_day_width");
+        const currentDayWidth = savedDayWidth ? Math.round(parseFloat(savedDayWidth)) : 4;
+        const savedSideWidth = safeGetDeviceItemLocal("taka_gantt_side_width");
+        const currentSideWidth = savedSideWidth ? parseInt(savedSideWidth, 10) : 300;
+        const totalDays = Math.round((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        contentW = currentSideWidth + (totalDays * currentDayWidth);
+        contentH = 160 + sortedProjects.length * 44;
+      } else {
+        contentW = 1200;
+        contentH = 800;
+      }
     }
 
     if (printScaleMode === "fit-cols") {
-       const targetWidthPx = (printWidth - 20) * 3.78;
-       const scale = Math.floor((targetWidthPx / estimatedGanttWidth) * 100);
-       return Math.max(10, Math.min(scale, 100));
+      const scale = Math.floor((targetWidthPx / contentW) * 100);
+      return Math.max(10, Math.min(scale, 100));
     }
     
     if (printScaleMode === "fit-rows") {
-       const targetHeightPx = (printHeight - 20) * 3.78;
-       const scale = Math.floor((targetHeightPx / estimatedGanttHeight) * 100);
-       return Math.max(10, Math.min(scale, 100));
+      const scale = Math.floor((targetHeightPx / contentH) * 100);
+      return Math.max(10, Math.min(scale, 100));
     }
     
     if (printScaleMode === "fit-page") {
-       const targetWidthPx = (printWidth - 20) * 3.78;
-       const scaleCols = Math.floor((targetWidthPx / estimatedGanttWidth) * 100);
-       
-       const targetHeightPx = (printHeight - 20) * 3.78;
-       const scaleRows = Math.floor((targetHeightPx / estimatedGanttHeight) * 100);
-       
-       return Math.max(10, Math.min(scaleCols, scaleRows, 100));
+      const scaleCols = Math.floor((targetWidthPx / contentW) * 100);
+      const scaleRows = Math.floor((targetHeightPx / contentH) * 100);
+      return Math.max(10, Math.min(scaleCols, scaleRows, 100));
     }
 
     return 100;
-  }, [printScaleMode, printScaleCustom, printWidth, printHeight, printFilteredData, printDates]);
+  }, [printScaleMode, printScaleCustom, printWidth, printHeight, measuredContentSize, activeTab, printFilteredData, printDates]);
 
   const ganttPrintPages = useMemo(() => {
     if (!isPrintPreview || activeTab !== "gantt") return null;
     return [{ dateRange: undefined as any }];
   }, [isPrintPreview, activeTab, printFilteredData, printDates]);
 
-  
-  
   const handleExportToExcel = async () => {
     if (isExportingPDF || activeTab === 'gantt') return;
     setIsExportingPDF(true);
@@ -1786,8 +1771,12 @@ export default function App() {
 
   const handlePrintToPDF = async () => {
     if (isExportingPDF) return;
+    if (printTarget === 'browser') {
+      window.print();
+      return;
+    }
     setIsExportingPDF(true);
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise(resolve => setTimeout(resolve, 100));
     try {
       await exportToPdf({
         activeTab,

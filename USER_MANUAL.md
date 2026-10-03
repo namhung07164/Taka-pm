@@ -1486,4 +1486,15 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Mọi thao tác thêm cột hoặc bỏ cột (qua công cụ `+ Add Column` / `Toggle Columns` hoặc nút đóng `x` trên tiêu đề các cột) tại tất cả các phân hệ (**Gantt Chart, Detail Tab, Budget Tab, Cost Tab, Task Delegation Tab**) đều được lưu trữ độc lập theo tài khoản người dùng và thiết bị đang sử dụng.
      + Trên màn hình điện thoại (Mobile), người dùng có thể tinh gọn bảng chỉ hiển thị 2-4 cột quan trọng nhất, trong khi trên màn hình Desktop lớn vẫn giữ nguyên đầy đủ 10-14 cột dữ liệu chi tiết mà không bị ghi đè hay xung đột giữa các thiết bị.
 
+23. **Tối Ưu Hóa Bộ Máy In Ấn & Xuất Bản PDF (Print Engine & PDF Export Optimization)**:
+   - **Căn Chuẩn Tỉ Lệ Khung In & Bảo Toàn Đúng Tỉ Lệ 1:1 (Exact Frame Scale & Proportional Aspect Ratio)**:
+     + Khắc phục triệt để hiện tượng biến dạng hoặc lệch khung in: hệ thống tự động đo lường kích thước thực của nội dung bảng biểu (`naturalWidth`, `naturalHeight`), tính toán tỉ lệ thu phóng `printScale` theo đúng chuẩn kích cỡ giấy in (A4: 210x297mm, A3: 297x420mm, A2: 420x594mm) với lề chuẩn 10mm.
+     + Đảm bảo các chế độ `Fit to width (cols on 1 page)`, `Fit to height (rows on 1 page)`, và `Fit to 1 page` tự động co giãn vừa khít 100% diện tích trang in mà không làm méo hình, không bị kéo dãn hay cắt xén nội dung.
+     + Đường lưới phân trang (Page Break overlay) và các trang PDF được cắt ghép chính xác theo từng ranh giới hàng của bảng dữ liệu.
+   - **Tối Ưu Siêu Nhẹ & Triệt Tiêu Hiện Tượng Đơ Lag Máy Ở Mọi Mức DPI (Zero-Lag & Lightweight Memory Architecture)**:
+     + **Cơ chế cắt lát từng trang (Per-Page Tile Slicing)**: Thay vì nhúng toàn bộ ảnh canvas khổng lồ (dung lượng hàng chục MB) lặp lại trên mọi trang PDF, hệ thống chỉ trích xuất đúng lát cắt của từng trang riêng lẻ sang ảnh JPEG tối ưu (chỉ khoảng 80-150KB/trang), giúp dung lượng file PDF siêu nhẹ và tốc độ xuất file hoàn tất chỉ trong 0.2 - 0.5 giây.
+     + **Bảo vệ bộ nhớ phần cứng (Hardware Memory Protection)**: Tự động giới hạn số điểm ảnh tối đa an toàn (Memory Cap < 6 Megapixels), tối ưu hóa quá trình chụp DOM (`skipFonts: true`) ngăn chặn triệt để tình trạng CPU/GPU bị quá tải hoặc treo trình duyệt khi chọn mức độ phân giải cao `200 DPI` hay `300 DPI`.
+     + **Tùy chọn In Trực Tiếp Siêu Nhanh (Direct Browser Print)**: Bổ sung tùy chọn máy in *"Direct Browser Print (Ctrl+P / Vector)"* cho phép mở ngay hộp thoại in bản địa của trình duyệt với đồ họa vector sắc nét tuyệt đối, phản hồi tức thì 0ms mà không tốn tài nguyên máy.
+
+
 

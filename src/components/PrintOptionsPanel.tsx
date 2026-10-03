@@ -71,7 +71,8 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
             onChange={(e) => setPrintTarget(e.target.value as any)}
             className="w-full text-xs font-bold bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-md px-2 py-1.5 outline-none cursor-pointer text-slate-700 dark:text-[#e3e3e3]"
           >
-            <option value="pdf">Standard Printer / PDF</option>
+            <option value="pdf">Download PDF (High Quality / Light)</option>
+            <option value="browser">Direct Browser Print (Ctrl+P / Vector)</option>
             {activeTab !== 'gantt' && <option value="excel">Export to Excel</option>}
           </select>
         </div>
@@ -149,12 +150,10 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
             onChange={(e) => setPrintDpi(parseInt(e.target.value, 10))}
             className="w-full text-xs font-bold bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-md px-2 py-1.5 outline-none cursor-pointer text-slate-700 dark:text-[#e3e3e3]"
           >
-            <option value={50}>50 DPI</option>
-            <option value={100}>100 DPI</option>
-            <option value={200}>200 DPI</option>
-            <option value={300}>300 DPI</option>
-            <option value={400}>400 DPI</option>
-            <option value={600}>600 DPI</option>
+            <option value={96}>96 DPI (Fastest)</option>
+            <option value={150}>150 DPI (Balanced)</option>
+            <option value={200}>200 DPI (High Detail)</option>
+            <option value={300}>300 DPI (Ultra Sharp)</option>
           </select>
         </div>
 
@@ -225,10 +224,16 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
 
       <button 
         onClick={printTarget === 'excel' ? onExportToExcel : onPrintToPDF}
-        className="mt-1 w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 py-2 rounded-md text-sm font-bold transition-colors shadow-sm active:scale-95 touch-manipulation"
+        className="mt-1 w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 py-2 rounded-md text-sm font-bold transition-colors shadow-sm active:scale-95 touch-manipulation flex items-center justify-center gap-2"
         disabled={isExportingPDF}
       >
-        {isExportingPDF ? "Exporting..." : "Print Document"}
+        {isExportingPDF 
+          ? "Processing..." 
+          : printTarget === 'excel' 
+          ? "Export to Excel" 
+          : printTarget === 'browser' 
+          ? "Open Browser Print" 
+          : "Download PDF"}
       </button>
     </motion.div>
   );

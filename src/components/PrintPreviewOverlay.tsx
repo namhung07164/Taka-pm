@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { useLanguage } from "../lib/LanguageContext";
 
 interface PrintPreviewOverlayProps {
   printScale: number;
@@ -8,15 +7,16 @@ interface PrintPreviewOverlayProps {
   printScaleMode: string;
 }
 
+const PX_PER_MM = 3.779527559;
+
 export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
   printScale,
   printPaperSize,
   printOrientation,
-  printScaleMode
 }) => {
   const [pageBreaks, setPageBreaks] = useState<{ domStartY: number; domEndY: number }[]>([]);
   const [cols, setCols] = useState(1);
-  const [finalUsableWidthPx, setFinalUsableWidthPx] = useState(0);
+  const [usableWidthPx, setUsableWidthPx] = useState(0);
 
   const getPaperDimensions = () => {
     switch (printPaperSize) {
@@ -36,44 +36,32 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
       const wrapper = document.querySelector('.print-content-wrapper') as HTMLElement;
       if (!wrapper) return;
       
-      const naturalWidth = wrapper.scrollWidth;
-      const naturalHeight = wrapper.scrollHeight;
+      const naturalWidth = Math.max(100, wrapper.scrollWidth);
+      const naturalHeight = Math.max(100, wrapper.scrollHeight);
       
       const { w: paperW, h: paperH } = getPaperDimensions();
       const printWidth = printOrientation === 'landscape' ? paperH : paperW;
       const printHeight = printOrientation === 'landscape' ? paperW : paperH;
       
-      const usableWidthPx = (printWidth - 20) * 3.78 / (printScale / 100);
-      const usableHeightPx = (printHeight - 20) * 3.78 / (printScale / 100);
+      const currentScale = Math.max(0.1, (printScale || 100) / 100);
+      const targetUsableWidthPx = ((printWidth - 20) * PX_PER_MM) / currentScale;
+      const targetUsableHeightPx = ((printHeight - 20) * PX_PER_MM) / currentScale;
       
-      let scaleAdjustment = 1;
-      if (printScaleMode === 'fit-page') {
-        scaleAdjustment = Math.max(1, naturalWidth / usableWidthPx, naturalHeight / usableHeightPx);
-      } else if (printScaleMode === 'fit-cols') {
-        scaleAdjustment = Math.max(1, naturalWidth / usableWidthPx);
-      } else if (printScaleMode === 'fit-rows') {
-        scaleAdjustment = Math.max(1, naturalHeight / usableHeightPx);
-      }
-      
-      const calculatedFinalUsableWidthPx = usableWidthPx * scaleAdjustment;
-      const calculatedFinalUsableHeightPx = usableHeightPx * scaleAdjustment;
-      
-      const calculatedCols = Math.max(1, Math.ceil(naturalWidth / calculatedFinalUsableWidthPx - 0.05));
+      const calculatedCols = Math.max(1, Math.ceil((naturalWidth - 2) / targetUsableWidthPx));
       
       let headerHeight = 0;
       const thead = wrapper.querySelector('thead');
-      const currentScale = printScale / 100;
       const wrapperRect = wrapper.getBoundingClientRect();
 
       if (thead) {
          const theadRect = thead.getBoundingClientRect();
-         headerHeight = (theadRect.bottom - wrapperRect.top) / currentScale;
+         headerHeight = Math.max(0, (theadRect.bottom - wrapperRect.top) / currentScale);
       }
       
       const validBoundaries = [0];
       const trElements = Array.from(wrapper.querySelectorAll('tbody tr'));
       trElements.forEach(tr => {
-          validBoundaries.push((tr.getBoundingClientRect().bottom - wrapperRect.top) / currentScale);
+          validBoundaries.push(Math.max(0, (tr.getBoundingClientRect().bottom - wrapperRect.top) / currentScale));
       });
       validBoundaries.push(naturalHeight);
       validBoundaries.sort((a, b) => a - b);
@@ -82,12 +70,12 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
       let domStartY = 0;
       
       while (domStartY < naturalHeight - 0.5) {
-          let domEndY_theoretical;
+          let domEndY_theoretical: number;
           
           if (newPageBreaks.length === 0) {
-              domEndY_theoretical = domStartY + calculatedFinalUsableHeightPx;
+              domEndY_theoretical = domStartY + targetUsableHeightPx;
           } else {
-              domEndY_theoretical = domStartY + calculatedFinalUsableHeightPx - headerHeight;
+              domEndY_theoretical = domStartY + targetUsableHeightPx - headerHeight;
           }
           
           if (domEndY_theoretical >= naturalHeight) {
@@ -96,7 +84,7 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
           }
           
           let breakY = domStartY;
-          for (let i=0; i<validBoundaries.length; i++) {
+          for (let i = 0; i < validBoundaries.length; i++) {
               if (validBoundaries[i] > domStartY && validBoundaries[i] <= domEndY_theoretical + 1) {
                   breakY = validBoundaries[i];
               }
@@ -111,7 +99,7 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
       }
       
       setCols(calculatedCols);
-      setFinalUsableWidthPx(calculatedFinalUsableWidthPx);
+      setUsableWidthPx(targetUsableWidthPx);
       setPageBreaks(newPageBreaks);
     };
 
@@ -120,25 +108,25 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
     if (wrapper) {
       observer = new ResizeObserver(() => {
         clearTimeout(timeoutId);
-        timeoutId = setTimeout(calculatePreviewGrid, 100);
+        timeoutId = setTimeout(calculatePreviewGrid, 80);
       });
       observer.observe(wrapper);
     }
     
-    timeoutId = setTimeout(calculatePreviewGrid, 200);
+    timeoutId = setTimeout(calculatePreviewGrid, 120);
     
     return () => {
       clearTimeout(timeoutId);
       if (observer) observer.disconnect();
     };
-  }, [printScale, printPaperSize, printOrientation, printScaleMode]);
+  }, [printScale, printPaperSize, printOrientation]);
 
   return (
     <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[100] hide-on-actual-print">
       {/* Horizontal lines */}
       {pageBreaks.map((pb, index) => {
-        if (index === pageBreaks.length - 1 && pb.domEndY >= document.querySelector('.print-content-wrapper')?.scrollHeight!) {
-          return null; // Don't draw line at the very bottom if it aligns perfectly
+        if (index === pageBreaks.length - 1 && pb.domEndY >= (document.querySelector('.print-content-wrapper')?.scrollHeight || 0)) {
+          return null;
         }
         return (
           <div 
@@ -146,7 +134,9 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
             className="absolute left-0 w-full border-b-2 border-red-500 border-dashed opacity-70"
             style={{ top: `${pb.domEndY}px` }}
           >
-            <span className="absolute left-1 -top-5 text-red-600 dark:text-red-400 font-bold text-xs bg-white/80 dark:bg-[#1e1e20]/80 px-1 rounded">Page Break</span>
+            <span className="absolute left-1 -top-5 text-red-600 dark:text-red-400 font-bold text-xs bg-white/90 dark:bg-[#1e1e20]/90 px-1 rounded shadow-sm">
+              Page Break
+            </span>
           </div>
         );
       })}
@@ -156,7 +146,7 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
         <div 
           key={`v-${index}`} 
           className="absolute top-0 h-full border-r-2 border-red-500 border-dashed opacity-70"
-          style={{ left: `${(index + 1) * finalUsableWidthPx}px` }}
+          style={{ left: `${(index + 1) * usableWidthPx}px` }}
         />
       ))}
     </div>

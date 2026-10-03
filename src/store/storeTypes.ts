@@ -41,8 +41,8 @@ export interface UISlice {
   setPrintDpi: (val: number) => void;
   printWatermark: "none" | "draft" | "confidential";
   setPrintWatermark: (val: "none" | "draft" | "confidential") => void;
-  printTarget: "pdf" | "excel";
-  setPrintTarget: (val: "pdf" | "excel") => void;
+  printTarget: "browser" | "pdf" | "excel";
+  setPrintTarget: (val: "browser" | "pdf" | "excel") => void;
   showTour: boolean;
   setShowTour: (val: boolean) => void;
   isExportingPDF: boolean;
