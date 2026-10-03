@@ -157,68 +157,70 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
         isTarget && dropPosition === 'after' && "border-b-2 border-b-blue-500"
       )}
     >
-      {/* Left Side Columns */}
+      {/* Left Side Columns Container */}
       <div
-        className="sticky left-0 z-20 bg-white dark:bg-[#1e1e20] flex border-r border-slate-200 dark:border-slate-800 shrink-0"
+        className="sticky left-0 z-20 bg-white dark:bg-[#1e1e20] flex border-r border-slate-200 dark:border-slate-800 shrink-0 h-full items-center overflow-hidden"
         style={{ width: `${sideWidth}px` }}
       >
-        <GanttTaskLeftColumns
-          t={t}
-          taskCode={taskCode}
-          projects={projects}
-          tasks={tasks}
-          isChild={isChild}
-          parentTask={parentTask}
-          hasChildren={hasChildren}
-          childCount={childCount}
-          isModularExpanded={isModularExpanded}
-          toggleModularParent={toggleModularParent}
-          selectedTaskSet={selectedTaskSet}
-          handleTaskCheckboxChange={handleTaskCheckboxChange}
-          isHideMode={isHideMode}
-          toggleHideRow={toggleHideRow}
-          isDragging={isDragging}
-          handleTaskDragStart={handleTaskDragStart}
-          handleTaskDragEnd={handleTaskDragEnd}
-          isEditMode={isEditMode}
-        />
+        <div className="flex-1 min-w-0 h-full flex items-center overflow-hidden">
+          <GanttTaskLeftColumns
+            t={t}
+            taskCode={taskCode}
+            projects={projects}
+            tasks={tasks}
+            isChild={isChild}
+            parentTask={parentTask}
+            hasChildren={hasChildren}
+            childCount={childCount}
+            isModularExpanded={isModularExpanded}
+            toggleModularParent={toggleModularParent}
+            selectedTaskSet={selectedTaskSet}
+            handleTaskCheckboxChange={handleTaskCheckboxChange}
+            isHideMode={isHideMode}
+            toggleHideRow={toggleHideRow}
+            isDragging={isDragging}
+            handleTaskDragStart={handleTaskDragStart}
+            handleTaskDragEnd={handleTaskDragEnd}
+            isEditMode={isEditMode}
+          />
+        </div>
+
+        {showStart && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
+          >
+            {formatGanttDate(t.start)}
+          </div>
+        )}
+
+        {showFinish && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
+          >
+            {formatGanttDate(t.finish)}
+          </div>
+        )}
+
+        {showParty && (
+          <div
+            className="text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
+          >
+            {t.party || "-"}
+          </div>
+        )}
+
+        {showDuration && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center font-bold shrink-0 h-full"
+            style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
+          >
+            {t.duration ? `${t.duration}d` : "-"}
+          </div>
+        )}
       </div>
-
-      {showStart && (
-        <div
-          className="print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 bg-white dark:bg-[#1e1e20]"
-          style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
-        >
-          {formatGanttDate(t.start)}
-        </div>
-      )}
-
-      {showFinish && (
-        <div
-          className="print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 bg-white dark:bg-[#1e1e20]"
-          style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
-        >
-          {formatGanttDate(t.finish)}
-        </div>
-      )}
-
-      {showParty && (
-        <div
-          className="print-sticky-x sticky z-30 text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 bg-white dark:bg-[#1e1e20]"
-          style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
-        >
-          {t.party || "-"}
-        </div>
-      )}
-
-      {showDuration && (
-        <div
-          className="print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-400 border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center font-bold shrink-0 bg-white dark:bg-[#1e1e20]"
-          style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
-        >
-          {t.duration ? `${t.duration}d` : "-"}
-        </div>
-      )}
 
       {/* Right Timeline Area */}
       <div className="flex-1 relative h-full flex items-center">

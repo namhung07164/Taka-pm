@@ -90,12 +90,13 @@ export function GanttTaskLeftColumns({
           <button
             type="button"
             onClick={() => toggleModularParent(t.id)}
-            className="p-0.5 rounded hover:bg-slate-700 text-slate-400 shrink-0 cursor-pointer"
+            className="p-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 shadow-xs shrink-0 cursor-pointer transition-all active:scale-90"
+            title="Toggle Grouped Tasks"
           >
             {isModularExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5 text-blue-400" />
+              <ChevronDown className="w-3.5 h-3.5 text-white font-bold stroke-[2.5]" />
             ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <ChevronRight className="w-3.5 h-3.5 text-white font-bold stroke-[2.5]" />
             )}
           </button>
         )}
@@ -109,18 +110,12 @@ export function GanttTaskLeftColumns({
             )
           )}
 
-          {taskCode && (
-            <span className="font-mono text-[10px] font-bold text-slate-400 shrink-0">
-              {taskCode}
-            </span>
-          )}
-
-          <span className="text-xs text-slate-100 truncate font-medium flex-1 min-w-0" title={t.name}>
+          <span className="text-xs text-slate-900 dark:text-slate-100 truncate font-semibold flex-1 min-w-0" title={t.name}>
             {t.name}
           </span>
 
           {hasChildren && (
-            <span className="text-[10px] text-blue-400 font-semibold shrink-0">
+            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold shrink-0">
               ({childCount})
             </span>
           )}

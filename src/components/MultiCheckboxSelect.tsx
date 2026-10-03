@@ -48,7 +48,7 @@ export function MultiCheckboxSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between gap-1.5 bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        className="w-full flex items-center justify-between gap-1.5 bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
       >
         <span className="truncate">{displayValue}</span>
         <ChevronDown className="w-3.5 h-3.5 opacity-60 shrink-0" />

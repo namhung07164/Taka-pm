@@ -79,53 +79,53 @@ export function GanttToolbarDateFilter({
           className={cn(
             "px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs cursor-pointer",
             tempStartDate || tempEndDate
-              ? "bg-[#182338] border-blue-600 text-blue-400"
-              : "bg-[#1c1c1e] dark:bg-[#1a1a1c] border-slate-700/80 text-slate-200 hover:bg-[#252528]"
+              ? "bg-blue-50 dark:bg-[#182338] border-blue-600 text-blue-600 dark:text-blue-400 font-bold"
+              : "bg-white dark:bg-[#1a1a1c] border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#252528]"
           )}
           title={t('Filter Date Range')}
         >
-          <Calendar className="w-3.5 h-3.5 text-blue-400" />
+          <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
           <span>{t('Date Filter')}</span>
         </button>
 
         {isDateFilterOpen && (
-          <div className="absolute top-full left-0 mt-1.5 bg-[#1e1e20] border border-slate-700 rounded-xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 w-64 animate-in fade-in zoom-in-95 text-slate-100">
-            <div className="flex items-center justify-between font-bold text-xs text-slate-200">
+          <div className="absolute top-full left-0 mt-1.5 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 w-64 animate-in fade-in zoom-in-95 text-slate-800 dark:text-slate-100">
+            <div className="flex items-center justify-between font-bold text-xs text-slate-900 dark:text-slate-200">
               <span>{t('Filter Timeline Range')}</span>
               <button
                 type="button"
                 onClick={() => setIsDateFilterOpen(false)}
-                className="p-0.5 text-slate-400 hover:text-slate-200"
+                className="p-0.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
             <div className="flex flex-col gap-1 text-xs">
-              <label className="text-[11px] font-semibold text-slate-400">{t('From Date')}:</label>
+              <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">{t('From Date')}:</label>
               <input
                 type="date"
                 value={tempStartDate}
                 onChange={(e) => setTempStartDate(e.target.value)}
-                className="bg-[#141416] border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                className="bg-slate-50 dark:bg-[#141416] border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div className="flex flex-col gap-1 text-xs">
-              <label className="text-[11px] font-semibold text-slate-400">{t('To Date')}:</label>
+              <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">{t('To Date')}:</label>
               <input
                 type="date"
                 value={tempEndDate}
                 onChange={(e) => setTempEndDate(e.target.value)}
-                className="bg-[#141416] border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                className="bg-slate-50 dark:bg-[#141416] border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={handleResetDateRange}
-                className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200 font-medium cursor-pointer"
+                className="px-2 py-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium cursor-pointer"
               >
                 {t('Reset')}
               </button>
@@ -145,7 +145,7 @@ export function GanttToolbarDateFilter({
       <button
         type="button"
         onClick={handleTodayClick}
-        className="px-3 py-1.5 bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-slate-200 text-xs font-semibold rounded-xl hover:bg-[#252528] shadow-xs flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+        className="px-3 py-1.5 bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-[#252528] shadow-xs flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
         title="Jump timeline to Today"
       >
         <Calendar className="w-3.5 h-3.5 text-rose-500" />
@@ -153,8 +153,8 @@ export function GanttToolbarDateFilter({
       </button>
 
       {/* View Switch */}
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-        <span className="uppercase tracking-wider text-[11px] text-slate-400 font-bold">{t('VIEW')}</span>
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+        <span className="uppercase tracking-wider text-[11px] text-slate-500 dark:text-slate-400 font-bold">{t('VIEW')}</span>
         <button
           type="button"
           onClick={() => {
@@ -165,14 +165,14 @@ export function GanttToolbarDateFilter({
         >
           <span className="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform translate-x-5.5" />
         </button>
-        <span className="text-xs font-medium text-slate-200 capitalize">
+        <span className="text-xs font-medium text-slate-800 dark:text-slate-200 capitalize">
           {viewMode === 'monthly' ? 'Monthly' : viewMode === 'weekly' ? 'Weekly' : 'Quarterly'}
         </span>
       </div>
 
       {/* Scale Input & Slider */}
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-        <span className="uppercase tracking-wider text-[11px] text-slate-400 font-bold">{t('SCALE')}</span>
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+        <span className="uppercase tracking-wider text-[11px] text-slate-500 dark:text-slate-400 font-bold">{t('SCALE')}</span>
         <div className="flex items-center gap-1.5">
           <input
             type="number"
@@ -190,9 +190,9 @@ export function GanttToolbarDateFilter({
                 setIsWidthChanged(true);
               }
             }}
-            className="w-12 px-2 py-1 text-xs text-center font-mono font-bold bg-[#1c1c1e] border border-slate-700/80 text-white rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-12 px-2 py-1 text-xs text-center font-mono font-bold bg-white dark:bg-[#1c1c1e] border border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-white rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
           />
-          <span className="text-slate-400 font-bold">%</span>
+          <span className="text-slate-500 dark:text-slate-400 font-bold">%</span>
 
           {/* Integrated Scale Range Slider */}
           <input
@@ -207,7 +207,7 @@ export function GanttToolbarDateFilter({
               setScaleInput(String(Math.round((num / 8) * 75)));
               setIsWidthChanged(true);
             }}
-            className="w-20 sm:w-28 h-1.5 bg-slate-700/80 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            className="w-20 sm:w-28 h-1.5 bg-slate-300 dark:bg-slate-700/80 rounded-lg appearance-none cursor-pointer accent-blue-500"
             title="Slide to scale timeline zoom"
           />
         </div>

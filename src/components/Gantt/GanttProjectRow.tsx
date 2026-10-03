@@ -131,141 +131,182 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     >
       <div
         className={cn(
-          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] p-1.5 flex items-center shrink-0 overflow-hidden",
+          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] flex items-center shrink-0 overflow-hidden",
           "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:group-hover:bg-[#28282a]"
         )}
         style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
       >
-        <div className="flex items-center gap-1 w-full relative min-w-0">
-          {isEditMode && (
-            <label
-              className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <input
-                type="checkbox"
-                checked={selectedProjectSet?.has(String(p.no)) || false}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    if (setSelectedProjectIds) setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
-                    if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
-                  } else {
-                    if (setSelectedProjectIds) setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
-                    const pTasksIds = new Set(projectTasks.map((t) => t.id));
-                    if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
+        {/* Project Name Column */}
+        <div className="flex-1 min-w-0 p-1.5 flex items-center overflow-hidden">
+          <div className="flex items-center gap-1 w-full relative min-w-0">
+            {isEditMode && (
+              <label
+                className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedProjectSet?.has(String(p.no)) || false}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      if (setSelectedProjectIds) setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
+                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
+                    } else {
+                      if (setSelectedProjectIds) setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
+                      const pTasksIds = new Set(projectTasks.map((t) => t.id));
+                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
+                    }
+                  }}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
+                />
+              </label>
+            )}
+            <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (canToggle && handleToggle) {
+                    handleToggle(p.id!);
                   }
                 }}
-                className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
-              />
-            </label>
-          )}
-          <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+                disabled={!canToggle}
+                className={cn(
+                  "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
+                  !canToggle
+                    ? "opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600"
+                    : isExpanded
+                    ? "text-slate-600 dark:text-[#c3c3c3] bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] cursor-pointer"
+                    : "text-slate-500 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] cursor-pointer"
+                )}
+                title={
+                  !canToggle
+                    ? "Dự án chưa có công việc"
+                    : isExpanded
+                    ? "Thu gọn Dự án này"
+                    : `Mở rộng Dự án này (${effectiveTaskCount} công việc)`
+                }
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleProjectModular}
+                disabled={!hasModularTasks}
+                className={cn(
+                  "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
+                  !hasModularTasks
+                    ? "opacity-25 cursor-not-allowed bg-slate-100 dark:bg-[#28282a] text-slate-400 dark:text-slate-600"
+                    : isProjectModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 shadow-xs ring-1 ring-purple-400/50 cursor-pointer"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/60 dark:hover:bg-purple-900/90 dark:text-purple-200 border border-purple-300 dark:border-purple-600/70 cursor-pointer"
+                )}
+                title={
+                  !hasModularTasks
+                    ? "Dự án không có Task Modular"
+                    : isProjectModularExpanded
+                    ? "Thu gọn Task Modular của dự án này"
+                    : "Mở rộng Task Modular của dự án này"
+                }
+              >
+                {isProjectModularExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+                )}
+              </button>
+            </div>
             <button
               type="button"
               onClick={(e) => {
+                if (isEditMode) return;
                 e.stopPropagation();
-                if (canToggle && handleToggle) {
-                  handleToggle(p.id!);
-                }
+                setQuickNavTarget({ project: p });
               }}
-              disabled={!canToggle}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (handleToggle) handleToggle(p.id!);
+              }}
               className={cn(
-                "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
-                !canToggle
-                  ? "opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600"
-                  : isExpanded
-                  ? "text-slate-600 dark:text-[#c3c3c3] bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] cursor-pointer"
-                  : "text-slate-500 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] cursor-pointer"
+                "flex items-center gap-1 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1 rounded transition-colors group/pname overflow-hidden",
+                !isEditMode ? "cursor-pointer" : ""
               )}
               title={
-                !canToggle
-                  ? "Dự án chưa có công việc"
-                  : isExpanded
-                  ? "Thu gọn Dự án này"
-                  : `Mở rộng Dự án này (${effectiveTaskCount} công việc)`
+                !isEditMode
+                  ? `Quick Navigator - Dự án: ${p.name} (${p.code})`
+                  : p.name
               }
             >
-              {isExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={handleToggleProjectModular}
-              disabled={!hasModularTasks}
-              className={cn(
-                "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
-                !hasModularTasks
-                  ? "opacity-25 cursor-not-allowed bg-slate-100 dark:bg-[#28282a] text-slate-400 dark:text-slate-600"
-                  : isProjectModularExpanded
-                  ? "bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 shadow-xs ring-1 ring-purple-400/50 cursor-pointer"
-                  : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/60 dark:hover:bg-purple-900/90 dark:text-purple-200 border border-purple-300 dark:border-purple-600/70 cursor-pointer"
-              )}
-              title={
-                !hasModularTasks
-                  ? "Dự án không có Task Modular"
-                  : isProjectModularExpanded
-                  ? "Thu gọn Task Modular của dự án này"
-                  : "Mở rộng Task Modular của dự án này"
-              }
-            >
-              {isProjectModularExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
-              )}
+              <div className="flex flex-col min-w-0 flex-1 justify-center gap-0.5 overflow-hidden">
+                <span 
+                  className={cn(
+                    "font-bold text-xs sm:text-sm truncate text-slate-900 dark:text-white leading-tight",
+                    !isEditMode && "group-hover/pname:text-blue-500 dark:group-hover/pname:text-blue-400 transition-colors"
+                  )} 
+                  title={p.name}
+                >
+                  {p.name}
+                </span>
+                <span className="text-[10px] text-slate-400 truncate font-mono flex items-center gap-1 flex-wrap leading-none">
+                  <span className="px-1 py-0.5 text-[9px] font-bold font-mono rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] shrink-0 leading-none">
+                    {p.code}
+                  </span>
+                  <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] uppercase shrink-0 leading-none">
+                    {p.store}
+                  </span>
+                  {p.location && (
+                    <span className="text-slate-400 text-[10px] font-medium leading-none">
+                      • {p.location}
+                    </span>
+                  )}
+                  <span className="text-amber-400 text-[9px] font-bold leading-none">●</span>
+                </span>
+              </div>
             </button>
           </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              if (isEditMode) return;
-              e.stopPropagation();
-              setQuickNavTarget({ project: p });
-            }}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              if (handleToggle) handleToggle(p.id!);
-            }}
-            className={cn(
-              "flex items-center gap-1 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1 rounded transition-colors group/pname overflow-hidden",
-              !isEditMode ? "cursor-pointer" : ""
-            )}
-            title={
-              !isEditMode
-                ? `Quick Navigator - Dự án: ${p.name} (${p.code})`
-                : p.name
-            }
-          >
-            <div className="flex flex-col min-w-0 flex-1 justify-center gap-0.5 overflow-hidden">
-              <span 
-                className={cn(
-                  "font-bold text-xs sm:text-sm truncate text-white leading-tight",
-                  !isEditMode && "group-hover/pname:text-blue-400 transition-colors"
-                )} 
-                title={p.name}
-              >
-                {p.name}
-              </span>
-              <span className="text-[10px] text-slate-400 truncate font-mono flex items-center gap-1 flex-wrap leading-none">
-                <span className="px-1 py-0.5 text-[9px] font-bold font-mono rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] shrink-0 leading-none">
-                  {p.code}
-                </span>
-                <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] uppercase shrink-0 leading-none">
-                  {p.store}
-                </span>
-                {p.location && (
-                  <span className="text-slate-400 text-[10px] font-medium leading-none">
-                    • {p.location}
-                  </span>
-                )}
-                <span className="text-amber-400 text-[9px] font-bold leading-none">●</span>
-              </span>
-            </div>
-          </button>
         </div>
+
+        {/* Extra Columns inside Side Container */}
+        {showStart && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-blue-700 dark:text-[#8ab4f8] font-bold border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
+          >
+            {formatGanttDate(pStart)}
+          </div>
+        )}
+
+        {showFinish && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-pink-700 dark:text-pink-400 font-bold border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
+          >
+            {formatGanttDate(pEnd)}
+          </div>
+        )}
+
+        {showParty && (
+          <div
+            className="text-xs text-slate-500 dark:text-[#838383] border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
+          >
+            {p.party || "-"}
+          </div>
+        )}
+
+        {showDuration && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center font-bold shrink-0 h-full"
+            style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
+          >
+            {projectDuration}
+          </div>
+        )}
+
         {startResizingSide && (
           <div
             className={cn(
@@ -276,54 +317,6 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
           />
         )}
       </div>
-
-      {showStart && (
-        <div
-          className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-blue-700 dark:text-[#8ab4f8] font-bold border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
-            "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
-          )}
-          style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
-        >
-          {formatGanttDate(pStart)}
-        </div>
-      )}
-
-      {showFinish && (
-        <div
-          className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-pink-700 dark:text-pink-400 font-bold border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]",
-            "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
-          )}
-          style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
-        >
-          {formatGanttDate(pEnd)}
-        </div>
-      )}
-
-      {showParty && (
-        <div
-          className={cn(
-            "print-sticky-x sticky z-30 text-xs text-slate-500 dark:text-[#838383] border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center shrink-0",
-            "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
-          )}
-          style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
-        >
-          {p.party || "-"}
-        </div>
-      )}
-
-      {showDuration && (
-        <div
-          className={cn(
-            "print-sticky-x sticky z-30 font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-r border-slate-200 dark:border-[#444446] p-2 flex items-center justify-center font-bold shrink-0",
-            "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:hover:bg-[#28282a]"
-          )}
-          style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
-        >
-          {projectDuration}
-        </div>
-      )}
 
       {/* Right Timeline Area */}
       <div className="flex-1 relative h-full flex items-center">

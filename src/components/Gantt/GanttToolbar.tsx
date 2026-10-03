@@ -157,7 +157,7 @@ export function GanttToolbar({
   const tasks = useAppStore((state) => state.tasks);
 
   return (
-    <div className="p-2 sm:p-3 bg-[#141416] dark:bg-[#121214] border-b border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-100">
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
       {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
       <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
@@ -165,7 +165,7 @@ export function GanttToolbar({
           <select
             value={globalYearFilter}
             onChange={(e) => setGlobalYearFilter(e.target.value)}
-            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
           >
             <option value="all">{t('All Years')}</option>
             {uniqueYears.map((y) => (
@@ -177,7 +177,7 @@ export function GanttToolbar({
           <select
             value={effectiveStore}
             onChange={(e) => setGlobalStoreFilter(e.target.value)}
-            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
           >
             {uniqueStores.length > 1 && <option value="all">{t('All Stores')}</option>}
             {uniqueStores.map((s) => (
@@ -191,14 +191,14 @@ export function GanttToolbar({
             onChange={setGlobalLocationFilter}
             options={locationOptions}
             placeholder={t('All Locations')}
-            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 rounded-lg text-xs"
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
           />
 
           {/* Col 4: Status */}
           <select
             value={filterProjectStatus}
             onChange={(e) => onStatusFilterChange(e.target.value)}
-            className="w-full bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
           >
             <option value="all">{t('All Statuses')}</option>
             <option value="On process & Upcoming">{t('On Process & Upcoming')}</option>
@@ -219,12 +219,12 @@ export function GanttToolbar({
             className={cn(
               "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
               isHighlightDelegationOn
-                ? "bg-[#2d2415] border-amber-500 text-amber-300 ring-1 ring-amber-500/50"
-                : "bg-[#1c1c1e] border-slate-700/80 text-amber-400 hover:bg-[#252528]"
+                ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50"
+                : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
             )}
             title={t('Highlight My Tasks')}
           >
-            <span className="text-amber-400 text-xs">🎯</span>
+            <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
             <span>Highlight Me</span>
           </button>
 
@@ -235,11 +235,11 @@ export function GanttToolbar({
               "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
               isEditMode
                 ? "bg-blue-600 border-blue-500 text-white shadow-md ring-1 ring-blue-400"
-                : "bg-[#1c1c1e] border-slate-700/80 text-blue-400 hover:bg-[#252528]"
+                : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
             )}
             title={t('Toggle Edit / Batch Actions Mode')}
           >
-            <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+            <Edit2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
             <span>Edit Mode</span>
           </button>
         </div>
@@ -326,7 +326,7 @@ export function GanttToolbar({
           value={searchTerm}
           onChange={setSearchTerm}
           placeholder="Search or ... ( + AND, , OR )"
-          className="w-full bg-[#18181a] dark:bg-[#161618] border border-slate-700/80 text-white placeholder-slate-400 text-xs rounded-lg pl-8 pr-8 py-1.5 outline-none shadow-inner focus:ring-1 focus:ring-blue-500 focus:border-blue-500 h-8 font-medium"
+          className="w-full bg-white dark:bg-[#161618] border border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-white placeholder-slate-400 text-xs rounded-lg pl-8 pr-8 py-1.5 outline-none shadow-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 h-8 font-medium"
         />
       </div>
     </div>

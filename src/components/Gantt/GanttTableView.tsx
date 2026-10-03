@@ -167,7 +167,7 @@ export function GanttTableView({
       >
         {/* Left Side Header */}
         <div
-          className="sticky left-0 z-30 bg-slate-100 dark:bg-[#28282b] flex items-center border-r border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-[#c3c3c3] shrink-0"
+          className="sticky left-0 z-30 bg-slate-100 dark:bg-[#28282b] flex items-center border-r border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-[#c3c3c3] shrink-0"
           style={{ width: `${sideWidth}px` }}
         >
           <div className="w-10 px-1 py-2 text-center border-r border-slate-200 dark:border-slate-800">

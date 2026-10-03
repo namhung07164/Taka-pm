@@ -45,9 +45,9 @@ export function ColumnAdder({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1c1c1e] dark:bg-[#1a1a1c] border border-slate-700/80 text-slate-200 rounded-xl hover:bg-[#252528] transition-all text-xs font-semibold shadow-xs cursor-pointer active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 rounded-xl hover:bg-slate-50 dark:hover:bg-[#252528] transition-all text-xs font-semibold shadow-xs cursor-pointer active:scale-95"
         >
-          <Plus className="w-3.5 h-3.5 text-slate-400" />
+          <Plus className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
           <span>{t('Add Column')}</span>
         </button>
       )}

@@ -66,9 +66,25 @@ export function GanttTab({
   const [tempEndDate, setTempEndDate] = useState('');
 
   const [sideWidth, setSideWidth] = useState<number>(() => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    if (isMobile) {
+      return Math.max(160, Math.min(220, Math.floor(window.innerWidth * 0.52)));
+    }
     const saved = localStorage.getItem('taka_gantt_side_width');
     return saved ? Math.max(180, Math.min(600, Number(saved))) : 360;
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        const maxMobileWidth = Math.max(160, Math.min(220, Math.floor(window.innerWidth * 0.52)));
+        setSideWidth(prev => Math.min(prev, maxMobileWidth));
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
     const saved = localStorage.getItem('taka_gantt_visible_columns');
