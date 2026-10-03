@@ -33,8 +33,8 @@ export interface UISlice {
   setSearchActiveProjectIds: (ids: string[]) => void;
   printFilterHeader: boolean;
   setPrintFilterHeader: (val: boolean) => void;
-  printScaleMode: "default" | "fit-cols" | "fit-rows" | "fit-page" | "custom";
-  setPrintScaleMode: (val: "default" | "fit-cols" | "fit-rows" | "fit-page" | "custom") => void;
+  printScaleMode: "default" | "fit-cols" | "fit-rows" | "fit-page" | "fill-page" | "custom";
+  setPrintScaleMode: (val: "default" | "fit-cols" | "fit-rows" | "fit-page" | "fill-page" | "custom") => void;
   printScaleCustom: number;
   setPrintScaleCustom: (val: number) => void;
   printDpi: number;

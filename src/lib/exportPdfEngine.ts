@@ -66,6 +66,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     printOrientation,
     printPaperSize,
     printDpi = 150,
+    printScaleMode = "fit-page",
     printScale = 100,
     printFilterHeader,
     printFilterContext,
@@ -115,40 +116,51 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       const pdfPageWidth = pdf.internal.pageSize.getWidth();
       const pdfPageHeight = pdf.internal.pageSize.getHeight();
       
-      // Tight 4mm margin for maximum drawing area coverage (Fit full page)
-      const margin = 4;
-      const usableWidth = pdfPageWidth - margin * 2;
+      // Tight outer margin (2mm) for near 100% full paper coverage
+      const margin = 2;
+      let usableWidth = pdfPageWidth - margin * 2;
       let usableHeight = pdfPageHeight - margin * 2;
       let topOffset = margin;
 
       if (printFilterHeader) {
         drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
-        topOffset += 11;
-        usableHeight -= 11;
+        topOffset += 8;
+        usableHeight -= 8;
       }
 
       if (printDate) {
-        usableHeight -= 4;
+        usableHeight -= 3.5;
       }
 
-      const imgAspect = imgW / imgH;
-      const pageAspect = usableWidth / usableHeight;
+      const isFillPage = printScaleMode === 'fill-page';
 
       let targetW = usableWidth;
       let targetH = usableHeight;
+      let xPos = margin;
+      let yPos = topOffset;
 
-      if (imgAspect > pageAspect) {
-        // Fits width exactly
+      if (isFillPage) {
         targetW = usableWidth;
-        targetH = usableWidth / imgAspect;
-      } else {
-        // Fits height exactly
         targetH = usableHeight;
-        targetW = usableHeight * imgAspect;
-      }
+        xPos = margin;
+        yPos = topOffset;
+      } else {
+        const imgAspect = imgW / imgH;
+        const pageAspect = usableWidth / usableHeight;
 
-      const xPos = margin + (usableWidth - targetW) / 2;
-      const yPos = topOffset + (usableHeight - targetH) / 2;
+        if (imgAspect > pageAspect) {
+          // Fits width exactly
+          targetW = usableWidth;
+          targetH = usableWidth / imgAspect;
+        } else {
+          // Fits height exactly
+          targetH = usableHeight;
+          targetW = usableHeight * imgAspect;
+        }
+
+        xPos = margin + (usableWidth - targetW) / 2;
+        yPos = topOffset + (usableHeight - targetH) / 2;
+      }
 
       pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
 

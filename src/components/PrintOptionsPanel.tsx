@@ -118,10 +118,11 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
             onChange={(e) => setPrintScaleMode(e.target.value as any)}
             className="w-full text-xs font-bold bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-md px-2 py-[7px] outline-none cursor-pointer text-slate-700 dark:text-[#e3e3e3] hover:bg-slate-200 dark:hover:bg-[#28282a] transition-colors h-[28px]"
           >
-            <option value="default">Default</option>
+            <option value="fit-page">Fit to 1 page (Proportional)</option>
+            <option value="fill-page">Fill 1 page (Full Page / Edge-to-Edge)</option>
             <option value="fit-cols">Fit to width (cols on 1 page)</option>
             <option value="fit-rows">Fit to height (rows on 1 page)</option>
-            <option value="fit-page">Fit to 1 page</option>
+            <option value="default">Default (100%)</option>
             <option value="custom">Custom</option>
           </select>
         </div>

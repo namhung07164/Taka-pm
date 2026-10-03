@@ -1496,5 +1496,15 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Bảo vệ bộ nhớ phần cứng (Hardware Memory Protection)**: Tự động giới hạn số điểm ảnh tối đa an toàn (Memory Cap < 6 Megapixels), tối ưu hóa quá trình chụp DOM (`skipFonts: true`) ngăn chặn triệt để tình trạng CPU/GPU bị quá tải hoặc treo trình duyệt khi chọn mức độ phân giải cao `200 DPI` hay `300 DPI`.
      + **Tùy chọn In Trực Tiếp Siêu Nhanh (Direct Browser Print)**: Bổ sung tùy chọn máy in *"Direct Browser Print (Ctrl+P / Vector)"* cho phép mở ngay hộp thoại in bản địa của trình duyệt với đồ họa vector sắc nét tuyệt đối, phản hồi tức thì 0ms mà không tốn tài nguyên máy.
 
+24. **Chuẩn Hóa Hiển Thị Ngày Giờ Gọn Gàng & Chuyên Nghiệp (Standardized Clean Date & Time Display)**:
+   - **Bố Cục 2 Tầng Cân Đối (2-Tier Compact Date & Time Architecture)**:
+     + Thay vì hiển thị chuỗi dài lộn xộn bị rớt dòng ngắt quãng thành 3-4 dòng (như `Thu, Jul / 2, 2026, / 8:00 AM`), các cột **Start** và **Finish** trên bảng tiến độ Gantt được tổ chức thành cấu trúc 2 tầng chuẩn mực:
+       * **Dòng 1 (Ngày tháng năm)**: Định dạng rõ ràng, phông Monospace in đậm sắc nét (ví dụ: `02 Jul 2026`, `27 Jul 2026`).
+       * **Dòng 2 (Khung giờ thi công)**: Hiển thị giờ thi công nhỏ gọn bên dưới (ví dụ: `8:00 AM`, `10:00 PM`), màu sắc mờ nhẹ nhàng để không làm rối mắt.
+     + Cột Start sử dụng màu xanh dương thương hiệu (`text-blue-700 dark:text-[#8ab4f8]`), cột Finish sử dụng màu hồng đậm (`text-pink-700 dark:text-pink-400`).
+   - **Chống Tràn & Không Bị Ngắt Chữ (Zero Awkward Line Wrapping)**:
+     + Tự động chống ngắt dòng giữa chừng (`whitespace-nowrap`), căn giữa tuyệt đối trong ô (width 80–110px), đem lại giao diện báo cáo chuyên nghiệp chuẩn Enterprise.
+
+
 
 

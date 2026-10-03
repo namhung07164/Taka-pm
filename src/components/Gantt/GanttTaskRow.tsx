@@ -5,7 +5,7 @@ import { computeTaskCode } from '../../lib/ganttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { GanttTaskLeftColumns } from './GanttTaskLeftColumns';
-import { cn, formatGanttDate } from './GanttUtils';
+import { cn, formatGanttDate, renderGanttDateCell } from './GanttUtils';
 
 export interface GanttTaskRowProps {
   t: Task;
@@ -187,19 +187,19 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
 
         {showStart && (
           <div
-            className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
             style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
           >
-            {formatGanttDate(t.start)}
+            {renderGanttDateCell(t.start, "text-blue-600 dark:text-[#8ab4f8]")}
           </div>
         )}
 
         {showFinish && (
           <div
-            className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
             style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
           >
-            {formatGanttDate(t.finish)}
+            {renderGanttDateCell(t.finish, "text-pink-600 dark:text-pink-400")}
           </div>
         )}
 

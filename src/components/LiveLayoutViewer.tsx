@@ -841,35 +841,44 @@ function LiveCanvas({
         }
       }
 
+      const oldW = stage.width();
+      const oldH = stage.height();
       const oldScaleX = stage.scaleX();
       const oldScaleY = stage.scaleY();
       const oldX = stage.x();
       const oldY = stage.y();
 
-      // Temporarily frame content tightly at 1:1 scale
+      // Temporarily expand stage buffer to full unconstrained drawing dimensions
+      const targetW = Math.max(100, Math.round(contentW));
+      const targetH = Math.max(100, Math.round(contentH));
+      stage.width(targetW);
+      stage.height(targetH);
       stage.scale({ x: 1, y: 1 });
       stage.position({ x: -contentX, y: -contentY });
+      stage.batchDraw();
 
       const exportRatio = Math.min(2.5, Math.max(1.0, dpi / 96));
       const dataUrl = stage.toDataURL({
         x: 0,
         y: 0,
-        width: Math.round(contentW),
-        height: Math.round(contentH),
+        width: targetW,
+        height: targetH,
         pixelRatio: exportRatio,
         mimeType: 'image/jpeg',
-        quality: 0.92
+        quality: 0.94
       });
 
-      // Restore user stage
+      // Restore user stage dimensions and transform
+      stage.width(oldW);
+      stage.height(oldH);
       stage.scale({ x: oldScaleX, y: oldScaleY });
       stage.position({ x: oldX, y: oldY });
       stage.batchDraw();
 
       return {
         dataUrl,
-        width: Math.round(contentW * exportRatio),
-        height: Math.round(contentH * exportRatio),
+        width: Math.round(targetW * exportRatio),
+        height: Math.round(targetH * exportRatio),
       };
     };
 

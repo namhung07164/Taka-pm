@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
 import { Project, Task } from '../../types';
 import { getStatus, computeActProgressPercent } from '../../lib/utils';
-import { formatGanttDate } from './GanttUtils';
+import { formatGanttDate, renderGanttDateCell } from './GanttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 
@@ -273,19 +273,19 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
         {/* Extra Columns inside Side Container */}
         {showStart && (
           <div
-            className="font-mono text-[10px] sm:text-xs text-blue-700 dark:text-[#8ab4f8] font-bold border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
             style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
           >
-            {formatGanttDate(pStart)}
+            {renderGanttDateCell(pStart, "text-blue-700 dark:text-[#8ab4f8]")}
           </div>
         )}
 
         {showFinish && (
           <div
-            className="font-mono text-[10px] sm:text-xs text-pink-700 dark:text-pink-400 font-bold border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
             style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
           >
-            {formatGanttDate(pEnd)}
+            {renderGanttDateCell(pEnd, "text-pink-700 dark:text-pink-400")}
           </div>
         )}
 
