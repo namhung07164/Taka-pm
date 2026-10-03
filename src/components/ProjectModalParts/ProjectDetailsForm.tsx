@@ -309,13 +309,13 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
               disabled={!canWrite}
               className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
             >
-              <option value="" disabled hidden>Select MD Status</option>
+              <option value="">-- None --</option>
               <option value="approached">approached</option>
               <option value="negotiation">negotiation</option>
-              <option value="MOU sent">MOU sent</option>
-              <option value="t&c Agreed">t&c Agreed</option>
+              <option value="Verbally agreed">Verbally agreed</option>
+              <option value="MOU signed">MOU signed</option>
               <option value="Signed agreement">Signed agreement</option>
-              <option value="Rejected">{t("Rejected")}</option>
+              <option value="Rejected">Rejected</option>
             </select>
           </div>
           <div>

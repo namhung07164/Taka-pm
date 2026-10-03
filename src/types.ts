@@ -67,7 +67,7 @@ export interface Project {
   updatedAt?: string;
   textColor?: string;
   comments?: TaskComment[];
-  mdStatus?: string;
+  mdStatus?: MdStatusType | string;
   isPinned?: boolean;
   pinnedOrder?: number;
   parentId?: string;
@@ -77,6 +77,17 @@ export interface Project {
   thumbnail?: string;
   imageLinks?: any[];
 }
+
+export const MD_STATUS_OPTIONS = [
+  'approached',
+  'negotiation',
+  'Verbally agreed',
+  'MOU signed',
+  'Signed agreement',
+  'Rejected',
+] as const;
+
+export type MdStatusType = typeof MD_STATUS_OPTIONS[number];
 
 export interface TaskNote {
   id: string;

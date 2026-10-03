@@ -602,7 +602,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - **Edit Mode & Tùy Chỉnh Bật/Tắt Nhãn Tooltip (Labels Appear Settings)**: Trong menu Hamburger góc phải trên cùng (nằm giữa mục "Đồng bộ Apple Calendar" và "Print Preview"), mục **Edit Mode** cho phép người dùng mở bảng cấu hình chuyên sâu của mặt bằng:
      * `Project Code`: Mã gian hàng / Mã dự án.
      * `Project Name`: Tên dự án / Tên thương hiệu.
-     * `MD Status`: Huy hiệu trạng thái MD (Renew, New, Close...).
+     * `MD Status`: Huy hiệu trạng thái MD (`approached`, `negotiation`, `Verbally agreed`, `MOU signed`, `Signed agreement`, `Rejected`).
      * `AC Status`: Huy hiệu trạng thái thi công thực tế (Actual Status).
      * `Màu sắc Legend`: Bật/tắt toàn bộ màu sắc phân nhóm & tiến độ trên các gian hàng ngoài mặt bằng Live View lẫn trong ô Tooltip (khi tắt, các khối gian hàng sẽ chuyển sang chế độ trong suốt - transparent - giúp nhìn rõ trọn vẹn bản vẽ kiến trúc nền bên dưới cùng đường viền và tên gian hàng sắc nét, đồng thời tự động ẩn thanh chú thích màu nổi).
      * `Floor / Store`: Tầng và chi nhánh (HCM/HN).
@@ -633,7 +633,7 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
    - Các nhóm quy tắc (Rule-Based Groups) và điều kiện lọc (Conditions API) được lưu trữ độc lập theo từng phiên bản (version). Khi chuyển đổi giữa các version, hệ thống sẽ tự động hiển thị chính xác các nhóm và điều kiện thuộc riêng version đó.
    - Khi cần sao chép nhanh bộ quy tắc từ version khác, sử dụng tính năng **`[ COPY GROUPS FROM ]`** để nhân bản danh sách nhóm sang version đang chọn.
    - **Các trường lọc quy tắc thông minh (Rule Conditions & Project Integration)**: Bên cạnh các chỉ số bán hàng và diện tích từ Excel (Sales, Margin, Size, Profit...), hệ thống tích hợp sâu các trường dữ liệu dự án thời gian thực (Real-time Project Attributes) liên kết theo mã gian hàng (Unit Code):
-     * **`App: MD Status`**: Lọc theo trạng thái MD Status của dự án (ví dụ: `Renew`, `New`, `Close`...).
+     * **`App: MD Status`**: Lọc theo trạng thái MD Status của dự án (`approached`, `negotiation`, `Verbally agreed`, `MOU signed`, `Signed agreement`, `Rejected`).
      * **`App: Act Status`**: Lọc theo trạng thái thi công thực tế (Actual Status) được tính toán tự động dựa trên tiến độ và các nhóm ủy quyền (Delegation Groups) của dự án.
      * **`App: Detail (Project)`**: Lọc theo nội dung chi tiết hoặc ghi chú của dự án mẹ.
      * **`App: Description (Project)`**: Lọc theo mô tả công việc/dự án (tự động nhận diện từ các trường Detail, Description hoặc Note).
