@@ -126,30 +126,28 @@ export const DetailTableView = memo(function DetailTableView({
           className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full"
           style={{ width: `${totalTableWidth}px` }}
         >
-          <thead className="sticky top-0 z-20 text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446] shadow-xs">
-            <DetailTableHeader
-              visibleColumns={effectiveVisibleColumns}
-              colWidths={colWidths}
-              canWrite={canWrite}
-              selectedTaskIds={selectedTaskIds}
-              allVisibleTaskIds={allVisibleTaskIds}
-              expandedCodes={expandedCodes}
-              filteredProjects={filteredProjects}
-              availableColumnsForUser={availableColumnsForUser}
-              sortConfig={sortConfig}
-              onResize={onResize}
-              onToggleColumn={onToggleColumn}
-              onSort={onSort}
-              onSelectAllChange={(checked) => {
-                if (checked) {
-                  setSelectedTaskIds(new Set(allVisibleTaskIds));
-                } else {
-                  setSelectedTaskIds(new Set());
-                }
-              }}
-              onToggleExpandAll={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])}
-            />
-          </thead>
+          <DetailTableHeader
+            visibleColumns={effectiveVisibleColumns}
+            colWidths={colWidths}
+            canWrite={canWrite}
+            selectedTaskIds={selectedTaskIds}
+            allVisibleTaskIds={allVisibleTaskIds}
+            expandedCodes={expandedCodes}
+            filteredProjects={filteredProjects}
+            availableColumnsForUser={availableColumnsForUser}
+            sortConfig={sortConfig}
+            onResize={onResize}
+            onToggleColumn={onToggleColumn}
+            onSort={onSort}
+            onSelectAllChange={(checked) => {
+              if (checked) {
+                setSelectedTaskIds(new Set(allVisibleTaskIds));
+              } else {
+                setSelectedTaskIds(new Set());
+              }
+            }}
+            onToggleExpandAll={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])}
+          />
           <tbody>
             {paddingTop > 0 && (
               <tr style={{ height: `${paddingTop}px` }}>

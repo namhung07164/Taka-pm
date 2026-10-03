@@ -49,7 +49,7 @@ export const DetailTableHeader = memo(function DetailTableHeader({
   // If columnsWithWidths is provided, render dynamically
   if (columnsWithWidths && columnsWithWidths.length > 0) {
     return (
-      <thead>
+      <thead className="sticky top-0 z-20 text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446] shadow-xs">
         <tr className="bg-slate-50 dark:bg-[#1e1e20] text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-[#444446] sticky top-0 z-20">
           {columnsWithWidths.map((col) => {
             if (col.id === 'checkbox') {
@@ -126,7 +126,7 @@ export const DetailTableHeader = memo(function DetailTableHeader({
   // Fallback to visibleColumns rendering
   const visCols = visibleColumns || [];
   return (
-    <thead>
+    <thead className="sticky top-0 z-20 text-xs text-slate-500 dark:text-[#a3a3a3] uppercase bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446] shadow-xs">
       <tr className="bg-slate-50 dark:bg-[#1e1e20] text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-[#444446] sticky top-0 z-20">
         {visCols.includes('checkbox') && (
           <th className="px-2 py-3 w-10 text-center select-none bg-slate-50 dark:bg-[#1e1e20] border-b border-slate-200 dark:border-[#444446]">
