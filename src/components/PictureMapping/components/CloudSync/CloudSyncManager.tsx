@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CloudUpload, CloudDownload, RefreshCw, Sparkles, ChevronDown, Check, Layers, GitMerge, Eye, Edit3, Settings } from 'lucide-react';
-import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, getStoredR2CredentialsAsync, extractR2Key, getS3Sdk, downloadR2JsonFile } from '../../lib/r2Upload';
+import { uploadSingleR2File, purgeOldR2BackgroundImages, getStoredR2Credentials, getStoredR2CredentialsAsync, extractR2Key, getS3Sdk, downloadR2JsonFile, isR2CredentialsValid } from '../../lib/r2Upload';
 import { cleanOrphanR2Files } from '../../../../lib/r2StorageUtils';
 import { useDataStore, StoreLocationRecord } from '../../DataContext';
 import { useAppStore } from '../../../../store/useAppStore';
@@ -12,6 +12,21 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../../../lib/firebase';
 
 let hasGlobalAutoSyncStarted = false;
+
+// Recursive sanitizer to ensure zero 'undefined' properties reach Firestore
+function sanitizeForFirestore(val: any): any {
+  if (val === undefined) return null;
+  if (val === null || typeof val !== 'object') return val;
+  if (Array.isArray(val)) return val.map(sanitizeForFirestore);
+  const out: Record<string, any> = {};
+  for (const k of Object.keys(val)) {
+    const v = val[k];
+    if (v !== undefined) {
+      out[k] = sanitizeForFirestore(v);
+    }
+  }
+  return out;
+}
 
 export type CloudSyncScope = 'all' | 'edit' | 'dynamic' | 'review';
 
@@ -161,6 +176,7 @@ export default function CloudSyncManager({
   };
 
   const executeSync = async (forceAction?: 'upload' | 'download', isAuto = false, forceScope?: CloudSyncScope) => {
+    const syncStartTime = Date.now();
     const currentAction = forceAction || actionType;
     const currentScope = forceScope || selectedScope;
     setIsModalOpen(false);
@@ -170,7 +186,7 @@ export default function CloudSyncManager({
     // 1. INSTANT 0ms OPTIMISTIC COMMIT TO ZUSTAND & LOCALSTORAGE
     const freshDataState = useDataStore.getState();
     const currentStore = (freshDataState.store || store || 'HCM') as 'HCM' | 'HN';
-    const currentLocation = (freshDataState.location || location || 'L1').toUpperCase().trim();
+    const currentLocation = (freshDataState.location || location || 'L1').trim();
     const currentActiveKey = `${currentStore}_${currentLocation}`;
     const updatedStoreLocationData: Record<string, StoreLocationRecord> = {
       ...(freshDataState.storeLocationData || {})
@@ -219,12 +235,13 @@ export default function CloudSyncManager({
     // 2. NETWORK ASYNC CLOUD SYNC (R2 & FIRESTORE)
     try {
       const creds = await getStoredR2CredentialsAsync();
+      const credsValidation = isR2CredentialsValid(creds);
 
       if (currentAction === 'upload') {
         let existingCloudData: any = null;
 
         let s3ClientInstance: any = null;
-        if (creds) {
+        if (creds && credsValidation.valid) {
           try {
             const { S3Client } = await getS3Sdk();
             s3ClientInstance = new S3Client({
@@ -439,11 +456,11 @@ export default function CloudSyncManager({
           timestamp: Date.now(),
         };
 
-        // Upload to Cloudflare R2 if creds available
+        // Upload to Cloudflare R2 if creds available and valid
         let r2UploadSuccess = false;
         let r2ErrorMessage = '';
 
-        if (creds && s3ClientInstance) {
+        if (creds && credsValidation.valid && s3ClientInstance) {
           try {
             const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
             const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3ClientInstance);
@@ -457,11 +474,15 @@ export default function CloudSyncManager({
             r2ErrorMessage = r2Err?.message || String(r2Err);
             console.warn('[R2 Upload Warning]', r2ErrorMessage);
           }
+        } else if (creds && !credsValidation.valid) {
+          r2ErrorMessage = credsValidation.reason || 'Cấu hình Cloudflare R2 không hợp lệ';
+          console.warn('[R2 Upload Warning]', r2ErrorMessage);
         } else {
           console.warn('[CloudSync] Missing R2 credentials when saving. Data saved to Firestore backup only.');
         }
 
         // Parallel Backup: Always save snapshot to Firestore and LocalStorage (with size protection)
+        let firestoreSaveSuccess = false;
         try {
           // Prepare sanitized Firestore backup copy (replace any heavy data: URLs to keep doc < 1MB)
           const firestoreStoreLocationData: Record<string, any> = {};
@@ -469,52 +490,66 @@ export default function CloudSyncManager({
             const part = cloudStoreLocationData[key];
             if (!part) continue;
             firestoreStoreLocationData[key] = {
-              activeMapVersionId: part.activeMapVersionId,
-              mapUnits: part.mapUnits || [],
+              activeMapVersionId: part.activeMapVersionId || null,
+              mapUnits: (part.mapUnits || []).map(u => ({
+                id: u.id,
+                name: u.name || '',
+                type: u.type,
+                x: u.x || 0,
+                y: u.y || 0,
+                width: u.width ?? null,
+                height: u.height ?? null,
+                radius: u.radius ?? null,
+                points: u.points ?? null,
+                rotation: u.rotation || 0,
+                scaleX: (u as any).scaleX ?? null,
+                scaleY: (u as any).scaleY ?? null,
+                fill: u.fill || '#3b82f6',
+                opacity: u.opacity ?? 0.5,
+                visible: u.visible !== false,
+                locked: !!u.locked,
+                store: u.store || null,
+                location: u.location || null,
+                groupId: (u as any).groupId || null,
+                groupName: (u as any).groupName || null,
+              })),
               mapVersions: (part.mapVersions || []).map(v => {
                 const bg = v.backgroundUrl || '';
-                const safeBg = bg.startsWith('data:') ? ((v as any).r2Key ? `r2://${(v as any).r2Key}` : '') : bg;
+                const safeBg = (bg.startsWith('data:') || bg.startsWith('blob:'))
+                  ? ((v as any).r2Key ? `r2://${(v as any).r2Key}` : '')
+                  : bg;
                 return {
-                  ...v,
+                  id: v.id,
+                  name: v.name,
+                  year: v.year,
+                  store: v.store,
+                  location: v.location,
                   backgroundUrl: safeBg,
+                  groups: v.groups || [],
+                  groupMappings: v.groupMappings || {},
+                  isDynamicActive: v.isDynamicActive !== false,
+                  // Do not duplicate mapUnits inside every version to keep Firestore doc well under 1MB
                 };
               }),
             };
           }
 
-          const firestorePayload = {
+          const firestorePayload = sanitizeForFirestore({
             storeLocationData: firestoreStoreLocationData,
             store,
             location,
             year: targetYear,
             globalYearFilter: targetYear,
-            activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId,
-            reviewSelectedLabels: configData.reviewSelectedLabels,
-            reviewLabelColors: configData.reviewLabelColors,
+            activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId || null,
+            reviewSelectedLabels: configData.reviewSelectedLabels || [],
+            reviewLabelColors: configData.reviewLabelColors || {},
             lastSavedScope: currentScope,
             updatedAt: new Date().toISOString(),
             timestamp: configData.timestamp,
-          };
+          });
 
-          const estimatedBytes = new Blob([JSON.stringify(firestorePayload)]).size;
-          if (estimatedBytes < 950000) {
-            await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), firestorePayload, { merge: true });
-          } else {
-            console.warn(`[Firestore Backup] Payload size (${estimatedBytes} bytes) near 1MB. Storing index on Firestore; full data on R2.`);
-            await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), {
-              store,
-              location,
-              year: targetYear,
-              globalYearFilter: targetYear,
-              activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId,
-              reviewSelectedLabels: configData.reviewSelectedLabels,
-              reviewLabelColors: configData.reviewLabelColors,
-              lastSavedScope: currentScope,
-              updatedAt: new Date().toISOString(),
-              timestamp: configData.timestamp,
-              isLargePayloadOnR2: true,
-            }, { merge: true });
-          }
+          await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), firestorePayload, { merge: true });
+          firestoreSaveSuccess = true;
 
           // Also update version timestamp to notify LiveLayoutViewer and other clients
           await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
@@ -522,7 +557,7 @@ export default function CloudSyncManager({
             updatedAt: new Date().toISOString()
           }, { merge: true });
         } catch (fsErr) {
-          console.warn('[Firestore Backup] Error saving backup:', fsErr);
+          console.error('[Firestore Backup] Error saving backup:', fsErr);
         }
 
         try {
@@ -572,27 +607,29 @@ export default function CloudSyncManager({
         setProgress(100);
         const totalVersions = Object.values(cloudStoreLocationData).reduce((acc, p) => acc + (p.mapVersions?.length || 0), 0);
         const totalUnits = Object.values(cloudStoreLocationData).reduce((acc, p) => acc + (p.mapUnits?.length || 0), 0);
+        const elapsedSec = ((Date.now() - syncStartTime) / 1000).toFixed(1);
 
         if (r2UploadSuccess) {
-          setStatusText(`Đã lưu thành công: ${totalUnits} units, ${totalVersions} versions lên Cloud!`);
+          setStatusText(`Đã lưu thành công: ${totalUnits} units, ${totalVersions} versions lên Cloudflare R2 (${elapsedSec}s)!`);
           useAppStore.getState().setToast({
             title: "Save Cloud Success",
-            message: `Successfully saved ${totalUnits} units and ${totalVersions} versions across all floors to Cloudflare R2 & Firestore!`,
+            message: `Successfully saved ${totalUnits} units and ${totalVersions} versions across all floors to Cloudflare R2 & Firestore in ${elapsedSec}s!`,
             type: "success",
           });
-        } else if (!creds) {
-          setStatusText(`Đã sao lưu ${totalUnits} units, ${totalVersions} versions vào Firestore Cloud & LocalStorage!`);
+        } else if (firestoreSaveSuccess) {
+          const warnNote = r2ErrorMessage ? ` (Lưu ý: ${r2ErrorMessage})` : '';
+          setStatusText(`Đã lưu ${totalUnits} units, ${totalVersions} versions vào Firestore Cloud (${elapsedSec}s)!`);
           useAppStore.getState().setToast({
-            title: "Cloud Backup Success",
-            message: `Saved ${totalUnits} units and ${totalVersions} versions to Firestore Cloud & LocalStorage. (Tip: Configure Cloudflare R2 in Settings for CDN hosting).`,
-            type: "success",
+            title: "Saved to Firestore Cloud",
+            message: `Data saved successfully to Firestore Cloud in ${elapsedSec}s!${warnNote}`,
+            type: r2ErrorMessage ? "warning" : "success",
           });
         } else {
-          setStatusText(`Đã lưu ${totalUnits} units, ${totalVersions} versions vào Firestore Cloud!`);
+          setStatusText(`Lỗi lưu Cloud (${elapsedSec}s): ${r2ErrorMessage || 'Không thể ghi dữ liệu'}`);
           useAppStore.getState().setToast({
-            title: "Cloud Backup Saved",
-            message: `Data saved to Firestore Cloud! Notice: R2 upload reported: ${r2ErrorMessage}.`,
-            type: "warning",
+            title: "Save Cloud Failed",
+            message: `Could not save to Cloud: ${r2ErrorMessage || 'Permission denied or network failure'}.`,
+            type: "error",
           });
         }
 
@@ -601,9 +638,10 @@ export default function CloudSyncManager({
         setStatusText(`Đang tải dữ liệu [${getScopeName(currentScope)}] từ Cloud...`);
 
         let data: any = null;
+        let loadSource = '';
 
-        // Try R2 download first
-        if (creds) {
+        // Try R2 download first if credentials are valid
+        if (creds && credsValidation.valid) {
           try {
             const { S3Client } = await getS3Sdk();
             const s3 = new S3Client({
@@ -614,22 +652,28 @@ export default function CloudSyncManager({
             const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
             if (downloadRes.success && downloadRes.data) {
               data = downloadRes.data;
+              loadSource = 'Cloudflare R2';
             }
           } catch (r2Err) {
             console.warn('[R2 Download] R2 fetch error, trying fallback:', r2Err);
           }
         }
 
-        // Fallback to Firestore backup if R2 didn't return data
-        if (!data) {
-          try {
-            const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
-            if (snap.exists()) {
-              data = snap.data();
+        // Compare or fallback to Firestore backup
+        try {
+          const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+          if (snap.exists()) {
+            const fsData = snap.data() as any;
+            if (fsData?.storeLocationData) {
+              // Prefer Firestore if R2 had no data OR Firestore timestamp is strictly newer
+              if (!data || (fsData.timestamp && (!data.timestamp || fsData.timestamp > data.timestamp))) {
+                data = fsData;
+                loadSource = 'Firestore Cloud';
+              }
             }
-          } catch (fsErr) {
-            console.warn('[Firestore Fallback] Error reading backup:', fsErr);
           }
+        } catch (fsErr) {
+          console.warn('[Firestore Fallback] Error reading backup:', fsErr);
         }
 
         // Fallback to LocalStorage backup
@@ -638,6 +682,7 @@ export default function CloudSyncManager({
             const cached = localStorage.getItem('taka_mapping_config_backup');
             if (cached) {
               data = JSON.parse(cached);
+              loadSource = 'LocalStorage Cache';
             }
           } catch {}
         }
@@ -667,9 +712,9 @@ export default function CloudSyncManager({
           };
         }
 
-        // Resolve background signed URLs if creds available
+        // Resolve background signed URLs if creds available and valid
         let s3ClientInstance: any = null;
-        if (creds) {
+        if (creds && credsValidation.valid) {
           const { S3Client } = await getS3Sdk();
           s3ClientInstance = new S3Client({
             region: 'auto',
@@ -699,7 +744,7 @@ export default function CloudSyncManager({
               const v = partition.mapVersions[j];
               const r2Key = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
 
-              if (creds && s3ClientInstance && r2Key) {
+              if (creds && credsValidation.valid && s3ClientInstance && r2Key) {
                 try {
                   const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
                   const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key });
@@ -720,8 +765,9 @@ export default function CloudSyncManager({
           }
         }
 
-        // Scoped Application to local state
-        const localMergedStoreLocationData: Record<string, StoreLocationRecord> = { ...storeLocationData };
+        // Scoped Application to local state (read directly from getState to avoid any stale closure)
+        const currentLocalStoreLocationData = useDataStore.getState().storeLocationData || {};
+        const localMergedStoreLocationData: Record<string, StoreLocationRecord> = { ...currentLocalStoreLocationData };
 
         if (currentScope === 'edit') {
           // Update ONLY coordinates & background transforms, keeping local dynamic rules
@@ -750,15 +796,21 @@ export default function CloudSyncManager({
 
           loadFullCloudData({
             storeLocationData: localMergedStoreLocationData,
-            store: store,
-            location: location,
-            activeMapVersionId: activeMapVersionId,
+            store: useDataStore.getState().store || store,
+            location: useDataStore.getState().location || location,
+            activeMapVersionId: useDataStore.getState().activeMapVersionId || activeMapVersionId,
             reviewSelectedLabels: reviewSelectedLabels || [],
             reviewLabelColors: reviewLabelColors || {},
           });
 
           setProgress(100);
-          setStatusText('Đã tải bản vẽ & tọa độ (Tab Edit) từ Cloud!');
+          const elapsedSec = ((Date.now() - syncStartTime) / 1000).toFixed(1);
+          setStatusText(`Đã tải bản vẽ & tọa độ (Tab Edit) từ ${loadSource || 'Cloud'} (${elapsedSec}s)!`);
+          useAppStore.getState().setToast({
+            title: "Load Cloud Success",
+            message: `Successfully loaded map units and floor plans from ${loadSource || 'Cloud'} in ${elapsedSec}s!`,
+            type: "success"
+          });
 
         } else if (currentScope === 'dynamic') {
           // Update dynamic rules and groups, while preserving all versions and units
@@ -814,9 +866,9 @@ export default function CloudSyncManager({
 
           loadFullCloudData({
             storeLocationData: localMergedStoreLocationData,
-            store: store,
-            location: location,
-            activeMapVersionId: activeMapVersionId,
+            store: useDataStore.getState().store || store,
+            location: useDataStore.getState().location || location,
+            activeMapVersionId: useDataStore.getState().activeMapVersionId || activeMapVersionId,
             reviewSelectedLabels: reviewSelectedLabels || [],
             reviewLabelColors: reviewLabelColors || {},
           });
@@ -835,10 +887,10 @@ export default function CloudSyncManager({
             useAppStore.getState().setGlobalYearFilter(data.globalYearFilter || data.year);
           }
           loadFullCloudData({
-            storeLocationData: storeLocationData,
-            store: store,
-            location: location,
-            activeMapVersionId: activeMapVersionId,
+            storeLocationData: useDataStore.getState().storeLocationData || storeLocationData,
+            store: useDataStore.getState().store || store,
+            location: useDataStore.getState().location || location,
+            activeMapVersionId: useDataStore.getState().activeMapVersionId || activeMapVersionId,
             reviewSelectedLabels: data.reviewSelectedLabels || [],
             reviewLabelColors: data.reviewLabelColors || {},
           });
@@ -858,9 +910,9 @@ export default function CloudSyncManager({
           }
           loadFullCloudData({
             storeLocationData: normalizedStoreLocationData,
-            store: data.store || store,
-            location: data.location || location,
-            activeMapVersionId: data.activeMapVersionId,
+            store: useDataStore.getState().store || data.store || store,
+            location: useDataStore.getState().location || data.location || location,
+            activeMapVersionId: data.activeMapVersionId || useDataStore.getState().activeMapVersionId,
             reviewSelectedLabels: data.reviewSelectedLabels || [],
             reviewLabelColors: data.reviewLabelColors || {},
             unitInfo: data.unitInfo || [],

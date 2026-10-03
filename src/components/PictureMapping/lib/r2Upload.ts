@@ -152,6 +152,23 @@ export function getStoredR2Credentials(): R2Credentials | null {
 }
 
 /**
+ * Validates R2 credentials format to detect misconfigurations (such as pasting AccessKey into SecretKey)
+ */
+export function isR2CredentialsValid(creds: R2Credentials | null): { valid: boolean; reason?: string } {
+  if (!creds) return { valid: false, reason: 'Chưa cấu hình Cloudflare R2' };
+  if (!creds.accountId || !creds.bucketName || !creds.accessKeyId || !creds.secretAccessKey) {
+    return { valid: false, reason: 'Thiếu thông tin tài khoản hoặc Access/Secret Key' };
+  }
+  if (creds.accessKeyId.trim() === creds.secretAccessKey.trim()) {
+    return { 
+      valid: false, 
+      reason: 'Secret Access Key đang bị trùng với Access Key ID (Key bí mật của Cloudflare R2 là chuỗi 64 ký tự hex, không phải chuỗi 32 ký tự của Access Key ID).' 
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Asynchronously retrieve R2 credentials, with fallback to Firestore taka_config/r2_credentials
  * on fresh accounts / cold boots before configCacheService sync completes.
  */
@@ -493,9 +510,20 @@ export async function downloadR2JsonFile<T = any>(
     const command = new GetObjectCommand({
       Bucket: creds.bucketName.trim(),
       Key: key,
+      ResponseCacheControl: 'no-cache, no-store, must-revalidate',
     });
     const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-    const res = await fetch(signedUrl);
+    // Append timestamp query parameter to strictly bypass any browser / CDN HTTP cache
+    const cacheBusterUrl = signedUrl.includes('?') 
+      ? `${signedUrl}&_t=${Date.now()}` 
+      : `${signedUrl}?_t=${Date.now()}`;
+    const res = await fetch(cacheBusterUrl, { 
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
     if (res.status === 404) {
       return { success: false, notFound: true, error: `File "${key}" chưa tồn tại trên R2 Bucket (Vui lòng bấm Save Cloud để lưu cấu hình lần đầu).` };
     }
@@ -535,6 +563,7 @@ export async function uploadSingleR2File(
   const isJson = originalName.toLowerCase().endsWith('.json');
   const safeName = originalName.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
   const contentType = file.blob.type || (isJson ? 'application/json' : 'image/jpeg');
+  const cacheControl = isJson ? 'no-cache, no-store, must-revalidate, max-age=0' : 'public, max-age=604800, immutable';
 
   let lastError = '';
 
@@ -550,6 +579,7 @@ export async function uploadSingleR2File(
         Key: safeName,
         Body: uint8Array,
         ContentType: contentType,
+        CacheControl: cacheControl,
       });
 
       await s3.send(command);
@@ -565,12 +595,16 @@ export async function uploadSingleR2File(
         Bucket: creds.bucketName.trim(),
         Key: safeName,
         ContentType: contentType,
+        CacheControl: cacheControl,
       });
 
       const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
       const res = await fetch(signedUrl, {
         method: 'PUT',
-        headers: { 'Content-Type': contentType },
+        headers: { 
+          'Content-Type': contentType,
+          'Cache-Control': cacheControl,
+        },
         body: file.blob,
       });
 

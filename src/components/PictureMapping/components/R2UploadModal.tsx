@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Draggable from 'react-draggable';
 import { testR2Connection } from '../lib/r2Upload';
+import { cn } from '../lib/utils';
 import { useAppStore } from '../../../store/useAppStore';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
@@ -120,6 +121,11 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
     const cleanBucketName = bucketName.trim();
     const cleanCfZoneId = cfZoneId.trim();
     const cleanCfApiToken = cfApiToken.trim();
+
+    if (cleanAccessKey && cleanSecretKey && cleanAccessKey === cleanSecretKey) {
+      alert('Lỗi cấu hình Cloudflare R2:\nSecret Access Key đang bị trùng khớp với Access Key ID!\n\nTrong Cloudflare R2:\n- Access Key ID: chuỗi 32 ký tự hex (vd: 53fdcb...)\n- Secret Access Key: chuỗi 64 ký tự hex (vd: a1b2c3d4...)\n\nVui lòng kiểm tra lại Cloudflare Dashboard > R2 > Manage R2 API Tokens để lấy đúng Secret Access Key.');
+      return;
+    }
 
     localStorage.setItem('r2_account_id', cleanAccountId);
     localStorage.setItem('r2_access_key', cleanAccessKey);
@@ -300,10 +306,20 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
                   type="password"
                   value={secretKey}
                   onChange={(e) => setSecretKey(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-500 text-sm font-mono transition-colors"
+                  className={cn(
+                    "w-full bg-slate-950 border rounded-lg px-3 py-2 text-white focus:outline-none text-sm font-mono transition-colors",
+                    accessKey.trim() && secretKey.trim() && accessKey.trim() === secretKey.trim()
+                      ? "border-rose-500 focus:border-rose-500 text-rose-200"
+                      : "border-slate-700 focus:border-amber-500"
+                  )}
                   placeholder="e.g. YOUR_SECRET_ACCESS_KEY"
                   disabled={uploading}
                 />
+                {accessKey.trim() && secretKey.trim() && accessKey.trim() === secretKey.trim() && (
+                  <p className="mt-1 text-[11px] text-rose-400 font-semibold flex items-center gap-1">
+                    ⚠️ Secret Access Key đang bị trùng với Access Key ID! Key bí mật của Cloudflare R2 là chuỗi 64 ký tự hex.
+                  </p>
+                )}
               </div>
 
               {/* Test Connection Button & Status */}
