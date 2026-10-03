@@ -101,10 +101,12 @@ export function GanttTaskLeftColumns({
         )}
 
         <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-          {(t.party?.toLowerCase().includes('tenant') || t.party?.toLowerCase().includes('contractor') || t.party?.toLowerCase().includes('nt') || t.name?.toLowerCase().includes('tenant') || t.name?.toLowerCase().includes('design guideline') || t.name?.toLowerCase().includes('opening') || t.name?.toLowerCase().includes('fit-out') || t.name?.toLowerCase().includes('shop drawing') || t.name?.toLowerCase().includes('re-instatement')) ? (
-            <span className="text-blue-400 text-[10px] shrink-0 font-black">▶</span>
-          ) : (
-            <span className="text-emerald-400 text-xs shrink-0">📌</span>
+          {isEditMode && (
+            (t.party?.toLowerCase().includes('tenant') || t.party?.toLowerCase().includes('contractor') || t.party?.toLowerCase().includes('nt') || t.name?.toLowerCase().includes('tenant') || t.name?.toLowerCase().includes('design guideline') || t.name?.toLowerCase().includes('opening') || t.name?.toLowerCase().includes('fit-out') || t.name?.toLowerCase().includes('shop drawing') || t.name?.toLowerCase().includes('re-instatement')) ? (
+              <span className="text-blue-400 text-[10px] shrink-0 font-black">▶</span>
+            ) : (
+              <span className="text-emerald-400 text-xs shrink-0">📌</span>
+            )
           )}
 
           {taskCode && (

@@ -369,10 +369,92 @@ export function useFirebaseData() {
   const projectsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigProjects = useRef<string>("");
 
+  // Atomic batching buffers for Projects and Tasks updates to prevent JS main thread freezing
+  const pendingProjectsMap = useRef<Map<string, Project> | null>(null);
+  const projectsBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchProjectsUpdate = useCallback((docChanges: any[]) => {
+    if (!pendingProjectsMap.current) {
+      const currentProjects = useAppStore.getState().projects || [];
+      const map = new Map<string, Project>();
+      currentProjects.forEach(p => map.set(p.id, p));
+      pendingProjectsMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const data = { id: change.doc.id, ...change.doc.data() } as Project;
+      if (change.type === "removed" || data.isDeleted) {
+        pendingProjectsMap.current!.delete(change.doc.id);
+      } else {
+        pendingProjectsMap.current!.set(change.doc.id, data);
+      }
+    });
+
+    if (projectsBatchTimer.current) {
+      clearTimeout(projectsBatchTimer.current);
+    }
+
+    projectsBatchTimer.current = setTimeout(() => {
+      if (pendingProjectsMap.current) {
+        const updatedList = Array.from(pendingProjectsMap.current.values());
+        updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
+        useAppStore.getState().setProjects(updatedList);
+        const setNotifs = useAppStore.getState().setAllProjectsForNotifs;
+        if (setNotifs) setNotifs(updatedList);
+        pendingProjectsMap.current = null;
+      }
+      projectsBatchTimer.current = null;
+    }, 40);
+  }, []);
+
+  const pendingTasksMap = useRef<Map<string, Task> | null>(null);
+  const tasksBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchTasksUpdate = useCallback((docChanges: any[]) => {
+    if (!pendingTasksMap.current) {
+      const currentTasks = useAppStore.getState().tasks || [];
+      const map = new Map<string, Task>();
+      currentTasks.forEach(t => map.set(t.id, t));
+      pendingTasksMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const data = { id: change.doc.id, ...change.doc.data() } as Task;
+      if (change.type === "removed" || data.isDeleted) {
+        pendingTasksMap.current!.delete(change.doc.id);
+      } else {
+        pendingTasksMap.current!.set(change.doc.id, data);
+      }
+    });
+
+    if (tasksBatchTimer.current) {
+      clearTimeout(tasksBatchTimer.current);
+    }
+
+    tasksBatchTimer.current = setTimeout(() => {
+      if (pendingTasksMap.current) {
+        const updatedList = Array.from(pendingTasksMap.current.values());
+        updatedList.sort((a, b) => {
+          if (a.projectCode !== b.projectCode) {
+            return (a.projectCode || "").localeCompare(b.projectCode || "");
+          }
+          return (a.orderIndex || 0) - (b.orderIndex || 0);
+        });
+        useAppStore.getState().setTasks(updatedList);
+        const setNotifs = useAppStore.getState().setAllTasksForNotifs;
+        if (setNotifs) setNotifs(updatedList);
+        pendingTasksMap.current = null;
+      }
+      tasksBatchTimer.current = null;
+    }, 40);
+  }, []);
+
   useEffect(() => {
     return () => {
       projectsPool.current.forEach(u => u());
       projectsPool.current.clear();
+      if (projectsBatchTimer.current) clearTimeout(projectsBatchTimer.current);
+      if (tasksBatchTimer.current) clearTimeout(tasksBatchTimer.current);
     };
   }, []);
 
@@ -397,28 +479,7 @@ export function useFirebaseData() {
           qProjects,
           (snapshot) => {
             usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
-            
-            const currentProjects = useAppStore.getState().projects || [];
-            const projectMap = new Map<string, Project>();
-            currentProjects.forEach(p => projectMap.set(p.id, p));
-
-            snapshot.docChanges().forEach((change) => {
-              const data = { id: change.doc.id, ...change.doc.data() } as Project;
-              if (change.type === "removed" || data.isDeleted) {
-                projectMap.delete(change.doc.id);
-              } else {
-                projectMap.set(change.doc.id, data);
-              }
-            });
-
-            const updatedList = Array.from(projectMap.values());
-            updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
-            
-            // Re-fetch setProjects from Zustand directly to avoid dependency issues
-            useAppStore.getState().setProjects(updatedList);
-            const setNotifs = useAppStore.getState().setAllProjectsForNotifs;
-            if (setNotifs) setNotifs(updatedList);
-            
+            batchProjectsUpdate(snapshot.docChanges());
             setCloudStatus("online");
           },
           (e) => {
@@ -656,32 +717,7 @@ export function useFirebaseData() {
             (snapshot) => {
               usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
               setIsTasksLoading(false);
-
-              const currentTasks = useAppStore.getState().tasks || [];
-              const taskMap = new Map<string, Task>();
-              currentTasks.forEach(t => taskMap.set(t.id, t));
-
-              snapshot.docChanges().forEach((change) => {
-                const data = { id: change.doc.id, ...change.doc.data() } as Task;
-                if (change.type === "removed" || data.isDeleted) {
-                  taskMap.delete(change.doc.id);
-                } else {
-                  taskMap.set(change.doc.id, data);
-                }
-              });
-
-              const updatedList = Array.from(taskMap.values());
-              updatedList.sort((a, b) => {
-                if (a.projectCode !== b.projectCode) {
-                  return (a.projectCode || "").localeCompare(b.projectCode || "");
-                }
-                return (a.orderIndex || 0) - (b.orderIndex || 0);
-              });
-
-              useAppStore.getState().setTasks(updatedList);
-              const setNotifs = useAppStore.getState().setAllTasksForNotifs;
-              if (setNotifs) setNotifs(updatedList);
-
+              batchTasksUpdate(snapshot.docChanges());
               setCloudStatus("online");
             },
             (e) => {
@@ -723,32 +759,7 @@ export function useFirebaseData() {
               (snapshot) => {
                 usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                 setIsTasksLoading(false);
-
-                const currentTasks = useAppStore.getState().tasks || [];
-                const taskMap = new Map<string, Task>();
-                currentTasks.forEach(t => taskMap.set(t.id, t));
-
-                snapshot.docChanges().forEach((change) => {
-                  const data = { id: change.doc.id, ...change.doc.data() } as Task;
-                  if (change.type === "removed" || data.isDeleted) {
-                    taskMap.delete(change.doc.id);
-                  } else {
-                    taskMap.set(change.doc.id, data);
-                  }
-                });
-
-                const updatedList = Array.from(taskMap.values());
-                updatedList.sort((a, b) => {
-                  if (a.projectCode !== b.projectCode) {
-                    return (a.projectCode || "").localeCompare(b.projectCode || "");
-                  }
-                  return (a.orderIndex || 0) - (b.orderIndex || 0);
-                });
-
-                useAppStore.getState().setTasks(updatedList);
-                const setNotifs = useAppStore.getState().setAllTasksForNotifs;
-                if (setNotifs) setNotifs(updatedList);
-
+                batchTasksUpdate(snapshot.docChanges());
                 setCloudStatus("online");
               },
               (e) => {

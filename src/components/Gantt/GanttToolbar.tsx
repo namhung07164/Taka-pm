@@ -2,6 +2,7 @@ import React from 'react';
 import { Search, Loader2, Edit2, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { ColumnAdder } from '../ColumnAdder';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
@@ -153,6 +154,7 @@ export function GanttToolbar({
   handleClearFocus,
 }: GanttToolbarProps) {
   const { t } = useLanguage();
+  const tasks = useAppStore((state) => state.tasks);
 
   return (
     <div className="p-2 sm:p-3 bg-[#141416] dark:bg-[#121214] border-b border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-100">
@@ -293,8 +295,8 @@ export function GanttToolbar({
             />
           )}
 
-          {/* Task loading spinner */}
-          {isTasksLoading && (
+          {/* Task loading spinner - Only on cold start when no cached tasks exist */}
+          {isTasksLoading && (!tasks || tasks.length === 0) && (
             <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               <span>{t('Syncing...')}</span>
@@ -312,23 +314,6 @@ export function GanttToolbar({
               <X className="w-3 h-3" />
             </button>
           )}
-        </div>
-
-        {/* Zoom Slider below Date Filter & Add Column */}
-        <div className="flex items-center gap-2 pl-0.5">
-          <input
-            type="range"
-            min="4"
-            max="40"
-            value={dayWidth}
-            onChange={(e) => {
-              const num = Number(e.target.value);
-              setDayWidth(num);
-              setScaleInput(String(Math.round((num / 8) * 75)));
-              setIsWidthChanged(true);
-            }}
-            className="w-24 sm:w-32 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-          />
         </div>
       </div>
 

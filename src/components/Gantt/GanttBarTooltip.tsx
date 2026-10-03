@@ -78,7 +78,7 @@ export function GanttBarTooltip({
         left: 0,
         top: 0,
         transform: 'none',
-        pointerEvents: 'auto',
+        pointerEvents: (isPinned || isEditingPredecessor) ? 'auto' : 'none',
         touchAction: 'none'
       }}
     >
@@ -161,14 +161,17 @@ export function GanttBarTooltip({
 
       {/* Predecessors Section & Editor */}
       {extraVars?.task && extraVars?.tasks && (
-        <div className="mt-2.5 pt-2 border-t border-slate-700/60">
+        <div className="mt-2.5 pt-2 border-t border-slate-700/60 pointer-events-auto">
           <GanttTooltipPredecessor
             task={extraVars.task}
             tasks={extraVars.tasks}
             projects={extraVars.projects || []}
             canWrite={Boolean(extraVars.canWrite ?? true)}
             isEditing={isEditingPredecessor}
-            setIsEditing={setIsEditingPredecessor}
+            setIsEditing={(val) => {
+              if (val) setActiveTooltip(id);
+              setIsEditingPredecessor(val);
+            }}
           />
         </div>
       )}

@@ -170,21 +170,22 @@ export function GanttToolbarDateFilter({
         </span>
       </div>
 
-      {/* Scale Input */}
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+      {/* Scale Input & Slider */}
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
         <span className="uppercase tracking-wider text-[11px] text-slate-400 font-bold">{t('SCALE')}</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <input
             type="number"
-            min="5"
+            min="0"
             max="150"
             value={scaleInput}
             onChange={(e) => {
               const val = e.target.value;
               setScaleInput(val);
               const num = Number(val);
-              if (!isNaN(num) && num >= 5 && num <= 150) {
-                const calculatedDayWidth = Math.max(4, Math.round((num / 75) * 8));
+              if (!isNaN(num) && num >= 0 && num <= 150) {
+                // Scale 0% maps to super compact dayWidth = 0.6px (~18px per month)
+                const calculatedDayWidth = num === 0 ? 0.6 : Math.max(0.6, Math.round((num / 75) * 8 * 10) / 10);
                 setDayWidth(calculatedDayWidth);
                 setIsWidthChanged(true);
               }
@@ -192,12 +193,30 @@ export function GanttToolbarDateFilter({
             className="w-12 px-2 py-1 text-xs text-center font-mono font-bold bg-[#1c1c1e] border border-slate-700/80 text-white rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
           />
           <span className="text-slate-400 font-bold">%</span>
+
+          {/* Integrated Scale Range Slider */}
+          <input
+            type="range"
+            min="0.6"
+            max="20"
+            step="0.2"
+            value={dayWidth}
+            onChange={(e) => {
+              const num = Number(e.target.value);
+              setDayWidth(num);
+              setScaleInput(String(Math.round((num / 8) * 75)));
+              setIsWidthChanged(true);
+            }}
+            className="w-20 sm:w-28 h-1.5 bg-slate-700/80 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            title="Slide to scale timeline zoom"
+          />
         </div>
+
         {isWidthChanged && (
           <button
             type="button"
             onClick={saveDayWidth}
-            className="p-1 text-emerald-400 hover:bg-emerald-950/40 rounded transition-colors"
+            className="p-1 text-emerald-400 hover:bg-emerald-950/40 rounded transition-colors cursor-pointer"
             title="Save zoom width as default"
           >
             <Save className="w-3.5 h-3.5" />

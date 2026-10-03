@@ -124,19 +124,19 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     <div
       id={`gantt-project-row-${p.no}`}
       className={cn(
-        "flex h-11 min-h-[44px] border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
+        "flex h-12 min-h-[48px] border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
         "bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a]",
         getRowVisibilityClass(rowId)
       )}
     >
       <div
         className={cn(
-          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] p-2 flex items-center shrink-0",
+          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] p-1.5 flex items-center shrink-0 overflow-hidden",
           "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:group-hover:bg-[#28282a]"
         )}
         style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
       >
-        <div className="flex items-center gap-1 w-full relative">
+        <div className="flex items-center gap-1 w-full relative min-w-0">
           {isEditMode && (
             <label
               className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
@@ -230,7 +230,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               if (handleToggle) handleToggle(p.id!);
             }}
             className={cn(
-              "flex items-center gap-1.5 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1.5 rounded transition-colors group/pname",
+              "flex items-center gap-1 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1 rounded transition-colors group/pname overflow-hidden",
               !isEditMode ? "cursor-pointer" : ""
             )}
             title={
@@ -239,29 +239,29 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 : p.name
             }
           >
-            <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+            <div className="flex flex-col min-w-0 flex-1 justify-center gap-0.5 overflow-hidden">
               <span 
                 className={cn(
-                  "font-bold text-xs sm:text-sm truncate text-white dark:text-white",
+                  "font-bold text-xs sm:text-sm truncate text-white leading-tight",
                   !isEditMode && "group-hover/pname:text-blue-400 transition-colors"
                 )} 
                 title={p.name}
               >
                 {p.name}
               </span>
-              <span className="text-[10px] text-slate-400 truncate font-mono flex items-center gap-1.5 flex-wrap">
-                <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] shrink-0">
+              <span className="text-[10px] text-slate-400 truncate font-mono flex items-center gap-1 flex-wrap leading-none">
+                <span className="px-1 py-0.5 text-[9px] font-bold font-mono rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] shrink-0 leading-none">
                   {p.code}
                 </span>
-                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] uppercase shrink-0">
+                <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] uppercase shrink-0 leading-none">
                   {p.store}
                 </span>
                 {p.location && (
-                  <span className="text-slate-400 text-[11px] font-medium">
+                  <span className="text-slate-400 text-[10px] font-medium leading-none">
                     • {p.location}
                   </span>
                 )}
-                <span className="text-amber-400 text-[10px] font-bold">●</span>
+                <span className="text-amber-400 text-[9px] font-bold leading-none">●</span>
               </span>
             </div>
           </button>
