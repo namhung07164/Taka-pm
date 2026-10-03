@@ -211,41 +211,68 @@ export function GanttToolbar({
           </select>
         </div>
 
-        {/* Action Buttons: Highlight Me & Edit Mode */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
-            className={cn(
-              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
-              isHighlightDelegationOn
-                ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50"
-                : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
-            )}
-            title={t('Highlight My Tasks')}
-          >
-            <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
-            <span>Highlight Me</span>
-          </button>
+        {/* Action Buttons: Highlight Me (hidden in Edit Mode) & Floating Sticky Edit Mode */}
+        <div className={cn(
+          "transition-all duration-200",
+          isEditMode
+            ? "sticky top-1 z-[60] p-1.5 rounded-xl bg-white/95 dark:bg-[#1a1a1c]/95 border border-blue-500/60 shadow-xl backdrop-blur-md flex flex-wrap items-center justify-between gap-2 shrink-0"
+            : "flex items-center gap-1.5 shrink-0"
+        )}>
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
+              className={cn(
+                "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
+                isHighlightDelegationOn
+                  ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50"
+                  : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
+              )}
+              title={t('Highlight My Tasks')}
+            >
+              <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
+              <span>Highlight Me</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={() => setIsEditMode(!isEditMode)}
             className={cn(
-              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8",
+              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8 shrink-0",
               isEditMode
-                ? "bg-blue-600 border-blue-500 text-white shadow-md ring-1 ring-blue-400"
+                ? "bg-blue-600 border-blue-500 text-white shadow-md ring-1 ring-blue-400 font-extrabold"
                 : "bg-white dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-[#252528]"
             )}
             title={t('Toggle Edit / Batch Actions Mode')}
           >
-            <Edit2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <Edit2 className="w-3.5 h-3.5 text-white dark:text-white" />
             <span>Edit Mode</span>
           </button>
+
+          {/* Edit Mode Batch Actions (Color, Baseline, Modular group, Sum, Hide, Delete, Export) */}
+          {isEditMode && (
+            <GanttToolbarActions
+              selectedProjectIds={selectedProjectIds}
+              selectedTaskIds={selectedTaskIds}
+              handleSetTextColor={handleSetTextColor}
+              handleSetBaselineSelected={handleSetBaselineSelected}
+              setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+              sumMode={sumMode}
+              setSumMode={setSumMode}
+              handleDeleteSelected={handleDeleteSelected}
+              isHideMode={isHideMode}
+              setIsHideMode={setIsHideMode}
+              hiddenRows={hiddenRows}
+              setHiddenRows={setHiddenRows}
+              handleExportToPDF={handleExportToPDF}
+              isExporting={isExporting}
+            />
+          )}
         </div>
       </div>
 
-      {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today, View Toggle, Scale input & slider) */}
+      {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today) */}
       <div className="flex flex-col gap-1 w-full">
         <div className="flex flex-wrap items-center gap-2 justify-between w-full">
           <div className="flex flex-wrap items-center gap-2">
@@ -274,26 +301,6 @@ export function GanttToolbar({
               onAddColumn={handleToggleColumn}
             />
           </div>
-
-          {/* Edit Mode Batch Actions (Color, Baseline, Modular group, Sum, Hide, Delete, Export) */}
-          {isEditMode && (
-            <GanttToolbarActions
-              selectedProjectIds={selectedProjectIds}
-              selectedTaskIds={selectedTaskIds}
-              handleSetTextColor={handleSetTextColor}
-              handleSetBaselineSelected={handleSetBaselineSelected}
-              setIsTaskModularModalOpen={setIsTaskModularModalOpen}
-              sumMode={sumMode}
-              setSumMode={setSumMode}
-              handleDeleteSelected={handleDeleteSelected}
-              isHideMode={isHideMode}
-              setIsHideMode={setIsHideMode}
-              hiddenRows={hiddenRows}
-              setHiddenRows={setHiddenRows}
-              handleExportToPDF={handleExportToPDF}
-              isExporting={isExporting}
-            />
-          )}
 
           {/* Task loading spinner - Only on cold start when no cached tasks exist */}
           {isTasksLoading && (!tasks || tasks.length === 0) && (

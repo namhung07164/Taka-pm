@@ -24,24 +24,15 @@ export function useGanttTimeline({
   getGroupTasksForProject,
   globalYearFilter
 }: UseGanttTimelineParams) {
-  const [viewMode, setViewMode] = useState<ViewMode>("monthly");
-  
-  const [dayWidth, setDayWidth] = useState<number>(() => {
-    const saved = localStorage.getItem("taka_gantt_day_width");
-    return saved ? Math.max(4, Math.min(120, Number(saved))) : 8;
-  });
-
-  const [isWidthChanged, setIsWidthChanged] = useState(false);
-  const [scaleInput, setScaleInput] = useState(() => String(dayWidth));
-
-  const saveDayWidth = useCallback(() => {
-    localStorage.setItem("taka_gantt_day_width", String(dayWidth));
-    setIsWidthChanged(false);
-    useAppStore.getState().setToast({
-      title: "Saved",
-      message: `Default day width updated to ${dayWidth}px`
-    });
-  }, [dayWidth]);
+  const viewMode = useAppStore((state) => state.ganttViewMode);
+  const setViewMode = useAppStore((state) => state.setGanttViewMode);
+  const dayWidth = useAppStore((state) => state.ganttDayWidth);
+  const setDayWidth = useAppStore((state) => state.setGanttDayWidth);
+  const scaleInput = useAppStore((state) => state.ganttScaleInput);
+  const setScaleInput = useAppStore((state) => state.setGanttScaleInput);
+  const isWidthChanged = useAppStore((state) => state.isGanttWidthChanged);
+  const setIsWidthChanged = useAppStore((state) => state.setIsGanttWidthChanged);
+  const saveDayWidth = useAppStore((state) => state.saveGanttDayWidth);
 
   const [customToday, setCustomToday] = useState<Date>(() => {
     const d = new Date();

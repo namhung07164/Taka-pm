@@ -48,6 +48,17 @@ export interface UISlice {
   isExportingPDF: boolean;
   setIsExportingPDF: (val: boolean) => void;
 
+  // Gantt View & Scale Controls
+  ganttViewMode: "monthly" | "weekly" | "quarterly";
+  setGanttViewMode: (mode: "monthly" | "weekly" | "quarterly") => void;
+  ganttDayWidth: number;
+  setGanttDayWidth: (width: number) => void;
+  ganttScaleInput: string;
+  setGanttScaleInput: (val: string) => void;
+  isGanttWidthChanged: boolean;
+  setIsGanttWidthChanged: (val: boolean) => void;
+  saveGanttDayWidth: () => void;
+
   // UI State
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;

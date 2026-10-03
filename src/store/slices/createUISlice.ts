@@ -39,6 +39,28 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set({ printDate: val });
   },
 
+  // Gantt View & Scale State
+  ganttViewMode: "monthly",
+  setGanttViewMode: (mode) => set({ ganttViewMode: mode }),
+  ganttDayWidth: (() => {
+    const saved = safeGetItemLocal("taka_gantt_day_width");
+    return saved ? Math.max(0.6, Math.min(120, Number(saved))) : 8;
+  })(),
+  setGanttDayWidth: (width) => set({ ganttDayWidth: width }),
+  ganttScaleInput: "75",
+  setGanttScaleInput: (val) => set({ ganttScaleInput: val }),
+  isGanttWidthChanged: false,
+  setIsGanttWidthChanged: (val) => set({ isGanttWidthChanged: val }),
+  saveGanttDayWidth: () => {
+    const currentWidth = get().ganttDayWidth;
+    safeSetItemLocal("taka_gantt_day_width", String(currentWidth));
+    set({ isGanttWidthChanged: false });
+    get().setToast({
+      title: "Saved",
+      message: `Default day width updated to ${currentWidth}px`
+    });
+  },
+
   expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
     const next = state.expandedProjectIds.includes(projectId)

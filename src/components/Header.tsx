@@ -39,6 +39,7 @@ const QRScannerModal = lazyWithRetry(() => import("./QRScannerModal").then(m => 
 import { AppUser, TabId, AppRole } from "../types";
 import { cn } from "../lib/utils";
 import { useLanguage } from "../lib/LanguageContext";
+import { HeaderMenuDrawer } from "./HeaderParts/HeaderMenuDrawer";
 import { RibbonDisplayMenu } from "./RibbonDisplayMenu";
 
 interface HeaderProps {
@@ -87,6 +88,16 @@ export function Header({
   const canWriteImportCsv = currentUser?.role === 'admin' || !!permissionMatrix[currentUser?.role as AppRole]?.Write?.importCsv;
   const jpyRate = useAppStore(state => state.jpyRate);
   const usdRate = useAppStore(state => state.usdRate);
+
+  const ganttViewMode = useAppStore(state => state.ganttViewMode);
+  const setGanttViewMode = useAppStore(state => state.setGanttViewMode);
+  const ganttDayWidth = useAppStore(state => state.ganttDayWidth);
+  const setGanttDayWidth = useAppStore(state => state.setGanttDayWidth);
+  const ganttScaleInput = useAppStore(state => state.ganttScaleInput);
+  const setGanttScaleInput = useAppStore(state => state.setGanttScaleInput);
+  const isGanttWidthChanged = useAppStore(state => state.isGanttWidthChanged);
+  const setIsGanttWidthChanged = useAppStore(state => state.setIsGanttWidthChanged);
+  const saveGanttDayWidth = useAppStore(state => state.saveGanttDayWidth);
 
   const handleCurrencyClick = () => {
     let nextCurrency: 'VND' | 'JPY' | 'USD' = 'VND';
@@ -186,236 +197,20 @@ export function Header({
             <Menu className="w-5 h-5" />
           </button>
 
-          {isMenuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-[9998] bg-black/20 backdrop-blur-[0.5px]"
-                onClick={() => setIsMenuOpen(false)}
-              />
-              <div className="absolute top-10 left-0 w-64 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="py-1.5">
-                <button onClick={() => {
-                    if (currentUser.role === "guest") onLoginClick();
-                    else onLogoutClick();
-                    setIsMenuOpen(false);
-                  }}
-                  className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-bold hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1"
-                >
-                  <span
-                    className={cn(
-                      "w-2 h-2 rounded-full",
-                      currentUser.role === "guest"
-                        ? "bg-slate-300 dark:bg-slate-600"
-                        : "bg-emerald-500",
-                    )}
-                  />
-                  {currentUser.role === "guest" ? t("Login") : t("Logout")}
-                </button>
-
-                {currentUser.role !== "guest" && (
-                  <button title={t("Settings")}
-                    onClick={() => {
-                      onTabChange("setting");
-                      setIsMenuOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1"
-                  >
-                    <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-[#a3a3a3]" />
-                    {t("Settings")}
-                  </button>
-                )}
-
-                {currentUser.role !== "guest" && (
-                  <button onClick={() => {
-                      onTabChange("accControl");
-                      setIsMenuOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
-                  >
-                    {t("Acc control")}
-                  </button>
-                )}
-
-                {currentUser.role === "admin" && (
-                  <button onClick={() => {
-                      onTabChange("audit");
-                      setIsMenuOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
-                  >
-                    Audit Log
-                  </button>
-                )}
-
-                <button 
-                  onClick={() => {
-                    useAppStore.getState().setIsCalendarSyncModalOpen(true);
-                    setIsMenuOpen(false);
-                  }}
-                  className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                  <span>Đồng bộ Apple Calendar (iOS)</span>
-                </button>
-
-                {/* Mobile Quick Utilities in Menu */}
-                <div className="md:hidden py-1 border-b border-slate-100 dark:border-[#444446]">
-                  <div className="grid grid-cols-2 gap-1 px-3 py-1">
-                    {onToggleTheme && (
-                      <button
-                        onClick={() => {
-                          onToggleTheme();
-                          setIsMenuOpen(false);
-                        }}
-                        className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] transition-colors"
-                      >
-                        {theme === "dark" ? <Sun className="w-4 h-4 mb-1 text-amber-500" /> : <Moon className="w-4 h-4 mb-1 text-slate-600" />}
-                        <span>{theme === "dark" ? "Light" : "Dark"}</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setLanguage(language === 'en' ? 'ja' : 'en');
-                        setIsMenuOpen(false);
-                      }}
-                      className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-50 dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] transition-colors"
-                    >
-                      <span className="text-base leading-none mb-1">{language === 'en' ? '🇬🇧' : '🇯🇵'}</span>
-                      <span>{language === 'en' ? 'English' : '日本語'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {activeTab === 'layout' && (
-                  <button 
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent("open-layout-edit-mode"));
-                      }, 50);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446]"
-                  >
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                    <span className="font-semibold text-purple-700 dark:text-purple-300">Edit Mode</span>
-                  </button>
-                )}
-
-                {currentUser.role !== "guest" && activeTab === 'detail' && (
-                  <>
-                    {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('detail-import-projects-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                        <Upload className="w-3.5 h-3.5 text-slate-500" />
-                        Import Project
-                      </button>
-                    )}
-                    <button onClick={() => { document.getElementById('detail-export-projects-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                      <Download className="w-3.5 h-3.5 text-slate-500" />
-                      Export Project
-                    </button>
-                    {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('detail-full-import-projects-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        Full Import Project
-                      </button>
-                    )}
-                    <div className="h-px bg-slate-100 dark:bg-[#444446]"></div>
-                    {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('detail-import-tasks-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                        <Upload className="w-3.5 h-3.5 text-slate-500" />
-                        Import Task
-                      </button>
-                    )}
-                    <button onClick={() => { document.getElementById('detail-export-tasks-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                      <Download className="w-3.5 h-3.5 text-slate-500" />
-                      Export Task
-                    </button>
-                    {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('detail-full-import-tasks-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        Full Import Task
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {currentUser.role !== "guest" && activeTab === 'budget' && (
-                  <>
-                    {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('budget-import-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                        <Upload className="w-3.5 h-3.5 text-slate-500" />
-                        Import Budget
-                      </button>
-                    )}
-                    <button onClick={() => { document.getElementById('budget-export-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                      <Download className="w-3.5 h-3.5 text-slate-500" />
-                      Export Budget
-                    </button>
-                    {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('budget-full-import-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        Full Import Budget
-                      </button>
-                    )}
-                  </>
-                )}
-                {currentUser.role !== "guest" && activeTab === 'cost' && (
-                  <>
-                    {canWriteImportCsv && (
-                      <button onClick={() => { document.getElementById('cost-import-input')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                        <Upload className="w-3.5 h-3.5 text-slate-500" />
-                        Import Cost
-                      </button>
-                    )}
-                    <button onClick={() => { document.getElementById('cost-export-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors">
-                      <Download className="w-3.5 h-3.5 text-slate-500" />
-                      Export Cost
-                    </button>
-                    {currentUser.role === 'admin' && (
-                      <button onClick={() => { document.getElementById('cost-full-import-btn')?.click(); setIsMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        Full Import Cost
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {['detail', 'budget', 'cost', 'summary', 'gantt', 'layout'].includes(activeTab) && (
-                  <>
-                    {['detail', 'budget', 'cost'].includes(activeTab) && currentUser.role !== "guest" && (
-                      <div className="h-px bg-slate-100 dark:bg-[#444446]"></div>
-                    )}
-                    <button 
-                      onClick={() => { 
-                        if (onPrintPreviewToggle) {
-                          onPrintPreviewToggle();
-                        }
-                        setIsMenuOpen(false); 
-                      }} 
-                      className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-slate-500" />
-                      {isPrintPreview ? 'Exit Print Preview' : 'Print Preview'}
-                    </button>
-
-                    {['gantt', 'layout'].includes(activeTab) && (
-                      <button 
-                        onClick={() => { 
-                          window.dispatchEvent(new CustomEvent("export-png"));
-                          setIsMenuOpen(false); 
-                        }} 
-                        className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5 text-slate-500" />
-                        Export as PNG
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-            </>
-          )}
+          <HeaderMenuDrawer
+            isMenuOpen={isMenuOpen}
+            setIsMenuOpen={setIsMenuOpen}
+            currentUser={currentUser}
+            activeTab={activeTab}
+            onTabChange={onTabChange}
+            onLoginClick={onLoginClick}
+            onLogoutClick={onLogoutClick}
+            onToggleTheme={onToggleTheme}
+            theme={theme}
+            canWriteImportCsv={canWriteImportCsv}
+            isPrintPreview={isPrintPreview}
+            onPrintPreviewToggle={onPrintPreviewToggle}
+          />
         </div>
 
         {/* Japanese Takashimaya Logo */}
