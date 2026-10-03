@@ -22,6 +22,7 @@ interface GanttTaskLeftColumnsProps {
   isDragging: boolean;
   handleTaskDragStart: (e: React.DragEvent, id: string) => void;
   handleTaskDragEnd: () => void;
+  isEditMode?: boolean;
 }
 
 export function GanttTaskLeftColumns({
@@ -40,43 +41,46 @@ export function GanttTaskLeftColumns({
   toggleHideRow,
   isDragging,
   handleTaskDragStart,
-  handleTaskDragEnd
+  handleTaskDragEnd,
+  isEditMode = false
 }: GanttTaskLeftColumnsProps) {
   const isSelected = selectedTaskSet.has(t.id);
   const taskCode = propTaskCode || (projects.length > 0 && tasks.length > 0 ? computeTaskCode(projects, tasks, t) : (t.taskCodePhu || ''));
 
   return (
     <div className="flex items-center w-full h-full overflow-hidden">
-      {/* Selection Checkbox & Drag Handle & Hide Button */}
-      <div className="w-9 px-1 py-1 flex items-center justify-center gap-0.5 shrink-0 border-r border-slate-200 dark:border-[#333336]">
-        {isHideMode ? (
-          <button
-            type="button"
-            onClick={(e) => toggleHideRow(`task-${t.id}`, e)}
-            className="p-1 text-slate-400 hover:text-amber-500 rounded transition-colors cursor-pointer"
-            title="Hide this task"
-          >
-            <EyeOff className="w-3.5 h-3.5" />
-          </button>
-        ) : (
-          <div className="flex items-center gap-0.5">
-            <div
-              draggable
-              onDragStart={(e) => handleTaskDragStart(e, t.id)}
-              onDragEnd={handleTaskDragEnd}
-              className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-300"
+      {/* Selection Checkbox & Drag Handle & Hide Button - ONLY in Edit Mode */}
+      {isEditMode && (
+        <div className="w-9 px-1 py-1 flex items-center justify-center gap-0.5 shrink-0 border-r border-slate-200 dark:border-[#333336]">
+          {isHideMode ? (
+            <button
+              type="button"
+              onClick={(e) => toggleHideRow(`task-${t.id}`, e)}
+              className="p-1 text-slate-400 hover:text-amber-500 rounded transition-colors cursor-pointer"
+              title="Hide this task"
             >
-              <GripVertical className="w-3 h-3" />
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-0.5">
+              <div
+                draggable
+                onDragStart={(e) => handleTaskDragStart(e, t.id)}
+                onDragEnd={handleTaskDragEnd}
+                className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-300"
+              >
+                <GripVertical className="w-3 h-3" />
+              </div>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(e) => handleTaskCheckboxChange(e, t.id)}
+                className="rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+              />
             </div>
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={(e) => handleTaskCheckboxChange(e, t.id)}
-              className="rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
-            />
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Task Name Column with indentation for child tasks */}
       <div className="flex-1 min-w-0 px-2 py-1 flex items-center gap-1 overflow-hidden">

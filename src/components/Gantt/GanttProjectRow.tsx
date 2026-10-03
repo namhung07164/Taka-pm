@@ -124,7 +124,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     <div
       id={`gantt-project-row-${p.no}`}
       className={cn(
-        "flex h-10 border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
+        "flex h-11 min-h-[44px] border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
         "bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a]",
         getRowVisibilityClass(rowId)
       )}

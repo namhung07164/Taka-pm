@@ -144,9 +144,9 @@ export function useGanttVirtualization({
       if (row.isHidden) {
         currentOffset += 0;
       } else if (row.type === 'project') {
-        currentOffset += 40; // project row height
+        currentOffset += 44; // project row height (h-11)
       } else {
-        currentOffset += 36; // task row height (h-9)
+        currentOffset += 40; // task row height (h-10)
       }
     }
 

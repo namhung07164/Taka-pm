@@ -311,15 +311,22 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
         <div 
           onClick={canWrite ? handleStartEdit : undefined}
           className={cn(
-            "font-medium font-mono text-[11px] text-blue-300 bg-blue-950/50 px-1.5 py-0.5 rounded border border-blue-800/40 whitespace-normal break-words max-w-[220px]",
-            canWrite ? "cursor-pointer hover:border-blue-500 transition-colors" : ""
+            "font-medium font-mono text-[11px] text-blue-300 bg-blue-950/50 px-2 py-1 rounded-lg border border-blue-800/60 whitespace-normal break-words shadow-xs",
+            canWrite ? "cursor-pointer hover:border-blue-400 hover:bg-blue-900/50 transition-colors" : ""
           )}
           title={task.predecessor}
         >
           {task.predecessor}
         </div>
       ) : (
-        <span className="text-slate-400 text-xs italic">None</span>
+        <button
+          type="button"
+          onClick={canWrite ? handleStartEdit : undefined}
+          className="text-left text-xs text-slate-400 hover:text-blue-300 italic px-2 py-1 rounded-lg border border-dashed border-slate-700 hover:border-blue-500/70 transition-colors flex items-center gap-1 cursor-pointer"
+        >
+          <Plus className="w-3 h-3 text-blue-400" />
+          <span>Add Predecessor...</span>
+        </button>
       )}
     </div>
   );

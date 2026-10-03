@@ -148,7 +148,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
       onDragLeave={(e) => handleTaskDragLeave(e, t.id)}
       onDrop={(e) => handleTaskDrop(e, t, p)}
       className={cn(
-        "flex h-9 border-b border-slate-100 dark:border-slate-800 transition-colors relative group",
+        "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-colors relative group",
         getRowVisibilityClass(`task-${t.id}`),
         isSelected ? "bg-blue-50/50 dark:bg-blue-950/30" : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
         isFocused && "ring-2 ring-blue-500 z-20 bg-blue-50/70 dark:bg-blue-900/30",
@@ -180,6 +180,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           isDragging={isDragging}
           handleTaskDragStart={handleTaskDragStart}
           handleTaskDragEnd={handleTaskDragEnd}
+          isEditMode={isEditMode}
         />
       </div>
 

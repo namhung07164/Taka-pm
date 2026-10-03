@@ -112,40 +112,51 @@ export function GanttBarTooltip({
         </div>
       </div>
 
-      {/* Main Info */}
-      <div className="space-y-1.5 text-[11px] text-slate-300">
-        <div className="flex justify-between items-center gap-2">
-          <span className="text-slate-400 font-medium">Timeline:</span>
-          <span className="font-mono font-semibold text-slate-200">
-            {formatGanttDate(startStr)} → {formatGanttDate(endStr)}
+      {/* Main Info with Task Detail Color Palette */}
+      <div className="space-y-2 text-xs text-slate-300">
+        {/* Progress & Duration */}
+        <div className="flex items-center justify-between gap-2 bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-700/60">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 font-medium">Prog:</span>
+            <span className="font-mono font-bold text-emerald-400">{extraVars?.actPrg ?? 0}%</span>
+          </div>
+          {extraVars?.duration !== undefined && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Dur:</span>
+              <span className="font-mono font-bold text-amber-300">{extraVars.duration}d</span>
+            </div>
+          )}
+        </div>
+
+        {/* Start Date */}
+        <div className="flex flex-col gap-0.5 bg-sky-950/40 border border-sky-800/50 p-2 rounded-lg">
+          <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">Start</span>
+          <span className="font-mono text-xs font-semibold text-sky-100">
+            {formatGanttDate(startStr)}
           </span>
         </div>
 
-        {extraVars?.duration && (
-          <div className="flex justify-between items-center gap-2">
-            <span className="text-slate-400 font-medium">Duration:</span>
-            <span className="font-mono font-semibold text-blue-300">{extraVars.duration} days</span>
-          </div>
-        )}
-
-        <div className="flex justify-between items-center gap-2">
-          <span className="text-slate-400 font-medium">Status:</span>
-          <span className="font-bold text-amber-300">{extraVars?.actStatus || status}</span>
+        {/* Finish Date */}
+        <div className="flex flex-col gap-0.5 bg-pink-950/40 border border-pink-800/50 p-2 rounded-lg">
+          <span className="text-[10px] font-bold text-pink-400 uppercase tracking-wider">Finish</span>
+          <span className="font-mono text-xs font-semibold text-pink-100">
+            {formatGanttDate(endStr)}
+          </span>
         </div>
 
-        {extraVars?.actPrg !== undefined && (
-          <div className="flex justify-between items-center gap-2">
-            <span className="text-slate-400 font-medium">Progress:</span>
-            <span className="font-mono font-bold text-emerald-400">{extraVars.actPrg}%</span>
+        {/* Party */}
+        {extraVars?.party && (
+          <div className="flex justify-between items-center gap-2 pt-0.5">
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Party:</span>
+            <span className="text-slate-100 font-bold">{extraVars.party}</span>
           </div>
         )}
 
-        {extraVars?.party && (
-          <div className="flex justify-between items-center gap-2">
-            <span className="text-slate-400 font-medium">Party:</span>
-            <span className="text-slate-200 font-semibold">{extraVars.party}</span>
-          </div>
-        )}
+        {/* Status */}
+        <div className="flex justify-between items-center gap-2">
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status:</span>
+          <span className="font-bold text-amber-400">{extraVars?.actStatus || status}</span>
+        </div>
       </div>
 
       {/* Predecessors Section & Editor */}
@@ -155,7 +166,7 @@ export function GanttBarTooltip({
             task={extraVars.task}
             tasks={extraVars.tasks}
             projects={extraVars.projects || []}
-            canWrite={Boolean(extraVars.canWrite)}
+            canWrite={Boolean(extraVars.canWrite ?? true)}
             isEditing={isEditingPredecessor}
             setIsEditing={setIsEditingPredecessor}
           />
