@@ -1533,6 +1533,17 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Bảng thông tin chi tiết (Tooltip Popover) sẽ **không tự động mở đè lên màn hình**, giữ cho mặt bằng thông thoáng và toàn diện.
      - Khi cần xem chi tiết dự án/thông tin gian hàng, người dùng chỉ cần nhấp trực tiếp vào ô gian hàng tương ứng trên bản đồ.
 
+28. **Mẫu Cấu Hình In Ấn Tự Động (Print Presets in PrintOptionsPanel)**:
+   - **Tích Hợp Bộ Mẫu In Chuẩn Định Sẵn (Built-in Presets)**:
+     - **Weekly Report**: Khổ A4 Ngang (Landscape), 150 DPI, Watermark DRAFT, Tỷ lệ fit-page.
+     - **Budget Overview**: Khổ A3 Ngang (Landscape), 200 DPI, Watermark CONFIDENTIAL, Tỷ lệ fit-cols.
+     - **Full Project Gantt**: Khổ A2 Ngang (Landscape), 300 DPI (Sắc nét), Watermark None, Tỷ lệ fit-page.
+     - **Quick Summary**: Khổ A4 Dọc (Portrait), 96 DPI (In nhanh trực tiếp trình duyệt).
+   - **Lưu & Quản Lý Mẫu In Tùy Chỉnh (Custom Saved Presets)**:
+     - Người dùng có thể nhấn nút **`+ Save Preset`** trên bảng `PrintOptionsPanel` để đặt tên và lưu lại toàn bộ cấu hình khổ giấy, hướng xoay, tỷ lệ scale, DPI, watermark, và hiển thị bộ lọc hiện tại.
+     - Mẫu in được lưu trữ an toàn theo từng tài khoản (`localStorage`), áp dụng nhanh lại bất cứ lúc nào chỉ với 1 cú nhấp chọn từ menu thả xuống (`-- Select Print Preset --`).
+
+
 
 
 

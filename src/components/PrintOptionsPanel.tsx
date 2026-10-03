@@ -1,7 +1,83 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import { motion } from "motion/react";
-import { X, GripHorizontal } from "lucide-react";
+import { X, GripHorizontal, Bookmark, Plus, Trash2 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { safeGetDeviceItemLocal, safeSetDeviceItemLocal } from "../lib/storage";
+
+export interface PrintPreset {
+  id: string;
+  name: string;
+  isBuiltIn?: boolean;
+  target?: "pdf" | "browser" | "excel";
+  orientation?: "portrait" | "landscape";
+  paperSize?: "A2" | "A3" | "A4";
+  scaleMode?: "fit-page" | "fill-page" | "fit-cols" | "fit-rows" | "default" | "custom";
+  scaleCustom?: number;
+  dpi?: number;
+  watermark?: "none" | "draft" | "confidential";
+  filterHeader?: boolean;
+  showDate?: boolean;
+  rangeType?: "entire" | "custom";
+}
+
+const BUILT_IN_PRESETS: PrintPreset[] = [
+  {
+    id: "preset-weekly-report",
+    name: "Weekly Report",
+    isBuiltIn: true,
+    target: "pdf",
+    orientation: "landscape",
+    paperSize: "A4",
+    scaleMode: "fit-page",
+    dpi: 150,
+    watermark: "draft",
+    filterHeader: true,
+    showDate: true,
+    rangeType: "entire"
+  },
+  {
+    id: "preset-budget-overview",
+    name: "Budget Overview",
+    isBuiltIn: true,
+    target: "pdf",
+    orientation: "landscape",
+    paperSize: "A3",
+    scaleMode: "fit-cols",
+    dpi: 200,
+    watermark: "confidential",
+    filterHeader: true,
+    showDate: true,
+    rangeType: "entire"
+  },
+  {
+    id: "preset-full-gantt",
+    name: "Full Project Gantt",
+    isBuiltIn: true,
+    target: "pdf",
+    orientation: "landscape",
+    paperSize: "A2",
+    scaleMode: "fit-page",
+    dpi: 300,
+    watermark: "none",
+    filterHeader: true,
+    showDate: true,
+    rangeType: "entire"
+  },
+  {
+    id: "preset-quick-summary",
+    name: "Quick Summary",
+    isBuiltIn: true,
+    target: "browser",
+    orientation: "portrait",
+    paperSize: "A4",
+    scaleMode: "fit-page",
+    dpi: 96,
+    watermark: "none",
+    filterHeader: false,
+    showDate: true,
+    rangeType: "entire"
+  }
+];
 
 interface PrintOptionsPanelProps {
   activeTab: string;
@@ -16,6 +92,9 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
   onPrintToPDF,
   onExportToExcel,
 }) => {
+  const currentUser = useAppStore(state => state.currentUser);
+  const setToast = useAppStore(state => state.setToast);
+
   const printTarget = useAppStore(state => state.printTarget);
   const setPrintTarget = useAppStore(state => state.setPrintTarget);
   const printOrientation = useAppStore(state => state.printOrientation);
@@ -42,11 +121,112 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
   const setPrintEndDate = useAppStore(state => state.setPrintEndDate);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("none");
+  const [customPresets, setCustomPresets] = useState<PrintPreset[]>(() => {
+    try {
+      const saved = safeGetDeviceItemLocal("taka_print_presets", currentUser?.id);
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return [];
+  });
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+
+  const handleApplyPreset = useCallback((preset: PrintPreset) => {
+    if (preset.target) setPrintTarget(preset.target);
+    if (preset.orientation) setPrintOrientation(preset.orientation);
+    if (preset.paperSize) setPrintPaperSize(preset.paperSize);
+    if (preset.scaleMode) setPrintScaleMode(preset.scaleMode);
+    if (preset.scaleCustom) setPrintScaleCustom(preset.scaleCustom);
+    if (preset.dpi) setPrintDpi(preset.dpi);
+    if (preset.watermark) setPrintWatermark(preset.watermark);
+    if (preset.filterHeader !== undefined) setPrintFilterHeader(preset.filterHeader);
+    if (preset.showDate !== undefined) setPrintDate(preset.showDate);
+    if (preset.rangeType) setPrintRangeType(preset.rangeType);
+
+    setToast({
+      title: "Preset Applied",
+      message: `Applied print preset "${preset.name}"`
+    });
+  }, [
+    setPrintTarget,
+    setPrintOrientation,
+    setPrintPaperSize,
+    setPrintScaleMode,
+    setPrintScaleCustom,
+    setPrintDpi,
+    setPrintWatermark,
+    setPrintFilterHeader,
+    setPrintDate,
+    setPrintRangeType,
+    setToast
+  ]);
+
+  const handleSelectPreset = (presetId: string) => {
+    setSelectedPresetId(presetId);
+    if (presetId === "none") return;
+
+    const allPresets = [...BUILT_IN_PRESETS, ...customPresets];
+    const found = allPresets.find(p => p.id === presetId);
+    if (found) {
+      handleApplyPreset(found);
+    }
+  };
+
+  const handleSaveCustomPreset = () => {
+    const trimmed = newPresetName.trim();
+    if (!trimmed) return;
+
+    const newPreset: PrintPreset = {
+      id: `custom-preset-${Date.now()}`,
+      name: trimmed,
+      isBuiltIn: false,
+      target: printTarget,
+      orientation: printOrientation,
+      paperSize: printPaperSize,
+      scaleMode: printScaleMode,
+      scaleCustom: printScaleCustom,
+      dpi: printDpi,
+      watermark: printWatermark,
+      filterHeader: printFilterHeader,
+      showDate: printDate,
+      rangeType: printRangeType
+    };
+
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    safeSetDeviceItemLocal("taka_print_presets", JSON.stringify(updated), currentUser?.id);
+
+    setSelectedPresetId(newPreset.id);
+    setIsAddingPreset(false);
+    setNewPresetName("");
+
+    setToast({
+      title: "Preset Saved",
+      message: `Saved custom preset "${trimmed}"`
+    });
+  };
+
+  const handleDeleteCustomPreset = (id: string) => {
+    const updated = customPresets.filter(p => p.id !== id);
+    setCustomPresets(updated);
+    safeSetDeviceItemLocal("taka_print_presets", JSON.stringify(updated), currentUser?.id);
+    if (selectedPresetId === id) {
+      setSelectedPresetId("none");
+    }
+    setToast({
+      title: "Preset Removed",
+      message: "Deleted custom print preset"
+    });
+  };
+
+  const selectedCustomPreset = customPresets.find(p => p.id === selectedPresetId);
+
   return (
     <motion.div 
       drag
       dragMomentum={false}
-      className="fixed top-4 right-4 z-[9999] bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-[#f3f3f3] p-4 rounded-xl shadow-2xl border border-slate-200 dark:border-[#333336] flex flex-col gap-4 animate-in slide-in-from-top-4 hide-on-actual-print min-w-[280px]"
+      className="fixed top-4 right-4 z-[9999] bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-[#f3f3f3] p-4 rounded-xl shadow-2xl border border-slate-200 dark:border-[#333336] flex flex-col gap-3.5 animate-in slide-in-from-top-4 hide-on-actual-print min-w-[300px] max-w-[340px]"
     >
       <div className="flex items-center justify-between cursor-move">
         <div className="flex items-center gap-2">
@@ -55,11 +235,100 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
         </div>
         <button 
           onClick={onClose}
-          className="p-1 hover:bg-slate-100 dark:hover:bg-[#333336] rounded-md transition-colors"
+          className="p-1 hover:bg-slate-100 dark:hover:bg-[#333336] rounded-md transition-colors cursor-pointer"
           title="Close"
         >
           <X size={16} />
         </button>
+      </div>
+
+      {/* Print Presets Section */}
+      <div className="flex flex-col gap-1.5 pb-2.5 border-b border-slate-200 dark:border-[#333336]">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase flex items-center gap-1">
+            <Bookmark className="w-3 h-3 text-blue-500" />
+            Print Presets
+          </span>
+          {!isAddingPreset && (
+            <button
+              onClick={() => setIsAddingPreset(true)}
+              className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 cursor-pointer active:scale-95"
+              title="Save current options as a new preset"
+            >
+              <Plus className="w-3 h-3" />
+              Save Preset
+            </button>
+          )}
+        </div>
+
+        {isAddingPreset ? (
+          <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
+            <input
+              type="text"
+              placeholder="Preset Name (e.g. Weekly Report)"
+              value={newPresetName}
+              onChange={(e) => setNewPresetName(e.target.value)}
+              className="flex-1 text-xs font-bold bg-slate-100 dark:bg-[#131314] border border-slate-300 dark:border-[#444446] rounded-md px-2 py-1 outline-none text-slate-800 dark:text-white"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveCustomPreset();
+                if (e.key === 'Escape') setIsAddingPreset(false);
+              }}
+            />
+            <button
+              onClick={handleSaveCustomPreset}
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-bold transition-colors cursor-pointer shrink-0"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => {
+                setIsAddingPreset(false);
+                setNewPresetName("");
+              }}
+              className="p-1 hover:bg-slate-200 dark:hover:bg-[#333336] rounded-md text-slate-400 cursor-pointer shrink-0"
+              title="Cancel"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <select
+              value={selectedPresetId}
+              onChange={(e) => handleSelectPreset(e.target.value)}
+              className="flex-1 text-xs font-bold bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-md px-2 py-1.5 outline-none cursor-pointer text-slate-800 dark:text-[#e3e3e3] hover:bg-slate-200 dark:hover:bg-[#28282a] transition-colors"
+            >
+              <option value="none">-- Select Print Preset --</option>
+              <optgroup label="Built-in Presets">
+                {BUILT_IN_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+              {customPresets.length > 0 && (
+                <optgroup label="Custom Saved Presets">
+                  {customPresets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+
+            {selectedCustomPreset && (
+              <button
+                onClick={() => handleDeleteCustomPreset(selectedCustomPreset.id)}
+                className="p-1.5 hover:bg-rose-100 dark:hover:bg-rose-950/50 text-slate-400 hover:text-rose-600 rounded-md transition-colors cursor-pointer shrink-0"
+                title={`Delete custom preset "${selectedCustomPreset.name}"`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -225,7 +494,7 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
 
       <button 
         onClick={printTarget === 'excel' ? onExportToExcel : onPrintToPDF}
-        className="mt-1 w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 py-2 rounded-md text-sm font-bold transition-colors shadow-sm active:scale-95 touch-manipulation flex items-center justify-center gap-2"
+        className="mt-1 w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 py-2 rounded-md text-sm font-bold transition-colors shadow-sm active:scale-95 touch-manipulation flex items-center justify-center gap-2 cursor-pointer"
         disabled={isExportingPDF}
       >
         {isExportingPDF 
