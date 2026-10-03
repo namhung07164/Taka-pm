@@ -240,10 +240,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       const left = pad;
       const right = pad;
       
-      // Vertical placement: When adding link or expanding panel on mobile, always anchor at safeTop
-      // to guarantee header and input form are NEVER pushed off the top of the iPhone screen
       let top = safeTop;
-      if (!showAddLinkInput && bounds) {
+      if (bounds) {
         if (bounds.centerY > viewportHeight * 0.52) {
           top = safeTop;
         } else {
@@ -308,7 +306,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     }
 
     hasInitialPositionRef.current = true;
-  }, [hoverInfo.clientX, hoverInfo.clientY, hoverInfo.unitScreenBounds, tooltipRef, containerRef, showAddLinkInput]);
+  }, [hoverInfo.clientX, hoverInfo.clientY, hoverInfo.unitScreenBounds, tooltipRef, containerRef]);
 
   useLayoutEffect(() => {
     positionTooltip();
@@ -861,14 +859,9 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           >
             {allUnitImages.length > 0 ? (
               <div className="relative flex items-center gap-1">
-                {/* Mini Image Thumbnail Preview - Click to enlarge directly */}
+                {/* Mini Image Thumbnail Preview - Clicking button toggles image panel below */}
                 <div 
-                  className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center hover:opacity-80 active:scale-95 transition-all cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEnlargedImage({ url: allUnitImages[0].url, title: allUnitImages[0].title });
-                  }}
-                  title="Bấm để xem ảnh phóng to toàn màn hình"
+                  className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center pointer-events-none"
                 >
                   <img 
                     src={normalizeImageUrl(allUnitImages[0].url)} 
@@ -1215,6 +1208,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                   type="url"
                   value={newLinkInput}
                   onChange={(e) => setNewLinkInput(e.target.value)}
+                  onFocus={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
                   placeholder="Dán link ảnh hoặc link bài viết (URL)..."
                   className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-white dark:bg-[#1e1e20] border border-blue-400 dark:border-blue-500 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-mono"
                 />
