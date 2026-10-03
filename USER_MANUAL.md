@@ -1478,3 +1478,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Nhấn phím `Escape` trên bàn phím hoặc nhấp vào vùng đen nền mờ (Backdrop) sẽ lập tức đóng trình xem ảnh.
      + Hỗ trợ giao diện thông báo và nút "Mở liên kết trong tab mới" nếu đường dẫn là tài liệu/trang web không cho phép tải trực tiếp dạng thẻ ảnh.
 
+22. **Lưu Trữ Tỉ Lệ Scale % Tab Gantt & Cấu Hình Thêm/Bỏ Cột Theo Thiết Bị (Device-Screen Aware Persistence)**:
+   - **Tỉ Lệ Scale % & Độ Rộng Gantt Theo Từng Thiết Bị (Mobile / Tablet / Desktop)**:
+     + Khi người dùng điều chỉnh ô nhập `% Scale` (hoặc kéo thanh trượt `Scale` trong menu Hamburger drawer / thanh công cụ Gantt), hệ thống tự động lưu trữ tức thì cấu hình tỉ lệ phóng to/thu nhỏ này vào bộ nhớ thiết bị theo từng hồ sơ màn hình độc lập (`mobile` < 768px, `tablet` 768px - 1024px, `desktop` ≥ 1024px).
+     + Khi đăng nhập hoặc sử dụng trên điện thoại, máy tính bảng hay máy tính để bàn, hệ thống tự động khôi phục đúng mức % Scale và chế độ xem (`Monthly` / `Weekly` / `Quarterly`) tối ưu cho kích thước màn hình của thiết bị đó.
+   - **Cấu Hình Thêm Cột / Bỏ Cột (Column Visibility) Theo Từng Thiết Bị & Tài Khoản**:
+     + Mọi thao tác thêm cột hoặc bỏ cột (qua công cụ `+ Add Column` / `Toggle Columns` hoặc nút đóng `x` trên tiêu đề các cột) tại tất cả các phân hệ (**Gantt Chart, Detail Tab, Budget Tab, Cost Tab, Task Delegation Tab**) đều được lưu trữ độc lập theo tài khoản người dùng và thiết bị đang sử dụng.
+     + Trên màn hình điện thoại (Mobile), người dùng có thể tinh gọn bảng chỉ hiển thị 2-4 cột quan trọng nhất, trong khi trên màn hình Desktop lớn vẫn giữ nguyên đầy đủ 10-14 cột dữ liệu chi tiết mà không bị ghi đè hay xung đột giữa các thiết bị.
+
+

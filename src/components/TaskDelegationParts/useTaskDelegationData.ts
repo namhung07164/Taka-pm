@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Project, Task, AppUser, AppRole } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { safeGetItemLocal, safeSetItemLocal } from '../../lib/storage';
+import { safeGetItemLocal, safeSetItemLocal, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
 import { scrollToElement } from '../../lib/utils';
 import { AVAILABLE_COLUMNS, DelegatableItem, DelegationColWidths, resolveGroupParentProject } from './taskDelegationTypes';
 import { filterAndSortDelegationGroups } from './delegationFilterSort';
@@ -61,24 +61,46 @@ export function useTaskDelegationData({
   );
   const searchRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const saved = safeGetItemLocal(`taka_delegation_col_widths_${currentUser.id}`);
-    if (saved) {
-      try {
-        setColWidths(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
-      }
-    }
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
 
-    const savedCols = safeGetItemLocal(`taka_delegation_visible_cols_${currentUser.id}`);
-    if (savedCols) {
-      try {
-        setVisibleColumns(JSON.parse(savedCols));
-      } catch (e) {
-        console.error(e);
+  useEffect(() => {
+    const loadDeviceConfig = () => {
+      const saved = safeGetDeviceItemLocal('taka_delegation_col_widths', currentUser.id);
+      if (saved) {
+        try {
+          setColWidths(JSON.parse(saved));
+        } catch (e) {
+          console.error(e);
+        }
       }
-    }
+
+      const savedCols = safeGetDeviceItemLocal('taka_delegation_visible_cols', currentUser.id);
+      if (savedCols) {
+        try {
+          setVisibleColumns(JSON.parse(savedCols));
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          setVisibleColumns(['expand', 'taskName', 'status', 'actions']);
+        }
+      }
+    };
+
+    loadDeviceConfig();
+
+    const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        loadDeviceConfig();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [currentUser.id]);
 
   const handleSort = (key: string) => {
@@ -92,7 +114,7 @@ export function useTaskDelegationData({
   const handleResize = (col: keyof DelegationColWidths, newWidth: number) => {
     setColWidths((prev) => {
       const next = { ...prev, [col]: newWidth };
-      safeSetItemLocal(`taka_delegation_col_widths_${currentUser.id}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_delegation_col_widths', JSON.stringify(next), currentUser.id);
       return next;
     });
   };
@@ -100,7 +122,7 @@ export function useTaskDelegationData({
   const handleToggleColumn = (colId: string) => {
     setVisibleColumns((prev) => {
       const next = prev.includes(colId) ? prev.filter((id) => id !== colId) : [...prev, colId];
-      safeSetItemLocal(`taka_delegation_visible_cols_${currentUser.id}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_delegation_visible_cols', JSON.stringify(next), currentUser.id);
       return next;
     });
   };

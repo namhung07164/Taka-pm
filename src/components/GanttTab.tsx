@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { useLanguage } from '../lib/LanguageContext';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../lib/storage';
 import { GanttTabProps } from './Gantt/ganttTypes';
 import { useGanttProjectsFilter } from './Gantt/useGanttProjectsFilter';
 import { useGanttTimeline } from './Gantt/useGanttTimeline';
@@ -68,33 +69,55 @@ export function GanttTab({
   const [sideWidth, setSideWidth] = useState<number>(() => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     if (isMobile) {
-      return Math.max(160, Math.min(220, Math.floor(window.innerWidth * 0.52)));
+      const savedMobile = safeGetDeviceItemLocal('taka_gantt_side_width', currentUser?.id);
+      return savedMobile ? Math.max(140, Math.min(260, Number(savedMobile))) : Math.max(160, Math.min(220, Math.floor(window.innerWidth * 0.52)));
     }
-    const saved = localStorage.getItem('taka_gantt_side_width');
+    const saved = safeGetDeviceItemLocal('taka_gantt_side_width', currentUser?.id);
     return saved ? Math.max(180, Math.min(600, Number(saved))) : 360;
   });
 
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
+    const saved = safeGetDeviceItemLocal('taka_gantt_visible_columns', currentUser?.id);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    return isMobile ? ['start', 'finish'] : ['start', 'finish', 'party', 'duration'];
+  });
+
+  // Track screen type to auto-load device-specific columns and width on orientation / breakpoint changes
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
+
   useEffect(() => {
     const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
       if (window.innerWidth < 768) {
         const maxMobileWidth = Math.max(160, Math.min(220, Math.floor(window.innerWidth * 0.52)));
         setSideWidth(prev => Math.min(prev, maxMobileWidth));
+      }
+
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        // Reload device-specific column config if available
+        const savedCols = safeGetDeviceItemLocal('taka_gantt_visible_columns', currentUser?.id);
+        if (savedCols) {
+          try { setVisibleColumns(JSON.parse(savedCols)); } catch (_) {}
+        }
+        const savedSide = safeGetDeviceItemLocal('taka_gantt_side_width', currentUser?.id);
+        if (savedSide) {
+          setSideWidth(Number(savedSide));
+        }
       }
     };
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
-    const saved = localStorage.getItem('taka_gantt_visible_columns');
-    return saved ? JSON.parse(saved) : ['start', 'finish', 'party', 'duration'];
-  });
+  }, [currentUser?.id]);
 
   const handleToggleColumn = (colId: string) => {
     setVisibleColumns(prev => {
       const next = prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId];
-      localStorage.setItem('taka_gantt_visible_columns', JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_gantt_visible_columns', JSON.stringify(next), currentUser?.id);
       return next;
     });
   };
@@ -272,7 +295,7 @@ export function GanttTab({
       const delta = moveEvent.clientX - startX;
       const newW = Math.max(180, Math.min(600, startW + delta));
       setSideWidth(newW);
-      localStorage.setItem('taka_gantt_side_width', String(newW));
+      safeSetDeviceItemLocal('taka_gantt_side_width', String(newW), currentUser?.id);
     };
 
     const onMouseUp = () => {

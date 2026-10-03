@@ -7,7 +7,7 @@ import {
   formatCurrencyValue 
 } from '../../lib/utils';
 import { useLocationOptions } from '../../hooks/useLocationOptions';
-import { safeSetItemLocal, safeSetItemSession, safeGetItemSession } from '../../lib/storage';
+import { safeSetItemLocal, safeSetItemSession, safeGetItemSession, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
 import { AVAILABLE_COLUMNS, ProjectFinancials } from './budgetTypes';
 import { useBudgetTreeData } from './useBudgetTreeData';
 import { useBudgetFilterSort } from './useBudgetFilterSort';
@@ -265,39 +265,61 @@ export function useBudgetData({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLinkModalOpen, selectedParentProject, searchTerm]);
 
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
+
   useEffect(() => {
-    const saved = localStorage.getItem(`taka_budget_col_widths_${currentUser.id}`);
-    if (saved) {
-      try { 
-        const parsed = JSON.parse(saved);
-        if (parsed.code && parsed.code < 165) {
-          parsed.code = 165;
-        }
-        if (parsed.no && parsed.no < 60) {
-          parsed.no = 80;
-        }
-        setColWidths(prev => ({ ...prev, ...parsed })); 
-      } catch (e) {}
-    }
-    const savedCols = localStorage.getItem(`taka_budget_visible_cols_${currentUser.id}`);
-    if (savedCols) {
-      try { 
-        const parsed = JSON.parse(savedCols);
-        if (Array.isArray(parsed)) {
-          let cleaned = parsed.filter((id: string) => id !== 'budget' && id !== 'linkCost');
-          if (!cleaned.includes('no')) {
-            cleaned = ['no', ...cleaned];
+    const loadDeviceConfig = () => {
+      const saved = safeGetDeviceItemLocal('taka_budget_col_widths', currentUser.id);
+      if (saved) {
+        try { 
+          const parsed = JSON.parse(saved);
+          if (parsed.code && parsed.code < 165) {
+            parsed.code = 165;
           }
-          setVisibleColumns(cleaned);
+          if (parsed.no && parsed.no < 60) {
+            parsed.no = 80;
+          }
+          setColWidths(prev => ({ ...prev, ...parsed })); 
+        } catch (e) {}
+      }
+      const savedCols = safeGetDeviceItemLocal('taka_budget_visible_cols', currentUser.id);
+      if (savedCols) {
+        try { 
+          const parsed = JSON.parse(savedCols);
+          if (Array.isArray(parsed)) {
+            let cleaned = parsed.filter((id: string) => id !== 'budget' && id !== 'linkCost');
+            if (!cleaned.includes('no')) {
+              cleaned = ['no', ...cleaned];
+            }
+            setVisibleColumns(cleaned);
+          }
+        } catch (e) {}
+      } else {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          setVisibleColumns(['no', 'code', 'projectName', 'totalBudget', 'actual', 'variance']);
         }
-      } catch (e) {}
-    }
+      }
+    };
+
+    loadDeviceConfig();
+
+    const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        loadDeviceConfig();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [currentUser.id]);
 
   const handleResize = (col: string, newWidth: number) => {
     setColWidths(prev => {
       const next = { ...prev, [col]: newWidth };
-      localStorage.setItem(`taka_budget_col_widths_${currentUser.id}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_budget_col_widths', JSON.stringify(next), currentUser.id);
       return next;
     });
   };
@@ -305,7 +327,7 @@ export function useBudgetData({
   const handleToggleColumn = (colId: string) => {
     setVisibleColumns(prev => {
       const next = prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId];
-      localStorage.setItem(`taka_budget_visible_cols_${currentUser.id}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_budget_visible_cols', JSON.stringify(next), currentUser.id);
       return next;
     });
   };

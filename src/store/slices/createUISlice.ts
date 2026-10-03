@@ -1,5 +1,5 @@
 import { StateCreator } from "zustand";
-import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
+import { safeGetItemLocal, safeSetItemLocal, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from "../../lib/storage";
 import { TabId } from "../../types";
 import { AppState, UISlice } from "../storeTypes";
 
@@ -39,25 +39,49 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set({ printDate: val });
   },
 
-  // Gantt View & Scale State
-  ganttViewMode: "monthly",
-  setGanttViewMode: (mode) => set({ ganttViewMode: mode }),
+  // Gantt View & Scale State (Device Screen & User Adjusted)
+  ganttViewMode: (safeGetDeviceItemLocal("taka_gantt_view_mode") as any) || "monthly",
+  setGanttViewMode: (mode) => {
+    safeSetDeviceItemLocal("taka_gantt_view_mode", mode);
+    set({ ganttViewMode: mode });
+  },
   ganttDayWidth: (() => {
-    const saved = safeGetItemLocal("taka_gantt_day_width");
-    return saved ? Math.max(0.6, Math.min(120, Number(saved))) : 8;
+    const saved = safeGetDeviceItemLocal("taka_gantt_day_width");
+    if (saved) {
+      return Math.max(0.6, Math.min(120, Number(saved)));
+    }
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    return isMobile ? 6 : 8;
   })(),
-  setGanttDayWidth: (width) => set({ ganttDayWidth: width }),
-  ganttScaleInput: "75",
-  setGanttScaleInput: (val) => set({ ganttScaleInput: val }),
+  setGanttDayWidth: (width) => {
+    safeSetDeviceItemLocal("taka_gantt_day_width", String(width));
+    set({ ganttDayWidth: width });
+  },
+  ganttScaleInput: (() => {
+    const saved = safeGetDeviceItemLocal("taka_gantt_scale_input");
+    if (saved) return saved;
+    const savedWidth = safeGetDeviceItemLocal("taka_gantt_day_width");
+    if (savedWidth) {
+      return String(Math.round((Number(savedWidth) / 8) * 75));
+    }
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    return isMobile ? "56" : "75";
+  })(),
+  setGanttScaleInput: (val) => {
+    safeSetDeviceItemLocal("taka_gantt_scale_input", val);
+    set({ ganttScaleInput: val });
+  },
   isGanttWidthChanged: false,
   setIsGanttWidthChanged: (val) => set({ isGanttWidthChanged: val }),
   saveGanttDayWidth: () => {
     const currentWidth = get().ganttDayWidth;
-    safeSetItemLocal("taka_gantt_day_width", String(currentWidth));
+    const currentScale = get().ganttScaleInput;
+    safeSetDeviceItemLocal("taka_gantt_day_width", String(currentWidth));
+    safeSetDeviceItemLocal("taka_gantt_scale_input", String(currentScale));
     set({ isGanttWidthChanged: false });
     get().setToast({
       title: "Saved",
-      message: `Default day width updated to ${currentWidth}px`
+      message: `Scale (${currentScale}% / ${currentWidth}px) saved for ${getDeviceScreenType()} screen`
     });
   },
 

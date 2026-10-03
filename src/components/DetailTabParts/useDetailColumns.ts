@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { AppUser } from '../../types';
+import { safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
 import { AVAILABLE_COLUMNS, SortConfig } from './detailTypes';
 
 interface UseDetailColumnsParams {
@@ -31,39 +32,60 @@ export function useDetailColumns({ currentUser, canWrite }: UseDetailColumnsPara
   });
 
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
 
   useEffect(() => {
-    const saved = localStorage.getItem(`taka_detail_col_widths_${currentUser.id}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.action && parsed.action < 160) {
-          parsed.action = 160;
+    const loadDeviceConfig = () => {
+      const saved = safeGetDeviceItemLocal('taka_detail_col_widths', currentUser.id);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.action && parsed.action < 160) {
+            parsed.action = 160;
+          }
+          setColWidths(parsed);
+        } catch (e) {
+          console.error(e);
         }
-        setColWidths(parsed);
-      } catch (e) {
-        console.error(e);
       }
-    }
-    
-    const savedCols = localStorage.getItem(`taka_detail_visible_cols_${currentUser.id}`);
-    if (savedCols) {
-      try {
-        let parsed = JSON.parse(savedCols);
-        if (!parsed.includes('action')) parsed.push('action');
-        setVisibleColumns(parsed);
-      } catch (e) {
-        console.error(e);
+      
+      const savedCols = safeGetDeviceItemLocal('taka_detail_visible_cols', currentUser.id);
+      if (savedCols) {
+        try {
+          let parsed = JSON.parse(savedCols);
+          if (!parsed.includes('action')) parsed.push('action');
+          setVisibleColumns(parsed);
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          setVisibleColumns(['no', 'code', 'projectName', 'taskName', 'action']);
+        } else {
+          setVisibleColumns(availableColumnsForUser.map(c => c.id));
+        }
       }
-    } else {
-      setVisibleColumns(availableColumnsForUser.map(c => c.id));
-    }
+    };
+
+    loadDeviceConfig();
+
+    const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        loadDeviceConfig();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [currentUser.role, currentUser.id, availableColumnsForUser]);
 
   const handleResize = (col: string, newWidth: number) => {
     setColWidths(prev => {
       const updated = { ...prev, [col]: newWidth };
-      localStorage.setItem(`taka_detail_col_widths_${currentUser.id}`, JSON.stringify(updated));
+      safeSetDeviceItemLocal('taka_detail_col_widths', JSON.stringify(updated), currentUser.id);
       return updated;
     });
   };
@@ -71,7 +93,7 @@ export function useDetailColumns({ currentUser, canWrite }: UseDetailColumnsPara
   const handleToggleColumn = (colId: string) => {
     setVisibleColumns(prev => {
       const next = prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId];
-      localStorage.setItem(`taka_detail_visible_cols_${currentUser.id}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_detail_visible_cols', JSON.stringify(next), currentUser.id);
       return next;
     });
   };

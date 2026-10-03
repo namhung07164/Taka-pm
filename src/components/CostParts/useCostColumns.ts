@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
 import { AVAILABLE_COLUMNS, CostColWidths } from './costTypes';
 
 interface UseCostColumnsParams {
@@ -27,32 +28,54 @@ export function useCostColumns({ userId }: UseCostColumnsParams) {
     action: 96,
   });
 
-  useEffect(() => {
-    const saved = localStorage.getItem(`taka_cost_col_widths_${userId}`);
-    if (saved) {
-      try {
-        setColWidths(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
-      }
-    }
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
 
-    const savedCols = localStorage.getItem(`taka_cost_visible_cols_${userId}`);
-    if (savedCols) {
-      try {
-        let parsed = JSON.parse(savedCols);
-        if (!parsed.includes('action')) parsed.push('action');
-        setVisibleColumns(parsed);
-      } catch (e) {
-        console.error(e);
+  useEffect(() => {
+    const loadDeviceConfig = () => {
+      const saved = safeGetDeviceItemLocal('taka_cost_col_widths', userId);
+      if (saved) {
+        try {
+          setColWidths(JSON.parse(saved));
+        } catch (e) {
+          console.error(e);
+        }
       }
-    }
+
+      const savedCols = safeGetDeviceItemLocal('taka_cost_visible_cols', userId);
+      if (savedCols) {
+        try {
+          let parsed = JSON.parse(savedCols);
+          if (!parsed.includes('action')) parsed.push('action');
+          setVisibleColumns(parsed);
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          setVisibleColumns(['no', 'code', 'projectName', 'actual', 'balance', 'action']);
+        }
+      }
+    };
+
+    loadDeviceConfig();
+
+    const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        loadDeviceConfig();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [userId]);
 
   const handleResize = (col: keyof CostColWidths, newWidth: number) => {
     setColWidths((prev) => {
       const next = { ...prev, [col]: newWidth };
-      localStorage.setItem(`taka_cost_col_widths_${userId}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_cost_col_widths', JSON.stringify(next), userId);
       return next;
     });
   };
@@ -62,7 +85,7 @@ export function useCostColumns({ userId }: UseCostColumnsParams) {
       const next = prev.includes(colId)
         ? prev.filter((id) => id !== colId)
         : [...prev, colId];
-      localStorage.setItem(`taka_cost_visible_cols_${userId}`, JSON.stringify(next));
+      safeSetDeviceItemLocal('taka_cost_visible_cols', JSON.stringify(next), userId);
       return next;
     });
   };
