@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Project, Task, AppUser } from '../../types';
 import { TimeUnit, GanttTableRow as GanttRowType, DependencyLine } from './ganttTypes';
+import { GanttColumnWidths } from './useGanttColumnResize';
 import { GanttProjectRow } from './GanttProjectRow';
 import { GanttTaskRow } from './GanttTaskRow';
 import { GanttTimelineHeader } from './GanttTimelineHeader';
@@ -29,6 +30,8 @@ interface GanttTableViewProps {
   sideWidth: number;
   setSideWidth: React.Dispatch<React.SetStateAction<number>>;
   startResizingSide: (e: React.MouseEvent) => void;
+  colWidths?: GanttColumnWidths;
+  startResizingColumn?: (colKey: keyof GanttColumnWidths, e: React.MouseEvent) => void;
   timeUnits: TimeUnit[];
   startDate: Date;
   customToday: Date;
@@ -93,6 +96,8 @@ export function GanttTableView({
   dayWidth,
   sideWidth,
   startResizingSide,
+  colWidths,
+  startResizingColumn,
   timeUnits,
   startDate,
   customToday,
@@ -164,11 +169,11 @@ export function GanttTableView({
   const showDuration = visibleColumns.includes('duration');
   const showPredecessor = visibleColumns.includes('predecessor');
 
-  const startColWidth = 75;
-  const finishColWidth = 75;
-  const partyColWidth = 75;
-  const durationColWidth = 55;
-  const predecessorColWidth = 85;
+  const startColWidth = colWidths?.start ?? 85;
+  const finishColWidth = colWidths?.finish ?? 85;
+  const partyColWidth = colWidths?.party ?? 80;
+  const durationColWidth = colWidths?.duration ?? 60;
+  const predecessorColWidth = colWidths?.predecessor ?? 90;
 
   const totalTimelineWidth = totalDays * dayWidth;
 
@@ -218,7 +223,10 @@ export function GanttTableView({
             <span className="truncate">{t('Project / Task')}</span>
           </div>
           {showStart && (
-            <div className="px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col" style={{ width: `${startColWidth}px` }}>
+            <div
+              className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+              style={{ width: `${startColWidth}px`, minWidth: `${startColWidth}px`, maxWidth: `${startColWidth}px` }}
+            >
               <span className="truncate flex-1">{t('Start')}</span>
               {handleToggleColumn && (
                 <button
@@ -233,10 +241,20 @@ export function GanttTableView({
                   <EyeOff className="w-3 h-3" />
                 </button>
               )}
+              {startResizingColumn && (
+                <div
+                  onMouseDown={(e) => startResizingColumn('start', e)}
+                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+                  title="Drag to resize column"
+                />
+              )}
             </div>
           )}
           {showFinish && (
-            <div className="px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col" style={{ width: `${finishColWidth}px` }}>
+            <div
+              className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+              style={{ width: `${finishColWidth}px`, minWidth: `${finishColWidth}px`, maxWidth: `${finishColWidth}px` }}
+            >
               <span className="truncate flex-1">{t('Finish')}</span>
               {handleToggleColumn && (
                 <button
@@ -251,10 +269,20 @@ export function GanttTableView({
                   <EyeOff className="w-3 h-3" />
                 </button>
               )}
+              {startResizingColumn && (
+                <div
+                  onMouseDown={(e) => startResizingColumn('finish', e)}
+                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+                  title="Drag to resize column"
+                />
+              )}
             </div>
           )}
           {showParty && (
-            <div className="px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col" style={{ width: `${partyColWidth}px` }}>
+            <div
+              className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+              style={{ width: `${partyColWidth}px`, minWidth: `${partyColWidth}px`, maxWidth: `${partyColWidth}px` }}
+            >
               <span className="truncate flex-1">{t('Party')}</span>
               {handleToggleColumn && (
                 <button
@@ -269,10 +297,20 @@ export function GanttTableView({
                   <EyeOff className="w-3 h-3" />
                 </button>
               )}
+              {startResizingColumn && (
+                <div
+                  onMouseDown={(e) => startResizingColumn('party', e)}
+                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+                  title="Drag to resize column"
+                />
+              )}
             </div>
           )}
           {showDuration && (
-            <div className="px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col" style={{ width: `${durationColWidth}px` }}>
+            <div
+              className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+              style={{ width: `${durationColWidth}px`, minWidth: `${durationColWidth}px`, maxWidth: `${durationColWidth}px` }}
+            >
               <span className="truncate flex-1">{t('Dur.')}</span>
               {handleToggleColumn && (
                 <button
@@ -287,10 +325,20 @@ export function GanttTableView({
                   <EyeOff className="w-3 h-3" />
                 </button>
               )}
+              {startResizingColumn && (
+                <div
+                  onMouseDown={(e) => startResizingColumn('duration', e)}
+                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+                  title="Drag to resize column"
+                />
+              )}
             </div>
           )}
           {showPredecessor && (
-            <div className="px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col" style={{ width: `${predecessorColWidth}px` }}>
+            <div
+              className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+              style={{ width: `${predecessorColWidth}px`, minWidth: `${predecessorColWidth}px`, maxWidth: `${predecessorColWidth}px` }}
+            >
               <span className="truncate flex-1">{t('Predecessor')}</span>
               {handleToggleColumn && (
                 <button
@@ -304,6 +352,13 @@ export function GanttTableView({
                 >
                   <EyeOff className="w-3 h-3" />
                 </button>
+              )}
+              {startResizingColumn && (
+                <div
+                  onMouseDown={(e) => startResizingColumn('predecessor', e)}
+                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+                  title="Drag to resize column"
+                />
               )}
             </div>
           )}

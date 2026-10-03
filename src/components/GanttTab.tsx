@@ -10,6 +10,7 @@ import { useGanttTimeline } from './Gantt/useGanttTimeline';
 import { useGanttVirtualization } from './Gantt/useGanttVirtualization';
 import { useGanttDependencies } from './Gantt/useGanttDependencies';
 import { useGanttDragReorder } from './Gantt/useGanttDragReorder';
+import { useGanttColumnResize } from './Gantt/useGanttColumnResize';
 import { useGanttBatchOps } from './Gantt/useGanttBatchOps';
 import { useGanttExport } from './Gantt/useGanttExport';
 import { GanttToolbar } from './Gantt/GanttToolbar';
@@ -286,6 +287,9 @@ export function GanttTab({
     tableRef: tableContainerRef
   });
 
+  // 8. Dynamic Column Width Resizing
+  const { colWidths, startResizingColumn } = useGanttColumnResize();
+
   // Resizing side width
   const startResizingSide = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -409,6 +413,8 @@ export function GanttTab({
         sideWidth={sideWidth}
         setSideWidth={setSideWidth}
         startResizingSide={startResizingSide}
+        colWidths={colWidths}
+        startResizingColumn={startResizingColumn}
         timeUnits={timeUnits}
         startDate={startDate}
         customToday={customToday}

@@ -1516,6 +1516,17 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
        * Tự động đọc cột `Parent task code` (hoặc các định danh tên cột tương đương như `Parent task code`, `Parent task name`, `Task mẹ`, `Parent task ID`, `Parent`).
        * Tự động liên kết công việc con vào đúng công việc mẹ trong cùng dự án, sau đó kích hoạt bộ máy **Rollup Engine** để tính toán tự động ngày bắt đầu (Start), ngày kết thúc (Finish) và thời lượng (Duration) cho toàn bộ cây công việc.
 
+26. **Co Giãn Độ Rộng Cột Linh Hoạt & Thao Tác Kéo Tráo Đổi Thứ Tự Task Trực Quan (Gantt Column Resizing & Drag-and-Drop Task Reordering)**:
+   - **Tự Điều Chỉnh Kích Thước Các Cột Dữ Liệu (`Start`, `Finish`, `Party`, `Duration`, `Predecessor`)**:
+     + Đã trang bị thanh kéo con trỏ (`cursor-col-resize`) trên biên phải của tất cả tiêu đề cột dữ liệu bảng Gantt.
+     + Người dùng có thể giữ chuột và kéo sang trái/phải để thu hẹp hoặc mở rộng độ rộng từng cột dữ liệu tùy ý.
+     + Kích thước các cột được lưu tự động theo từng thiết bị/tài khoản (`localStorage`), đảm bảo bảo toàn chính xác giao diện tùy biến của từng người dùng.
+   - **Kéo Thả Di Chuyển Vị Trí Công Việc Tức Thì Trong Chế Độ Chỉnh Sửa (Edit Mode Drag & Drop Task Reordering)**:
+     + Kéo thả di chuyển thứ tự công việc được phân quyền an toàn **chỉ kích hoạt khi bật chế độ Chỉnh sửa (`Edit Mode`)**.
+     + Khi ở Edit Mode, tay cầm kéo thả (`GripVertical`) xuất hiện rõ ràng trên từng hàng công việc. Cho phép người dùng nhấp giữ và kéo bất kỳ công việc nào (cả công việc chính và công việc con) di chuyển lên/xuống để thay đổi thứ tự.
+     + Ở chế độ xem thông thường (Edit Mode tắt), cột đầu tiên hiển thị số thứ tự công việc `#` rõ ràng, vô hiệu hóa hoàn toàn tính năng kéo thả để tránh thao tác nhầm lẫn ngoài ý muốn.
+
+
 
 
 

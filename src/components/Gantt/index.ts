@@ -24,4 +24,5 @@ export * from './useGanttDependencies';
 export * from './useGanttDragReorder';
 export * from './useGanttBatchOps';
 export * from './useGanttExport';
+export * from './useGanttColumnResize';
 export * from './GanttTableView';

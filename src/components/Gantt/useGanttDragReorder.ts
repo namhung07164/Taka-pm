@@ -117,35 +117,59 @@ export function useGanttDragReorder({
       return;
     }
 
-    // Reorder inside the same project
+    // Reorder inside the same project & parent group
     const pCode = targetTask.projectCode;
-    const projectTasks = tasks.filter(t => t.projectCode === pCode && !t.parentTaskId);
-    const targetIdx = projectTasks.findIndex(t => t.id === targetTask.id);
-    const draggedIdx = projectTasks.findIndex(t => t.id === draggedTask.id);
+    const targetParentId = targetTask.parentTaskId || (targetTask as any).parentId || null;
+    const draggedParentId = draggedTask.parentTaskId || (draggedTask as any).parentId || null;
 
-    if (targetIdx !== -1 && draggedIdx !== -1) {
-      const reordered = [...projectTasks];
-      const [moved] = reordered.splice(draggedIdx, 1);
-      const insertIdx = dropPosition === 'before' ? targetIdx : targetIdx + 1;
-      reordered.splice(insertIdx, 0, moved);
+    // Sibling tasks (either root tasks of the project or child tasks of the same parent)
+    const siblingTasks = tasks
+      .filter(t => t.projectCode === pCode && (t.parentTaskId || (t as any).parentId || null) === targetParentId)
+      .sort((a, b) => (a.orderIndex !== undefined ? a.orderIndex : ((a as any).order || 0)) - (b.orderIndex !== undefined ? b.orderIndex : ((b as any).order || 0)));
 
-      // Save order to store and Firestore
-      const batch = writeBatch(db);
-      reordered.forEach((t, i) => {
-        const orderNum = (i + 1) * 10;
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-        batch.update(docRef, { order: orderNum, updatedAt: new Date().toISOString() });
+    const cleanList = siblingTasks.filter(t => t.id !== draggedTask.id);
+    const targetIdx = cleanList.findIndex(t => t.id === targetTask.id);
+    const insertIdx = targetIdx === -1 ? cleanList.length : (dropPosition === 'before' ? targetIdx : targetIdx + 1);
+
+    const nowIso = new Date().toISOString();
+    const movedTask: Task = {
+      ...draggedTask,
+      parentTaskId: targetParentId || undefined,
+      updatedAt: nowIso
+    };
+    cleanList.splice(insertIdx, 0, movedTask);
+
+    const reorderedWithOrder = cleanList.map((t, idx) => ({
+      ...t,
+      orderIndex: idx,
+      order: (idx + 1) * 10,
+      updatedAt: nowIso
+    }));
+
+    // 0ms Optimistic UI update in Zustand
+    useAppStore.getState().optimisticUpdateTasks(reorderedWithOrder);
+
+    // Save to Firestore in batch
+    const batch = writeBatch(db);
+    reorderedWithOrder.forEach(t => {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      batch.update(docRef, {
+        order: t.order,
+        orderIndex: t.orderIndex,
+        parentTaskId: t.parentTaskId || null,
+        parentId: t.parentTaskId || null,
+        updatedAt: t.updatedAt
       });
+    });
 
-      try {
-        await batch.commit();
-        useAppStore.getState().setToast({
-          title: "Success",
-          message: `Reordered task ${draggedTask.name}`
-        });
-      } catch (err) {
-        console.error("Task reorder error:", err);
-      }
+    try {
+      await batch.commit();
+      useAppStore.getState().setToast({
+        title: "Success",
+        message: `Reordered task ${draggedTask.name}`
+      });
+    } catch (err) {
+      console.error("Task reorder error:", err);
     }
 
     handleTaskDragEnd();

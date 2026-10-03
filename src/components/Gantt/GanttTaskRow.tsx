@@ -148,9 +148,9 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   return (
     <div
       id={`gantt-task-row-${t.id}`}
-      onDragOver={(e) => handleTaskDragOver(e, t.id)}
-      onDragLeave={(e) => handleTaskDragLeave(e, t.id)}
-      onDrop={(e) => handleTaskDrop(e, t, p)}
+      onDragOver={(e) => isEditMode && handleTaskDragOver(e, t.id)}
+      onDragLeave={(e) => isEditMode && handleTaskDragLeave(e, t.id)}
+      onDrop={(e) => isEditMode && handleTaskDrop(e, t, p)}
       className={cn(
         "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-colors relative group",
         getRowVisibilityClass(`task-${t.id}`),

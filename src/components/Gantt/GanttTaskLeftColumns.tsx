@@ -50,8 +50,8 @@ export function GanttTaskLeftColumns({
   return (
     <div className="flex items-center w-full h-full overflow-hidden">
       {/* Selection Checkbox & Drag Handle & Hide Button - ONLY in Edit Mode */}
-      {isEditMode && (
-        <div className="w-9 px-1 py-1 flex items-center justify-center gap-0.5 shrink-0 border-r border-slate-200 dark:border-[#333336]">
+      {isEditMode ? (
+        <div className="w-10 px-1 py-1 flex items-center justify-center gap-0.5 shrink-0 border-r border-slate-200 dark:border-[#333336]">
           {isHideMode ? (
             <button
               type="button"
@@ -67,9 +67,10 @@ export function GanttTaskLeftColumns({
                 draggable
                 onDragStart={(e) => handleTaskDragStart(e, t.id)}
                 onDragEnd={handleTaskDragEnd}
-                className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-300"
+                className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                title="Drag to reorder task"
               >
-                <GripVertical className="w-3 h-3" />
+                <GripVertical className="w-3.5 h-3.5" />
               </div>
               <input
                 type="checkbox"
@@ -79,6 +80,10 @@ export function GanttTaskLeftColumns({
               />
             </div>
           )}
+        </div>
+      ) : (
+        <div className="w-10 px-1 py-1 flex items-center justify-center shrink-0 border-r border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-400 dark:text-slate-500 font-semibold select-none">
+          {t.orderIndex !== undefined ? t.orderIndex + 1 : '#'}
         </div>
       )}
 
