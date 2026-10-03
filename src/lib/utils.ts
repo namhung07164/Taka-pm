@@ -994,8 +994,49 @@ export function calculateActiveNotifications(
     return projectByCodeMap.get(c);
   };
 
+  // Consolidate tasks: combining explicit `tasks` array with embedded `project.taskSummaries` (task summarize data)
+  const taskMap = new Map<string, Task>();
+
+  // 1. First extract embedded task summarize items from all projects
+  projects.forEach((p) => {
+    if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+      p.taskSummaries.forEach((ts, idx) => {
+        const pCode = p.code || "";
+        const pStore = String(p.store || "HCM").toUpperCase().trim();
+        const pYear = String(p.year || "").trim();
+        const tsId = ts.id || `ts_${pCode}_${pStore}_${pYear}_${idx}`;
+
+        taskMap.set(tsId, {
+          id: tsId,
+          name: ts.name || `Task ${idx + 1}`,
+          start: ts.start || "",
+          finish: ts.finish || "",
+          projectCode: pCode,
+          projectStore: pStore,
+          projectYear: pYear,
+          party: ts.party || p.party || "",
+          runningStatus: ts.runningStatus || "On process",
+          duration: ts.duration || "",
+          parentTaskId: ts.parentTaskId,
+          taskCodePhu: ts.taskCodePhu,
+          comments: ts.comments || [],
+          ...ts
+        } as Task);
+      });
+    }
+  });
+
+  // 2. Overwrite or complement with detailed tasks from explicit `tasks` array
+  tasks.forEach((t) => {
+    if (t.id) {
+      taskMap.set(t.id, t);
+    }
+  });
+
+  const effectiveTasks = Array.from(taskMap.values());
+
   // Generate notifications for Cross-Year Rollover (only active/pending tasks, skip completed & canceled)
-  tasks.forEach((task) => {
+  effectiveTasks.forEach((task) => {
     const isCompleted = task.runningStatus === 'Completed';
     if (!isCompleted && task.projectYear && Number(task.projectYear) < currentActualYear) {
       const project = findParentProject(task.projectCode, task.projectYear, task.projectStore);
@@ -1029,7 +1070,7 @@ export function calculateActiveNotifications(
 
   // Generate notifications for @mentions
   if (currentUserId) {
-    tasks.forEach((task) => {
+    effectiveTasks.forEach((task) => {
       const project = findParentProject(task.projectCode, task.projectYear, task.projectStore);
       if (task.comments && task.comments.length > 0) {
         task.comments.forEach((comment) => {
@@ -1252,7 +1293,7 @@ export function calculateActiveNotifications(
       return; // Skip normal project/task processing for task_delegation
     }
 
-    const targetList = rule.target === "project" ? projects : tasks;
+    const targetList = rule.target === "project" ? projects : effectiveTasks;
 
     targetList.forEach((item) => {
       // For projects, we use computed fields if the rule is for 'start' or 'handover'

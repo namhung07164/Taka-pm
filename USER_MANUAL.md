@@ -1543,6 +1543,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Người dùng có thể nhấn nút **`+ Save Preset`** trên bảng `PrintOptionsPanel` để đặt tên và lưu lại toàn bộ cấu hình khổ giấy, hướng xoay, tỷ lệ scale, DPI, watermark, và hiển thị bộ lọc hiện tại.
      - Mẫu in được lưu trữ an toàn theo từng tài khoản (`localStorage`), áp dụng nhanh lại bất cứ lúc nào chỉ với 1 cú nhấp chọn từ menu thả xuống (`-- Select Print Preset --`).
 
+29. **Đồng Bộ Dữ Liệu Thông Báo Từ Task Summarize (Notification Integration with Task Summarize)**:
+   - **Hợp Nhất Dữ Liệu Task Summarize Vào Hệ Thống Notification**:
+     - Hệ thống tính toán thông báo (`calculateActiveNotifications`) đã được cập nhật để **trích xuất và đồng bộ tự động dữ liệu từ danh sách `taskSummaries` (Task Summarize)** đính kèm trong từng hồ sơ dự án.
+     - Giúp toàn bộ thông báo về thời hạn công việc (Start/Finish/Handover deadline), thông báo nhắc nhở công việc tồn đọng giữa các năm (Cross-Year Rollover) và thông báo nhắc tên (`@mention`) hoạt động chính xác 100% ngay cả khi ứng dụng chưa tải chi tiết toàn bộ bảng task (Tri-Gate Lazy Loading / Zero-Read optimization).
+
+
 
 
 
