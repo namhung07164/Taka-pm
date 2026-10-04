@@ -102,22 +102,11 @@ export function LayoutUnitLightboxModal({
         // Prevent background clicks from closing the modal during zoom / pinch / pan
         e.stopPropagation();
       }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
-      onPointerMove={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
     >
       {/* 1. Ultra-Prominent Floating Close 'X' Button on Top-Right of Viewport */}
       <button
         type="button"
         onClick={handleSafeClose}
-        onTouchEnd={(e) => {
-          e.stopPropagation();
-        }}
         className="fixed top-3 right-3 sm:top-5 sm:right-5 z-[1000001] p-2.5 sm:p-3 bg-slate-900/90 hover:bg-red-600 text-white rounded-full border border-white/20 shadow-2xl transition-all duration-150 active:scale-90 cursor-pointer flex items-center justify-center group"
         title="Đóng xem ảnh (Phím Escape)"
         aria-label="Đóng xem ảnh"
@@ -129,11 +118,6 @@ export function LayoutUnitLightboxModal({
       <div
         className="relative max-w-5xl w-full max-h-[94vh] bg-slate-900/98 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col z-[1000000]"
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-slate-800 bg-slate-900 text-white shrink-0">
