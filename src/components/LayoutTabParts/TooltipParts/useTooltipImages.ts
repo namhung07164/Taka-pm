@@ -79,9 +79,10 @@ export function useTooltipImages({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [enlargedImage]);
 
-  const handleAddCustomImage = (e?: React.FormEvent) => {
+  const handleAddCustomImage = (e?: React.FormEvent, customUrl?: string) => {
     if (e) e.preventDefault();
-    const trimmed = newLinkInput.trim();
+    const targetUrl = customUrl || newLinkInput;
+    const trimmed = targetUrl.trim();
     if (!trimmed) return;
 
     const newEntry = {

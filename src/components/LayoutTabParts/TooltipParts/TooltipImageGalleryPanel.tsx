@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Image as ImageIcon, 
   Plus, 
@@ -8,11 +8,14 @@ import {
   Maximize2, 
   ExternalLink, 
   Copy, 
-  Trash2 
+  Trash2,
+  Upload,
+  Loader2
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
 import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
+import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
 
 interface TooltipImageGalleryPanelProps {
   showImagePanel: boolean;
@@ -23,10 +26,11 @@ interface TooltipImageGalleryPanelProps {
   setNewLinkInput: React.Dispatch<React.SetStateAction<string>>;
   allUnitImages: TooltipImageItem[];
   copiedLink: string | null;
-  handleAddCustomImage: (e?: React.FormEvent) => void;
+  handleAddCustomImage: (e?: React.FormEvent, customUrl?: string) => void;
   handleDeleteCustomImage: (id: string, urlToDelete?: string) => void;
   handleCopyLink: (url: string) => void;
   setEnlargedImage: (img: { url: string; title?: string } | null) => void;
+  unitCode?: string;
 }
 
 export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> = ({
@@ -42,8 +46,43 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   handleDeleteCustomImage,
   handleCopyLink,
   setEnlargedImage,
+  unitCode,
 }) => {
+  const [addMode, setAddMode] = useState<'link' | 'picture'>('link');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccessUrl, setUploadSuccessUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   if (!showImagePanel && !showAddLinkInput) return null;
+
+  const handlePictureFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    setIsUploading(true);
+    setUploadError(null);
+    setUploadSuccessUrl(null);
+
+    try {
+      const res = await uploadPictureToTakaFolder(file, unitCode);
+      if (res.success && res.publicUrl) {
+        setUploadSuccessUrl(res.publicUrl);
+        setNewLinkInput(res.publicUrl);
+        // Save link immediately into gallery
+        handleAddCustomImage(undefined, res.publicUrl);
+        setTimeout(() => setUploadSuccessUrl(null), 3000);
+      } else {
+        setUploadError(res.error || 'Upload failed');
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Lỗi kết nối upload');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="w-full bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150 my-1">
@@ -87,42 +126,135 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
         </div>
       </div>
 
-      {/* Add / Post Link Input Row (Only visible when clicking "+ Thêm") */}
+      {/* Add / Post Link Input or Upload Picture Section (Only visible when clicking "+ Thêm") */}
       {showAddLinkInput && (
-        <form onSubmit={handleAddCustomImage} className="flex gap-1.5 items-center w-full animate-in fade-in slide-in-from-top-1 duration-150 py-0.5">
-          <div className="relative flex-1 min-w-0">
-            <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input 
-              type="url"
-              value={newLinkInput}
-              onChange={(e) => setNewLinkInput(e.target.value)}
-              onFocus={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Dán link ảnh hoặc link bài viết (URL)..."
-              className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-white dark:bg-[#1e1e20] border border-blue-400 dark:border-blue-500 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-mono"
-            />
+        <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-top-1 duration-150 py-1 bg-white dark:bg-[#1a1a1c] border border-blue-300 dark:border-blue-900 rounded-xl p-2 shadow-xs">
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5 gap-1">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMode('link');
+                  setUploadError(null);
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer",
+                  addMode === 'link'
+                    ? "bg-blue-600 text-white shadow-2xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                )}
+              >
+                <LinkIcon className="w-3 h-3" />
+                <span>Dán Link URL</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMode('picture');
+                  setUploadError(null);
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer",
+                  addMode === 'picture'
+                    ? "bg-purple-600 text-white shadow-2xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                )}
+              >
+                <Upload className="w-3 h-3" />
+                <span>Add Picture (Upload R2)</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setNewLinkInput('');
+                setShowAddLinkInput(false);
+                setUploadError(null);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Đóng"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={!newLinkInput.trim()}
-            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation shrink-0 cursor-pointer shadow-xs"
-            title="Xác nhận thêm link"
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>OK</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setNewLinkInput('');
-              setShowAddLinkInput(false);
-            }}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors shrink-0"
-            title="Hủy"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </form>
+
+          {/* Mode 1: Dán Link URL */}
+          {addMode === 'link' && (
+            <form onSubmit={handleAddCustomImage} className="flex gap-1.5 items-center w-full pt-0.5">
+              <div className="relative flex-1 min-w-0">
+                <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input 
+                  type="url"
+                  value={newLinkInput}
+                  onChange={(e) => setNewLinkInput(e.target.value)}
+                  onFocus={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="Dán link ảnh hoặc link bài viết (https://...)..."
+                  className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-slate-50 dark:bg-[#1e1e20] border border-blue-400 dark:border-blue-500 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!newLinkInput.trim()}
+                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation shrink-0 cursor-pointer shadow-xs"
+                title="Xác nhận thêm link"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>OK</span>
+              </button>
+            </form>
+          )}
+
+          {/* Mode 2: Add Picture (Auto upload R2) */}
+          {addMode === 'picture' && (
+            <div className="flex flex-col gap-1.5 w-full pt-0.5">
+              <input 
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={handlePictureFileSelected}
+              />
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs shrink-0"
+                >
+                  {isUploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isUploading ? "Đang upload lên R2..." : "Chọn Ảnh Từ Máy / Chụp Ảnh"}</span>
+                </button>
+
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono shrink-0 truncate max-w-[210px]">
+                  <span>Thư mục R2:</span>
+                  <span className="font-bold text-purple-600 dark:text-purple-400">Taka-Pm-folder/</span>
+                </div>
+              </div>
+
+              {uploadError && (
+                <div className="text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 p-1.5 rounded-md border border-red-200 dark:border-red-900/80 flex items-center gap-1">
+                  <span>⚠️ {uploadError}</span>
+                </div>
+              )}
+
+              {uploadSuccessUrl && (
+                <div className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 p-1.5 rounded-md border border-emerald-200 dark:border-emerald-900/80 flex items-center gap-1 truncate font-mono">
+                  <span>✅ Đã lưu link R2:</span>
+                  <span className="truncate">{uploadSuccessUrl}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Image & Link Thumbnail List */}

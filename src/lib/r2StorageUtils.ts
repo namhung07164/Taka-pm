@@ -1,4 +1,7 @@
 import { getStoredR2Credentials, getS3Sdk, extractR2Key, listR2Objects, deleteR2Object, R2Credentials } from '../components/PictureMapping/lib/r2Upload';
+import { doc, getDoc } from 'firebase/firestore';
+import { db, APP_ID } from './firebase';
+import { useAppStore } from '../store/useAppStore';
 
 /**
  * R2 Storage Garbage Collector & Cleanup Utilities.
@@ -173,5 +176,75 @@ export async function cleanOrphanR2Files(
   } catch (err) {
     console.error('[R2 GC] Lỗi trong quá trình quét và dọn dẹp R2:', err);
     return { scannedCount: 0, deletedCount: 0, deletedKeys: [] };
+  }
+}
+
+/**
+ * Uploads a picture file to Cloudflare R2 bucket under `Taka-Pm-folder/`
+ * and returns the public HTTP URL: https://hcm.taka-pm.org/Taka-Pm-folder/<filename>
+ */
+export async function uploadPictureToTakaFolder(
+  file: File,
+  unitCode?: string
+): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
+  let creds = getStoredR2Credentials();
+  if (!creds) {
+    try {
+      const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        if (data.accountId && data.accessKeyId && data.secretAccessKey && data.bucketName) {
+          creds = {
+            accountId: data.accountId,
+            accessKeyId: data.accessKeyId,
+            secretAccessKey: data.secretAccessKey,
+            bucketName: data.bucketName,
+          };
+          useAppStore.getState().setR2Config(data);
+        }
+      }
+    } catch (e) {
+      console.error("[R2 Upload] Error fetching R2 credentials:", e);
+    }
+  }
+
+  if (!creds) {
+    return { success: false, error: "Chưa cấu hình thông tin Cloudflare R2 (r2_credentials)." };
+  }
+
+  try {
+    const { S3Client, PutObjectCommand } = await getS3Sdk();
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: creds.accessKeyId.trim(),
+        secretAccessKey: creds.secretAccessKey.trim(),
+      },
+    });
+
+    const cleanName = file.name.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
+    const prefix = unitCode ? `${unitCode.replace(/[^a-zA-Z0-9_-]/g, '_')}_` : '';
+    const keyName = `${prefix}${Date.now()}_${cleanName}`;
+    const fullKey = `Taka-Pm-folder/${keyName}`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+
+    const command = new PutObjectCommand({
+      Bucket: creds.bucketName.trim(),
+      Key: fullKey,
+      Body: uint8Array,
+      ContentType: file.type || 'image/jpeg',
+      CacheControl: 'public, max-age=604800, immutable',
+    });
+
+    await s3.send(command);
+
+    const publicUrl = `https://hcm.taka-pm.org/${fullKey}`;
+    return { success: true, publicUrl };
+  } catch (err: any) {
+    console.error("[R2 Upload] Failed to upload picture to Taka-Pm-folder:", err);
+    return { success: false, error: err?.message || "Lỗi tải ảnh lên Cloudflare R2." };
   }
 }

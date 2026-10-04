@@ -317,6 +317,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         handleDeleteCustomImage={handleDeleteCustomImage}
         handleCopyLink={handleCopyLink}
         setEnlargedImage={setEnlargedImage}
+        unitCode={unitCode || data.code || ''}
       />
 
       {/* 8. Enlarged Image Lightbox Modal */}
