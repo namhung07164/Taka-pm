@@ -214,27 +214,15 @@ export function useGanttProjectsFilter({
     setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
   }, [sortedProjects.length]);
 
-  // Auto-expand projects when searching (Debounced to prevent WebKit DOM reflow lag during soft keyboard input)
+  // Search filter operates on Project Summaries + loaded tasks first (Tri-Gate Lazy Loading).
+  // Projects remain in summarized/collapsed state until user taps Expand (+), which triggers Delta Sync task fetching.
   const lastAutoExpandedSearchRef = useRef<string>('');
   useEffect(() => {
     const term = deferredSearchTerm.trim();
     if (!term) {
       lastAutoExpandedSearchRef.current = '';
-      return;
     }
-    const timer = setTimeout(() => {
-      if (term !== lastAutoExpandedSearchRef.current && paginatedProjects.length > 0) {
-        // iOS / iPad 5 RAM Guard: On touch devices, cap auto-expanded trees during search to top 5 projects
-        const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-        const projectsToExpand = isTouch ? paginatedProjects.slice(0, 5) : paginatedProjects;
-        const idsToExpand = projectsToExpand.map(p => p.id || p.code);
-        setExpandedProjects(idsToExpand);
-        lastAutoExpandedSearchRef.current = term;
-      }
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [deferredSearchTerm, paginatedProjects, setExpandedProjects]);
+  }, [deferredSearchTerm]);
 
   return {
     globalYearFilter,
