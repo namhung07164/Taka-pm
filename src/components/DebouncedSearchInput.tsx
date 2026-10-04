@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useTransition } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { X } from 'lucide-react';
 
@@ -20,6 +20,7 @@ export function DebouncedSearchInput({
   const [innerValue, setInnerValue] = useState(value || "");
   const lastReportedValue = useRef(value || "");
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [, startTransition] = useTransition();
 
   // Sync external value changes into local state
   useEffect(() => {
@@ -36,7 +37,9 @@ export function DebouncedSearchInput({
     }
     if (valToCommit !== lastReportedValue.current) {
       lastReportedValue.current = valToCommit;
-      onChange(valToCommit);
+      startTransition(() => {
+        onChange(valToCommit);
+      });
     }
   };
 
@@ -49,7 +52,9 @@ export function DebouncedSearchInput({
     timerRef.current = setTimeout(() => {
       if (innerValue !== lastReportedValue.current) {
         lastReportedValue.current = innerValue;
-        onChange(innerValue);
+        startTransition(() => {
+          onChange(innerValue);
+        });
       }
     }, debounceMs);
 

@@ -66,7 +66,7 @@ export function useBudgetData({
   const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
 
   useEffect(() => {
-    const isSearching = !!searchTerm.trim();
+    const isSearching = !!deferredSearchTerm.trim();
     if (!wasSearchingRef.current && isSearching) {
       if (moneyFilter !== 'all') {
         lastSelectedMoneyFilterRef.current = moneyFilter;
@@ -81,7 +81,7 @@ export function useBudgetData({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, moneyFilter]);
+  }, [deferredSearchTerm]);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
   const [colWidths, setColWidths] = useState<Record<string, number>>({

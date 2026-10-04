@@ -53,7 +53,7 @@ export function useCostSearchFilter({
   const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
 
   useEffect(() => {
-    const isSearching = !!searchTerm.trim();
+    const isSearching = !!deferredSearchTerm.trim();
     if (!wasSearchingRef.current && isSearching) {
       if (hasActForcFilter !== 'all') {
         lastSelectedActForcFilterRef.current = hasActForcFilter;
@@ -71,92 +71,96 @@ export function useCostSearchFilter({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, hasActForcFilter]);
+  }, [deferredSearchTerm]);
 
-  // Auto-jump to matched project location(s) when searching in CostTab
+  // Auto-jump to matched project location(s) when searching in CostTab (Debounced)
   useEffect(() => {
-    const term = searchTerm.trim();
+    const term = deferredSearchTerm.trim();
     if (!term) return;
 
-    const matchedProjects = projects.filter((p) => {
-      const pYear = p.year
-        ? String(p.year).trim()
-        : p.start
-        ? String(p.start).substring(0, 4)
-        : null;
-      if (
-        globalYearFilter !== 'all' &&
-        (pYear === null || pYear !== String(globalYearFilter).trim())
-      )
-        return false;
-      if (
-        effectiveStore !== 'all' &&
-        (!p.store ||
-          String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())
-      )
-        return false;
+    const timer = setTimeout(() => {
+      const matchedProjects = projects.filter((p) => {
+        const pYear = p.year
+          ? String(p.year).trim()
+          : p.start
+          ? String(p.start).substring(0, 4)
+          : null;
+        if (
+          globalYearFilter !== 'all' &&
+          (pYear === null || pYear !== String(globalYearFilter).trim())
+        )
+          return false;
+        if (
+          effectiveStore !== 'all' &&
+          (!p.store ||
+            String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())
+        )
+          return false;
 
-      const groupCosts = getGroupCostsForProject(p);
+        const groupCosts = getGroupCostsForProject(p);
 
-      const isMatch = matchesAdvancedSearch(
-        term,
-        [
-          p.store,
-          p.location,
-          p.year,
-          p.code,
-          p.linkCodes,
-          p.name,
-          p.detail,
-          (p as any).description,
-          p.note,
-        ],
-        [],
-        (tLower) => {
-          return groupCosts.some((c) => {
-            const cBalance =
-              (c.actual || 0) -
-              (c.firstPaid || 0) -
-              (c.secondPaid || 0) -
-              (c.thirdPaid || 0);
-            const costFields = [
-              c.description,
-              c.vendor,
-              c.actual,
-              c.firstPaid,
-              c.secondPaid,
-              c.thirdPaid,
-              c.supportingFee,
-              cBalance,
-            ];
-            return costFields.some((val) =>
-              String(val || '').toLowerCase().includes(tLower)
-            );
-          });
-        }
+        const isMatch = matchesAdvancedSearch(
+          term,
+          [
+            p.store,
+            p.location,
+            p.year,
+            p.code,
+            p.linkCodes,
+            p.name,
+            p.detail,
+            (p as any).description,
+            p.note,
+          ],
+          [],
+          (tLower) => {
+            return groupCosts.some((c) => {
+              const cBalance =
+                (c.actual || 0) -
+                (c.firstPaid || 0) -
+                (c.secondPaid || 0) -
+                (c.thirdPaid || 0);
+              const costFields = [
+                c.description,
+                c.vendor,
+                c.actual,
+                c.firstPaid,
+                c.secondPaid,
+                c.thirdPaid,
+                c.supportingFee,
+                cBalance,
+              ];
+              return costFields.some((val) =>
+                String(val || '').toLowerCase().includes(tLower)
+              );
+            });
+          }
+        );
+        return isMatch;
+      });
+
+      const matchedLocations = Array.from(
+        new Set(
+          matchedProjects
+            .map((p) => p.location)
+            .filter((loc): loc is string => !!loc && loc.trim() !== '')
+        )
       );
-      return isMatch;
-    });
 
-    const matchedLocations = Array.from(
-      new Set(
-        matchedProjects
-          .map((p) => p.location)
-          .filter((loc): loc is string => !!loc && loc.trim() !== '')
-      )
-    );
-
-    if (matchedLocations.length > 0) {
-      const currentLocs = globalLocationFilter || [];
-      const isSame =
-        currentLocs.length === matchedLocations.length &&
-        currentLocs.every((l) => matchedLocations.includes(l));
-      if (!isSame) {
-        setGlobalLocationFilter(matchedLocations);
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame =
+          currentLocs.length === matchedLocations.length &&
+          currentLocs.every((l) => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
       }
-    }
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [
-    searchTerm,
+    deferredSearchTerm,
     projects,
     costs,
     globalYearFilter,

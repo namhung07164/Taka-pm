@@ -124,6 +124,25 @@ export function useGanttProjectsFilter({
     [tasksByProject, tasksMapByCode]
   );
 
+  // Pre-indexed Search Pool Cache to eliminate Garbage Collection pauses on mobile Safari
+  const projectSearchIndex = useMemo(() => {
+    const map = new Map<string, { pPool: (string | number | undefined | null)[]; tPools: (string | number | undefined | null)[][] }>();
+    projects.forEach(p => {
+      const pTasks = getGroupTasksForProject(p);
+      const pPool = [p.code, p.name, p.store, p.location, p.year, p.detail, p.party];
+      const tPools = pTasks.map(t => [
+        t.name,
+        t.taskCodePhu,
+        t.party,
+        t.runningStatus,
+        t.predecessor,
+        ...(t.notes ? t.notes.map(n => n.content) : [])
+      ]);
+      map.set(p.id || p.code, { pPool, tPools });
+    });
+    return map;
+  }, [projects, getGroupTasksForProject]);
+
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
       const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
@@ -158,31 +177,13 @@ export function useGanttProjectsFilter({
 
       if (!deferredSearchTerm.trim()) return true;
 
-      const pSearchPool = [
-        p.code,
-        p.name,
-        p.store,
-        p.location,
-        p.year,
-        p.detail,
-        p.party,
-        status
-      ];
-      if (matchesAdvancedSearch(deferredSearchTerm, pSearchPool)) return true;
+      const indexed = projectSearchIndex.get(p.id || p.code);
+      if (indexed) {
+        if (matchesAdvancedSearch(deferredSearchTerm, [...indexed.pPool, status])) return true;
+        return indexed.tPools.some(tPool => matchesAdvancedSearch(deferredSearchTerm, tPool));
+      }
 
-      // Match against project's tasks
-      const pTasks = getGroupTasksForProject(p);
-      return pTasks.some(t => {
-        const tSearchPool = [
-          t.name,
-          t.taskCodePhu,
-          t.party,
-          t.runningStatus,
-          t.predecessor,
-          ...(t.notes ? t.notes.map(n => n.content) : [])
-        ];
-        return matchesAdvancedSearch(deferredSearchTerm, tSearchPool);
-      });
+      return matchesAdvancedSearch(deferredSearchTerm, [p.code, p.name, p.store, p.location, status]);
     });
   }, [
     projects,
@@ -191,7 +192,7 @@ export function useGanttProjectsFilter({
     globalLocationFilter,
     filterProjectStatus,
     deferredSearchTerm,
-    getGroupTasksForProject
+    projectSearchIndex
   ]);
 
   const [visibleCount, setVisibleCount] = useState(20);

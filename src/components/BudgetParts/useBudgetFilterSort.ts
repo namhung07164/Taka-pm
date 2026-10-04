@@ -60,49 +60,53 @@ export function useBudgetFilterSort({
     return matchesAdvancedSearch(term, searchFields);
   };
 
-  // Auto-jump to matched project location(s) when searching
+  // Auto-jump to matched project location(s) when searching (Debounced)
   useEffect(() => {
     const term = searchTerm.trim();
     if (!term) return;
     if (!treeData || treeData.length === 0) return;
 
-    const matchedLocationsList: string[] = [];
+    const timer = setTimeout(() => {
+      const matchedLocationsList: string[] = [];
 
-    treeData.forEach((node: any) => {
-      const pYear = node.year ? String(node.year) : (node.start ? String(node.start).substring(0, 4) : null);
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return;
-      if (effectiveStore !== 'all' && node.store !== effectiveStore) return;
+      treeData.forEach((node: any) => {
+        const pYear = node.year ? String(node.year) : (node.start ? String(node.start).substring(0, 4) : null);
+        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return;
+        if (effectiveStore !== 'all' && node.store !== effectiveStore) return;
 
-      const parentMatch = isParentMatchSearch(node, term);
-      if (parentMatch && node.location) {
-        matchedLocationsList.push(node.location);
+        const parentMatch = isParentMatchSearch(node, term);
+        if (parentMatch && node.location) {
+          matchedLocationsList.push(node.location);
+        }
+
+        if (node.children && node.children.length > 0) {
+          node.children.forEach((child: any) => {
+            const cYear = child.year ? String(child.year) : null;
+            if (globalYearFilter !== 'all' && cYear && cYear !== globalYearFilter) return;
+            if (effectiveStore !== 'all' && child.store && child.store !== effectiveStore) return;
+
+            if (isChildMatchSearch(child, term) || parentMatch) {
+              if (child.location) matchedLocationsList.push(child.location);
+              else if (node.location) matchedLocationsList.push(node.location);
+            }
+          });
+        }
+      });
+
+      const matchedLocations = Array.from(
+        new Set(matchedLocationsList.filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
       }
+    }, 350);
 
-      if (node.children && node.children.length > 0) {
-        node.children.forEach((child: any) => {
-          const cYear = child.year ? String(child.year) : null;
-          if (globalYearFilter !== 'all' && cYear && cYear !== globalYearFilter) return;
-          if (effectiveStore !== 'all' && child.store && child.store !== effectiveStore) return;
-
-          if (isChildMatchSearch(child, term) || parentMatch) {
-            if (child.location) matchedLocationsList.push(child.location);
-            else if (node.location) matchedLocationsList.push(node.location);
-          }
-        });
-      }
-    });
-
-    const matchedLocations = Array.from(
-      new Set(matchedLocationsList.filter((loc): loc is string => !!loc && loc.trim() !== ''))
-    );
-
-    if (matchedLocations.length > 0) {
-      const currentLocs = globalLocationFilter || [];
-      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
-      if (!isSame) {
-        setGlobalLocationFilter(matchedLocations);
-      }
-    }
+    return () => clearTimeout(timer);
   }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filterNode = (node: any): boolean => {

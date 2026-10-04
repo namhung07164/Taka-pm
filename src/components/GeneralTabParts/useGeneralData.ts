@@ -55,7 +55,7 @@ export function useGeneralData({
 
   // Status and Location Filter Preservation when Searching
   useEffect(() => {
-    const isSearching = !!searchTerm.trim();
+    const isSearching = !!deferredSearchTerm.trim();
     if (!wasSearchingRef.current && isSearching) {
       if (statusFilter !== 'all') {
         lastSelectedStatusFilterRef.current = statusFilter;
@@ -70,32 +70,37 @@ export function useGeneralData({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, statusFilter]);
+  }, [deferredSearchTerm]);
 
-  // Auto-jump to matched project location(s) when searching
+  // Auto-jump to matched project location(s) when searching (Debounced)
   useEffect(() => {
-    const term = searchTerm.trim();
+    const term = deferredSearchTerm.trim();
     if (!term) return;
-    const matchedProjects = projects.filter(p => {
-      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
-      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
-      const matchesSearch = matchesAdvancedSearch(term, searchFields);
-      const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
-      const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
-      const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
-      return matchesSearch && matchesYear && matchesStore;
-    });
-    const matchedLocations = Array.from(
-      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
-    );
-    if (matchedLocations.length > 0) {
-      const currentLocs = globalLocationFilter || [];
-      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
-      if (!isSame) {
-        setGlobalLocationFilter(matchedLocations);
+
+    const timer = setTimeout(() => {
+      const matchedProjects = projects.filter(p => {
+        const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+        const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
+        const matchesSearch = matchesAdvancedSearch(term, searchFields);
+        const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
+        const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
+        const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
+        return matchesSearch && matchesYear && matchesStore;
+      });
+      const matchedLocations = Array.from(
+        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
       }
-    }
-  }, [searchTerm, projects, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [deferredSearchTerm, projects, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   // Handle Escape key globally to clear search when not in modal
   useEffect(() => {

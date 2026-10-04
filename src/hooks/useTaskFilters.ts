@@ -8,7 +8,10 @@ export function useTaskFilters(currentUser: AppUser) {
     return safeGetItemSession("taka_detail_search") || "";
   });
   useEffect(() => {
-    safeSetItemSession("taka_detail_search", searchTerm);
+    const timer = setTimeout(() => {
+      safeSetItemSession("taka_detail_search", searchTerm);
+    }, 350);
+    return () => clearTimeout(timer);
   }, [searchTerm]);
 
   const [yearFilter, setYearFilter] = useState(() => {
