@@ -6,6 +6,7 @@ import { ProjectFinancials } from './budgetTypes';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
+import { getZIndexClass } from '../../lib/zIndexManager';
 
 interface BudgetLinkModalProps {
   isOpen: boolean;
@@ -179,7 +180,7 @@ export function BudgetLinkModal({
   const parentStore = selectedParentProject ? String(selectedParentProject.store || '').toLowerCase() : '';
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto">
+    <div className={`fixed inset-0 ${getZIndexClass('MODAL_MODULAR')} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto`}>
       <motion.div
         drag
         dragControls={dragControls}

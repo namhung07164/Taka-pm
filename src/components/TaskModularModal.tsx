@@ -16,6 +16,7 @@ import {
 import { Task, Project } from "../types";
 import { cn, matchesAdvancedSearch } from "../lib/utils";
 import { DebouncedSearchInput } from './DebouncedSearchInput';
+import { getZIndexClass } from '../lib/zIndexManager';
 
 interface TaskModularModalProps {
   isOpen: boolean;
@@ -162,7 +163,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150" onClick={onClose}>
+    <div className={`fixed inset-0 ${getZIndexClass('MODAL_MODULAR')} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`} onClick={onClose}>
       <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, select">
         <div 
           ref={nodeRef}
