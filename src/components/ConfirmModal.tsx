@@ -3,6 +3,7 @@ import Draggable from 'react-draggable';
 import { useLanguage } from "../lib/LanguageContext";
 import { Portal } from './Portal';
 import { AlertTriangle, Info, X, GripHorizontal } from 'lucide-react';
+import { getZIndexClass } from '../lib/zIndexManager';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export function ConfirmModal({ isOpen, title = "Confirm", message, confirmText =
 
   return (
     <Portal>
-      <div className="fixed inset-0 bg-slate-900/50 flex items-end md:items-center justify-center z-[160000] p-0 md:p-4">
+      <div className={`fixed inset-0 bg-slate-900/50 flex items-end md:items-center justify-center ${getZIndexClass('CONFIRM_ALERT')} p-0 md:p-4`}>
         <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
           <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] rounded-t-2xl md:rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-transparent dark:border-[#333336] animate-in slide-in-from-bottom-full md:slide-in-from-bottom-0 md:zoom-in-95 duration-200 pointer-events-auto relative">
             <div className="modal-handle cursor-grab active:cursor-grabbing px-6 pt-4 pb-2 flex items-center justify-between border-b border-slate-100 dark:border-[#28282a]">

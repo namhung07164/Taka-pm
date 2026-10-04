@@ -15,6 +15,7 @@ import {
 import { TabId } from '../types';
 import { QuickNavTarget } from '../store/storeTypes';
 import { useAppStore } from '../store/useAppStore';
+import { getZIndexClass, useOverlayStack } from '../lib/zIndexManager';
 
 interface ProjectQuickNavModalProps {
   target: QuickNavTarget | null;
@@ -43,6 +44,13 @@ export function ProjectQuickNavModal({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  const zInfo = useOverlayStack({
+    layer: 'QUICK_NAV',
+    isOpen,
+    onClose,
+    closeOnTabChange: true
+  });
 
   if (!isOpen || !target || !target.project) return null;
 
@@ -148,7 +156,7 @@ export function ProjectQuickNavModal({
     <AnimatePresence>
       <div 
         id="project-quick-nav-modal-backdrop"
-        className="fixed inset-0 z-[150000] flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-[2px] transition-opacity"
+        className={`fixed inset-0 ${zInfo.zClass} flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-[2px] transition-opacity`}
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
         }}
@@ -163,7 +171,7 @@ export function ProjectQuickNavModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 8 }}
           transition={{ duration: 0.14, ease: 'easeOut' }}
-          className="w-[88vw] sm:w-[270px] max-w-[290px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation relative z-[150001]"
+          className={`w-[88vw] sm:w-[270px] max-w-[290px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation relative ${getZIndexClass('QUICK_NAV', 1)}`}
         >
           {/* Draggable Header */}
           <div className="px-3 py-2 border-b border-slate-100 dark:border-[#333336] bg-slate-50/90 dark:bg-[#252528] flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing">

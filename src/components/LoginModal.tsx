@@ -3,8 +3,10 @@ import { useEnrichedData } from '../hooks/useEnrichedData';
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import Draggable from 'react-draggable';
-import { X } from 'lucide-react';
+import { X, GripHorizontal } from 'lucide-react';
 import { AppUser } from '../types';
+import { Portal } from './Portal';
+import { getZIndexClass } from '../lib/zIndexManager';
 
 interface LoginModalProps {
   isOpen: boolean;

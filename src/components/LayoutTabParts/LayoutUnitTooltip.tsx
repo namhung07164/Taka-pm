@@ -15,6 +15,7 @@ import { TooltipProgressBars } from './TooltipParts/TooltipProgressBars';
 import { TooltipMetaRow } from './TooltipParts/TooltipMetaRow';
 import { TooltipDetailsSection } from './TooltipParts/TooltipDetailsSection';
 import { TooltipImageGalleryPanel } from './TooltipParts/TooltipImageGalleryPanel';
+import { getZIndexClass, useOverlayStack } from '../../lib/zIndexManager';
 
 export { getMdStatusColorClass };
 export type { LayoutUnitTooltipProps };
@@ -201,11 +202,19 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     area: true,
   };
 
+  const zInfo = useOverlayStack({
+    layer: 'LAYOUT_TOOLTIP',
+    isOpen: !!hoverInfo?.visible,
+    onClose,
+    closeOnTabChange: true
+  });
+
   return createPortal(
     <div 
       ref={tooltipRef}
       className={cn(
-        "fixed z-[50000] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
+        "fixed pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
+        zInfo.zClass,
         "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
         "overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y"
       )}

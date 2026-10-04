@@ -14,6 +14,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
 import { sortGroupTasks, extractSubtaskIndex } from '../../lib/ganttUtils';
 import { QuickNavButton } from '../QuickNavButton';
+import { getZIndexClass, useOverlayStack } from '../../lib/zIndexManager';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -309,6 +310,13 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
     };
   }, [rawProjectTasks]);
 
+  const zInfo = useOverlayStack({
+    layer: 'MINI_GANTT',
+    isOpen,
+    onClose,
+    closeOnTabChange: true
+  });
+
   if (!isOpen || !project) return null;
 
   const storeDisplay = (project.store || 'HCM').toUpperCase();
@@ -327,7 +335,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
   const modalContent = (
     <div 
-      className="fixed inset-0 z-[150000] pointer-events-none flex items-center justify-center p-3 sm:p-5 overscroll-contain"
+      className={`fixed inset-0 ${zInfo.zClass} pointer-events-none flex items-center justify-center p-3 sm:p-5 overscroll-contain`}
       onWheel={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
