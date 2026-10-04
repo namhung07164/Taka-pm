@@ -3135,6 +3135,7 @@ function LiveCanvas({
               }
             }}
             onTouchMove={(e) => {
+              if (document.body.classList.contains('lightbox-open')) return;
               if (e.evt.touches.length === 2) {
                 e.evt.preventDefault();
                 const touch1 = e.evt.touches[0];
@@ -3184,6 +3185,7 @@ function LiveCanvas({
               }
             }}
             onTouchEnd={() => {
+              if (document.body.classList.contains('lightbox-open')) return;
               if (rafTouchIdRef.current !== null) {
                 cancelAnimationFrame(rafTouchIdRef.current);
                 rafTouchIdRef.current = null;

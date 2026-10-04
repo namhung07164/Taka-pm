@@ -105,7 +105,7 @@ export function LayoutUnitLightboxModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-150 select-none touch-none"
+      className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-150 select-none touch-none overscroll-none"
       onClick={(e) => {
         // Prevent background clicks from closing the modal during zoom / pinch / pan
         e.stopPropagation();
