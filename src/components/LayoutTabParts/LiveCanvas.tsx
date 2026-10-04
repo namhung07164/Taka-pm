@@ -350,6 +350,9 @@ export const LiveCanvas = React.memo(function LiveCanvas({
             }}
             canWrite={canWrite}
             storeFilter={storeFilter}
+            onFocusUnit={(unitTarget) => {
+              stageInteractions.zoomAndPanToUnit(unitTarget);
+            }}
           />
         </div>
       )}

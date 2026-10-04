@@ -61,10 +61,73 @@ export function useLayoutStageInteractions({
   const aggregatedDataRef = useRef<Record<string, any>>({});
   const restrictedProjectCodesRef = useRef<Set<string>>(new Set());
 
+  // Zoom & Pan smoothly to target unit and highlight it
+  const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
+    const focalPoint = calculateUnitFocalPoint(
+      targetUnitOrName,
+      units,
+      aggregatedDataRef.current,
+      restrictedProjectCodesRef.current
+    );
+    if (!focalPoint) return false;
+
+    const { targetUnit, cx, cy } = focalPoint;
+
+    const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
+    const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
+    const isDesktop = containerW >= 768;
+
+    const targetScale = 0.7;
+
+    const targetScreenCenterX = isDesktop ? containerW * 0.38 : containerW * 0.50;
+    const targetScreenCenterY = isDesktop ? containerH * 0.50 : containerH * 0.35;
+
+    const posX = targetScreenCenterX - cx * targetScale;
+    const posY = targetScreenCenterY - cy * targetScale;
+    const newPos = { x: posX, y: posY };
+
+    const stage = stageRef.current;
+    if (stage) {
+      stage.to({
+        scaleX: targetScale,
+        scaleY: targetScale,
+        x: posX,
+        y: posY,
+        duration: 0.35,
+        easing: Konva.Easings.EaseInOut,
+        onFinish: () => {
+          setStageScale(targetScale);
+          setStagePos(newPos);
+        }
+      });
+    } else {
+      setStageScale(targetScale);
+      setStagePos(newPos);
+    }
+
+    setFocusedUnitId(targetUnit.id);
+    if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+
+    isPinnedRef.current = false;
+    setHoverInfo(null);
+
+    onUnitSelected?.(targetUnit);
+    return true;
+  }, [units, dimensions.width, dimensions.height, onUnitSelected]);
+
   const updateAggregatedData = useCallback((data: Record<string, any>, restricted: Set<string>) => {
     aggregatedDataRef.current = data;
     restrictedProjectCodesRef.current = restricted;
-  }, []);
+
+    // If there is an active search query waiting to be focused and not yet focused, retry zooming now that aggregates are available
+    if (targetUnitSearch && String(targetUnitSearch).trim() && !focusedUnitId) {
+      const q = String(targetUnitSearch).trim();
+      const success = zoomAndPanToUnit(q);
+      if (success) {
+        lastHandledSearchRef.current = q;
+      }
+    }
+  }, [targetUnitSearch, focusedUnitId, zoomAndPanToUnit]);
 
   // Kinetic inertia, gestures and zoom engine
   const gestures = useLayoutGestures({
@@ -129,65 +192,11 @@ export function useLayoutStageInteractions({
     }
   }, [storeFilter, targetLoc, version?.id, version?.backgroundUrl, bgImage, targetUnitSearch, focusedUnitId]);
 
-  // Zoom & Pan smoothly to target unit and highlight it
-  const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
-    const focalPoint = calculateUnitFocalPoint(
-      targetUnitOrName,
-      units,
-      aggregatedDataRef.current,
-      restrictedProjectCodesRef.current
-    );
-    if (!focalPoint) return false;
-
-    const { targetUnit, cx, cy } = focalPoint;
-
-    const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
-    const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
-    const isDesktop = containerW >= 768;
-
-    const targetScale = 0.7;
-
-    const targetScreenCenterX = isDesktop ? containerW * 0.38 : containerW * 0.50;
-    const targetScreenCenterY = isDesktop ? containerH * 0.50 : containerH * 0.35;
-
-    const posX = targetScreenCenterX - cx * targetScale;
-    const posY = targetScreenCenterY - cy * targetScale;
-    const newPos = { x: posX, y: posY };
-
-    const stage = stageRef.current;
-    if (stage) {
-      stage.to({
-        scaleX: targetScale,
-        scaleY: targetScale,
-        x: posX,
-        y: posY,
-        duration: 0.35,
-        easing: Konva.Easings.EaseInOut,
-        onFinish: () => {
-          setStageScale(targetScale);
-          setStagePos(newPos);
-        }
-      });
-    } else {
-      setStageScale(targetScale);
-      setStagePos(newPos);
-    }
-
-    setFocusedUnitId(targetUnit.id);
-    if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
-
-    isPinnedRef.current = false;
-    setHoverInfo(null);
-
-    onUnitSelected?.(targetUnit);
-    return true;
-  }, [units, dimensions.width, dimensions.height, onUnitSelected]);
-
   // Sync with incoming targetUnitSearch prop from toolbar
   useEffect(() => {
     if (targetUnitSearch && String(targetUnitSearch).trim()) {
       const q = String(targetUnitSearch).trim();
-      if (lastHandledSearchRef.current === q) {
+      if (lastHandledSearchRef.current === q && focusedUnitId) {
         return;
       }
 
@@ -197,7 +206,7 @@ export function useLayoutStageInteractions({
       } else {
         const foundInOther = findUnitInOtherFloorVersions(q, availableStoreVersions);
         if (foundInOther) {
-          lastHandledSearchRef.current = q;
+          // Do not mark lastHandledSearchRef.current = q yet so that when the new floor loads, it zooms to the unit!
           if (foundInOther.location) {
             const floorLoc = String(foundInOther.location).trim().toUpperCase();
             if (useAppStore.getState().globalLocationFilter[0] !== floorLoc) {
@@ -237,18 +246,18 @@ export function useLayoutStageInteractions({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [focusedUnitId, targetUnitSearch, fitToScreen, onClearFocus]);
 
-  // If units reload after floor switch and targetUnitSearch is waiting to be zoomed, zoom once cleanly
+  // If units reload after floor switch and targetUnitSearch is waiting to be zoomed, zoom cleanly
   useEffect(() => {
     if (targetUnitSearch && String(targetUnitSearch).trim() && units.length > 0) {
       const q = String(targetUnitSearch).trim();
-      if (lastHandledSearchRef.current !== q) {
+      if (lastHandledSearchRef.current !== q || !focusedUnitId) {
         const success = zoomAndPanToUnit(q);
         if (success) {
           lastHandledSearchRef.current = q;
         }
       }
     }
-  }, [units, targetUnitSearch, zoomAndPanToUnit]);
+  }, [units, targetUnitSearch, zoomAndPanToUnit, focusedUnitId]);
 
   // ResizeObserver for canvas container: safely only update state when width/height actually changes
   useEffect(() => {

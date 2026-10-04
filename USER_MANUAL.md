@@ -1594,12 +1594,16 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Trên biểu đồ Gantt, thanh Baseline (màu vàng/amber) được tính toán vẽ chính xác **từ ngày bắt đầu Baseline (`baselineStart` / `baseStart`) đến ngày kết thúc Baseline (`baselineFinish` / `baseFinish`)**.
      - Đã sửa lại công thức tính độ rộng khoảng ngày (`widthDays = Math.max(getExactDays(s, e) + 1, 1)`), giúp thanh Baseline hiển thị trải dài khớp 100% với khoảng thời gian kế hoạch chuẩn, hỗ trợ xem so sánh trực quan giữa tiến độ Baseline và tiến độ thực tế (Actual).
 
-35. **Thu Phóng Con Trỏ Chuột & Kéo Trượt Bàn Bằng Trên Sơ Đồ Gantt (Gantt Wheel Zoom & Drag-to-Pan)**:
-   - **Phóng To / Thu Nhỏ Bằng Con Trỏ Chuột (`Mouse Wheel Zoom`)**:
-     - Khi cuộn con trỏ chuột (`Wheel`) trên vùng thời gian Gantt (hoặc nhấn giữ `Ctrl`/`Meta`/`Alt` + Cuộn chuột), sơ đồ Gantt sẽ **tự động phóng to/thu nhỏ mượt mà theo đúng tâm con trỏ chuột (Focal Point Zoom)**.
-   - **Kéo Trượt Bàn Bằng Bằng Con Trỏ (`Drag-to-Pan Navigation`)**:
-     - Người dùng có thể **nhấp giữ con trỏ chuột (Left / Middle Click)** trên vùng trống sơ đồ Gantt để rê kéo trượt điều hướng 2 chiều (ngang & dọc) nhanh chóng, linh hoạt trên toàn bộ mốc thời gian dự án lớn.
-     - Con trỏ chuyển đổi trạng thái bàn tay nắm (`cursor-grab` / `cursor-grabbing`), tự động bỏ qua các phần tử tương tác (Nút bấm, Ô nhập liệu, Thanh tiến độ Task) để đảm bảo không ảnh hưởng thao tác chỉnh sửa.
+36. **Khắc Phục & Nâng Cấp Toàn Diện Cơ Chế Focus Gian Hàng Trên Tab Layout (Layout Focus & Cross-Floor Auto-Zoom)**:
+   - **Tự Động Chuyển Tầng & Zoom Đến Gian Hàng Khi Tìm Kiếm (Auto Floor-Switch & Zoom Focus)**:
+     - Khi người dùng tìm kiếm theo mã gian hàng (`unit`), mã dự án (`code`), tên dự án (`name`) hoặc thương hiệu (`brand`), hệ thống sẽ tự động chuyển đúng tầng lầu tương ứng và phóng to mượt mà (`Zoom & Pan`) đến vị trí gian hàng, hiển thị viền vàng nổi bật (`Golden Ring Indicator`) và thanh trạng thái (`LayoutFocusBanner`).
+     - Khắc phục hoàn toàn lỗi chuyển tầng bị huỷ lệnh zoom trước khi dữ liệu tầng mới kịp tải xong.
+   - **Nút Focus 1-Chạm Trên Bảng Tooltip (Crosshair Focus Button)**:
+     - Tích hợp thêm nút Focus (`Crosshair icon`) trực tiếp trên thanh công cụ góc phải của bảng tooltip `LayoutUnitTooltip`, cho phép người dùng phóng to và đưa gian hàng đang xem vào giữa màn hình chỉ bằng một cú nhấp chuột.
+
+37. **Điều Chỉnh Tốc Độ Thu Phóng Con Trỏ Chuột Mượt Mà (Smooth Damped Mouse Wheel Zoom)**:
+   - **Tối Ưu Tốc Độ Zoom Trên Desktop**:
+     - Áp dụng hệ số giảm chấn hàm mũ mềm mại (`Math.exp(-deltaY * 0.0008)`) trên toàn bộ các trình xem sơ đồ mặt bằng (Live Canvas, Review Tab, Edit Tab), giúp thao tác cuộn con trỏ chuột trên máy tính để bàn diễn ra từ từ, êm ái và chính xác tương đương tốc độ của nút bấm kính lúp (+ / -).
 
 
 

@@ -1,3 +1,5 @@
+import { useAppStore } from '../../store/useAppStore';
+
 export interface UnitFocalPointResult {
   targetUnit: any;
   cx: number;
@@ -21,7 +23,8 @@ export function calculateUnitFocalPoint(
     const q = String(targetUnitOrName).toLowerCase().trim();
     targetUnit = units.find((u: any) => 
       (u.name || '').toLowerCase().trim() === q || 
-      String(u.id).toLowerCase() === q
+      String(u.id).toLowerCase() === q ||
+      (u.label && String(u.label).toLowerCase().trim() === q)
     );
     if (!targetUnit) {
       targetUnit = units.find((u: any) => {
@@ -34,6 +37,31 @@ export function calculateUnitFocalPoint(
         const matchUnit = d.unit && String(d.unit).toLowerCase().trim() === q;
         return matchCode || matchName || matchBrand || matchUnit;
       });
+    }
+    if (!targetUnit) {
+      // Direct store lookup fallback if aggregatedData not ready or project not yet linked in dataMap
+      try {
+        const globalProjects = (useAppStore.getState?.() as any)?.projects || [];
+        const matchedProj = globalProjects.find((p: any) => 
+          (p.code && String(p.code).toLowerCase().trim() === q) ||
+          (p.id && String(p.id).toLowerCase().trim() === q) ||
+          (p.name && String(p.name).toLowerCase().trim() === q) ||
+          ((p as any).unit && String((p as any).unit).toLowerCase().trim() === q)
+        );
+        if (matchedProj) {
+          const pCodes = [
+            matchedProj.code,
+            (matchedProj as any).unit,
+            matchedProj.name,
+            ...((matchedProj as any).linkCodes || [])
+          ].filter(Boolean).map((s: string) => String(s).toLowerCase().trim());
+
+          targetUnit = units.find((u: any) => {
+            const uName = (u.name || '').toLowerCase().trim();
+            return pCodes.includes(uName) || pCodes.some((pc: string) => uName.includes(pc) || pc.includes(uName));
+          });
+        }
+      } catch {}
     }
     if (!targetUnit) {
       const stem = q.replace(/[-_.#]\d+$/, '').trim();
@@ -276,22 +304,50 @@ export function triggerStageDownload(stage: any) {
 }
 
 export function findUnitInOtherFloorVersions(q: string, availableStoreVersions: any[]) {
-  return availableStoreVersions.find((v: any) => {
+  if (!q || !Array.isArray(availableStoreVersions) || availableStoreVersions.length === 0) return null;
+  const qLower = String(q).toLowerCase().trim();
+
+  // 1. Direct version unit matching
+  const matched = availableStoreVersions.find((v: any) => {
     if (v?.groupMappings) {
       const inGroup = Object.values(v.groupMappings).some((m: any) => 
-        Array.isArray(m) && m.some(id => String(id).toLowerCase() === q.toLowerCase())
+        Array.isArray(m) && m.some(id => String(id).toLowerCase().trim() === qLower)
       );
       if (inGroup) return true;
     }
-    if (v?.mapUnits && Array.isArray(v.mapUnits)) {
-      const inUnits = v.mapUnits.some((u: any) => 
-        (u.name && String(u.name).toLowerCase() === q.toLowerCase()) ||
-        (u.id && String(u.id).toLowerCase() === q.toLowerCase())
+    const unitList = (Array.isArray(v?.mapUnits) ? v.mapUnits : (Array.isArray(v?.units) ? v.units : []));
+    if (unitList.length > 0) {
+      const inUnits = unitList.some((u: any) => 
+        (u.name && String(u.name).toLowerCase().trim() === qLower) ||
+        (u.id && String(u.id).toLowerCase().trim() === qLower) ||
+        (u.label && String(u.label).toLowerCase().trim() === qLower)
       );
       if (inUnits) return true;
     }
     return false;
   });
+
+  if (matched) return matched;
+
+  // 2. Fallback: If q is a project code/name, find its floor location and matching version
+  try {
+    const globalProjects = (useAppStore.getState?.() as any)?.projects || [];
+    const p = globalProjects.find((proj: any) => 
+      (proj.code && String(proj.code).toLowerCase().trim() === qLower) ||
+      (proj.id && String(proj.id).toLowerCase().trim() === qLower) ||
+      (proj.name && String(proj.name).toLowerCase().trim() === qLower) ||
+      ((proj as any).unit && String((proj as any).unit).toLowerCase().trim() === qLower)
+    );
+    if (p?.location) {
+      const pLoc = String(p.location).trim().toUpperCase();
+      const verForLoc = availableStoreVersions.find((v: any) => 
+        String(v.location || '').trim().toUpperCase() === pLoc
+      );
+      if (verForLoc) return verForLoc;
+    }
+  } catch {}
+
+  return null;
 }
 
 export function hasAggregatedDataChanged(prev: any, next: any): boolean {

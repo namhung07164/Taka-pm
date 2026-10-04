@@ -14,6 +14,7 @@ import {
   Plus,
   Trash2,
   Maximize2,
+  Crosshair,
   Check
 } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
@@ -46,6 +47,7 @@ interface LayoutUnitTooltipProps {
   onClose: () => void;
   onEditProject?: (project: Project, isReadOnly?: boolean, tab?: 'details' | 'chat' | 'delegation') => void;
   onOpenMiniGantt?: (project: Project) => void;
+  onFocusUnit?: (unitName: string) => void;
   canWrite?: boolean;
   storeFilter?: string;
 }
@@ -96,6 +98,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   onClose,
   onEditProject,
   onOpenMiniGantt,
+  onFocusUnit,
   canWrite = false,
   storeFilter = 'HCM'
 }) => {
@@ -901,6 +904,19 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             title={`Quick Navigator (${unitCode})`}
             className="p-1 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-[#333336] dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446]"
           />
+          {onFocusUnit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onFocusUnit(unitCode || hoverInfo.unitName);
+              }}
+              className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 border border-slate-200 dark:border-[#444446] transition-colors active:scale-95 touch-manipulation cursor-pointer"
+              title="Phóng to & Focus gian hàng này (Zoom & Center)"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
