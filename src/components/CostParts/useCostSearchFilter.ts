@@ -162,7 +162,6 @@ export function useCostSearchFilter({
   }, [
     deferredSearchTerm,
     projects,
-    costs,
     globalYearFilter,
     effectiveStore,
     globalLocationFilter,
