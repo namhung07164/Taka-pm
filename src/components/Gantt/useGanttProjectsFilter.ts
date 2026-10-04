@@ -48,7 +48,10 @@ export function useGanttProjectsFilter({
   const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
 
   useEffect(() => {
-    safeSetItemSession("taka_gantt_search", searchTerm);
+    const timer = setTimeout(() => {
+      safeSetItemSession("taka_gantt_search", searchTerm);
+    }, 350);
+    return () => clearTimeout(timer);
   }, [searchTerm]);
 
   const onStatusFilterChange = useCallback((status: string) => {
@@ -61,7 +64,7 @@ export function useGanttProjectsFilter({
 
   // Status & Location filter preservation during search
   useEffect(() => {
-    const isSearching = !!searchTerm.trim();
+    const isSearching = !!deferredSearchTerm.trim();
     if (!wasSearchingRef.current && isSearching) {
       if (filterProjectStatus !== 'all') {
         lastSelectedStatusFilterRef.current = filterProjectStatus;
@@ -76,7 +79,7 @@ export function useGanttProjectsFilter({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, filterProjectStatus]);
+  }, [deferredSearchTerm]);
 
   const uniqueYears = useMemo(() => {
     const yearsSet = new Set<string>();
@@ -210,7 +213,7 @@ export function useGanttProjectsFilter({
     setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
   }, [sortedProjects.length]);
 
-  // Auto-expand projects when searching
+  // Auto-expand projects when searching (Debounced to prevent WebKit DOM reflow lag during soft keyboard input)
   const lastAutoExpandedSearchRef = useRef<string>('');
   useEffect(() => {
     const term = deferredSearchTerm.trim();
@@ -218,11 +221,15 @@ export function useGanttProjectsFilter({
       lastAutoExpandedSearchRef.current = '';
       return;
     }
-    if (term !== lastAutoExpandedSearchRef.current && paginatedProjects.length > 0) {
-      const idsToExpand = paginatedProjects.map(p => p.id || p.code);
-      setExpandedProjects(idsToExpand);
-      lastAutoExpandedSearchRef.current = term;
-    }
+    const timer = setTimeout(() => {
+      if (term !== lastAutoExpandedSearchRef.current && paginatedProjects.length > 0) {
+        const idsToExpand = paginatedProjects.map(p => p.id || p.code);
+        setExpandedProjects(idsToExpand);
+        lastAutoExpandedSearchRef.current = term;
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [deferredSearchTerm, paginatedProjects, setExpandedProjects]);
 
   return {
