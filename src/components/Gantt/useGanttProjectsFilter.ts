@@ -224,7 +224,10 @@ export function useGanttProjectsFilter({
     }
     const timer = setTimeout(() => {
       if (term !== lastAutoExpandedSearchRef.current && paginatedProjects.length > 0) {
-        const idsToExpand = paginatedProjects.map(p => p.id || p.code);
+        // iOS / iPad 5 RAM Guard: On touch devices, cap auto-expanded trees during search to top 5 projects
+        const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        const projectsToExpand = isTouch ? paginatedProjects.slice(0, 5) : paginatedProjects;
+        const idsToExpand = projectsToExpand.map(p => p.id || p.code);
         setExpandedProjects(idsToExpand);
         lastAutoExpandedSearchRef.current = term;
       }
