@@ -410,6 +410,9 @@ export function LayoutTab({
   // Automatically sync activeStore and floor partition to useDataStore (PictureMapping / useSummaryData)
   // so switching HCM <-> HN instantly recalculates summary data without needing to visit General tab
   useEffect(() => {
+    if (!locFilterStr || locFilterStr.trim() === '' || locFilterStr.toUpperCase() === 'ALL') {
+      return;
+    }
     const targetStore = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
     const currStore = useDataStore.getState().store;
     const currLocation = useDataStore.getState().location;

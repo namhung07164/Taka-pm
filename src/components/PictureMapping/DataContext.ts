@@ -167,7 +167,13 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   },
 
   setStoreAndLocation: (newStore, newLocation) => {
+    if (!newLocation || newLocation.trim() === '' || newLocation.toUpperCase() === 'ALL') {
+      return;
+    }
     const state = get();
+    if (state.store === newStore && state.location === newLocation) {
+      return;
+    }
     const oldKey = getPartitionKey(state.store, state.location);
     const newKey = getPartitionKey(newStore, newLocation);
 
