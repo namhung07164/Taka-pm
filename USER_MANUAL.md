@@ -1575,6 +1575,14 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Trên biểu đồ Gantt, thanh Baseline (màu vàng/amber) được tính toán vẽ chính xác **từ ngày bắt đầu Baseline (`baselineStart` / `baseStart`) đến ngày kết thúc Baseline (`baselineFinish` / `baseFinish`)**.
      - Đã sửa lại công thức tính độ rộng khoảng ngày (`widthDays = Math.max(getExactDays(s, e) + 1, 1)`), giúp thanh Baseline hiển thị trải dài khớp 100% với khoảng thời gian kế hoạch chuẩn, hỗ trợ xem so sánh trực quan giữa tiến độ Baseline và tiến độ thực tế (Actual).
 
+35. **Thu Phóng Con Trỏ Chuột & Kéo Trượt Bàn Bằng Trên Sơ Đồ Gantt (Gantt Wheel Zoom & Drag-to-Pan)**:
+   - **Phóng To / Thu Nhỏ Bằng Con Trỏ Chuột (`Mouse Wheel Zoom`)**:
+     - Khi cuộn con trỏ chuột (`Wheel`) trên vùng thời gian Gantt (hoặc nhấn giữ `Ctrl`/`Meta`/`Alt` + Cuộn chuột), sơ đồ Gantt sẽ **tự động phóng to/thu nhỏ mượt mà theo đúng tâm con trỏ chuột (Focal Point Zoom)**.
+   - **Kéo Trượt Bàn Bằng Bằng Con Trỏ (`Drag-to-Pan Navigation`)**:
+     - Người dùng có thể **nhấp giữ con trỏ chuột (Left / Middle Click)** trên vùng trống sơ đồ Gantt để rê kéo trượt điều hướng 2 chiều (ngang & dọc) nhanh chóng, linh hoạt trên toàn bộ mốc thời gian dự án lớn.
+     - Con trỏ chuyển đổi trạng thái bàn tay nắm (`cursor-grab` / `cursor-grabbing`), tự động bỏ qua các phần tử tương tác (Nút bấm, Ô nhập liệu, Thanh tiến độ Task) để đảm bảo không ảnh hưởng thao tác chỉnh sửa.
+
+
 
 
 

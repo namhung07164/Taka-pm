@@ -16,7 +16,7 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
   dayWidth,
 }) => {
   return (
-    <div className="flex h-full">
+    <div className="flex h-full cursor-grab active:cursor-grabbing" title="Cuộn con trỏ chuột để phóng to/thu nhỏ (Wheel to Zoom), Nhấp giữ rê chuột để di chuyển (Drag to Pan)">
       {timeUnits.map((unit) => {
         const width = unit.days * dayWidth;
         return (

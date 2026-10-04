@@ -12,6 +12,7 @@ import { GanttDependencyLinks } from './GanttDependencyLinks';
 import { GanttSumBadge } from './GanttSumBadge';
 import { GanttExportOverlay } from './GanttExportOverlay';
 import { GanttEmptyState } from './GanttEmptyState';
+import { useGanttZoomAndPan } from './useGanttZoomAndPan';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { useAppStore } from '../../store/useAppStore';
@@ -176,6 +177,12 @@ export function GanttTableView({
   const predecessorColWidth = colWidths?.predecessor ?? 90;
 
   const totalTimelineWidth = totalDays * dayWidth;
+
+  const { isPanning, handlePointerDown } = useGanttZoomAndPan({
+    mainScrollRef,
+    topScrollRef,
+    sideWidth
+  });
 
   return (
     <div
@@ -374,7 +381,11 @@ export function GanttTableView({
       <div
         ref={mainScrollRef}
         onScroll={handleCombinedMainScroll}
-        className="flex-grow overflow-auto relative flex min-h-0"
+        onPointerDown={handlePointerDown}
+        className={cn(
+          "flex-grow overflow-auto relative flex min-h-0",
+          isPanning ? "cursor-grabbing select-none" : "cursor-grab"
+        )}
       >
         {/* Left Side Resizable Divider Bar */}
         <div
