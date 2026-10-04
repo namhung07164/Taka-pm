@@ -226,12 +226,10 @@ export function LayoutUnitLightboxModal({
               maxScale={8}
               centerOnInit
               wheel={{ step: 0.1 }}
-              doubleClick={{ mode: 'toggle', step: 1.5 }}
-              panning={{ velocityDisabled: true }}
-              pinch={{ step: 5 }}
+              doubleClick={{ mode: 'toggle' }}
             >
               <TransformComponent
-                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
                 contentClass="!w-full !h-full flex items-center justify-center select-none"
               >
                 <img

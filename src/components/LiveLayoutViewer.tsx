@@ -1964,9 +1964,6 @@ function LiveCanvas({
     // Highlight unit with pulse glow
     setFocusedUnitId(targetUnit.id);
     if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
-    focusedTimerRef.current = setTimeout(() => {
-      setFocusedUnitId(null);
-    }, 10000);
 
     // Calculate precise screen bounding box for the unit in viewport coordinates
     const unitScreenLeft = targetScreenCenterX - (uW / 2) * targetScale;
@@ -2031,7 +2028,7 @@ function LiveCanvas({
       if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
       fitToScreen(true);
     }
-  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, fitToScreen, focusedUnitId]);
+  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, fitToScreen]);
 
   // Keyboard listener: Escape key to exit zoom focus
   useEffect(() => {
