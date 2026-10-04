@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MapPin, 
@@ -143,11 +144,11 @@ export function ProjectQuickNavModal({
     }
   ];
 
-  return (
+  const modalContent = (
     <AnimatePresence>
       <div 
         id="project-quick-nav-modal-backdrop"
-        className="fixed inset-0 z-[100050] flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-[2px] transition-opacity"
+        className="fixed inset-0 z-[150000] flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-[2px] transition-opacity"
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
         }}
@@ -162,7 +163,7 @@ export function ProjectQuickNavModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 8 }}
           transition={{ duration: 0.14, ease: 'easeOut' }}
-          className="w-[88vw] sm:w-[270px] max-w-[290px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation"
+          className="w-[88vw] sm:w-[270px] max-w-[290px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation relative z-[150001]"
         >
           {/* Draggable Header */}
           <div className="px-3 py-2 border-b border-slate-100 dark:border-[#333336] bg-slate-50/90 dark:bg-[#252528] flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing">
@@ -260,4 +261,10 @@ export function ProjectQuickNavModal({
       </div>
     </AnimatePresence>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+
+  return modalContent;
 }
