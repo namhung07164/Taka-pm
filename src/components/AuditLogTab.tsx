@@ -6,6 +6,7 @@ import { formatDisplayDateTime } from '../lib/utils';
 import { Loader2, Search, Filter, ArrowRight, ArrowLeft, Eye, Sparkles, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../lib/LanguageContext';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { DebouncedSearchInput } from './DebouncedSearchInput';
 
 const AuditDiffViewerModal = lazyWithRetry(
   () => import('./AuditDiffViewerModal'),
@@ -233,16 +234,16 @@ export function AuditLogTab() {
               <option value="DELETE">DELETE</option>
             </select>
             
-            <div className="flex relative">
-              <input 
-                type="text"
+            <div className="flex relative items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 z-10 pointer-events-none" />
+              <DebouncedSearchInput 
                 placeholder="User email..."
                 value={userEmailFilter}
-                onChange={(e) => setUserEmailFilter(e.target.value)}
+                onChange={(val) => setUserEmailFilter(val)}
+                debounceMs={250}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="w-full sm:w-64 pl-9 pr-3 py-2 bg-white dark:bg-[#18181a] border border-slate-200 dark:border-[#333336] rounded-l-lg text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full sm:w-64 pl-9 py-2 bg-white dark:bg-[#18181a] border border-slate-200 dark:border-[#333336] rounded-l-lg text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <button 
                 onClick={handleSearch}
                 className="bg-slate-800 dark:bg-blue-600 text-white px-4 py-2 rounded-r-lg text-sm font-semibold active:scale-95 transition-transform"

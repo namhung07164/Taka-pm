@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { DynamicUnitSummaryItem } from '../../lib/dynamicSummaryEngine';
 import { Search, Filter, CheckCircle2, Clock, AlertTriangle, Building, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../../../lib/utils';
+import { DebouncedSearchInput } from '../../../DebouncedSearchInput';
 
 interface DynamicUnitSummaryTableProps {
   summaryList: DynamicUnitSummaryItem[];
@@ -129,13 +130,13 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
           {/* Filter Toolbar */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[140px]">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" />
+              <DebouncedSearchInput
                 placeholder="Tìm Unit, Project Code, Brand..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500"
+                onChange={(val) => setSearchTerm(val)}
+                debounceMs={250}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 py-1.5 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500"
               />
             </div>
 

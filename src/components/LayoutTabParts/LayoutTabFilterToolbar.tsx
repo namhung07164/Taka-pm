@@ -11,6 +11,7 @@ import {
   Save, 
   HelpCircle 
 } from 'lucide-react';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
 
 interface LayoutTabFilterToolbarProps {
   activeStore: string;
@@ -216,18 +217,19 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
         <div className="w-full">
           <div ref={searchContainerRef} className="relative w-full">
             <div className="relative flex items-center">
-              <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input 
-                type="text"
+              <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+              <DebouncedSearchInput 
                 value={unitSearchInput}
-                onChange={(e) => {
-                  const val = e.target.value;
+                onChange={(val) => {
                   setUnitSearchInput(val);
                   if (!val.trim()) {
                     setTargetUnitSearch(null);
+                  } else {
+                    setTargetUnitSearch(val.trim());
                   }
                   setShowSuggestions(true);
                 }}
+                debounceMs={250}
                 onFocus={() => setShowSuggestions(true)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -243,18 +245,8 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                   }
                 }}
                 placeholder="Search unit, brand, or project..."
-                className="w-full pl-9 pr-8 py-1.5 sm:py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-xs transition-all"
+                className="w-full pl-9 py-1.5 sm:py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-xs transition-all"
               />
-              {unitSearchInput && (
-                <button 
-                  type="button"
-                  onClick={onClearSearchAndFocus}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 transition-colors shadow-xs active:scale-95 touch-manipulation"
-                  title="Clear search & Reset zoom"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
 
             {/* Suggestions Dropdown */}

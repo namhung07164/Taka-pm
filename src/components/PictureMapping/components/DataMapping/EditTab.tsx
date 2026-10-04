@@ -13,6 +13,7 @@ import { useSummaryData } from '../../lib/summaryData';
 import { useAppStore } from '../../../../store/useAppStore';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
+import { DebouncedSearchInput } from '../../../DebouncedSearchInput';
 
 import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
@@ -1835,13 +1836,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                   <span className="text-[10px] font-normal text-slate-500 font-mono">{units.length} units</span>
                 </h4>
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                    <input 
-                      type="text"
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={14} />
+                    <DebouncedSearchInput 
                       placeholder="Search units..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 outline-none focus:border-brand-500 transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 py-1.5 text-xs text-slate-200 outline-none focus:border-brand-500 transition-all"
                       value={librarySearchTerm}
-                      onChange={(e) => setLibrarySearchTerm(e.target.value)}
+                      onChange={(val) => setLibrarySearchTerm(val)}
+                      debounceMs={250}
                     />
                 </div>
             </div>
@@ -2145,13 +2146,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 {/* Search & Filter */}
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10 pointer-events-none" />
+                    <DebouncedSearchInput
                       placeholder="Tìm kiếm version theo tên, năm..."
                       value={copyBgSearchTerm}
-                      onChange={(e) => setCopyBgSearchTerm(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                      onChange={(val) => setCopyBgSearchTerm(val)}
+                      debounceMs={250}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
                     />
                   </div>
                   <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none shrink-0 px-2">

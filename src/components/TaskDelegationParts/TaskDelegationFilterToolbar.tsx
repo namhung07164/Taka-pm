@@ -147,12 +147,12 @@ export const TaskDelegationFilterToolbar = React.memo(function TaskDelegationFil
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Search className="h-4 w-4 text-slate-400" />
                 </div>
-                <input
-                  type="text"
+                <DebouncedSearchInput
                   placeholder="Link Project/Task..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(val) => setSearchTerm(val)}
                   onFocus={() => setIsSearchFocused(true)}
+                  debounceMs={250}
                   className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-800 dark:text-[#e3e3e3] text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block w-full pl-9 pr-3 py-2 outline-none shadow-sm"
                 />
               </div>

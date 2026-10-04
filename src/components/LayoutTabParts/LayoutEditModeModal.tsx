@@ -14,6 +14,7 @@ import {
   Settings 
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
 
 export interface LayoutEditModeModalProps {
   showMenu: boolean;
@@ -74,19 +75,14 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
 
         {/* Search Input */}
         <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input 
-            type="text"
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-none" />
+          <DebouncedSearchInput 
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(val) => setSearchQuery(val)}
+            debounceMs={250}
             placeholder="Search Unit / Brand / Project..."
-            className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full pl-9 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
           />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
 
         {/* Smart Notifications & Alerts Config (Collapsible Accordion) */}
