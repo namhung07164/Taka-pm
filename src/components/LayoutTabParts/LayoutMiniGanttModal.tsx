@@ -327,7 +327,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
   const modalContent = (
     <div 
-      className="fixed inset-0 z-[9999] pointer-events-none flex items-center justify-center p-3 sm:p-5 overscroll-contain"
+      className="fixed inset-0 z-[150000] pointer-events-none flex items-center justify-center p-3 sm:p-5 overscroll-contain"
       onWheel={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}

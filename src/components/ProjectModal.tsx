@@ -47,7 +47,7 @@ export function ProjectModal(props: ProjectModalProps) {
 
   return (
     <Portal>
-      <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4 overscroll-contain">
+      <div className="fixed inset-0 bg-slate-900/60 z-[150000] flex items-center justify-center p-0 md:p-4 overscroll-contain">
         <React.Suspense fallback={null}>
           {confirmModal.isOpen && (
             <ConfirmModal

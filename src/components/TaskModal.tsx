@@ -95,7 +95,7 @@ export function TaskModal(props: TaskModalProps) {
 
   return (
     <Portal>
-      <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-0 md:p-4">
+      <div className="fixed inset-0 bg-slate-900/60 z-[150000] flex items-center justify-center p-0 md:p-4">
       <React.Suspense fallback={null}>
         {confirmModal.isOpen && (
           <ConfirmModal 

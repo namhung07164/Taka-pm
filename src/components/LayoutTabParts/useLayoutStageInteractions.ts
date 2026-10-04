@@ -258,6 +258,26 @@ export function useLayoutStageInteractions({
     }
   }, [units, targetUnitSearch, zoomAndPanToUnit, focusedUnitId]);
 
+  const activeTab = useAppStore(state => state.activeTab);
+
+  // Auto-close tooltip and clear pinned state when navigating to another tab
+  useEffect(() => {
+    if (activeTab !== 'layout') {
+      setHoverInfo(null);
+      isPinnedRef.current = false;
+      if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+    }
+  }, [activeTab]);
+
+  // Clean up tooltip state on unmount
+  useEffect(() => {
+    return () => {
+      setHoverInfo(null);
+      isPinnedRef.current = false;
+      if (focusedTimerRef.current) clearTimeout(focusedTimerRef.current);
+    };
+  }, []);
+
   // ResizeObserver for canvas container: safely only update state when width/height actually changes
   useEffect(() => {
     const updateSize = () => {

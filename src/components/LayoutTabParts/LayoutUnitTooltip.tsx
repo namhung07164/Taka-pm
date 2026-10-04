@@ -205,7 +205,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     <div 
       ref={tooltipRef}
       className={cn(
-        "fixed z-[100000] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
+        "fixed z-[50000] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
         "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
         "overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y"
       )}

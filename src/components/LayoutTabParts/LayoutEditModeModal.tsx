@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Search, 
@@ -55,8 +56,8 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
 }) => {
   if (!showMenu) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden">
+  const content = (
+    <div className="fixed inset-0 z-[150000] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-5 text-slate-800 dark:text-slate-200 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2 font-bold text-base text-slate-800 dark:text-slate-100">
@@ -335,4 +336,9 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+  return content;
 };
