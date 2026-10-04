@@ -89,8 +89,9 @@ export function useLayoutTabData({
     const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
     const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
     const activeCodeParam = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
+    const filterTs = (layoutTabFilters as any)?._ts || '';
 
-    const propKey = `${activeStoreParam}_${activeLocParam}_${activeCodeParam}`;
+    const propKey = `${activeStoreParam}_${activeLocParam}_${activeCodeParam}_${filterTs}`;
     if (hasSyncedInitialRef.current && propKey === lastInitialPropKeyRef.current) {
       return;
     }

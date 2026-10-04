@@ -140,8 +140,8 @@ export interface UISlice {
   setGanttTabFocusTaskId: (id: string) => void;
   ganttTriggerToday: number;
   triggerGanttToday: () => void;
-  layoutTabFilters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string } | null;
-  setLayoutTabFilters: (filters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string } | null) => void;
+  layoutTabFilters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string; _ts?: number } | null;
+  setLayoutTabFilters: (filters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string; _ts?: number } | null) => void;
   notificationFilterId: string | null;
   setNotificationFilterId: (id: string | null) => void;
 

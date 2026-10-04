@@ -75,19 +75,25 @@ export function useLayoutStageInteractions({
 
     const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
     const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
-    const isDesktop = containerW >= 768;
 
     const targetScale = 0.7;
 
-    const targetScreenCenterX = isDesktop ? containerW * 0.38 : containerW * 0.50;
-    const targetScreenCenterY = isDesktop ? containerH * 0.50 : containerH * 0.35;
+    // Center unit perfectly at exact 50% width and 50% height of viewport
+    const targetScreenCenterX = containerW * 0.50;
+    const targetScreenCenterY = containerH * 0.50;
 
     const posX = targetScreenCenterX - cx * targetScale;
     const posY = targetScreenCenterY - cy * targetScale;
     const newPos = { x: posX, y: posY };
 
+    setStageScale(targetScale);
+    setStagePos(newPos);
+
     const stage = stageRef.current;
     if (stage) {
+      stage.scale({ x: targetScale, y: targetScale });
+      stage.position(newPos);
+      stage.batchDraw();
       stage.to({
         scaleX: targetScale,
         scaleY: targetScale,
@@ -100,9 +106,6 @@ export function useLayoutStageInteractions({
           setStagePos(newPos);
         }
       });
-    } else {
-      setStageScale(targetScale);
-      setStagePos(newPos);
     }
 
     setFocusedUnitId(targetUnit.id);
@@ -191,34 +194,43 @@ export function useLayoutStageInteractions({
     }
   }, [storeFilter, targetLoc, version?.id, version?.backgroundUrl, bgImage, targetUnitSearch, focusedUnitId]);
 
-  // Sync with incoming targetUnitSearch prop from toolbar
+  // Sync with incoming targetUnitSearch prop from toolbar / Quick Navigation
   useEffect(() => {
     if (targetUnitSearch && String(targetUnitSearch).trim()) {
       const q = String(targetUnitSearch).trim();
-      if (lastHandledSearchRef.current === q && focusedUnitId) {
-        return;
-      }
-
-      const success = zoomAndPanToUnit(q);
-      if (success) {
-        lastHandledSearchRef.current = q;
-      } else {
-        const foundInOther = findUnitInOtherFloorVersions(q, availableStoreVersions);
-        if (foundInOther) {
-          // Do not mark lastHandledSearchRef.current = q yet so that when the new floor loads, it zooms to the unit!
-          if (foundInOther.location) {
-            const floorLoc = String(foundInOther.location).trim().toUpperCase();
-            if (useAppStore.getState().globalLocationFilter[0] !== floorLoc) {
-              useAppStore.getState().setGlobalLocationFilter([floorLoc]);
+      
+      const tryZoom = () => {
+        const success = zoomAndPanToUnit(q);
+        if (success) {
+          lastHandledSearchRef.current = q;
+        } else {
+          const foundInOther = findUnitInOtherFloorVersions(q, availableStoreVersions);
+          if (foundInOther) {
+            if (foundInOther.location) {
+              const floorLoc = String(foundInOther.location).trim().toUpperCase();
+              if (useAppStore.getState().globalLocationFilter[0] !== floorLoc) {
+                useAppStore.getState().setGlobalLocationFilter([floorLoc]);
+              }
+            }
+            if (foundInOther.id !== selectedVersionId) {
+              setSelectedVersionId(foundInOther.id);
             }
           }
-          if (foundInOther.id !== selectedVersionId) {
-            setSelectedVersionId(foundInOther.id);
-          }
         }
-      }
+      };
+
+      tryZoom();
+      // Multi-stage retry so that when tab switches and container DOM dimensions mount / re-measure, centering happens cleanly
+      const t1 = setTimeout(tryZoom, 60);
+      const t2 = setTimeout(tryZoom, 220);
+      const t3 = setTimeout(tryZoom, 500);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
     } else if (targetUnitSearch === null || targetUnitSearch === '') {
-      // Guard against infinite loop: ONLY reset if there was an active search or focused unit
       if (lastHandledSearchRef.current !== null || focusedUnitId !== null) {
         lastHandledSearchRef.current = null;
         setFocusedUnitId(null);
@@ -227,7 +239,7 @@ export function useLayoutStageInteractions({
         fitToScreenRef.current(true);
       }
     }
-  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, focusedUnitId, setSelectedVersionId]);
+  }, [targetUnitSearch, zoomAndPanToUnit, availableStoreVersions, selectedVersionId, setSelectedVersionId]);
 
   // Keyboard listener: Escape key to exit zoom focus
   useEffect(() => {

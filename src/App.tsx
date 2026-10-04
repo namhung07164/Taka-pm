@@ -1001,7 +1001,7 @@ export default function App() {
     if (rawLoc) {
       useAppStore.getState().setGlobalLocationFilter([rawLoc]);
     }
-    setLayoutTabFilters({ store, location: rawLoc || location, projectCode, sourceTaskId });
+    setLayoutTabFilters({ store, location: rawLoc || location, projectCode, sourceTaskId, _ts: Date.now() });
     handleTabChange("layout");
   };
 
@@ -1038,8 +1038,11 @@ export default function App() {
     // 3. Tab-specific search & filter synchronization
     switch (targetTab) {
       case "layout": {
+        const unitCode = (p as any)?.unit || task?.projectCode || p?.code || effectiveFilterCode || "";
         const rawCode = p?.code || (p as any)?.unit || effectiveFilterCode || task?.projectCode || "";
-        const extractedFloor = extractFloorFromCodeOrName(rawCode) || 
+        const targetUnitCode = unitCode || rawCode;
+
+        const extractedFloor = extractFloorFromCodeOrName(targetUnitCode) || 
                                extractFloorFromCodeOrName((p as any)?.unit) || 
                                extractFloorFromCodeOrName(p?.code) || 
                                extractFloorFromCodeOrName(effectiveFilterCode);
@@ -1054,7 +1057,8 @@ export default function App() {
         setLayoutTabFilters({
           store: p?.store || task?.projectStore || "all",
           location: targetFloor,
-          projectCode: rawCode,
+          projectCode: targetUnitCode,
+          _ts: Date.now(),
         });
         handleTabChange("layout");
         break;
