@@ -11,7 +11,7 @@ export interface LayoutColorLegendBarProps {
   setIsLegendStripCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = ({
+export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.memo(({
   layoutTooltipVisibility,
   activeGroups,
   selectedLegendGroupId,
@@ -126,4 +126,4 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = ({
       </div>
     </div>
   );
-};
+});

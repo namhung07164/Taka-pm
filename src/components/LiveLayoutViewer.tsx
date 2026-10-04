@@ -12,7 +12,7 @@ Konva.hitOnDragEnabled = false;
 Konva.dragDistance = 3;
 Konva.dragButtons = [0];
 
-export function LiveLayoutViewer({
+export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
   storeFilter,
   locationFilter,
   yearFilter,
@@ -95,6 +95,6 @@ export function LiveLayoutViewer({
       canWrite={canWrite}
     />
   );
-}
+});
 
 export default LiveLayoutViewer;

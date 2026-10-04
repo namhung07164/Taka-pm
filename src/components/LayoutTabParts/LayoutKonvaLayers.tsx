@@ -20,7 +20,7 @@ export interface LayoutKonvaLayersProps {
   hasStoredUnitImages: (codeOrName: string | undefined | null) => boolean;
 }
 
-export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = ({
+export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
   bgImage,
   version,
   visibleUnits,
@@ -261,4 +261,4 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = ({
       </Layer>
     </>
   );
-};
+});

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { preloadFloorImages } from '../../lib/imageDBCache';
@@ -37,6 +37,9 @@ export function useLayoutFloorData({
   ).trim();
 
   // 1. Gather all store versions across all sources (Zustand helper, local partitions, cloud partitions, and root config)
+  const prevAvailVersionsRef = useRef<any[]>([]);
+  const prevAvailVersionsKeyRef = useRef<string>('');
+
   const availableStoreVersions = useMemo(() => {
     const versionsMap = new Map<string, any>();
 
@@ -106,7 +109,14 @@ export function useLayoutFloorData({
       });
     }
 
-    return Array.from(versionsMap.values());
+    const finalVersions = Array.from(versionsMap.values());
+    const key = `${storeFilter}_${finalVersions.map(v => `${v?.id || ''}_${v?.backgroundUrl || ''}`).join('|')}`;
+    if (key === prevAvailVersionsKeyRef.current) {
+      return prevAvailVersionsRef.current;
+    }
+    prevAvailVersionsKeyRef.current = key;
+    prevAvailVersionsRef.current = finalVersions;
+    return finalVersions;
   }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
 
   // Pre-cache all floor maps for this store into IndexedDB
@@ -122,6 +132,9 @@ export function useLayoutFloorData({
   }, [availableStoreVersions]);
 
   // 2. Filter versions specific to targetLoc (e.g. L2) and year from Picture Mapping / global setting
+  const prevLocationVersionsRef = useRef<any[]>([]);
+  const prevLocationVersionsKeyRef = useRef<string>('');
+
   const locationVersions = useMemo(() => {
     if (availableStoreVersions.length === 0) return [];
     
@@ -134,28 +147,30 @@ export function useLayoutFloorData({
       return vLoc === tLoc || (vLoc === '' && tokenRegex.test(vName));
     });
 
+    let result = matched;
     if (matched.length === 0) {
-      return [];
-    }
-
-    // Filter by year if activeYear is active (synced with Picture tab / Review tab)
-    if (activeYear && activeYear !== 'all') {
+      result = [];
+    } else if (activeYear && activeYear !== 'all') {
       const targetYear = String(activeYear).trim();
       const yearMatched = matched.filter(v => String(v.year || '').trim() === targetYear);
       if (yearMatched.length > 0) {
-        return yearMatched;
+        result = yearMatched;
+      } else {
+        result = [...matched].sort((a, b) => {
+          const yA = Number(a.year) || 0;
+          const yB = Number(b.year) || 0;
+          return yB - yA;
+        });
       }
-      // If there is no specific version uploaded for this year yet, fallback to the latest available drawing
-      // for this floor (sorted descending by year) so the layout and unit locations are never blank
-      const sortedByYear = [...matched].sort((a, b) => {
-        const yA = Number(a.year) || 0;
-        const yB = Number(b.year) || 0;
-        return yB - yA;
-      });
-      return sortedByYear;
     }
 
-    return matched;
+    const key = `${targetLoc}_${activeYear}_${result.map(v => v?.id || '').join('|')}`;
+    if (key === prevLocationVersionsKeyRef.current) {
+      return prevLocationVersionsRef.current;
+    }
+    prevLocationVersionsKeyRef.current = key;
+    prevLocationVersionsRef.current = result;
+    return result;
   }, [availableStoreVersions, targetLoc, activeYear]);
 
   // 3. Resolve active version & units

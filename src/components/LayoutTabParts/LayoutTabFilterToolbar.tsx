@@ -48,7 +48,7 @@ interface LayoutTabFilterToolbarProps {
   onClearSearchAndFocus: () => void;
 }
 
-export function LayoutTabFilterToolbar({
+export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar({
   activeStore,
   allowedStores,
   setGlobalStoreFilter,
@@ -358,4 +358,4 @@ export function LayoutTabFilterToolbar({
       )}
     </div>
   );
-}
+});

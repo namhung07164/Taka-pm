@@ -54,7 +54,7 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
     } catch (e) {
       try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
     }
-  }, 200);
+  }, 1500);
 }
 
 interface DataStoreState {

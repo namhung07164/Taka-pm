@@ -115,7 +115,11 @@ export function useLayoutStageInteractions({
   // Trigger fitToScreen when background image or partition version changes
   const lastFloorVersionKeyRef = useRef<string>('');
   useEffect(() => {
-    const currentKey = `${storeFilter}_${targetLoc}_${version?.id || ''}_${bgImage ? 'loaded' : 'none'}`;
+    // If version has a background URL, wait for bgImage to load before auto-fitting to prevent jumping
+    if (version?.backgroundUrl && !bgImage) {
+      return;
+    }
+    const currentKey = `${storeFilter}_${targetLoc}_${version?.id || ''}`;
     const floorChanged = lastFloorVersionKeyRef.current !== currentKey;
     if (floorChanged) {
       lastFloorVersionKeyRef.current = currentKey;
@@ -123,7 +127,7 @@ export function useLayoutStageInteractions({
         fitToScreenRef.current();
       }
     }
-  }, [storeFilter, targetLoc, version?.id, bgImage, targetUnitSearch, focusedUnitId]);
+  }, [storeFilter, targetLoc, version?.id, version?.backgroundUrl, bgImage, targetUnitSearch, focusedUnitId]);
 
   // Zoom & Pan smoothly to target unit and highlight it
   const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
@@ -249,22 +253,16 @@ export function useLayoutStageInteractions({
   // ResizeObserver for canvas container: safely only update state when width/height actually changes
   useEffect(() => {
     const updateSize = () => {
-      if (containerRef.current) {
-        const newW = containerRef.current.offsetWidth || 800;
-        const newH = containerRef.current.offsetHeight || 600;
-        setDimensions(prev => {
-          if (prev.width === newW && prev.height === newH) return prev;
-          return { width: newW, height: newH };
-        });
-      }
+      if (!containerRef.current) return;
+      const newW = containerRef.current.offsetWidth || 800;
+      const newH = containerRef.current.offsetHeight || 600;
+      setDimensions(prev => (prev.width === newW && prev.height === newH) ? prev : { width: newW, height: newH });
     };
     updateSize();
     window.addEventListener('resize', updateSize);
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
-      ro = new ResizeObserver(() => {
-        updateSize();
-      });
+      ro = new ResizeObserver(updateSize);
       ro.observe(containerRef.current);
     }
     return () => {

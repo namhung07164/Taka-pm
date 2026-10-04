@@ -69,26 +69,28 @@ export function LayoutTab({
 
   return (
     <>
-      <LayoutTabFullscreenView
-        isFullscreenView={isFullscreenView}
-        setIsFullscreenView={setIsFullscreenView}
-        activeStore={activeStore}
-        locFilterStr={locFilterStr}
-        effectiveYear={effectiveYear}
-        targetUnitSearch={targetUnitSearch}
-        onUnitSelected={(unit) => {
-          if (unit?.name) {
-            setUnitSearchInput(unit.name);
-          }
-        }}
-        onClearFocus={handleClearSearchAndFocus}
-        isLiveMapMode={isLiveMapMode}
-        url={url}
-        getCleanUrl={getCleanUrl}
-        fallbackSvg={fallbackSvg}
-        isEditing={isEditing}
-        setIsEditing={setIsEditing}
-      />
+      {isFullscreenView && (
+        <LayoutTabFullscreenView
+          isFullscreenView={isFullscreenView}
+          setIsFullscreenView={setIsFullscreenView}
+          activeStore={activeStore}
+          locFilterStr={locFilterStr}
+          effectiveYear={effectiveYear}
+          targetUnitSearch={targetUnitSearch}
+          onUnitSelected={(unit) => {
+            if (unit?.name) {
+              setUnitSearchInput(unit.name);
+            }
+          }}
+          onClearFocus={handleClearSearchAndFocus}
+          isLiveMapMode={isLiveMapMode}
+          url={url}
+          getCleanUrl={getCleanUrl}
+          fallbackSvg={fallbackSvg}
+          isEditing={isEditing}
+          setIsEditing={setIsEditing}
+        />
+      )}
 
       <div className="flex-grow flex flex-col p-2.5 sm:p-4 md:p-6 bg-slate-50 dark:bg-slate-950 relative h-full print:p-0 print:m-0 print:bg-white print:border-none print:shadow-none">
         <LayoutTabFilterToolbar

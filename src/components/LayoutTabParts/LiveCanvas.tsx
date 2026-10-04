@@ -37,7 +37,7 @@ interface LiveCanvasProps {
   canWrite: boolean;
 }
 
-export function LiveCanvas({
+export const LiveCanvas = React.memo(function LiveCanvas({
   config,
   storeFilter,
   locationFilter,
@@ -416,4 +416,4 @@ export function LiveCanvas({
       />
     </div>
   );
-}
+});

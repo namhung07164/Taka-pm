@@ -21,7 +21,7 @@ interface LayoutTabFullscreenViewProps {
   setIsEditing: (val: boolean) => void;
 }
 
-export function LayoutTabFullscreenView({
+export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenView({
   isFullscreenView,
   setIsFullscreenView,
   activeStore,
@@ -314,4 +314,4 @@ export function LayoutTabFullscreenView({
       )}
     </AnimatePresence>
   );
-}
+});

@@ -12,7 +12,7 @@ export interface LayoutBottomActionBarProps {
   onOpenLegendModal: () => void;
 }
 
-export const LayoutBottomActionBar: React.FC<LayoutBottomActionBarProps> = ({
+export const LayoutBottomActionBar: React.FC<LayoutBottomActionBarProps> = React.memo(({
   hoverInfo,
   layoutTooltipVisibility,
   activeGroups,
@@ -69,4 +69,4 @@ export const LayoutBottomActionBar: React.FC<LayoutBottomActionBarProps> = ({
       )}
     </div>
   );
-};
+});

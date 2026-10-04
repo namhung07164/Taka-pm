@@ -9,7 +9,7 @@ export interface LayoutFloorVersionSelectorProps {
   setSelectedVersionId: (id: string) => void;
 }
 
-export const LayoutFloorVersionSelector: React.FC<LayoutFloorVersionSelectorProps> = ({
+export const LayoutFloorVersionSelector: React.FC<LayoutFloorVersionSelectorProps> = React.memo(({
   storeFilter,
   targetLoc,
   locationVersions,
@@ -51,4 +51,4 @@ export const LayoutFloorVersionSelector: React.FC<LayoutFloorVersionSelectorProp
       )}
     </div>
   );
-};
+});

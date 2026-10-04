@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { useSummaryData } from '../PictureMapping/lib/summaryData';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { useDynamicUnitSummary } from '../PictureMapping/lib/dynamicSummaryEngine';
 import { buildAggregatedUnitData } from './layoutDataAggregator';
+
+const EMPTY_RESTRICTED_SET = new Set<string>();
 
 interface UseLayoutAggregatesProps {
   units: any[];
@@ -48,7 +50,7 @@ export function useLayoutAggregates({
 
   // Compute set of project codes that the current user is NOT allowed to access (RBAC)
   const restrictedProjectCodes = useMemo(() => {
-    if (!currUser || currUser.role === 'admin') return new Set<string>();
+    if (!currUser || currUser.role === 'admin') return EMPTY_RESTRICTED_SET;
 
     const allowedCodeSet = new Set<string>();
     enrichedProjects.forEach(p => {
@@ -281,33 +283,47 @@ export function useLayoutAggregates({
   }, [displayedUnits, focusedUnitId]);
 
   // Viewport Spatial Culling (Loại bỏ các shape nằm ngoài khung nhìn khi Zoom để tối ưu GPU/FPS)
+  const prevVisibleUnitsRef = useRef<any[]>([]);
+  const prevVisibleUnitsKeyRef = useRef<string>('');
+
   const visibleUnits = useMemo(() => {
     const scale = stageScale || 1;
     const vpW = dimensions.width || 800;
     const vpH = dimensions.height || 600;
 
-    if (scale <= 0.35 || displayedUnits.length <= 40) {
+    let filtered = displayedUnits;
+    if (scale > 0.35 && displayedUnits.length > 40) {
+      const bufferPadding = Math.max(150, 300 / scale);
+      const minWorldX = (-stagePos.x / scale) - bufferPadding;
+      const maxWorldX = ((vpW - stagePos.x) / scale) + bufferPadding;
+      const minWorldY = (-stagePos.y / scale) - bufferPadding;
+      const maxWorldY = ((vpH - stagePos.y) / scale) + bufferPadding;
+
+      filtered = displayedUnits.filter((unit: any) => {
+        if (unit.id === focusedUnitId || deferredSearchQuery.trim()) {
+          return true;
+        }
+
+        const uMinX = unit.minX ?? unit.x ?? 0;
+        const uMaxX = unit.maxX ?? (uMinX + (unit.width || 100));
+        const uMinY = unit.minY ?? unit.y ?? 0;
+        const uMaxY = unit.maxY ?? (uMinY + (unit.height || 30));
+
+        return uMaxX >= minWorldX && uMinX <= maxWorldX && uMaxY >= minWorldY && uMinY <= maxWorldY;
+      });
+    }
+
+    if (filtered === displayedUnits) {
       return displayedUnits;
     }
 
-    const bufferPadding = Math.max(150, 300 / scale);
-    const minWorldX = (-stagePos.x / scale) - bufferPadding;
-    const maxWorldX = ((vpW - stagePos.x) / scale) + bufferPadding;
-    const minWorldY = (-stagePos.y / scale) - bufferPadding;
-    const maxWorldY = ((vpH - stagePos.y) / scale) + bufferPadding;
-
-    return displayedUnits.filter((unit: any) => {
-      if (unit.id === focusedUnitId || deferredSearchQuery.trim()) {
-        return true;
-      }
-
-      const uMinX = unit.minX ?? unit.x ?? 0;
-      const uMaxX = unit.maxX ?? (uMinX + (unit.width || 100));
-      const uMinY = unit.minY ?? unit.y ?? 0;
-      const uMaxY = unit.maxY ?? (uMinY + (unit.height || 30));
-
-      return uMaxX >= minWorldX && uMinX <= maxWorldX && uMaxY >= minWorldY && uMinY <= maxWorldY;
-    });
+    const key = filtered.map((u: any) => u.id).join('|');
+    if (key === prevVisibleUnitsKeyRef.current) {
+      return prevVisibleUnitsRef.current;
+    }
+    prevVisibleUnitsKeyRef.current = key;
+    prevVisibleUnitsRef.current = filtered;
+    return filtered;
   }, [displayedUnits, stageScale, stagePos.x, stagePos.y, dimensions.width, dimensions.height, focusedUnitId, deferredSearchQuery]);
 
   // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout

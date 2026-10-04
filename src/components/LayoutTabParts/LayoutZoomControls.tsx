@@ -12,7 +12,7 @@ export interface LayoutZoomControlsProps {
   onFitToScreen: () => void;
 }
 
-export const LayoutZoomControls: React.FC<LayoutZoomControlsProps> = ({
+export const LayoutZoomControls: React.FC<LayoutZoomControlsProps> = React.memo(({
   totalFloorAlerts,
   filterOnlyAlerts,
   setFilterOnlyAlerts,
@@ -74,4 +74,4 @@ export const LayoutZoomControls: React.FC<LayoutZoomControlsProps> = ({
       </button>
     </div>
   );
-};
+});

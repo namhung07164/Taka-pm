@@ -46,7 +46,7 @@ interface LayoutCanvasViewportProps {
   hasStoredUnitImages: (key: string | undefined | null) => boolean;
 }
 
-export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = ({
+export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.memo(({
   containerRef,
   stageRef,
   dimensions,
@@ -327,4 +327,4 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = ({
       </Stage>
     </div>
   );
-};
+});

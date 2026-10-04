@@ -1,15 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, APP_ID } from "../../lib/firebase";
 import { AppRole } from '../../types';
 import { getUserAllowedStores, getEffectiveStoreFilter } from '../../lib/utils';
-import { usePerformanceStore } from '../../store/usePerformanceStore';
-import { executeTriggerExportProcess } from '../PictureMapping/lib/dynamicExportService';
 import { useDataStore } from '../PictureMapping/DataContext';
+import { useLayoutTabSettings } from './useLayoutTabSettings';
 import { 
-  isValidUrl, 
   buildUnitSuggestions, 
   scoreAndFilterUnitSuggestions, 
   resolveTargetFloorForUnit, 
@@ -41,9 +37,6 @@ export function useLayoutTabData({
   const locations = useAppStore(state => state.locations);
   const locationVisibility = useAppStore(state => state.locationVisibility);
 
-  const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>({});
-  const [url, setUrl] = useState<string>('https://drive.google.com/file/d/1hxzPKKhQWhQ-tAThmgan8eNqqy5GN-Ds/preview');
-
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
   const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
@@ -68,17 +61,38 @@ export function useLayoutTabData({
   const storeLocationData = useDataStore((state) => state.storeLocationData);
   const mapVersions = useDataStore((state) => state.mapVersions);
 
-  // All versions for activeStore (synced with PictureMapping / ReviewTab)
+  // Stable memoized versions for activeStore to prevent reference churn across partition updates
+  const prevStoreVersionsRef = useRef<any[]>([]);
+  const prevStoreVersionsKeyRef = useRef<string>('');
+
   const allStoreVersions = useMemo(() => {
     try {
-      return getAllStoreVersions((activeStore === 'HN' ? 'HN' : 'HCM'));
+      const vers = getAllStoreVersions((activeStore === 'HN' ? 'HN' : 'HCM'));
+      if (!Array.isArray(vers)) return [];
+      const sig = `${activeStore}_${vers.map(v => `${v?.id || ''}_${v?.backgroundUrl || ''}`).join('|')}`;
+      if (sig === prevStoreVersionsKeyRef.current) {
+        return prevStoreVersionsRef.current;
+      }
+      prevStoreVersionsKeyRef.current = sig;
+      prevStoreVersionsRef.current = vers;
+      return vers;
     } catch {
       return [];
     }
   }, [getAllStoreVersions, activeStore, storeLocationData, mapVersions]);
 
-  // Initial params sync effect
+  // Initial params sync effect - ONLY run once on mount or when explicit props change!
+  const hasSyncedInitialRef = useRef(false);
+  const lastInitialPropKeyRef = useRef('');
+
   useEffect(() => {
+    const propKey = `${propInitialStore || ''}_${propInitialLocation || ''}_${propInitialProjectCode || ''}`;
+    if (hasSyncedInitialRef.current && propKey === lastInitialPropKeyRef.current) {
+      return;
+    }
+    hasSyncedInitialRef.current = true;
+    lastInitialPropKeyRef.current = propKey;
+
     if (initialStore && initialStore !== 'all') {
       setGlobalStoreFilter(initialStore);
     }
@@ -107,9 +121,12 @@ export function useLayoutTabData({
     if (targetLoc && targetLoc.toLowerCase() !== 'all') {
       setGlobalLocationFilter([targetLoc]);
     }
-  }, [initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
+  }, [propInitialStore, propInitialLocation, propInitialProjectCode, initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   // Available years: based on user permissions, projects, tasks, and store versions
+  const prevAvailableYearsRef = useRef<string[]>([]);
+  const prevAvailableYearsKeyRef = useRef<string>('');
+
   const availableYears = useMemo(() => {
     const storeProjects = projects.filter(p => {
       if (!activeStore || activeStore === 'all') return true;
@@ -155,9 +172,17 @@ export function useLayoutTabData({
 
     const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
 
-    return Array.from(new Set([...userPermittedYears, ...versionYears, ...defaultStoreYears]))
+    const finalYears = Array.from(new Set([...userPermittedYears, ...versionYears, ...defaultStoreYears]))
       .filter(Boolean)
       .sort((a, b) => Number(b) - Number(a));
+
+    const key = finalYears.join('|');
+    if (key === prevAvailableYearsKeyRef.current) {
+      return prevAvailableYearsRef.current;
+    }
+    prevAvailableYearsKeyRef.current = key;
+    prevAvailableYearsRef.current = finalYears;
+    return finalYears;
   }, [allStoreVersions, projects, tasks, activeStore]);
 
   const effectiveYear = useMemo(() => {
@@ -181,7 +206,10 @@ export function useLayoutTabData({
     }
   }, [globalStoreFilter, allowedStores, setGlobalStoreFilter]);
 
-  // Danh sách location của Tab Layout
+  // Danh sách location của Tab Layout (Cached to prevent array reference churn)
+  const prevAvailableLocationsRef = useRef<string[]>([]);
+  const prevAvailableLocationsKeyRef = useRef<string>('');
+
   const availableLocations = useMemo(() => {
     const storeParam = (activeStore === 'HN' ? 'HN' : 'HCM');
     const isUserAdmin = currentUser?.role === 'admin';
@@ -238,7 +266,14 @@ export function useLayoutTabData({
       finalLocations = (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
     }
 
-    return sortLocationsByFloorRank(finalLocations);
+    const sorted = sortLocationsByFloorRank(finalLocations);
+    const key = sorted.join('|');
+    if (key === prevAvailableLocationsKeyRef.current) {
+      return prevAvailableLocationsRef.current;
+    }
+    prevAvailableLocationsKeyRef.current = key;
+    prevAvailableLocationsRef.current = sorted;
+    return sorted;
   }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab
@@ -265,28 +300,25 @@ export function useLayoutTabData({
     }
     return availableLocations[0] || '';
   }, [globalLocationFilter, availableLocations]);
-  const docKey = `url_${activeStore}_${locFilterStr}`;
-
-  // Automatically sync activeStore and floor partition to useDataStore
-  useEffect(() => {
-    if (!locFilterStr || locFilterStr.trim() === '' || locFilterStr.toUpperCase() === 'ALL') {
-      return;
-    }
-    const targetStore = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-    const currStore = useDataStore.getState().store;
-    const currLocation = useDataStore.getState().location;
-
-    if (currStore !== targetStore || currLocation !== locFilterStr) {
-      useDataStore.getState().setStoreAndLocation(targetStore, locFilterStr);
-    }
-  }, [activeStore, locFilterStr]);
-
-  const [isEditing, setIsEditing] = useState(false);
   const [isLiveMapMode, setIsLiveMapMode] = useState(true);
-  const [editUrl, setEditUrl] = useState("");
-  const [isExporting, setIsExporting] = useState(false);
-  const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
   const [isFullscreenView, setIsFullscreenView] = useState(false);
+
+  // Settings, URL persistence, and export triggers
+  const {
+    url,
+    isEditing,
+    setIsEditing,
+    editUrl,
+    setEditUrl,
+    handleSave,
+    isExporting,
+    exportStatusMessage,
+    handleTriggerReExport,
+    getCleanUrl,
+    fallbackSvg,
+    cacheBuster,
+    setCacheBuster,
+  } = useLayoutTabSettings({ activeStore, locFilterStr });
 
   // Search Unit functionality next to Trigger Export
   const [unitSearchInput, setUnitSearchInput] = useState('');
@@ -296,13 +328,17 @@ export function useLayoutTabData({
 
   const getAllStoreUnits = useDataStore((state) => state.getAllStoreUnits);
 
-  // Aggregate all known units in active store for rapid autocomplete suggestions
+  // Lazy autocomplete suggestions: ONLY compute when user opens or types into search box
   const unitSuggestions = useMemo(() => {
+    if (!showSuggestions && !unitSearchInput.trim()) {
+      return [];
+    }
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
     return buildUnitSuggestions(storeUnits, projects, activeStore, availableLocations, isAdmin);
-  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin]);
+  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin, showSuggestions, unitSearchInput]);
 
   const filteredUnitSuggestions = useMemo(() => {
+    if (!unitSearchInput.trim()) return [];
     const currentLoc = globalLocationFilter[0] || '';
     return scoreAndFilterUnitSuggestions(unitSuggestions, unitSearchInput, currentLoc);
   }, [unitSuggestions, unitSearchInput, globalLocationFilter]);
@@ -340,126 +376,6 @@ export function useLayoutTabData({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
-
-  // Listen to layout settings & triggers from Firestore
-  useEffect(() => {
-    usePerformanceStore.getState().registerListener('taka_settings/layout');
-    usePerformanceStore.getState().registerListener('taka_settings/layout_trigger');
-
-    const unsubLayout = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout'), (docSnap) => {
-      usePerformanceStore.getState().trackSnapshot('taka_settings/layout', docSnap);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setLayoutSettings(data);
-      }
-    }, (error) => {
-      console.error("Error listening to layout settings", error);
-    });
-
-    const unsubTrigger = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout_trigger'), (docSnap) => {
-      usePerformanceStore.getState().trackSnapshot('taka_settings/layout_trigger', docSnap);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.is_ready_to_export === false) {
-          setIsExporting(false);
-          if (data.export_completed_at) {
-            setCacheBuster(data.export_completed_at);
-          }
-        } else if (data.is_ready_to_export === true) {
-          if (data.requested_at && Date.now() - data.requested_at < 15000) {
-            setIsExporting(true);
-          } else {
-            setIsExporting(false);
-          }
-        }
-      }
-    }, (error) => {
-      console.error("Error listening to layout_trigger", error);
-    });
-
-    return () => {
-      unsubLayout();
-      unsubTrigger();
-      usePerformanceStore.getState().unregisterListener('taka_settings/layout');
-      usePerformanceStore.getState().unregisterListener('taka_settings/layout_trigger');
-    };
-  }, []);
-
-  // Synchronize URL when docKey, layoutSettings, or activeStore changes
-  useEffect(() => {
-    if (layoutSettings[docKey] && isValidUrl(layoutSettings[docKey])) {
-      setUrl(layoutSettings[docKey]);
-    } else if (layoutSettings[`url_${activeStore}`] && isValidUrl(layoutSettings[`url_${activeStore}`])) {
-      setUrl(layoutSettings[`url_${activeStore}`]);
-    } else {
-      setUrl('');
-    }
-  }, [docKey, layoutSettings, activeStore]);
-
-  const [exportStatusMessage, setExportStatusMessage] = useState<string>('');
-
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    if (isExporting) {
-      timeoutId = setTimeout(() => {
-        setIsExporting(false);
-        setExportStatusMessage('');
-      }, 30000);
-    }
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [isExporting]);
-
-  const handleSave = async () => {
-    try {
-      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout');
-      const updates: Record<string, any> = { [docKey]: editUrl };
-      setDoc(docRef, updates, { merge: true });
-      setUrl(editUrl);
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Error saving layout URL", error);
-    }
-  };
-
-  const handleTriggerReExport = async () => {
-    if (isExporting) return;
-    try {
-      setIsExporting(true);
-      setExportStatusMessage('Bước 1/4: Đang tải dữ liệu từ Cloudflare R2...');
-      const targetStore = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-      
-      const res = await executeTriggerExportProcess(targetStore, (status) => {
-        setExportStatusMessage(status);
-      });
-
-      setCacheBuster(Date.now());
-      setIsExporting(false);
-      setExportStatusMessage('');
-      alert(`✅ ${res.message}`);
-    } catch (error: any) {
-      console.error("Error triggering layout export", error);
-      setIsExporting(false);
-      setExportStatusMessage('');
-      alert(`⚠️ Lỗi khi Trigger Export:\n${error?.message || error}`);
-    }
-  };
-
-  const getCleanUrl = useCallback((inputUrl: string | undefined | null) => {
-    if (!inputUrl) return undefined;
-    let cleanUrl = inputUrl;
-    if (cleanUrl.includes('/view')) {
-      cleanUrl = cleanUrl.replace('/view', '/preview');
-    }
-    if (cleanUrl) {
-      const separator = cleanUrl.includes('?') ? '&' : '?';
-      return `${cleanUrl}${separator}t=${cacheBuster}`;
-    }
-    return undefined;
-  }, [cacheBuster]);
-
-  const fallbackSvg = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%2394a3b8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
 
   return {
     allowedStores, activeStore, setGlobalStoreFilter,
