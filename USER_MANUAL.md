@@ -1238,17 +1238,25 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Hệ thống sẽ tự động gửi gói tin kiểm tra và phản hồi tức thời: Nếu thành công, bạn có thể an tâm bấm "Save & Upload"; nếu còn thiếu CORS hoặc sai quyền token, hệ thống sẽ chỉ rõ nguyên nhân để bạn xử lý ngay.
 
 6. **Chế Độ Xem Mặt Bằng Trực Tiếp (Live Layout Viewer - Tab Layout)**:
-   - **Kiến Trúc Module Hóa Chuẩn Enterprise (Modular Architecture & Cap < 500 lines)**:
-     - Toàn bộ phân hệ `LiveLayoutViewer` đã được chuẩn hóa và phân tách thành các submodule chuyên biệt (< 500 dòng/file theo quy định AGENTS.md), bảo toàn nguyên vẹn 100% logic tính toán, hiệu năng và trải nghiệm UI/UX:
-       + `LiveLayoutViewer.tsx`: Container Orchestrator điều phối kết nối và tải cấu hình R2 (100 dòng).
-       + `LiveCanvas.tsx`: Điều phối bố cục giao diện tổng thể và gắn kết các thanh công cụ, modal nổi (432 dòng).
-       + `useLayoutFloorData.ts`: Quản lý tải và đồng bộ phiên bản mặt bằng, khử trùng lặp hình khối (416 dòng).
-       + `useLayoutAggregates.ts`: Xử lý phân quyền RBAC, so khớp dự án và lọc gian hàng (358 dòng).
-       + `layoutDataAggregator.ts`: Động cơ tổng hợp dữ liệu tài chính, cảnh báo và tiến độ dự án (384 dòng).
-       + `useLayoutGestures.ts`: Xử lý quán tính mượt mà (Kinetic Inertia), thu phóng bánh xe chuột và cảm ứng 2 ngón (335 dòng).
-       + `useLayoutStageInteractions.ts`: Xử lý tiêu điểm gian hàng, bảng thông tin nổi (Tooltip) và phím tắt (491 dòng).
-       + `layoutStageUtils.ts`: Tiện ích tính toán tọa độ trọng tâm và xuất ảnh sắc nét cao (253 dòng).
-       + `LayoutCanvasViewport.tsx`: Lớp kết xuất đồ họa Konva Stage và Canvas Viewport (330 dòng).
+   - **Kiến Trúc Module Hóa Toàn Diện Chuẩn Enterprise (Modular Architecture & Cap < 500 lines)**:
+     - Toàn bộ phân hệ Tab Layout từ tệp điều phối chính đến phần lõi canvas đã được chuẩn hóa và phân tách thành các submodule chuyên biệt (tất cả đều < 500 dòng/file theo quy định AGENTS.md), bảo toàn nguyên vẹn 100% logic tính toán, hiệu năng và trải nghiệm UI/UX:
+       + **Phân hệ Vỏ Điều Phối (`LayoutTab.tsx` - từ 1.418 dòng giảm còn 166 dòng)**:
+         * `LayoutTab.tsx`: Container Orchestrator tối giản, điều phối các luồng dữ liệu cấp cao (166 dòng).
+         * `useLayoutTabData.ts`: Hook chuyên trách quản lý bộ lọc Store, Tầng, Năm, đồng bộ URL và quyền truy cập (477 dòng).
+         * `LayoutTabFilterToolbar.tsx`: Thanh công cụ lọc thống nhất, chuyển đổi chế độ Live/Static, tìm kiếm căn hộ (361 dòng).
+         * `LayoutTabFullscreenView.tsx`: Giao diện toàn màn hình với cử chỉ cảm ứng vuốt để đóng (swipe-to-dismiss) và pinch-to-zoom (317 dòng).
+         * `LayoutTabStaticViewer.tsx`: Khung xem bản vẽ tĩnh dự phòng với tính năng pan, zoom và nhúng iframe (116 dòng).
+         * `layoutTabSearchUtils.ts`: Tiện ích sắp xếp thứ tự tầng và thuật toán chấm điểm gợi ý căn hộ thông minh (294 dòng).
+       + **Phân hệ Lõi Bản Đồ Trực Tiếp (`LiveLayoutViewer.tsx` - từ 2.767 dòng)**:
+         * `LiveLayoutViewer.tsx`: Container kết nối phân quyền và cấu hình R2 (100 dòng).
+         * `LiveCanvas.tsx`: Điều phối Canvas chính, thanh công cụ phụ và modal chú giải (419 dòng).
+         * `useLayoutFloorData.ts`: Quản lý tải và đồng bộ phiên bản mặt bằng, khử trùng lặp hình khối (419 dòng).
+         * `useLayoutAggregates.ts`: Xử lý phân quyền RBAC, so khớp dự án và lọc gian hàng (358 dòng).
+         * `layoutDataAggregator.ts`: Động cơ tổng hợp dữ liệu tài chính, cảnh báo và tiến độ dự án (384 dòng).
+         * `useLayoutGestures.ts`: Xử lý quán tính mượt mà (Kinetic Inertia), thu phóng bánh xe chuột và cảm ứng 2 ngón (335 dòng).
+         * `useLayoutStageInteractions.ts`: Xử lý tiêu điểm gian hàng, bảng thông tin nổi (Tooltip) và phím tắt (495 dòng).
+         * `layoutStageUtils.ts`: Tiện ích tính toán tọa độ trọng tâm và xuất ảnh sắc nét cao (297 dòng).
+         * `LayoutCanvasViewport.tsx`: Lớp kết xuất đồ họa Konva Stage và Canvas Viewport (330 dòng).
    - **Đồng bộ tự động theo tầng & chi nhánh (Multi-Floor & Cloud R2 Partition Sync)**: Tại Tab Layout, khi chuyển sang chế độ xem Live View, hệ thống tự động quét toàn bộ các phân vùng (partitions) lưu trên Cloudflare R2 (`storeLocationData`) và bộ nhớ in-memory. Bản vẽ mặt bằng cùng toàn bộ hình khối vẽ (polygons, rects, circles) của mọi tầng (B2, B1, L1, L2, L3, L4, L5) được tự động tải và lập chỉ mục đầy đủ, sẵn sàng hiển thị ngay khi người dùng chuyển tầng.
    - **Tô màu chuẩn xác 100% như Tab Review**:
      - *Đồng nhất phong cách đồ họa*: Tích hợp cơ chế hiển thị chuẩn của ReviewTab với viền trắng tương phản cao (`stroke="#ffffff"`), độ dày viền thích ứng linh hoạt theo tỉ lệ thu phóng (`strokeWidth={2 / scale}`), và bóng đổ nổi khối (`shadowBlur={4}`, `shadowColor="rgba(0,0,0,0.5)"`).
