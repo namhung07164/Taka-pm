@@ -71,7 +71,7 @@ export function useDetailData({
   const wasSearchingRef = useRef<boolean>(false);
 
   useEffect(() => {
-    const isSearching = !!searchTerm.trim();
+    const isSearching = !!deferredSearchTerm.trim();
     if (!wasSearchingRef.current && isSearching) {
       if (statusFilter !== 'all') {
         lastSelectedStatusFilterRef.current = statusFilter;
@@ -86,7 +86,7 @@ export function useDetailData({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [searchTerm, globalLocationFilter, setGlobalLocationFilter, statusFilter]);
+  }, [deferredSearchTerm]);
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = useRef<string | null>(null);
@@ -122,60 +122,64 @@ export function useDetailData({
     getProjectInfo,
   } = useDetailProjectInfo({ projects, tasks });
 
-  // Auto-jump to matched project location(s) when searching
+  // Auto-jump to matched project location(s) when searching (Debounced)
   useEffect(() => {
-    const term = searchTerm.trim();
+    const term = deferredSearchTerm.trim();
     if (!term) return;
 
-    const matchedProjects = projects.filter(p => {
-      const pYear = p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null);
-      if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-      if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+    const timer = setTimeout(() => {
+      const matchedProjects = projects.filter(p => {
+        const pYear = p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null);
+        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+        if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
 
-      const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
-      const isMatch = matchesAdvancedSearch(
-        term,
-        [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
-        [],
-        (tLower) => {
-          const summariesMatch = p.taskSummaries?.some(ts =>
-            String(ts.name || "").toLowerCase().includes(tLower)
-          ) || false;
-          const taskMatches = groupTasks.some((t, idx) => {
-            const taskFields = [
-              t.taskCodePhu,
-              `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-              t.name,
-              t.duration,
-              t.start,
-              t.finish,
-              t.party,
-              formatDisplayDateMain(t.start),
-              formatDisplayDateTime(t.start),
-              formatDisplayDateMain(t.finish),
-              formatDisplayDateTime(t.finish)
-            ];
-            const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
-            const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
-            return fieldMatch || notesMatch;
-          });
-          return summariesMatch || taskMatches;
-        }
+        const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+        const isMatch = matchesAdvancedSearch(
+          term,
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
+          [],
+          (tLower) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(tLower)
+            ) || false;
+            const taskMatches = groupTasks.some((t, idx) => {
+              const taskFields = [
+                t.taskCodePhu,
+                `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                t.name,
+                t.duration,
+                t.start,
+                t.finish,
+                t.party,
+                formatDisplayDateMain(t.start),
+                formatDisplayDateTime(t.start),
+                formatDisplayDateMain(t.finish),
+                formatDisplayDateTime(t.finish)
+              ];
+              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
+              return fieldMatch || notesMatch;
+            });
+            return summariesMatch || taskMatches;
+          }
+        );
+        return isMatch;
+      });
+
+      const matchedLocations = Array.from(
+        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
       );
-      return isMatch;
-    });
-
-    const matchedLocations = Array.from(
-      new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
-    );
-    if (matchedLocations.length > 0) {
-      const currentLocs = globalLocationFilter || [];
-      const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
-      if (!isSame) {
-        setGlobalLocationFilter(matchedLocations);
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
       }
-    }
-  }, [searchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [deferredSearchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const delegationGroupByParentKey = useMemo(() => {
     const map = new Map<string, DelegationGroup>();

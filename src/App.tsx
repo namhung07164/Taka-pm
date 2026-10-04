@@ -1078,6 +1078,7 @@ export default function App() {
       case "detail": {
         if (effectiveFilterCode) {
           setDetailTabFilterCode(effectiveFilterCode);
+          safeSetItemSession("taka_detail_search", effectiveFilterCode);
         } else {
           setDetailTabFilterCode("");
         }
@@ -1087,6 +1088,7 @@ export default function App() {
         if (task?.id) {
           setDetailTabFocusTaskId(task.id);
         }
+        useAppStore.getState().setIsTasksRequested(true);
         handleTabChange("detail");
         break;
       }

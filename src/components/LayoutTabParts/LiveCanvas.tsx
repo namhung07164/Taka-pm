@@ -334,16 +334,13 @@ export const LiveCanvas = React.memo(function LiveCanvas({
               }
             }}
             onOpenMiniGantt={(project) => {
-              stageInteractions.isPinnedRef.current = true;
+              stageInteractions.isPinnedRef.current = false;
+              stageInteractions.setHoverInfo(null);
               setMiniGanttProject(project);
             }}
             onEditProject={(project, _isReadOnly, tab) => {
-              if (tab === 'chat') {
-                stageInteractions.isPinnedRef.current = true;
-              } else {
-                stageInteractions.isPinnedRef.current = false;
-                stageInteractions.setHoverInfo(null);
-              }
+              stageInteractions.isPinnedRef.current = false;
+              stageInteractions.setHoverInfo(null);
               setEditingProject(project);
               setModalInitialTab(tab || 'details');
               setIsProjectModalOpen(true);
