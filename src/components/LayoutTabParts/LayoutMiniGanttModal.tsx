@@ -15,6 +15,7 @@ import { cn, parseDateTime, getTaskStatus } from '../../lib/utils';
 import { sortGroupTasks, extractSubtaskIndex } from '../../lib/ganttUtils';
 import { QuickNavButton } from '../QuickNavButton';
 import { getZIndexClass, useOverlayStack } from '../../lib/zIndexManager';
+import { safeSetItemLocal, safeSetItemSession } from '../../lib/storage';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -322,13 +323,46 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
   const storeDisplay = (project.store || 'HCM').toUpperCase();
   const isHcm = storeDisplay === 'HCM';
 
-  // Navigate to full Gantt Tab
+  // Navigate to full Gantt Tab (matching Quick Navigation 100%)
   const handleOpenFullGantt = () => {
+    // 1. Sync Year filter
+    const yearVal = project.year;
+    if (yearVal) {
+      useAppStore.getState().setGlobalYearFilter(String(yearVal));
+    } else {
+      useAppStore.getState().setGlobalYearFilter("all");
+    }
+
+    // 2. Sync Store filter
+    const storeVal = project.store;
+    const currentUser = useAppStore.getState().currentUser;
+    if (storeVal) {
+      useAppStore.getState().setGlobalStoreFilter(storeVal);
+      if (currentUser?.id) {
+        safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(storeVal));
+      }
+    } else {
+      useAppStore.getState().setGlobalStoreFilter("all");
+      if (currentUser?.id) {
+        safeSetItemLocal(`taka_store_filter_${currentUser.id}`, "all");
+      }
+    }
+
+    // 3. Set search query filter in Gantt
+    if (project.code) {
+      safeSetItemSession("taka_gantt_search", project.code);
+    }
+
+    // 4. Expand project in Gantt and request tasks
     const currentExpanded = useAppStore.getState().expandedProjectIds;
     if (project.id && !currentExpanded.includes(project.id)) {
       useAppStore.getState().setExpandedProjectIds([...currentExpanded, project.id]);
     }
     useAppStore.getState().setIsTasksRequested(true);
+
+    // 5. Trigger Gantt Today scroll and tab switch
+    safeSetItemSession("taka_gantt_trigger_today", "true");
+    useAppStore.getState().triggerGanttToday();
     setActiveTab('gantt');
     onClose();
   };
