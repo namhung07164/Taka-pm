@@ -346,8 +346,10 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
           getBarColor={getBarColor}
         />
         <GanttBaseline
-          startStr={p.baselineStart}
-          endStr={p.baselineFinish}
+          baselineStart={p.baselineStart || (p as any).baseStart}
+          baselineFinish={p.baselineFinish || (p as any).baseFinish}
+          startStr={p.computedTakStart || p.start}
+          endStr={p.computedTakCompl || p.opening || p.handover}
           type="project"
           startDate={startDate}
           dayWidth={dayWidth}

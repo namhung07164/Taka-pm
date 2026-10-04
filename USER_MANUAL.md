@@ -1570,6 +1570,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      - Khi mở rộng bảng hình ảnh trong Tooltip gian hàng trên màn hình di động, bảng Tooltip tự động đẩy vị trí mép trên (`top = safeTop`) lên ngay sát dưới thanh điều hướng chính.
      - Tối ưu kích thước xem trước hình ảnh ở mức vừa vặn (`max-h-[190px]`), giúp toàn bộ khung thông tin và hình ảnh nằm gọn gàng phía trên nút Menu điều hướng (`≡ Menu`), tuyệt đối không bị che khuất hay chìm xuống dưới mép màn hình.
 
+34. **Vẽ Thanh Baseline Kế Hoạch Chuẩn Trên Sơ Đồ Gantt (Gantt Baseline Bar Rendering)**:
+   - **Định Vị Đường Baseline Chính Xác**:
+     - Trên biểu đồ Gantt, thanh Baseline (màu vàng/amber) được tính toán vẽ chính xác **từ ngày bắt đầu Baseline (`baselineStart` / `baseStart`) đến ngày kết thúc Baseline (`baselineFinish` / `baseFinish`)**.
+     - Đã sửa lại công thức tính độ rộng khoảng ngày (`widthDays = Math.max(getExactDays(s, e) + 1, 1)`), giúp thanh Baseline hiển thị trải dài khớp 100% với khoảng thời gian kế hoạch chuẩn, hỗ trợ xem so sánh trực quan giữa tiến độ Baseline và tiến độ thực tế (Actual).
+
+
 
 
 

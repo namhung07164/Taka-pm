@@ -238,15 +238,15 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
 
       {/* Right Timeline Area */}
       <div className="flex-1 relative h-full flex items-center">
-        {/* Baseline Bar (if task has baseline) */}
-        {t.baselineStart && t.baselineFinish && (
-          <GanttBaseline
-            baselineStart={t.baselineStart}
-            baselineFinish={t.baselineFinish}
-            startDate={startDate}
-            dayWidth={dayWidth}
-          />
-        )}
+        {/* Baseline Bar (from baselineStart/baseStart or plan start to baselineFinish/baseFinish or plan finish) */}
+        <GanttBaseline
+          baselineStart={t.baselineStart || (t as any).baseStart}
+          baselineFinish={t.baselineFinish || (t as any).baseFinish}
+          startStr={t.start}
+          endStr={t.finish}
+          startDate={startDate}
+          dayWidth={dayWidth}
+        />
 
         {/* Task Main Gantt Bar */}
         <GanttBar
