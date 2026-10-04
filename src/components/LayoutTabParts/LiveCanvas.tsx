@@ -6,9 +6,6 @@ import { LayoutPrintLegendOverlay } from './LayoutPrintLegendOverlay';
 import { LayoutFocusBanner } from './LayoutFocusBanner';
 import { LayoutFloorVersionSelector } from './LayoutFloorVersionSelector';
 import { LayoutZoomControls } from './LayoutZoomControls';
-import { LayoutColorLegendBar } from './LayoutColorLegendBar';
-import { LayoutBottomActionBar } from './LayoutBottomActionBar';
-import { LayoutColorLegendModal } from './LayoutColorLegendModal';
 import { LayoutEditModeModal } from './LayoutEditModeModal';
 import { LayoutCanvasViewport } from './LayoutCanvasViewport';
 import { useLayoutFloorData } from './useLayoutFloorData';
@@ -64,8 +61,6 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
   const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [showLegendModal, setShowLegendModal] = useState(false);
-  const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(false);
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -255,17 +250,6 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         onFitToScreen={() => stageInteractions.fitToScreen(true)}
       />
 
-      {/* iOS Floating Color Legend Bar - Hidden on mobile screens */}
-      <LayoutColorLegendBar
-        layoutTooltipVisibility={layoutTooltipVisibility}
-        activeGroups={activeGroups}
-        selectedLegendGroupId={selectedLegendGroupId}
-        setSelectedLegendGroupId={setSelectedLegendGroupId}
-        setShowLegendModal={setShowLegendModal}
-        isLegendStripCollapsed={isLegendStripCollapsed}
-        setIsLegendStripCollapsed={setIsLegendStripCollapsed}
-      />
-
       {/* Active Alert Filter Banner */}
       {filterOnlyAlerts && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-red-600 text-white px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 hide-on-actual-print print:hidden">
@@ -280,26 +264,6 @@ export const LiveCanvas = React.memo(function LiveCanvas({
           </button>
         </div>
       )}
-
-      {/* Floating Bottom Action Buttons */}
-      <LayoutBottomActionBar
-        hoverInfo={stageInteractions.hoverInfo}
-        layoutTooltipVisibility={layoutTooltipVisibility}
-        activeGroups={activeGroups}
-        totalFloorAlerts={totalFloorAlerts}
-        filterOnlyAlerts={filterOnlyAlerts}
-        setFilterOnlyAlerts={setFilterOnlyAlerts}
-        onOpenLegendModal={() => setShowLegendModal(true)}
-      />
-
-      {/* Full Color Legend Modal / Drawer (iOS friendly) */}
-      <LayoutColorLegendModal
-        showLegendModal={showLegendModal}
-        onClose={() => setShowLegendModal(false)}
-        activeGroups={activeGroups}
-        selectedLegendGroupId={selectedLegendGroupId}
-        setSelectedLegendGroupId={setSelectedLegendGroupId}
-      />
 
       {/* Floating Edit Mode Drawer / Modal */}
       <LayoutEditModeModal

@@ -279,7 +279,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
               pendingWheelDeltaRef.current = 0;
 
               const oldScale = currentStage.scaleX();
-              const zoomFactor = Math.exp(-deltaY * 0.002);
+              const zoomFactor = Math.exp(-deltaY * 0.0008);
               const newScale = Math.max(0.04, Math.min(oldScale * zoomFactor, 20));
 
               const mousePointTo = {

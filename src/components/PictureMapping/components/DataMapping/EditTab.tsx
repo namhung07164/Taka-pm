@@ -844,7 +844,6 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
-    const scaleBy = 1.1;
     const stage = e.target.getStage();
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
@@ -856,7 +855,10 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       y: (pointer.y - stage.y()) / oldScale,
     };
 
-    const newScale = e.evt.deltaY < 0 ? Math.min(oldScale * scaleBy, 10) : Math.max(oldScale / scaleBy, 0.05);
+    // Smooth dampened zoom speed for desktop mouse wheels
+    const deltaY = e.evt.deltaY;
+    const zoomFactor = Math.exp(-deltaY * 0.0008);
+    const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
     setScale(newScale);
     setPosition({
       x: pointer.x - mousePointTo.x * newScale,

@@ -54,14 +54,7 @@ export const GanttTodayLine: React.FC<GanttTodayLineProps> = React.memo(({
     calculatedTodayLeft = diffDays * dayWidth;
   }
 
-  const leftPosition =
-    sideWidth +
-    (showStart ? startColWidth : 0) +
-    (showFinish ? finishColWidth : 0) +
-    (showParty ? partyColWidth : 0) +
-    (showDuration ? durationColWidth : 0) +
-    (showPredecessor ? predecessorColWidth : 0) +
-    (calculatedTodayLeft || 0);
+  const leftPosition = sideWidth + (calculatedTodayLeft || 0);
 
   const formattedDate = format(customToday, 'dd/MM/yyyy');
 
