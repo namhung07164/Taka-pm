@@ -22,9 +22,11 @@ export function DebouncedSearchInput({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [, startTransition] = useTransition();
 
-  // Sync external value changes into local state
+  const isFocusedRef = useRef(false);
+
+  // Sync external value changes into local state (only when not actively typing/focused)
   useEffect(() => {
-    if (value !== lastReportedValue.current) {
+    if (!isFocusedRef.current && value !== lastReportedValue.current) {
       setInnerValue(value || "");
       lastReportedValue.current = value || "";
     }
@@ -69,10 +71,19 @@ export function DebouncedSearchInput({
   return (
     <div className="relative w-full">
       <input
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        autoComplete="off"
+        enterKeyHint="search"
         {...props}
         className={props.className ? (props.className.includes('pr-') ? props.className.replace(/pr-\d+/, 'pr-10') : props.className + ' pr-10') : 'pr-10'}
         value={innerValue}
         onChange={(e) => setInnerValue(e.target.value)}
+        onFocus={(e) => {
+          isFocusedRef.current = true;
+          if (props.onFocus) props.onFocus(e);
+        }}
         onKeyDown={(e) => {
           if (props.onKeyDown) props.onKeyDown(e);
           if (e.key === 'Escape' && innerValue) {
@@ -80,16 +91,15 @@ export function DebouncedSearchInput({
             e.stopPropagation();
             setInnerValue("");
             commitSearch("");
-          } else if (triggerOnEnter && e.key === 'Enter') {
+          } else if (e.key === 'Enter') {
             e.preventDefault();
             commitSearch(innerValue);
           }
         }}
         onBlur={(e) => {
+          isFocusedRef.current = false;
           if (props.onBlur) props.onBlur(e);
-          if (triggerOnEnter) {
-            commitSearch(innerValue);
-          }
+          commitSearch(innerValue);
         }}
       />
       {innerValue && (

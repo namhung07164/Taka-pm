@@ -344,7 +344,7 @@ export function GanttToolbar({
         <DebouncedSearchInput
           value={searchTerm}
           onChange={setSearchTerm}
-          debounceMs={350}
+          debounceMs={500}
           placeholder="Search or ... ( + AND, , OR )"
           className="w-full bg-white dark:bg-[#161618] border border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-white placeholder-slate-400 text-xs rounded-lg pl-8 pr-8 py-1.5 outline-none shadow-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 h-8 font-medium"
         />
