@@ -6,6 +6,8 @@ import { LayoutPrintLegendOverlay } from './LayoutPrintLegendOverlay';
 import { LayoutFocusBanner } from './LayoutFocusBanner';
 import { LayoutFloorVersionSelector } from './LayoutFloorVersionSelector';
 import { LayoutZoomControls } from './LayoutZoomControls';
+import { LayoutColorLegendBar } from './LayoutColorLegendBar';
+import { LayoutColorLegendModal } from './LayoutColorLegendModal';
 import { LayoutEditModeModal } from './LayoutEditModeModal';
 import { LayoutCanvasViewport } from './LayoutCanvasViewport';
 import { useLayoutFloorData } from './useLayoutFloorData';
@@ -61,6 +63,8 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
   const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showLegendModal, setShowLegendModal] = useState(false);
+  const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(true);
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -264,6 +268,32 @@ export const LiveCanvas = React.memo(function LiveCanvas({
           </button>
         </div>
       )}
+
+      {/* Compact Color Legend Bar with Export Integration */}
+      <LayoutColorLegendBar
+        layoutTooltipVisibility={layoutTooltipVisibility}
+        activeGroups={activeGroups}
+        selectedLegendGroupId={selectedLegendGroupId}
+        setSelectedLegendGroupId={setSelectedLegendGroupId}
+        setShowLegendModal={setShowLegendModal}
+        isLegendStripCollapsed={isLegendStripCollapsed}
+        setIsLegendStripCollapsed={setIsLegendStripCollapsed}
+        canWrite={canWrite}
+        handleTriggerExport={handleTriggerExport}
+        isExporting={isExporting}
+        exportStatus={exportStatus}
+        handleExport={stageInteractions.handleExport}
+        setIsPrintPreview={setIsPrintPreview}
+      />
+
+      {/* Full Color Legend Modal / Drawer (iOS friendly) */}
+      <LayoutColorLegendModal
+        showLegendModal={showLegendModal}
+        onClose={() => setShowLegendModal(false)}
+        activeGroups={activeGroups}
+        selectedLegendGroupId={selectedLegendGroupId}
+        setSelectedLegendGroupId={setSelectedLegendGroupId}
+      />
 
       {/* Floating Edit Mode Drawer / Modal */}
       <LayoutEditModeModal

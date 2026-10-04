@@ -254,7 +254,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
             minScale={0.5}
             maxScale={6}
             centerOnInit
-            wheel={{ step: 0.1 }}
+            wheel={{ step: 0.015 }}
             doubleClick={{ mode: 'toggle' }}
           >
             <TransformComponent

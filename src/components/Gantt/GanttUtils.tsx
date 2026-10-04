@@ -103,6 +103,7 @@ export const positionTooltip = (
     if (y < 0) x = 10;
   }
 
+  tooltip.style.zIndex = '999999';
   tooltip.style.left = `${x}px`;
   tooltip.style.top = `${y}px`;
 };

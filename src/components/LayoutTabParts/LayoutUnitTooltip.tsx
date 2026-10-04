@@ -250,6 +250,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       }
 
       el.style.position = 'fixed';
+      el.style.zIndex = '999999';
       el.style.left = `${left}px`;
       el.style.right = `${right}px`;
       el.style.top = `${Math.max(safeTop, top)}px`;
@@ -295,6 +296,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       }
 
       el.style.position = 'fixed';
+      el.style.zIndex = '999999';
       el.style.left = `${left}px`;
       el.style.right = 'auto';
       el.style.top = `${top}px`;
@@ -778,11 +780,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     area: true,
   };
 
-  return (
+  return createPortal(
     <div 
       ref={tooltipRef}
       className={cn(
-        "fixed z-[120] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
+        "fixed z-[100000] pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
         "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
         "overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y"
       )}
@@ -1356,6 +1358,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           copiedLink={copiedLink}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 };

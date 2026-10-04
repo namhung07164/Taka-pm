@@ -71,7 +71,7 @@ export function GanttBarTooltip({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onClick={(e) => e.stopPropagation()}
-      className={`fixed z-[9999] bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs rounded-xl shadow-2xl p-3 max-w-sm border backdrop-blur-md transition-all duration-150 ${
+      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs rounded-xl shadow-2xl p-3 max-w-sm border backdrop-blur-md transition-all duration-150 ${
         isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
       }`}
       style={{

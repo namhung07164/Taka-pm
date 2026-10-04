@@ -123,24 +123,35 @@ export function computeTooltipPosition(
   const isMobile = viewportWidth < 640;
   const pad = 12;
   const bottomMargin = isMobile ? 84 : 72;
-  const topMargin = isMobile ? 64 : 16;
+
+  let safeTop = isMobile ? 120 : 100;
+  if (typeof document !== 'undefined') {
+    const headerEl = document.querySelector('header') || document.querySelector('.sticky.top-0');
+    if (headerEl) {
+      const hRect = headerEl.getBoundingClientRect();
+      if (hRect.bottom > 0) {
+        safeTop = Math.max(safeTop, hRect.bottom + 8);
+      }
+    }
+  }
 
   if (isMobile) {
     let top: number;
     if (clientY > viewportHeight * 0.52) {
-      top = topMargin;
+      top = safeTop;
     } else {
-      top = Math.max(topMargin, viewportHeight - tooltipHeight - bottomMargin);
+      top = Math.max(safeTop, viewportHeight - tooltipHeight - bottomMargin);
     }
 
     return {
       position: 'fixed' as const,
+      zIndex: 999999,
       left: `${pad}px`,
       right: `${pad}px`,
       top: `${top}px`,
       width: `calc(100vw - ${pad * 2}px)`,
       maxWidth: '420px',
-      maxHeight: `calc(${viewportHeight - topMargin - bottomMargin}px)`,
+      maxHeight: `calc(${viewportHeight - safeTop - bottomMargin}px)`,
       margin: '0 auto',
       transform: 'none',
     };
@@ -156,16 +167,17 @@ export function computeTooltipPosition(
   if (top + tooltipHeight > viewportHeight - bottomMargin) {
     top = clientY - tooltipHeight - 16;
   }
-  top = Math.max(topMargin, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
+  top = Math.max(safeTop, Math.min(top, viewportHeight - tooltipHeight - bottomMargin));
 
   return {
     position: 'fixed' as const,
+    zIndex: 999999,
     left: `${left}px`,
     right: 'auto',
     top: `${top}px`,
     width: '350px',
     maxWidth: `calc(100vw - ${pad * 2}px)`,
-    maxHeight: `calc(${viewportHeight - topMargin - bottomMargin}px)`,
+    maxHeight: `calc(${viewportHeight - safeTop - bottomMargin}px)`,
     margin: '0',
     transform: 'none',
   };
