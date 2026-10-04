@@ -190,7 +190,10 @@ export const DetailMobileView = memo(function DetailMobileView({
             : (p.taskCount !== undefined 
                 ? p.taskCount 
                 : (p.taskSummaries?.length ?? 0));
-          const isExpanded = expandedCodes.includes(String(p.id!));
+          const isExpanded =
+            expandedCodes.includes(String(p.id || '')) ||
+            (p.code ? expandedCodes.includes(p.code) : false) ||
+            (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
 
           const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
           const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);

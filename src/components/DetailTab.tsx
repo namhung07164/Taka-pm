@@ -287,21 +287,37 @@ export function DetailTab({
     }
   }, [projects.length, tasks.length, delegationGroups.length]);
 
-  // Initial Filter Code Scrolling
+  // Initial Filter Code Scrolling & Auto-Expansion
   const lastProcessedFilterCodeRef = useRef<string | null>(null);
   useEffect(() => {
     if (initialFilterCode && initialFilterCode !== lastProcessedFilterCodeRef.current) {
       lastProcessedFilterCodeRef.current = initialFilterCode;
       setSearchTerm(initialFilterCode);
       setStatusFilter('all');
+
+      const filterUpper = String(initialFilterCode).trim().toUpperCase();
       const matchedProj = projects.find(
-        (p) => String(p.code || "").trim().toUpperCase() === String(initialFilterCode).trim().toUpperCase()
+        (p) => String(p.code || "").trim().toUpperCase() === filterUpper
       ) || projects.find(
-        (p) => p.code && String(initialFilterCode).trim().toUpperCase().startsWith(String(p.code).trim().toUpperCase() + '-')
+        (p) => p.code && filterUpper.startsWith(String(p.code).trim().toUpperCase() + '-')
+      ) || projects.find(
+        (p) => p.code && filterUpper.includes(String(p.code).trim().toUpperCase())
       );
-      if (matchedProj && matchedProj.id) {
-        setExpandedCodes([...new Set([...expandedCodes, matchedProj.id])]);
+
+      if (matchedProj) {
+        const keysToExpand = [
+          matchedProj.id,
+          matchedProj.code,
+          matchedProj.no !== undefined && matchedProj.no !== null ? String(matchedProj.no) : '',
+          filterUpper
+        ].filter(Boolean) as string[];
+
+        const currentExpanded = useAppStore.getState().expandedProjectIds;
+        setExpandedCodes([...new Set([...currentExpanded, ...keysToExpand])]);
       }
+
+      useAppStore.getState().setIsTasksRequested(true);
+
       setTimeout(() => {
         const el =
           (matchedProj ? document.getElementById(`detail-project-${matchedProj.no ?? matchedProj.code}`) : null) ||
@@ -309,12 +325,12 @@ export function DetailTab({
         if (el && el instanceof HTMLElement) {
           scrollToElement(el);
         }
-      }, 500);
+      }, 300);
     } else if (!initialFilterCode && lastProcessedFilterCodeRef.current !== null) {
       lastProcessedFilterCodeRef.current = null;
       if (!initialFocusTaskId) setSearchTerm('');
     }
-  }, [initialFilterCode, initialFocusTaskId, projects, expandedCodes, setExpandedCodes, setSearchTerm, setStatusFilter]);
+  }, [initialFilterCode, initialFocusTaskId, projects, setExpandedCodes, setSearchTerm, setStatusFilter]);
 
   const toggleGroup = useCallback((id: string) => {
     toggleProjectExpansion(id);

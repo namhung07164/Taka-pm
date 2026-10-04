@@ -82,7 +82,10 @@ export function useDetailFlatRows({
         return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }) : sortedTasks;
 
-      const isExpanded = expandedCodes.includes(String(p.id!));
+      const isExpanded =
+        expandedCodes.includes(String(p.id || '')) ||
+        (p.code ? expandedCodes.includes(p.code) : false) ||
+        (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
       const isProjDelegationOn = !!p.delegation || delegationGroups.some(g => g.projectCode === p.code);
 
       const isProjectMatch = lowerSearchTerm
