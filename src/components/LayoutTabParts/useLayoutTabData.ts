@@ -81,37 +81,42 @@ export function useLayoutTabData({
     }
   }, [getAllStoreVersions, activeStore, storeLocationData, mapVersions]);
 
-  // Initial params sync effect - ONLY run once on mount or when explicit props change!
+  // Initial params sync effect - runs on mount or when props / layoutTabFilters change!
   const hasSyncedInitialRef = useRef(false);
   const lastInitialPropKeyRef = useRef('');
 
   useEffect(() => {
-    const propKey = `${propInitialStore || ''}_${propInitialLocation || ''}_${propInitialProjectCode || ''}`;
+    const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
+    const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
+    const activeCodeParam = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
+
+    const propKey = `${activeStoreParam}_${activeLocParam}_${activeCodeParam}`;
     if (hasSyncedInitialRef.current && propKey === lastInitialPropKeyRef.current) {
       return;
     }
     hasSyncedInitialRef.current = true;
     lastInitialPropKeyRef.current = propKey;
 
-    if (initialStore && initialStore !== 'all') {
-      setGlobalStoreFilter(initialStore);
+    if (activeStoreParam && activeStoreParam !== 'all') {
+      setGlobalStoreFilter(activeStoreParam);
     }
     
-    if (initialLocation && initialLocation !== 'all') {
+    if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
       setIsLiveMapMode(true);
+      setGlobalLocationFilter([activeLocParam.toUpperCase().trim()]);
     }
     
-    if (initialProjectCode) {
-      setProjectCodeFilter(initialProjectCode);
-      setUnitSearchInput(initialProjectCode);
-      setTargetUnitSearch(initialProjectCode);
+    if (activeCodeParam) {
+      setProjectCodeFilter(activeCodeParam);
+      setUnitSearchInput(activeCodeParam);
+      setTargetUnitSearch(activeCodeParam);
       setIsLiveMapMode(true);
     }
 
     const unitInfo = useDataStore.getState().unitInfo || [];
     const targetLoc = resolveInitialTargetLocation(
-      initialLocation, 
-      initialProjectCode, 
+      activeLocParam, 
+      activeCodeParam, 
       projects, 
       tasks, 
       allStoreVersions, 
@@ -121,7 +126,7 @@ export function useLayoutTabData({
     if (targetLoc && targetLoc.toLowerCase() !== 'all') {
       setGlobalLocationFilter([targetLoc]);
     }
-  }, [propInitialStore, propInitialLocation, propInitialProjectCode, initialStore, initialLocation, initialProjectCode, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
+  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   // Available years: based on user permissions, projects, tasks, and store versions
   const prevAvailableYearsRef = useRef<string[]>([]);
@@ -280,16 +285,42 @@ export function useLayoutTabData({
   useEffect(() => {
     if (availableLocations.length > 0) {
       const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
+      if (!currentLoc || currentLoc === 'ALL') {
+        const initialTargetLoc = resolveInitialTargetLocation(
+          propInitialLocation || layoutTabFilters?.location || '', 
+          propInitialProjectCode || layoutTabFilters?.projectCode || '', 
+          projects, 
+          tasks, 
+          allStoreVersions, 
+          useDataStore.getState().unitInfo || []
+        );
+        if (initialTargetLoc && availableLocations.includes(initialTargetLoc)) {
+          setGlobalLocationFilter([initialTargetLoc]);
+          return;
+        }
+      }
       const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
       if (matched) {
         if (globalLocationFilter[0] !== matched) {
           setGlobalLocationFilter([matched]);
         }
       } else {
-        setGlobalLocationFilter([availableLocations[0]]);
+        const initialTargetLoc = resolveInitialTargetLocation(
+          propInitialLocation || layoutTabFilters?.location || '', 
+          propInitialProjectCode || layoutTabFilters?.projectCode || '', 
+          projects, 
+          tasks, 
+          allStoreVersions, 
+          useDataStore.getState().unitInfo || []
+        );
+        if (initialTargetLoc && availableLocations.includes(initialTargetLoc)) {
+          setGlobalLocationFilter([initialTargetLoc]);
+        } else {
+          setGlobalLocationFilter([availableLocations[0]]);
+        }
       }
     }
-  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter]);
+  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions]);
 
   const locFilterStr = useMemo(() => {
     const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();

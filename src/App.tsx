@@ -58,7 +58,7 @@ import { PrintOptionsPanel } from "./components/PrintOptionsPanel";
 import { Toast } from "./components/Toast";
 import { initAuth } from './lib/firebase';
 import { enrichProjects, calculateActiveNotifications, getUserAllowedStores } from "./lib/utils";
-import { findProjectLayoutUnit } from "./lib/layoutUnitFinder";
+import { findProjectLayoutUnit, extractFloorFromCodeOrName } from "./lib/layoutUnitFinder";
 import { undoManager, UndoAction } from "./lib/undoManager";
 import { useAppStore } from "./store/useAppStore";
 import { PrintFilterHeader } from "./components/PrintFilterHeader";
@@ -1012,7 +1012,11 @@ export default function App() {
     projectCode?: string,
     sourceTaskId?: string,
   ) => {
-    setLayoutTabFilters({ store, location, projectCode, sourceTaskId });
+    const rawLoc = (location && location !== 'all' && location !== 'ALL') ? location : (extractFloorFromCodeOrName(projectCode) || '');
+    if (rawLoc) {
+      useAppStore.getState().setGlobalLocationFilter([rawLoc]);
+    }
+    setLayoutTabFilters({ store, location: rawLoc || location, projectCode, sourceTaskId });
     handleTabChange("layout");
   };
 
@@ -1049,10 +1053,23 @@ export default function App() {
     // 3. Tab-specific search & filter synchronization
     switch (targetTab) {
       case "layout": {
+        const rawCode = p?.code || (p as any)?.unit || effectiveFilterCode || task?.projectCode || "";
+        const extractedFloor = extractFloorFromCodeOrName(rawCode) || 
+                               extractFloorFromCodeOrName((p as any)?.unit) || 
+                               extractFloorFromCodeOrName(p?.code) || 
+                               extractFloorFromCodeOrName(effectiveFilterCode);
+        const targetFloor = (p?.location && p.location !== 'all' && p.location !== 'ALL') 
+          ? p.location 
+          : (extractedFloor || "all");
+
+        if (targetFloor && targetFloor !== 'all' && targetFloor !== 'ALL') {
+          useAppStore.getState().setGlobalLocationFilter([targetFloor]);
+        }
+
         setLayoutTabFilters({
           store: p?.store || task?.projectStore || "all",
-          location: p?.location || "all",
-          projectCode: p?.code || task?.projectCode || "",
+          location: targetFloor,
+          projectCode: rawCode,
         });
         handleTabChange("layout");
         break;

@@ -111,9 +111,8 @@ export function useLayoutStageInteractions({
     isPinnedRef.current = false;
     setHoverInfo(null);
 
-    onUnitSelected?.(targetUnit);
     return true;
-  }, [units, dimensions.width, dimensions.height, onUnitSelected]);
+  }, [units, dimensions.width, dimensions.height]);
 
   const updateAggregatedData = useCallback((data: Record<string, any>, restricted: Set<string>) => {
     aggregatedDataRef.current = data;
@@ -440,10 +439,11 @@ export function useLayoutStageInteractions({
     if (gestures.isInteractingRef.current || Boolean(miniGanttProject)) return;
     try {
       pinAndShowTooltip(unit, e.evt.clientX, e.evt.clientY);
+      onUnitSelected?.(unit);
     } catch (err) {
       console.error("Defensive Check: Error onClick unit in LiveLayoutViewer:", err, unit);
     }
-  }, [gestures.isInteractingRef, miniGanttProject, pinAndShowTooltip]);
+  }, [gestures.isInteractingRef, miniGanttProject, pinAndShowTooltip, onUnitSelected]);
 
   const handleTapUnit = useCallback((unit: any, e: any) => {
     if (gestures.isInteractingRef.current || Boolean(miniGanttProject)) return;
@@ -451,10 +451,11 @@ export function useLayoutStageInteractions({
       const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
       const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
       pinAndShowTooltip(unit, clientX, clientY);
+      onUnitSelected?.(unit);
     } catch (err) {
       console.error("Defensive Check: Error onTap unit in LiveLayoutViewer:", err, unit);
     }
-  }, [gestures.isInteractingRef, miniGanttProject, pinAndShowTooltip]);
+  }, [gestures.isInteractingRef, miniGanttProject, pinAndShowTooltip, onUnitSelected]);
 
   return {
     stageRef,

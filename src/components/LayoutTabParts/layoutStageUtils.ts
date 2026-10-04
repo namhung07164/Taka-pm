@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store/useAppStore';
+import { extractFloorFromCodeOrName } from './layoutTabSearchUtils';
 
 export interface UnitFocalPointResult {
   targetUnit: any;
@@ -14,20 +15,38 @@ export function calculateUnitFocalPoint(
   aggregatedData: Record<string, any>,
   restrictedProjectCodes: Set<string>
 ): UnitFocalPointResult | null {
-  if (!targetUnitOrName) return null;
+  if (!targetUnitOrName || !Array.isArray(units) || units.length === 0) return null;
 
   let targetUnit: any = null;
   if (typeof targetUnitOrName === 'object' && targetUnitOrName?.id) {
     targetUnit = targetUnitOrName;
   } else {
     const q = String(targetUnitOrName).toLowerCase().trim();
-    targetUnit = units.find((u: any) => 
-      (u.name || '').toLowerCase().trim() === q || 
-      String(u.id).toLowerCase() === q ||
-      (u.label && String(u.label).toLowerCase().trim() === q)
-    );
+    const qFloor = extractFloorFromCodeOrName(q);
+
+    const isDifferentFloor = (u: any) => {
+      if (!qFloor) return false;
+      const uFloor = extractFloorFromCodeOrName(u.name || u.label || u.id);
+      if (uFloor && uFloor.toUpperCase() !== qFloor.toUpperCase()) {
+        return true;
+      }
+      return false;
+    };
+
+    // 1. Direct exact match by unit name, id, or label
+    targetUnit = units.find((u: any) => {
+      if (isDifferentFloor(u)) return false;
+      return (
+        (u.name || '').toLowerCase().trim() === q || 
+        String(u.id).toLowerCase() === q ||
+        (u.label && String(u.label).toLowerCase().trim() === q)
+      );
+    });
+
+    // 2. Exact match in aggregated data (project code, brand name, unit, project name)
     if (!targetUnit) {
       targetUnit = units.find((u: any) => {
+        if (isDifferentFloor(u)) return false;
         const uName = (u.name || '').toLowerCase().trim();
         const d = aggregatedData[uName];
         if (!d) return false;
@@ -38,8 +57,9 @@ export function calculateUnitFocalPoint(
         return matchCode || matchName || matchBrand || matchUnit;
       });
     }
+
+    // 3. Direct store lookup fallback if aggregatedData not ready or project not yet linked in dataMap
     if (!targetUnit) {
-      // Direct store lookup fallback if aggregatedData not ready or project not yet linked in dataMap
       try {
         const globalProjects = (useAppStore.getState?.() as any)?.projects || [];
         const matchedProj = globalProjects.find((p: any) => 
@@ -57,37 +77,41 @@ export function calculateUnitFocalPoint(
           ].filter(Boolean).map((s: string) => String(s).toLowerCase().trim());
 
           targetUnit = units.find((u: any) => {
+            if (isDifferentFloor(u)) return false;
             const uName = (u.name || '').toLowerCase().trim();
-            return pCodes.includes(uName) || pCodes.some((pc: string) => uName.includes(pc) || pc.includes(uName));
+            const uId = String(u.id || '').toLowerCase().trim();
+            return pCodes.includes(uName) || pCodes.includes(uId);
           });
         }
       } catch {}
     }
+
+    // 4. Normalized exact match (without hyphens/dots/spaces)
     if (!targetUnit) {
-      const stem = q.replace(/[-_.#]\d+$/, '').trim();
-      if (stem && stem !== q) {
-        targetUnit = units.find((u: any) => 
-          (u.name || '').toLowerCase().trim() === stem || 
-          String(u.id).toLowerCase() === stem
-        );
+      const normQ = q.replace(/[-_.\s]/g, '');
+      if (normQ.length >= 2) {
+        targetUnit = units.find((u: any) => {
+          if (isDifferentFloor(u)) return false;
+          const normUName = (u.name || '').toLowerCase().trim().replace(/[-_.\s]/g, '');
+          const normUId = String(u.id || '').toLowerCase().trim().replace(/[-_.\s]/g, '');
+          return normUName === normQ || normUId === normQ;
+        });
       }
     }
-    if (!targetUnit) {
+
+    // 5. Prefix / Stem match ONLY if same floor and significant length
+    if (!targetUnit && q.length >= 3) {
       targetUnit = units.find((u: any) => {
+        if (isDifferentFloor(u)) return false;
         const uName = (u.name || '').toLowerCase().trim();
-        if (uName && (uName.includes(q) || q.includes(uName))) return true;
-        const d = aggregatedData[uName];
-        if (!d) return false;
-        return (d.projectName && d.projectName.toLowerCase().includes(q)) ||
-               (d.brandName && d.brandName.toLowerCase().includes(q)) ||
-               (d.appProjectCode && (d.appProjectCode.toLowerCase().includes(q) || q.includes(d.appProjectCode.toLowerCase())));
+        if (uName.length < 3) return false;
+        return (
+          uName.startsWith(q + '-') ||
+          uName.startsWith(q + '_') ||
+          q.startsWith(uName + '-') ||
+          q.startsWith(uName + '_')
+        );
       });
-    }
-    if (!targetUnit) {
-      targetUnit = units.find((u: any) => 
-        (u.name || '').toLowerCase().includes(q) ||
-        String(u.id).toLowerCase() === q
-      );
     }
   }
 
@@ -338,14 +362,27 @@ export function findUnitInOtherFloorVersions(q: string, availableStoreVersions: 
       (proj.name && String(proj.name).toLowerCase().trim() === qLower) ||
       ((proj as any).unit && String((proj as any).unit).toLowerCase().trim() === qLower)
     );
-    if (p?.location) {
-      const pLoc = String(p.location).trim().toUpperCase();
-      const verForLoc = availableStoreVersions.find((v: any) => 
-        String(v.location || '').trim().toUpperCase() === pLoc
-      );
-      if (verForLoc) return verForLoc;
+    if (p) {
+      const pFloor = (p.location && p.location !== 'all' && p.location !== 'ALL') ? p.location : ((p as any).floor || extractFloorFromCodeOrName(p.code) || extractFloorFromCodeOrName((p as any).unit));
+      if (pFloor && pFloor.toLowerCase() !== 'all') {
+        const pLoc = String(pFloor).trim().toUpperCase();
+        const verForLoc = availableStoreVersions.find((v: any) => 
+          String(v.location || '').trim().toUpperCase() === pLoc
+        );
+        if (verForLoc) return verForLoc;
+      }
     }
   } catch {}
+
+  // 3. Fallback: If q contains floor pattern (e.g. "L3-303-1" -> "L3")
+  const qFloor = extractFloorFromCodeOrName(q);
+  if (qFloor && qFloor.toLowerCase() !== 'all') {
+    const floorLoc = qFloor.toUpperCase();
+    const verForLoc = availableStoreVersions.find((v: any) => 
+      String(v.location || '').trim().toUpperCase() === floorLoc
+    );
+    if (verForLoc) return verForLoc;
+  }
 
   return null;
 }
