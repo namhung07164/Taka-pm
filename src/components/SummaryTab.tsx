@@ -8,7 +8,12 @@ import { Filter, BarChart3, TrendingUp, Wallet, Printer, LayoutDashboard, LineCh
 import { useLanguage } from '../lib/LanguageContext';
 import { MultiCheckboxSelect } from './MultiCheckboxSelect';
 import { useLocationOptions } from '../hooks/useLocationOptions';
-import { ExecutiveDashboard } from './ExecutiveDashboard';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ExecutiveDashboard = lazyWithRetry(
+  () => import('./ExecutiveDashboard').then(m => ({ default: m.ExecutiveDashboard })),
+  'ExecutiveDashboard'
+);
 
 interface SummaryTabProps {
 }
@@ -187,11 +192,23 @@ export function SummaryTab({}: SummaryTabProps) {
       </div>
 
       {activeSubTab === 'exec_dashboard' ? (
-        <ExecutiveDashboard
-          filteredProjects={filteredProjects}
-          globalYearFilter={globalYearFilter}
-          effectiveStore={effectiveStore}
-        />
+        <React.Suspense fallback={
+          <div className="flex-1 w-full p-6 animate-pulse space-y-4">
+            <div className="h-8 bg-slate-200 dark:bg-slate-800 rounded-lg w-1/3"></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="h-28 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+              <div className="h-28 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+              <div className="h-28 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+            </div>
+            <div className="h-72 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+          </div>
+        }>
+          <ExecutiveDashboard
+            filteredProjects={filteredProjects}
+            globalYearFilter={globalYearFilter}
+            effectiveStore={effectiveStore}
+          />
+        </React.Suspense>
       ) : (
         <>
           {/* Header & Filters Table Section */}

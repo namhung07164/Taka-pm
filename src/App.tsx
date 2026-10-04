@@ -32,23 +32,8 @@ import { Navigation } from "./components/Navigation";
 import { RibbonDisplayMenu } from "./components/RibbonDisplayMenu";
 import { lazyWithRetry } from "./lib/lazyWithRetry";
 import { TabErrorBoundary } from "./components/TabErrorBoundary";
-const GeneralTab = lazyWithRetry(() => import("./components/GeneralTab"), "GeneralTab");
-const SummaryTab = lazyWithRetry(() => import("./components/SummaryTab"), "SummaryTab");
-const LayoutTab = lazyWithRetry(() => import("./components/LayoutTab"), "LayoutTab");
-const DetailTab = lazyWithRetry(() => import("./components/DetailTab"), "DetailTab");
-const TaskDelegationTab = lazyWithRetry(() => import("./components/TaskDelegationTab"), "TaskDelegationTab");
-const DelegationCalendarTab = lazyWithRetry(() => import("./components/DelegationCalendarTab"), "DelegationCalendarTab");
-const CalendarTab = lazyWithRetry(() => import("./components/CalendarTab"), "CalendarTab");
+import { AppTabRouter } from "./components/AppTabRouter";
 const GanttTab = lazyWithRetry(() => import("./components/GanttTab"), "GanttTab");
-const BudgetTab = lazyWithRetry(() => import("./components/BudgetTab"), "BudgetTab");
-const CostTab = lazyWithRetry(() => import("./components/CostTab"), "CostTab");
-const AccControlTab = lazyWithRetry(() => import("./components/AccControlTab"), "AccControlTab");
-const CsvExportTab = lazyWithRetry(() => import("./components/CsvExportTab"), "CsvExportTab");
-const PictureMappingTab = lazyWithRetry(() => import("./components/PictureMappingTab").then(m => ({ default: m.PictureMappingTab })), "PictureMappingTab");
-const NotificationTab = lazyWithRetry(() => import("./components/NotificationTab"), "NotificationTab");
-const SettingTab = lazyWithRetry(() => import("./components/SettingTab"), "SettingTab");
-const ManualTab = lazyWithRetry(() => import("./components/ManualTab").then(m => ({ default: m.ManualTab })), "ManualTab");
-const AuditLogTab = lazyWithRetry(() => import("./components/AuditLogTab").then(m => ({ default: m.AuditLogTab })), "AuditLogTab");
 const AppTour = lazyWithRetry(() => import("./components/AppTour").then(m => ({ default: m.AppTour })), "AppTour");
 const CommandPaletteModal = lazyWithRetry(() => import("./components/CommandPaletteModal").then(m => ({ default: m.CommandPaletteModal })), "CommandPaletteModal");
 import { ProjectQuickNavModal } from "./components/ProjectQuickNavModal";
@@ -2113,411 +2098,59 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <div className="flex-grow flex flex-col min-h-0 relative z-[10]">
-            <TabErrorBoundary tabKey={activeTab}>
-              <Suspense fallback={<div className="flex-1 w-full h-full p-4 md:p-6 lg:p-8 animate-pulse bg-slate-50 dark:bg-[#0e0e11]">  <div className="max-w-7xl mx-auto w-full space-y-6">    <div className="flex items-center justify-between">      <div className="h-8 w-48 bg-slate-200 dark:bg-[#18181a] rounded-lg"></div>      <div className="h-8 w-24 bg-slate-200 dark:bg-[#18181a] rounded-lg"></div>    </div>    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">      {[1,2,3,4].map(i => <div key={i} className="h-24 bg-slate-200 dark:bg-[#18181a] rounded-xl"></div>)}    </div>    <div className="h-[400px] w-full bg-slate-200 dark:bg-[#18181a] rounded-xl"></div>  </div></div>}>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeTab}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.15 }}
-                  className="flex flex-col flex-grow min-h-0"
-                >
-            {activeTab === "layout" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See?.layout) && (
-                <LayoutTab
-                  
-                  
-                  
-                  
-                  initialStore={layoutTabFilters?.store}
-                  initialLocation={layoutTabFilters?.location}
-                  initialProjectCode={layoutTabFilters?.projectCode}
-                  onClearFocus={() => setLayoutTabFilters(null)}
-                  onBackToGantt={() => {
-                    if (layoutTabFilters?.sourceTaskId) {
-                      setGanttTabFocusTaskId(layoutTabFilters.sourceTaskId);
-                    } else {
-                      setGanttTabFocusTaskId("");
-                    }
-                    handleTabChange("gantt");
-                  }}
-                />
-              )}
-            {activeTab === "summary" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See?.summary ||
-                permissionMatrix[userRole]?.See?.report) && (
-                <SummaryTab
-                  
-                  
-                  
-                  
-                  
-                  
-                />
-              )}
-            {activeTab === "general" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See
-                  ?.general) && (
-                <GeneralTab
-                  
-                  
-                  
-                  
-                  
-                  
-                  onProjectClick={(p) => {
-                    setQuickNavTarget({ project: p });
-                  }}
-                />
-              )}
-            {activeTab === "detail" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See?.detail) && (
-                <Profiler id="DetailTab" onRender={onRenderCallback}>
-                  <DetailTab
-                    
-                    
-                    
-                    
-                    
-                    
-                    
-                    initialFilterCode={detailTabFilterCode}
-                    initialStoreFilter={globalStoreFilter}
-                    initialFocusTaskId={detailTabFocusTaskId}
-                    returnScrollId={detailReturnScrollId}
-                    onClearFocus={() => {
-                      setDetailReturnScrollId(detailTabFocusTaskId);
-                      setDetailTabFocusTaskId("");
-                    }}
-                    onBackToGantt={() => {
-                      setDetailReturnScrollId(detailTabFocusTaskId);
-                      setDetailTabFocusTaskId("");
-                      setDetailTabFilterCode("");
-                      handleTabChange("gantt");
-                    }}
-                    onAddProject={() => {
-                      setEditingProject(null);
-                      setIsReadOnlyModal(false);
-                      setModalInitialTab("details");
-                      setIsProjectModalOpen(true);
-                    }}
-                    onAddTask={(p) => {
-                      if (!isAppReadyRef.current) return;
-                      const safeP = p || (projects && projects.length > 0 ? projects[0] : null);
-                      setPrefillProjectCode(safeP?.code || "");
-                      setPrefillProjectYear(safeP?.year || null);
-                      setPrefillProjectStore(safeP?.store || null);
-                      setEditingTask(null);
-                      setIsReadOnlyModal(false);
-                      setModalInitialTab("details");
-                      setIsTaskModalOpen(true);
-                    }}
-                    onEditProject={(p, isReadOnly, initialTab) => {
-                      setEditingProject(p);
-                      setIsReadOnlyModal(isReadOnly || false);
-                      setModalInitialTab((initialTab as "details" | "chat") || "details");
-                      setIsProjectModalOpen(true);
-                    }}
-                    onEditTask={(t, isReadOnly, initialTab) => {
-                      setEditingTask(t);
-                      setIsReadOnlyModal(isReadOnly || false);
-                      setModalInitialTab((initialTab as "details" | "chat") || "details");
-                      setIsTaskModalOpen(true);
-                    }}
-                    onNavigateToDelegation={(groupId, sourceTaskId) => {
-                      if (sourceTaskId) setDetailReturnScrollId(sourceTaskId);
-                      handleTabChange("taskDelegation");
-                      setTimeout(() => {
-                        window.dispatchEvent(
-                          new CustomEvent("taka_open_delegation_group", {
-                            detail: { groupId },
-                          }),
-                        );
-                      }, 400);
-                    }}
-                  />
-                </Profiler>
-              )}
-            {activeTab === "calendar" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See?.calendar ||
-                permissionMatrix[userRole]?.See?.report) && (
-                <CalendarTab
-                  
-                  
-                  
-                  
-                  
-                  onEditTask={(t, isReadOnly) => {
-                    setEditingTask(t);
-                    setIsReadOnlyModal(isReadOnly || false);
-                    setModalInitialTab("details");
-                    setIsTaskModalOpen(true);
-                  }}
-                  onEditProject={(p, isReadOnly) => {
-                    setEditingProject(p);
-                    setIsReadOnlyModal(isReadOnly || false);
-                    setModalInitialTab("details");
-                    setIsProjectModalOpen(true);
-                  }}
-                />
-              )}
-            {activeTab === "gantt" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See?.report) && (
-                <Profiler id="GanttTab" onRender={onRenderCallback}>
-                  <div className="flex flex-col flex-grow min-h-0">
-                    <GanttTab
-                      
-                      
-                      
-                      
-                      
-                      
-                      initialFocusTaskId={ganttTabFocusTaskId}
-                      onClearFocus={() => setGanttTabFocusTaskId("")}
-                      onNavigateToLayout={handleNavigateToLayout}
-                      onNavigateToTaskDetail={handleNavigateToTaskDetail}
-                    />
-                  </div>
-                </Profiler>
-              )}
-            {activeTab === "budget" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See?.budget) && (
-                <BudgetTab
-                  
-                  
-                  
-                  
-                  initialSearchTerm={budgetTabSearchTerm}
-                  onGoToCost={(code) => {
-                    setCostTabSearchTerm(code ? String(code).replace(/["']/g, '').trim() : "");
-                    handleTabChange("cost");
-                  }}
-                />
-              )}
-            {activeTab === "taskDelegation" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See
-                  ?.taskDelegation) && (
-                <TaskDelegationTab
-                  
-                  
-                  
-                  
-                  
-                  
-                  onBackFromFocus={() => {
-                    if (tabHistory.length > 0) {
-                      const prev = tabHistory[tabHistory.length - 1];
-                      setTabHistory((h) => h.slice(0, -1));
-                      setActiveTab(prev);
-                    } else {
-                      setActiveTab("detail");
-                    }
-                  }}
-                />
-              )}
-            {activeTab === "taskDelegationCalendar" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See
-                  ?.taskDelegation) && (
-                <DelegationCalendarTab
-                  groups={visibleDelegationGroups}
-                  
-                  
-                  
-                  
-                  onTabChange={handleTabChange}
-                />
-              )}
-            {activeTab === "cost" &&
-              (currentUser.role === "admin" ||
-                permissionMatrix[userRole]?.See
-                  ?.costDetail) && (
-                <CostTab
-                  initialSearchTerm={costTabSearchTerm}
-                  onGoToBudget={(code) => {
-                    setBudgetTabSearchTerm(code);
-                    handleTabChange("budget");
-                  }}
-                />
-              )}
-            {activeTab === "accControl" && (
-              <AccControlTab
-                users={appUsers}
-                
-                
-                
-                locationVisibility={locationVisibility}
-                
-                
-                onEditUser={(u) => {
-                  setEditingUser(u);
-                  setIsUserModalOpen(true);
-                }}
-                onAddUser={() => {
-                  setEditingUser(null);
-                  setIsUserModalOpen(true);
-                }}
-              />
-            )}
-            {activeTab === "notification" &&
-              (currentUser.role === "admin" ||
-                currentUser.notification !== false) && (
-                <NotificationTab
-                  activeNotifications={activeNotifications}
-                  readNotifs={readNotifs}
-                  filterId={notificationFilterId}
-                  initialStatusFilter={unreadCount > 0 ? "unread" : "all"}
-                  onClearFilter={() => setNotificationFilterId(null)}
-                  onRequestPermission={handleRequestPermission}
-                  onTogglePushEnabled={notifActions.onTogglePushEnabled}
-                  onToggleRead={notifActions.onToggleRead}
-                  onMarkAllRead={() => notifActions.onMarkAllRead(activeNotifications)}
-                  onActionAgree={notifActions.onActionAgree}
-                  onActionReject={notifActions.onActionReject}
-                  onNotificationClick={(notif) => {
-                    notifActions.onNotificationClick(notif);
-                    
-                    // Navigate logic
-                    if (notif.targetId && notif.targetType) {
-                      if (notif.targetType === "notification") {
-                        setNotificationFilterId(notif.targetId);
-                        handleTabChange("notification");
-                        return;
-                      }
-
-                      // Check if user has permission to see layout tab
-                      const canSeeLayout = currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.layout;
-                      const combinedProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().allProjectsForNotifs || []);
-                      const combinedTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().allTasksForNotifs || []);
-                      const layoutMatch = canSeeLayout ? findProjectLayoutUnit(notif, combinedProjects, combinedTasks) : null;
-
-                      if (canSeeLayout && layoutMatch) {
-                        // 1. Synchronize global Year & Store filters if needed
-                        const targetYear = layoutMatch.year || (layoutMatch.project?.year ? String(layoutMatch.project.year) : (notif.projectYear ? String(notif.projectYear) : ''));
-                        if (targetYear && targetYear !== globalYearFilter && targetYear !== 'all') {
-                          setGlobalYearFilter(targetYear);
-                        }
-                        const targetStore = layoutMatch.store || notif.projectStore || 'HCM';
-                        if (targetStore && targetStore !== 'all') {
-                          setGlobalStoreFilter(targetStore);
-                        }
-                        const targetLocation = layoutMatch.location || 'L1';
-                        if (targetLocation && targetLocation !== 'ALL') {
-                          useAppStore.getState().setGlobalLocationFilter([targetLocation]);
-                        }
-
-                        const targetUnitCode = layoutMatch.unitCode || layoutMatch.project?.code || notif.projectCode || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
-
-                        // 2. Set layoutTabFilters to zoom, pan, focus, and open the unit tooltip on Liveview
-                        setLayoutTabFilters({
-                          store: targetStore,
-                          location: targetLocation,
-                          projectCode: targetUnitCode,
-                          sourceTaskId: layoutMatch.task?.id,
-                        });
-
-                        // 3. Switch to layout liveview tab
-                        handleTabChange("layout");
-
-                        // 4. If notification is for comments, open comments modal (closing keeps user on liveview)
-                        if (layoutMatch.isComment) {
-                          if (layoutMatch.isTaskComment && layoutMatch.task) {
-                            setEditingTask(layoutMatch.task);
-                            setIsReadOnlyModal(false);
-                            setModalInitialTab("chat");
-                            setIsTaskModalOpen(true);
-                          } else if (layoutMatch.project) {
-                            setEditingProject(layoutMatch.project);
-                            setIsReadOnlyModal(false);
-                            setModalInitialTab("chat");
-                            setIsProjectModalOpen(true);
-                          }
-                        }
-                        return;
-                      }
-
-                      // 5. If project has no unit in layout tab (or delegation without layout unit):
-                      // Link to Task Detail tab and open project modal with comment tab
-                      if (notif.targetType === "task_delegation") {
-                        handleTabChange("detail");
-                        const targetProject =
-                          layoutMatch?.project ||
-                          combinedProjects.find(
-                            (p) =>
-                              (notif.projectCode && p.code?.toLowerCase() === notif.projectCode.toLowerCase()) ||
-                              String(p.id) === String(notif.targetId) ||
-                              String(p.no) === String(notif.targetId)
-                          );
-
-                        if (targetProject) {
-                          setEditingProject(targetProject);
-                          setIsReadOnlyModal(false);
-                          setModalInitialTab("chat");
-                          setIsProjectModalOpen(true);
-                        } else if (layoutMatch?.task) {
-                          setEditingTask(layoutMatch.task);
-                          setIsReadOnlyModal(false);
-                          setModalInitialTab("chat");
-                          setIsTaskModalOpen(true);
-                        } else {
-                          executeDeepLinkRef.current?.(
-                            notif.targetType,
-                            notif.targetId,
-                            {
-                              store: notif.projectStore,
-                              year: String(notif.projectYear),
-                              code: notif.projectCode,
-                            }
-                          );
-                        }
-                        return;
-                      }
-
-                      // 6. Default deep link flow for other types
-                      executeDeepLinkRef.current?.(
-                        notif.targetType,
-                        notif.targetId,
-                        {
-                          store: notif.projectStore,
-                          year: String(notif.projectYear),
-                          code: notif.projectCode,
-                        }
-                      );
-                    }
-                  }}
-                />
-              )}
-            {activeTab === "setting" && (
-              <SettingTab rules={notificationRules} />
-            )}
-            {activeTab === "manual" && (
-              <ManualTab />
-            )}
-            {activeTab === "audit" && (currentUser.role === "admin" || (permissionMatrix[userRole]?.See as any)?.audit) && (
-              <AuditLogTab />
-            )}
-            {activeTab === "csv_export" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.importCsv || !!permissionMatrix[userRole]?.Write?.importCsv) && (
-              <CsvExportTab />
-            )}
-            {activeTab === "picture_mapping" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.pictureMapping || !!permissionMatrix[userRole]?.Write?.pictureMapping) && (
-              <PictureMappingTab />
-            )}
-            </motion.div>
-            </AnimatePresence>
-            </Suspense>
-            </TabErrorBoundary>
-          </div>
+          <AppTabRouter
+            activeTab={activeTab}
+            currentUser={currentUser}
+            userRole={userRole}
+            permissionMatrix={permissionMatrix}
+            layoutTabFilters={layoutTabFilters}
+            setLayoutTabFilters={setLayoutTabFilters}
+            ganttTabFocusTaskId={ganttTabFocusTaskId}
+            setGanttTabFocusTaskId={setGanttTabFocusTaskId}
+            detailTabFilterCode={detailTabFilterCode}
+            setDetailTabFilterCode={setDetailTabFilterCode}
+            globalStoreFilter={globalStoreFilter}
+            globalYearFilter={globalYearFilter}
+            setGlobalStoreFilter={setGlobalStoreFilter}
+            setGlobalYearFilter={setGlobalYearFilter}
+            detailTabFocusTaskId={detailTabFocusTaskId}
+            setDetailTabFocusTaskId={setDetailTabFocusTaskId}
+            detailReturnScrollId={detailReturnScrollId}
+            setDetailReturnScrollId={setDetailReturnScrollId}
+            budgetTabSearchTerm={budgetTabSearchTerm}
+            setBudgetTabSearchTerm={setBudgetTabSearchTerm}
+            costTabSearchTerm={costTabSearchTerm}
+            setCostTabSearchTerm={setCostTabSearchTerm}
+            tabHistory={tabHistory}
+            setTabHistory={setTabHistory}
+            locationVisibility={locationVisibility}
+            activeNotifications={activeNotifications}
+            readNotifs={readNotifs}
+            notificationFilterId={notificationFilterId}
+            setNotificationFilterId={setNotificationFilterId}
+            unreadCount={unreadCount}
+            handleRequestPermission={handleRequestPermission}
+            notifActions={notifActions}
+            notificationRules={notificationRules}
+            handleTabChange={handleTabChange}
+            handleNavigateToLayout={handleNavigateToLayout}
+            handleNavigateToTaskDetail={handleNavigateToTaskDetail}
+            setQuickNavTarget={setQuickNavTarget}
+            setEditingProject={setEditingProject}
+            setEditingTask={setEditingTask}
+            setEditingUser={setEditingUser}
+            setIsReadOnlyModal={setIsReadOnlyModal}
+            setModalInitialTab={setModalInitialTab}
+            setIsProjectModalOpen={setIsProjectModalOpen}
+            setIsTaskModalOpen={setIsTaskModalOpen}
+            setIsUserModalOpen={setIsUserModalOpen}
+            setPrefillProjectCode={setPrefillProjectCode}
+            setPrefillProjectYear={setPrefillProjectYear}
+            setPrefillProjectStore={setPrefillProjectStore}
+            isAppReadyRef={isAppReadyRef}
+            executeDeepLinkRef={executeDeepLinkRef}
+            onRenderCallback={onRenderCallback}
+          />
         )}
       </div>
       </div>
