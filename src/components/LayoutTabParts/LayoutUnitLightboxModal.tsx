@@ -64,6 +64,14 @@ export function LayoutUnitLightboxModal({
     setIsLoading(true);
   }, [rawUrl]);
 
+  // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
+  useEffect(() => {
+    document.body.classList.add('lightbox-open');
+    return () => {
+      document.body.classList.remove('lightbox-open');
+    };
+  }, []);
+
   // Safe close handler that absorbs any synthetic click/touch events before unmounting
   const handleSafeClose = useCallback((e?: React.SyntheticEvent) => {
     if (e) {

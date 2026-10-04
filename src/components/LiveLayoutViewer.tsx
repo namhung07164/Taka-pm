@@ -987,6 +987,11 @@ function LiveCanvas({
 
   // Inertia momentum panning handlers
   const handleDragStart = useCallback(() => {
+    if (document.body.classList.contains('lightbox-open')) {
+      const stage = stageRef.current;
+      if (stage) stage.stopDrag();
+      return;
+    }
     stopInertia();
     isInteractingRef.current = true;
     setHoverInfo(null);
@@ -3055,6 +3060,7 @@ function LiveCanvas({
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
             onClick={(e) => {
+              if (document.body.classList.contains('lightbox-open')) return;
               if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               if (e.target === stageRef.current) {
@@ -3063,6 +3069,7 @@ function LiveCanvas({
               }
             }}
             onTap={(e) => {
+              if (document.body.classList.contains('lightbox-open')) return;
               if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               if (e.target === stageRef.current) {
@@ -3101,6 +3108,7 @@ function LiveCanvas({
               });
             }}
             onTouchStart={(e) => {
+              if (document.body.classList.contains('lightbox-open')) return;
               if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               stopInertia();
               if (e.evt.touches.length === 2) {
@@ -3192,6 +3200,7 @@ function LiveCanvas({
               isInteractingRef.current = false;
             }}
             onWheel={(e) => {
+              if (document.body.classList.contains('lightbox-open')) return;
               if (isProjectModalOpen || Boolean(miniGanttProject)) return;
               e.evt.preventDefault();
               stopInertia();
