@@ -287,7 +287,7 @@ export function DetailTab({
     }
   }, [projects.length, tasks.length, delegationGroups.length]);
 
-  // Initial Filter Code Scrolling & Auto-Expansion
+  // Initial Filter Code Scrolling & Tri-Gate Lazy Loading Target
   const lastProcessedFilterCodeRef = useRef<string | null>(null);
   useEffect(() => {
     if (initialFilterCode && initialFilterCode !== lastProcessedFilterCodeRef.current) {
@@ -304,19 +304,8 @@ export function DetailTab({
         (p) => p.code && filterUpper.includes(String(p.code).trim().toUpperCase())
       );
 
-      if (matchedProj) {
-        const keysToExpand = [
-          matchedProj.id,
-          matchedProj.code,
-          matchedProj.no !== undefined && matchedProj.no !== null ? String(matchedProj.no) : '',
-          filterUpper
-        ].filter(Boolean) as string[];
-
-        const currentExpanded = useAppStore.getState().expandedProjectIds;
-        setExpandedCodes([...new Set([...currentExpanded, ...keysToExpand])]);
-      }
-
-      useAppStore.getState().setIsTasksRequested(true);
+      // Keep parent row collapsed by default (Tri-Gate Lazy Loading rule).
+      // Child tasks are fetched via Delta Sync only when user taps Expand (+).
 
       setTimeout(() => {
         const el =
@@ -330,7 +319,7 @@ export function DetailTab({
       lastProcessedFilterCodeRef.current = null;
       if (!initialFocusTaskId) setSearchTerm('');
     }
-  }, [initialFilterCode, initialFocusTaskId, projects, setExpandedCodes, setSearchTerm, setStatusFilter]);
+  }, [initialFilterCode, initialFocusTaskId, projects, setSearchTerm, setStatusFilter]);
 
   const toggleGroup = useCallback((id: string) => {
     toggleProjectExpansion(id);
