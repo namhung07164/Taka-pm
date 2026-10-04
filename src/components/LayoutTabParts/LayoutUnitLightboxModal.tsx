@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -64,6 +64,18 @@ export function LayoutUnitLightboxModal({
     setIsLoading(true);
   }, [rawUrl]);
 
+  // Safe close handler that absorbs any synthetic click/touch events before unmounting
+  const handleSafeClose = useCallback((e?: React.SyntheticEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // Safety delay of 60ms to let browser absorb any pending synthetic touch/tap events on iOS/Android
+    setTimeout(() => {
+      onClose();
+    }, 60);
+  }, [onClose]);
+
   // Keyboard shortcut: Escape key closes enlarged image (AGENTS.md Rule 6)
   useEffect(() => {
     if (!enlargedImage) return;
@@ -85,21 +97,28 @@ export function LayoutUnitLightboxModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[99999] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-150 select-none"
+      className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-150 select-none touch-none"
       onClick={(e) => {
+        // Prevent background clicks from closing the modal during zoom / pinch / pan
         e.stopPropagation();
-        onClose();
       }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
     >
       {/* 1. Ultra-Prominent Floating Close 'X' Button on Top-Right of Viewport */}
       <button
         type="button"
-        onClick={(e) => {
+        onClick={handleSafeClose}
+        onTouchEnd={(e) => {
           e.stopPropagation();
-          onClose();
         }}
-        className="fixed top-3 right-3 sm:top-5 sm:right-5 z-[100001] p-2.5 sm:p-3 bg-slate-900/90 hover:bg-red-600 text-white rounded-full border border-white/20 shadow-2xl transition-all duration-150 active:scale-90 cursor-pointer flex items-center justify-center group"
+        className="fixed top-3 right-3 sm:top-5 sm:right-5 z-[1000001] p-2.5 sm:p-3 bg-slate-900/90 hover:bg-red-600 text-white rounded-full border border-white/20 shadow-2xl transition-all duration-150 active:scale-90 cursor-pointer flex items-center justify-center group"
         title="Đóng xem ảnh (Phím Escape)"
         aria-label="Đóng xem ảnh"
       >
@@ -108,8 +127,13 @@ export function LayoutUnitLightboxModal({
 
       {/* 2. Lightbox Card Container */}
       <div
-        className="relative max-w-5xl w-full max-h-[94vh] bg-slate-900/98 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col z-[100000]"
+        className="relative max-w-5xl w-full max-h-[94vh] bg-slate-900/98 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col z-[1000000]"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-slate-800 bg-slate-900 text-white shrink-0">
@@ -183,7 +207,7 @@ export function LayoutUnitLightboxModal({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleSafeClose}
               className="px-2.5 py-1.5 bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold active:scale-95 shadow-sm"
               title="Đóng (Escape)"
             >
@@ -210,11 +234,13 @@ export function LayoutUnitLightboxModal({
               maxScale={8}
               centerOnInit
               wheel={{ step: 0.1 }}
-              doubleClick={{ mode: 'toggle' }}
+              doubleClick={{ mode: 'toggle', step: 1.5 }}
+              panning={{ velocityDisabled: true }}
+              pinch={{ step: 5 }}
             >
               <TransformComponent
-                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing"
-                contentClass="!w-full !h-full flex items-center justify-center"
+                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+                contentClass="!w-full !h-full flex items-center justify-center select-none"
               >
                 <img
                   src={resolvedUrl}
