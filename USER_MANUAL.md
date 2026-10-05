@@ -510,6 +510,8 @@ Dành riêng cho cấp Lãnh đạo cấp cao cần bức tranh điều hành t�
    - Dữ liệu dòng tiền kết hợp từ phân kỳ thanh toán 3 đợt (`1st Paid`, `2nd Paid`, `3rd Paid`) của từng hạng mục chi phí.
 3. **Bảng Xếp Hạng & Đánh Giá EVM Từng Dự Án**:
    - So sánh BAC (Budget), AC (Actual Cost), EV (Earned Value), CPI, SPI, Tiến độ % hoàn thành kèm Đánh giá điều hành trực quan (Xuất sắc, Cần đẩy tiến độ, Bội chi phí, Nguy cơ cao).
+4. **Kiến Trúc Module Hóa Chuẩn Enterprise & Cơ Chế Tri-Gate Lazy Loading**:
+   - Toàn bộ phân hệ Summary và Executive Dashboard tuân thủ triệt để cấu trúc module 4 lớp (`SummaryParts/`, `ExecutiveDashboardParts/`), kích hoạt Tri-Gate Lazy Loading chỉ nạp dữ liệu chi phí và công việc khi mở màn hình, giữ file điều phối dưới 100 dòng code và bảo toàn tốc độ phản hồi 60 FPS.
 
 ---
 

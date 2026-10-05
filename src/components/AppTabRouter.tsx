@@ -444,18 +444,8 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                             setIsReadOnlyModal(false);
                             setModalInitialTab("chat");
                             setIsTaskModalOpen(true);
-                          } else {
-                            executeDeepLinkRef.current?.(
-                              notif.targetType,
-                              notif.targetId,
-                              {
-                                store: notif.projectStore,
-                                year: String(notif.projectYear),
-                                code: notif.projectCode,
-                              }
-                            );
+                            return;
                           }
-                          return;
                         }
 
                         executeDeepLinkRef.current?.(

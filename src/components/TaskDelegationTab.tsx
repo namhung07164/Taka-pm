@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -17,6 +17,16 @@ const ConfirmModal = lazyWithRetry(
 export function TaskDelegationTab({ onBackFromFocus }: TaskDelegationTabProps) {
   const { enrichedProjects: projects, filteredTasks: tasks } = useEnrichedData();
   const currentUser = useAppStore((state) => state.currentUser)!;
+  const isTasksRequested = useAppStore((state) => state.isTasksRequested);
+  const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
+  const isDelegationsRequested = useAppStore((state) => state.isDelegationsRequested);
+  const setIsDelegationsRequested = useAppStore((state) => state.setIsDelegationsRequested);
+
+  // Tri-Gate Lazy Loading (Rule 3)
+  useEffect(() => {
+    if (!isTasksRequested) setIsTasksRequested(true);
+    if (!isDelegationsRequested) setIsDelegationsRequested(true);
+  }, [isTasksRequested, setIsTasksRequested, isDelegationsRequested, setIsDelegationsRequested]);
 
   const {
     groups,
