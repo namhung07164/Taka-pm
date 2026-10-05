@@ -2,6 +2,7 @@ import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { addPendingUpdate } from './syncQueue';
 import { touchYearMeta } from './yearsFingerprintService';
+import { recordDelta } from './deltaSyncService';
 
 export interface CoalescedMutation {
   collectionPath: string; // Tên collection, vd: taka_tasks
@@ -104,6 +105,21 @@ async function flushQueueItem(queueKey: string): Promise<void> {
     // Touch year metadata if available to invalidate client cache fingerprints
     if (item.year) {
       touchYearMeta(item.year).catch(() => {});
+    }
+
+    // Record delta change log for Stage 2 Delta Sync
+    if (
+      ['taka_projects', 'taka_tasks', 'taka_costs', 'taka_delegations'].includes(
+        item.collectionPath
+      )
+    ) {
+      recordDelta({
+        docId: item.docId,
+        collectionName: item.collectionPath as any,
+        action: item.isUpdate ? 'update' : 'create',
+        data: item.data,
+        year: item.year,
+      }).catch(() => {});
     }
   } catch (err) {
     console.error(`[mutationCoalescer] Error flushing ${queueKey}, buffering to syncQueue:`, err);

@@ -26,6 +26,7 @@ import {
   NotificationRule,
 } from "../types";
 import { setupStaticConfigSync } from "../lib/configCacheService";
+import { startDeltaSyncService } from "../lib/deltaSyncService";
 import {
   fetchYearsMeta,
   isYearCacheValid,
@@ -381,6 +382,12 @@ export function useFirebaseData() {
     fetchYearsMeta().then((meta) => {
       remoteYearsMetaRef.current = meta;
     });
+
+    // Start Background Delta Sync Service (Stage 2 Delta Pipeline)
+    const stopDeltaSync = startDeltaSyncService(25000);
+    return () => {
+      stopDeltaSync();
+    };
   }, []);
 
   // Atomic batching buffers for Projects and Tasks updates to prevent JS main thread freezing

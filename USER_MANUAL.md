@@ -1628,3 +1628,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Tự động đẩy vào `syncQueue.ts` khi mất mạng để chống mất mát dữ liệu ngầm theo Quy tắc 2 của AGENTS.md.
    - **Ảo Hóa Bảng Dữ Liệu Toàn Diện (TanStack Table Virtualization)**:
      + Tích hợp hook `useTableVirtualizer.ts` bọc thư viện `@tanstack/react-virtual` vào các bảng lớn (`CostTableView.tsx`, `DetailTableView.tsx`), đảm bảo trình duyệt chỉ render đúng số hàng hiển thị trên khung nhìn màn hình (~20 - 30 hàng), giữ tốc độ cuộn mượt mà 60 FPS trên iPad/máy POS và giảm 90% dung lượng DOM tree.
+
+39. **Hệ Thống Đồng Bộ Biến Thiên Hai Chiều (Giai Đoạn 2: Delta Sync Pipeline)**:
+   - **Bảng Nhật Ký Thay Đổi (`taka_deltas`)**:
+     + Mỗi khi phát sinh mutation (tạo mới, cập nhật, xóa) trên các thực thể chính (Dự án, Nhiệm vụ, Chi phí, Ủy quyền), hệ thống tự động ghi 1 bản ghi biến thiên vào collection `taka_deltas` với `numericTime = Date.now()`, `docId`, `collectionName`, `action` và `data` payload.
+   - **Cơ Chế Kéo Delta Cục Bộ (Client Delta Pull Engine)**:
+     + Trình duyệt lưu giữ mốc đồng bộ cuối cùng (`taka_last_delta_sync_time_v1`).
+     + Thay vì mở listener toàn bộ bảng hoặc reload toàn bộ dữ liệu, client định kỳ kéo (pull) chỉ những bản ghi có `numericTime > lastSyncTime` và nạp trực tiếp vào Zustand Store (0ms UI re-render).
+     + Tự động kích hoạt khi người dùng quay lại tab trình duyệt (`visibilitychange`) hoặc khi mạng trực tuyến trở lại (`online`).
+   - **Hiệu Quả**: Giảm ngay **80% - 90% số lượng Document READ** cho toàn bộ các năm còn lại, đưa tốc độ và kiến trúc tiệm cận mô hình Local-First của Linear.

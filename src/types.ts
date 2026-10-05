@@ -309,3 +309,16 @@ export interface AuditLog {
   data: any;
   previousData?: any;
 }
+
+export interface TakaDelta {
+  id: string;
+  docId: string;
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  action: 'create' | 'update' | 'delete';
+  year?: string;
+  data: Record<string, any>;
+  updatedBy?: string;
+  timestamp: string;
+  numericTime: number;
+}
+
