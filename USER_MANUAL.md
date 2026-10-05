@@ -1360,6 +1360,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + **Side-by-Side JSON**: Hiển thị bảng so sánh 2 cột song song giữa trạng thái cũ và trạng thái mới.
      + **Raw Event Inspector**: Xem toàn bộ đối tượng sự kiện kiểm toán và hỗ trợ 1-click **Copy JSON** vào bộ nhớ tạm.
      + **Bộ Lọc Nhanh (Field Filter)**: Cho phép gõ tên trường (như `budget`, `status`, `finish`, v.v.) để tìm nhanh biến động khi tài liệu có nhiều thông tin.
+   - **Cấu Trúc Module Chuẩn Enterprise (Rule 12 - AGENTS.md)**:
+     + Phân hệ **Audit Log** đã được băm nhỏ thành các submodule độc lập tại thư mục `src/components/AuditLogParts/` (`AuditLogFilterToolbar`, `AuditLogTableView`, `AuditLogRowItem`, `auditLogTypes`, `useAuditLogData`), đưa component chính `AuditLogTab.tsx` về vai trò điều phối tinh gọn (< 85 dòng code).
+     + Tương tự, phân hệ **Active Notifications** đã được module hóa toàn diện tại `src/components/NotificationParts/` (`NotificationFilterToolbar`, `NotificationItemCard`, `notificationTypes`, `useNotificationData`), giúp `NotificationTab.tsx` chỉ giữ vai trò container orchestrator (< 95 dòng code).
+     + Bảng điều khiển hiệu năng **Firestore Performance & Read Monitor** đã được tách thành `src/components/PerformanceDashboardParts/` (`PerformanceHeader`, `PerformanceMetricsCards`, `PerformanceCollectionTable`, `PerformanceEventLogs`, `performanceTypes`), hạ line count từ 568 dòng xuống 209 dòng code.
+     + Hộp thoại lệnh trung tâm **Command Palette (`Ctrl+K`)** được chuẩn hóa vào `src/components/CommandPaletteParts/` (`CommandPaletteItemRow`, `CommandPaletteFooter`, `useCommandPaletteItems`, `commandPaletteTypes`), giảm từ 691 dòng xuống 215 dòng.
+     + Hộp thoại Gantt rút gọn mặt bằng **LayoutMiniGanttModal** được tách thành `MiniGanttHeader`, `MiniGanttRowItem`, `useMiniGanttData`, giảm từ 738 dòng xuống 238 dòng, đảm bảo 100% file `.tsx`/`.ts` trong hệ thống tuân thủ nghiêm ngặt trần < 500 dòng code.
 
 13. **Hệ Thống Thiết Kế Thống Nhất Trên Thiết Bị Di Động & iOS (Unified Mobile Design Language)**:
    - **Đồng Bộ Màu Sắc & Thành Phần Dữ Liệu Tương Đồng**:
