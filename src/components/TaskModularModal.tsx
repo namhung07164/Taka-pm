@@ -23,9 +23,11 @@ interface TaskModularModalProps {
   onClose: () => void;
   selectedTaskIds: string[];
   tasks: Task[];
-  projects: Project[];
-  onGroupTasks: (parentTaskId: string, childTaskIds: string[]) => void | Promise<void>;
-  onUnlinkTasks: (childTaskIds: string[]) => void | Promise<void>;
+  projects?: Project[];
+  onGroupTasks?: (parentTaskId: string, childTaskIds: string[]) => void | Promise<void>;
+  onUnlinkTasks?: (childTaskIds: string[]) => void | Promise<void>;
+  onGroup?: (parentTaskId: string, childTaskIds: string[]) => void | Promise<void>;
+  onUnlink?: (childTaskIds: string[]) => void | Promise<void>;
 }
 
 export const TaskModularModal: React.FC<TaskModularModalProps> = ({
@@ -33,9 +35,11 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   onClose,
   selectedTaskIds,
   tasks,
-  projects,
+  projects = [],
   onGroupTasks,
   onUnlinkTasks,
+  onGroup,
+  onUnlink,
 }) => {
   const [selectedParentTaskId, setSelectedParentTaskId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -154,12 +158,18 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
   const handleConfirmGroup = () => {
     if (!selectedParentTaskId || allTargetTaskIds.length === 0) return;
-    onGroupTasks(selectedParentTaskId, allTargetTaskIds);
+    const groupFn = onGroupTasks || onGroup;
+    if (typeof groupFn === 'function') {
+      groupFn(selectedParentTaskId, allTargetTaskIds);
+    }
   };
 
   const handleConfirmUnlink = () => {
     if (selectedTaskIds.length === 0) return;
-    onUnlinkTasks(selectedTaskIds);
+    const unlinkFn = onUnlinkTasks || onUnlink;
+    if (typeof unlinkFn === 'function') {
+      unlinkFn(selectedTaskIds);
+    }
   };
 
   return (

@@ -429,6 +429,9 @@ export function GanttTab({
             onClose={() => setIsTaskModularModalOpen(false)}
             selectedTaskIds={selectedTaskIds}
             tasks={tasks}
+            projects={projects}
+            onGroupTasks={handleGroupModularTasks}
+            onUnlinkTasks={handleUnlinkModularTasks}
             onGroup={handleGroupModularTasks}
             onUnlink={handleUnlinkModularTasks}
           />

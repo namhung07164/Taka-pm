@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 
@@ -103,45 +103,73 @@ export function useGanttBatchOps({
 
   // Group / Unlink modular tasks
   const handleGroupModularTasks = async (parentTaskId: string, childTaskIds: string[]) => {
-    const batch = writeBatch(db);
     const now = new Date().toISOString();
+    const prevTasks = useAppStore.getState().tasks;
 
-    childTaskIds.forEach(id => {
+    // 0ms Optimistic UI update
+    const updatedTasks = prevTasks.map((t) =>
+      childTaskIds.includes(t.id)
+        ? { ...t, parentTaskId, parentId: parentTaskId, updatedAt: now }
+        : t
+    );
+    useAppStore.getState().setTasks(updatedTasks);
+    setIsTaskModularModalOpen(false);
+    setSelectedTaskIds([]);
+
+    const batch = writeBatch(db);
+    childTaskIds.forEach((id) => {
       const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-      batch.update(docRef, { parentId: parentTaskId, updatedAt: now });
+      batch.update(docRef, { parentTaskId, parentId: parentTaskId, updatedAt: now });
     });
 
     try {
       await batch.commit();
-      setIsTaskModularModalOpen(false);
-      setSelectedTaskIds([]);
       useAppStore.getState().setToast({
         title: "Success",
         message: `Grouped ${childTaskIds.length} tasks under parent modular task.`
       });
     } catch (err) {
       console.error(err);
+      useAppStore.getState().setTasks(prevTasks);
+      useAppStore.getState().setToast({
+        title: "Error",
+        message: "Failed to group tasks on server. Changes reverted."
+      });
     }
   };
 
   const handleUnlinkModularTasks = async (childTaskIds: string[]) => {
-    const batch = writeBatch(db);
     const now = new Date().toISOString();
+    const prevTasks = useAppStore.getState().tasks;
 
-    childTaskIds.forEach(id => {
+    // 0ms Optimistic UI update
+    const updatedTasks = prevTasks.map((t) =>
+      childTaskIds.includes(t.id)
+        ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now }
+        : t
+    );
+    useAppStore.getState().setTasks(updatedTasks);
+    setSelectedTaskIds([]);
+
+    const batch = writeBatch(db);
+    childTaskIds.forEach((id) => {
       const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-      batch.update(docRef, { parentId: null, updatedAt: now });
+      batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
     });
 
     try {
       await batch.commit();
-      setSelectedTaskIds([]);
       useAppStore.getState().setToast({
         title: "Success",
         message: `Unlinked ${childTaskIds.length} modular tasks.`
       });
     } catch (err) {
       console.error(err);
+      useAppStore.getState().setTasks(prevTasks);
+      useAppStore.getState().setToast({
+        title: "Error",
+        message: "Failed to unlink tasks on server. Changes reverted."
+      });
     }
   };
 
