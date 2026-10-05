@@ -26,6 +26,7 @@
     "autoprefixer": "^10.4.21",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dexie": "^4.4.6",
     "dotenv": "^17.4.2",
     "firebase": "^12.11.0",
     "glob": "^13.0.6",

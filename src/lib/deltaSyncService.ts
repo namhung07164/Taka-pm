@@ -14,6 +14,7 @@ import { usePerformanceStore } from '../store/usePerformanceStore';
 import { safeGetItemLocal, safeSetItemLocal } from './storage';
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
 import { touchYearMeta } from './yearsFingerprintService';
+import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
@@ -222,6 +223,9 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
     if (tasksChanged) store.setTasks(updatedTasks);
     if (costsChanged) store.setCosts(updatedCosts);
     if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
+
+    // Lưu các delta vào Dexie Local-First Database ngầm
+    applyDeltasToLocalDatabase(deltas).catch(() => {});
 
     // Cập nhật mốc đồng bộ mới nhất
     safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));

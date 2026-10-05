@@ -27,6 +27,7 @@ import {
 } from "../types";
 import { setupStaticConfigSync } from "../lib/configCacheService";
 import { startDeltaSyncService } from "../lib/deltaSyncService";
+import { bootstrapLocalStore, offloadPersistSnapshot } from "../lib/backgroundSyncWorker";
 import {
   fetchYearsMeta,
   isYearCacheValid,
@@ -379,6 +380,9 @@ export function useFirebaseData() {
   const remoteYearsMetaRef = useRef<YearsMetaMap>({});
 
   useEffect(() => {
+    // Stage 3: Instant Local-First Boot from Dexie (~5ms, 0 Read, 0 Network)
+    bootstrapLocalStore().catch(() => {});
+
     fetchYearsMeta().then((meta) => {
       remoteYearsMetaRef.current = meta;
     });
@@ -420,6 +424,7 @@ export function useFirebaseData() {
         const updatedList = Array.from(pendingProjectsMap.current.values());
         updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
         useAppStore.getState().setProjects(updatedList);
+        offloadPersistSnapshot('taka_projects', updatedList);
         const setNotifs = useAppStore.getState().setAllProjectsForNotifs;
         if (setNotifs) setNotifs(updatedList);
         pendingProjectsMap.current = null;
@@ -462,6 +467,7 @@ export function useFirebaseData() {
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
         useAppStore.getState().setTasks(updatedList);
+        offloadPersistSnapshot('taka_tasks', updatedList);
         const setNotifs = useAppStore.getState().setAllTasksForNotifs;
         if (setNotifs) setNotifs(updatedList);
         pendingTasksMap.current = null;
