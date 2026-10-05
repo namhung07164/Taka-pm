@@ -5,6 +5,7 @@ import { doc, setDoc, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
 import { extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
+import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
 
 interface UseTooltipImagesParams {
   p?: Project;
@@ -168,6 +169,13 @@ export function useTooltipImages({
 
     // Clean up from project.taskSummaries
     try {
+      const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
+      if (targetUrl) {
+        deleteR2ImageCleanly(targetUrl).catch(err => {
+          console.warn("[R2 Purge] Deep clean error:", err);
+        });
+      }
+
       const allProjects = useAppStore.getState().projects;
       const targetProj = p || allProjects.find(item => {
         if (item.id === p?.id) return true;

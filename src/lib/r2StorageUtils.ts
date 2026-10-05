@@ -248,3 +248,111 @@ export async function uploadPictureToTakaFolder(
     return { success: false, error: err?.message || "Lỗi tải ảnh lên Cloudflare R2." };
   }
 }
+
+/**
+ * Permanently deletes an image file from Cloudflare R2 Cloud Storage.
+ * Handles both full public URLs (e.g. https://hcm.taka-pm.org/Taka-Pm-folder/file.jpg),
+ * r2:// protocol links, and direct key names, ensuring zero leftover files or versions on R2.
+ */
+export async function deleteR2ImageCleanly(
+  urlOrKey: string,
+  customCreds?: R2Credentials | null
+): Promise<{ success: boolean; deletedKeys: string[] }> {
+  if (!urlOrKey || typeof urlOrKey !== 'string') {
+    return { success: false, deletedKeys: [] };
+  }
+
+  const trimmed = urlOrKey.trim();
+  if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return { success: false, deletedKeys: [] };
+  }
+
+  let creds = customCreds || getStoredR2Credentials();
+  if (!creds) {
+    try {
+      const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        if (data.accountId && data.accessKeyId && data.secretAccessKey && data.bucketName) {
+          creds = {
+            accountId: data.accountId,
+            accessKeyId: data.accessKeyId,
+            secretAccessKey: data.secretAccessKey,
+            bucketName: data.bucketName,
+          };
+          useAppStore.getState().setR2Config(data);
+        }
+      }
+    } catch (e) {
+      console.error("[R2 Purge] Error fetching credentials:", e);
+    }
+  }
+
+  if (!creds || !creds.accountId || !creds.bucketName) {
+    console.warn('[R2 Purge] Cannot delete from R2: Credentials missing.');
+    return { success: false, deletedKeys: [] };
+  }
+
+  // Extract all potential object key candidates
+  const keysToDelete = new Set<string>();
+
+  if (trimmed.startsWith('r2://')) {
+    keysToDelete.add(trimmed.replace('r2://', ''));
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const parsed = new URL(trimmed);
+      const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+      if (pathname) {
+        keysToDelete.add(pathname);
+        const parts = pathname.split('/');
+        if (parts.length > 1) {
+          keysToDelete.add(parts[parts.length - 1]);
+        }
+      }
+    } catch {}
+  } else {
+    keysToDelete.add(trimmed);
+  }
+
+  const r2Key = extractR2Key(trimmed);
+  if (r2Key) {
+    keysToDelete.add(r2Key);
+  }
+
+  const uniqueKeys = Array.from(keysToDelete).filter(Boolean);
+  if (uniqueKeys.length === 0) {
+    return { success: false, deletedKeys: [] };
+  }
+
+  try {
+    const { S3Client } = await getS3Sdk();
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: creds.accessKeyId.trim(),
+        secretAccessKey: creds.secretAccessKey.trim(),
+      },
+    });
+
+    const deletedKeys: string[] = [];
+    for (const key of uniqueKeys) {
+      try {
+        const ok = await deleteR2Object(key, creds, s3);
+        if (ok) {
+          deletedKeys.push(key);
+          console.log(`[R2 Purge] Permanently deleted object from R2: "${key}"`);
+        }
+      } catch (err) {
+        console.warn(`[R2 Purge] Error deleting key "${key}":`, err);
+      }
+    }
+
+    return { success: deletedKeys.length > 0, deletedKeys };
+  } catch (err) {
+    console.error('[R2 Purge] Error connecting to R2 for deletion:', err);
+    return { success: false, deletedKeys: [] };
+  }
+}
