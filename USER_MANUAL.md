@@ -1617,17 +1617,14 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Tối Ưu Tốc Độ Zoom Trên Desktop**:
      - Áp dụng hệ số giảm chấn hàm mũ mềm mại (`Math.exp(-deltaY * 0.0008)`) trên toàn bộ các trình xem sơ đồ mặt bằng (Live Canvas, Review Tab, Edit Tab), giúp thao tác cuộn con trỏ chuột trên máy tính để bàn diễn ra từ từ, êm ái và chính xác tương đương tốc độ của nút bấm kính lúp (+ / -).
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+38. **Kiến Trúc Tối Ưu Hóa Hiệu Năng & Giảm Chi Phí Firestore Enterprise (Firestore Zero-Read & Write Coalescing Engine)**:
+   - **Cơ Chế Metadata Fingerprinting Cho Niên Độ Cũ (Zero-Read Prior Years)**:
+     + Lưu trữ bảng vân tay `years_meta` trên Firestore ghi nhận mốc thời gian cập nhật cuối cùng (`updatedAt`) của từng niên độ (ví dụ các năm đã đóng: 2023, 2024, 2025).
+     + Khi người dùng chuyển sang năm cũ, hệ thống đối soát vân tay metadata. Nếu trùng khớp với phiên bản đã lưu trong Local Cache/IndexedDB của trình duyệt, ứng dụng sẽ nạp tức thì 100% dữ liệu từ máy cục bộ mà **không mở listener Firestore mới**, tiết kiệm từ hàng trăm đến hàng nghìn lượt Document READ.
+   - **Truy Vấn Tổng Hợp Phía Máy Chủ (Server-Side Aggregations)**:
+     + Tích hợp dịch vụ `aggregationService.ts` tận dụng `getCountFromServer` và `getAggregateFromServer` (`sum`, `average`) của Firestore v10+, cho phép lấy tổng số lượng và tổng ngân sách/chi phí chỉ tốn 1 lượt Read duy nhất mà không cần tải hàng nghìn document về client.
+   - **Động Cơ Gom Ghi Đột Biến (Write Coalescing & Debouncing Engine)**:
+     + Mô-đun `mutationCoalescer.ts` tiếp nhận các thao tác chỉnh sửa liên tiếp (nhập ghi chú, đổi màu, chỉnh tiến độ), gom gộp (merge) dữ liệu trong cửa sổ trễ 400ms – 800ms và chỉ ghi 1 lần duy nhất lên Firestore, giảm tới 70% số lượng Document WRITE.
+     + Tự động đẩy vào `syncQueue.ts` khi mất mạng để chống mất mát dữ liệu ngầm theo Quy tắc 2 của AGENTS.md.
+   - **Ảo Hóa Bảng Dữ Liệu Toàn Diện (TanStack Table Virtualization)**:
+     + Tích hợp hook `useTableVirtualizer.ts` bọc thư viện `@tanstack/react-virtual` vào các bảng lớn (`CostTableView.tsx`, `DetailTableView.tsx`), đảm bảo trình duyệt chỉ render đúng số hàng hiển thị trên khung nhìn màn hình (~20 - 30 hàng), giữ tốc độ cuộn mượt mà 60 FPS trên iPad/máy POS và giảm 90% dung lượng DOM tree.

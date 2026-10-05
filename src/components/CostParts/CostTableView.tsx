@@ -4,6 +4,7 @@ import { CostColWidths, PaidDateMatches } from './costTypes';
 import { CostTableRow } from './CostTableRow';
 import { CostTableHeader } from './CostTableHeader';
 import { CostTableTotalRow } from './CostTableTotalRow';
+import { useTableVirtualizer } from '../../hooks/useTableVirtualizer';
 
 interface CostTableViewProps {
   filteredProjectsForDisplay: Project[];
@@ -88,9 +89,23 @@ export const CostTableView = React.memo(function CostTableView({
     0
   );
 
+  const projectsToDisplay = filteredProjectsForDisplay.slice(0, visibleCount);
+  const { parentRef, virtualItems, totalSize } = useTableVirtualizer({
+    count: projectsToDisplay.length,
+    estimateSize: 52,
+    overscan: 6,
+  });
+
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom =
+    virtualItems.length > 0
+      ? totalSize - virtualItems[virtualItems.length - 1].end
+      : 0;
+
   return (
     <div
-      className="hidden xl:block overflow-x-auto flex-grow pb-16"
+      ref={parentRef}
+      className="hidden xl:block overflow-x-auto flex-grow pb-16 max-h-[78vh]"
       onScroll={handleCostScroll}
     >
       <table
@@ -120,8 +135,21 @@ export const CostTableView = React.memo(function CostTableView({
             formatCurrency={formatCurrency}
           />
 
-          {/* Project Groups & Detail Rows */}
-          {filteredProjectsForDisplay.slice(0, visibleCount).map((p, pIdx) => {
+          {paddingTop > 0 && (
+            <tr>
+              <td
+                colSpan={visibleColumns.length}
+                style={{ height: `${paddingTop}px`, padding: 0, border: 'none' }}
+              />
+            </tr>
+          )}
+
+          {/* Virtualized Project Groups & Detail Rows */}
+          {virtualItems.map((virtualRow) => {
+            const p = projectsToDisplay[virtualRow.index];
+            if (!p) return null;
+            const pIdx = virtualRow.index;
+
             const pDerivedYear = p.year
               ? p.year
               : p.start
@@ -169,6 +197,15 @@ export const CostTableView = React.memo(function CostTableView({
               />
             );
           })}
+
+          {paddingBottom > 0 && (
+            <tr>
+              <td
+                colSpan={visibleColumns.length}
+                style={{ height: `${paddingBottom}px`, padding: 0, border: 'none' }}
+              />
+            </tr>
+          )}
 
           {visibleCount < filteredProjectsForDisplay.length && (
             <tr>

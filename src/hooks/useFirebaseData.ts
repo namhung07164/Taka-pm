@@ -26,6 +26,13 @@ import {
   NotificationRule,
 } from "../types";
 import { setupStaticConfigSync } from "../lib/configCacheService";
+import {
+  fetchYearsMeta,
+  isYearCacheValid,
+  loadYearDataFromLocal,
+  saveYearDataToLocal,
+  YearsMetaMap,
+} from "../lib/yearsFingerprintService";
 
 let isArchiveLoaded = false;
 
@@ -368,6 +375,13 @@ export function useFirebaseData() {
   // 2.1 Unified Global Delta Sync for Projects (Native Firebase Cache)
   const projectsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigProjects = useRef<string>("");
+  const remoteYearsMetaRef = useRef<YearsMetaMap>({});
+
+  useEffect(() => {
+    fetchYearsMeta().then((meta) => {
+      remoteYearsMetaRef.current = meta;
+    });
+  }, []);
 
   // Atomic batching buffers for Projects and Tasks updates to prevent JS main thread freezing
   const pendingProjectsMap = useRef<Map<string, Project> | null>(null);
@@ -472,6 +486,23 @@ export function useFirebaseData() {
 
     liveTargetYears.forEach(year => {
       if (!projectsPool.current.has(year)) {
+        // Metadata Fingerprinting check: If year is closed or past, and local cache matches remote timestamp, skip network read!
+        const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+        if (isClosedOrPastYear && isYearCacheValid(year, remoteYearsMetaRef.current)) {
+          const cached = loadYearDataFromLocal(year);
+          if (cached && cached.projects && cached.projects.length > 0) {
+            batchProjectsUpdate(
+              cached.projects.map((p) => ({
+                type: 'added',
+                doc: { id: p.id, data: () => p },
+              }))
+            );
+            usePerformanceStore.getState().trackGetDoc(`taka_projects_${year}`, true, cached.projects.length, 'Metadata Fingerprint Cache Hit');
+            projectsPool.current.set(year, () => {});
+            return;
+          }
+        }
+
         const qProjects = buildStoreAndYearQuery(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), "store", "year", year);
         
         usePerformanceStore.getState().registerListener(`taka_projects_${year}`);
@@ -481,6 +512,15 @@ export function useFirebaseData() {
             usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
             batchProjectsUpdate(snapshot.docChanges());
             setCloudStatus("online");
+
+            // Cache to local storage with fingerprint
+            const yearProjects = snapshot.docs
+              .map((d) => ({ id: d.id, ...d.data() } as Project))
+              .filter((p) => !p.isDeleted);
+            if (yearProjects.length > 0) {
+              const updatedAt = remoteYearsMetaRef.current[year]?.updatedAt || new Date().toISOString();
+              saveYearDataToLocal(year, updatedAt, { projects: yearProjects });
+            }
           },
           (e) => {
             console.error("Projects listener error:", e);
