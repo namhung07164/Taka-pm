@@ -55,6 +55,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
   const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
+  const quickNavTarget = useAppStore(state => state.quickNavTarget);
   const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
   const setIsPrintPreview = useAppStore(state => state.setIsPrintPreview);
@@ -62,6 +63,14 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
   const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
   const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
+  const isAnyModalActive = Boolean(quickNavTarget) || isProjectModalOpen || Boolean(miniGanttProject);
+
+  const savedTooltipStateRef = React.useRef<{
+    hoverInfo: any;
+    isPinned: boolean;
+  } | null>(null);
+  const prevIsAnyModalActiveRef = React.useRef(isAnyModalActive);
+
   const [showMenu, setShowMenu] = useState(false);
   const [showLegendModal, setShowLegendModal] = useState(false);
   const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(true);
@@ -136,6 +145,31 @@ export const LiveCanvas = React.memo(function LiveCanvas({
 
   // Synchronize latest aggregated data with stage interaction callbacks
   stageInteractions.updateAggregatedData(aggregatedData, restrictedProjectCodes);
+
+  // Auto-hide Tooltip when QuickNav / MiniGantt / ProjectModal is active, and Auto-restore when closed
+  useEffect(() => {
+    if (!prevIsAnyModalActiveRef.current && isAnyModalActive) {
+      if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
+        savedTooltipStateRef.current = {
+          hoverInfo: stageInteractions.hoverInfo,
+          isPinned: stageInteractions.isPinnedRef.current,
+        };
+      }
+    } else if (prevIsAnyModalActiveRef.current && !isAnyModalActive) {
+      if (savedTooltipStateRef.current) {
+        const saved = savedTooltipStateRef.current;
+        savedTooltipStateRef.current = null;
+        stageInteractions.isPinnedRef.current = saved.isPinned;
+        stageInteractions.setHoverInfo(saved.hoverInfo);
+        if (saved.hoverInfo?.clientX != null && saved.hoverInfo?.clientY != null) {
+          setTimeout(() => {
+            stageInteractions.updateTooltipPos(saved.hoverInfo.clientX, saved.hoverInfo.clientY);
+          }, 30);
+        }
+      }
+    }
+    prevIsAnyModalActiveRef.current = isAnyModalActive;
+  }, [isAnyModalActive, stageInteractions]);
 
   // Listen for Edit Mode trigger from hamburger menu
   useEffect(() => {
@@ -316,14 +350,15 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         onOpenR2Config={onOpenR2Config}
       />
 
-      {/* Tooltip */}
-      {stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible && (
+      {/* Tooltip (Auto-hidden when any Modal or QuickNav is active) */}
+      {!isAnyModalActive && stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible && (
         <div className="hide-on-actual-print print:hidden">
           <LayoutUnitTooltip
             hoverInfo={stageInteractions.hoverInfo}
             tooltipRef={stageInteractions.tooltipRef}
             containerRef={stageInteractions.containerRef}
             onClose={() => {
+              savedTooltipStateRef.current = null;
               stageInteractions.isPinnedRef.current = false;
               stageInteractions.setHoverInfo(null);
               if (stageInteractions.focusedUnitId) {
@@ -334,13 +369,21 @@ export const LiveCanvas = React.memo(function LiveCanvas({
               }
             }}
             onOpenMiniGantt={(project) => {
-              stageInteractions.isPinnedRef.current = false;
-              stageInteractions.setHoverInfo(null);
+              if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
+                savedTooltipStateRef.current = {
+                  hoverInfo: stageInteractions.hoverInfo,
+                  isPinned: stageInteractions.isPinnedRef.current,
+                };
+              }
               setMiniGanttProject(project);
             }}
             onEditProject={(project, _isReadOnly, tab) => {
-              stageInteractions.isPinnedRef.current = false;
-              stageInteractions.setHoverInfo(null);
+              if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
+                savedTooltipStateRef.current = {
+                  hoverInfo: stageInteractions.hoverInfo,
+                  isPinned: stageInteractions.isPinnedRef.current,
+                };
+              }
               setEditingProject(project);
               setModalInitialTab(tab || 'details');
               setIsProjectModalOpen(true);

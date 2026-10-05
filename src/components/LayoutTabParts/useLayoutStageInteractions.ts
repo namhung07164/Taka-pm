@@ -414,7 +414,7 @@ export function useLayoutStageInteractions({
   }, [hoverInfo?.visible, hoverInfo?.unitName, hoverInfo?.data]);
 
   const handleMouseEnterUnit = useCallback((unit: any, e: any) => {
-    if (gestures.isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject)) return;
+    if (gestures.isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
     try {
       const container = e.target.getStage()?.container();
       if (container) container.style.cursor = 'pointer';
@@ -431,27 +431,27 @@ export function useLayoutStageInteractions({
     } catch (err) {
       console.error("Defensive Check: Error onMouseEnter unit in LiveLayoutViewer:", err, unit);
     }
-  }, [gestures.isInteractingRef, miniGanttProject, updateTooltipPos]);
+  }, [gestures.isInteractingRef, miniGanttProject, isProjectModalOpen, updateTooltipPos]);
 
   const handleMouseMoveUnit = useCallback((_unit: any, e: any) => {
-    if (gestures.isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject)) return;
+    if (gestures.isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
     try {
       updateTooltipPos(e.evt.clientX, e.evt.clientY);
     } catch (err) {
       console.error("Defensive Check: Error onMouseMove unit in LiveLayoutViewer:", err);
     }
-  }, [gestures.isInteractingRef, miniGanttProject, updateTooltipPos]);
+  }, [gestures.isInteractingRef, miniGanttProject, isProjectModalOpen, updateTooltipPos]);
 
   const handleMouseLeaveUnit = useCallback((unit: any, e: any) => {
     try {
       const container = e.target.getStage()?.container();
       if (container) container.style.cursor = 'grab';
-      if (isPinnedRef.current || Boolean(miniGanttProject)) return;
+      if (isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
       setHoverInfo(null);
     } catch (err) {
       console.error("Defensive Check: Error onMouseLeave unit in LiveLayoutViewer:", err, unit);
     }
-  }, [miniGanttProject]);
+  }, [miniGanttProject, isProjectModalOpen]);
 
   const pinAndShowTooltip = useCallback((unit: any, clientX: number, clientY: number) => {
     isPinnedRef.current = true;

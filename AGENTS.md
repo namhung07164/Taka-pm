@@ -85,3 +85,11 @@
 
 ## 14. Documentation Maintenance
 - Khi hoàn thành hoặc thay đổi tính năng mới, **bắt buộc** cập nhật các bước thao tác vào `USER_MANUAL.md`.
+
+## 15. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
+- **Primary Storage (Dexie.js / IndexedDB)**: Coi `src/lib/localDb.ts` (`TakaLocalDB`) và in-memory Zustand là Primary Data Source cho client. Khi boot app, luôn ưu tiên đọc cache Dexie (`bootstrapLocalStore()`) nạp ngay 100% dữ liệu trong 5ms – 10ms, triệt tiêu hoàn toàn loading spinner.
+- **Delta Sync Pipeline (`taka_deltas`)**: Mọi đột biến (mutation) sau khi xả ghi xuống Firestore bắt buộc ghi nhận bản ghi delta qua `recordDelta()` (`src/lib/deltaSyncService.ts`). Background worker định kỳ kéo delta (`numericTime > lastSyncTime`) và áp dụng nguyên tử vào Zustand + Dexie, cắt giảm 80%–95% lượt Firestore READ.
+- **Non-blocking UI Thread**: Mọi tác vụ ghi nặng (`offloadPersistSnapshot`, `bulkPut`, `applyDeltasToLocalDatabase`) bắt buộc đẩy sang background microtasks (`setTimeout(..., 0)`), cấm thực hiện I/O làm nghẽn luồng render chính của React, bảo đảm 60 FPS.
+- **Self-Mutation Skipping & Tri-Gate Guards**: Tránh echo giật con trỏ khi đang gõ phím (`delta.updatedBy === currentUser.email`) và tuân thủ tuyệt đối 3 cờ Tri-Gate (`isTasksRequested`, `isCostsRequested`, `isDelegationsRequested`) không nhồi dữ liệu vào slice chưa kích hoạt.
+- **Fault-Tolerant Fallback & Sync Queue**: Khi IndexedDB bị chặn (Incognito/Private) hoặc rỗng dữ liệu, tự động fallback về nạp Firestore. Mọi tác vụ ghi tiếp tục được bảo vệ bởi hàng đợi `syncQueue.ts` chống mất mát dữ liệu ngoại tuyến.
+
