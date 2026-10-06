@@ -180,7 +180,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
               canWrite={canWrite}
             />
             {isFlashed && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/80 dark:text-emerald-300 animate-pulse border border-emerald-300 dark:border-emerald-700 shrink-0" title={updatedBy ? `Cập nhật bởi ${updatedBy}` : 'Cập nhật trực tiếp từ xa'}>
+              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/80 dark:text-emerald-300 animate-pulse border border-emerald-300 dark:border-emerald-700 shrink-0" title={updatedBy ? `Updated by ${updatedBy}` : 'Realtime updated remotely'}>
                 🟢 Live
               </span>
             )}

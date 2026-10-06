@@ -32,7 +32,7 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
         const rows = parseCSV(text);
         
         if (rows.length < 2) {
-          useAppStore.getState().setToast({ title: "Thông báo", message: 'CSV file is empty or has no data rows.' });
+          useAppStore.getState().setToast({ title: "Notice", message: 'CSV file is empty or has no data rows.' });
           return;
         }
 
@@ -62,7 +62,7 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
         }
         
         if (hasError) {
-          useAppStore.getState().setToast({ title: "Thông báo", message: 'Import failed: ' + errorMsg });
+          useAppStore.getState().setToast({ title: "Notice", message: 'Import failed: ' + errorMsg });
           return;
         }
 
@@ -177,10 +177,10 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
           });
         }
         
-        useAppStore.getState().setToast({ title: "Thông báo", message: `Import Projects completed! Processed ${importCount} .` });
+        useAppStore.getState().setToast({ title: "Success", message: `Import Projects completed! Processed ${importCount} projects.` });
       } catch (err) {
         console.error('Import error:', err);
-        useAppStore.getState().setToast({ title: "Thông báo", message: 'Error importing CSV: ' + (err instanceof Error ? err.message : String(err)) });
+        useAppStore.getState().setToast({ title: "Error", message: 'Error importing CSV: ' + (err instanceof Error ? err.message : String(err)) });
       } finally {
         e.target.value = '';
       }

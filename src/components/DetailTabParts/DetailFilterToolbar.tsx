@@ -202,11 +202,11 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                   onClick={() => handleSyncAllPredecessors(true)}
                   disabled={isSyncingPredecessors}
                   className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
-                  title="Sửa và đồng bộ tất cả nội dung Predecessor theo mã Subtask code"
+                  title="Fix and synchronize all predecessor references with subtask codes"
                 >
                   <Wand2 className={`w-4 h-4 pointer-events-none ${isSyncingPredecessors ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline pointer-events-none">
-                    {isSyncingPredecessors ? 'Đang sửa...' : 'Sync Predecessor'}
+                    {isSyncingPredecessors ? 'Syncing...' : 'Sync Predecessor'}
                   </span>
                 </button>
 
@@ -215,11 +215,11 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     onClick={() => handleConvertAllSubtasksToHash()}
                     disabled={isConvertingToHash}
                     className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-cyan-600 dark:bg-cyan-600 border border-cyan-700 text-white rounded-lg hover:bg-cyan-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
-                    title="Quét toàn bộ và chuyển đổi dấu '-' thành '#' cho Subtask Code và Predecessor"
+                    title="Scan and convert '-' to '#' for subtask codes and predecessors"
                   >
                     <Hash className={`w-4 h-4 pointer-events-none ${isConvertingToHash ? 'animate-spin' : ''}`} />
                     <span className="hidden sm:inline pointer-events-none">
-                      {isConvertingToHash ? 'Đang đổi...' : "Đổi '-' sang '#'"}
+                      {isConvertingToHash ? 'Converting...' : "Convert '-' to '#'"}
                     </span>
                   </button>
                 )}
@@ -243,7 +243,7 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
               {currentUser.role === 'admin' && (
                 <FullReplaceImport 
                   collectionName="taka_projects"
-                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Thông báo", message: String(`Full replace successful! Imported ${count} .`) })}
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} projects.`) })}
                   onParseRow={(row, headers) => {
                     const p: any = {};
                     let rowNo: any = null;
@@ -271,7 +271,7 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
               {currentUser.role === 'admin' && (
                 <FullReplaceImport 
                   collectionName="taka_tasks"
-                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Thông báo", message: String(`Full replace successful! Imported ${count} .`) })}
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} tasks.`) })}
                   onParseRow={(row, headers) => {
                     const t: any = {};
                     headers.forEach((h, i) => {

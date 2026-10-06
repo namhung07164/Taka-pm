@@ -112,7 +112,7 @@ export function useDetailTaskMutations({
                    (String(tsk.projectStore || '') === String(currentProject.store || '') || (!tsk.projectStore && !currentProject.store));
           });
           if (isDuplicate) {
-            useAppStore.getState().setToast({ title: "Thông báo", message: `Tên nhiệm vụ "${updates.name}" đã tồn tại trong dự án ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Vui lòng nhập tên khác.` });
+            useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
             return;
           }
         }

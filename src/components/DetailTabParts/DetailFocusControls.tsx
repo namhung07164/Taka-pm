@@ -20,7 +20,7 @@ export const DetailFocusControls = memo(function DetailFocusControls({
       <button
         onClick={onBackToGantt}
         className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-slate-700/80 hover:bg-slate-800 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-white rounded-full shadow-lg transition-all active:scale-95 text-xs backdrop-blur-sm cursor-pointer border border-slate-600/30"
-        title="Quay lại Gantt (Back to Gantt)"
+        title="Back to Gantt"
       >
         <ArrowLeft className="w-4 h-4" />
         <span className="font-bold tracking-wide">Back to Gantt</span>
@@ -30,7 +30,7 @@ export const DetailFocusControls = memo(function DetailFocusControls({
         <button
           onClick={onClearFocus}
           className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-slate-700/80 hover:bg-slate-800 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-white rounded-full shadow-lg transition-all active:scale-95 text-xs backdrop-blur-sm cursor-pointer border border-slate-600/30"
-          title="Thoát Focus (Esc)"
+          title="Clear Focus (Esc)"
         >
           <EyeOff className="w-4 h-4" />
           <span className="font-bold tracking-wide">Clear Focus</span>

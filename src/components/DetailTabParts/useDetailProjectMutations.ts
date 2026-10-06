@@ -137,7 +137,7 @@ export function useDetailProjectMutations({
           String(proj.store) === String(newStore)
         );
         if (isDuplicate) {
-          useAppStore.getState().setToast({ title: "Thông báo", message: `Mã dự án "${newCode}" đã tồn tại trong năm ${newYear} - Store ${newStore}. Vui lòng nhập mã khác.` });
+          useAppStore.getState().setToast({ title: "Notice", message: `Project code "${newCode}" already exists in year ${newYear} - Store ${newStore}. Please enter a different code.` });
           return;
         }
       }

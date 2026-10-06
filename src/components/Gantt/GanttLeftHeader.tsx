@@ -65,7 +65,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           type="button"
           onClick={handleToggleExpandAll}
           className="p-1 rounded hover:bg-slate-200 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-300 active:scale-90 transition-all shrink-0 cursor-pointer"
-          title={isAllExpanded ? "Thu gọn tất cả Dự án" : "Mở rộng tất cả Dự án"}
+          title={isAllExpanded ? "Collapse All Projects" : "Expand All Projects"}
         >
           {isAllExpanded ? (
             <ChevronDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 font-bold" />

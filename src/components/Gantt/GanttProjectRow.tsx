@@ -183,10 +183,10 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 )}
                 title={
                   !canToggle
-                    ? "Dự án chưa có công việc"
+                    ? "Project has no tasks"
                     : isExpanded
-                    ? "Thu gọn Dự án này"
-                    : `Mở rộng Dự án này (${effectiveTaskCount} công việc)`
+                    ? "Collapse this project"
+                    : `Expand this project (${effectiveTaskCount} tasks)`
                 }
               >
                 {isExpanded ? (
@@ -209,10 +209,10 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 )}
                 title={
                   !hasModularTasks
-                    ? "Dự án không có Task Modular"
+                    ? "Project has no modular tasks"
                     : isProjectModularExpanded
-                    ? "Thu gọn Task Modular của dự án này"
-                    : "Mở rộng Task Modular của dự án này"
+                    ? "Collapse modular tasks of this project"
+                    : "Expand modular tasks of this project"
                 }
               >
                 {isProjectModularExpanded ? (
@@ -247,7 +247,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               )}
               title={
                 !isEditMode
-                  ? `Quick Navigator - Dự án: ${p.name} (${p.code})`
+                  ? `Quick Navigator - Project: ${p.name} (${p.code})`
                   : p.name
               }
             >

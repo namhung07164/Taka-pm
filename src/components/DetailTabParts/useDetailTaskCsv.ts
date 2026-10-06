@@ -126,7 +126,7 @@ export function useDetailTaskCsv({
       }
 
       if (!rows || rows.length < 2) {
-        useAppStore.getState().setToast({ title: "Thông báo", message: "File không có dữ liệu hoặc định dạng không đúng." });
+        useAppStore.getState().setToast({ title: "Notice", message: "CSV file is empty or format is invalid." });
         return;
       }
 
@@ -156,7 +156,7 @@ export function useDetailTaskCsv({
       }
       
       if (hasError) {
-        useAppStore.getState().setToast({ title: "Thông báo", message: 'Import failed: ' + errorMsg });
+        useAppStore.getState().setToast({ title: "Notice", message: 'Import failed: ' + errorMsg });
         return;
       }
 
@@ -557,10 +557,10 @@ export function useDetailTaskCsv({
         });
       }
       
-      useAppStore.getState().setToast({ title: "Thông báo", message: `Import Tasks completed! Processed ${tasksToImport.length} tasks.` });
+      useAppStore.getState().setToast({ title: "Success", message: `Import Tasks completed! Processed ${tasksToImport.length} tasks.` });
     } catch (err: any) {
       console.error("Import error:", err);
-      useAppStore.getState().setToast({ title: "Lỗi", message: "Không thể nhập file: " + (err?.message || "Lỗi xử lý file"), type: "error" });
+      useAppStore.getState().setToast({ title: "Error", message: "Failed to import file: " + (err?.message || "File processing error"), type: "error" });
     } finally {
       e.target.value = '';
     }

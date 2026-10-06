@@ -29,7 +29,7 @@ export function useDetailBulkActions({
     if (selectedTaskIds.size === 0) return;
     
     if (action === 'delete') {
-      if (!window.confirm(`Bạn có chắc muốn xoá ${selectedTaskIds.size} nhiệm vụ đã chọn?`)) return;
+      if (!window.confirm(`Are you sure you want to delete ${selectedTaskIds.size} selected tasks?`)) return;
     }
 
     try {
@@ -134,13 +134,13 @@ export function useDetailBulkActions({
           return;
         }
 
-        useAppStore.getState().setToast({ title: "Thành công", message: `Đã ${action === 'delete' ? 'xoá' : 'cập nhật'} ${updateCount} nhiệm vụ.` });
+        useAppStore.getState().setToast({ title: "Success", message: `Successfully ${action === 'delete' ? 'deleted' : 'updated'} ${updateCount} tasks.` });
         setSelectedTaskIds(new Set());
         lastCheckedTaskIdRef.current = null;
       }
     } catch (e: any) {
       console.error(e);
-      useAppStore.getState().setToast({ title: "Lỗi", message: e.message });
+      useAppStore.getState().setToast({ title: "Error", message: e.message });
     }
   };
 
