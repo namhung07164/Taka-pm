@@ -1340,7 +1340,7 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Thứ Tự Phân Hệ Lựa Chọn (5 Tùy Chọn Chuẩn)**:
      1. 🗺️ **Layout (Mặt Bằng)**: Chuyển sang bản vẽ mặt bằng trực tiếp, tự động lọc theo store/location và highlight gian hàng tương ứng với mã dự án/task.
      2. 📊 **Gantt (Gantt Chart)**: Tự động lọc theo năm, store, điền mã dự án hoặc task code phụ vào ô tìm kiếm Gantt (`taka_gantt_search`), đồng thời cuộn đến mốc thời gian hiện tại (`triggerGanttToday`).
-     3. 📋 **Tasks (Task Detail)**: Tự động chuyển sang bảng chi tiết công việc, lọc chính xác theo mã dự án hoặc mã task code phụ.
+     3. 📋 **Tasks (Task Detail)**: Tự động chuyển sang bảng chi tiết công việc, lọc chính xác theo mã dự án hoặc mã task code phụ. Hệ thống tối ưu hóa cơ chế **Zero-Lag Atomic Transition**: tiền mở rộng dự án mẹ ngay tại thời điểm điều hướng trong một lượt cập nhật trạng thái duy nhất, loại bỏ hoàn toàn khoảng đen chờ màn hình (Black void screen) và giải phóng chi phí dựng hàng loạt tác vụ con nhờ công nghệ tăng tốc trình duyệt `content-visibility: auto` cùng phân tách `isDesktop` loại bỏ hoàn toàn bảng Desktop nặng khi chạy trên di động.
      4. 💰 **Budget (Ngân Sách)**: Tự động chuyển sang bảng ngân sách, đồng bộ năm/store và tự động điền mã dự án vào ô tìm kiếm ngân sách.
      5. 🧾 **Cost (Chi Phí)**: Tự động chuyển sang bảng chi tiết chi phí, đồng bộ năm/store và tự động điền mã dự án/task code vào ô tìm kiếm chi phí.
    - **Thao Tác Nhanh**: Nhấn phím `Esc` hoặc bấm nút đóng để thoát bảng điều hướng ngay lập tức.

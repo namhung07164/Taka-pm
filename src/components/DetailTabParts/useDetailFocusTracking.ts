@@ -223,13 +223,18 @@ export function useDetailFocusTracking({
           if (statusFilter !== 'all') {
             setStatusFilter('all');
           }
-          setExpandedCodes([...new Set([...expandedCodes, p.id!])]);
-          setTimeout(() => {
+          if (p.id && !expandedCodes.includes(p.id)) {
+            setExpandedCodes([...expandedCodes, p.id]);
+          }
+          const tryScroll = (attempts = 0) => {
             const el = document.getElementById(`detail-task-${initialFocusTaskId}`);
             if (el) {
               scrollToElement(el);
+            } else if (attempts < 6) {
+              setTimeout(() => tryScroll(attempts + 1), 80);
             }
-          }, 500);
+          };
+          requestAnimationFrame(() => tryScroll(0));
         } else if (task.projectCode) {
           if (statusFilter !== 'all') {
             setStatusFilter('all');

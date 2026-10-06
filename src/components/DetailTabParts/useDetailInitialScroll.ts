@@ -22,10 +22,13 @@ export function useDetailInitialScroll({
   setSearchTerm,
   setStatusFilter,
 }: UseDetailInitialScrollParams) {
-  // Backfill dates once loaded
+  // Backfill dates once loaded (deferred to background microtask to prevent UI freeze during tab navigation)
   useEffect(() => {
     if (projects.length > 0 && tasks.length > 0) {
-      backfillMissingProjectDates(projects, tasks, delegationGroups);
+      const timer = setTimeout(() => {
+        backfillMissingProjectDates(projects, tasks, delegationGroups);
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, [projects.length, tasks.length, delegationGroups.length]);
 
@@ -56,20 +59,21 @@ export function useDetailInitialScroll({
         );
 
       // Keep parent row collapsed by default (Tri-Gate Lazy Loading rule).
-      // Child tasks are fetched via Delta Sync only when user taps Expand (+).
-
-      setTimeout(() => {
-        const el =
-          (matchedProj
-            ? document.getElementById(
-                `detail-project-${matchedProj.no ?? matchedProj.code}`
-              )
-            : null) ||
-          document.querySelector(`[data-project-code="${initialFilterCode}"]`);
-        if (el && el instanceof HTMLElement) {
-          scrollToElement(el);
-        }
-      }, 300);
+      // If initialFocusTaskId is present, useDetailFocusTracking will scroll directly to the task.
+      if (!initialFocusTaskId) {
+        setTimeout(() => {
+          const el =
+            (matchedProj
+              ? document.getElementById(
+                  `detail-project-${matchedProj.no ?? matchedProj.code}`
+                )
+              : null) ||
+            document.querySelector(`[data-project-code="${initialFilterCode}"]`);
+          if (el && el instanceof HTMLElement) {
+            scrollToElement(el);
+          }
+        }, 300);
+      }
     } else if (
       !initialFilterCode &&
       lastProcessedFilterCodeRef.current !== null

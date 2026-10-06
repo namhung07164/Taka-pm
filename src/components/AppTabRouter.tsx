@@ -1,5 +1,5 @@
 import React, { Suspense, Profiler } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { TabErrorBoundary } from "./TabErrorBoundary";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { useAppStore } from "../store/useAppStore";
@@ -154,15 +154,13 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
             </div>
           </div>
         }>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.15 }}
-              className="flex flex-col flex-grow min-h-0"
-            >
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0.95 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.06 }}
+            className="flex flex-col flex-grow min-h-0"
+          >
               {activeTab === "layout" &&
                 (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.layout) && (
                   <LayoutTab
@@ -482,7 +480,6 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 <PictureMappingTab />
               )}
             </motion.div>
-          </AnimatePresence>
         </Suspense>
       </TabErrorBoundary>
     </div>

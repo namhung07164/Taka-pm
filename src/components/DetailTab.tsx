@@ -99,6 +99,15 @@ export function DetailTab({
     permissionMatrix,
   });
 
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1280 : true);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(min-width: 1280px)');
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
   // Modals state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -368,7 +377,8 @@ export function DetailTab({
         parseCSVDate={parseCSVDate}
       />
 
-      <DetailTableView
+      {isDesktop && (
+        <DetailTableView
         tableContainerRef={tableContainerRef}
         handleTableScroll={handleTableScroll}
         totalTableWidth={totalTableWidth}
@@ -422,6 +432,7 @@ export function DetailTab({
         visibleCount={visibleCount}
         setVisibleCount={setVisibleCount}
       />
+      )}
 
       <DetailMobileView
         filteredProjects={filteredProjects}

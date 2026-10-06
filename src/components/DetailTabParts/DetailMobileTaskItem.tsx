@@ -56,7 +56,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
   return (
     <div 
       id={`detail-task-${t.id}`} 
-      style={{ contain: 'content' }}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '120px' }}
       className={cn(
         "bg-slate-50/90 dark:bg-[#252528] rounded-xl p-3 border border-slate-200/90 dark:border-[#444446] text-sm shadow-xs flex flex-col gap-2.5 transition-all", 
         taskBorderAccent,

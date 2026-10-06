@@ -1081,6 +1081,12 @@ export default function App() {
           if (task?.id) {
             updates.detailTabFocusTaskId = task.id;
           }
+          if (p?.id) {
+            const currentExpanded = useAppStore.getState().expandedProjectIds || [];
+            if (!currentExpanded.includes(p.id)) {
+              updates.expandedProjectIds = [...currentExpanded, p.id];
+            }
+          }
           updates.isTasksRequested = true;
           break;
         }
