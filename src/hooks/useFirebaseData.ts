@@ -30,6 +30,7 @@ import { startDeltaSyncService } from "../lib/deltaSyncService";
 import { bootstrapLocalStore, offloadPersistSnapshot } from "../lib/backgroundSyncWorker";
 import {
   fetchYearsMeta,
+  setMemoryYearsMeta,
   isYearCacheValid,
   loadYearDataFromLocal,
   saveYearDataToLocal,
@@ -385,6 +386,7 @@ export function useFirebaseData() {
 
     fetchYearsMeta().then((meta) => {
       remoteYearsMetaRef.current = meta;
+      setMemoryYearsMeta(meta);
     });
 
     // Start Background Delta Sync Service (Stage 2 Delta Pipeline)

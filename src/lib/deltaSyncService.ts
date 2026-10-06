@@ -7,13 +7,14 @@ import {
   getDocs,
   setDoc,
   doc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { safeGetItemLocal, safeSetItemLocal } from './storage';
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
-import { touchYearMeta } from './yearsFingerprintService';
+import { touchYearMeta, getMemoryYearsMeta } from './yearsFingerprintService';
 import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
@@ -81,6 +82,23 @@ export function getLastDeltaSyncTime(): number {
  */
 export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
   const lastSyncTime = getLastDeltaSyncTime();
+
+  // 1. Heartbeat Fingerprint Optimization (Rule 15):
+  // Nếu đang xem năm cụ thể và remote metadata updatedAt không mới hơn lastSyncTime,
+  // bỏ qua hoàn toàn truy vấn taka_deltas -> 0 Firestore READ!
+  // Kèm Lớp Bảo hiểm Fail-Safe: Nếu đã quá 2 phút chưa kiểm tra trực tiếp, vẫn chạy query phòng ngừa
+  if (yearFilter && yearFilter !== 'all') {
+    const memMeta = getMemoryYearsMeta();
+    if (memMeta && memMeta[yearFilter]?.updatedAt) {
+      const remoteTime = new Date(memMeta[yearFilter].updatedAt).getTime();
+      const timeSinceLastSync = Date.now() - lastSyncTime;
+      const FAIL_SAFE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes fail-safe
+      if (!isNaN(remoteTime) && remoteTime <= lastSyncTime && timeSinceLastSync < FAIL_SAFE_TIMEOUT_MS) {
+        return 0; // Pure 0-Read bypass
+      }
+    }
+  }
+
   const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
 
   try {
@@ -237,50 +255,155 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
   }
 }
 
-let syncIntervalTimer: any = null;
+const LAST_PRUNE_KEY = 'taka_last_delta_prune_time_v1';
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Khởi động Background Delta Sync Poller
- * Tự động kiểm tra delta định kỳ 25s hoặc khi người dùng quay lại tab trình duyệt
+ * Tự động Dọn dẹp Delta cũ (Delta Retention TTL & Pruning)
+ * - Xóa các delta đã quá retentionDays ngày (mặc định 7 ngày).
+ * - Chạy ngầm tối đa 1 lần mỗi 24 giờ trên mỗi máy trạm để tránh tốn tài nguyên.
+ * - Giúp collection taka_deltas luôn siêu nhẹ (< 100 documents) và query nhanh < 10ms.
+ */
+export async function pruneExpiredDeltas(retentionDays: number = 7): Promise<number> {
+  const lastPruneRaw = safeGetItemLocal(LAST_PRUNE_KEY);
+  const now = Date.now();
+  if (lastPruneRaw) {
+    const lastPruneTime = Number(lastPruneRaw);
+    if (!isNaN(lastPruneTime) && (now - lastPruneTime < ONE_DAY_MS)) {
+      return 0; // Đã dọn dẹp trong vòng 24h qua
+    }
+  }
+
+  const cutoffTime = now - retentionDays * ONE_DAY_MS;
+  const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
+
+  try {
+    const qPrune = query(
+      colRef,
+      where('numericTime', '<', cutoffTime),
+      limit(100)
+    );
+
+    const snapshot = await getDocs(qPrune);
+    if (snapshot.empty) {
+      safeSetItemLocal(LAST_PRUNE_KEY, String(now));
+      return 0;
+    }
+
+    const batch = writeBatch(db);
+    snapshot.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+
+    await batch.commit();
+    safeSetItemLocal(LAST_PRUNE_KEY, String(now));
+    return snapshot.size;
+  } catch (err) {
+    console.warn('[deltaSync] Failed to prune expired deltas:', err);
+    return 0;
+  }
+}
+
+let syncIntervalTimer: any = null;
+let isHibernating = false;
+let lastActivityTime = Date.now();
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity threshold
+
+/**
+ * Khởi động Background Delta Sync Poller với Adaptive Tab Hibernation & Inactivity Sleep
+ * - Khi ẩn tab hoặc người dùng không hoạt động > 5 phút: Tạm dừng định thời hoàn toàn (0 Idle Read).
+ * - Khi quay lại tab hoặc tương tác: Lập tức sync tức thì (0ms) và kích hoạt lại interval.
  */
 export function startDeltaSyncService(intervalMs: number = 25000): () => void {
   if (typeof window === 'undefined') return () => {};
-
-  if (syncIntervalTimer) {
-    clearInterval(syncIntervalTimer);
-  }
 
   const triggerSync = () => {
     const year = useAppStore.getState().globalYearFilter;
     pullAndApplyDeltas(year).catch(() => {});
   };
 
-  // Sync ngay khi khởi động
-  triggerSync();
-
-  // Poller định kỳ
-  syncIntervalTimer = setInterval(triggerSync, intervalMs);
-
-  // Lắng nghe khi người dùng chuyển tab quay lại (visibilitychange)
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      triggerSync();
-    }
-  };
-
-  const handleOnline = () => {
-    triggerSync();
-  };
-
-  window.addEventListener('visibilitychange', handleVisibilityChange);
-  window.addEventListener('online', handleOnline);
-
-  return () => {
+  const stopPolling = () => {
     if (syncIntervalTimer) {
       clearInterval(syncIntervalTimer);
       syncIntervalTimer = null;
     }
+  };
+
+  const startPolling = () => {
+    stopPolling();
+    syncIntervalTimer = setInterval(() => {
+      // Check for hidden tab or inactivity sleep
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        hibernate();
+        return;
+      }
+      if (Date.now() - lastActivityTime > IDLE_TIMEOUT_MS) {
+        hibernate();
+        return;
+      }
+      triggerSync();
+    }, intervalMs);
+  };
+
+  const hibernate = () => {
+    if (isHibernating) return;
+    isHibernating = true;
+    stopPolling();
+  };
+
+  const wakeAndSync = () => {
+    lastActivityTime = Date.now();
+    if (isHibernating || !syncIntervalTimer) {
+      isHibernating = false;
+      triggerSync(); // Sync immediately on wake
+      startPolling();
+    }
+  };
+
+  // 1. Initial boot sync & start timer
+  triggerSync();
+  startPolling();
+
+  // 2. Schedule non-blocking background TTL pruning after boot (15s delay)
+  setTimeout(() => {
+    pruneExpiredDeltas(7).catch(() => {});
+  }, 15000);
+
+  // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      wakeAndSync();
+    } else {
+      hibernate();
+    }
+  };
+
+  // 3. Online network reconnection
+  const handleOnline = () => {
+    wakeAndSync();
+  };
+
+  // 4. User activity listeners to wake up from inactivity sleep
+  const handleUserActivity = () => {
+    if (isHibernating) {
+      wakeAndSync();
+    } else {
+      lastActivityTime = Date.now();
+    }
+  };
+
+  window.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('pointerdown', handleUserActivity, { passive: true });
+  window.addEventListener('keydown', handleUserActivity, { passive: true });
+  window.addEventListener('touchstart', handleUserActivity, { passive: true });
+
+  return () => {
+    stopPolling();
     window.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('pointerdown', handleUserActivity);
+    window.removeEventListener('keydown', handleUserActivity);
+    window.removeEventListener('touchstart', handleUserActivity);
   };
 }

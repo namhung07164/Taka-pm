@@ -52,6 +52,7 @@ export interface GanttToolbarProps {
   handleSetTextColor: (color: string | null) => void;
   handleSetBaselineSelected: () => void;
   handleToggleRealtimeUpdate: () => void;
+  isTaskModularModalOpen?: boolean;
   setIsTaskModularModalOpen: (val: boolean) => void;
   sumMode: "none" | "duration";
   setSumMode: (val: "none" | "duration") => void;
@@ -120,6 +121,7 @@ export function GanttToolbar({
   setSelectedTaskIds,
   handleSetTextColor,
   handleSetBaselineSelected,
+  isTaskModularModalOpen = false,
   setIsTaskModularModalOpen,
   sumMode,
   setSumMode,
@@ -213,8 +215,8 @@ export function GanttToolbar({
         </div>
 
       {/* Floating Sticky Edit Mode Button & Floating Edit Mode Panel (Matches Task Detail) */}
-      {canWrite && !isEditMode && (
-        <div className="fixed top-[154px] sm:top-[160px] right-4 md:right-8 z-[99999] flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+      {canWrite && !isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed top-[154px] sm:top-[160px] right-4 md:right-8 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
           <button
             type="button"
             onClick={() => setIsEditMode(true)}
@@ -229,8 +231,8 @@ export function GanttToolbar({
         </div>
       )}
 
-      {canWrite && isEditMode && (
-        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-[99999] flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+      {canWrite && isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
           <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
             <Edit2 className="w-3.5 h-3.5 text-blue-500" />
             <span>Editing Mode</span>

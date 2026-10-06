@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Draggable from "react-draggable";
 import {
   Layers,
@@ -16,7 +17,7 @@ import {
 import { Task, Project } from "../types";
 import { cn, matchesAdvancedSearch } from "../lib/utils";
 import { DebouncedSearchInput } from './DebouncedSearchInput';
-import { getZIndexClass } from '../lib/zIndexManager';
+import { getZIndexClass, useOverlayStack } from '../lib/zIndexManager';
 
 interface TaskModularModalProps {
   isOpen: boolean;
@@ -126,54 +127,48 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   // Candidate parent tasks:
   // 1. Cannot be in selectedTaskIds (cannot group into self)
   // 2. Cannot be a child of any selected task (avoid cycle)
-  // 3. STRICT 1-LEVEL CONSTRAINT: A parent task cannot be a child of another task (t.parentTaskId must be falsy)
+  // 3. STRICT 1-LEVEL CONSTRAINT: A parent task cannot be a child of another task
   const candidateParentTasks = useMemo(() => {
     const selectedSet = new Set(selectedTaskIds);
-
     return tasks.filter((t) => {
-      if (selectedSet.has(t.id)) return false;
-      if (t.parentTaskId) return false; // Strictly 1 level: candidate parent task must be a root task
-
-      // Project scope filter
+      if (selectedSet.has(t.id) || t.parentTaskId) return false;
       if (filterScope === "same_project" && selectedProjectCodes.size > 0) {
         const pCode = String(t.projectCode || "").trim().toLowerCase();
         if (!selectedProjectCodes.has(pCode)) return false;
       }
-
-      // Search term filter
       if (searchTerm.trim()) {
         const isMatch = matchesAdvancedSearch(searchTerm, [t.name, t.projectCode, t.party, t.taskCodePhu]);
         if (!isMatch) return false;
       }
-
       return true;
     });
   }, [tasks, selectedTaskIds, filterScope, selectedProjectCodes, searchTerm]);
 
+  const zInfo = useOverlayStack({
+    layer: 'MODAL_MODULAR',
+    isOpen,
+    onClose,
+    closeOnTabChange: true
+  });
+
   if (!isOpen) return null;
 
-  const chosenParentTask = selectedParentTaskId
-    ? tasks.find((t) => t.id === selectedParentTaskId)
-    : null;
+  const chosenParentTask = selectedParentTaskId ? tasks.find((t) => t.id === selectedParentTaskId) : null;
 
   const handleConfirmGroup = () => {
     if (!selectedParentTaskId || allTargetTaskIds.length === 0) return;
     const groupFn = onGroupTasks || onGroup;
-    if (typeof groupFn === 'function') {
-      groupFn(selectedParentTaskId, allTargetTaskIds);
-    }
+    if (typeof groupFn === 'function') groupFn(selectedParentTaskId, allTargetTaskIds);
   };
 
   const handleConfirmUnlink = () => {
     if (selectedTaskIds.length === 0) return;
     const unlinkFn = onUnlinkTasks || onUnlink;
-    if (typeof unlinkFn === 'function') {
-      unlinkFn(selectedTaskIds);
-    }
+    if (typeof unlinkFn === 'function') unlinkFn(selectedTaskIds);
   };
 
-  return (
-    <div className={`fixed inset-0 ${getZIndexClass('MODAL_MODULAR')} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`} onClick={onClose}>
+  return createPortal(
+    <div className={`fixed inset-0 ${zInfo.zClass} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`} onClick={onClose}>
       <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, select">
         <div 
           ref={nodeRef}
@@ -489,6 +484,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
         </div>
       </div>
       </Draggable>
-    </div>
+    </div>,
+    document.body
   );
 };

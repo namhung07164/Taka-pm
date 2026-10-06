@@ -16,21 +16,46 @@ export type YearsMetaMap = Record<string, YearMetaInfo>;
 const FINGERPRINT_CACHE_KEY = 'taka_years_meta_fingerprint_v1';
 const DATA_CACHE_PREFIX = 'taka_year_data_v1_';
 
+let memoryYearsMeta: YearsMetaMap | null = null;
+let lastMetaFetchTime = 0;
+
 /**
- * Lấy document metadata years_meta từ Firestore hoặc cache
+ * Cập nhật snapshot metadata vào bộ nhớ RAM (0 Firestore Read)
  */
-export async function fetchYearsMeta(): Promise<YearsMetaMap> {
+export function setMemoryYearsMeta(meta: YearsMetaMap): void {
+  memoryYearsMeta = meta;
+  lastMetaFetchTime = Date.now();
+}
+
+/**
+ * Lấy metadata hiện tại từ RAM nếu có
+ */
+export function getMemoryYearsMeta(): YearsMetaMap | null {
+  return memoryYearsMeta;
+}
+
+/**
+ * Lấy document metadata years_meta từ Firestore hoặc RAM cache (TTL 60s)
+ */
+export async function fetchYearsMeta(forceRefresh: boolean = false): Promise<YearsMetaMap> {
+  const now = Date.now();
+  if (!forceRefresh && memoryYearsMeta && (now - lastMetaFetchTime < 60000)) {
+    return memoryYearsMeta;
+  }
+
   try {
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'years_meta');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const data = snap.data() as YearsMetaMap;
+      memoryYearsMeta = data;
+      lastMetaFetchTime = now;
       return data;
     }
   } catch (err) {
     console.warn('[yearsFingerprint] Unable to fetch remote years_meta:', err);
   }
-  return {};
+  return memoryYearsMeta || {};
 }
 
 /**

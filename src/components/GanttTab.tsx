@@ -317,6 +317,7 @@ export function GanttTab({
         handleSetTextColor={handleSetTextColor}
         handleSetBaselineSelected={handleSetBaselineSelected}
         handleToggleRealtimeUpdate={handleToggleRealtimeUpdate}
+        isTaskModularModalOpen={isTaskModularModalOpen}
         setIsTaskModularModalOpen={setIsTaskModularModalOpen}
         sumMode={sumMode}
         setSumMode={setSumMode}
