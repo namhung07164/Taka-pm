@@ -17,6 +17,7 @@ import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
 import { touchYearMeta, getMemoryYearsMeta } from './yearsFingerprintService';
 import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 import { triggerBatchChangeFlash } from './changeFlashService';
+import { broadcastAppliedDeltas } from './broadcastSyncService';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
@@ -57,6 +58,9 @@ export async function recordDelta(delta: {
     if (delta.year) {
       touchYearMeta(delta.year).catch(() => {});
     }
+
+    // Phát tín hiệu tức thì sang các tab khác trong cùng trình duyệt (0 Read)
+    broadcastAppliedDeltas([deltaPayload]);
   } catch (err) {
     console.warn('[deltaSync] Failed to record delta to Firestore:', err);
   }
@@ -257,6 +261,9 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
 
     // Lưu các delta vào Dexie Local-First Database ngầm
     applyDeltasToLocalDatabase(deltas).catch(() => {});
+
+    // Phát tín hiệu delta đã nạp sang các tab khác (giúp các tab phụ không cần gửi request lên Firestore)
+    broadcastAppliedDeltas(deltas);
 
     // Cập nhật mốc đồng bộ mới nhất
     safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));

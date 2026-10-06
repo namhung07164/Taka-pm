@@ -16,6 +16,8 @@ import { usePerformanceStore } from '../store/usePerformanceStore';
 import { pullAndApplyDeltas } from './deltaSyncService';
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
 import { deduplicateTasks } from './taskDeduplicationService';
+import { initBroadcastSyncListener } from './broadcastSyncService';
+import { purgeOldDeltas } from './deltaPurgeService';
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
@@ -135,7 +137,15 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () =
   // 1. Boot local store ngay lập tức
   bootstrapLocalStore().catch(() => {});
 
-  // 2. Định kỳ kích hoạt Delta Sync
+  // 2. Kích hoạt BroadcastChannel Multi-Tab Synchronization
+  const cleanupBroadcast = initBroadcastSyncListener();
+
+  // 3. Khởi chạy ngầm Auto-Purge dọn dẹp các delta cũ (>48h) không làm nghẽn UI
+  setTimeout(() => {
+    purgeOldDeltas(48).catch(() => {});
+  }, 5000);
+
+  // 4. Định kỳ kích hoạt Delta Sync
   const runSync = async () => {
     try {
       const year = useAppStore.getState().globalYearFilter;
@@ -156,5 +166,6 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () =
       clearInterval(syncCoordinatorTimer);
       syncCoordinatorTimer = null;
     }
+    cleanupBroadcast();
   };
 }
