@@ -68,11 +68,12 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
     try {
       const res = await uploadPictureToTakaFolder(file, unitCode);
       if (res.success && res.publicUrl) {
-        setUploadSuccessUrl(res.publicUrl);
+        const feedback = `${res.publicUrl}${(res as any).compressionInfo || ''}`;
+        setUploadSuccessUrl(feedback);
         setNewLinkInput(res.publicUrl);
         // Save link immediately into gallery
         handleAddCustomImage(undefined, res.publicUrl);
-        setTimeout(() => setUploadSuccessUrl(null), 3000);
+        setTimeout(() => setUploadSuccessUrl(null), 4500);
       } else {
         setUploadError(res.error || 'Upload failed');
       }

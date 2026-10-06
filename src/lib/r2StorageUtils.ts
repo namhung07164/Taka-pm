@@ -2,6 +2,7 @@ import { getStoredR2Credentials, getS3Sdk, extractR2Key, listR2Objects, deleteR2
 import { doc, getDoc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
+import { compressImageToWebp } from './imageCompression';
 
 /**
  * R2 Storage Garbage Collector & Cleanup Utilities.
@@ -223,26 +224,39 @@ export async function uploadPictureToTakaFolder(
       },
     });
 
-    const cleanName = file.name.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
+    // Auto-compress photo to ultra-lightweight WebP format (Canva & Cloudinary standard: max 1920px, quality 0.82)
+    let uploadFile = file;
+    let compressionInfo = '';
+    try {
+      const compressed = await compressImageToWebp(file, { maxWidth: 1920, maxHeight: 1920, quality: 0.82 });
+      uploadFile = compressed.file;
+      if (compressed.compressionRatio > 0) {
+        compressionInfo = ` (Đã nén ${(compressed.originalSize / 1024).toFixed(0)}KB → ${(compressed.compressedSize / 1024).toFixed(0)}KB, tiết kiệm ${compressed.compressionRatio}%)`;
+      }
+    } catch (compressErr) {
+      console.warn('[R2 Upload] Lỗi nén WebP, sử dụng file gốc:', compressErr);
+    }
+
+    const cleanName = uploadFile.name.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
     const prefix = unitCode ? `${unitCode.replace(/[^a-zA-Z0-9_-]/g, '_')}_` : '';
     const keyName = `${prefix}${Date.now()}_${cleanName}`;
     const fullKey = `Taka-Pm-folder/${keyName}`;
 
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = await uploadFile.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
 
     const command = new PutObjectCommand({
       Bucket: creds.bucketName.trim(),
       Key: fullKey,
       Body: uint8Array,
-      ContentType: file.type || 'image/jpeg',
+      ContentType: uploadFile.type || 'image/webp',
       CacheControl: 'public, max-age=604800, immutable',
     });
 
     await s3.send(command);
 
     const publicUrl = `https://hcm.taka-pm.org/${fullKey}`;
-    return { success: true, publicUrl };
+    return { success: true, publicUrl, compressionInfo } as any;
   } catch (err: any) {
     console.error("[R2 Upload] Failed to upload picture to Taka-Pm-folder:", err);
     return { success: false, error: err?.message || "Lỗi tải ảnh lên Cloudflare R2." };
