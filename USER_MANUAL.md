@@ -614,11 +614,15 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
      * `Progress Bars`: Thanh tiến độ kế hoạch (Plan) và tiến độ thực tế (Act).
      * `Diện tích (m²)`: Kích thước diện tích sàn của gian hàng.
      * *Hệ thống tự động lưu cấu hình cá nhân này vào bộ nhớ thiết bị, có sẵn các nút "Bật tất cả" và "Mặc định" để thao tác 1 chạm nhanh chóng.*
-   - **Thanh Chú Thích Màu Nổi (Floating Color Legend Bar)**: Ở góc dưới màn hình (đặc biệt tối ưu trải nghiệm 1 chạm cho iOS/iPhone/iPad), hệ thống hiển thị dải các chấm màu và tên nhóm phân loại tương ứng theo định dạng thẻ cuộn ngang mượt mà.
-     - **Chạm 1 chạm để Lọc & Highlight**: Khi chạm vào một thẻ nhóm màu trên thanh Legend, hệ thống sẽ tự động highlight các gian hàng thuộc nhóm đó và làm mờ các gian hàng còn lại để nhận diện nhanh trên mặt bằng; chạm lại lần nữa để trở về bình thường.
-     - **Nút Thu gọn/Mở rộng**: Có thể bấm nút Chevron để thu gọn thanh Swatches thành một dải badge nhỏ gọn nhằm tối đa hóa diện tích quan sát bản đồ.
-   - **Bảng Tra Cứu Chú Thích Màu Toàn Diện (Color Legend Modal)**: Nằm ngay cạnh nút Menu dưới đáy màn hình với nút bấm chuyên biệt `[ 🎨 Chú thích màu ]`:
-     - Hiển thị danh sách đầy đủ tất cả các nhóm ngành hàng/phân loại, mã màu, số lượng gian hàng và các mã gian hàng liên quan.
+   - **Thanh Chú Thích Màu Chuẩn Thiết Kế Chuyên Nghiệp (Floating Draggable Color Legend HUD)**: Được thiết kế dưới dạng bảng HUD nổi thông minh (Professional Canvas HUD), giải quyết triệt để vấn đề che khuất hay khó đọc:
+     - **Tùy Chọn Vị Trí & Docking Linh Hoạt**: Hỗ trợ chuyển đổi nhanh vị trí gắn (Docking) sang `Top-Right` (ngay dưới nút Zoom, vị trí tối ưu chuẩn CAD/GIS), `Bottom-Right`, hoặc `Bottom-Left`. Hệ thống tự động ghi nhớ vị trí ưu tiên của bạn trên trình duyệt.
+     - **Kéo Thả Tự Do (Universal Draggable)**: Tích hợp tay cầm kéo (`Grip Handle` ⠿) cho phép rê chuột hoặc chạm kéo bảng chú thích đến bất kỳ tọa độ nào trên mặt bằng mà không lo che khuất các gian hàng đang thao tác.
+     - **Tìm Kiếm Nhanh (Inline Search)**: Khi có nhiều hơn 5 nhóm phân loại, thanh tìm kiếm thông minh xuất hiện tức thì giúp lọc nhanh theo tên ngành hàng (F&B, Thời trang, Mỹ phẩm...).
+     - **Chạm 1 chạm để Lọc & Highlight**: Chạm vào một thẻ nhóm màu trên bảng Legend để highlight các gian hàng thuộc nhóm đó và tự động làm mờ các gian hàng còn lại trên mặt bằng; chạm lại lần nữa hoặc bấm nút `Clear Filter` để khôi phục hiển thị toàn bộ.
+     - **Tích Hợp Xuất Bản Vẽ (Export Menu)**: Hỗ trợ xuất ảnh HD (JPEG), xuất tài liệu PDF khổ A3/A4, xem trước in ấn (Print Preview), và kích hoạt đồng bộ tự động lên Cloudflare R2 ngay từ bảng Legend.
+     - **Nút Thu Gọn Siêu Nhẹ (Compact Pill Mode)**: Bấm nút Chevron để thu gọn thành một thanh pill nhỏ gọn `[ 🎨 Color Legend ]` cao chỉ 36px, tối đa hóa diện tích quan sát bản đồ.
+   - **Bảng Tra Cứu Chú Thích Màu Toàn Diện (Color Legend Modal)**: Có thể mở nhanh bằng nút `[ Layers / All Groups ]`:
+     - Hiển thị danh sách đầy đủ tất cả các nhóm ngành hàng/phân loại, mã màu sắc nét, số lượng gian hàng và danh sách chi tiết các mã gian hàng liên quan.
      - Cung cấp bảng quy chuẩn màu sắc trạng thái tiến độ dự án (`Completed` - Xanh lá, `On Process` - Xanh dương, `Upcoming` - Vàng cam, `Delay` - Đỏ) giúp người dùng tra cứu nhanh chóng mọi lúc mọi nơi.
     - **Hệ Thống Cảnh Báo Thông Minh & Chế Độ Lọc Sự Cố Mặt Bằng (Smart Alerts & Focus Mode)**:
       - **Huy hiệu cảnh báo trực quan (Smart Alert Badges)**: Tự động hiển thị huy hiệu đỏ (Critical) hoặc cam (Warning) ngay trên đỉnh gian hàng gặp vấn đề (công việc quá hạn, dự án chậm tiến độ, sắp bàn giao trong 3 ngày, hoặc nguy cơ trễ khai trương dưới 80% tiến độ khi còn dưới 5 ngày).

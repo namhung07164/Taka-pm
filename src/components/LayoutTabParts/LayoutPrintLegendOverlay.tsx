@@ -17,7 +17,7 @@ export const LayoutPrintLegendOverlay: React.FC<LayoutPrintLegendOverlayProps> =
     <div className="hidden print:flex absolute bottom-4 left-4 z-30 bg-white/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl border border-slate-300 shadow-md flex-col gap-1.5 min-w-[200px] max-w-xl pointer-events-none">
       <div className="flex items-center justify-between border-b border-slate-200 pb-1 gap-3">
         <span className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">
-          Chú thích / Legend
+          Color Legend
         </span>
         <span className="text-[10px] font-bold text-slate-600">
           {storeFilter} • {targetLoc} {version?.year ? `(${version.year})` : ''}

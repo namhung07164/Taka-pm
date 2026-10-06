@@ -73,7 +73,15 @@ export const LiveCanvas = React.memo(function LiveCanvas({
 
   const [showMenu, setShowMenu] = useState(false);
   const [showLegendModal, setShowLegendModal] = useState(false);
-  const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState(true);
+  const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('taka_layout_legend_collapsed');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // Ignore
+    }
+    return false;
+  });
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);

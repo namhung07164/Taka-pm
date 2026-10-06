@@ -33,7 +33,7 @@ export const LayoutBottomActionBar: React.FC<LayoutBottomActionBarProps> = React
         )}
       >
         <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 
-        <span>Chú thích màu</span>
+        <span>Color Legend</span>
         {layoutTooltipVisibility?.legendColor !== false && activeGroups.length > 0 && (
           <span className="bg-white/25 px-1.5 py-0.2 rounded-full text-[10px] font-mono">
             {activeGroups.length}
@@ -41,7 +41,7 @@ export const LayoutBottomActionBar: React.FC<LayoutBottomActionBarProps> = React
         )}
         {layoutTooltipVisibility?.legendColor === false && (
           <span className="bg-black/30 px-1.5 py-0.2 rounded-full text-[9px] font-medium text-slate-300">
-            Tắt
+            Off
           </span>
         )}
       </button>
