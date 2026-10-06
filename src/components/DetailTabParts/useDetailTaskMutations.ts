@@ -16,6 +16,7 @@ import {
 } from '../../lib/ganttUtils';
 import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/utils';
 import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
+import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
 
 interface UseDetailTaskMutationsParams {
@@ -104,12 +105,17 @@ export function useDetailTaskMutations({
           (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore))
         );
         if (currentProject) {
+          const normUpdateName = normalizeTaskNameForComparison(updates.name, currentProject.code);
           const isDuplicate = tasks.some(tsk => {
-            if (tsk.id === t.id) return false;
-            if (tsk.name.trim().toLowerCase() !== (updates.name || '').trim().toLowerCase()) return false;
-            return tsk.projectCode === currentProject.code &&
+            if (tsk.id === t.id || tsk.isDeleted) return false;
+            const sameProject = tsk.projectCode === currentProject.code &&
                    (String(tsk.projectYear || '') === String(currentProject.year || '') || (!tsk.projectYear && !currentProject.year)) &&
                    (String(tsk.projectStore || '') === String(currentProject.store || '') || (!tsk.projectStore && !currentProject.store));
+            if (!sameProject) return false;
+
+            if (tsk.name.trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+            const tNorm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+            return !!(normUpdateName && tNorm && normUpdateName === tNorm);
           });
           if (isDuplicate) {
             useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });

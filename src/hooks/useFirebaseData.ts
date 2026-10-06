@@ -28,6 +28,7 @@ import {
 import { setupStaticConfigSync } from "../lib/configCacheService";
 import { startDeltaSyncService } from "../lib/deltaSyncService";
 import { bootstrapLocalStore, offloadPersistSnapshot } from "../lib/backgroundSyncWorker";
+import { deduplicateTasksInMemory } from "../lib/taskDeduplicationService";
 import {
   fetchYearsMeta,
   setMemoryYearsMeta,
@@ -463,18 +464,40 @@ export function useFirebaseData() {
 
     tasksBatchTimer.current = setTimeout(() => {
       if (pendingTasksMap.current) {
-        const updatedList = Array.from(pendingTasksMap.current.values());
-        updatedList.sort((a, b) => {
+        const rawList = Array.from(pendingTasksMap.current.values());
+        const projects = useAppStore.getState().projects || [];
+        const { dedupedTasks, duplicateCount, removedTaskIds } = deduplicateTasksInMemory(rawList, projects);
+        dedupedTasks.sort((a, b) => {
           if (a.projectCode !== b.projectCode) {
             return (a.projectCode || "").localeCompare(b.projectCode || "");
           }
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
-        useAppStore.getState().setTasks(updatedList);
-        offloadPersistSnapshot('taka_tasks', updatedList);
+        useAppStore.getState().setTasks(dedupedTasks);
+        offloadPersistSnapshot('taka_tasks', dedupedTasks);
         const setNotifs = useAppStore.getState().setAllTasksForNotifs;
-        if (setNotifs) setNotifs(updatedList);
+        if (setNotifs) setNotifs(dedupedTasks);
         pendingTasksMap.current = null;
+
+        // Clean up duplicate documents from Firestore in background if any found
+        if (duplicateCount > 0 && removedTaskIds.length > 0) {
+          setTimeout(async () => {
+            try {
+              const BATCH_LIMIT = 400;
+              for (let i = 0; i < removedTaskIds.length; i += BATCH_LIMIT) {
+                const chunk = removedTaskIds.slice(i, i + BATCH_LIMIT);
+                const batch = writeBatch(db);
+                chunk.forEach(id => {
+                  const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+                  batch.delete(ref);
+                });
+                await batch.commit();
+              }
+            } catch (e) {
+              console.warn('Silent duplicate cleanup failed:', e);
+            }
+          }, 1000);
+        }
       }
       tasksBatchTimer.current = null;
     }, 40);
@@ -1122,7 +1145,9 @@ export function useFirebaseData() {
         const newTasks = [...currentTasks];
         const tMap = new Map(newTasks.map(t => [t.id, t]));
         (data.taka_tasks || []).forEach((t: any) => tMap.set(t.id, t));
-        useAppStore.getState().setTasks(Array.from(tMap.values()));
+        const rawLoadedTasks = Array.from(tMap.values());
+        const { dedupedTasks } = deduplicateTasksInMemory(rawLoadedTasks, useAppStore.getState().projects);
+        useAppStore.getState().setTasks(dedupedTasks);
 
         const currentCosts = useAppStore.getState().costs || [];
         const newCosts = [...currentCosts];

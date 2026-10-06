@@ -15,6 +15,7 @@ import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { pullAndApplyDeltas } from './deltaSyncService';
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
+import { deduplicateTasks } from './taskDeduplicationService';
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
@@ -39,7 +40,7 @@ export async function bootstrapLocalStore(): Promise<{
       store.setProjects(projects);
     }
     if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-      store.setTasks(tasks);
+      store.setTasks(deduplicateTasks(tasks));
     }
     if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
       store.setCosts(costs);

@@ -2,14 +2,16 @@ import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { enrichProjects, getUserAllowedStores } from '../lib/utils';
 import { Task, DelegationGroup } from '../types';
+import { deduplicateTasks } from '../lib/taskDeduplicationService';
 
 export function useEnrichedData() {
   const projects = useAppStore(state => state.projects);
-  const tasks = useAppStore(state => state.tasks);
+  const rawTasks = useAppStore(state => state.tasks);
   const delegationGroups = useAppStore(state => state.delegationGroups);
   const currentUser = useAppStore(state => state.currentUser)!;
 
   return useMemo(() => {
+    const tasks = deduplicateTasks(rawTasks);
     const enriched = enrichProjects(projects, tasks, delegationGroups);
     
     if (!currentUser || currentUser.role === "admin") {
@@ -199,5 +201,5 @@ export function useEnrichedData() {
     });
 
     return { enrichedProjects, filteredTasks, visibleDelegationGroups };
-  }, [projects, tasks, delegationGroups, currentUser]);
+  }, [projects, rawTasks, delegationGroups, currentUser]);
 }

@@ -12,7 +12,9 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   server: {
-    hmr: process.env.DISABLE_HMR !== 'true',
+    port: 3000,
+    host: true,
+    hmr: false,
   },
   build: {
     outDir: 'dist',

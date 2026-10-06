@@ -1,13 +1,19 @@
 import React, { useState } from "react";
-import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers } from "lucide-react";
+import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers, CheckCheck } from "lucide-react";
 import { clearAllIDB } from "../../lib/idb";
 import { useAppStore } from "../../store/useAppStore";
-import { doc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { db, APP_ID } from "../../lib/firebase";
-import { deleteStorageFiles, extractStorageUrls } from "../../lib/storageUtils";
 import { syncAllProjectsTaskCountsToFirestore } from "../../lib/projectDatesService";
 import { convertAllSubtaskCodesAndPredecessorsToHash } from "../../lib/ganttUtils";
+import { scanAndRemoveDuplicateTasksOnFirestore, deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
+import { 
+  purgeDeletedTombstones, 
+  standardizeFiscalYears, 
+  repairMissingTaskYears, 
+  archiveHistoricalData 
+} from "./maintenanceHelpers";
 import { Project, Task } from "../../types";
+import { doc, collection, getDocs, writeBatch } from 'firebase/firestore';
+import { db, APP_ID } from "../../lib/firebase";
 
 interface SettingDataMaintenanceProps {
   isAdmin: boolean;
@@ -25,6 +31,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
   const [isPruningDelegations, setIsPruningDelegations] = useState(false);
   const [isSyncingTaskCounts, setIsSyncingTaskCounts] = useState(false);
   const [isConvertingToHash, setIsConvertingToHash] = useState(false);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
 
   const handleClearLocalCache = async () => {
     if (window.confirm("Do you want to clear all local IndexedDB cache and resync fresh data from server?")) {
@@ -40,6 +47,52 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
     }
   };
 
+  const handleDeduplicateTasks = () => {
+    if (!isAdmin) return;
+    onConfirmAction(
+      "Quét & Hợp nhất Task con trùng lặp",
+      "Hệ thống sẽ quét toàn bộ task trên Firestore và bộ nhớ, tự động phát hiện các task con bị trùng tên trong cùng một dự án, giữ lại bản ghi đầy đủ/mới nhất và xóa các bản ghi dư thừa. Bạn có muốn tiếp tục?",
+      async () => {
+        setIsDeduplicating(true);
+        useAppStore.getState().setToast({
+          title: "Đang quét...",
+          message: "Đang phân tích và xử lý các task con trùng lặp trên Firestore...",
+          type: "info"
+        });
+        try {
+          const projects = useAppStore.getState().projects;
+          const currentTasks = useAppStore.getState().tasks;
+          const { dedupedTasks } = deduplicateTasksInMemory(currentTasks, projects);
+          useAppStore.getState().setTasks(dedupedTasks);
+
+          const result = await scanAndRemoveDuplicateTasksOnFirestore(projects);
+          if (result.removedCount > 0) {
+            useAppStore.getState().setToast({
+              title: "Dọn dẹp thành công",
+              message: `Đã phát hiện và xóa ${result.removedCount} task con trùng lặp trên Firestore!`,
+              type: "success"
+            });
+          } else {
+            useAppStore.getState().setToast({
+              title: "Dữ liệu chuẩn",
+              message: "Không phát hiện task con nào bị trùng lặp trên hệ thống.",
+              type: "info"
+            });
+          }
+        } catch (e: any) {
+          console.error("Deduplicate tasks error:", e);
+          useAppStore.getState().setToast({
+            title: "Lỗi dọn dẹp",
+            message: e?.message || "Có lỗi xảy ra khi xử lý task trùng lặp.",
+            type: "error"
+          });
+        } finally {
+          setIsDeduplicating(false);
+        }
+      }
+    );
+  };
+
   const handlePurgeOldTombstones = () => {
     if (!isAdmin) return;
     onConfirmAction(
@@ -48,21 +101,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
       async () => {
         setIsPurging(true);
         try {
-          const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-          let deletedCount = 0;
-          for (const colName of ["taka_projects", "taka_tasks", "taka_costs"]) {
-            const q = query(
-              collection(db, "artifacts", APP_ID, "public", "data", colName),
-              where("isDeleted", "==", true),
-              where("updatedAt", "<", sixtyDaysAgo)
-            );
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              const batch = writeBatch(db);
-              snap.docs.forEach(d => { batch.delete(d.ref); deletedCount++; });
-              await batch.commit();
-            }
-          }
+          const deletedCount = await purgeDeletedTombstones();
           useAppStore.getState().setToast({ title: "Cleanup Complete", message: `Permanently purged ${deletedCount} obsolete tombstone record(s).` });
         } catch (e) {
           console.error("Purge error:", e);
@@ -82,40 +121,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
       async () => {
         setIsStandardizingYears(true);
         try {
-          let totalUpdated = 0;
-          const collectionsConfig = [
-            { name: "taka_projects", field: "year" },
-            { name: "taka_tasks", field: "projectYear" },
-            { name: "taka_costs", field: "projectYear" },
-            { name: "taka_delegation_groups", field: "projectYear" }
-          ];
-
-          for (const item of collectionsConfig) {
-            const colRef = collection(db, "artifacts", APP_ID, "public", "data", item.name);
-            const snap = await getDocs(colRef);
-            let batch = writeBatch(db);
-            let count = 0;
-
-            for (const d of snap.docs) {
-              const data = d.data();
-              const rawYear = data[item.field];
-              if (typeof rawYear === "string") {
-                const numYear = Number(rawYear.trim());
-                if (!isNaN(numYear) && numYear > 2000 && numYear < 2100) {
-                  batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), { [item.field]: numYear });
-                  count++;
-                  totalUpdated++;
-                  if (count >= 400) {
-                    await batch.commit();
-                    batch = writeBatch(db);
-                    count = 0;
-                  }
-                }
-              }
-            }
-            if (count > 0) await batch.commit();
-          }
-
+          const totalUpdated = await standardizeFiscalYears();
           useAppStore.getState().setToast({
             title: "Standardization Completed",
             message: `Successfully standardized ${totalUpdated} records to number format.`,
@@ -143,54 +149,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
       async () => {
         setIsFixingMissingYears(true);
         try {
-          const projRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
-          const projSnap = await getDocs(projRef);
-          const projectYearMap = new Map<string, number>();
-          projSnap.docs.forEach(docSnap => {
-            const data = docSnap.data();
-            if (data.code && data.year && typeof data.year === 'number') {
-              projectYearMap.set(data.code, data.year);
-            }
-          });
-
-          let totalUpdated = 0;
-          const collectionsConfig = [
-            { name: "taka_tasks", field: "projectYear" },
-            { name: "taka_costs", field: "projectYear" },
-            { name: "taka_delegation_groups", field: "projectYear" }
-          ];
-
-          for (const item of collectionsConfig) {
-            const colRef = collection(db, "artifacts", APP_ID, "public", "data", item.name);
-            const snap = await getDocs(colRef);
-            let batch = writeBatch(db);
-            let count = 0;
-
-            for (const d of snap.docs) {
-              const data = d.data();
-              const rawYear = data[item.field];
-              if (rawYear === undefined || rawYear === null || rawYear === '' || isNaN(Number(rawYear))) {
-                const code = data.projectCode || data.code;
-                if (code && projectYearMap.has(code)) {
-                  const correctYear = projectYearMap.get(code);
-                  batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), {
-                    [item.field]: correctYear
-                  });
-                  count++;
-                  totalUpdated++;
-                  if (count >= 400) {
-                    await batch.commit();
-                    batch = writeBatch(db);
-                    count = 0;
-                  }
-                }
-              }
-            }
-            if (count > 0) {
-              await batch.commit();
-            }
-          }
-
+          const totalUpdated = await repairMissingTaskYears();
           useAppStore.getState().setToast({
             title: "Repair Completed",
             message: `Successfully backfilled projectYear for ${totalUpdated} records.`,
@@ -215,41 +174,10 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
         setIsArchiving(true);
         useAppStore.getState().setToast({ title: "Archiving...", message: "Generating archive bundle for historical years. Please wait...", type: "info" });
         try {
-          const { ARCHIVED_YEARS } = await import("../../lib/utils");
-          const collectionsToArchive = [
-            "taka_projects",
-            "taka_tasks",
-            "taka_costs",
-            "taka_delegation_groups"
-          ];
-          const archiveData: Record<string, any[]> = {};
-
-          for (const colName of collectionsToArchive) {
-            archiveData[colName] = [];
-            for (const year of ARCHIVED_YEARS) {
-              const yearField = (colName === "taka_projects" || colName === "taka_delegation_groups") ? (colName === "taka_projects" ? "year" : "projectYear") : "projectYear";
-              const q = query(
-                collection(db, "artifacts", APP_ID, "public", "data", colName),
-                where(yearField, "in", [String(year), Number(year)])
-              );
-              const snap = await getDocs(q);
-              snap.forEach(docSnap => {
-                archiveData[colName].push({ id: docSnap.id, ...docSnap.data() });
-              });
-            }
-          }
-
-          const { ref, uploadString } = await import("firebase/storage");
-          const { storage } = await import("../../lib/firebase");
-
-          const archiveRef = ref(storage, "archives/taka_archive.json");
-          await uploadString(archiveRef, JSON.stringify(archiveData), "raw", {
-            contentType: "application/json"
-          });
-
+          const count = await archiveHistoricalData();
           useAppStore.getState().setToast({
             title: "Archived Successfully",
-            message: `Created archive containing ${Object.values(archiveData).reduce((acc: number, arr: any) => acc + arr.length, 0)} records.`,
+            message: `Created archive containing ${count} records.`,
             type: "success"
           });
         } catch (e) {
@@ -410,6 +338,16 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
       >
         <Database className="w-4 h-4 text-amber-500" />
         Clear & Resync Cache
+      </button>
+
+      <button
+        onClick={handleDeduplicateTasks}
+        disabled={isDeduplicating}
+        title="Quét và xóa các task con bị trùng tên trong cùng một dự án"
+        className="px-5 py-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900/40 bg-white dark:bg-[#1e1e20] hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-3 font-medium text-emerald-700 dark:text-emerald-400 shadow-sm text-sm disabled:opacity-50 cursor-pointer"
+      >
+        <CheckCheck className="w-4 h-4 text-emerald-500" />
+        {isDeduplicating ? "Đang xử lý..." : "Deduplicate Tasks"}
       </button>
 
       <button

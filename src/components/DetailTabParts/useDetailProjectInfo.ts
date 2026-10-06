@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { getStatus } from '../../lib/utils';
+import { deduplicateTasks } from '../../lib/taskDeduplicationService';
 
 export interface ProjectInfo {
   status: string;
@@ -58,7 +59,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           return matchesStore && matchesYear;
         });
       }
-      const sortedTasks = sortGroupTasks(rawGroupTasks);
+      const sortedTasks = sortGroupTasks(deduplicateTasks(rawGroupTasks || []));
       let computedTakStart = p.computedTakStart || p.start;
       if (sortedTasks.length > 0) {
         let minStart: string | undefined = undefined;
