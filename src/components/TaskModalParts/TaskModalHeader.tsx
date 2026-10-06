@@ -3,6 +3,7 @@ import { X, Link as LinkIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { QRCodeButton } from '../QRCodeButton';
 import { Task, DelegationGroup } from '../../types';
+import { useIsRowFlashed } from '../../lib/changeFlashService';
 
 interface TaskModalHeaderProps {
   task: Task | null;
@@ -22,6 +23,8 @@ export const TaskModalHeader = memo(function TaskModalHeader({
   onClose,
   t,
 }: TaskModalHeaderProps) {
+  const { isFlashed, updatedBy } = useIsRowFlashed(task?.id);
+
   return (
     <div className="modal-handle cursor-move px-4 md:px-6 py-4 border-b border-slate-100 dark:border-[#333336] flex justify-between items-center bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0 pt-[env(safe-area-inset-top)] md:pt-4">
       {task ? (
@@ -61,6 +64,12 @@ export const TaskModalHeader = memo(function TaskModalHeader({
             <LinkIcon className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{t("Project")}</span>
           </button>
+          {isFlashed && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 rounded-lg text-xs font-bold border border-emerald-300 dark:border-emerald-700 animate-pulse shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>{updatedBy ? `Live updated by ${updatedBy}` : 'Live Synced'}</span>
+            </div>
+          )}
         </div>
       ) : (
         <h3 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">Task Details</h3>

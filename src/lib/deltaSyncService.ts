@@ -16,6 +16,7 @@ import { safeGetItemLocal, safeSetItemLocal } from './storage';
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
 import { touchYearMeta, getMemoryYearsMeta } from './yearsFingerprintService';
 import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
+import { triggerBatchChangeFlash } from './changeFlashService';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
@@ -241,6 +242,18 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
     if (tasksChanged) store.setTasks(updatedTasks);
     if (costsChanged) store.setCosts(updatedCosts);
     if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
+
+    // Trụ cột 3: Kích hoạt Smart Change Flash cho các dòng vừa nhận thay đổi từ đồng nghiệp (Google Sheets standard)
+    const flashEntries = deltas
+      .filter((d) => d.action === 'create' || d.action === 'update')
+      .map((d) => ({
+        docId: d.docId,
+        collectionName: d.collectionName,
+        updatedBy: d.updatedBy,
+      }));
+    if (flashEntries.length > 0) {
+      triggerBatchChangeFlash(flashEntries);
+    }
 
     // Lưu các delta vào Dexie Local-First Database ngầm
     applyDeltasToLocalDatabase(deltas).catch(() => {});

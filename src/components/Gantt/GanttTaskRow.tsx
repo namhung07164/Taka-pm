@@ -6,6 +6,7 @@ import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { GanttTaskLeftColumns } from './GanttTaskLeftColumns';
 import { cn, formatGanttDate, renderGanttDateCell } from './GanttUtils';
+import { useIsRowFlashed } from '../../lib/changeFlashService';
 
 export interface GanttTaskRowProps {
   t: Task;
@@ -145,6 +146,8 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     canWrite,
   };
 
+  const { isFlashed } = useIsRowFlashed(t.id);
+
   return (
     <div
       id={`gantt-task-row-${t.id}`}
@@ -152,13 +155,14 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
       onDragLeave={(e) => isEditMode && handleTaskDragLeave(e, t.id)}
       onDrop={(e) => isEditMode && handleTaskDrop(e, t, p)}
       className={cn(
-        "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-colors relative group",
+        "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-all duration-700 relative group",
         getRowVisibilityClass(`task-${t.id}`),
         isSelected ? "bg-blue-50/50 dark:bg-blue-950/30" : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
         isFocused && "ring-2 ring-blue-500 z-20 bg-blue-50/70 dark:bg-blue-900/30",
         isDragging && "opacity-40",
         isTarget && dropPosition === 'before' && "border-t-2 border-t-blue-500",
-        isTarget && dropPosition === 'after' && "border-b-2 border-b-blue-500"
+        isTarget && dropPosition === 'after' && "border-b-2 border-b-blue-500",
+        isFlashed && "ring-2 ring-emerald-500/80 bg-emerald-50/80 dark:bg-emerald-950/60 z-20 shadow-sm"
       )}
     >
       {/* Left Side Columns Container */}

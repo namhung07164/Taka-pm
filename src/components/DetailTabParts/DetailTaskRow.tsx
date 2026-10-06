@@ -8,6 +8,7 @@ import { PredecessorEditableCell } from './PredecessorEditableCell';
 import { FastToggle } from './FastToggle';
 import { QuickNavButton } from '../QuickNavButton';
 import { cleanDurationString } from '../../lib/taskImportService';
+import { useIsRowFlashed } from '../../lib/changeFlashService';
 
 interface DetailTaskRowProps {
   item: DetailTableRow & { type: 'task' };
@@ -66,6 +67,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   const groupTasks = item.groupTasks;
   const i = item.taskIndex;
   const isChildTask = Boolean(t.parentTaskId);
+  const { isFlashed, updatedBy } = useIsRowFlashed(t.id);
 
   const childTasksCount = React.useMemo(() => {
     if (!tasks || tasks.length === 0) return 0;
@@ -85,11 +87,12 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       onDragEnd={onDragEnd}
       onDrop={(e) => onDrop(e, t, p)}
       className={cn(
-        "table-row-optimized border-b border-slate-100 dark:border-[#333336] transition-colors relative",
+        "table-row-optimized border-b border-slate-100 dark:border-[#333336] transition-all duration-700 relative",
         item.taskIndex % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-slate-50/50 dark:bg-[#252528]",
         isSelected && "bg-blue-50/80 dark:bg-blue-900/20",
         isDragging && "opacity-40",
-        isFocused && "ring-2 ring-blue-500 z-10"
+        isFocused && "ring-2 ring-blue-500 z-10",
+        isFlashed && "ring-2 ring-emerald-500/80 bg-emerald-50/80 dark:bg-emerald-950/60 z-10 shadow-sm"
       )}
     >
       {visibleColumns.includes('drag') && (
@@ -176,6 +179,11 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
               onSave={(val) => onUpdateTask(t, { name: val })}
               canWrite={canWrite}
             />
+            {isFlashed && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/80 dark:text-emerald-300 animate-pulse border border-emerald-300 dark:border-emerald-700 shrink-0" title={updatedBy ? `Cập nhật bởi ${updatedBy}` : 'Cập nhật trực tiếp từ xa'}>
+                🟢 Live
+              </span>
+            )}
             {t.notes && t.notes.length > 0 && (
               <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1.5 py-0.2 rounded-full font-mono">
                 {t.notes.length} note

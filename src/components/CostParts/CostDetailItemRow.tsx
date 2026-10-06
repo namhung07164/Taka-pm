@@ -4,6 +4,7 @@ import { Cost } from '../../types';
 import { cn, formatDisplayDateMain } from '../../lib/utils';
 import { CostEditableCell } from './CostEditableCell';
 import { QRCodeButton } from '../QRCodeButton';
+import { useIsRowFlashed } from '../../lib/changeFlashService';
 
 interface CostDetailItemRowProps {
   cost: Cost;
@@ -44,10 +45,15 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
   isThirdPaidMatch,
   formatCurrency,
 }: CostDetailItemRowProps) {
+  const { isFlashed } = useIsRowFlashed(c.id);
+
   return (
     <tr
       key={c.id}
-      className="table-row-optimized bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50/50 dark:hover:bg-[#333336] transition-all text-xs"
+      className={cn(
+        "table-row-optimized bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] hover:bg-blue-50/50 dark:hover:bg-[#333336] transition-all duration-700 text-xs",
+        isFlashed && "ring-2 ring-emerald-500/80 bg-emerald-50/80 dark:bg-emerald-950/60 shadow-sm"
+      )}
     >
       {visibleColumns.includes('no') && (
         <td className="px-4 py-3 text-center text-slate-300 dark:text-slate-600 font-mono italic">
