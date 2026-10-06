@@ -201,6 +201,11 @@ export function ProjectQuickNavModal({
                 <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight mt-0.5" title={displayName}>
                   {displayName}
                 </div>
+                {isTaskMode && project.name && project.name !== displayName && (
+                  <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate leading-tight" title={project.name}>
+                    {project.name}
+                  </div>
+                )}
               </div>
             </div>
 

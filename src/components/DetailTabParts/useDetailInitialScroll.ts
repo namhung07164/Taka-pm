@@ -62,13 +62,25 @@ export function useDetailInitialScroll({
       // If initialFocusTaskId is present, useDetailFocusTracking will scroll directly to the task.
       if (!initialFocusTaskId) {
         setTimeout(() => {
-          const el =
-            (matchedProj
-              ? document.getElementById(
-                  `detail-project-${matchedProj.no ?? matchedProj.code}`
-                )
-              : null) ||
-            document.querySelector(`[data-project-code="${initialFilterCode}"]`);
+          let el: HTMLElement | null = null;
+          if (filterUpper.includes('#')) {
+            const matchedTask = tasks.find((t) => 
+              (t.taskCodePhu && String(t.taskCodePhu).trim().toUpperCase() === filterUpper) ||
+              (matchedProj && matchedProj.code && `${matchedProj.code}#${(t.orderIndex !== undefined ? t.orderIndex : 0) + 1}`.toUpperCase() === filterUpper)
+            );
+            if (matchedTask) {
+              el = document.getElementById(`detail-task-${matchedTask.id}`);
+            }
+          }
+          if (!el) {
+            el =
+              (matchedProj
+                ? document.getElementById(
+                    `detail-project-${matchedProj.no ?? matchedProj.code}`
+                  )
+                : null) ||
+              document.querySelector(`[data-project-code="${initialFilterCode}"]`);
+          }
           if (el && el instanceof HTMLElement) {
             scrollToElement(el);
           }

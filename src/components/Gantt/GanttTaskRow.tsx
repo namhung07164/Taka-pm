@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAppStore } from '../../store/useAppStore';
 import { Project, Task, AppUser } from '../../types';
 import { getTaskStatus, computeActProgressPercent, resolveActualStatus, getUserDelegationRoleForTask } from '../../lib/utils';
 import { computeTaskCode } from '../../lib/ganttUtils';
@@ -154,6 +155,11 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   return (
     <div
       id={`gantt-task-row-${t.id}`}
+      onClick={() => {
+        if (!isEditMode) {
+          useAppStore.getState().setGanttTabFocusTaskId(t.id);
+        }
+      }}
       onDragOver={(e) => isEditMode && handleTaskDragOver(e, t.id)}
       onDragLeave={(e) => isEditMode && handleTaskDragLeave(e, t.id)}
       onDrop={(e) => isEditMode && handleTaskDrop(e, t, p)}

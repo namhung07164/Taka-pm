@@ -1082,21 +1082,46 @@ export default function App() {
           break;
         }
         case "detail": {
-          updates.detailTabFilterCode = effectiveFilterCode || "";
-          if (effectiveFilterCode) {
-            safeSetItemSession("taka_detail_search", effectiveFilterCode);
-          }
-          if (p?.store || task?.projectStore) {
-            updates.detailTabStoreFilter = p?.store || task?.projectStore || "";
-          }
-          if (task?.id) {
-            updates.detailTabFocusTaskId = task.id;
-          }
-          if (p?.id) {
-            const currentExpanded = useAppStore.getState().expandedProjectIds || [];
-            if (!currentExpanded.includes(p.id)) {
-              updates.expandedProjectIds = [...currentExpanded, p.id];
+          let resolvedTask = task;
+          if (!resolvedTask && p) {
+            const currentGanttFocusId = useAppStore.getState().ganttTabFocusTaskId;
+            if (currentGanttFocusId) {
+              resolvedTask = tasks.find((t) => t.id === currentGanttFocusId && (
+                (p.code && String(t.projectCode || "").trim().toLowerCase() === String(p.code).trim().toLowerCase()) ||
+                (p.id && t.projectId === p.id)
+              ));
             }
+            if (!resolvedTask) {
+              resolvedTask = tasks.find((t) =>
+                (p.code && String(t.projectCode || "").trim().toLowerCase() === String(p.code).trim().toLowerCase()) ||
+                (p.id && t.projectId === p.id)
+              );
+            }
+          }
+
+          const targetTaskId = resolvedTask?.id || "";
+          if (targetTaskId) {
+            updates.detailTabFocusTaskId = targetTaskId;
+          }
+
+          const effectiveCode = resolvedTask
+            ? (computeTaskCode(projects, tasks, resolvedTask) || resolvedTask.taskCodePhu || (p ? `${p.code}#${(resolvedTask.orderIndex !== undefined ? resolvedTask.orderIndex : 0) + 1}` : "") || p?.code || "")
+            : (effectiveFilterCode || p?.code || "");
+
+          updates.detailTabFilterCode = effectiveCode;
+          if (effectiveCode) {
+            safeSetItemSession("taka_detail_search", effectiveCode);
+          }
+          if (p?.store || resolvedTask?.projectStore || task?.projectStore) {
+            updates.detailTabStoreFilter = p?.store || resolvedTask?.projectStore || task?.projectStore || "";
+          }
+          if (p) {
+            const currentExpanded = useAppStore.getState().expandedProjectIds || [];
+            const newExpanded = new Set(currentExpanded);
+            if (p.id) newExpanded.add(String(p.id));
+            if (p.code) newExpanded.add(p.code);
+            if (p.no !== undefined && p.no !== null) newExpanded.add(String(p.no));
+            updates.expandedProjectIds = Array.from(newExpanded);
           }
           updates.isTasksRequested = true;
           break;
