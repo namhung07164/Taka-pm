@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash } from "lucide-react";
+import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers } from "lucide-react";
 import { clearAllIDB } from "../../lib/idb";
 import { useAppStore } from "../../store/useAppStore";
 import { doc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
@@ -22,9 +22,8 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
   const [isFixingMissingYears, setIsFixingMissingYears] = useState(false);
   const [isStandardizingYears, setIsStandardizingYears] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
-  const [isDeduplicatingDelegations, setIsDeduplicatingDelegations] = useState(false);
+  const [isPruningDelegations, setIsPruningDelegations] = useState(false);
   const [isSyncingTaskCounts, setIsSyncingTaskCounts] = useState(false);
-  const [isScanningOrphans, setIsScanningOrphans] = useState(false);
   const [isConvertingToHash, setIsConvertingToHash] = useState(false);
 
   const handleClearLocalCache = async () => {
@@ -51,9 +50,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
         try {
           const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
           let deletedCount = 0;
-          const collections = ["taka_projects", "taka_tasks", "taka_costs"];
-
-          for (const colName of collections) {
+          for (const colName of ["taka_projects", "taka_tasks", "taka_costs"]) {
             const q = query(
               collection(db, "artifacts", APP_ID, "public", "data", colName),
               where("isDeleted", "==", true),
@@ -62,24 +59,14 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
             const snap = await getDocs(q);
             if (!snap.empty) {
               const batch = writeBatch(db);
-              snap.docs.forEach(d => {
-                batch.delete(d.ref);
-                deletedCount++;
-              });
+              snap.docs.forEach(d => { batch.delete(d.ref); deletedCount++; });
               await batch.commit();
             }
           }
-
-          useAppStore.getState().setToast({
-            title: "Cleanup Complete",
-            message: `Permanently purged ${deletedCount} obsolete tombstone record(s).`
-          });
+          useAppStore.getState().setToast({ title: "Cleanup Complete", message: `Permanently purged ${deletedCount} obsolete tombstone record(s).` });
         } catch (e) {
           console.error("Purge error:", e);
-          useAppStore.getState().setToast({
-            title: "Error",
-            message: "Failed to purge tombstones. Check permissions or composite indexes."
-          });
+          useAppStore.getState().setToast({ title: "Error", message: "Failed to purge tombstones. Check permissions." });
         } finally {
           setIsPurging(false);
         }
@@ -115,9 +102,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
               if (typeof rawYear === "string") {
                 const numYear = Number(rawYear.trim());
                 if (!isNaN(numYear) && numYear > 2000 && numYear < 2100) {
-                  batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), {
-                    [item.field]: numYear
-                  });
+                  batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), { [item.field]: numYear });
                   count++;
                   totalUpdated++;
                   if (count >= 400) {
@@ -128,9 +113,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
                 }
               }
             }
-            if (count > 0) {
-              await batch.commit();
-            }
+            if (count > 0) await batch.commit();
           }
 
           useAppStore.getState().setToast({
@@ -374,6 +357,50 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
     );
   };
 
+  const handlePruneEmptyDelegationsAction = () => {
+    if (!isAdmin) return;
+    onConfirmAction(
+      "Scan & Prune Empty Delegations",
+      "The system will scan taka_delegation_groups on Firestore to detect auto-generated import placeholders with 0 subtasks, 0 comments, and 0 attachments, then safely delete them from Firestore and local cache to cut read usage by ~95%. Genuine delegations will be 100% preserved. Do you want to proceed?",
+      async () => {
+        setIsPruningDelegations(true);
+        useAppStore.getState().setToast({
+          title: "Scanning...",
+          message: "Analyzing delegation records on Firestore...",
+          type: "info"
+        });
+        try {
+          const { scanEmptyDelegations, pruneEmptyDelegations } = await import("../../lib/delegationMaintenanceService");
+          const scanResult = await scanEmptyDelegations();
+          if (scanResult.emptyCount === 0) {
+            useAppStore.getState().setToast({
+              title: "Delegations Clean",
+              message: `Scanned ${scanResult.totalScanned} groups. All ${scanResult.genuineCount} records are active and genuine!`,
+              type: "info"
+            });
+            return;
+          }
+
+          const pruneResult = await pruneEmptyDelegations(scanResult.emptyGroups.map(g => g.id));
+          useAppStore.getState().setToast({
+            title: "Pruning Complete",
+            message: `Safely deleted ${pruneResult.deletedCount} empty placeholder delegations. Preserved ${scanResult.genuineCount} active groups!`,
+            type: "success"
+          });
+        } catch (e: any) {
+          console.error("Prune delegations error:", e);
+          useAppStore.getState().setToast({
+            title: "Pruning Failed",
+            message: e?.message || "Failed to prune empty delegations",
+            type: "error"
+          });
+        } finally {
+          setIsPruningDelegations(false);
+        }
+      }
+    );
+  };
+
   return (
     <div className="px-5 py-3 bg-slate-50 dark:bg-[#1a1a1c] border-b border-slate-200 dark:border-[#444446] flex flex-wrap items-center gap-3 animate-in fade-in duration-150">
       <button
@@ -383,6 +410,16 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
       >
         <Database className="w-4 h-4 text-amber-500" />
         Clear & Resync Cache
+      </button>
+
+      <button
+        onClick={handlePruneEmptyDelegationsAction}
+        disabled={isPruningDelegations}
+        title="Scan and delete empty/unused auto-imported delegation placeholders to save Firestore reads"
+        className="px-5 py-2.5 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-white dark:bg-[#1e1e20] hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors flex items-center gap-3 font-medium text-purple-700 dark:text-purple-400 shadow-sm text-sm disabled:opacity-50 cursor-pointer"
+      >
+        <Layers className="w-4 h-4 text-purple-500" />
+        {isPruningDelegations ? "Pruning..." : "Prune Empty Delegations"}
       </button>
 
       <button

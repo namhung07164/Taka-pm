@@ -240,37 +240,40 @@ export async function batchSaveTasksToFirestore(
         const activeUserId = currentUser?.id && currentUser.id !== 'guest' 
           ? currentUser.id 
           : (currentUser?.username || 'system');
-        const rawParty = (t.party && t.party.trim()) ? t.party.trim() : (currentUser?.username || '');
+        const rawParty = (t.party && t.party.trim()) ? t.party.trim() : '';
         const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
         const deterministicGroupId = `del_${t.id}`;
 
-        const delGroup: DelegationGroup = {
-          id: deterministicGroupId,
-          parentTaskId: t.id,
-          name: t.name || 'Delegated Task',
-          projectCode: t.projectCode,
-          projectStore: t.projectStore,
-          projectYear: t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear)) 
-            ? Number(t.projectYear) 
-            : new Date().getFullYear(),
-          subTasks: [{
-            id: generateId(),
-            name: '',
-            comments: '',
-            status: 'Assigned',
-            delegationStatus: 'Assigned',
-            priority: 'Mid',
-            party: parsedParty,
-            startAct: dateStr,
-            finishAct: dateStr,
-            updatedAt: now
-          }],
-          updatedAt: now,
-          createdBy: activeUserId
-        };
+        // Only create delegation group if party is explicitly assigned, preventing thousands of empty ghost delegations
+        if (parsedParty) {
+          const delGroup: DelegationGroup = {
+            id: deterministicGroupId,
+            parentTaskId: t.id,
+            name: t.name || 'Delegated Task',
+            projectCode: t.projectCode,
+            projectStore: t.projectStore,
+            projectYear: t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear)) 
+              ? Number(t.projectYear) 
+              : new Date().getFullYear(),
+            subTasks: [{
+              id: generateId(),
+              name: '',
+              comments: '',
+              status: 'Assigned',
+              delegationStatus: 'Assigned',
+              priority: 'Mid',
+              party: parsedParty,
+              startAct: dateStr,
+              finishAct: dateStr,
+              updatedAt: now
+            }],
+            updatedAt: now,
+            createdBy: activeUserId
+          };
 
-        const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
-        batch.set(delRef, delGroup, { merge: true });
+          const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+          batch.set(delRef, delGroup, { merge: true });
+        }
       }
     });
 

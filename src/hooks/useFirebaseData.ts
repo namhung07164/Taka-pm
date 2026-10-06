@@ -110,13 +110,15 @@ export function useFirebaseData() {
       const needsCosts = tabsRequiringCosts.includes(activeTab) || (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
       const tabsRequiringDelegations: TabId[] = [
-        "gantt",
-        "detail",
         "taskDelegation",
-        "taskDelegationCalendar",
-        "notification"
+        "taskDelegationCalendar"
       ];
-      const needsDelegations = tabsRequiringDelegations.includes(activeTab) || isTaskModalOpen || (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+      const storeDelegations = useAppStore.getState().delegationGroups || [];
+      const needsDelegations = tabsRequiringDelegations.includes(activeTab) || 
+        isTaskModalOpen || 
+        (isProjectModalOpen && !isChatOnly && !isLayoutTab) ||
+        // If local Dexie/Zustand cache has zero delegations and user lands on Gantt/Detail/Notification, hydrate once
+        (storeDelegations.length === 0 && (activeTab === "gantt" || activeTab === "detail" || activeTab === "notification"));
 
       // App is evaluating active tab needs. 
       // We NEVER unmount (set to false) because destroying the listener drops the IDB resumeToken,
@@ -1069,6 +1071,7 @@ export function useFirebaseData() {
             }
 
             useAppStore.getState().setDelegationGroups(loaded);
+            offloadPersistSnapshot('taka_delegations', loaded);
           },
           (e) => {
             setIsDelegationsLoading(false);

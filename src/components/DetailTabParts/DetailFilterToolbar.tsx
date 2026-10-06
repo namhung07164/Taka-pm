@@ -305,33 +305,36 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                         const dateStr = now.substring(0, 10);
                         const activeUser = useAppStore.getState().currentUser || currentUser;
                         const activeUserId = activeUser?.id && activeUser.id !== 'guest' ? activeUser.id : (activeUser?.username || 'system');
-                        const rawParty = (record.party && record.party.trim()) ? record.party.trim() : (activeUser?.username || '');
+                        const rawParty = (record.party && record.party.trim()) ? record.party.trim() : '';
                         const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
                         const deterministicGroupId = `del_${record.id}`;
-                        const newGroup = {
-                          id: deterministicGroupId,
-                          parentTaskId: record.id,
-                          name: record.name || 'Delegated Task',
-                          projectCode: record.projectCode,
-                          projectStore: record.projectStore,
-                          projectYear: (record.projectYear !== undefined && record.projectYear !== null && !isNaN(Number(record.projectYear))) ? Number(record.projectYear) : (Number(projects.find(p => p.code === record.projectCode)?.year) || new Date().getFullYear()),
-                          subTasks: [{ 
-                             id: generateId(), 
-                             name: '', 
-                             comments: '', 
-                             status: 'Assigned', 
-                             delegationStatus: 'Assigned', 
-                             priority: 'Mid', 
-                             party: parsedParty, 
-                             startAct: dateStr, 
-                             finishAct: dateStr, 
-                             updatedAt: now 
-                          }],
-                          updatedAt: now,
-                          createdBy: activeUserId
-                        };
-                        const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
-                        batch.set(delRef, newGroup, { merge: true });
+
+                        if (parsedParty) {
+                          const newGroup = {
+                            id: deterministicGroupId,
+                            parentTaskId: record.id,
+                            name: record.name || 'Delegated Task',
+                            projectCode: record.projectCode,
+                            projectStore: record.projectStore,
+                            projectYear: (record.projectYear !== undefined && record.projectYear !== null && !isNaN(Number(record.projectYear))) ? Number(record.projectYear) : (Number(projects.find(p => p.code === record.projectCode)?.year) || new Date().getFullYear()),
+                            subTasks: [{ 
+                               id: generateId(), 
+                               name: '', 
+                               comments: '', 
+                               status: 'Assigned', 
+                               delegationStatus: 'Assigned', 
+                               priority: 'Mid', 
+                               party: parsedParty, 
+                               startAct: dateStr, 
+                               finishAct: dateStr, 
+                               updatedAt: now 
+                            }],
+                            updatedAt: now,
+                            createdBy: activeUserId
+                          };
+                          const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+                          batch.set(delRef, newGroup, { merge: true });
+                        }
                      }
                   }}
                   id="detail-full-import-tasks-btn"
