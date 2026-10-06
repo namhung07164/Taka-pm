@@ -23,6 +23,7 @@ interface GanttTaskLeftColumnsProps {
   handleTaskDragStart: (e: React.DragEvent, id: string) => void;
   handleTaskDragEnd: () => void;
   isEditMode?: boolean;
+  onNavigateToTaskDetail?: (taskId: string) => void;
 }
 
 export function GanttTaskLeftColumns({
@@ -42,7 +43,8 @@ export function GanttTaskLeftColumns({
   isDragging,
   handleTaskDragStart,
   handleTaskDragEnd,
-  isEditMode = false
+  isEditMode = false,
+  onNavigateToTaskDetail
 }: GanttTaskLeftColumnsProps) {
   const isSelected = selectedTaskSet.has(t.id);
   const taskCode = propTaskCode || (projects.length > 0 && tasks.length > 0 ? computeTaskCode(projects, tasks, t) : (t.taskCodePhu || ''));
@@ -106,7 +108,20 @@ export function GanttTaskLeftColumns({
           </button>
         )}
 
-        <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+        <div 
+          onClick={(e) => {
+            if (isEditMode) return;
+            e.stopPropagation();
+            if (onNavigateToTaskDetail) {
+              onNavigateToTaskDetail(t.id);
+            }
+          }}
+          className={cn(
+            "flex items-center gap-1.5 truncate flex-1 min-w-0 p-0.5 rounded transition-colors group/tname overflow-hidden",
+            !isEditMode ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-[#333336]" : ""
+          )}
+          title={!isEditMode ? `Click to view task in Task Detail (${t.name})` : t.name}
+        >
           {isEditMode && (
             (t.party?.toLowerCase().includes('tenant') || t.party?.toLowerCase().includes('contractor') || t.party?.toLowerCase().includes('nt') || t.name?.toLowerCase().includes('tenant') || t.name?.toLowerCase().includes('design guideline') || t.name?.toLowerCase().includes('opening') || t.name?.toLowerCase().includes('fit-out') || t.name?.toLowerCase().includes('shop drawing') || t.name?.toLowerCase().includes('re-instatement')) ? (
               <span className="text-blue-400 text-[10px] shrink-0 font-black">▶</span>
@@ -115,7 +130,7 @@ export function GanttTaskLeftColumns({
             )
           )}
 
-          <span className="text-xs text-slate-900 dark:text-slate-100 truncate font-semibold flex-1 min-w-0" title={t.name}>
+          <span className="text-xs text-slate-900 dark:text-slate-100 truncate font-semibold flex-1 min-w-0 group-hover/tname:text-blue-600 dark:group-hover/tname:text-[#8ab4f8]" title={t.name}>
             {t.name}
           </span>
 

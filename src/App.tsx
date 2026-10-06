@@ -965,6 +965,10 @@ export default function App() {
 
         const subTaskCode = computeTaskCode(projects, tasks, targetTask) || targetTask.taskCodePhu || (targetProject ? `${targetProject.code}#1` : targetTask.projectCode || "");
 
+        if (subTaskCode) {
+          safeSetItemSession("taka_detail_search", subTaskCode);
+        }
+
         if (targetProject) {
           setDetailTabFilterCode(subTaskCode);
           if (targetProject.store) {
@@ -972,6 +976,12 @@ export default function App() {
           }
           if (targetProject.year) {
             setGlobalYearFilter(String(targetProject.year));
+          }
+          if (targetProject.id) {
+            const currentExpanded = useAppStore.getState().expandedProjectIds || [];
+            if (!currentExpanded.includes(targetProject.id)) {
+              useAppStore.getState().setExpandedProjectIds([...currentExpanded, targetProject.id]);
+            }
           }
         } else if (targetTask.projectCode) {
           setDetailTabFilterCode(subTaskCode);
@@ -985,6 +995,7 @@ export default function App() {
       } else {
         setDetailTabFilterCode("");
       }
+      useAppStore.getState().setIsTasksRequested(true);
       setGanttTabFocusTaskId(taskId);
       setDetailTabFocusTaskId(taskId);
       handleTabChange("detail");

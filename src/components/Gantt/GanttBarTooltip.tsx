@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, GripHorizontal, Pin } from 'lucide-react';
+import { X, GripHorizontal, Pin, ExternalLink } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { formatGanttDate } from './GanttUtils';
 import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
@@ -27,6 +27,7 @@ interface GanttBarTooltipProps {
     tasks?: Task[];
     projects?: Project[];
     canWrite?: boolean;
+    onNavigateToTaskDetail?: (taskId: string) => void;
     onProcessChildTasks?: Array<{
       id: string;
       name: string;
@@ -89,6 +90,21 @@ export function GanttBarTooltip({
           <span className="truncate">{label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {extraVars?.task?.id && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (extraVars?.onNavigateToTaskDetail) {
+                  extraVars.onNavigateToTaskDetail(extraVars.task.id);
+                }
+              }}
+              className="p-1 text-slate-400 hover:text-blue-400 rounded hover:bg-slate-700 transition-colors cursor-pointer"
+              title="Open in Task Detail"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTooltip(isPinned ? null : id)}
@@ -184,8 +200,19 @@ export function GanttBarTooltip({
           </div>
           <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
             {extraVars.onProcessChildTasks.map((ct) => (
-              <div key={ct.id} className="p-1.5 rounded bg-slate-800/80 border border-slate-700/50 flex flex-col gap-0.5">
-                <div className="flex justify-between items-center gap-1 font-semibold text-[11px] text-slate-200">
+              <div
+                key={ct.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (extraVars?.onNavigateToTaskDetail) {
+                    setActiveTooltip(null);
+                    extraVars.onNavigateToTaskDetail(ct.id);
+                  }
+                }}
+                className="p-1.5 rounded bg-slate-800/80 border border-slate-700/50 flex flex-col gap-0.5 cursor-pointer hover:bg-slate-700/90 hover:border-blue-400/60 transition-colors group/subtask"
+                title={`Click to view ${ct.name} in Task Detail`}
+              >
+                <div className="flex justify-between items-center gap-1 font-semibold text-[11px] text-slate-200 group-hover/subtask:text-blue-300">
                   <span className="truncate">{ct.name}</span>
                   <span className="font-mono text-emerald-400 text-[10px]">{ct.actPrg || 0}%</span>
                 </div>

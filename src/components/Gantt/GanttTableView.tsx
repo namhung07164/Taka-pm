@@ -372,6 +372,7 @@ export function GanttTableView({
                   handleTaskCheckboxChange={handleTaskCheckboxChange}
                   isHideMode={isHideMode}
                   toggleHideRow={toggleHideRow}
+                  onNavigateToTaskDetail={onNavigateToTaskDetail}
                 />
               );
             })

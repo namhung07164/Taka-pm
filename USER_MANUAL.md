@@ -1328,7 +1328,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 10. **Bảng Điều Hướng Nhanh Dự Án & Tác Vụ (Project & Task Quick Navigation Hub Modal)**:
    - **Thao Tác Kích Hoạt**: 
      - Tại tab **General (Tổng quan)**: Nhấp vào bất kỳ dự án nào (trên bản vẽ Canvas hoặc Card danh sách điện thoại).
-     - Tại tab **Gantt Chart**: **Nhấp trực tiếp vào Tiêu đề dự án (Project Title)** (nút icon Quick Navigator ở dòng dự án mẹ và các tác vụ con đã được ẩn để giữ giao diện Gantt tinh gọn, thoáng đãng).
+     - Tại tab **Gantt Chart**:
+       + **Nhấp vào Tiêu đề dự án (Project Title)**: Mở bảng Quick Navigation của toàn dự án.
+       + **Nhấp trực tiếp vào Tên task con (Subtask Name)** hoặc **Nút điều hướng (`ExternalLink`) trên Tooltip thanh Gantt**: Hệ thống lập tức kích hoạt cơ chế Zero-Lag Transition, chuyển sang tab **Task Detail**, tự động tiền mở rộng dự án mẹ và cuộn mượt mà trực tiếp đến đúng vị trí của task con đó.
      - Tại tab **Layout (Mặt bằng 2D)**: **Nhấp vào nút Quick Navigator (`QuickNavButton`) ngay trong Tooltip chi tiết của gian hàng/ô unit** (ở góc phải phía trên kế bên nút đóng và trên thanh thao tác bên dưới).
      - Tại các tab **Task Detail**, **Ngân Sách (Budget)**, và **Chi Phí (Cost)**: Nhấp vào nút biểu tượng điều hướng (`QuickNavButton`) nằm ở cột **Action** của từng dòng dự án mẹ (các dòng con đã được ẩn nút để tránh rối mắt).
    - **Hỗ Trợ Task Code Phụ (Sub-task Code)**: Khi kích hoạt từ từng tác vụ/task cụ thể, hệ thống tự động nhận diện và ưu tiên điền mã `taskCodePhu` (hoặc tính toán chuẩn theo `computeTaskCode`) để lọc và định vị chính xác nhiệm vụ đó tại các tab đích (Gantt, Task Detail, Cost).

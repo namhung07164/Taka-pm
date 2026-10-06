@@ -966,6 +966,7 @@ export function useFirebaseData() {
   const delegationsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigDelegations = useRef<string>("");
   const delegationsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const yearDelegationsCache = useRef<Map<string, Map<string, DelegationGroup>>>(new Map());
 
   useEffect(() => {
     return () => {
@@ -973,6 +974,7 @@ export function useFirebaseData() {
       delegationsPool.current.clear();
       delegationsTTLTimeouts.current.forEach(t => clearTimeout(t));
       delegationsTTLTimeouts.current.clear();
+      yearDelegationsCache.current.clear();
     };
   }, []);
 
@@ -994,6 +996,7 @@ export function useFirebaseData() {
         delegationsPool.current.clear();
         delegationsTTLTimeouts.current.forEach(t => clearTimeout(t));
         delegationsTTLTimeouts.current.clear();
+        yearDelegationsCache.current.clear();
       } else {
         const activeYearsSet = new Set(targetYears);
         Array.from(delegationsPool.current.keys()).forEach(year => {
@@ -1005,6 +1008,7 @@ export function useFirebaseData() {
                 if (unsub) unsub();
                 delegationsPool.current.delete(year);
                 delegationsTTLTimeouts.current.delete(year);
+                yearDelegationsCache.current.delete(year);
                 usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
               }, TTL_DURATION_MS);
               delegationsTTLTimeouts.current.set(year, timeoutId);
@@ -1043,32 +1047,36 @@ export function useFirebaseData() {
             usePerformanceStore.getState().trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
             
-            const currentDelegations = useAppStore.getState().delegationGroups || [];
-            const delegationMap = new Map<string, DelegationGroup>();
-            currentDelegations.forEach(d => delegationMap.set(d.id!, d));
+            if (!yearDelegationsCache.current.has(year)) {
+              yearDelegationsCache.current.set(year, new Map());
+            }
+            const yearMap = yearDelegationsCache.current.get(year)!;
 
             snapshot.docChanges().forEach((change) => {
               const data = { id: change.doc.id, ...change.doc.data() } as DelegationGroup;
               if (change.type === "removed") {
-                delegationMap.delete(change.doc.id);
+                yearMap.delete(change.doc.id);
               } else {
-                delegationMap.set(change.doc.id, data);
+                yearMap.set(change.doc.id, data);
               }
             });
 
             const loaded: DelegationGroup[] = [];
             const seenParentTaskIds = new Set<string>();
 
-            for (const data of delegationMap.values()) {
-              if (data.parentTaskId) {
-                if (!seenParentTaskIds.has(data.parentTaskId)) {
-                  seenParentTaskIds.add(data.parentTaskId);
+            // Aggregate across active year caches
+            yearDelegationsCache.current.forEach((map) => {
+              for (const data of map.values()) {
+                if (data.parentTaskId) {
+                  if (!seenParentTaskIds.has(data.parentTaskId)) {
+                    seenParentTaskIds.add(data.parentTaskId);
+                    loaded.push(data);
+                  }
+                } else {
                   loaded.push(data);
                 }
-              } else {
-                loaded.push(data);
               }
-            }
+            });
 
             useAppStore.getState().setDelegationGroups(loaded);
             offloadPersistSnapshot('taka_delegations', loaded);

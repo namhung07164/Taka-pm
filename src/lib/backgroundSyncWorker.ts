@@ -44,7 +44,7 @@ export async function bootstrapLocalStore(): Promise<{
     if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
       store.setCosts(costs);
     }
-    if (delegations.length > 0 && (!store.delegationGroups || store.delegationGroups.length === 0)) {
+    if (delegations.length > 0 && store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0)) {
       store.setDelegationGroups(delegations);
     }
 

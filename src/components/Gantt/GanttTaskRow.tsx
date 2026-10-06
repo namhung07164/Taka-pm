@@ -60,6 +60,7 @@ export interface GanttTaskRowProps {
   handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void;
   isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
+  onNavigateToTaskDetail?: (taskId: string) => void;
 }
 
 export const GanttTaskRow = React.memo(function GanttTaskRow({
@@ -113,7 +114,8 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   dropPosition,
   handleTaskCheckboxChange,
   isHideMode,
-  toggleHideRow
+  toggleHideRow,
+  onNavigateToTaskDetail
 }: GanttTaskRowProps) {
   const isSelected = selectedTaskSet.has(t.id);
   const isTarget = dragOverTaskId === t.id;
@@ -144,6 +146,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     tasks,
     projects,
     canWrite,
+    onNavigateToTaskDetail,
   };
 
   const { isFlashed } = useIsRowFlashed(t.id);
@@ -190,6 +193,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
             handleTaskDragStart={handleTaskDragStart}
             handleTaskDragEnd={handleTaskDragEnd}
             isEditMode={isEditMode}
+            onNavigateToTaskDetail={onNavigateToTaskDetail}
           />
         </div>
 
