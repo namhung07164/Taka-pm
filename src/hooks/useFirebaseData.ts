@@ -668,6 +668,7 @@ export function useFirebaseData() {
 
   // 2.3 Unified Global Delta Sync for Tasks (Native Firebase Cache with TTL)
   const tasksPool = useRef<Map<string, () => void>>(new Map());
+  const prevQuerySigTasks = useRef<string>("");
   const prevSigTasks = useRef<string>("");
   const tasksTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -689,17 +690,17 @@ export function useFirebaseData() {
       : [];
     const currentSig = `${querySignature}_${activeProjectIds.join(',')}_${isTasksRequested}`;
 
-    if (prevSigTasks.current !== currentSig) {
-      // If querySignature (role/perms) changes, clear everything immediately
-      const isSignatureChanged = prevSigTasks.current.split('_')[0] !== querySignature;
-      if (isSignatureChanged && prevSigTasks.current !== "") {
+    if (prevQuerySigTasks.current !== querySignature) {
+      // If querySignature (role/perms) truly changes, clear everything immediately
+      if (prevQuerySigTasks.current !== "") {
         tasksPool.current.forEach(u => u());
         tasksPool.current.clear();
         tasksTTLTimeouts.current.forEach(t => clearTimeout(t));
         tasksTTLTimeouts.current.clear();
       }
-      prevSigTasks.current = currentSig;
+      prevQuerySigTasks.current = querySignature;
     }
+    prevSigTasks.current = currentSig;
 
     if (activeProjectIds.length === 0) {
       // Start TTL cleanup for any existing listeners when all projects collapsed
@@ -974,6 +975,7 @@ export function useFirebaseData() {
 
   // 2.5 Delta Sync for Delegation Groups (Native Firebase Cache with TTL)
   const delegationsPool = useRef<Map<string, () => void>>(new Map());
+  const prevQuerySigDelegations = useRef<string>("");
   const prevSigDelegations = useRef<string>("");
   const delegationsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const yearDelegationsCache = useRef<Map<string, Map<string, DelegationGroup>>>(new Map());
@@ -997,43 +999,42 @@ export function useFirebaseData() {
       : [];
     const currentSig = `${querySignature}_${targetYears.join(',')}_${isDelegationsRequested}`;
 
-    if (prevSigDelegations.current !== currentSig) {
+    if (prevQuerySigDelegations.current !== querySignature) {
       // If querySignature (role/perms) changes, clear everything immediately
-      const isSignatureChanged = prevSigDelegations.current.split('_')[0] !== querySignature;
-      
-      if (isSignatureChanged && prevSigDelegations.current !== "") {
+      if (prevQuerySigDelegations.current !== "") {
         delegationsPool.current.forEach(u => u());
         delegationsPool.current.clear();
         delegationsTTLTimeouts.current.forEach(t => clearTimeout(t));
         delegationsTTLTimeouts.current.clear();
         yearDelegationsCache.current.clear();
-      } else {
-        const activeYearsSet = new Set(targetYears);
-        Array.from(delegationsPool.current.keys()).forEach(year => {
-          if (!activeYearsSet.has(year)) {
-            // Year is no longer active, start TTL garbage collection
-            if (!delegationsTTLTimeouts.current.has(year)) {
-              const timeoutId = setTimeout(() => {
-                const unsub = delegationsPool.current.get(year);
-                if (unsub) unsub();
-                delegationsPool.current.delete(year);
-                delegationsTTLTimeouts.current.delete(year);
-                yearDelegationsCache.current.delete(year);
-                usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
-              }, TTL_DURATION_MS);
-              delegationsTTLTimeouts.current.set(year, timeoutId);
-            }
-          } else {
-            // Year is active, clear any pending TTL
-            if (delegationsTTLTimeouts.current.has(year)) {
-              clearTimeout(delegationsTTLTimeouts.current.get(year)!);
-              delegationsTTLTimeouts.current.delete(year);
-            }
-          }
-        });
       }
-      prevSigDelegations.current = currentSig;
+      prevQuerySigDelegations.current = querySignature;
     }
+    prevSigDelegations.current = currentSig;
+
+    const activeYearsSet = new Set(targetYears);
+    Array.from(delegationsPool.current.keys()).forEach(year => {
+      if (!activeYearsSet.has(year)) {
+        // Year is no longer active, start TTL garbage collection
+        if (!delegationsTTLTimeouts.current.has(year)) {
+          const timeoutId = setTimeout(() => {
+            const unsub = delegationsPool.current.get(year);
+            if (unsub) unsub();
+            delegationsPool.current.delete(year);
+            delegationsTTLTimeouts.current.delete(year);
+            yearDelegationsCache.current.delete(year);
+            usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
+          }, TTL_DURATION_MS);
+          delegationsTTLTimeouts.current.set(year, timeoutId);
+        }
+      } else {
+        // Year is active, clear any pending TTL
+        if (delegationsTTLTimeouts.current.has(year)) {
+          clearTimeout(delegationsTTLTimeouts.current.get(year)!);
+          delegationsTTLTimeouts.current.delete(year);
+        }
+      }
+    });
 
     if (targetYears.length === 0) {
       return;

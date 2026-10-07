@@ -187,20 +187,6 @@ export function useDetailPredecessorSync({
     }
   }, [tasks, projects]);
 
-  // Auto-migration check on mount
-  useEffect(() => {
-    if (tasks.length > 0 && projects.length > 0 && !hasAutoHealedRef.current && hasWritePermission) {
-      const needsMigration = tasks.some(t => 
-        (t.taskCodePhu && /-\d+$/.test(t.taskCodePhu)) ||
-        (t.predecessor && /-\d+(?:fs|ss|ff|sf|[+-]|\s|$)/i.test(t.predecessor))
-      );
-      if (needsMigration) {
-        hasAutoHealedRef.current = true;
-        handleSyncAllPredecessors(false);
-      }
-    }
-  }, [tasks, projects, hasWritePermission, handleSyncAllPredecessors]);
-
   return {
     isSyncingPredecessors,
     handleSyncAllPredecessors,

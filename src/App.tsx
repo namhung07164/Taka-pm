@@ -1115,12 +1115,13 @@ export default function App() {
           if (p?.store || resolvedTask?.projectStore || task?.projectStore) {
             updates.detailTabStoreFilter = p?.store || resolvedTask?.projectStore || task?.projectStore || "";
           }
-          if (p) {
+          // Requirement: Khi chuyển qua project qua quick navigation thì chỉ mở project, 
+          // chưa expand task con để không kích hoạt tải tasks từ Firestore về.
+          // Chỉ mở rộng task con nếu đích đến là một công việc (task) cụ thể.
+          if (task && resolvedTask && p?.id) {
             const currentExpanded = useAppStore.getState().expandedProjectIds || [];
             const newExpanded = new Set(currentExpanded);
-            if (p.id) newExpanded.add(String(p.id));
-            if (p.code) newExpanded.add(p.code);
-            if (p.no !== undefined && p.no !== null) newExpanded.add(String(p.no));
+            newExpanded.add(String(p.id));
             updates.expandedProjectIds = Array.from(newExpanded);
           }
           updates.isTasksRequested = true;

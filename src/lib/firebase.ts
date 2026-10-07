@@ -60,13 +60,16 @@ checkAndCleanStorageQuota();
 // Using SingleTabManager with forceOwnership ensures that when a desktop PC or mobile wakes up
 // from sleep or restarts after 1 hour, it immediately seizes the IndexedDB lock and reuses the local
 // cache instead of assuming a broken lock and initiating an expensive full-server reconciliation fetch.
-const isIOS = typeof window !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+const isIOS = typeof window !== 'undefined' && (
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+);
 const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 const isPWA = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any)?.standalone);
 
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ 
-    tabManager: (isIframe || isPWA || isDevMode) 
+    tabManager: (isIframe || isPWA || isDevMode || isIOS) 
       ? persistentSingleTabManager({ forceOwnership: true }) 
       : persistentMultipleTabManager(),
     // Setting unlimited cache size for Desktop while bounding iOS to 40MB (41943040) to avoid WebKit IDB purge / QuotaExceeded
