@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { DetailTableRow } from './detailTypes';
+import { useAppStore } from '../../store/useAppStore';
 
 export interface UseDetailVirtualizationParams {
   flatTableRows: DetailTableRow[];
@@ -128,6 +129,25 @@ export function useDetailVirtualization({
       tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
     }
   }, [initialFocusTaskId, flatTableRows, rowOffsets]);
+
+  useEffect(() => {
+    if (!flatTableRows || flatTableRows.length === 0) return;
+    const visibleSlice = flatTableRows.slice(startIndex, endIndex);
+    const visibleIds = new Set<string>();
+    for (const row of visibleSlice) {
+      if (row.type === 'project' && row.project) {
+        if (row.project.id) visibleIds.add(String(row.project.id));
+        if (row.project.code) visibleIds.add(String(row.project.code));
+      } else if (row.type === 'task' && row.task) {
+        if (row.task.projectId) visibleIds.add(String(row.task.projectId));
+        if (row.task.projectCode) visibleIds.add(String(row.task.projectCode));
+      }
+    }
+    const arr = Array.from(visibleIds).filter(Boolean);
+    if (arr.length > 0) {
+      useAppStore.getState().setVisibleActiveProjectIds(arr);
+    }
+  }, [flatTableRows, startIndex, endIndex]);
 
   return {
     tableContainerRef,

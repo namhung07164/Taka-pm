@@ -1715,3 +1715,19 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Loại bỏ hoàn toàn 250.000 phép so sánh lặp thừa trên mỗi khung hình render, bẻ gãy chuỗi re-render lan truyền giúp bảng cuộn và gõ phím đạt 60 FPS mượt mà tuyệt đối.
    - **Nạp Tức Thì Dữ Liệu Từ Dexie Khi Đổi Tab (`hydrateTasksFromLocal`, `hydrateCostsFromLocal`, `hydrateDelegationsFromLocal`)**:
      + Khi chuyển từ General Tab sang Detail, Gantt, Cost hay Phân quyền, dữ liệu đã có trong IndexedDB lập tức được nạp vào Zustand Store trong 3ms – 5ms, triệt tiêu hoàn toàn màn hình xoay vòng chờ tải.
+
+47. **Nạp Cục Bộ Tức Thời Từng Dự Án (Dexie Local-First Task Hydration) & Ưu Tiên Khung Nhìn Cuộn (Viewport Lazy Loading)**:
+   - **Nạp Task Dự Án Cụ Thể Tức Thời 0ms (`hydrateTasksForProjects`)**:
+     + Khi người dùng bấm mở rộng (Expand `▶`) một dự án lẻ hoặc tìm kiếm công việc, hệ thống tức thời truy vấn các Task của dự án đó từ cơ sở dữ liệu cục bộ IndexedDB (`localDb.tasks`) thông qua chỉ mục `projectId` và `code` để nạp ngay vào Zustand Store trong 0ms.
+     + Người dùng thấy toàn bộ cây công việc hiện lên ngay lập tức mà không phải chờ phản hồi từ mạng internet hay Firestore.
+   - **Ưu Tiên Tải Theo Khung Nhìn Thực Tế (Viewport Prioritization & `visibleActiveProjectIds`)**:
+     + Bộ đo ảo hóa (`useDetailVirtualization`) và giao diện di động (`DetailMobileView`) liên tục nhận diện các dự án đang hiển thị trực tiếp trong khung nhìn của màn hình (`visibleActiveProjectIds`).
+     + Khi mở rộng nhiều dự án cùng lúc, hệ thống ưu tiên kết nối và cập nhật các dự án đang nhìn thấy trước, trong khi các dự án ngoài tầm mắt (off-screen) tiếp tục sử dụng dữ liệu đệm cục bộ cực nhanh, tiết kiệm tối đa băng thông và lượt đọc mạng máy chủ.
+
+48. **Chế Độ Xem Nhanh Nhiệm Vụ 0-Read (Quick Preview Via `taskSummaries`)**:
+   - **Xem Nhanh Tiến Độ & Danh Mục Công Việc Không Tốn Lượt Đọc**:
+     + Khi mở Quick Navigator trên bất kỳ dự án nào (từ Budget, Cost, Detail, Gantt hay Layout), hệ thống cung cấp thanh "Tasks Preview" tích hợp sẵn.
+     + Danh mục nhiệm vụ (Tên task, ngày bắt đầu → kết thúc, số lượng) được hiển thị trực tiếp từ mảng nhúng `p.taskSummaries` đã có sẵn trong tài liệu dự án mà không phát sinh thêm bất kỳ truy vấn Firestore nào (0 Read).
+   - **Chuyển Tiếp Linh Hoạt Khi Cần Chỉnh Sửa Chi Tiết**:
+     + Người dùng có thể nhấp chuột trực tiếp vào từng task trong danh sách xem nhanh để điều hướng thẳng đến công việc đó trong tab Task Detail hoặc mở Task Modal khi cần chỉnh sửa sâu (ghi chú, hình ảnh hiện trường, phân công...).
+     + Tách biệt hoàn toàn giữa nhu cầu "Xem nhanh tổng quan (0 read)" và "Chỉnh sửa chuyên sâu (on-demand read)", tối ưu hóa trải nghiệm mượt mà 60 FPS.

@@ -186,6 +186,32 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
 }
 
 /**
+ * Đọc Tasks từ Local Database theo danh sách Project IDs hoặc Project Codes
+ */
+export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Promise<Task[]> {
+  if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return [];
+  try {
+    const rawIds = projectIdsOrCodes.map(id => String(id).trim()).filter(Boolean);
+    if (rawIds.length === 0) return [];
+    const [byProjId, byCode] = await Promise.all([
+      localDb.tasks.where('projectId').anyOf(rawIds).toArray(),
+      localDb.tasks.where('code').anyOf(rawIds).toArray(),
+    ]);
+    const mergedMap = new Map<string, Task>();
+    for (const t of byProjId) {
+      if (t && t.id) mergedMap.set(t.id, t);
+    }
+    for (const t of byCode) {
+      if (t && t.id) mergedMap.set(t.id, t);
+    }
+    return Array.from(mergedMap.values());
+  } catch (err) {
+    console.warn('[localDb] getLocalTasksForProjects error:', err);
+    return [];
+  }
+}
+
+/**
  * Đọc toàn bộ Tasks từ Local Database
  */
 export async function getLocalTasks(year?: string): Promise<Task[]> {

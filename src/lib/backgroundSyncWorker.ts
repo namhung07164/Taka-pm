@@ -9,6 +9,7 @@ import {
   deleteLocalRecord,
   getLocalProjects,
   getLocalTasks,
+  getLocalTasksForProjects,
   getLocalCosts,
   getLocalDelegations,
 } from './localDb';
@@ -92,6 +93,41 @@ export async function hydrateTasksFromLocal(): Promise<number> {
     return 0;
   } catch (err) {
     console.warn('[backgroundSyncWorker] hydrateTasksFromLocal error:', err);
+    return 0;
+  }
+}
+
+/**
+ * Nạp tức thì Tasks của các dự án cụ thể từ Dexie vào Zustand (0ms UI, không chờ Firestore)
+ */
+export async function hydrateTasksForProjects(projectIdsOrCodes: string[]): Promise<number> {
+  if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return 0;
+  try {
+    const localTasks = await getLocalTasksForProjects(projectIdsOrCodes);
+    if (!localTasks || localTasks.length === 0) return 0;
+
+    const store = useAppStore.getState();
+    const existingTasks = store.tasks || [];
+    const existingIds = new Set(existingTasks.map(t => t.id));
+    const newTasksToAdd: Task[] = [];
+
+    for (const t of localTasks) {
+      if (!existingIds.has(t.id)) {
+        newTasksToAdd.push(t);
+      }
+    }
+
+    if (newTasksToAdd.length > 0) {
+      const merged = deduplicateTasks([...existingTasks, ...newTasksToAdd]);
+      store.setTasks(merged);
+      usePerformanceStore
+        .getState()
+        .trackGetDoc('dexie_tasks_partial_hydration', true, newTasksToAdd.length, `Local-First Hydration for ${projectIdsOrCodes.length} projects (0ms)`);
+      return newTasksToAdd.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[backgroundSyncWorker] hydrateTasksForProjects error:', err);
     return 0;
   }
 }

@@ -31,6 +31,7 @@ import {
   bootstrapLocalStore,
   offloadPersistSnapshot,
   hydrateTasksFromLocal,
+  hydrateTasksForProjects,
   hydrateCostsFromLocal,
   hydrateDelegationsFromLocal
 } from "../lib/backgroundSyncWorker";
@@ -83,6 +84,7 @@ export function useFirebaseData() {
   const activeTab = useAppStore((state) => state.activeTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const expandedProjectIds = useAppStore((state) => state.expandedProjectIds);
+  const visibleActiveProjectIds = useAppStore((state) => state.visibleActiveProjectIds);
   const searchActiveProjectIds = useAppStore((state) => state.searchActiveProjectIds);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
   const setIsTasksLoading = useAppStore((state) => state.setIsTasksLoading);
@@ -720,6 +722,9 @@ export function useFirebaseData() {
       return;
     }
 
+    // Instant 0ms Dexie Local-First Hydration for active projects
+    hydrateTasksForProjects(activeProjectIds).catch(() => {});
+
     setIsTasksLoading(true);
 
     const currentProjects = useAppStore.getState().projects || [];
@@ -798,7 +803,15 @@ export function useFirebaseData() {
         }
       } else {
         // Individual listeners for <= 10 projects
-        projs.forEach(p => {
+        // Sort with viewport priority (visible projects attached first)
+        const visibleSet = new Set(visibleActiveProjectIds.map(id => String(id)));
+        const sortedProjs = [...projs].sort((a, b) => {
+          const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
+          const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
+          return bVis - aVis;
+        });
+
+        sortedProjs.forEach(p => {
           const projKey = `proj_${p.id}`;
           const yearKey = `year_${year}`;
           
@@ -857,7 +870,7 @@ export function useFirebaseData() {
         }
       }
     });
-  }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds, globalYearFilter, buildStoreAndYearQuery]);
+  }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds, visibleActiveProjectIds, globalYearFilter, buildStoreAndYearQuery]);
 
   // 2.4 Delta Sync for Costs (Native Firebase Cache for active target years with Keep-Alive Pool)
   const costsPool = useRef<Map<string, () => void>>(new Map());
