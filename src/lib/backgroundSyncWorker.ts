@@ -72,6 +72,31 @@ export async function bootstrapLocalStore(): Promise<{
 }
 
 /**
+ * Nạp tức thời Projects từ Dexie khi mở app hoặc chuyển năm (0ms UI, 0 Firestore Read)
+ */
+export async function hydrateProjectsFromLocal(year?: string, storeFilter?: string): Promise<number> {
+  try {
+    const localProjects = await getLocalProjects(year, storeFilter);
+    if (localProjects && localProjects.length > 0) {
+      const currentStore = useAppStore.getState();
+      const existing = currentStore.projects || [];
+      const pMap = new Map(existing.map(p => [p.id, p]));
+      localProjects.forEach(p => pMap.set(p.id, p));
+      const merged = Array.from(pMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
+      currentStore.setProjects(merged);
+      usePerformanceStore
+        .getState()
+        .trackGetDoc('dexie_projects_hydration', true, localProjects.length, `Instant Local-First Projects Hydration (0ms, 0 Read)`);
+      return localProjects.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[backgroundSyncWorker] hydrateProjectsFromLocal error:', err);
+    return 0;
+  }
+}
+
+/**
  * Nạp tức thời Tasks từ Dexie khi người dùng chuyển sang tab yêu cầu Tasks (0ms UI, triệt tiêu Spinner)
  */
 export async function hydrateTasksFromLocal(): Promise<number> {

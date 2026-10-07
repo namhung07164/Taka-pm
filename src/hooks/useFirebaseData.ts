@@ -26,10 +26,11 @@ import {
   NotificationRule,
 } from "../types";
 import { setupStaticConfigSync } from "../lib/configCacheService";
-import { startDeltaSyncService } from "../lib/deltaSyncService";
+import { startDeltaSyncService, pullAndApplyDeltas } from "../lib/deltaSyncService";
 import {
   bootstrapLocalStore,
   offloadPersistSnapshot,
+  hydrateProjectsFromLocal,
   hydrateTasksFromLocal,
   hydrateTasksForProjects,
   hydrateCostsFromLocal,
@@ -542,10 +543,24 @@ export function useFirebaseData() {
     const isAllYears = globalYearFilter === 'all' || globalYearFilter === 'ALL';
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
-    liveTargetYears.forEach(year => {
+    liveTargetYears.forEach(async (year) => {
       if (!projectsPool.current.has(year)) {
-        // Metadata Fingerprinting check: If year is closed or past, and local cache matches remote timestamp, skip network read!
+        // Step 1: Instant Local-First Dexie Hydration (0ms, 0 Read)
+        const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
+        
+        // Metadata Fingerprinting check: If local cache is valid or data is already hydrated
         const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+        const hasLocalData = localCount > 0 || (useAppStore.getState().projects || []).some(p => String(p.year) === String(year));
+
+        if (hasLocalData) {
+          // If we already have local projects, mark pool as active (0 Read full table query)
+          // and catch any latest changes via lightweight Delta Sync Pipeline (0-2 reads)
+          projectsPool.current.set(year, () => {});
+          pullAndApplyDeltas(year).catch(() => {});
+          usePerformanceStore.getState().trackGetDoc(`taka_projects_${year}`, true, localCount, 'Dexie Local-First Projects Hydration (0 Read full collection)');
+          return;
+        }
+
         if (isClosedOrPastYear && isYearCacheValid(year, remoteYearsMetaRef.current)) {
           const cached = loadYearDataFromLocal(year);
           if (cached && cached.projects && cached.projects.length > 0) {
@@ -578,6 +593,7 @@ export function useFirebaseData() {
             if (yearProjects.length > 0) {
               const updatedAt = remoteYearsMetaRef.current[year]?.updatedAt || new Date().toISOString();
               saveYearDataToLocal(year, updatedAt, { projects: yearProjects });
+              offloadPersistSnapshot('taka_projects', yearProjects);
             }
           },
           (e) => {

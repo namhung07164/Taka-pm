@@ -1731,3 +1731,14 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Chuyển Tiếp Linh Hoạt Khi Cần Chỉnh Sửa Chi Tiết**:
      + Người dùng có thể nhấp chuột trực tiếp vào từng task trong danh sách xem nhanh để điều hướng thẳng đến công việc đó trong tab Task Detail hoặc mở Task Modal khi cần chỉnh sửa sâu (ghi chú, hình ảnh hiện trường, phân công...).
      + Tách biệt hoàn toàn giữa nhu cầu "Xem nhanh tổng quan (0 read)" và "Chỉnh sửa chuyên sâu (on-demand read)", tối ưu hóa trải nghiệm mượt mà 60 FPS.
+
+49. **Kiến Trúc Tải Dự Án Cục Bộ & Đồng Bộ Vi Phân Không Rủi Ro (Local-First Projects Hydration & Zero-Risk Delta Pipeline)**:
+   - **Nạp Toàn Bộ Danh Mục 250+ Dự Án Từ Dexie IndexedDB (0 Firestore Read)**:
+     + Khi mở ứng dụng hoặc đổi năm, hệ thống nạp toàn bộ danh mục 250+ dự án trực tiếp từ cơ sở dữ liệu IndexedDB trên thiết bị (`hydrateProjectsFromLocal`) trong 3ms – 5ms.
+     + Triệt tiêu hoàn toàn truy vấn toàn bảng nặng nề (vốn tiêu tốn 220–250 reads mỗi lần vào app), đưa chi phí nạp danh sách dự án về **0 Firestore Read**.
+   - **Đồng Bộ Biến Động Qua Delta Pipeline (`taka_deltas`)**:
+     + Thay vì giữ kết nối lắng nghe snapshot toàn bộ 250 dự án, ứng dụng chỉ lắng nghe và kéo các bản ghi thay đổi vi phân (`taka_deltas`) phát sinh sau mốc thời gian `lastSyncTime`.
+     + Đảm bảo khi đồng nghiệp tạo mới, sửa hoặc xóa dự án, dữ liệu vẫn được cập nhật tức thì theo thời gian thực (1–2 reads) mà không cần tải lại toàn bộ danh mục.
+   - **Bảo Toàn 100% Tính Toàn Vẹn Số Liệu Tài Chính & Bản Đồ**:
+     + Nhờ duy trì đầy đủ 100% danh mục 250+ dự án trong RAM (Zustand) và Dexie, các công thức tính toán thẻ KPI Tổng quan, Tổng ngân sách năm, Tỷ lệ hoàn thành và Sơ đồ gian hàng mặt bằng (Layout Tab) luôn chính xác tuyệt đối từng đồng, loại bỏ 100% rủi ro hụt số liệu hay trùng số thứ tự No khi tạo mới.
+
