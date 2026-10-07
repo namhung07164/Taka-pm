@@ -1669,3 +1669,11 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Hệ thống trang bị tiến trình ngầm tự động quét và xóa các bản ghi delta có tuổi thọ lớn hơn 48 giờ (`numericTime < Date.now() - 48h`) theo từng đợt an toàn (`writeBatch`).
      + Giúp bảng `taka_deltas` luôn duy trì kích thước tinh gọn, tối ưu hóa tốc độ truy vấn delta và bảo vệ định mức lưu trữ Firestore lâu dài.
 
+42. **Gom Gộp Biến Thiên Hàng Loạt & Đồng Bộ Nguyên Tử (Giai Đoạn 2 Nâng Cấp: Delta Batching & Coalescing Engine)**:
+   - **Hàm Ghi Delta Theo Lô (`recordBatchDeltas`)**:
+     + Khi người dùng thực hiện các thao tác biến động hàng loạt (như kéo dời lịch Gantt liên hoàn nhiều task phụ thuộc, import file CSV/Excel 50–100 công việc, hoặc chỉnh sửa tiền nhiệm hàng loạt), hệ thống tự động gom toàn bộ các thay đổi vào **1 document Delta duy nhất** với cấu trúc `action: 'batch_update'` và danh sách `batchItems: [...]`.
+     + **Hiệu Quả**: Cắt giảm **80% – 90% số lượng Document WRITE** phát sinh trên Firestore, giúp tiết kiệm chi phí dịch vụ đám mây tối đa.
+   - **Đồng Bộ Nguyên Tử (Atomic Multi-Task Synchronization)**:
+     + Khi client khác nhận được bản tin `batch_update`, toàn bộ các task liên quan được giải nén và cập nhật vào Zustand Store + Dexie Database trong **cùng 1 khung hình hiển thị (1 render frame)**, triệt tiêu hoàn toàn hiện tượng các task phụ thuộc nhảy gián đoạn nối đuôi nhau.
+
+

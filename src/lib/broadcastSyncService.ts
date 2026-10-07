@@ -95,54 +95,68 @@ export function initBroadcastSyncListener(): () => void {
       const delegationsToUpdate: DelegationGroup[] = [];
       const delegationsToDelete: string[] = [];
 
-      deltas.forEach((delta) => {
-        const docId = delta.docId;
+      const processItem = (
+        docId: string,
+        collectionName: string,
+        action: 'create' | 'update' | 'delete',
+        data: any
+      ) => {
         if (!docId) return;
 
-        switch (delta.collectionName) {
+        switch (collectionName) {
           case 'taka_projects':
-            if (delta.action === 'delete') {
+            if (action === 'delete') {
               projectsToDelete.push(docId);
               deleteLocalRecord('taka_projects', docId).catch(() => {});
-            } else if (delta.data) {
-              const proj = { id: docId, ...delta.data } as (Project & { id: string });
+            } else if (data) {
+              const proj = { id: docId, ...data } as (Project & { id: string });
               projectsToUpdate.push(proj);
               upsertLocalRecord('taka_projects', proj).catch(() => {});
             }
             break;
 
           case 'taka_tasks':
-            if (delta.action === 'delete') {
+            if (action === 'delete') {
               tasksToDelete.push(docId);
               deleteLocalRecord('taka_tasks', docId).catch(() => {});
-            } else if (delta.data) {
-              const task = { id: docId, ...delta.data } as Task;
+            } else if (data) {
+              const task = { id: docId, ...data } as (Task & { id: string });
               tasksToUpdate.push(task);
               upsertLocalRecord('taka_tasks', task).catch(() => {});
             }
             break;
 
           case 'taka_costs':
-            if (delta.action === 'delete') {
+            if (action === 'delete') {
               costsToDelete.push(docId);
               deleteLocalRecord('taka_costs', docId).catch(() => {});
-            } else if (delta.data) {
-              const cost = { id: docId, ...delta.data } as Cost;
+            } else if (data) {
+              const cost = { id: docId, ...data } as (Cost & { id: string });
               costsToUpdate.push(cost);
               upsertLocalRecord('taka_costs', cost).catch(() => {});
             }
             break;
 
           case 'taka_delegations':
-            if (delta.action === 'delete') {
+            if (action === 'delete') {
               delegationsToDelete.push(docId);
               deleteLocalRecord('taka_delegations', docId).catch(() => {});
-            } else if (delta.data) {
-              const group = { id: docId, ...delta.data } as DelegationGroup;
+            } else if (data) {
+              const group = { id: docId, ...data } as DelegationGroup;
               delegationsToUpdate.push(group);
               upsertLocalRecord('taka_delegations', group).catch(() => {});
             }
             break;
+        }
+      };
+
+      deltas.forEach((delta) => {
+        if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+          delta.batchItems.forEach((item) => {
+            processItem(item.docId, item.collectionName, item.action, item.data);
+          });
+        } else if (delta.docId && delta.collectionName) {
+          processItem(delta.docId, delta.collectionName, delta.action as any, delta.data);
         }
       });
 

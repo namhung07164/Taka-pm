@@ -18,6 +18,8 @@ import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/util
 import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
 import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { TakaDeltaItem } from '../../types';
 
 interface UseDetailTaskMutationsParams {
   tasks: Task[];
@@ -342,6 +344,15 @@ export function useDetailTaskMutations({
 
       try {
         await batch.commit();
+
+        const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => ({
+          docId: item.id,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          data: item,
+          year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+        }));
+        recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
       } catch (error: any) {
         console.error("Batch commit failed", error);
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });

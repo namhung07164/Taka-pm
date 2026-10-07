@@ -79,11 +79,22 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
   setTimeout(async () => {
     try {
       await localDb.transaction('rw', [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations], async () => {
-        for (const delta of deltas) {
-          if (delta.action === 'delete') {
-            await deleteLocalRecord(delta.collectionName, delta.docId);
+        const processDeltaItem = async (docId?: string, collectionName?: any, action?: string, data?: any) => {
+          if (!docId || !collectionName) return;
+          if (action === 'delete') {
+            await deleteLocalRecord(collectionName, docId);
           } else {
-            await upsertLocalRecord(delta.collectionName, { id: delta.docId, ...delta.data });
+            await upsertLocalRecord(collectionName, { id: docId, ...data });
+          }
+        };
+
+        for (const delta of deltas) {
+          if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+            for (const item of delta.batchItems) {
+              await processDeltaItem(item.docId, item.collectionName, item.action, item.data);
+            }
+          } else if (delta.docId && delta.collectionName) {
+            await processDeltaItem(delta.docId, delta.collectionName, delta.action, delta.data);
           }
         }
       });

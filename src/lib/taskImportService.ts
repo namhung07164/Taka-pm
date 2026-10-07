@@ -11,6 +11,7 @@ import { findAffectedProjects } from './taskStateService';
 import { doc } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
+import { recordBatchDeltas } from './deltaSyncService';
 
 /**
  * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
@@ -278,6 +279,16 @@ export async function batchSaveTasksToFirestore(
     });
 
     await batch.commit();
+
+    // Ghi gom các delta theo lô vào 1 document duy nhất (Giai đoạn 2)
+    const deltaItems = chunk.map((t) => ({
+      docId: t.id,
+      collectionName: 'taka_tasks' as const,
+      action: 'update' as const,
+      data: t,
+      year: t.projectYear ? String(t.projectYear) : undefined,
+    }));
+    recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id).catch(() => {});
   }
 }
 

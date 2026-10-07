@@ -310,13 +310,22 @@ export interface AuditLog {
   previousData?: any;
 }
 
-export interface TakaDelta {
-  id: string;
+export interface TakaDeltaItem {
   docId: string;
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
   action: 'create' | 'update' | 'delete';
   year?: string;
-  data: Record<string, any>;
+  data?: Record<string, any>;
+}
+
+export interface TakaDelta {
+  id: string;
+  docId?: string;
+  collectionName?: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  action: 'create' | 'update' | 'delete' | 'batch_update';
+  year?: string;
+  data?: Record<string, any>;
+  batchItems?: TakaDeltaItem[];
   updatedBy?: string;
   timestamp: string;
   numericTime: number;
