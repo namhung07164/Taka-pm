@@ -9,7 +9,7 @@ import {
   resolveActualStatus, 
   matchesAdvancedSearch 
 } from '../../lib/utils';
-import { computeTaskCode } from '../../lib/ganttUtils';
+import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { SortConfig } from './detailTypes';
 import { useDetailProjectInfo } from './useDetailProjectInfo';
@@ -308,12 +308,7 @@ export function useDetailData({
 
   // Task code & status maps
   const taskCodeMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (let idx = 0; idx < tasks.length; idx++) {
-      const t = tasks[idx];
-      map.set(t.id, computeTaskCode(projects, tasks, t) || t.taskCodePhu || '');
-    }
-    return map;
+    return computeAllTaskCodes(projects, tasks);
   }, [projects, tasks]);
 
   const taskActualStatusMap = useMemo(() => {

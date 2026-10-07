@@ -2,7 +2,6 @@ import { useMemo, useCallback } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { getStatus } from '../../lib/utils';
-import { deduplicateTasks } from '../../lib/taskDeduplicationService';
 
 export interface ProjectInfo {
   status: string;
@@ -23,7 +22,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
   const { tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
     const keyMap = new Map<string, Task[]>();
     const codeMap = new Map<string, Task[]>();
-    tasks.forEach(t => {
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
       const key = `${t.projectCode || ''}-${t.projectYear || ''}-${t.projectStore || ''}`;
       let list = keyMap.get(key);
       if (!list) {
@@ -40,7 +40,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         }
         cList.push(t);
       }
-    });
+    }
     return { tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
   }, [tasks]);
 
@@ -59,39 +59,33 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           return matchesStore && matchesYear;
         });
       }
-      const sortedTasks = sortGroupTasks(deduplicateTasks(rawGroupTasks || []));
+      const sortedTasks = sortGroupTasks(rawGroupTasks || []);
       let computedTakStart = p.computedTakStart || p.start;
+      let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
+      let computedOpening = p.computedOpening || p.opening;
+
       if (sortedTasks.length > 0) {
         let minStart: string | undefined = undefined;
+        let maxFinish: string | undefined = undefined;
         for (let i = 0; i < sortedTasks.length; i++) {
           const t = sortedTasks[i];
           if (t.start && (!minStart || t.start < minStart)) {
             minStart = t.start;
           }
-        }
-        if (minStart) computedTakStart = minStart;
-      }
-      let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
-      if (sortedTasks.length > 0) {
-        let maxFinish: string | undefined = undefined;
-        for (let i = 0; i < sortedTasks.length; i++) {
-          const t = sortedTasks[i];
           if (t.finish && (!maxFinish || t.finish > maxFinish)) {
             maxFinish = t.finish;
           }
-        }
-        if (maxFinish) computedTakCompl = maxFinish;
-      }
-      let computedOpening = p.computedOpening || p.opening;
-      for (let i = 0; i < sortedTasks.length; i++) {
-        const t = sortedTasks[i];
-        const name = String(t.name || '').toLowerCase();
-        if (name.includes('opening') || name.includes('open')) {
-          if (t.finish && (!computedOpening || t.finish > computedOpening)) {
-            computedOpening = t.finish;
+          const name = String(t.name || '').toLowerCase();
+          if (name.includes('opening') || name.includes('open')) {
+            if (t.finish && (!computedOpening || t.finish > computedOpening)) {
+              computedOpening = t.finish;
+            }
           }
         }
+        if (minStart) computedTakStart = minStart;
+        if (maxFinish) computedTakCompl = maxFinish;
       }
+
       const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
       const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
       const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -124,35 +118,29 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         return matchesStore && matchesYear;
       });
     }
-    const sortedTasks = sortGroupTasks(rawGroupTasks);
+    const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;
+    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
+    let computedOpening = p.computedOpening || p.opening;
+
     if (sortedTasks.length > 0) {
       let minStart: string | undefined = undefined;
-      for (let i = 0; i < sortedTasks.length; i++) {
-        const t = sortedTasks[i];
-        if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
-      }
-      if (minStart) computedTakStart = minStart;
-    }
-    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
-    if (sortedTasks.length > 0) {
       let maxFinish: string | undefined = undefined;
       for (let i = 0; i < sortedTasks.length; i++) {
         const t = sortedTasks[i];
+        if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
         if (t.finish && (!maxFinish || t.finish > maxFinish)) maxFinish = t.finish;
-      }
-      if (maxFinish) computedTakCompl = maxFinish;
-    }
-    let computedOpening = p.computedOpening || p.opening;
-    for (let i = 0; i < sortedTasks.length; i++) {
-      const t = sortedTasks[i];
-      const name = String(t.name || '').toLowerCase();
-      if (name.includes('opening') || name.includes('open')) {
-        if (t.finish && (!computedOpening || t.finish > computedOpening)) {
-          computedOpening = t.finish;
+        const name = String(t.name || '').toLowerCase();
+        if (name.includes('opening') || name.includes('open')) {
+          if (t.finish && (!computedOpening || t.finish > computedOpening)) {
+            computedOpening = t.finish;
+          }
         }
       }
+      if (minStart) computedTakStart = minStart;
+      if (maxFinish) computedTakCompl = maxFinish;
     }
+
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
     return { status, start: computedTakStart || '9999-12-31', finish, sortedTasks, computedTakStart, computedTakCompl, computedOpening };

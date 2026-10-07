@@ -44,11 +44,11 @@ export function useDetailFocusTracking({
   const [activeProjectInView, setActiveProjectInView] = useState<Project | null>(null);
   const lastFocusedTaskIdRef = useRef<string | null>(null);
 
-  // Smart Viewport Project Tracking using IntersectionObserver
+  // Smart Viewport Project Tracking using IntersectionObserver (Debounced to protect 60fps scrolling)
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return;
     const visibleEntriesMap = new Map<Element, IntersectionObserverEntry>();
-    let rafId: number | null = null;
+    let debounceTimer: NodeJS.Timeout | null = null;
 
     const updateActiveProject = () => {
       let topProjectEl: Element | null = null;
@@ -95,8 +95,8 @@ export function useDetailFocusTracking({
     };
 
     const scheduleUpdate = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(updateActiveProject);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(updateActiveProject, 200);
     };
 
     const observer = new IntersectionObserver(
@@ -113,7 +113,7 @@ export function useDetailFocusTracking({
       {
         root: null,
         rootMargin: '-60px 0px -40% 0px',
-        threshold: [0, 0.25, 0.5, 0.75, 1.0],
+        threshold: [0, 0.5, 1.0],
       }
     );
 
@@ -126,7 +126,7 @@ export function useDetailFocusTracking({
 
     return () => {
       cancelAnimationFrame(frameId);
-      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (debounceTimer) clearTimeout(debounceTimer);
       observer.disconnect();
       visibleEntriesMap.clear();
     };

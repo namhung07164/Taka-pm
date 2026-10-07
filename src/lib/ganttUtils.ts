@@ -604,7 +604,11 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 }
 
 export function computeTaskCode(projects: Project[], tasks: Task[], task: Task): string {
-  if (!task || !projects || !Array.isArray(projects) || !tasks || !Array.isArray(tasks)) return '';
+  if (!task) return '';
+  if (task.taskCodePhu && task.taskCodePhu.trim()) {
+    return task.taskCodePhu.trim();
+  }
+  if (!projects || !Array.isArray(projects) || !tasks || !Array.isArray(tasks)) return '';
 
   const taskPCode = String(task.projectCode || '').trim().toLowerCase();
   
@@ -637,13 +641,60 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
 
   const i = groupTasks.findIndex(t => t.id === task.id);
   const orderNum = i !== -1 ? i + 1 : ((task.orderIndex !== undefined ? task.orderIndex : 0) + 1);
-  const defaultCode = currentPCode ? `${currentPCode}#${orderNum}` : '';
+  return currentPCode ? `${currentPCode}#${orderNum}` : '';
+}
 
-  if (task.taskCodePhu && task.taskCodePhu.trim()) {
-    return task.taskCodePhu.trim();
+/**
+ * Pre-indexes all task codes in O(N log K) single pass instead of O(N^2 log N).
+ */
+export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!tasks || !Array.isArray(tasks)) return map;
+
+  const projectMapByCode = new Map<string, Project>();
+  const projectMapById = new Map<string, Project>();
+  (projects || []).forEach(p => {
+    if (p.id) projectMapById.set(p.id, p);
+    if (p.code) {
+      projectMapByCode.set(String(p.code).trim().toLowerCase(), p);
+      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`.toLowerCase();
+      projectMapByCode.set(key, p);
+    }
+  });
+
+  const tasksByGroupKey = new Map<string, Task[]>();
+  for (let idx = 0; idx < tasks.length; idx++) {
+    const t = tasks[idx];
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      map.set(t.id, t.taskCodePhu.trim());
+      continue;
+    }
+    const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
+              (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
+    const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
+    const groupKey = `${pCode}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
+    
+    let list = tasksByGroupKey.get(groupKey);
+    if (!list) {
+      list = [];
+      tasksByGroupKey.set(groupKey, list);
+    }
+    list.push(t);
   }
 
-  return defaultCode;
+  tasksByGroupKey.forEach((groupTasks) => {
+    const sorted = sortGroupTasks(groupTasks);
+    sorted.forEach((t, i) => {
+      const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
+                (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
+      const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
+      const orderNum = t.orderIndex !== undefined ? t.orderIndex + 1 : i + 1;
+      const code = pCode ? `${pCode}#${orderNum}` : '';
+      map.set(t.id, code);
+    });
+  });
+
+  return map;
 }
 
 export function parsePredecessors(predecessorString: string, taskNoMap: Map<string, Task[]>, contextTask?: Task) {

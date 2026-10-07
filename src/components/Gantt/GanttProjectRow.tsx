@@ -228,8 +228,8 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                 if (isEditMode) return;
                 e.stopPropagation();
                 const activeTaskId = useAppStore.getState().ganttTabFocusTaskId;
-                const targetChildTask = (projectTasks && projectTasks.length > 0)
-                  ? (projectTasks.find((t) => t.id === activeTaskId) || projectTasks[0])
+                const targetChildTask = (projectTasks && projectTasks.length > 0 && activeTaskId)
+                  ? projectTasks.find((t) => t.id === activeTaskId)
                   : undefined;
                 setQuickNavTarget({
                   project: p,

@@ -198,7 +198,6 @@ export const DetailTableView = memo(function DetailTableView({
                   delStatusText={actStatus.label}
                   delStatusColorClass={actStatus.color}
                   childTasksCount={childCount}
-                  projects={projects}
                   onToggleSelectTask={handleToggleSelectTask}
                   onEditTask={onEditTask}
                   onUpdateTask={handleUpdateTask}
