@@ -1082,49 +1082,40 @@ export default function App() {
           break;
         }
         case "detail": {
-          let resolvedTask = task;
-          if (!resolvedTask && p) {
-            const currentGanttFocusId = useAppStore.getState().ganttTabFocusTaskId;
-            if (currentGanttFocusId) {
-              resolvedTask = tasks.find((t) => t.id === currentGanttFocusId && (
-                (p.code && String(t.projectCode || "").trim().toLowerCase() === String(p.code).trim().toLowerCase()) ||
-                (p.id && t.projectId === p.id)
-              ));
-            }
-            if (!resolvedTask) {
-              resolvedTask = tasks.find((t) =>
-                (p.code && String(t.projectCode || "").trim().toLowerCase() === String(p.code).trim().toLowerCase()) ||
-                (p.id && t.projectId === p.id)
-              );
-            }
-          }
+          // If a specific task was explicitly targeted (e.g. user clicked directly on a subtask in Gantt/Search):
+          // focus that task and expand the project.
+          // If a PROJECT was targeted (task is null/undefined):
+          // DO NOT resolve to or invent any child task! Keep focus empty, filter by project code, and keep project collapsed.
+          const isTargetingSpecificTask = Boolean(task && task.id);
+          const targetTaskId = isTargetingSpecificTask ? (task?.id || "") : "";
+          updates.detailTabFocusTaskId = targetTaskId;
 
-          const targetTaskId = resolvedTask?.id || "";
-          if (targetTaskId) {
-            updates.detailTabFocusTaskId = targetTaskId;
-          }
-
-          const effectiveCode = resolvedTask
-            ? (computeTaskCode(projects, tasks, resolvedTask) || resolvedTask.taskCodePhu || (p ? `${p.code}#${(resolvedTask.orderIndex !== undefined ? resolvedTask.orderIndex : 0) + 1}` : "") || p?.code || "")
-            : (effectiveFilterCode || p?.code || "");
+          const effectiveCode = isTargetingSpecificTask && task
+            ? (computeTaskCode(projects, tasks, task) || task.taskCodePhu || (p ? `${p.code}#${(task.orderIndex !== undefined ? task.orderIndex : 0) + 1}` : "") || p?.code || "")
+            : (p?.code || effectiveFilterCode || "");
 
           updates.detailTabFilterCode = effectiveCode;
           if (effectiveCode) {
             safeSetItemSession("taka_detail_search", effectiveCode);
           }
-          if (p?.store || resolvedTask?.projectStore || task?.projectStore) {
-            updates.detailTabStoreFilter = p?.store || resolvedTask?.projectStore || task?.projectStore || "";
+          if (p?.store || task?.projectStore) {
+            updates.detailTabStoreFilter = p?.store || task?.projectStore || "";
           }
+
           // Requirement: Khi chuyển qua project qua quick navigation thì chỉ mở project, 
           // chưa expand task con để không kích hoạt tải tasks từ Firestore về.
           // Chỉ mở rộng task con nếu đích đến là một công việc (task) cụ thể.
-          if (task && resolvedTask && p?.id) {
+          if (isTargetingSpecificTask && p?.id) {
             const currentExpanded = useAppStore.getState().expandedProjectIds || [];
             const newExpanded = new Set(currentExpanded);
             newExpanded.add(String(p.id));
             updates.expandedProjectIds = Array.from(newExpanded);
+            updates.isTasksRequested = true;
+          } else {
+            // Khi chọn chuyển tới Project: đảm bảo focus task bị xóa sạch và không kích hoạt useDetailFocusTracking
+            updates.detailTabFocusTaskId = "";
+            updates.ganttTabFocusTaskId = "";
           }
-          updates.isTasksRequested = true;
           break;
         }
         case "budget": {

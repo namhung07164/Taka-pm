@@ -227,14 +227,12 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               onClick={(e) => {
                 if (isEditMode) return;
                 e.stopPropagation();
-                const activeTaskId = useAppStore.getState().ganttTabFocusTaskId;
-                const targetChildTask = (projectTasks && projectTasks.length > 0 && activeTaskId)
-                  ? projectTasks.find((t) => t.id === activeTaskId)
-                  : undefined;
+                // Clear any lingering task focus when user explicitly clicks the Project row
+                useAppStore.getState().setGanttTabFocusTaskId("");
                 setQuickNavTarget({
                   project: p,
-                  task: targetChildTask,
-                  taskCode: targetChildTask ? (targetChildTask.taskCodePhu || (p.code ? `${p.code}#${(targetChildTask.orderIndex !== undefined ? targetChildTask.orderIndex : 0) + 1}` : '')) : p.code,
+                  task: undefined,
+                  taskCode: p.code,
                 });
               }}
               onDoubleClick={(e) => {
