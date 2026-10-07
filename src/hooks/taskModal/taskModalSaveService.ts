@@ -18,6 +18,8 @@ import { saveTaskStateUnified } from '../../lib/taskStateService';
 import { useAppStore } from '../../store/useAppStore';
 import { Project, Task, AppUser } from '../../types';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../../lib/deltaPatchService';
 
 export interface TaskSaveParams {
   formData: Partial<Task>;
@@ -38,6 +40,7 @@ export async function executeTaskSave({
   projects,
   tasks,
   cloudStatus,
+  currentUser,
   setToast,
   onClose,
   setIsSubmitting
@@ -293,6 +296,18 @@ export async function executeTaskSave({
 
     try {
       batch.commit().catch(e => console.error("Batch commit failed", e));
+      const deltaItems = optimisticList.map(item => {
+        const prev = tasks.find(t => t.id === item.id);
+        return createPatchDeltaItem({
+          docId: item.id,
+          collectionName: 'taka_tasks',
+          previous: prev,
+          updated: item,
+          action: prev ? 'update' : 'create',
+          year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
+        });
+      });
+      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
     } catch (error: any) {
       console.error("Batch commit failed", error);
       useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });

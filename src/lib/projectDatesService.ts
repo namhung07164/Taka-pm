@@ -238,6 +238,26 @@ export async function syncProjectDatesToFirestore(
       projectId
     );
 
+    // Dirty-check guard: Skip writing if computed dates and progress are identical
+    const currentProjects = useAppStore.getState().projects || [];
+    const existing = currentProjects.find((p) => p.id === projectId);
+    if (existing) {
+      const isStartSame = (existing.computedTakStart || null) === (dates.computedTakStart || null);
+      const isComplSame = (existing.computedTakCompl || null) === (dates.computedTakCompl || null);
+      const isOpeningSame = (existing.computedOpening || null) === (dates.computedOpening || null);
+      const isPlanSame = (existing.computedPlanProgress ?? null) === (dates.computedPlanProgress ?? null);
+      const isActSame = (existing.computedActProgress ?? null) === (dates.computedActProgress ?? null);
+      const isCountSame = (existing.taskCount ?? null) === (dates.taskCount ?? null);
+      const isSummariesSame = (!dates.taskSummaries && !existing.taskSummaries) ||
+        (Array.isArray(dates.taskSummaries) && Array.isArray(existing.taskSummaries) &&
+         dates.taskSummaries.length === existing.taskSummaries.length &&
+         JSON.stringify(dates.taskSummaries) === JSON.stringify(existing.taskSummaries));
+
+      if (isStartSame && isComplSame && isOpeningSame && isPlanSame && isActSame && isCountSame && isSummariesSame) {
+        return;
+      }
+    }
+
     const updatePayload: Record<string, any> = {
       updatedAt: new Date().toISOString(),
     };

@@ -3,6 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, increment } from 'firebase/firestore';
 import { Cost } from "../types";
 import { useAppStore } from "../store/useAppStore";
+import { recordDelta } from "./deltaSyncService";
 
 export interface CostInstallment {
   amount: number;
@@ -551,6 +552,15 @@ export async function saveCostWithAtomicSummary(
 
   // 5. Commit batch
   batch.commit().catch(console.error);
+
+  recordDelta({
+    docId: newCostData.id,
+    collectionName: 'taka_costs',
+    action: oldCostData ? 'update' : 'create',
+    isPatch: !!oldCostData,
+    data: newCostData,
+    year: String(newCostData.projectYear || '2026'),
+  }).catch(() => {});
 }
 
 export async function deleteCostWithAtomicSummary(
@@ -637,4 +647,12 @@ export async function deleteCostWithAtomicSummary(
 
   // 5. Commit
   batch.commit().catch(console.error);
+
+  recordDelta({
+    docId: costToDelete.id,
+    collectionName: 'taka_costs',
+    action: 'delete',
+    data: { id: costToDelete.id, isDeleted: true },
+    year: String(costToDelete.projectYear || '2026'),
+  }).catch(() => {});
 }

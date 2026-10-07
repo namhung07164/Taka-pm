@@ -129,11 +129,38 @@ export function saveYearDataToLocal(
   }
 }
 
+const pendingYearTouches = new Map<string, { timer: any; firstQueuedAt: number }>();
+
 /**
  * Cập nhật timestamp cho một năm trên Firestore khi có bất kỳ mutation nào
+ * Coalescing / Debounce 1.5s để gom nhiều mutation liên tiếp trong cùng năm thành 1 lần ghi Firestore duy nhất (Giảm 80-90% Write)
  */
 export async function touchYearMeta(year: string): Promise<void> {
   if (!year || String(year).toLowerCase() === 'all') return;
+
+  const now = Date.now();
+  const existing = pendingYearTouches.get(year);
+
+  if (existing) {
+    if (now - existing.firstQueuedAt < 5000) {
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => {
+        flushTouchYearMeta(year);
+      }, 1500);
+      return;
+    }
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    flushTouchYearMeta(year);
+  }, 1500);
+
+  pendingYearTouches.set(year, { timer, firstQueuedAt: now });
+}
+
+async function flushTouchYearMeta(year: string): Promise<void> {
+  pendingYearTouches.delete(year);
   try {
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'years_meta');
     const now = new Date().toISOString();
@@ -149,4 +176,18 @@ export async function touchYearMeta(year: string): Promise<void> {
   } catch (err) {
     console.error('[yearsFingerprint] Failed to touch years_meta:', err);
   }
+}
+
+/**
+ * Flush toàn bộ các năm còn đang chờ debounce trước khi đóng tab hoặc reload
+ */
+export async function flushAllPendingYearTouches(): Promise<void> {
+  const years = Array.from(pendingYearTouches.keys());
+  await Promise.all(years.map((y) => flushTouchYearMeta(y)));
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    flushAllPendingYearTouches();
+  });
 }

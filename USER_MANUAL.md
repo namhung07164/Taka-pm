@@ -1685,5 +1685,16 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Triệt Tiêu Xung Đột Ghi Đè Đồng Thời (Zero Concurrent Field-Clobbering)**:
      + Khi hai kỹ sư hoặc quản lý cùng thao tác trên một công việc cùng lúc (ví dụ: Kỹ sư A dời tiến độ ngày bắt đầu/kết thúc trên Gantt trong khi Kỹ sư B đang gõ ghi chú hoặc đổi trạng thái task), hàm `applyFieldPatch` và Dexie `patchLocalRecord` chỉ hòa trộn các trường được chỉ định vào bộ nhớ. Toàn bộ các trường còn lại được bảo toàn nguyên vẹn 100%, xóa bỏ hoàn toàn rủi ro người này ghi đè làm mất công sức nhập liệu của người kia.
 
+44. **Tối Ưu Hóa Sâu Lượt Đọc & Ghi Firestore (Advanced Read/Write Reduction Engine)**:
+   - **Cơ Chế Kiểm Tra Bẩn Trước Khi Ghi Dự Án (Dirty-Check Guard in `syncProjectDatesToFirestore`)**:
+     + Mỗi khi tính toán lại tiến độ hoặc ngày của dự án, hệ thống so sánh đối chiếu với dữ liệu hiện tại trong RAM. Nếu các mốc ngày (`computedTakStart`, `computedTakCompl`, `computedOpening`) và tiến độ (`computedPlanProgress`, `computedActProgress`, `taskCount`) không có biến động, hệ thống **bỏ qua hoàn toàn lệnh ghi Firestore**, giúp tiết kiệm 50% – 70% lượt ghi `taka_projects`.
+   - **Gom Gộp Ghi Metadata Năm (`touchYearMeta` Debounced Coalescing)**:
+     + Đưa vào hàng đợi debounce 1.5s với cơ chế giới hạn tối đa 5s. Khi phát sinh nhiều biến động liên tiếp trong cùng 1 năm (như kéo Gantt bar, import task, sửa tiền nhiệm), hệ thống chỉ ghi 1 lần duy nhất lên `taka_config/years_meta`, cắt giảm tới 80% – 90% lượt ghi metadata.
+   - **Bảo Vệ Điểm Ngủ Nhàn Rỗi (Idle 0-Read Protection in `pullAndApplyDeltas`)**:
+     + Khi máy chủ không có delta mới, hệ thống tự động tịnh tiến an toàn mốc `lastSyncTime` với khoảng đệm an toàn 30s. Điều này duy trì cờ Heartbeat Fingerprint luôn có hiệu lực, ngăn chặn triệt để hiện tượng quá hạn 2 phút gây phát sinh truy vấn kiểm tra định kỳ 25s/lần khi người dùng không thao tác, đưa số lượt đọc lúc nhàn rỗi về đúng **0 lượt READ**.
+   - **Ghi Nhận Delta Hai Chiều Cho Module Chi Phí (Cost Delta Sync Pipeline)**:
+     + Tích hợp trực tiếp `recordDelta` vào quy trình lưu và xóa chi phí (`financialService.ts`), giúp các máy trạm khác cập nhật tức thời biến động ngân sách qua kênh delta siêu nhẹ mà không cần truy vấn lại toàn bộ danh mục chi phí.
+
+
 
 

@@ -167,6 +167,9 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
 
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
+      // Advance lastSyncTime with 60s clock skew buffer so Heartbeat Fingerprint bypass stays active (0-Read)
+      const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
+      safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
       return 0;
     }
 

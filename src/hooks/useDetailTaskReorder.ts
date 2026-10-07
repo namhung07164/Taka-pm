@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Project, Task } from '../types';
+import { Project, Task, TakaDeltaItem } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { db, APP_ID, writeBatch } from '../lib/firebase';
 import { doc } from 'firebase/firestore';
+import { recordBatchDeltas } from '../lib/deltaSyncService';
 import { 
   sortTasksByPredecessorsAndDates, 
   updatePredecessorsStrings, 
@@ -106,6 +107,15 @@ export function useDetailTaskReorder({
 
       try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
+        const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
+          docId: taskId,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: patch,
+          year: p.year ? String(p.year) : undefined,
+        }));
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'reorder_tasks').catch(() => {});
       } catch (error: any) {
         console.error("Batch commit failed", error);
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
@@ -199,6 +209,15 @@ export function useDetailTaskReorder({
 
       try {
         batch.commit().catch(e => console.error("Batch commit failed", e));
+        const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
+          docId: taskId,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: patch,
+          year: p.year ? String(p.year) : undefined,
+        }));
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'move_task').catch(() => {});
       } catch (error: any) {
         console.error("Batch commit failed", error);
         useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
@@ -334,6 +353,32 @@ export function useDetailTaskReorder({
 
       if (writeCount > 0) writeBatches.push(currentWriteBatch.commit());
       await Promise.all(writeBatches);
+
+      const deltaItems: TakaDeltaItem[] = [];
+      result.taskUpdates.forEach((tu) => {
+        deltaItems.push({
+          docId: tu.id,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: tu.updates,
+        });
+      });
+      result.predecessorUpdates.forEach((pu) => {
+        if (!result.taskUpdates.some((tu) => tu.id === pu.id)) {
+          deltaItems.push({
+            docId: pu.id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            isPatch: true,
+            data: { predecessor: pu.predecessor, updatedAt: pu.updatedAt },
+          });
+        }
+      });
+      if (deltaItems.length > 0) {
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'drag_reorder').catch(() => {});
+      }
+
       setSelectedTaskIds(new Set());
     } catch (err) {
       console.error("DetailTab drop error:", err);

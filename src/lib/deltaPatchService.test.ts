@@ -20,13 +20,14 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
     start: '2026-10-01 08:00',
     finish: '2026-10-05 17:00',
     duration: '4',
-    status: 'Pending',
+    durationManual: false,
+    finishManual: false,
+    runningStatus: 'Upcoming',
     party: 'Thạch Cao SG',
-    comments: 'Yêu cầu kiểm tra mặt bằng trước khi lắp khung xương',
-    order: 1,
+    comments: [{ id: 'c1', text: 'Yêu cầu kiểm tra mặt bằng trước khi lắp khung xương', createdAt: '2026-10-01', userId: 'u1' }],
+    orderIndex: 1,
     textColor: '#1a1a1a',
     updatedAt: '2026-10-01T08:00:00.000Z',
-    createdBy: 'admin@taka.vn',
   };
 
   describe('isEqualValue', () => {
@@ -74,7 +75,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
       expect(patch.comments).toBeUndefined();
       expect(patch.party).toBeUndefined();
       expect(patch.textColor).toBeUndefined();
-      expect(patch.status).toBeUndefined();
+      expect(patch.runningStatus).toBeUndefined();
 
       // Essential identifiers are kept
       expect(patch.id).toBe('task_001');
@@ -84,7 +85,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
     it('reduces payload size by over 80% compared to full task object', () => {
       const updatedTask: Task = {
         ...baseTask,
-        status: 'Completed',
+        runningStatus: 'Completed',
         updatedAt: '2026-10-02T12:00:00.000Z',
       };
 
@@ -119,7 +120,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
       // User B simultaneously edited status and party
       const userBLocalState: Task = {
         ...baseTask,
-        status: 'On Process',
+        runningStatus: 'On process',
         party: 'Nhà Thầu Mới HCM',
       };
 
@@ -132,7 +133,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
       expect(merged.duration).toBe('5');
 
       // User B's concurrent changes are completely preserved! No clobbering!
-      expect(merged.status).toBe('On Process');
+      expect(merged.runningStatus).toBe('On process');
       expect(merged.party).toBe('Nhà Thầu Mới HCM');
       expect(merged.name).toBe(baseTask.name);
     });
@@ -142,7 +143,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
     it('creates TakaDeltaItem with isPatch=true for updates', () => {
       const updatedTask: Task = {
         ...baseTask,
-        status: 'Delay',
+        runningStatus: 'Delayed',
         updatedAt: '2026-10-02T15:00:00.000Z',
       };
 
@@ -156,7 +157,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
 
       expect(item.action).toBe('update');
       expect(item.isPatch).toBe(true);
-      expect(item.data?.status).toBe('Delay');
+      expect(item.data?.runningStatus).toBe('Delayed');
       expect(item.data?.name).toBeUndefined();
     });
 
@@ -166,7 +167,7 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
           docId: 'task_001',
           collectionName: 'taka_tasks',
           previous: baseTask,
-          updated: { ...baseTask, status: 'Completed' },
+          updated: { ...baseTask, runningStatus: 'Completed' },
           year: '2026',
         },
         {

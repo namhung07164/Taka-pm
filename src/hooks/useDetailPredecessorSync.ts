@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Project, Task } from '../types';
+import { Project, Task, TakaDeltaItem } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { db, APP_ID, writeBatch } from '../lib/firebase';
 import { doc } from 'firebase/firestore';
 import { healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
+import { recordBatchDeltas } from '../lib/deltaSyncService';
 
 interface UseDetailPredecessorSyncParams {
   tasks: Task[];
@@ -58,6 +59,19 @@ export function useDetailPredecessorSync({
               batch.set(tRef, updatePayload, { merge: true });
             });
             await batch.commit();
+            const deltaItems: TakaDeltaItem[] = chunk.map((u) => ({
+              docId: u.id,
+              collectionName: 'taka_tasks',
+              action: 'update',
+              isPatch: true,
+              data: {
+                predecessor: u.predecessor,
+                taskCodePhu: u.taskCodePhu,
+                updatedAt: u.updatedAt,
+              },
+              year: (tasks.find((t) => t.id === u.id)?.projectYear) ? String(tasks.find((t) => t.id === u.id)!.projectYear) : undefined,
+            }));
+            recordBatchDeltas(deltaItems, 'predecessor_heal').catch(() => {});
           }
         };
         commitChunks().catch(e => console.error("Background sync predecessors error:", e));
@@ -127,6 +141,19 @@ export function useDetailPredecessorSync({
               batch.set(tRef, updatePayload, { merge: true });
             });
             await batch.commit();
+            const deltaItems: TakaDeltaItem[] = chunk.map((u) => ({
+              docId: u.id,
+              collectionName: 'taka_tasks',
+              action: 'update',
+              isPatch: true,
+              data: {
+                predecessor: u.predecessor,
+                taskCodePhu: u.taskCodePhu,
+                updatedAt: u.updatedAt,
+              },
+              year: (tasks.find((t) => t.id === u.id)?.projectYear) ? String(tasks.find((t) => t.id === u.id)!.projectYear) : undefined,
+            }));
+            recordBatchDeltas(deltaItems, 'predecessor_convert_hash').catch(() => {});
           }
         };
         commitChunks().catch(e => console.error("Background convert to hash error:", e));
