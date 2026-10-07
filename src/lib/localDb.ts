@@ -27,6 +27,13 @@ export class TakaLocalDB extends Dexie {
       delegations: '&id, projectId, code, store, year, status, updatedAt',
       syncMeta: '&key, updatedAt',
     });
+    this.version(2).stores({
+      projects: '&id, code, store, year, status, updatedAt',
+      tasks: '&id, projectId, projectCode, code, projectStore, projectYear, store, year, status, updatedAt',
+      costs: '&id, projectId, projectCode, code, projectStore, projectYear, store, year, status, updatedAt',
+      delegations: '&id, projectId, projectCode, code, projectStore, projectYear, store, year, status, updatedAt',
+      syncMeta: '&key, updatedAt',
+    });
   }
 }
 
@@ -193,12 +200,16 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
   try {
     const rawIds = projectIdsOrCodes.map(id => String(id).trim()).filter(Boolean);
     if (rawIds.length === 0) return [];
-    const [byProjId, byCode] = await Promise.all([
-      localDb.tasks.where('projectId').anyOf(rawIds).toArray(),
-      localDb.tasks.where('code').anyOf(rawIds).toArray(),
+    const [byProjId, byProjCode, byCode] = await Promise.all([
+      localDb.tasks.where('projectId').anyOf(rawIds).toArray().catch(() => []),
+      localDb.tasks.where('projectCode').anyOf(rawIds).toArray().catch(() => []),
+      localDb.tasks.where('code').anyOf(rawIds).toArray().catch(() => []),
     ]);
     const mergedMap = new Map<string, Task>();
     for (const t of byProjId) {
+      if (t && t.id) mergedMap.set(t.id, t);
+    }
+    for (const t of byProjCode) {
       if (t && t.id) mergedMap.set(t.id, t);
     }
     for (const t of byCode) {
