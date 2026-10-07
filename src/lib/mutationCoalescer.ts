@@ -118,6 +118,7 @@ async function flushQueueItem(queueKey: string): Promise<void> {
         collectionName: item.collectionPath as any,
         action: item.isUpdate ? 'update' : 'create',
         data: item.data,
+        isPatch: item.isUpdate,
         year: item.year,
       }).catch(() => {});
     }

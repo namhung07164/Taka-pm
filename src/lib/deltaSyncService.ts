@@ -18,6 +18,7 @@ import { touchYearMeta, getMemoryYearsMeta } from './yearsFingerprintService';
 import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 import { triggerBatchChangeFlash } from './changeFlashService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
+import { applyFieldPatch } from './deltaPatchService';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
@@ -33,6 +34,7 @@ export async function recordDelta(delta: {
   data: Record<string, any>;
   year?: string;
   updatedBy?: string;
+  isPatch?: boolean;
 }): Promise<void> {
   const now = Date.now();
   const deltaId = `delta_${now}_${Math.random().toString(36).substring(2, 8)}`;
@@ -45,6 +47,7 @@ export async function recordDelta(delta: {
     action: delta.action,
     year: delta.year ? String(delta.year) : undefined,
     data: delta.data,
+    isPatch: delta.isPatch,
     updatedBy: delta.updatedBy || useAppStore.getState().currentUser?.email || 'system',
     timestamp: nowIso,
     numericTime: now,
@@ -235,7 +238,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
           if (action === 'delete') {
             updatedProjects = updatedProjects.filter((p) => p.id !== docId);
           } else if (idx !== -1) {
-            updatedProjects[idx] = { ...updatedProjects[idx], ...data } as Project;
+            updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
           } else if (action === 'create' || action === 'update') {
             updatedProjects.push({ id: docId, ...data } as Project);
           }
@@ -248,7 +251,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
           if (action === 'delete') {
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
           } else if (idx !== -1) {
-            updatedTasks[idx] = { ...updatedTasks[idx], ...data } as Task;
+            updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
           } else if (action === 'create' || action === 'update') {
             updatedTasks.push({ id: docId, ...data } as Task);
           }
@@ -261,7 +264,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
           if (action === 'delete') {
             updatedCosts = updatedCosts.filter((c) => c.id !== docId);
           } else if (idx !== -1) {
-            updatedCosts[idx] = { ...updatedCosts[idx], ...data } as Cost;
+            updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
           } else if (action === 'create' || action === 'update') {
             updatedCosts.push({ id: docId, ...data } as Cost);
           }
@@ -274,7 +277,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
           if (action === 'delete') {
             updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
           } else if (idx !== -1) {
-            updatedDelegations[idx] = { ...updatedDelegations[idx], ...data } as DelegationGroup;
+            updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
           } else if (action === 'create' || action === 'update') {
             updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
           }

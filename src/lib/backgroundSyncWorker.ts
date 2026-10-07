@@ -5,6 +5,7 @@ import {
   bulkPersistCosts,
   bulkPersistDelegations,
   upsertLocalRecord,
+  patchLocalRecord,
   deleteLocalRecord,
   getLocalProjects,
   getLocalTasks,
@@ -79,10 +80,18 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
   setTimeout(async () => {
     try {
       await localDb.transaction('rw', [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations], async () => {
-        const processDeltaItem = async (docId?: string, collectionName?: any, action?: string, data?: any) => {
+        const processDeltaItem = async (
+          docId?: string,
+          collectionName?: any,
+          action?: string,
+          data?: any,
+          isPatch?: boolean
+        ) => {
           if (!docId || !collectionName) return;
           if (action === 'delete') {
             await deleteLocalRecord(collectionName, docId);
+          } else if (action === 'update' || isPatch) {
+            await patchLocalRecord(collectionName, docId, data || {});
           } else {
             await upsertLocalRecord(collectionName, { id: docId, ...data });
           }
@@ -91,10 +100,10 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
         for (const delta of deltas) {
           if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
             for (const item of delta.batchItems) {
-              await processDeltaItem(item.docId, item.collectionName, item.action, item.data);
+              await processDeltaItem(item.docId, item.collectionName, item.action, item.data, item.isPatch);
             }
           } else if (delta.docId && delta.collectionName) {
-            await processDeltaItem(delta.docId, delta.collectionName, delta.action, delta.data);
+            await processDeltaItem(delta.docId, delta.collectionName, delta.action, delta.data, delta.isPatch);
           }
         }
       });

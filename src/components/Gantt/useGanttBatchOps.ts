@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { Task, Project, AppUser } from '../../types';
+import { Task, Project, AppUser, TakaDeltaItem } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { recordBatchDeltas, recordDelta } from '../../lib/deltaSyncService';
 
 interface UseGanttBatchOpsParams {
   tasks: Task[];
@@ -185,6 +186,18 @@ export function useGanttBatchOps({
 
     try {
       await batch.commit();
+      const deltaItems: TakaDeltaItem[] = selectedTaskIds.map(id => {
+        const t = tasks.find(item => item.id === id);
+        return {
+          docId: id,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: { textColor: color, updatedAt: now },
+          year: t?.projectYear ? String(t.projectYear) : undefined,
+        };
+      });
+      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
       useAppStore.getState().setToast({
         title: "Success",
         message: `Updated text color for ${selectedTaskIds.length} tasks.`
@@ -213,6 +226,23 @@ export function useGanttBatchOps({
 
     try {
       await batch.commit();
+      const deltaItems: TakaDeltaItem[] = [];
+      selectedTaskIds.forEach(id => {
+        const t = tasks.find(item => item.id === id);
+        if (t && t.start && t.finish) {
+          deltaItems.push({
+            docId: id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            isPatch: true,
+            data: { baselineStart: t.start, baselineFinish: t.finish, updatedAt: now },
+            year: t.projectYear ? String(t.projectYear) : undefined,
+          });
+        }
+      });
+      if (deltaItems.length > 0) {
+        recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+      }
       useAppStore.getState().setToast({
         title: "Success",
         message: `Saved baseline dates for selected tasks.`
@@ -240,6 +270,23 @@ export function useGanttBatchOps({
 
     try {
       await batch.commit();
+      const deltaItems: TakaDeltaItem[] = [];
+      selectedTaskIds.forEach(id => {
+        const t = tasks.find(item => item.id === id);
+        if (t) {
+          deltaItems.push({
+            docId: id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            isPatch: true,
+            data: { realtimeUpdate: !t.realtimeUpdate, updatedAt: now },
+            year: t.projectYear ? String(t.projectYear) : undefined,
+          });
+        }
+      });
+      if (deltaItems.length > 0) {
+        recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+      }
       useAppStore.getState().setToast({
         title: "Success",
         message: `Toggled realtime sync on selected tasks.`
@@ -257,6 +304,15 @@ export function useGanttBatchOps({
         isPinned: !p.isPinned,
         updatedAt: new Date().toISOString()
       }).commit();
+      recordDelta({
+        docId: p.id,
+        collectionName: 'taka_projects',
+        action: 'update',
+        isPatch: true,
+        data: { isPinned: !p.isPinned, updatedAt: new Date().toISOString() },
+        year: p.year ? String(p.year) : undefined,
+        updatedBy: currentUser?.email || currentUser?.username,
+      }).catch(() => {});
     } catch (err) {
       console.error(err);
     }

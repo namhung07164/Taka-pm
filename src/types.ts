@@ -316,6 +316,7 @@ export interface TakaDeltaItem {
   action: 'create' | 'update' | 'delete';
   year?: string;
   data?: Record<string, any>;
+  isPatch?: boolean;
 }
 
 export interface TakaDelta {
@@ -325,6 +326,7 @@ export interface TakaDelta {
   action: 'create' | 'update' | 'delete' | 'batch_update';
   year?: string;
   data?: Record<string, any>;
+  isPatch?: boolean;
   batchItems?: TakaDeltaItem[];
   updatedBy?: string;
   timestamp: string;

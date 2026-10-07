@@ -6,6 +6,9 @@ import { parseDateTime, formatToDatetimeLocal } from '../lib/utils';
 import { debounce } from 'lodash';
 import { scheduleDependentTasks } from '../lib/ganttUtils';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
+import { recordBatchDeltas } from '../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../lib/deltaPatchService';
+import { useAppStore } from '../store/useAppStore';
 
 export function useGanttDragDrop(tasks: Task[], projects: Project[]) {
   const [optimisticTasks, setOptimisticTasks] = useState<Record<string, Task>>({});
@@ -32,6 +35,20 @@ export function useGanttDragDrop(tasks: Task[], projects: Project[]) {
         });
         batch.commit().catch(e => console.error("Batch commit failed", e));
         
+        const deltaItems = updatedTasks.map((t) => {
+          const prev = tasks.find((item) => item.id === t.id);
+          return createPatchDeltaItem({
+            docId: t.id,
+            collectionName: 'taka_tasks',
+            previous: prev,
+            updated: t,
+            action: 'update',
+            year: t.projectYear ? String(t.projectYear) : undefined,
+          });
+        });
+        const currentUser = useAppStore.getState().currentUser;
+        recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username || 'gantt_drag').catch(() => {});
+
         projectsToSync.forEach(key => {
           const [code, store, year] = key.split('|');
           syncProjectDatesByCode(code, store || undefined, year || undefined);

@@ -108,6 +108,35 @@ export async function upsertLocalRecord(
 }
 
 /**
+ * Áp dụng field-level patch vào Local Database (Dexie)
+ * Nếu bản ghi đã tồn tại: chỉ cập nhật các trường thay đổi (giữ nguyên các trường còn lại)
+ * Nếu chưa tồn tại: thêm mới bản ghi
+ */
+export async function patchLocalRecord(
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
+  id: string,
+  patch: Record<string, any>
+): Promise<void> {
+  if (!id || !patch) return;
+  try {
+    const table = (() => {
+      switch (collectionName) {
+        case 'taka_projects': return localDb.projects;
+        case 'taka_tasks': return localDb.tasks;
+        case 'taka_costs': return localDb.costs;
+        case 'taka_delegations': return localDb.delegations;
+      }
+    })();
+    const updatedCount = await (table as any).update(id, patch);
+    if (updatedCount === 0) {
+      await (table as any).put({ id, ...patch });
+    }
+  } catch (err) {
+    console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
+  }
+}
+
+/**
  * Xóa 1 bản ghi khỏi Local Database
  */
 export async function deleteLocalRecord(
