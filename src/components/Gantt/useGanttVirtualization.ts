@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Project, Task } from '../../types';
 import { GanttTableRow } from './ganttTypes';
+import { sortGroupTasks } from '../../lib/ganttUtils';
 
 interface UseGanttVirtualizationParams {
   paginatedProjects: Project[];
@@ -68,8 +69,10 @@ export function useGanttVirtualization({
 
       if (!isProjectExpanded) return;
 
-      const pTasks = getGroupTasksForProject(p);
-      if (!pTasks || pTasks.length === 0) return;
+      const rawTasks = getGroupTasksForProject(p);
+      if (!rawTasks || rawTasks.length === 0) return;
+
+      const pTasks = sortGroupTasks(rawTasks);
 
       // Group parent and child tasks
       const parentTasks: Task[] = [];
@@ -101,9 +104,12 @@ export function useGanttVirtualization({
         }
       });
 
-      parentTasks.forEach(t => {
+      const sortedParentTasks = sortGroupTasks(parentTasks);
+
+      sortedParentTasks.forEach(t => {
         const isTaskHidden = hiddenRowsSet.has(`task-${t.id}`);
-        const children = childTasksMap.get(t.id) || [];
+        const rawChildren = childTasksMap.get(t.id) || [];
+        const children = sortGroupTasks(rawChildren);
         const hasChildren = children.length > 0;
         const isModularExpanded = expandedModularSet.has(t.id);
 

@@ -361,13 +361,23 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
       return 1;
     }
 
-    // 2. If both have taskCodePhu without single trailing number, compare with natural alphanumeric sort
+    // 2. Prioritize orderIndex if explicitly assigned
+    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? a.orderIndex : null;
+    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? b.orderIndex : null;
+
+    if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
+      return valAOrder - valBOrder;
+    }
+    if (valAOrder !== null && valBOrder === null) return -1;
+    if (valAOrder === null && valBOrder !== null) return 1;
+
+    // 3. If both have taskCodePhu without single trailing number, compare with natural alphanumeric sort
     if (codeA && codeB && codeA !== codeB) {
       const codeCmp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
       if (codeCmp !== 0) return codeCmp;
     }
 
-    // 3. Chronological sort by Start Date (e.g., Jul 12 < Jul 15 < Jul 31 < Oct 29 < Nov 15 < Jan 1)
+    // 4. Chronological sort by Start Date (e.g., Jul 12 < Jul 15 < Jul 31 < Oct 29 < Nov 15 < Jan 1)
     const startA = a.start || '';
     const startB = b.start || '';
     if (startA && startB && startA !== startB) {
@@ -378,17 +388,6 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (finishA && finishB && finishA !== finishB) {
       return finishA.localeCompare(finishB);
     }
-
-    // 4. Fallback to orderIndex
-    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? a.orderIndex : null;
-    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? b.orderIndex : null;
-
-    if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
-      return valAOrder - valBOrder;
-    }
-
-    if (valAOrder !== null && valBOrder === null) return -1;
-    if (valAOrder === null && valBOrder !== null) return 1;
 
     // 5. Stable sort using name (natural) and then id
     const nameA = a.name || '';

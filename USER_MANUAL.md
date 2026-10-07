@@ -1742,3 +1742,8 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Bảo Toàn 100% Tính Toàn Vẹn Số Liệu Tài Chính & Bản Đồ**:
      + Nhờ duy trì đầy đủ 100% danh mục 250+ dự án trong RAM (Zustand) và Dexie, các công thức tính toán thẻ KPI Tổng quan, Tổng ngân sách năm, Tỷ lệ hoàn thành và Sơ đồ gian hàng mặt bằng (Layout Tab) luôn chính xác tuyệt đối từng đồng, loại bỏ 100% rủi ro hụt số liệu hay trùng số thứ tự No khi tạo mới.
 
+50. **Chuẩn Hóa Thứ Tự Sắp Xếp Công Việc Trên Tab Gantt (Unified Gantt Task Hierarchy & Ordering Engine)**:
+   - **Tự Động Sắp Xếp Chuẩn Xác Theo Thứ Tự Nhiệm Vụ (`orderIndex` & `taskCodePhu`)**:
+     + Danh sách nhiệm vụ (Tasks) bên dưới từng dự án trên biểu đồ Gantt được tự động sắp xếp theo thứ tự số tự nhiên chuẩn xác: ưu tiên chỉ số con từ mã nhiệm vụ phụ (`#1, #2, #3... #33`), chỉ số thứ tự (`orderIndex: 0, 1, 2...`), hoặc theo thứ tự ngày tháng bắt đầu (`Start Date`) thay vì hiển thị ngẫu nhiên theo thứ tự nạp mạng từ cơ sở dữ liệu.
+   - **Bảo Toàn Cấu Trúc Cây Cha - Con (Parent-Child Modular Hierarchy)**:
+     + Các nhóm công việc cha và nhiệm vụ con dạng mô-đun được gom nhóm và sắp xếp tuần tự theo đúng tiến độ thực tế, đảm bảo cột số thứ tự `#` hiển thị liền mạch 1, 2, 3... 33 mà không bị nhảy cóc hay xáo trộn vị trí.
