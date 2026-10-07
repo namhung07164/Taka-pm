@@ -1698,3 +1698,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
 
 
 
+
+
+45. **Tối Ưu Hóa Chuông Thông Báo Qua Bộ Nhớ Cục Bộ (Local-First Notification Task Engine)**:
+   - **Đọc Trực Tiếp Từ Dexie Local DB (0 Firestore Read)**:
+     + Thay vì phát sinh truy vấn Firestore định kỳ kéo 50 công việc để phục vụ biểu tượng chuông thông báo và cảnh báo quá hạn/hạn chót trên Header, hệ thống chuyển sang đọc trực tiếp từ kho lưu trữ cục bộ Dexie (`notificationTaskService.ts`).
+     + Dữ liệu được tính toán ngay tại client trong <2ms với chi phí **0 lượt READ Firestore**.
+   - **Cơ Chế Dự Phòng 2 Tầng An Toàn Tuyệt Đối (Cold-Boot Safe Fallback)**:
+     + Khi người dùng đăng nhập lần đầu tiên trên thiết bị mới hoặc mở bằng chế độ ẩn danh (Incognito) lúc bộ nhớ cục bộ chưa có dữ liệu, hệ thống tự động kích hoạt truy vấn dự phòng lên Firestore đúng 1 lần duy nhất, sau đó nạp ngay vào Dexie.
+     + Kể từ lần thứ hai trở đi, 100% các lần tính toán thông báo đều thực hiện ngoại tuyến cục bộ, vừa bảo đảm không bị mất thông báo trên máy mới, vừa tiết kiệm tối đa chi phí truy vấn máy chủ.

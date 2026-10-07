@@ -28,6 +28,7 @@ import {
 import { setupStaticConfigSync } from "../lib/configCacheService";
 import { startDeltaSyncService } from "../lib/deltaSyncService";
 import { bootstrapLocalStore, offloadPersistSnapshot } from "../lib/backgroundSyncWorker";
+import { loadNotificationTasks } from "../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../lib/taskDeduplicationService";
 import {
   fetchYearsMeta,
@@ -617,7 +618,7 @@ export function useFirebaseData() {
 
   }, [querySignature, buildStoreAndYearQuery, globalYearFilter]);
 
-  // 2.2 Lightweight Always-on Notification Query for Tasks (Polling instead of onSnapshot to save Reads)
+  // 2.2 Local-First Notification Query for Tasks (0 Read from Dexie with Safe Firestore Fallback)
   useEffect(() => {
     let isCancelled = false;
     let intervalId: NodeJS.Timeout | null = null;
@@ -629,44 +630,15 @@ export function useFirebaseData() {
     const fetchNotifs = async () => {
       if (isCancelled) return;
       try {
-        const now = new Date();
-        const past7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-        const future14 = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
-
-        const qNotifTasks = query(
-          collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-          where("finish", ">=", past7),
-          where("finish", "<=", future14),
-          limit(50)
-        );
-
-        // Cache-First strategy: read from IndexedDB cache first (0 Read cost).
-        // Only fetch from Server if cache is empty or unavailable.
-        let snapshot;
-        try {
-          snapshot = await getDocsFromCache(qNotifTasks);
-          if (snapshot.empty) {
-            snapshot = await getDocsFromServer(qNotifTasks);
-          }
-        } catch {
-          snapshot = await getDocsFromServer(qNotifTasks);
-        }
+        const loadedNotifTasks = await loadNotificationTasks();
         if (isCancelled) return;
-
-        const loadedNotifTasks: Task[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = { id: docSnap.id, ...docSnap.data() } as Task;
-          if (!data.isDeleted) {
-            loadedNotifTasks.push(data);
-          }
-        });
         setAllTasksForNotifs(loadedNotifTasks);
       } catch (e) {
         console.warn("[useFirebaseData] Notification lightweight tasks query error:", e);
       }
     };
 
-    // Initial fetch
+    // Initial fetch (Instant 0ms from Dexie Local DB)
     fetchNotifs();
 
     // Poll every 4 hours (14400000 ms)
