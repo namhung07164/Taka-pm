@@ -39,6 +39,7 @@ export interface DetailTableViewProps {
   handleDeleteProject: (p: Project) => Promise<void>;
   taskActualStatusMap: Map<string, { label: string; color: string }>;
   taskCodeMap: Map<string, string>;
+  childTasksCountMap?: Map<string, number>;
   draggingTaskIds: string[];
   dragOverTaskId: string | null;
   dropPosition: 'before' | 'after' | null;
@@ -94,6 +95,7 @@ export const DetailTableView = memo(function DetailTableView({
   handleDeleteProject,
   taskActualStatusMap,
   taskCodeMap,
+  childTasksCountMap,
   draggingTaskIds,
   dragOverTaskId,
   dropPosition,
@@ -179,6 +181,7 @@ export const DetailTableView = memo(function DetailTableView({
               }
               const t = item.task;
               const actStatus = taskActualStatusMap.get(t.id) || { label: 'Pending', color: 'bg-slate-50 text-slate-600' };
+              const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
               return (
                 <DetailTaskRow
                   key={item.key}
@@ -194,7 +197,7 @@ export const DetailTableView = memo(function DetailTableView({
                   isFocused={initialFocusTaskId === t.id}
                   delStatusText={actStatus.label}
                   delStatusColorClass={actStatus.color}
-                  tasks={tasks}
+                  childTasksCount={childCount}
                   projects={projects}
                   onToggleSelectTask={handleToggleSelectTask}
                   onEditTask={onEditTask}

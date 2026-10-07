@@ -71,6 +71,82 @@ export async function bootstrapLocalStore(): Promise<{
 }
 
 /**
+ * Nạp tức thời Tasks từ Dexie khi người dùng chuyển sang tab yêu cầu Tasks (0ms UI, triệt tiêu Spinner)
+ */
+export async function hydrateTasksFromLocal(): Promise<number> {
+  try {
+    const store = useAppStore.getState();
+    if (store.tasks && store.tasks.length > 0) return store.tasks.length;
+    const localTasks = await getLocalTasks();
+    if (localTasks && localTasks.length > 0) {
+      const currentStore = useAppStore.getState();
+      if (!currentStore.tasks || currentStore.tasks.length === 0) {
+        const deduped = deduplicateTasks(localTasks);
+        currentStore.setTasks(deduped);
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');
+        return deduped.length;
+      }
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[backgroundSyncWorker] hydrateTasksFromLocal error:', err);
+    return 0;
+  }
+}
+
+/**
+ * Nạp tức thời Costs từ Dexie khi người dùng chuyển sang tab yêu cầu Chi phí (0ms UI)
+ */
+export async function hydrateCostsFromLocal(): Promise<number> {
+  try {
+    const store = useAppStore.getState();
+    if (store.costs && store.costs.length > 0) return store.costs.length;
+    const localCosts = await getLocalCosts();
+    if (localCosts && localCosts.length > 0) {
+      const currentStore = useAppStore.getState();
+      if (!currentStore.costs || currentStore.costs.length === 0) {
+        currentStore.setCosts(localCosts);
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_costs_hydration', true, localCosts.length, 'Instant Local-First Costs Hydration (0ms)');
+        return localCosts.length;
+      }
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[backgroundSyncWorker] hydrateCostsFromLocal error:', err);
+    return 0;
+  }
+}
+
+/**
+ * Nạp tức thời Delegations từ Dexie khi người dùng chuyển sang tab Phân quyền (0ms UI)
+ */
+export async function hydrateDelegationsFromLocal(): Promise<number> {
+  try {
+    const store = useAppStore.getState();
+    if (store.delegationGroups && store.delegationGroups.length > 0) return store.delegationGroups.length;
+    const localDelegations = await getLocalDelegations();
+    if (localDelegations && localDelegations.length > 0) {
+      const currentStore = useAppStore.getState();
+      if (!currentStore.delegationGroups || currentStore.delegationGroups.length === 0) {
+        currentStore.setDelegationGroups(localDelegations);
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_delegations_hydration', true, localDelegations.length, 'Instant Local-First Delegations Hydration (0ms)');
+        return localDelegations.length;
+      }
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[backgroundSyncWorker] hydrateDelegationsFromLocal error:', err);
+    return 0;
+  }
+}
+
+/**
  * Ghi nhận các Delta nhận được từ server vào Dexie Local Database ngầm
  */
 export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<void> {

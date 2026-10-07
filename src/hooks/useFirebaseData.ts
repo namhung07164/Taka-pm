@@ -27,7 +27,13 @@ import {
 } from "../types";
 import { setupStaticConfigSync } from "../lib/configCacheService";
 import { startDeltaSyncService } from "../lib/deltaSyncService";
-import { bootstrapLocalStore, offloadPersistSnapshot } from "../lib/backgroundSyncWorker";
+import {
+  bootstrapLocalStore,
+  offloadPersistSnapshot,
+  hydrateTasksFromLocal,
+  hydrateCostsFromLocal,
+  hydrateDelegationsFromLocal
+} from "../lib/backgroundSyncWorker";
 import { loadNotificationTasks } from "../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../lib/taskDeduplicationService";
 import {
@@ -126,9 +132,18 @@ export function useFirebaseData() {
       // We NEVER unmount (set to false) because destroying the listener drops the IDB resumeToken,
       // causing massive read storms (4K-6K reads) if the user switches back to the tab or wakes the iOS PWA.
       // Keeping the listener alive is vastly cheaper than a full server re-sync.
-      if (needsTasks) setIsTasksRequested(true);
-      if (needsCosts) setIsCostsRequested(true);
-      if (needsDelegations) setIsDelegationsRequested(true);
+      if (needsTasks) {
+        setIsTasksRequested(true);
+        hydrateTasksFromLocal().catch(() => {});
+      }
+      if (needsCosts) {
+        setIsCostsRequested(true);
+        hydrateCostsFromLocal().catch(() => {});
+      }
+      if (needsDelegations) {
+        setIsDelegationsRequested(true);
+        hydrateDelegationsFromLocal().catch(() => {});
+      }
     };
 
     evaluate();

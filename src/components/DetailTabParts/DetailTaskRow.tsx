@@ -23,8 +23,9 @@ interface DetailTaskRowProps {
   isFocused: boolean;
   delStatusText: string;
   delStatusColorClass: string;
-  tasks: Task[];
-  projects: Project[];
+  childTasksCount: number;
+  tasks?: Task[];
+  projects?: Project[];
   onToggleSelectTask: (id: string, shiftKey: boolean) => void;
   onEditTask: (t: Task) => void;
   onUpdateTask: (t: Task, updates: Partial<Task>) => Promise<void>;
@@ -49,6 +50,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   isFocused,
   delStatusText,
   delStatusColorClass,
+  childTasksCount = 0,
   tasks,
   projects,
   onToggleSelectTask,
@@ -68,11 +70,6 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   const i = item.taskIndex;
   const isChildTask = Boolean(t.parentTaskId);
   const { isFlashed, updatedBy } = useIsRowFlashed(t.id);
-
-  const childTasksCount = React.useMemo(() => {
-    if (!tasks || tasks.length === 0) return 0;
-    return tasks.filter(child => child.parentTaskId === t.id || (t.taskCodePhu && child.parentTaskId === t.taskCodePhu)).length;
-  }, [tasks, t.id, t.taskCodePhu]);
 
   return (
     <tr

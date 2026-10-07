@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PredecessorMultiInput } from '../PredecessorMultiInput';
 import { Task, Project } from '../../types';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
+import { useAppStore } from '../../store/useAppStore';
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
   value,
@@ -15,8 +16,8 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   onSave: (val: any) => void,
   canWrite: boolean,
   task: Task,
-  tasks: Task[],
-  projects: Project[]
+  tasks?: Task[],
+  projects?: Project[]
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
@@ -37,7 +38,9 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
       projectStore: task?.projectStore,
       projectLocation: task?.location
     };
-    const resolved = resolvePredecessorString(rawVal, tasks, projects, task?.projectCode, context);
+    const effectiveTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().tasks || []);
+    const effectiveProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().projects || []);
+    const resolved = resolvePredecessorString(rawVal, effectiveTasks, effectiveProjects, task?.projectCode, context);
     setVal(resolved);
     if (resolved !== (value || '')) {
       onSave(resolved);
@@ -83,8 +86,8 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
           value={val}
           onChange={setVal}
           onCommit={(finalVal) => commitSave(finalVal)}
-          tasks={tasks}
-          projects={projects}
+          tasks={tasks || useAppStore.getState().tasks || []}
+          projects={projects || useAppStore.getState().projects || []}
           currentProjectId={task.projectId}
           currentProjectCode={task.projectCode}
           currentProjectYear={task.projectYear}

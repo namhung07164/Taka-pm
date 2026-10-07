@@ -156,6 +156,7 @@ export function DetailTab({
     lowerSearchTerm,
     taskCodeMap,
     taskActualStatusMap,
+    childTasksCountMap,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
@@ -412,6 +413,7 @@ export function DetailTab({
         handleDeleteProject={handleDeleteProject}
         taskActualStatusMap={taskActualStatusMap}
         taskCodeMap={taskCodeMap}
+        childTasksCountMap={childTasksCountMap}
         draggingTaskIds={draggingTaskIds}
         dragOverTaskId={dragOverTaskId}
         dropPosition={dropPosition}

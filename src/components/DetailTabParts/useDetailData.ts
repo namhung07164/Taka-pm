@@ -328,6 +328,18 @@ export function useDetailData({
     return map;
   }, [tasks, delegationGroupByParentKey]);
 
+  // Pre-indexed O(1) map of subtask counts per parent to avoid 250,000 array filters in DetailTaskRow
+  const childTasksCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const child = tasks[idx];
+      if (child.parentTaskId) {
+        map.set(child.parentTaskId, (map.get(child.parentTaskId) || 0) + 1);
+      }
+    }
+    return map;
+  }, [tasks]);
+
   // Virtual Windowing Flat Rows
   const flatTableRows = useDetailFlatRows({
     filteredProjects,
@@ -403,6 +415,7 @@ export function useDetailData({
     lowerSearchTerm,
     taskCodeMap,
     taskActualStatusMap,
+    childTasksCountMap,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
