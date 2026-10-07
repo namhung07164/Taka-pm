@@ -140,10 +140,10 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         activeTaskNames.forEach(name => {
           lines.push(...name.split('\n').map((l: string) => l.trim()).filter((l: string) => l !== ''));
         });
-        return lines;
+        return Array.from(new Set(lines));
       })();
 
-  const taskLines = rawTaskLines.filter(line => !isUrlOrPhotoLine(line));
+  const taskLines = Array.from(new Set(rawTaskLines.filter(line => !isUrlOrPhotoLine(line))));
 
   const rawDetailText = p?.detail || data.detail || data.appProjectDetail || data.appDetail || '';
   const detailText = isUrlOrPhotoLine(rawDetailText) ? '' : rawDetailText;

@@ -137,31 +137,43 @@ export function buildAggregatedUnitData({
     const pCodes = extractAllProjectCodes(p);
     const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
     
-    const matchedTaskSet = new Set<any>();
+    const seenTaskKeys = new Set<string>();
+    const allMatchedTasks: any[] = [];
+    const addTaskIfUnique = (t: any) => {
+      if (!t) return;
+      const key = t.id 
+        ? String(t.id).trim().toLowerCase()
+        : `${String(t.name || '').trim().toLowerCase()}_${String(t.start || t.startDate || '').trim()}_${String(t.finish || t.endDate || '').trim()}`;
+      if (!seenTaskKeys.has(key)) {
+        seenTaskKeys.add(key);
+        allMatchedTasks.push(t);
+      }
+    };
+
     if (p.id) {
       const pIdLower = String(p.id).trim().toLowerCase();
       const list = tasksByProjIdMap.get(pIdLower);
-      if (list) list.forEach(t => matchedTaskSet.add(t));
+      if (list) list.forEach(addTaskIfUnique);
     }
     if (p.no) {
       const pNoLower = String(p.no).trim().toLowerCase();
       const list = tasksByProjIdMap.get(pNoLower);
-      if (list) list.forEach(t => matchedTaskSet.add(t));
+      if (list) list.forEach(addTaskIfUnique);
     }
     pCodes.forEach(c => {
       const list = tasksByCodeMap.get(c);
-      if (list) list.forEach(t => matchedTaskSet.add(t));
+      if (list) list.forEach(addTaskIfUnique);
     });
     if (p.code) {
       const pCodeLower = String(p.code).trim().toLowerCase();
       const list = tasksByCodeMap.get(pCodeLower);
-      if (list) list.forEach(t => matchedTaskSet.add(t));
+      if (list) list.forEach(addTaskIfUnique);
     }
+    // Only supplement from p.taskSummaries if not already captured from real tasks
     if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
-      p.taskSummaries.forEach(ts => matchedTaskSet.add(ts));
+      p.taskSummaries.forEach(addTaskIfUnique);
     }
-    const allMatchedTasks = Array.from(matchedTaskSet);
-    const allTaskNames = allMatchedTasks.map((t: any) => t.name).filter(Boolean);
+    const allTaskNames = Array.from(new Set(allMatchedTasks.map((t: any) => t.name).filter(Boolean)));
 
     const activeTasks = allMatchedTasks.filter((t: any) => {
       const startStr = t.start || t.startDate || t.takStart;
@@ -171,7 +183,7 @@ export function buildAggregatedUnitData({
       const finish = new Date(finishStr);
       return now >= start && now <= finish;
     });
-    const activeTaskNames = activeTasks.map(t => t.name).filter(Boolean);
+    const activeTaskNames = Array.from(new Set(activeTasks.map(t => t.name).filter(Boolean)));
 
     const isUrlOrImageLine = (str: string | undefined | null) => {
       if (!str || typeof str !== 'string') return false;
@@ -191,8 +203,8 @@ export function buildAggregatedUnitData({
       );
     };
 
-    const cleanAllTaskNames = allTaskNames.filter(t => !isUrlOrImageLine(t));
-    const cleanActiveTaskNames = activeTaskNames.filter(t => !isUrlOrImageLine(t));
+    const cleanAllTaskNames = Array.from(new Set(allTaskNames.filter(t => !isUrlOrImageLine(t))));
+    const cleanActiveTaskNames = Array.from(new Set(activeTaskNames.filter(t => !isUrlOrImageLine(t))));
 
     const taskSummaryStr = cleanAllTaskNames.length > 0 
       ? cleanAllTaskNames.join('; ')
@@ -202,6 +214,7 @@ export function buildAggregatedUnitData({
     cleanActiveTaskNames.forEach(name => {
       taskLines.push(...name.split('\n').map((l: string) => l.trim()).filter((l: string) => l !== '' && !isUrlOrImageLine(l)));
     });
+    taskLines = Array.from(new Set(taskLines));
 
     const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
     const detailStr = p.detail || '';
