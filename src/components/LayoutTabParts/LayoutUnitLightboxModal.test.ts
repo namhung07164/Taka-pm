@@ -32,6 +32,12 @@ describe('normalizeImageUrl', () => {
     expect(normalized).toBe(raw);
   });
 
+  it('converts r2:// protocol URLs to public HTTP endpoints', () => {
+    const raw = 'r2://Taka-Pm-folder/unit_123.webp';
+    const normalized = normalizeImageUrl(raw);
+    expect(normalized).toBe('https://hcm.taka-pm.org/Taka-Pm-folder/unit_123.webp');
+  });
+
   it('returns empty string for null, undefined, or empty values', () => {
     expect(normalizeImageUrl(null)).toBe('');
     expect(normalizeImageUrl(undefined)).toBe('');

@@ -22,10 +22,11 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     triggered: boolean;
   } | null>(null);
 
+  const singleTouchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const lastTapRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Pinch-to-zoom gesture on touch devices (iOS / iPad / mobile)
+  // 1. Pinch-to-zoom & Drag-to-zoom gesture on touch devices (iOS / iPad / mobile)
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const p1 = e.touches[0];
@@ -34,6 +35,13 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       touchStateRef.current = { initialDist: dist, triggered: false };
       setIsPinching(true);
       setShowZoomHint(true);
+      singleTouchStartRef.current = null;
+    } else if (e.touches.length === 1) {
+      singleTouchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        time: Date.now(),
+      };
     }
   };
 
@@ -64,6 +72,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    singleTouchStartRef.current = null;
     if (touchStateRef.current) {
       touchStateRef.current = null;
       setIsPinching(false);
@@ -138,6 +147,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
             transform: previewScale > 1 ? `scale(${previewScale})` : undefined,
             transition: isPinching ? 'none' : 'transform 0.15s ease-out',
           }}
+          draggable={false}
           className="w-full h-auto max-h-[180px] sm:max-h-[270px] object-contain hover:scale-[1.01] duration-150 rounded-md select-none"
         />
       ) : (

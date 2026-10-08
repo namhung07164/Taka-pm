@@ -50,10 +50,11 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
     title: '',
   });
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [copied, setCopied] = useState(false);
   const transformRef = useRef<any>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Listen to window-level custom events: 'taka_open_image_viewer'
   useEffect(() => {
@@ -87,19 +88,9 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   const activeTitle = (isControlled ? (propTitle || propAlt || propImage?.title) : eventState.title) || 'Image Viewer';
   const effectiveInitialScale = (isControlled ? (propInitialScale || propImage?.initialScale) : eventState.initialScale) || 1;
 
-  // Apply continuous zoom if launched with initial gesture scale
-  useEffect(() => {
-    if (effectiveInitialScale > 1 && transformRef.current) {
-      const timer = setTimeout(() => {
-        try {
-          transformRef.current?.setTransform(0, 0, effectiveInitialScale);
-        } catch {}
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [rawTargetUrl, effectiveInitialScale]);
-
   const resolvedUrl = normalizeImageUrl(rawTargetUrl);
+  const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
+  const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
 
   const handleClose = useCallback(() => {
     if (isControlled) {
@@ -109,13 +100,49 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
     }
   }, [isControlled, propOnClose]);
 
+  const handleImageError = useCallback(() => {
+    const driveMatch = rawTargetUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
+                       rawTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
+      setHasTriedCdnFallback(true);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}`);
+      return;
+    }
+    setIsLoading(false);
+    setHasError(true);
+  }, [rawTargetUrl, hasTriedCdnFallback]);
+
+  const handleImageLoad = useCallback(() => {
+    setIsLoading(false);
+    setHasError(false);
+    if (effectiveInitialScale > 1) {
+      try {
+        transformRef.current?.centerView(effectiveInitialScale);
+      } catch {}
+    }
+  }, [effectiveInitialScale]);
+
   // Reset loading and error states when URL changes
   useEffect(() => {
-    if (resolvedUrl) {
-      setIsLoading(true);
-      setHasError(false);
+    setCurrentSrc(resolvedUrl);
+    setHasTriedCdnFallback(false);
+    setHasError(false);
+
+    if (!resolvedUrl) {
+      setIsLoading(false);
+      return;
     }
-  }, [resolvedUrl]);
+
+    const testImg = new Image();
+    testImg.src = resolvedUrl;
+    if (testImg.complete && testImg.naturalWidth > 0) {
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+      testImg.onload = () => setIsLoading(false);
+      testImg.onerror = () => handleImageError();
+    }
+  }, [resolvedUrl, handleImageError]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -280,15 +307,12 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
               contentClass="!w-full !h-full flex items-center justify-center"
             >
               <img
-                src={resolvedUrl}
+                ref={imgRef}
+                src={currentSrc}
                 alt={activeTitle}
-                className="max-w-[95vw] max-h-[85vh] object-contain transition-opacity duration-300 drop-shadow-2xl"
-                style={{ opacity: isLoading ? 0 : 1 }}
-                onLoad={() => setIsLoading(false)}
-                onError={() => {
-                  setIsLoading(false);
-                  setHasError(true);
-                }}
+                className="max-w-[95vw] max-h-[85vh] object-contain drop-shadow-2xl"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
                 draggable={false}
               />
             </TransformComponent>

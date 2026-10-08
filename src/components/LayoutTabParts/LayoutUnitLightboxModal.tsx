@@ -20,6 +20,11 @@ export function normalizeImageUrl(rawUrl: string | undefined | null): string {
   const trimmed = rawUrl.trim();
   if (!trimmed) return '';
 
+  // Cloudflare R2 protocol url conversion
+  if (trimmed.startsWith('r2://')) {
+    return `https://hcm.taka-pm.org/${trimmed.replace('r2://', '')}`;
+  }
+
   // Google Drive URL conversion: convert view/sharing link to high-res thumbnail
   const driveMatch = trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
   if (driveMatch && driveMatch[1]) {
@@ -52,34 +57,64 @@ export function LayoutUnitLightboxModal({
   copiedLink,
 }: LayoutUnitLightboxModalProps) {
   const [imageError, setImageError] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const transformRef = useRef<any>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   const rawUrl = enlargedImage?.url || '';
   const resolvedUrl = normalizeImageUrl(rawUrl);
+  const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
+  const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
+
   const initialZoom = enlargedImage?.initialScale && enlargedImage.initialScale > 1
-    ? enlargedImage.initialScale
+    ? Math.min(6, enlargedImage.initialScale)
     : 1;
 
-  // Apply continuous zoom if launched with initial gesture scale
-  useEffect(() => {
-    if (enlargedImage?.initialScale && enlargedImage.initialScale > 1) {
-      const timer = setTimeout(() => {
-        try {
-          if (transformRef.current) {
-            transformRef.current.setTransform(0, 0, enlargedImage.initialScale);
-          }
-        } catch {}
-      }, 50);
-      return () => clearTimeout(timer);
+  const handleImageError = useCallback(() => {
+    // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
+    const driveMatch = rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
+                       rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
+      setHasTriedCdnFallback(true);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}`);
+      return;
     }
-  }, [enlargedImage?.url, enlargedImage?.initialScale]);
+    setIsLoading(false);
+    setImageError(true);
+  }, [rawUrl, hasTriedCdnFallback]);
 
-  // Reset loading and error state whenever enlargedImage changes
-  useEffect(() => {
+  const handleImageLoad = useCallback(() => {
+    setIsLoading(false);
     setImageError(false);
-    setIsLoading(true);
-  }, [rawUrl]);
+    if (initialZoom > 1) {
+      try {
+        transformRef.current?.centerView(initialZoom);
+      } catch {}
+    }
+  }, [initialZoom]);
+
+  // Synchronize currentSrc & instant cache evaluation when enlargedImage changes
+  useEffect(() => {
+    setCurrentSrc(resolvedUrl);
+    setHasTriedCdnFallback(false);
+    setImageError(false);
+
+    if (!resolvedUrl) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Fast check: If already cached in browser memory, show instantly
+    const testImg = new Image();
+    testImg.src = resolvedUrl;
+    if (testImg.complete && testImg.naturalWidth > 0) {
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+      testImg.onload = () => setIsLoading(false);
+      testImg.onerror = () => handleImageError();
+    }
+  }, [resolvedUrl, handleImageError]);
 
   // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
   useEffect(() => {
@@ -229,7 +264,7 @@ export function LayoutUnitLightboxModal({
         {/* Content Body: Zoomable Image or Fallback */}
         <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/70 overflow-hidden min-h-[280px] sm:min-h-[420px] relative">
           {isLoading && !imageError && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10 pointer-events-none">
               <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
               <span className="text-xs">Đang tải hình ảnh...</span>
             </div>
@@ -251,16 +286,12 @@ export function LayoutUnitLightboxModal({
                 contentClass="!w-full !h-full flex items-center justify-center select-none"
               >
                 <img
-                  src={resolvedUrl}
+                  ref={imgRef}
+                  src={currentSrc}
                   alt={enlargedImage.title || 'Enlarged Preview'}
-                  onLoad={() => setIsLoading(false)}
-                  onError={() => {
-                    setIsLoading(false);
-                    setImageError(true);
-                  }}
-                  className={`max-w-full max-h-[75vh] object-contain rounded-xl select-none transition-opacity duration-200 ${
-                    isLoading ? 'opacity-0' : 'opacity-100'
-                  }`}
+                  onLoad={handleImageLoad}
+                  onError={handleImageError}
+                  className="max-w-full max-h-[75vh] object-contain rounded-xl select-none"
                   draggable={false}
                 />
               </TransformComponent>

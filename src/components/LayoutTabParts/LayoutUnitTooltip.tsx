@@ -209,7 +209,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     closeOnTabChange: true
   });
 
-  return createPortal(
+  const tooltipElement = createPortal(
     <div 
       ref={tooltipRef}
       className={cn(
@@ -319,8 +319,14 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         setEnlargedImage={setEnlargedImage}
         unitCode={unitCode || data.code || ''}
       />
+    </div>,
+    document.body
+  );
 
-      {/* 8. Enlarged Image Lightbox Modal */}
+  return (
+    <>
+      {tooltipElement}
+      {/* 8. Enlarged Image Lightbox Modal - Mounted as clean top-level sibling portal */}
       {enlargedImage && (
         <LayoutUnitLightboxModal
           enlargedImage={enlargedImage}
@@ -329,8 +335,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           copiedLink={copiedLink}
         />
       )}
-    </div>,
-    document.body
+    </>
   );
 };
 

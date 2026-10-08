@@ -163,7 +163,7 @@ export function useLayoutGestures({
     }
     stopInertia();
     isInteractingRef.current = true;
-    setHoverInfo(null);
+    setHoverInfo((current: any) => (current ? null : current));
     const stage = stageRef.current;
     if (stage) {
       dragVelocityTrackerRef.current.history = [

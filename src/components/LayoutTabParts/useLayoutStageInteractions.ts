@@ -3,6 +3,7 @@ import Konva from 'konva';
 import { useAppStore } from '../../store/useAppStore';
 import { HoverInfo } from './layoutViewerTypes';
 import { useLayoutGestures } from './useLayoutGestures';
+import { useLayoutWindowListeners } from './useLayoutWindowListeners';
 import { 
   calculateUnitFocalPoint, 
   computeTooltipPosition, 
@@ -290,65 +291,16 @@ export function useLayoutStageInteractions({
     };
   }, []);
 
-  // ResizeObserver for canvas container: safely only update state when width/height actually changes
-  useEffect(() => {
-    const updateSize = () => {
-      if (!containerRef.current) return;
-      const newW = containerRef.current.offsetWidth || 800;
-      const newH = containerRef.current.offsetHeight || 600;
-      setDimensions(prev => (prev.width === newW && prev.height === newH) ? prev : { width: newW, height: newH });
-    };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
-      ro = new ResizeObserver(updateSize);
-      ro.observe(containerRef.current);
-    }
-    return () => {
-      window.removeEventListener('resize', updateSize);
-      if (ro) ro.disconnect();
-    };
-  }, []);
-
-  // When print preview activates or deactivates, automatically fit floor plan to screen
-  const prevPrintPreviewRef = useRef(isPrintPreview);
-  useEffect(() => {
-    if (prevPrintPreviewRef.current !== isPrintPreview) {
-      prevPrintPreviewRef.current = isPrintPreview;
-      const timer = setTimeout(() => {
-        fitToScreen(false);
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [isPrintPreview, fitToScreen]);
-
-  // Handle browser native print & custom export events
-  useEffect(() => {
-    const handleBeforePrint = () => fitToScreenRef.current(false);
-    const handleExportPngEvent = () => handleExport();
-    window.addEventListener('beforeprint', handleBeforePrint);
-    window.addEventListener('export-png', handleExportPngEvent);
-    return () => {
-      window.removeEventListener('beforeprint', handleBeforePrint);
-      window.removeEventListener('export-png', handleExportPngEvent);
-    };
-  }, [handleExport]);
-
-  // Wake-up redraw handler after tab cold freeze or background sleep
-  useEffect(() => {
-    const handleWakeUp = () => {
-      if (document.visibilityState === 'visible') {
-        stageRef.current?.batchDraw();
-      }
-    };
-    document.addEventListener('visibilitychange', handleWakeUp);
-    window.addEventListener('focus', handleWakeUp);
-    return () => {
-      document.removeEventListener('visibilitychange', handleWakeUp);
-      window.removeEventListener('focus', handleWakeUp);
-    };
-  }, []);
+  // Window listeners: resize observer, print preview, export, visibility wake-up
+  useLayoutWindowListeners({
+    isPrintPreview,
+    fitToScreen,
+    fitToScreenRef,
+    handleExport,
+    stageRef,
+    containerRef,
+    setDimensions,
+  });
 
   // Handle position tooltip directly via DOM with RAF throttle and 2D collision clamping
   const rafTooltipIdRef = useRef<number | null>(null);
@@ -414,7 +366,7 @@ export function useLayoutStageInteractions({
   }, [hoverInfo?.visible, hoverInfo?.unitName, hoverInfo?.data]);
 
   const handleMouseEnterUnit = useCallback((unit: any, e: any) => {
-    if (gestures.isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
+    if (gestures.isInteractingRef.current || (e?.evt && e.evt.buttons > 0) || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
     try {
       const container = e.target.getStage()?.container();
       if (container) container.style.cursor = 'pointer';
@@ -434,7 +386,7 @@ export function useLayoutStageInteractions({
   }, [gestures.isInteractingRef, miniGanttProject, isProjectModalOpen, updateTooltipPos]);
 
   const handleMouseMoveUnit = useCallback((_unit: any, e: any) => {
-    if (gestures.isInteractingRef.current || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
+    if (gestures.isInteractingRef.current || (e?.evt && e.evt.buttons > 0) || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
     try {
       updateTooltipPos(e.evt.clientX, e.evt.clientY);
     } catch (err) {
@@ -445,13 +397,13 @@ export function useLayoutStageInteractions({
   const handleMouseLeaveUnit = useCallback((unit: any, e: any) => {
     try {
       const container = e.target.getStage()?.container();
-      if (container) container.style.cursor = 'grab';
-      if (isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
-      setHoverInfo(null);
+      if (container && !gestures.isInteractingRef.current) container.style.cursor = 'grab';
+      if (gestures.isInteractingRef.current || (e?.evt && e.evt.buttons > 0) || isPinnedRef.current || Boolean(miniGanttProject) || Boolean(isProjectModalOpen)) return;
+      setHoverInfo(current => (current ? null : current));
     } catch (err) {
       console.error("Defensive Check: Error onMouseLeave unit in LiveLayoutViewer:", err, unit);
     }
-  }, [miniGanttProject, isProjectModalOpen]);
+  }, [gestures.isInteractingRef, miniGanttProject, isProjectModalOpen]);
 
   const pinAndShowTooltip = useCallback((unit: any, clientX: number, clientY: number) => {
     isPinnedRef.current = true;
