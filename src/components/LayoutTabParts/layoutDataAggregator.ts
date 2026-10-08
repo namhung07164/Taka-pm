@@ -21,7 +21,7 @@ export interface BuildAggregatedUnitDataParams {
   delegationGroups: any[];
   layoutTooltipVisibility: any;
   restrictedProjectCodes: Set<string>;
-  hasStoredUnitImages: (key: string | undefined | null) => boolean;
+  hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
 }
 
 export function buildAggregatedUnitData({
@@ -254,6 +254,7 @@ export function buildAggregatedUnitData({
 
     targetUnitKeys.forEach(code => {
        if (dataMap[code]) {
+          const uStore = (dataMap[code]?.store || pMeta.store || storeFilter || '').toUpperCase().trim();
           dataMap[code].matchedProject = p;
           dataMap[code].hasAppProject = true;
           dataMap[code].appProjectStatus = status;
@@ -309,8 +310,8 @@ export function buildAggregatedUnitData({
             (p.comments && Array.isArray(p.comments) && p.comments.some((c: any) => c.attachments && c.attachments.length > 0)) ||
             (p as any).imageUrl || (p as any).thumbnail || (p as any).image ||
             dataMap[code].imageUrl || dataMap[code].thumbnail || dataMap[code].image ||
-            hasStoredUnitImages(code) ||
-            hasStoredUnitImages(p.code)
+            hasStoredUnitImages(code, uStore) ||
+            hasStoredUnitImages(p.code, uStore)
           );
           dataMap[code].hasImage = hasProjectImages || dataMap[code].hasImage;
 

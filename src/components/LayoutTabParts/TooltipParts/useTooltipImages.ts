@@ -3,7 +3,7 @@ import { Project } from '../../../types';
 import { useAppStore } from '../../../store/useAppStore';
 import { doc, setDoc, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
-import { extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
+import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
 import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
 
@@ -13,6 +13,7 @@ interface UseTooltipImagesParams {
   unitCode: string;
   tooltipRef: React.RefObject<HTMLDivElement>;
   positionTooltip: (forceRecalculate?: boolean) => void;
+  storeFilter?: string;
 }
 
 export function useTooltipImages({
@@ -21,29 +22,63 @@ export function useTooltipImages({
   unitCode,
   tooltipRef,
   positionTooltip,
+  storeFilter,
 }: UseTooltipImagesParams) {
   const [showImagePanel, setShowImagePanel] = useState(false);
   const [showAddLinkInput, setShowAddLinkInput] = useState(false);
   const [newLinkInput, setNewLinkInput] = useState('');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string; initialScale?: number } | null>(null);
-  const [customUnitImages, setCustomUnitImages] = useState<Array<{ id: string; url: string; title?: string; createdAt?: string }>>([]);
+  const [customUnitImages, setCustomUnitImages] = useState<Array<{ id: string; url: string; title?: string; createdAt?: string; store?: string }>>([]);
 
-  const activeUnitStorageKey = `taka_unit_images_${data.code || unitCode || 'default'}`;
+  const activeStore = (
+    p?.store ||
+    data?.store ||
+    (p ? extractProjectMetadata(p).store : '') ||
+    (storeFilter && storeFilter.toUpperCase() !== 'ALL' ? storeFilter : '') ||
+    'HCM'
+  ).toUpperCase().trim();
 
-  // Load custom images from localStorage
+  const cleanCode = String(data?.code || unitCode || 'default').trim();
+  const activeUnitStorageKey = `taka_unit_images_${activeStore}_${cleanCode}`;
+
+  // Load custom images from localStorage with strict store separation
   useEffect(() => {
     try {
+      // 1. Primary: load store-partitioned key
       const saved = localStorage.getItem(activeUnitStorageKey);
       if (saved) {
-        setCustomUnitImages(JSON.parse(saved));
-      } else {
-        setCustomUnitImages([]);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const matching = parsed.filter(item => !item.store || item.store.toUpperCase() === activeStore);
+          setCustomUnitImages(matching);
+          return;
+        }
       }
+
+      // 2. Legacy key check: only migrate to HN if currently in HN (never load into HCM!)
+      const legacyKey = `taka_unit_images_${cleanCode}`;
+      const legacySaved = localStorage.getItem(legacyKey);
+      if (legacySaved) {
+        try {
+          const parsedLegacy = JSON.parse(legacySaved);
+          if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+            if (activeStore === 'HN') {
+              const tagged = parsedLegacy.map(item => ({ ...item, store: 'HN' }));
+              localStorage.setItem(activeUnitStorageKey, JSON.stringify(tagged));
+              localStorage.removeItem(legacyKey);
+              setCustomUnitImages(tagged);
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      setCustomUnitImages([]);
     } catch {
       setCustomUnitImages([]);
     }
-  }, [activeUnitStorageKey]);
+  }, [activeUnitStorageKey, activeStore, cleanCode]);
 
   // Reset panel open state when unit changes
   useEffect(() => {
@@ -91,6 +126,7 @@ export function useTooltipImages({
       url: trimmed,
       title: `Link ${customUnitImages.length + 1}`,
       createdAt: new Date().toISOString(),
+      store: activeStore,
     };
     const updated = [newEntry, ...customUnitImages];
     setCustomUnitImages(updated);
@@ -105,17 +141,19 @@ export function useTooltipImages({
       window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
     }
 
-    // Persist link without polluting taskSummaries with fake tasks
+    // Persist link to project ONLY IF project strictly belongs to activeStore
     try {
       const allProjects = useAppStore.getState().projects;
-      const targetProj = p || allProjects.find(item => {
-        if (item.id === p?.id) return true;
+      const targetProj = (p && extractProjectMetadata(p).store === activeStore ? p : null) || allProjects.find(item => {
+        if (item.id === p?.id && extractProjectMetadata(item).store === activeStore) return true;
+        const itemStore = extractProjectMetadata(item).store;
+        if (itemStore && itemStore !== activeStore) return false;
         const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
         const targetCode = String(data.code || unitCode || '').toLowerCase();
         return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
       });
 
-      if (targetProj) {
+      if (targetProj && extractProjectMetadata(targetProj).store === activeStore) {
         // Purge any legacy fake "Link / Photo:" tasks from taskSummaries to keep the task list & detail box clean
         const cleanedSummaries = (targetProj.taskSummaries || []).filter(
           ts => !ts.name?.startsWith('Link / Photo:') && !ts.name?.startsWith('http://') && !ts.name?.startsWith('https://')
@@ -155,6 +193,11 @@ export function useTooltipImages({
     try {
       if (updated.length === 0) {
         localStorage.removeItem(activeUnitStorageKey);
+        localStorage.removeItem(`taka_unit_images_${activeStore}_${data.code || ''}`);
+        localStorage.removeItem(`taka_unit_images_${activeStore}_${unitCode || ''}`);
+        if (p?.code) localStorage.removeItem(`taka_unit_images_${activeStore}_${p.code}`);
+        // Also remove legacy keys if any
+        localStorage.removeItem(`taka_unit_images_${cleanCode}`);
         localStorage.removeItem(`taka_unit_images_${data.code || ''}`);
         localStorage.removeItem(`taka_unit_images_${unitCode || ''}`);
         if (p?.code) localStorage.removeItem(`taka_unit_images_${p.code}`);
@@ -167,7 +210,7 @@ export function useTooltipImages({
       window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
     }
 
-    // Clean up from project.taskSummaries
+    // Clean up from project.taskSummaries ONLY if project belongs to activeStore
     try {
       const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
       if (targetUrl) {
@@ -177,14 +220,16 @@ export function useTooltipImages({
       }
 
       const allProjects = useAppStore.getState().projects;
-      const targetProj = p || allProjects.find(item => {
-        if (item.id === p?.id) return true;
+      const targetProj = (p && extractProjectMetadata(p).store === activeStore ? p : null) || allProjects.find(item => {
+        if (item.id === p?.id && extractProjectMetadata(item).store === activeStore) return true;
+        const itemStore = extractProjectMetadata(item).store;
+        if (itemStore && itemStore !== activeStore) return false;
         const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
         const targetCode = String(data.code || unitCode || '').toLowerCase();
         return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
       });
 
-      if (targetProj) {
+      if (targetProj && extractProjectMetadata(targetProj).store === activeStore) {
         const filteredSummaries = (targetProj.taskSummaries || []).filter(
           ts => ts.link !== urlToDelete && ts.imageUrl !== urlToDelete && !ts.name?.includes(urlToDelete || '') && !ts.name?.startsWith('Link / Photo:')
         );
@@ -244,8 +289,11 @@ export function useTooltipImages({
     const list: TooltipImageItem[] = [];
     const seenUrls = new Set<string>();
 
-    // 1. Project taskSummaries links (Prioritized cloud-backed task summarize)
-    if (p?.taskSummaries && Array.isArray(p.taskSummaries)) {
+    const projStore = p ? extractProjectMetadata(p).store : '';
+    const isProjMatchingStore = !p || !projStore || !activeStore || projStore === activeStore;
+
+    // 1. Project taskSummaries links (Prioritized cloud-backed task summarize, strictly matching store)
+    if (isProjMatchingStore && p?.taskSummaries && Array.isArray(p.taskSummaries)) {
       p.taskSummaries.forEach((ts, tsIdx) => {
         const url = ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' ? ts.name.match(/https?:\/\/[^\s]+/)?.[0] : null);
         if (url && typeof url === 'string' && !seenUrls.has(url)) {
@@ -261,93 +309,101 @@ export function useTooltipImages({
       });
     }
 
-    // 2. Custom user-posted links from localStorage
+    // 2. Custom user-posted links from localStorage (strictly filtered by activeStore)
     customUnitImages.forEach((c) => {
       if (c.url && !seenUrls.has(c.url)) {
-        seenUrls.add(c.url);
-        list.push({
-          id: c.id,
-          url: c.url,
-          title: c.title || 'Attached Link',
-          source: 'User Link',
-          isCustom: true,
-        });
+        if (!c.store || c.store.toUpperCase() === activeStore) {
+          seenUrls.add(c.url);
+          list.push({
+            id: c.id,
+            url: c.url,
+            title: c.title || 'Attached Link',
+            source: `${activeStore} Link`,
+            isCustom: true,
+          });
+        }
       }
     });
 
-    // 3. Project direct image / thumbnail fields
-    if (p?.thumbnail && typeof p.thumbnail === 'string' && !seenUrls.has(p.thumbnail)) {
-      seenUrls.add(p.thumbnail);
-      list.push({
-        id: 'proj_thumb',
-        url: p.thumbnail,
-        title: 'Project Thumbnail',
-        source: 'Project Data',
-        isCustom: true,
-      });
-    }
-    if (p?.imageUrl && typeof p.imageUrl === 'string' && !seenUrls.has(p.imageUrl)) {
-      seenUrls.add(p.imageUrl);
-      list.push({
-        id: 'proj_image',
-        url: p.imageUrl,
-        title: 'Project Image',
-        source: 'Project Data',
-        isCustom: true,
-      });
-    }
-    if ((p as any)?.image && typeof (p as any).image === 'string' && !seenUrls.has((p as any).image)) {
-      seenUrls.add((p as any).image);
-      list.push({
-        id: 'proj_img',
-        url: (p as any).image,
-        title: 'Project Image',
-        source: 'Project Data',
-        isCustom: true,
-      });
-    }
-    if ((p as any)?.photo && typeof (p as any).photo === 'string' && !seenUrls.has((p as any).photo)) {
-      seenUrls.add((p as any).photo);
-      list.push({
-        id: 'proj_photo',
-        url: (p as any).photo,
-        title: 'Project Photo',
-        source: 'Project Data',
-        isCustom: true,
-      });
-    }
-
-    // 4. Unit image from layout data
-    if (data.imageUrl && typeof data.imageUrl === 'string' && !seenUrls.has(data.imageUrl)) {
-      seenUrls.add(data.imageUrl);
-      list.push({
-        id: 'data_image',
-        url: data.imageUrl,
-        title: 'Unit Layout Image',
-        source: 'Layout Data',
-      });
-    }
-    if (data.thumbnail && typeof data.thumbnail === 'string' && !seenUrls.has(data.thumbnail)) {
-      seenUrls.add(data.thumbnail);
-      list.push({
-        id: 'data_thumb',
-        url: data.thumbnail,
-        title: 'Unit Thumbnail',
-        source: 'Layout Data',
-      });
-    }
-    if (data.image && typeof data.image === 'string' && !seenUrls.has(data.image)) {
-      seenUrls.add(data.image);
-      list.push({
-        id: 'data_img',
-        url: data.image,
-        title: 'Floor Image',
-        source: 'Layout Data',
-      });
+    // 3. Project direct image / thumbnail fields (strictly matching activeStore)
+    if (isProjMatchingStore) {
+      if (p?.thumbnail && typeof p.thumbnail === 'string' && !seenUrls.has(p.thumbnail)) {
+        seenUrls.add(p.thumbnail);
+        list.push({
+          id: 'proj_thumb',
+          url: p.thumbnail,
+          title: 'Project Thumbnail',
+          source: 'Project Data',
+          isCustom: true,
+        });
+      }
+      if (p?.imageUrl && typeof p.imageUrl === 'string' && !seenUrls.has(p.imageUrl)) {
+        seenUrls.add(p.imageUrl);
+        list.push({
+          id: 'proj_image',
+          url: p.imageUrl,
+          title: 'Project Image',
+          source: 'Project Data',
+          isCustom: true,
+        });
+      }
+      if ((p as any)?.image && typeof (p as any).image === 'string' && !seenUrls.has((p as any).image)) {
+        seenUrls.add((p as any).image);
+        list.push({
+          id: 'proj_img',
+          url: (p as any).image,
+          title: 'Project Image',
+          source: 'Project Data',
+          isCustom: true,
+        });
+      }
+      if ((p as any)?.photo && typeof (p as any).photo === 'string' && !seenUrls.has((p as any).photo)) {
+        seenUrls.add((p as any).photo);
+        list.push({
+          id: 'proj_photo',
+          url: (p as any).photo,
+          title: 'Project Photo',
+          source: 'Project Data',
+          isCustom: true,
+        });
+      }
     }
 
-    // 5. Project comments attachments
-    if (p?.comments && Array.isArray(p.comments)) {
+    // 4. Unit image from layout data (strictly matching activeStore)
+    const dataStore = (data.store || '').toUpperCase().trim();
+    const isDataMatchingStore = !dataStore || !activeStore || dataStore === activeStore;
+    if (isDataMatchingStore) {
+      if (data.imageUrl && typeof data.imageUrl === 'string' && !seenUrls.has(data.imageUrl)) {
+        seenUrls.add(data.imageUrl);
+        list.push({
+          id: 'data_image',
+          url: data.imageUrl,
+          title: 'Unit Layout Image',
+          source: 'Layout Data',
+        });
+      }
+      if (data.thumbnail && typeof data.thumbnail === 'string' && !seenUrls.has(data.thumbnail)) {
+        seenUrls.add(data.thumbnail);
+        list.push({
+          id: 'data_thumb',
+          url: data.thumbnail,
+          title: 'Unit Thumbnail',
+          source: 'Layout Data',
+        });
+      }
+      if (data.image && typeof data.image === 'string' && !seenUrls.has(data.image)) {
+        seenUrls.add(data.image);
+        list.push({
+          id: 'data_img',
+          url: data.image,
+          title: 'Floor Image',
+          source: 'Layout Data',
+        });
+      }
+    }
+
+    // 5. Project comments attachments (strictly matching activeStore)
+    if (isProjMatchingStore && p?.comments && Array.isArray(p.comments)) {
       p.comments.forEach((c, cIdx) => {
         if (c.attachments && Array.isArray(c.attachments)) {
           c.attachments.forEach((att, aIdx) => {
@@ -366,7 +422,7 @@ export function useTooltipImages({
     }
 
     return list;
-  }, [customUnitImages, data.imageUrl, data.thumbnail, data.image, p?.comments, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
+  }, [customUnitImages, activeStore, data.store, data.imageUrl, data.thumbnail, data.image, p, p?.comments, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
 
   return {
     showImagePanel,

@@ -17,7 +17,8 @@ export interface LayoutKonvaLayersProps {
   onMouseLeaveUnit: (unit: any, e: any) => void;
   onClickUnit: (unit: any, e: any) => void;
   onTapUnit: (unit: any, e: any) => void;
-  hasStoredUnitImages: (codeOrName: string | undefined | null) => boolean;
+  hasStoredUnitImages: (codeOrName: string | undefined | null, store?: string) => boolean;
+  storeFilter?: string;
 }
 
 export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
@@ -37,6 +38,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
   onClickUnit,
   onTapUnit,
   hasStoredUnitImages,
+  storeFilter,
 }) => {
   const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
@@ -123,9 +125,9 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             unit.imageUrl || 
             unit.thumbnail || 
             unit.image || 
-            hasStoredUnitImages(unit.name) ||
-            hasStoredUnitImages(unit.id) ||
-            hasStoredUnitImages(unit.code)
+            hasStoredUnitImages(unit.name, storeFilter) ||
+            hasStoredUnitImages(unit.id, storeFilter) ||
+            hasStoredUnitImages(unit.code, storeFilter)
           );
           const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
           const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));

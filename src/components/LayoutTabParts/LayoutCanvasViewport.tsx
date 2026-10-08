@@ -43,7 +43,8 @@ interface LayoutCanvasViewportProps {
   handleMouseLeaveUnit: (unit: any, e: any) => void;
   handleClickUnit: (unit: any, e: any) => void;
   handleTapUnit: (unit: any, e: any) => void;
-  hasStoredUnitImages: (key: string | undefined | null) => boolean;
+  hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
+  storeFilter?: string;
 }
 
 export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.memo(({
@@ -87,6 +88,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
   handleClickUnit,
   handleTapUnit,
   hasStoredUnitImages,
+  storeFilter,
 }) => {
   return (
     <div 
@@ -323,6 +325,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
           onClickUnit={handleClickUnit}
           onTapUnit={handleTapUnit}
           hasStoredUnitImages={hasStoredUnitImages}
+          storeFilter={storeFilter}
         />
       </Stage>
     </div>

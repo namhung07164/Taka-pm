@@ -15,7 +15,7 @@ interface UseLayoutAggregatesProps {
   locationFilter: string;
   targetLoc: string;
   effectiveLayoutYear: string;
-  hasStoredUnitImages: (key: string | undefined | null) => boolean;
+  hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
   unitImagesRev: number;
   focusedUnitId: string | null;
   filterOnlyAlerts: boolean;

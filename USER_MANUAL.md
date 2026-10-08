@@ -582,12 +582,14 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
        - **Bảng Hình Ảnh & Link Thumbnail Liên Kết (Interactive Image & Link Gallery Panel)**:
          * **Mặc Định Ẩn Gọn Gàng & Bật/Tắt Linh Hoạt Qua Biểu Tượng Hình Ảnh**: Khi nhấp chọn gian hàng trên mặt bằng, Tooltip mặc định hiển thị gọn gàng các thông tin tiến độ và ô Detail/Description. Chỉ khi người dùng nhấp vào **biểu tượng hình ảnh** ở góc phải thanh tiêu đề, bảng hình ảnh mới mở rộng bên dưới ô Detail để xem ảnh; nhấp lại lần nữa hoặc bấm nút `[X]` để thu gọn.
          * **Bảo Vệ Tính Toàn Vẹn Ô Detail**: Tuyệt đối không tự ý chèn các đường dẫn URL (`http://...`, `https://...`) hay chuỗi thô vào nội dung ô Detail/Description. Ô Detail giữ đúng chức năng hiển thị danh sách đầu việc và mô tả nghiệp vụ chuẩn, trong khi các link ảnh được quản lý và hiển thị riêng biệt trong khu vực hình ảnh.
-         * **Tự Động Trích Xuất & Hiển Thị Đa Nguồn**:
-           - Tự động hiển thị và đồng bộ các link ảnh/thumbnail được lưu trong **Task Summarize (`project.taskSummaries`)** trên toàn bộ hệ thống Firestore và bộ nhớ Zustand.
-           - Tự động nhận diện ảnh/thumbnail từ trường dữ liệu dự án (`project.thumbnail`, `project.imageUrl`, `project.image`, `project.photo`).
-           - Tự động hiển thị các file ảnh đính kèm từ bình luận tiến độ (`project.comments.attachments`).
-           - Tự động nhận diện ảnh/thumbnail từ dữ liệu mặt bằng (`data.imageUrl`, `data.thumbnail`).
-           - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào qua nút **`+ Thêm`**.
+         * **Tự Động Trích Xuất & Hiển Thị Đa Nguồn & Phân Vùng Độc Lập Theo Chi Nhánh (Store Partitioning HCM vs HN)**:
+           - **Phân Vùng Riêng Biệt 100% Theo Chi Nhánh (HCM & HN Isolation)**: Toàn bộ hình ảnh, link dán và ảnh tải lên Cloudflare R2 đều được lưu trữ và lọc tách biệt hoàn toàn theo chi nhánh hiện hành (`HCM` hoặc `HN`). Khi người dùng thêm link hay tải ảnh tại chi nhánh Hà Nội (`HN`), hình ảnh sẽ chỉ hiển thị trong Tooltip và mặt bằng của Hà Nội, tuyệt đối không bị lẫn hay hiển thị chéo sang chi nhánh TP.HCM (`HCM`) và ngược lại.
+           - **Hiển Thị Huy Hiệu Chi Nhánh Rõ Ràng**: Tiêu đề bảng hình ảnh trong Tooltip hiển thị rõ nhãn chi nhánh (`Hình ảnh liên kết (HCM)` hoặc `Hình ảnh liên kết (HN)`) kèm huy hiệu đếm số lượng ảnh theo quy chuẩn màu thương hiệu (HCM: Xanh dương, HN: Đỏ).
+           - Tự động hiển thị và đồng bộ các link ảnh/thumbnail được lưu trong **Task Summarize (`project.taskSummaries`)** thuộc đúng chi nhánh tương ứng trên toàn bộ hệ thống Firestore và bộ nhớ Zustand.
+           - Tự động nhận diện ảnh/thumbnail từ trường dữ liệu dự án (`project.thumbnail`, `project.imageUrl`, `project.image`, `project.photo`) thuộc đúng chi nhánh.
+           - Tự động hiển thị các file ảnh đính kèm từ bình luận tiến độ (`project.comments.attachments`) của dự án thuộc đúng chi nhánh.
+           - Tự động nhận diện ảnh/thumbnail từ dữ liệu mặt bằng (`data.imageUrl`, `data.thumbnail`) của đúng chi nhánh.
+           - Tự động hiển thị các đường link ảnh / bài viết do người dùng dán vào qua nút **`+ Thêm`** theo đúng phân vùng chi nhánh.
          * **Hiển Thị Link Address Kèm Thao Tác 1 Chạm & Phóng To Trực Tiếp**: Hiển thị đường dẫn liên kết (`Link address`) ngay dưới từng thumbnail, tích hợp nút **Mở link sang tab mới** (`ExternalLink`), nút **Sao chép link** (`Copy`), nút **Phóng to xem ảnh HD** (`Lightbox Zoom`) và cho phép nhấp trực tiếp vào thumbnail mini ở header để mở hộp thoại phóng to chuẩn Enterprise (`LayoutUnitLightboxModal`) với đầy đủ nút đóng `[X]` đa lớp, thao tác phóng to/thu nhỏ và phím `Escape`.
          * **Dán & Lưu Link Nhanh Chóng**: Nút **`+ Thêm`** trên thanh tiêu đề mở ô nhập link; khi bấm **OK**, đường link sẽ tự động được ghi nhận và lưu đồng bộ trực tiếp mà không gây xáo trộn ô Detail của dự án.
          * **Tối Ưu Hiển Thị & Phóng To Toàn Màn Hình Trên iPad / Tablet (iOS Safari Portal & Sticky Header)**:

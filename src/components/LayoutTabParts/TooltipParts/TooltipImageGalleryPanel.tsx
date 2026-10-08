@@ -32,6 +32,7 @@ interface TooltipImageGalleryPanelProps {
   handleCopyLink: (url: string) => void;
   setEnlargedImage: (img: { url: string; title?: string; initialScale?: number } | null) => void;
   unitCode?: string;
+  activeStore?: string;
 }
 
 export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> = ({
@@ -48,6 +49,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   handleCopyLink,
   setEnlargedImage,
   unitCode,
+  activeStore = 'HCM',
 }) => {
   const [addMode, setAddMode] = useState<'link' | 'picture'>('link');
   const [isUploading, setIsUploading] = useState(false);
@@ -67,7 +69,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
     setUploadSuccessUrl(null);
 
     try {
-      const res = await uploadPictureToTakaFolder(file, unitCode);
+      const res = await uploadPictureToTakaFolder(file, unitCode, activeStore);
       if (res.success && res.publicUrl) {
         const feedback = `${res.publicUrl}${(res as any).compressionInfo || ''}`;
         setUploadSuccessUrl(feedback);
@@ -92,8 +94,13 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
       <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
         <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200 min-w-0">
           <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8] shrink-0" />
-          <span className="truncate">Hình ảnh & Thumbnail liên kết</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8] font-mono shrink-0">
+          <span className="truncate">Hình ảnh liên kết ({activeStore})</span>
+          <span className={cn(
+            "text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 font-bold",
+            activeStore.toUpperCase() === 'HN'
+              ? "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-400"
+              : "bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8]"
+          )}>
             {allUnitImages.length}
           </span>
         </div>

@@ -368,18 +368,37 @@ export function useLayoutFloorData({
 
   const [bgImage] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
 
-  // Helper to accurately check if unit has user-attached images in localStorage
-  const hasStoredUnitImages = useCallback((key: string | undefined | null): boolean => {
+  // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
+  const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
     if (typeof window === 'undefined' || !key) return false;
     try {
-      const raw = localStorage.getItem(`taka_unit_images_${key}`);
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) && parsed.length > 0;
+      const activeStore = (overrideStore || (storeFilter === 'HN' ? 'HN' : 'HCM')).toUpperCase();
+      const storeKey = `taka_unit_images_${activeStore}_${key}`;
+      const raw = localStorage.getItem(storeKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return true;
+      }
+      // Migrate legacy un-prefixed key for HN if present
+      if (activeStore === 'HN') {
+        const legacyRaw = localStorage.getItem(`taka_unit_images_${key}`);
+        if (legacyRaw) {
+          try {
+            const parsed = JSON.parse(legacyRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const tagged = parsed.map((item: any) => ({ ...item, store: 'HN' }));
+              localStorage.setItem(storeKey, JSON.stringify(tagged));
+              localStorage.removeItem(`taka_unit_images_${key}`);
+              return true;
+            }
+          } catch {}
+        }
+      }
+      return false;
     } catch {
       return false;
     }
-  }, []);
+  }, [storeFilter]);
 
   // Realtime image change subscription to update canvas badges instantly upon add/delete in Tooltip
   const [unitImagesRev, setUnitImagesRev] = useState(0);

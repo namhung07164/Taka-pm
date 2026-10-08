@@ -186,7 +186,8 @@ export async function cleanOrphanR2Files(
  */
 export async function uploadPictureToTakaFolder(
   file: File,
-  unitCode?: string
+  unitCode?: string,
+  store?: string
 ): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
   let creds = getStoredR2Credentials();
   if (!creds) {
@@ -238,8 +239,9 @@ export async function uploadPictureToTakaFolder(
     }
 
     const cleanName = uploadFile.name.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
+    const storePrefix = store ? `${store.toUpperCase().trim()}_` : '';
     const prefix = unitCode ? `${unitCode.replace(/[^a-zA-Z0-9_-]/g, '_')}_` : '';
-    const keyName = `${prefix}${Date.now()}_${cleanName}`;
+    const keyName = `${storePrefix}${prefix}${Date.now()}_${cleanName}`;
     const fullKey = `Taka-Pm-folder/${keyName}`;
 
     const arrayBuffer = await uploadFile.arrayBuffer();

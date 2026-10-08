@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { cn, extractAllProjectCodes, projectMatchesUnitCode } from '../../lib/utils';
+import { cn, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
@@ -37,27 +37,54 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const initialP: Project | undefined = data.matchedProject;
 
   const p: Project | undefined = useMemo(() => {
+    const expectedStore = (
+      data.store ||
+      (storeFilter && storeFilter.toUpperCase() !== 'ALL' ? storeFilter : '') ||
+      'HCM'
+    ).toUpperCase().trim();
+
     if (initialP?.id) {
       const found = projects.find(item => item.id === initialP.id);
-      if (found) return found;
+      if (found) {
+        const itemStore = extractProjectMetadata(found).store;
+        if (!expectedStore || !itemStore || itemStore === expectedStore) {
+          return found;
+        }
+      }
     }
     // Only resolve project if unit actually has an associated app project
     if (!data.hasAppProject && !data.matchedProject && !data.appProjectCode) {
-      return initialP;
+      if (initialP) {
+        const initStore = extractProjectMetadata(initialP).store;
+        if (!expectedStore || !initStore || initStore === expectedStore) {
+          return initialP;
+        }
+      }
+      return undefined;
     }
     const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
     if (targetCode) {
       const found = projects.find(item => {
+        const itemStore = extractProjectMetadata(item).store;
+        if (expectedStore && itemStore && itemStore !== expectedStore) {
+          return false;
+        }
         const itemUnitCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
         return itemUnitCodes.includes(targetCode) || projectMatchesUnitCode(itemUnitCodes, targetCode);
       });
       if (found) return found;
     }
-    return initialP;
-  }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, hoverInfo.unitName, projects]);
+    if (initialP) {
+      const initStore = extractProjectMetadata(initialP).store;
+      if (!expectedStore || !initStore || initStore === expectedStore) {
+        return initialP;
+      }
+    }
+    return undefined;
+  }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, data.store, hoverInfo.unitName, projects, storeFilter]);
 
   const unitCode = p?.code || hoverInfo.unitName;
-  const storeDisplay = p?.store || data.store || storeFilter || 'HCM';
+  const storeDisplay = (p?.store || data.store || storeFilter || 'HCM').toUpperCase().trim();
   const projectName = p?.name || data.projectName || data.brandName || '';
   const floorValue = data.floor || (p as any)?.floor;
 
@@ -184,6 +211,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     unitCode,
     tooltipRef,
     positionTooltip,
+    storeFilter: storeDisplay,
   });
 
   // Safe fallback if vis is undefined
@@ -318,6 +346,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         handleCopyLink={handleCopyLink}
         setEnlargedImage={setEnlargedImage}
         unitCode={unitCode || data.code || ''}
+        activeStore={storeDisplay}
       />
     </div>,
     document.body

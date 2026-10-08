@@ -458,6 +458,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         handleClickUnit={stageInteractions.handleClickUnit}
         handleTapUnit={stageInteractions.handleTapUnit}
         hasStoredUnitImages={hasStoredUnitImages}
+        storeFilter={storeFilter}
       />
     </div>
   );
