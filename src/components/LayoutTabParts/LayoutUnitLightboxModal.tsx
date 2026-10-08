@@ -39,7 +39,7 @@ export function normalizeImageUrl(rawUrl: string | undefined | null): string {
 }
 
 interface LayoutUnitLightboxModalProps {
-  enlargedImage: { url: string; title?: string } | null;
+  enlargedImage: { url: string; title?: string; initialScale?: number } | null;
   onClose: () => void;
   onCopyLink: (url: string) => void;
   copiedLink: string | null;
@@ -57,6 +57,23 @@ export function LayoutUnitLightboxModal({
 
   const rawUrl = enlargedImage?.url || '';
   const resolvedUrl = normalizeImageUrl(rawUrl);
+  const initialZoom = enlargedImage?.initialScale && enlargedImage.initialScale > 1
+    ? enlargedImage.initialScale
+    : 1;
+
+  // Apply continuous zoom if launched with initial gesture scale
+  useEffect(() => {
+    if (enlargedImage?.initialScale && enlargedImage.initialScale > 1) {
+      const timer = setTimeout(() => {
+        try {
+          if (transformRef.current) {
+            transformRef.current.setTransform(0, 0, enlargedImage.initialScale);
+          }
+        } catch {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [enlargedImage?.url, enlargedImage?.initialScale]);
 
   // Reset loading and error state whenever enlargedImage changes
   useEffect(() => {
@@ -221,11 +238,12 @@ export function LayoutUnitLightboxModal({
           {!imageError ? (
             <TransformWrapper
               ref={transformRef}
-              initialScale={1}
+              initialScale={initialZoom}
               minScale={0.5}
               maxScale={8}
               centerOnInit
-              wheel={{ step: 0.015 }}
+              wheel={{ step: 0.02 }}
+              pinch={{ step: 5 }}
               doubleClick={{ mode: 'toggle' }}
             >
               <TransformComponent

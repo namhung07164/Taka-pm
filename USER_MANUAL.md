@@ -1747,3 +1747,25 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Danh sách nhiệm vụ (Tasks) bên dưới từng dự án trên biểu đồ Gantt được tự động sắp xếp theo thứ tự số tự nhiên chuẩn xác: ưu tiên chỉ số con từ mã nhiệm vụ phụ (`#1, #2, #3... #33`), chỉ số thứ tự (`orderIndex: 0, 1, 2...`), hoặc theo thứ tự ngày tháng bắt đầu (`Start Date`) thay vì hiển thị ngẫu nhiên theo thứ tự nạp mạng từ cơ sở dữ liệu.
    - **Bảo Toàn Cấu Trúc Cây Cha - Con (Parent-Child Modular Hierarchy)**:
      + Các nhóm công việc cha và nhiệm vụ con dạng mô-đun được gom nhóm và sắp xếp tuần tự theo đúng tiến độ thực tế, đảm bảo cột số thứ tự `#` hiển thị liền mạch 1, 2, 3... 33 mà không bị nhảy cóc hay xáo trộn vị trí.
+
+51. **Tô Màu Chuẩn Xác Thanh Bar Gantt Theo Vòng Đời Công Việc (Accurate Gantt Bar Lifecycle Coloring)**:
+   - **Phân Biệt Chuẩn Xác Trạng Thái Thực Tế Công Việc**:
+     + Khắc phục hoàn toàn hiện tượng công việc bị tô màu xanh lá (Green) dựa trên từ khóa tên công việc (`isGreenDesignTask`).
+     + Màu sắc thanh Gantt được chuẩn hóa đồng bộ 100% với hệ thống trạng thái doanh nghiệp:
+       * **Completed (Hoàn thành)**: Màu xanh lục (`bg-emerald-500`) khi công việc đạt 100% tiến độ thực tế hoặc được duyệt `Approved`.
+       * **Delayed / Overdue (Trễ hạn)**: Màu đỏ hồng (`bg-rose-500`) khi công việc quá hạn so với ngày kết thúc hoặc trạng thái bị từ chối/trễ.
+       * **On Process (Đang thực hiện)**: Màu xanh dương (`bg-blue-500`) khi công việc đang trong giai đoạn triển khai thực tế.
+       * **Upcoming (Sắp diễn ra)**: Màu xám bạc (`bg-slate-400 dark:bg-slate-500`) cho các công việc có ngày thực hiện trong tương lai.
+       * **Milestone (Mốc quan trọng)**: Hình thoi màu cam rực rỡ (`bg-[#f97316]`) khi thời lượng bằng 0 ngày hoặc là mốc Opening.
+     + Hỗ trợ tô màu tùy biến (`textColor`) do người dùng cài đặt riêng mà không làm mất hiệu ứng tiến độ thực tế (`Actual Progress Fill`).
+
+52. **Tự Động Mở Toàn Màn Hình & Zoom Tiếp Khi Kéo/Zoom Hình Ảnh Trong Tooltip (Auto-Fullscreen Continuous Zoom from Tooltip Images)**:
+   - **Nhận Diện Cử Chỉ Thu Phóng Đa Nền Tảng (Pinch-to-Zoom & Wheel Gesture Detection)**:
+     + Khi người dùng xem hình ảnh trong bảng Tooltip chi tiết gian hàng (`LayoutUnitTooltip`), hệ thống tự động nhận biết cử chỉ phóng to trực tiếp trên ảnh thu nhỏ:
+       * **Trên iPad / iPhone / Màn hình cảm ứng**: Nhận biết cử chỉ chụm mở 2 ngón tay (`Pinch-to-zoom`) với phản hồi phóng to tức thời ngay dưới ngón tay.
+       * **Chạm đúp (Double-tap)**: Tự động kích hoạt phóng to toàn màn hình ở mức tỷ lệ 2x.
+       * **Trên Máy tính / Chuột / Trackpad**: Nhận biết thao tác cuộn con trỏ chuột lên (`Wheel Up`) hoặc chụm phóng to trên trackpad (`Ctrl + Wheel`).
+   - **Tự Động Mở Toàn Màn Hình & Tiếp Tục Zoom Mượt Mà (Seamless Fullscreen Zoom Continuation)**:
+     + Ngay khi nhận biết cử chỉ thu phóng vượt ngưỡng, cửa sổ xem ảnh toàn màn hình chất lượng cao (`LayoutUnitLightboxModal` / `ZoomableImageViewer`) tự động mở lên ngay lập tức.
+     + Mức phóng to đang thực hiện từ cử chỉ (`initialScale`) được truyền thẳng vào cửa sổ toàn màn hình, giúp hình ảnh mở ra đúng tỷ lệ đã zoom và cho phép người dùng **tiếp tục thu phóng sâu hơn (lên đến 8x)** mà không bị gián đoạn hay phải thao tác lại từ đầu.
+

@@ -16,6 +16,7 @@ import { cn } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
 import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
 import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
+import { TooltipZoomableThumbnail } from './TooltipZoomableThumbnail';
 
 interface TooltipImageGalleryPanelProps {
   showImagePanel: boolean;
@@ -29,7 +30,7 @@ interface TooltipImageGalleryPanelProps {
   handleAddCustomImage: (e?: React.FormEvent, customUrl?: string) => void;
   handleDeleteCustomImage: (id: string, urlToDelete?: string) => void;
   handleCopyLink: (url: string) => void;
-  setEnlargedImage: (img: { url: string; title?: string } | null) => void;
+  setEnlargedImage: (img: { url: string; title?: string; initialScale?: number } | null) => void;
   unitCode?: string;
 }
 
@@ -271,35 +272,11 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
               key={img.id}
               className="bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#333336] p-2 flex flex-col gap-1.5 shadow-2xs group hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
             >
-              {/* Thumbnail Image Container - Full Natural Proportions & Zero Crop */}
-              <div className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[190px] sm:max-h-[280px] flex items-center justify-center group/thumb p-1">
-                <img 
-                  src={normalizeImageUrl(img.url)} 
-                  alt={img.title}
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                    const parent = (e.target as HTMLElement).parentElement;
-                    if (parent && !parent.querySelector('.img-fallback')) {
-                      const div = document.createElement('div');
-                      div.className = 'img-fallback flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-2 text-center';
-                      div.innerHTML = `<span class="font-semibold text-slate-600 dark:text-slate-300">Web Link / Article Preview</span><span class="truncate max-w-[200px] text-[9px] font-mono text-blue-500">${img.url}</span>`;
-                      parent.appendChild(div);
-                    }
-                  }}
-                  className="w-full h-auto max-h-[180px] sm:max-h-[270px] object-contain cursor-pointer hover:scale-[1.01] transition-transform duration-200 rounded-md"
-                  onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
-                />
-                <div className="absolute top-2 right-2 flex gap-1 opacity-90 group-hover/thumb:opacity-100 transition-opacity">
-                  <button
-                    type="button"
-                    onClick={() => setEnlargedImage({ url: img.url, title: img.title })}
-                    className="p-1.5 bg-black/70 hover:bg-black/90 text-white rounded-md backdrop-blur-xs transition-colors cursor-pointer shadow-md"
-                    title="Phóng to xem ảnh HD toàn màn hình"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              {/* Thumbnail Image Container with Pinch / Wheel / Double-tap Auto-Fullscreen Zoom */}
+              <TooltipZoomableThumbnail
+                img={img}
+                onOpenFullscreen={(target) => setEnlargedImage(target)}
+              />
 
               {/* Link Address and Action Buttons (Only shown when clicking "+ Thêm") */}
               {showAddLinkInput && (

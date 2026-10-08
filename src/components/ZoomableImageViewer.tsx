@@ -23,7 +23,8 @@ export interface ZoomableImageViewerProps {
   src?: string;
   title?: string;
   alt?: string;
-  image?: { url: string; title?: string } | null;
+  image?: { url: string; title?: string; initialScale?: number } | null;
+  initialScale?: number;
 }
 
 export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
@@ -35,12 +36,14 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   title: propTitle,
   alt: propAlt,
   image: propImage,
+  initialScale: propInitialScale,
 }) => {
   // Global event listener state for uncontrolled / window-event usage
   const [eventState, setEventState] = useState<{
     isOpen: boolean;
     url: string;
     title?: string;
+    initialScale?: number;
   }>({
     isOpen: false,
     url: '',
@@ -55,7 +58,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   // Listen to window-level custom events: 'taka_open_image_viewer'
   useEffect(() => {
     const handleOpenEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ url?: string; imageUrl?: string; src?: string; title?: string }>;
+      const customEvent = e as CustomEvent<{ url?: string; imageUrl?: string; src?: string; title?: string; initialScale?: number }>;
       const detail = customEvent.detail;
       if (detail) {
         const rawUrl = detail.url || detail.imageUrl || detail.src || '';
@@ -64,6 +67,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
             isOpen: true,
             url: rawUrl,
             title: detail.title || '',
+            initialScale: detail.initialScale,
           });
         }
       }
@@ -81,6 +85,19 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
     ? (propImageUrl || propUrl || propSrc || propImage?.url || '')
     : eventState.url;
   const activeTitle = (isControlled ? (propTitle || propAlt || propImage?.title) : eventState.title) || 'Image Viewer';
+  const effectiveInitialScale = (isControlled ? (propInitialScale || propImage?.initialScale) : eventState.initialScale) || 1;
+
+  // Apply continuous zoom if launched with initial gesture scale
+  useEffect(() => {
+    if (effectiveInitialScale > 1 && transformRef.current) {
+      const timer = setTimeout(() => {
+        try {
+          transformRef.current?.setTransform(0, 0, effectiveInitialScale);
+        } catch {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [rawTargetUrl, effectiveInitialScale]);
 
   const resolvedUrl = normalizeImageUrl(rawTargetUrl);
 
@@ -250,11 +267,12 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
         ) : (
           <TransformWrapper
             ref={transformRef}
-            initialScale={1}
+            initialScale={effectiveInitialScale}
             minScale={0.5}
             maxScale={6}
             centerOnInit
-            wheel={{ step: 0.015 }}
+            wheel={{ step: 0.02 }}
+            pinch={{ step: 5 }}
             doubleClick={{ mode: 'toggle' }}
           >
             <TransformComponent

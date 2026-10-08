@@ -26,7 +26,7 @@ export function useTooltipImages({
   const [showAddLinkInput, setShowAddLinkInput] = useState(false);
   const [newLinkInput, setNewLinkInput] = useState('');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
-  const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string } | null>(null);
+  const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string; initialScale?: number } | null>(null);
   const [customUnitImages, setCustomUnitImages] = useState<Array<{ id: string; url: string; title?: string; createdAt?: string }>>([]);
 
   const activeUnitStorageKey = `taka_unit_images_${data.code || unitCode || 'default'}`;
