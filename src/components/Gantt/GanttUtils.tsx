@@ -114,12 +114,26 @@ export const getBarColor = (status: string, duration?: string | number): string 
     duration !== "" &&
     parseFloat(String(duration)) === 0
   ) {
-    return "bg-orange-500 hover:bg-orange-600";
+    return "bg-amber-500 hover:bg-amber-600 border border-amber-600";
   }
-  if (status === "On process" || status === "In Progress") return "bg-blue-500 hover:bg-blue-600";
-  if (status === "Upcoming") return "bg-slate-700 dark:bg-slate-500 hover:bg-slate-800 dark:hover:bg-slate-400";
-  if (status === "Completed") return "bg-green-500 hover:bg-green-600";
-  if (status === "Handover") return "bg-blue-500 hover:bg-blue-600";
-  if (status === "Canceled") return "bg-slate-400 hover:bg-slate-500";
-  return "bg-slate-400 hover:bg-slate-500";
+  const s = String(status || "").toLowerCase().trim();
+  if (s === "completed" || s === "done") {
+    return "bg-emerald-500 hover:bg-emerald-600 border border-emerald-600";
+  }
+  if (s === "on process" || s === "in progress") {
+    return "bg-blue-500 hover:bg-blue-600 border border-blue-600";
+  }
+  if (s === "delayed" || s === "delay" || s === "overdue") {
+    return "bg-rose-500 hover:bg-rose-600 border border-rose-600";
+  }
+  if (s === "upcoming" || s === "planned") {
+    return "bg-slate-400 dark:bg-slate-500 hover:bg-slate-500 dark:hover:bg-slate-400 border border-slate-500/80";
+  }
+  if (s === "handover") {
+    return "bg-blue-500 hover:bg-blue-600 border border-blue-600";
+  }
+  if (s === "canceled" || s === "cancelled") {
+    return "bg-slate-300 dark:bg-slate-600 hover:bg-slate-400 text-slate-600 border border-slate-400";
+  }
+  return "bg-slate-400 dark:bg-slate-500 hover:bg-slate-500 border border-slate-500/80";
 };

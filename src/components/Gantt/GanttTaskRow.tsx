@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { Project, Task, AppUser } from '../../types';
-import { getTaskStatus, computeActProgressPercent, resolveActualStatus, getUserDelegationRoleForTask } from '../../lib/utils';
+import { getTaskStatus, computeActProgressPercent, resolveActualStatus, getUserDelegationRoleForTask, parseDateTime } from '../../lib/utils';
 import { computeTaskCode } from '../../lib/ganttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
@@ -132,8 +132,34 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   const actPrg = computeActProgressPercent([t], delegationGroups || []);
   const taskCode = computeTaskCode(projects, tasks, t);
 
+  // Compute accurate lifecycle status taking into account runningStatus, delegation, approvals, progress, and dates
+  let effectiveStatus = planStatus;
+  const running = (t.runningStatus || '').toLowerCase();
+  const actLabel = (actStatusObj.label || '').toLowerCase();
+
+  if (running.includes('complete') || t.approval === 'Approved' || actPrg >= 100 || actLabel.includes('complete')) {
+    effectiveStatus = 'Completed';
+  } else if (running.includes('delay') || actLabel.includes('reject') || actLabel.includes('delay')) {
+    effectiveStatus = 'Delayed';
+  } else if (running.includes('cancel')) {
+    effectiveStatus = 'Canceled';
+  } else if (running.includes('process') || running.includes('progress') || (actPrg > 0 && actPrg < 100) || actLabel.includes('progress') || actLabel.includes('process')) {
+    effectiveStatus = 'On process';
+  } else if (running.includes('upcoming') || actLabel.includes('planned') || actLabel.includes('upcoming')) {
+    effectiveStatus = 'Upcoming';
+  } else {
+    // Check if task is overdue (past finish date but not completed)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dFinish = parseDateTime(t.finish);
+    if (dFinish) dFinish.setHours(0, 0, 0, 0);
+    if (dFinish && today > dFinish && actPrg < 100 && t.approval !== 'Approved') {
+      effectiveStatus = 'Delayed';
+    }
+  }
+
   const extraVars = {
-    actStatus: actStatusObj.label,
+    actStatus: effectiveStatus,
     actStatusColor: actStatusObj.color,
     party: t.party,
     actPrg,
@@ -268,7 +294,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           label={t.name}
           startStr={t.start}
           endStr={t.finish}
-          status={planStatus}
+          status={effectiveStatus}
           extraVars={extraVars}
           startDate={startDate}
           dayWidth={dayWidth}

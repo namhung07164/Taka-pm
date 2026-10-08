@@ -68,12 +68,11 @@ export const GanttBar = React.memo(function GanttBar({
   const isTask = id.startsWith('task-') || id.startsWith('sim-task-');
   const dStart = parseDateTime(startStr);
   const dEnd = parseDateTime(endStr);
-  const isMilestone = (dStart && dEnd && Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000) ||
-                      label.toLowerCase().includes('opening') ||
-                      label.toLowerCase().includes('taka handover') ||
-                      Number(extraVars?.duration) === 0;
+  const isMilestone = Number(extraVars?.duration) === 0 ||
+                      (dStart && dEnd && Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000) ||
+                      (label.toLowerCase().includes('opening') && Number(extraVars?.duration || 0) <= 1);
 
-  const isGreenDesignTask = label.toLowerCase().includes('design') || label.toLowerCase().includes('drawing') || label.toLowerCase().includes('quotation');
+  const customColor = extraVars?.task?.textColor;
   
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
@@ -128,8 +127,6 @@ export const GanttBar = React.memo(function GanttBar({
 
   const barColor = isMilestone 
     ? "bg-[#f97316] border border-[#ea580c]" 
-    : isGreenDesignTask 
-    ? "bg-[#10b981] border border-[#059669]" 
     : getBarColor(status, extraVars?.duration);
 
   const actProgress = extraVars?.actPrg ?? 0;
@@ -160,7 +157,7 @@ export const GanttBar = React.memo(function GanttBar({
         className={cn(
           "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs",
           isMilestone ? "w-4 h-4 rotate-45 rounded-[2px] mt-1.5 shadow-md z-20" : "h-6 rounded-md",
-          barColor,
+          !customColor && barColor,
           isSimulation && "border-2 border-dashed border-purple-400 opacity-80",
           extraVars?.highlight === 'assignee' && "ring-2 ring-emerald-400 ring-offset-1",
           extraVars?.highlight === 'creator' && "ring-2 ring-blue-400 ring-offset-1",
@@ -170,7 +167,8 @@ export const GanttBar = React.memo(function GanttBar({
         style={{
           left: `${leftPx}px`,
           width: `${widthPx}px`,
-          zIndex: isPinned ? 30 : isHovered ? 20 : 10
+          zIndex: isPinned ? 30 : isHovered ? 20 : 10,
+          ...(customColor && !isMilestone ? { backgroundColor: customColor, borderColor: customColor } : {})
         }}
       >
         {/* Actual Progress Fill */}

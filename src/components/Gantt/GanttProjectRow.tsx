@@ -78,10 +78,14 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     }
   }
 
-  const pStatus = getStatus(pStart, pEnd, p.computedOpening || p.opening, p.code);
+  const baseStatus = p.computedStatus || getStatus(pStart, pEnd, p.computedOpening || p.opening, p.code);
   const pActPrg = projectTasks.length > 0
     ? computeActProgressPercent(projectTasks, delegationGroups)
     : (p.computedActProgress ?? 0);
+  const effectiveProjectStatus = pActPrg >= 100 
+    ? 'Completed' 
+    : (p.computedActStatus && p.computedActStatus !== 'Planned' ? p.computedActStatus : baseStatus);
+  const pStatus = effectiveProjectStatus;
   const effectiveTaskCount = p.taskCount !== undefined ? p.taskCount : (projectTasks ? projectTasks.length : 0);
   const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
 
