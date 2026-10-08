@@ -6,7 +6,8 @@
   "packageManager": "npm@10.8.2",
   "scripts": {
     "dev": "tsx server.ts",
-    "prebuild": "rm -f bun.lock bun.lockb yarn.lock pnpm-lock.yaml",
+    "prebuild": "rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py; rm -rf tmp workspace",
+    "clean:junk": "rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py; rm -rf tmp workspace",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",

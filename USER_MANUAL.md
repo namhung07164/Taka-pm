@@ -1769,3 +1769,10 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Ngay khi nhận biết cử chỉ thu phóng vượt ngưỡng, cửa sổ xem ảnh toàn màn hình chất lượng cao (`LayoutUnitLightboxModal` / `ZoomableImageViewer`) tự động mở lên ngay lập tức.
      + Mức phóng to đang thực hiện từ cử chỉ (`initialScale`) được truyền thẳng vào cửa sổ toàn màn hình, giúp hình ảnh mở ra đúng tỷ lệ đã zoom và cho phép người dùng **tiếp tục thu phóng sâu hơn (lên đến 8x)** mà không bị gián đoạn hay phải thao tác lại từ đầu.
 
+53. **Cơ Chế Tự Động Dọn Dẹp File Rác & Bảo Vệ Vệ Sinh Mã Nguồn (Automated Repository Hygiene & Anti-Junk Guard)**:
+   - **Loại Bỏ Triệt Để File Rác Ngoại Lai**:
+     + Đã thanh lọc toàn bộ các file nén backup cũ (`*.zip`), file so sánh tạm thời (`*.diff`, `*.patch`), các script kiểm thử tạm (`test_*.js`, `patch_*.js`, `USER_MANUAL_UPDATE.py`) và thư mục đệm (`tmp/`, `workspace/`).
+   - **Chốt Chặn Khóa Phụ Kiện Tự Động (Strict NPM-Only Guard)**:
+     + Tích hợp lệnh tiền xây dựng `prebuild` và `clean:junk` trong `package.json` tự động tiêu hủy bất kỳ lockfile phụ nào (`bun.lock*`, `yarn.lock`, `pnpm-lock.yaml`) trước mỗi lần build ứng dụng.
+     + Bổ sung cấu hình toàn diện trong `.gitignore` ngăn chặn vĩnh viễn việc tạo hay lưu vết file rác trên kho mã nguồn.
+

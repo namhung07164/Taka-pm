@@ -5,6 +5,27 @@ coverage/
 .env*
 !.env.example
 
-# Lockfiles
-bun.lock
+# Lockfiles (Enforce NPM only)
+bun.lock*
 bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
+# Archives & Temporary files
+*.zip
+*.tar*
+*.bak
+*.old
+*.diff
+*.patch
+*.orig
+*.tmp
+tmp/
+temp/
+workspace/
+
+# Ad-hoc scripts
+test_*.js
+patch_*.js
+remove_*.sh
+USER_MANUAL_UPDATE.py
