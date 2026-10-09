@@ -10,6 +10,7 @@ import {
   rollupParentTaskDates, 
   batchSaveTasksToFirestore 
 } from '../../lib/taskImportService';
+import { healAllTasksPredecessors } from '../../lib/ganttUtils';
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 
@@ -332,7 +333,11 @@ export async function executeImportTasks({
   const tasksToSaveMap = new Map<string, Task>();
   calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));
   updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
-  const finalTasksToSave = Array.from(tasksToSaveMap.values());
+  const rawTasksToSave = Array.from(tasksToSaveMap.values());
+
+  // Auto-heal predecessor string codes on imported CSV/Excel tasks
+  const healed = healAllTasksPredecessors(rawTasksToSave, projects);
+  const finalTasksToSave = healed.updatedTasks;
 
   // Optimistic update
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
