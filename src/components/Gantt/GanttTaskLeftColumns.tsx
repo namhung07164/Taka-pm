@@ -1,8 +1,9 @@
 import React from 'react';
-import { ChevronDown, ChevronRight, GripVertical, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, EyeOff, Target } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { cn } from './GanttUtils';
 import { computeTaskCode } from '../../lib/ganttUtils';
+import { useAppStore } from '../../store/useAppStore';
 
 interface GanttTaskLeftColumnsProps {
   t: Task;
@@ -23,6 +24,7 @@ interface GanttTaskLeftColumnsProps {
   handleTaskDragStart: (e: React.DragEvent, id: string) => void;
   handleTaskDragEnd: () => void;
   isEditMode?: boolean;
+  isFocused?: boolean;
   onNavigateToTaskDetail?: (taskId: string) => void;
 }
 
@@ -44,6 +46,7 @@ export function GanttTaskLeftColumns({
   handleTaskDragStart,
   handleTaskDragEnd,
   isEditMode = false,
+  isFocused = false,
   onNavigateToTaskDetail
 }: GanttTaskLeftColumnsProps) {
   const isSelected = selectedTaskSet.has(t.id);
@@ -130,7 +133,10 @@ export function GanttTaskLeftColumns({
             )
           )}
 
-          <span className="text-xs text-slate-900 dark:text-slate-100 truncate font-semibold flex-1 min-w-0 group-hover/tname:text-blue-600 dark:group-hover/tname:text-[#8ab4f8]" title={t.name}>
+          <span className={cn(
+            "text-xs truncate font-semibold flex-1 min-w-0 transition-colors",
+            isFocused ? "text-blue-700 dark:text-blue-300 font-bold" : "text-slate-900 dark:text-slate-100 group-hover/tname:text-blue-600 dark:group-hover/tname:text-[#8ab4f8]"
+          )} title={t.name}>
             {t.name}
           </span>
 
@@ -138,6 +144,25 @@ export function GanttTaskLeftColumns({
             <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold shrink-0">
               ({childCount})
             </span>
+          )}
+
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                useAppStore.getState().setGanttTabFocusTaskId(t.id);
+              }}
+              className={cn(
+                "p-0.5 rounded transition-all shrink-0 cursor-pointer",
+                isFocused
+                  ? "opacity-100 text-amber-500 bg-amber-100 dark:bg-amber-950/60 ring-1 ring-amber-400/50"
+                  : "opacity-0 group-hover/tname:opacity-100 text-slate-400 hover:text-amber-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+              )}
+              title={isFocused ? "Task is in Focus Active mode" : "Focus this task in Gantt"}
+            >
+              <Target className="w-3 h-3" />
+            </button>
           )}
         </div>
       </div>

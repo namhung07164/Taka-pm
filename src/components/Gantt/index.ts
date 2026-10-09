@@ -25,4 +25,6 @@ export * from './useGanttDragReorder';
 export * from './useGanttBatchOps';
 export * from './useGanttExport';
 export * from './useGanttColumnResize';
+export * from './useGanttFocusTracking';
+export * from './GanttFocusControls';
 export * from './GanttTableView';

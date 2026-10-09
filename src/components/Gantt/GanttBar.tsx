@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn, parseDateTime } from '../../lib/utils';
 import { positionTooltip } from './GanttUtils';
 import { Task, Project } from '../../types';
@@ -20,6 +20,7 @@ export interface GanttBarProps {
     predecessors?: string;
     highlight?: 'assignee' | 'creator' | null;
     isSimulation?: boolean;
+    isFocused?: boolean;
     hasChildren?: boolean;
     childCount?: number;
     task?: Task;
@@ -82,8 +83,10 @@ export const GanttBar = React.memo(function GanttBar({
   const dragStartPos = useRef({ x: 0, y: 0 });
   const tooltipStartPos = useRef({ x: 0, y: 0 });
   const hoverTimeoutRef = useRef<number | null>(null);
+  const isDismissedRef = useRef(false);
 
   const handleBarMouseEnter = (e: React.MouseEvent) => {
+    if (isDismissedRef.current) return;
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
@@ -93,12 +96,14 @@ export const GanttBar = React.memo(function GanttBar({
   };
 
   const handleBarMouseLeave = () => {
+    isDismissedRef.current = false;
     hoverTimeoutRef.current = window.setTimeout(() => {
       setIsHovered(false);
     }, 200);
   };
 
   const handleTooltipMouseEnter = () => {
+    if (isDismissedRef.current) return;
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
@@ -111,6 +116,13 @@ export const GanttBar = React.memo(function GanttBar({
       setIsHovered(false);
     }, 150);
   };
+
+  const handleCloseTooltip = useCallback(() => {
+    setActiveTooltip(null);
+    setIsEditingPredecessor(false);
+    setIsHovered(false);
+    isDismissedRef.current = true;
+  }, [setActiveTooltip, setIsEditingPredecessor]);
 
   useEffect(() => {
     return () => {
@@ -197,6 +209,7 @@ export const GanttBar = React.memo(function GanttBar({
           extraVars?.highlight === 'assignee' && "ring-2 ring-emerald-400 ring-offset-1",
           extraVars?.highlight === 'creator' && "ring-2 ring-blue-400 ring-offset-1",
           isPinned && "ring-2 ring-blue-500 shadow-md",
+          extraVars?.isFocused && "ring-2 ring-blue-400 ring-offset-1 dark:ring-offset-slate-900 shadow-lg brightness-110",
           isHovered && "brightness-110 shadow-md scale-[1.01]"
         )}
         style={{
@@ -244,6 +257,7 @@ export const GanttBar = React.memo(function GanttBar({
           handlePointerUp={handlePointerUp}
           onMouseEnter={handleTooltipMouseEnter}
           onMouseLeave={handleTooltipMouseLeave}
+          onClose={handleCloseTooltip}
         />
       )}
     </>

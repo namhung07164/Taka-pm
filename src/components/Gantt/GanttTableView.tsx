@@ -209,7 +209,7 @@ export function GanttTableView({
   const hasModularTasks = currentModularParentIds.length > 0;
   const isAllModularExpanded =
     hasModularTasks &&
-    currentModularParentIds.every((id) => expandedModularTasks.includes(id));
+    currentModularParentIds.some((id) => expandedModularTasks.includes(id));
 
   const handleToggleExpandAllModular = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -228,9 +228,6 @@ export function GanttTableView({
         safeSetItemSession("taka_gantt_modular_expanded", JSON.stringify(next));
         return next;
       });
-      // Also expand currently displayed projects if not expanded yet
-      const curProjectIds = currentProjects.map((p) => p.id!).filter(Boolean) as string[];
-      setExpandedProjectIds(Array.from(new Set([...expandedProjects, ...curProjectIds])));
     }
   };
 

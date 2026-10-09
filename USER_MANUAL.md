@@ -333,9 +333,18 @@ Trực quan hóa kế hoạch và tiến độ thực tế theo thời gian.
         - Khi nhấn **Enter** hoặc chọn gợi ý, hệ thống tự động tính toán lại các mốc ngày `Start`, `Finish`, `Duration` và tự động dịch chuyển (cascade) các công việc phụ thuộc phía sau trong 0ms (Optimistic UI), đồng thời lưu ngầm lên Firestore.
         - Hỗ trợ nút `[ ✓ Apply ]` để xác nhận hoặc `[ ✕ Cancel / Phím Escape ]` để hủy thao tác nhanh chóng.
     - **Nút Mở Rộng / Đóng All Tím Cho Task Gộp (Master Purple Modular Toggle Button)**:
-      * **Vị trí**: Nằm ở ô tiêu đề cột **Project / Task** trên thanh header bảng Gantt, được đặt ngay phía dưới nút mũi tên xanh/xám mở rộng/thu gọn tất cả dự án (`ChevronDown / ChevronRight`).
-      * **Chức năng**: Mở rộng hoặc thu gọn toàn bộ các nhóm Task gộp (Modular Group Tasks) đối với tất cả các dự án đang xem, đang tìm kiếm hoặc đang hiển thị trên màn hình hiện tại.
-      * **Trạng thái trực quan**: Màu tím nổi bật (`bg-purple-600` khi đang mở rộng all, `bg-purple-100 dark:bg-purple-900/60` khi đang đóng all). Khi kích hoạt mở rộng all, hệ thống đồng thời tự động mở rộng các dự án đang đóng để hiển thị ngay lập tức toàn bộ cây công việc con gộp trên giao diện.
+      * **Vị trí**: Nằm ở ô tiêu đề cột **Project / Task** trên thanh header bảng Gantt, được đặt ngay phía dưới nút mũi tên xanh/xám mở rộng/thu gọn tất cả dự án (`ChevronDown / ChevronRight`), và tại từng dòng dự án có task con gộp.
+      * **Chức năng**: Mở rộng hoặc thu gọn các nhóm Task gộp (Modular Group Tasks).
+      * **Trạng thái thông minh khi có Task con gộp đang mở**: Khi bất kỳ task nào có task con gộp được mở rộng trên màn hình, nút mũi tên tím tự động chuyển sang chế độ quay xuống (`ChevronDown`) để người dùng có thể nhấp vào và thu gọn tất cả (`collapse all`) một cách nhanh chóng và thuận tiện.
+      * **Bảo toàn trạng thái Dự án (Không tự ý mở rộng dự án)**: Khi nhấn nút mũi tên tím, hệ thống tuyệt đối không tự động mở rộng các dự án nếu các dự án đó chưa được người dùng mở rộng (`isExpanded = false`). Dự án đang đóng sẽ vẫn giữ nguyên trạng thái đóng.
+    - **Đóng Bảng Thông Tin Nổi Tooltip (Tooltip Close Button & Interactions)**:
+      * **Nút "X" tắt Tooltip**: Bấm nút "X" ở góc trên bên phải của bảng thông tin nổi (Tooltip) sẽ lập tức đóng hoàn toàn Tooltip ngay cả khi con trỏ chuột vẫn đang nằm trong khu vực thanh hoặc tooltip, không bị hiện tượng kẹt chuột hoặc tự động mở lại.
+      * **Các nút chức năng trên Tooltip**: Hỗ trợ nút **Ghim (Pin)**, nút **🎯 Focus trong Gantt (Focus in Gantt)**, nút **Mở chi tiết công việc (Open in Task Detail)** và nút **Sửa/thêm quan hệ tiền nhiệm (Predecessors)**.
+    - **Chế Độ Focus Active Toàn Diện Tại Tab Gantt (Gantt Focus Active Mode)**:
+      * **Kích hoạt linh hoạt**: Người dùng có thể kích hoạt chế độ Focus cho bất kỳ công việc nào bằng cách bấm biểu tượng mục tiêu **🎯 (Focus in Gantt)** trên dòng task (cột Project/Task) hoặc trong bảng Tooltip, hoặc điều hướng trực tiếp từ Task Detail / Command Palette (`Ctrl+K`).
+      * **Tự động mở dự án & định vị dòng thời gian**: Khi ở chế độ Focus Active, hệ thống tự động mở rộng dự án cha và nhóm task gộp (nếu là task con), đồng thời tự động cuộn mượt định vị chính xác vị trí dòng task trên màn hình (Vertical Scroll) và canh giữa thanh tiến độ trên dòng thời gian Timeline (Horizontal Scroll).
+      * **Thanh điều khiển nổi (Floating Focus Controls Widget)**: Góc dưới bên phải hiển thị cụm điều khiển nổi sang trọng và tiện lợi: hiển thị mã/tên task đang focus, nút **Locate** (định vị lại tâm điểm), nút **Task Detail** (mở modal chi tiết), và nút **Clear (Esc)**.
+      * **Phím tắt**: Người dùng có thể nhấn phím `Escape` bất kỳ lúc nào để thoát nhanh khỏi chế độ Focus Active.
     - **Tương Tác Tooltip Task Gộp Mẹ Hiển Thị Các Task Con Gom Đang On Process**:
       * **Mục tiêu**: Nắm bắt nhanh tiến độ của các công việc con đang trong giai đoạn triển khai (`On Process`) của một nhóm việc cha mà không cần phải cuộn tìm kiếm.
       * **Thao tác**: Nhấp vào thanh biểu đồ Gantt hoặc nhấp vào Tooltip của Task gộp mẹ để ghim và kích hoạt tương tác (`isPinned`).

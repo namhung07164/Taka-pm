@@ -17,6 +17,8 @@ import { useGanttExport } from './Gantt/useGanttExport';
 import { GanttToolbar } from './Gantt/GanttToolbar';
 import { GanttTableView } from './Gantt/GanttTableView';
 import { getBarColor } from './Gantt/GanttUtils';
+import { useGanttFocusTracking } from './Gantt/useGanttFocusTracking';
+import { GanttFocusControls } from './Gantt/GanttFocusControls';
 
 const TaskModularModal = lazyWithRetry(
   () => import('./TaskModularModal').then(m => ({ default: m.TaskModularModal })),
@@ -45,6 +47,7 @@ export function GanttTab({
   const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
   const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
+  const setExpandedProjectIds = useAppStore(state => state.setExpandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
 
   useEffect(() => {
@@ -54,30 +57,13 @@ export function GanttTab({
   }, [isTasksRequested, setIsTasksRequested]);
 
   const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => Promise<void>;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: async () => {}
-  });
+    isOpen: boolean; title: string; message: string; onConfirm: () => Promise<void>;
+  }>({ isOpen: false, title: '', message: '', onConfirm: async () => {} });
 
   const {
-    filterStartDate,
-    setFilterStartDate,
-    filterEndDate,
-    setFilterEndDate,
-    tempStartDate,
-    setTempStartDate,
-    tempEndDate,
-    setTempEndDate,
-    sideWidth,
-    setSideWidth,
-    visibleColumns,
-    handleToggleColumn,
+    filterStartDate, setFilterStartDate, filterEndDate, setFilterEndDate,
+    tempStartDate, setTempStartDate, tempEndDate, setTempEndDate,
+    sideWidth, setSideWidth, visibleColumns, handleToggleColumn,
   } = useGanttLayoutState(currentUser?.id);
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -279,12 +265,32 @@ export function GanttTab({
     return () => clearTimeout(timer);
   }, [handleTodayClick]);
 
-  const handleClearFocus = useCallback(() => {
-    setGanttTabFocusTaskId(null);
-    setGanttTabFilterProjectId('');
-    setSearchTerm('');
-    if (onClearFocus) onClearFocus();
-  }, [onClearFocus, setGanttTabFocusTaskId, setGanttTabFilterProjectId, setSearchTerm]);
+  // Focus Tracking Engine: Auto-expand, auto-center timeline & vertical scroll, Esc key handler
+  const {
+    focusedTask,
+    handleClearFocus,
+    scrollToFocusedTask,
+  } = useGanttFocusTracking({
+    tasks,
+    projects,
+    initialFocusTaskId,
+    ganttTabFocusTaskId,
+    setGanttTabFocusTaskId,
+    onClearFocus: () => {
+      setGanttTabFilterProjectId('');
+      setSearchTerm('');
+      if (onClearFocus) onClearFocus();
+    },
+    expandedProjects,
+    setExpandedProjectIds,
+    expandedModularTasks,
+    setExpandedModularTasks,
+    tableContainerRef,
+    mainScrollRef,
+    topScrollRef,
+    startDate,
+    dayWidth,
+  });
 
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (
@@ -462,6 +468,14 @@ export function GanttTab({
           />
         </Suspense>
       )}
+
+      {/* Floating Focus Active Controls */}
+      <GanttFocusControls
+        focusedTask={focusedTask}
+        onClearFocus={handleClearFocus}
+        onNavigateToTaskDetail={onNavigateToTaskDetail}
+        onScrollToTask={scrollToFocusedTask}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, GripHorizontal, Pin, ExternalLink, ChevronDown } from 'lucide-react';
+import { X, GripHorizontal, Pin, ExternalLink, ChevronDown, Target } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { formatGanttDate } from './GanttUtils';
 import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
@@ -49,6 +49,7 @@ interface GanttBarTooltipProps {
   handlePointerUp: (e: React.PointerEvent) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onClose?: () => void;
 }
 
 export function GanttBarTooltip({
@@ -67,7 +68,8 @@ export function GanttBarTooltip({
   handlePointerMove,
   handlePointerUp,
   onMouseEnter,
-  onMouseLeave
+  onMouseLeave,
+  onClose
 }: GanttBarTooltipProps) {
   const [isSubtasksOpen, setIsSubtasksOpen] = useState(true);
 
@@ -76,7 +78,10 @@ export function GanttBarTooltip({
       ref={tooltipRef}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      onPointerDown={handlePointerDown}
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
+        handlePointerDown(e);
+      }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
@@ -103,24 +108,43 @@ export function GanttBarTooltip({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {extraVars?.task?.id && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (extraVars?.onNavigateToTaskDetail) {
-                  extraVars.onNavigateToTaskDetail(extraVars.task.id);
-                }
-              }}
-              className="p-1 text-slate-400 hover:text-blue-400 rounded hover:bg-slate-700 transition-colors cursor-pointer"
-              title="Open in Task Detail"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useAppStore.getState().setGanttTabFocusTaskId(extraVars.task!.id);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="p-1 text-amber-400 hover:text-amber-300 rounded hover:bg-slate-700 transition-colors cursor-pointer"
+                title="Focus this task in Gantt"
+              >
+                <Target className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (extraVars?.onNavigateToTaskDetail) {
+                    extraVars.onNavigateToTaskDetail(extraVars.task!.id);
+                  }
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="p-1 text-slate-400 hover:text-blue-400 rounded hover:bg-slate-700 transition-colors cursor-pointer"
+                title="Open in Task Detail"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </>
           )}
           <button
             type="button"
-            onClick={() => setActiveTooltip(isPinned ? null : id)}
-            className={`p-1 rounded transition-colors ${
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveTooltip(isPinned ? null : id);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`p-1 rounded transition-colors cursor-pointer ${
               isPinned ? 'text-blue-400 bg-blue-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-700'
             }`}
             title={isPinned ? 'Unpin' : 'Pin tooltip'}
@@ -129,11 +153,16 @@ export function GanttBarTooltip({
           </button>
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
               setActiveTooltip(null);
               setIsEditingPredecessor(false);
+              onClose?.();
             }}
-            className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-700 transition-colors"
+            onPointerDown={(e) => e.stopPropagation()}
+            className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-700 transition-colors cursor-pointer"
+            title="Close tooltip"
           >
             <X className="w-3.5 h-3.5" />
           </button>
