@@ -81,6 +81,44 @@ export const GanttBar = React.memo(function GanttBar({
   const isDraggingTooltipRef = useRef(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
   const tooltipStartPos = useRef({ x: 0, y: 0 });
+  const hoverTimeoutRef = useRef<number | null>(null);
+
+  const handleBarMouseEnter = (e: React.MouseEvent) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+    setIsHovered(true);
+  };
+
+  const handleBarMouseLeave = () => {
+    hoverTimeoutRef.current = window.setTimeout(() => {
+      setIsHovered(false);
+    }, 200);
+  };
+
+  const handleTooltipMouseEnter = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setIsHovered(true);
+  };
+
+  const handleTooltipMouseLeave = () => {
+    hoverTimeoutRef.current = window.setTimeout(() => {
+      setIsHovered(false);
+    }, 150);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const isPinned = activeTooltip === id || isEditingPredecessor;
 
@@ -141,10 +179,7 @@ export const GanttBar = React.memo(function GanttBar({
             setActiveTooltip(isPinned ? null : id);
           }
         }}
-        onMouseEnter={(e) => {
-          lastMousePos.current = { x: e.clientX, y: e.clientY };
-          setIsHovered(true);
-        }}
+        onMouseEnter={handleBarMouseEnter}
         onMouseMove={(e) => {
           if (!isPinned && !isDraggingTooltipRef.current) {
             lastMousePos.current = { x: e.clientX, y: e.clientY };
@@ -153,7 +188,7 @@ export const GanttBar = React.memo(function GanttBar({
             }
           }
         }}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseLeave={handleBarMouseLeave}
         className={cn(
           "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs",
           isMilestone ? "w-4 h-4 rotate-45 rounded-[2px] mt-1.5 shadow-md z-20" : "h-6 rounded-md",
@@ -207,6 +242,8 @@ export const GanttBar = React.memo(function GanttBar({
           handlePointerDown={handlePointerDown}
           handlePointerMove={handlePointerMove}
           handlePointerUp={handlePointerUp}
+          onMouseEnter={handleTooltipMouseEnter}
+          onMouseLeave={handleTooltipMouseLeave}
         />
       )}
     </>

@@ -15,6 +15,7 @@ export interface GanttTaskRowProps {
   parentTask?: Task;
   hasChildren: boolean;
   childCount: number;
+  childTasks?: Task[];
   isModularExpanded: boolean;
   p: Project;
   projects: Project[];
@@ -70,6 +71,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   parentTask,
   hasChildren,
   childCount,
+  childTasks,
   isModularExpanded,
   p,
   projects,
@@ -158,6 +160,53 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     }
   }
 
+  const onProcessChildTasks = React.useMemo(() => {
+    if (!hasChildren || !childTasks || childTasks.length === 0) return [];
+
+    return childTasks
+      .filter((ct) => {
+        const plSt = getTaskStatus(ct.start, ct.finish);
+        const lg = (delegationGroups || []).find((g: any) => g.taskId === ct.id || g.parentTaskId === ct.id);
+        const actStObj = resolveActualStatus(plSt, lg?.subTasks || []);
+        const prg = computeActProgressPercent([ct], delegationGroups || []);
+        const running = (ct.runningStatus || '').toLowerCase();
+        const actLabel = (actStObj.label || '').toLowerCase();
+
+        if (running.includes('complete') || ct.approval === 'Approved' || prg >= 100 || actLabel.includes('complete')) {
+          return false;
+        }
+
+        if (
+          running.includes('process') ||
+          running.includes('progress') ||
+          actLabel.includes('process') ||
+          actLabel.includes('progress') ||
+          plSt === 'On process'
+        ) {
+          return true;
+        }
+
+        if (prg > 0 && prg < 100) {
+          return true;
+        }
+
+        return false;
+      })
+      .map((ct) => {
+        const ctPrg = computeActProgressPercent([ct], delegationGroups || []);
+        const ctCode = ct.taskCodePhu || computeTaskCode(projects, tasks, ct);
+        return {
+          id: String(ct.id),
+          name: ct.name,
+          taskCode: ctCode,
+          actPrg: ctPrg,
+          start: ct.start,
+          finish: ct.finish,
+          duration: ct.duration,
+        };
+      });
+  }, [hasChildren, childTasks, delegationGroups, projects, tasks]);
+
   const extraVars = {
     actStatus: effectiveStatus,
     actStatusColor: actStatusObj.color,
@@ -174,6 +223,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     projects,
     canWrite,
     onNavigateToTaskDetail,
+    onProcessChildTasks,
   };
 
   const { isFlashed } = useIsRowFlashed(t.id);

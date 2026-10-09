@@ -332,6 +332,16 @@ Trực quan hóa kế hoạch và tiến độ thực tế theo thời gian.
         - Hỗ trợ các nút chọn nhanh loại liên kết quan hệ tiến độ: **FS (Finish-to-Start)**, **SS (Start-to-Start)**, **FF (Finish-to-Finish)**, **SF (Start-to-Finish)** và độ trễ (`+/- ngày`).
         - Khi nhấn **Enter** hoặc chọn gợi ý, hệ thống tự động tính toán lại các mốc ngày `Start`, `Finish`, `Duration` và tự động dịch chuyển (cascade) các công việc phụ thuộc phía sau trong 0ms (Optimistic UI), đồng thời lưu ngầm lên Firestore.
         - Hỗ trợ nút `[ ✓ Apply ]` để xác nhận hoặc `[ ✕ Cancel / Phím Escape ]` để hủy thao tác nhanh chóng.
+    - **Nút Mở Rộng / Đóng All Tím Cho Task Gộp (Master Purple Modular Toggle Button)**:
+      * **Vị trí**: Nằm ở ô tiêu đề cột **Project / Task** trên thanh header bảng Gantt, được đặt ngay phía dưới nút mũi tên xanh/xám mở rộng/thu gọn tất cả dự án (`ChevronDown / ChevronRight`).
+      * **Chức năng**: Mở rộng hoặc thu gọn toàn bộ các nhóm Task gộp (Modular Group Tasks) đối với tất cả các dự án đang xem, đang tìm kiếm hoặc đang hiển thị trên màn hình hiện tại.
+      * **Trạng thái trực quan**: Màu tím nổi bật (`bg-purple-600` khi đang mở rộng all, `bg-purple-100 dark:bg-purple-900/60` khi đang đóng all). Khi kích hoạt mở rộng all, hệ thống đồng thời tự động mở rộng các dự án đang đóng để hiển thị ngay lập tức toàn bộ cây công việc con gộp trên giao diện.
+    - **Tương Tác Tooltip Task Gộp Mẹ Hiển Thị Các Task Con Gom Đang On Process**:
+      * **Mục tiêu**: Nắm bắt nhanh tiến độ của các công việc con đang trong giai đoạn triển khai (`On Process`) của một nhóm việc cha mà không cần phải cuộn tìm kiếm.
+      * **Thao tác**: Nhấp vào thanh biểu đồ Gantt hoặc nhấp vào Tooltip của Task gộp mẹ để ghim và kích hoạt tương tác (`isPinned`).
+      * **Bảng danh sách Active Subtasks**: Ngay trên Tooltip của Task gộp mẹ hiển thị mục **On Process Subtasks ({số lượng})** kèm nút bấm mở rộng/thu gọn có chấm sáng nhấp nháy màu hổ phách.
+      * **Chi tiết từng Task con**: Hiển thị rõ mã task phụ (`#1`, `#2`... trong huy hiệu tím), tên công việc, thanh tiến độ % xanh lá cây, mốc ngày thực hiện (`Start ➔ Finish`) và thời lượng (`d`).
+      * **Điều hướng tức thì**: Nhấp vào bất kỳ task con nào trong danh sách trên Tooltip để chuyển ngay vào màn hình chi tiết công việc (**Task Detail Modal**) hoặc tự động focus/highlight công việc đó trên dòng thời gian.
 
 ---
 

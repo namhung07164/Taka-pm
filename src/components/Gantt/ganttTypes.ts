@@ -51,6 +51,7 @@ export type GanttTableRow =
       isChild: boolean;
       hasChildren: boolean;
       childCount: number;
+      childTasks?: Task[];
       isModularExpanded: boolean;
       isHidden: boolean;
     };

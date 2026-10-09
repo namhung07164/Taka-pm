@@ -1,9 +1,10 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, GripHorizontal, Pin, ExternalLink } from 'lucide-react';
+import { X, GripHorizontal, Pin, ExternalLink, ChevronDown } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { formatGanttDate } from './GanttUtils';
 import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
+import { useAppStore } from '../../store/useAppStore';
 
 interface GanttBarTooltipProps {
   id: string;
@@ -46,6 +47,8 @@ interface GanttBarTooltipProps {
   handlePointerDown: (e: React.PointerEvent) => void;
   handlePointerMove: (e: React.PointerEvent) => void;
   handlePointerUp: (e: React.PointerEvent) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
 export function GanttBarTooltip({
@@ -62,16 +65,25 @@ export function GanttBarTooltip({
   tooltipRef,
   handlePointerDown,
   handlePointerMove,
-  handlePointerUp
+  handlePointerUp,
+  onMouseEnter,
+  onMouseLeave
 }: GanttBarTooltipProps) {
+  const [isSubtasksOpen, setIsSubtasksOpen] = useState(true);
+
   return createPortal(
     <div
       ref={tooltipRef}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!isPinned) setActiveTooltip(id);
+      }}
       className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs rounded-xl shadow-2xl p-3 max-w-sm border backdrop-blur-md transition-all duration-150 ${
         isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
       }`}
@@ -79,7 +91,7 @@ export function GanttBarTooltip({
         left: 0,
         top: 0,
         transform: 'none',
-        pointerEvents: (isPinned || isEditingPredecessor) ? 'auto' : 'none',
+        pointerEvents: 'auto',
         touchAction: 'none'
       }}
     >
@@ -192,36 +204,73 @@ export function GanttBarTooltip({
         </div>
       )}
 
-      {/* Active On-process Child Tasks in Modular Project */}
-      {extraVars?.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 && (
-        <div className="mt-2.5 pt-2 border-t border-slate-700/60">
-          <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-1">
-            Active Subtasks ({extraVars.onProcessChildTasks.length})
-          </div>
-          <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
-            {extraVars.onProcessChildTasks.map((ct) => (
-              <div
-                key={ct.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (extraVars?.onNavigateToTaskDetail) {
-                    setActiveTooltip(null);
-                    extraVars.onNavigateToTaskDetail(ct.id);
-                  }
-                }}
-                className="p-1.5 rounded bg-slate-800/80 border border-slate-700/50 flex flex-col gap-0.5 cursor-pointer hover:bg-slate-700/90 hover:border-blue-400/60 transition-colors group/subtask"
-                title={`Click to view ${ct.name} in Task Detail`}
-              >
-                <div className="flex justify-between items-center gap-1 font-semibold text-[11px] text-slate-200 group-hover/subtask:text-blue-300">
-                  <span className="truncate">{ct.name}</span>
-                  <span className="font-mono text-emerald-400 text-[10px]">{ct.actPrg || 0}%</span>
+      {/* Active On-process Child Tasks in Group/Parent Task */}
+      {extraVars?.hasChildren && (
+        <div className="mt-2.5 pt-2 border-t border-slate-700/60 pointer-events-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isPinned) setActiveTooltip(id);
+              setIsSubtasksOpen((prev) => !prev);
+            }}
+            className="w-full flex items-center justify-between p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-semibold text-[11px] cursor-pointer transition-colors"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span>On Process Subtasks ({extraVars.onProcessChildTasks?.length || 0})</span>
+            </div>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isSubtasksOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isSubtasksOpen && (
+            <div className="mt-1.5 max-h-40 overflow-y-auto space-y-1.5 pr-1">
+              {extraVars.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 ? (
+                extraVars.onProcessChildTasks.map((ct) => (
+                  <div
+                    key={ct.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      useAppStore.getState().setGanttTabFocusTaskId(ct.id);
+                      if (extraVars?.onNavigateToTaskDetail) {
+                        setActiveTooltip(null);
+                        extraVars.onNavigateToTaskDetail(ct.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg bg-slate-800/90 border border-slate-700 hover:border-blue-400/80 hover:bg-slate-700/80 transition-all cursor-pointer group/ct"
+                    title={`Click to view ${ct.name} in Task Detail / Focus`}
+                  >
+                    <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-200">
+                      <div className="flex items-center gap-1 min-w-0">
+                        {ct.taskCode && (
+                          <span className="px-1 py-0.2 bg-purple-500/25 text-purple-300 border border-purple-500/40 rounded text-[9px] font-mono shrink-0 font-bold">
+                            {ct.taskCode}
+                          </span>
+                        )}
+                        <span className="truncate group-hover/ct:text-blue-300">{ct.name}</span>
+                      </div>
+                      <span className="font-mono text-emerald-400 text-[10px] shrink-0 font-bold">{ct.actPrg || 0}%</span>
+                    </div>
+
+                    {(ct.start || ct.finish) && (
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5 font-mono">
+                        <span>{formatGanttDate(ct.start)} ➔ {formatGanttDate(ct.finish)}</span>
+                        {ct.duration && <span>{ct.duration}d</span>}
+                      </div>
+                    )}
+
+                    <div className="w-full bg-slate-700 h-1 rounded-full overflow-hidden mt-1">
+                      <div className="bg-emerald-500 h-1 rounded-full transition-all" style={{ width: `${ct.actPrg || 0}%` }} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-[10px] text-slate-400 italic text-center py-1.5 bg-slate-800/40 rounded border border-slate-700/40">
+                  No active on-process subtasks ({extraVars.childCount || 0} subtasks completed or upcoming)
                 </div>
-                <div className="w-full bg-slate-700 h-1 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-1 rounded-full" style={{ width: `${ct.actPrg || 0}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>,

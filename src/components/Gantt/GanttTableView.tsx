@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Project, Task, AppUser } from '../../types';
 import { TimeUnit, GanttTableRow as GanttRowType, DependencyLine } from './ganttTypes';
@@ -17,6 +17,7 @@ import { useGanttZoomAndPan } from './useGanttZoomAndPan';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { useAppStore } from '../../store/useAppStore';
+import { safeSetItemSession } from '../../lib/storage';
 
 interface GanttTableViewProps {
   tableContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -83,6 +84,10 @@ interface GanttTableViewProps {
   isExporting: boolean;
   onNavigateToTaskDetail?: (taskId: string) => void;
   onNavigateToLayout?: (store: string, location: string, projectCode?: string, sourceTaskId?: string) => void;
+  paginatedProjects?: Project[];
+  expandedModularTasks?: string[];
+  setExpandedModularTasks?: React.Dispatch<React.SetStateAction<string[]>>;
+  getGroupTasksForProject?: (p: Project) => Task[];
 }
 
 export function GanttTableView({
@@ -148,20 +153,84 @@ export function GanttTableView({
   computedSum,
   isExporting,
   onNavigateToTaskDetail,
-  onNavigateToLayout
+  onNavigateToLayout,
+  paginatedProjects,
+  expandedModularTasks = [],
+  setExpandedModularTasks,
+  getGroupTasksForProject
 }: GanttTableViewProps) {
   const { t } = useLanguage();
   const expandedProjects = useAppStore((state) => state.expandedProjectIds);
   const setExpandedProjectIds = useAppStore((state) => state.setExpandedProjectIds);
 
-  const isAllExpanded = projects.length > 0 && projects.every((p) => expandedProjects.includes(p.id!));
+  const currentProjects = (paginatedProjects && paginatedProjects.length > 0) ? paginatedProjects : projects;
+  const isAllExpanded = currentProjects.length > 0 && currentProjects.every((p) => expandedProjects.includes(p.id!));
 
   const handleToggleExpandAll = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isAllExpanded) {
       setExpandedProjectIds([]);
     } else {
-      setExpandedProjectIds(projects.map((p) => p.id!).filter(Boolean) as string[]);
+      setExpandedProjectIds(currentProjects.map((p) => p.id!).filter(Boolean) as string[]);
+    }
+  };
+
+  // Find all modular parent task IDs for currently displayed/searched projects
+  const currentModularParentIds = useMemo(() => {
+    const parentIdSet = new Set<string>();
+
+    currentProjects.forEach((p) => {
+      const pTasks = getGroupTasksForProject ? getGroupTasksForProject(p) : [];
+      if (!pTasks || pTasks.length === 0) return;
+
+      const projectTaskById = new Map<string, Task>();
+      const projectTaskByCode = new Map<string, Task>();
+      pTasks.forEach((t) => {
+        if (t.id) projectTaskById.set(String(t.id), t);
+        if (t.taskCodePhu) {
+          projectTaskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        }
+      });
+
+      pTasks.forEach((t) => {
+        const rawParentId = t.parentTaskId || (t as any).parentId;
+        if (rawParentId) {
+          const parentKey = String(rawParentId).trim().toLowerCase();
+          const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
+          const effectiveParentId = matchedParent ? String(matchedParent.id) : String(rawParentId);
+          parentIdSet.add(effectiveParentId);
+        }
+      });
+    });
+
+    return Array.from(parentIdSet);
+  }, [currentProjects, getGroupTasksForProject]);
+
+  const hasModularTasks = currentModularParentIds.length > 0;
+  const isAllModularExpanded =
+    hasModularTasks &&
+    currentModularParentIds.every((id) => expandedModularTasks.includes(id));
+
+  const handleToggleExpandAllModular = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasModularTasks || !setExpandedModularTasks) return;
+
+    if (isAllModularExpanded) {
+      const toRemove = new Set(currentModularParentIds);
+      setExpandedModularTasks((prev) => {
+        const next = prev.filter((id) => !toRemove.has(id));
+        safeSetItemSession("taka_gantt_modular_expanded", JSON.stringify(next));
+        return next;
+      });
+    } else {
+      setExpandedModularTasks((prev) => {
+        const next = Array.from(new Set([...prev, ...currentModularParentIds]));
+        safeSetItemSession("taka_gantt_modular_expanded", JSON.stringify(next));
+        return next;
+      });
+      // Also expand currently displayed projects if not expanded yet
+      const curProjectIds = currentProjects.map((p) => p.id!).filter(Boolean) as string[];
+      setExpandedProjectIds(Array.from(new Set([...expandedProjects, ...curProjectIds])));
     }
   };
 
@@ -205,6 +274,9 @@ export function GanttTableView({
           handleToggleSelectAll={handleToggleSelectAll}
           isAllExpanded={isAllExpanded}
           handleToggleExpandAll={handleToggleExpandAll}
+          isAllModularExpanded={isAllModularExpanded}
+          handleToggleExpandAllModular={handleToggleExpandAllModular}
+          hasModularTasks={hasModularTasks}
           visibleColumns={visibleColumns}
           colWidths={colWidths}
           handleToggleColumn={handleToggleColumn}
@@ -289,7 +361,10 @@ export function GanttTableView({
                     key={row.key}
                     p={row.project}
                     pIdx={row.projectIndex}
+                    projectTasks={getGroupTasksForProject ? getGroupTasksForProject(row.project) : []}
                     isExpanded={row.isExpanded}
+                    expandedModularTasks={expandedModularTasks}
+                    setExpandedModularTasks={setExpandedModularTasks}
                     toggleProjectExpansion={toggleProjectExpansion}
                     sideWidth={sideWidth}
                     showStart={showStart}
@@ -327,6 +402,7 @@ export function GanttTableView({
                   parentTask={row.parentTask}
                   hasChildren={row.hasChildren}
                   childCount={row.childCount}
+                  childTasks={row.type === 'task' ? row.childTasks : undefined}
                   isModularExpanded={row.isModularExpanded}
                   projects={projects}
                   tasks={tasks}

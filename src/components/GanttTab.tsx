@@ -160,6 +160,8 @@ export function GanttTab({
     handleUnlinkModularTasks,
     isTaskModularModalOpen,
     setIsTaskModularModalOpen,
+    expandedModularTasks,
+    setExpandedModularTasks,
     expandedModularSet,
     toggleModularParent,
     sumMode,
@@ -425,6 +427,10 @@ export function GanttTab({
         isExporting={isExporting}
         onNavigateToTaskDetail={onNavigateToTaskDetail}
         onNavigateToLayout={onNavigateToLayout}
+        paginatedProjects={paginatedProjects}
+        expandedModularTasks={expandedModularTasks}
+        setExpandedModularTasks={setExpandedModularTasks}
+        getGroupTasksForProject={getGroupTasksForProject}
       />
 
       {/* Task Modular Grouping Modal */}

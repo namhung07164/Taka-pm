@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 import { GanttColumnWidths } from './useGanttColumnResize';
+import { cn } from '../../lib/utils';
 
 interface GanttLeftHeaderProps {
   sideWidth: number;
@@ -10,6 +11,9 @@ interface GanttLeftHeaderProps {
   handleToggleSelectAll: () => void;
   isAllExpanded: boolean;
   handleToggleExpandAll: (e: React.MouseEvent) => void;
+  isAllModularExpanded?: boolean;
+  handleToggleExpandAllModular?: (e: React.MouseEvent) => void;
+  hasModularTasks?: boolean;
   visibleColumns: string[];
   colWidths?: GanttColumnWidths;
   handleToggleColumn?: (colId: string) => void;
@@ -23,6 +27,9 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
   handleToggleSelectAll,
   isAllExpanded,
   handleToggleExpandAll,
+  isAllModularExpanded = false,
+  handleToggleExpandAllModular,
+  hasModularTasks = false,
   visibleColumns,
   colWidths,
   handleToggleColumn,
@@ -60,19 +67,47 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           <span>#</span>
         )}
       </div>
-      <div className="flex-1 min-w-[140px] px-2 py-2 border-r border-slate-200 dark:border-slate-800 truncate flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={handleToggleExpandAll}
-          className="p-1 rounded hover:bg-slate-200 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-300 active:scale-90 transition-all shrink-0 cursor-pointer"
-          title={isAllExpanded ? "Collapse All Projects" : "Expand All Projects"}
-        >
-          {isAllExpanded ? (
-            <ChevronDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 font-bold" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 font-bold" />
-          )}
-        </button>
+      <div className="flex-1 min-w-[140px] px-2 py-1 border-r border-slate-200 dark:border-slate-800 truncate flex items-center gap-1.5">
+        <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleToggleExpandAll}
+            className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-300 active:scale-90 transition-all shrink-0 cursor-pointer"
+            title={isAllExpanded ? "Collapse All Projects" : "Expand All Projects"}
+          >
+            {isAllExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 font-bold" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 font-bold" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleExpandAllModular}
+            disabled={!hasModularTasks}
+            className={cn(
+              "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation cursor-pointer",
+              !hasModularTasks
+                ? "opacity-25 cursor-not-allowed bg-slate-100 dark:bg-[#28282a] text-slate-400 dark:text-slate-600"
+                : isAllModularExpanded
+                ? "bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 shadow-xs ring-1 ring-purple-400/50"
+                : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/60 dark:hover:bg-purple-900/90 dark:text-purple-200 border border-purple-300 dark:border-purple-600/70"
+            )}
+            title={
+              !hasModularTasks
+                ? "No group tasks in currently displayed projects"
+                : isAllModularExpanded
+                ? "Collapse All Group Tasks (Current Projects)"
+                : "Expand All Group Tasks (Current Projects)"
+            }
+          >
+            {isAllModularExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+            )}
+          </button>
+        </div>
         <span className="truncate">{t('Project / Task')}</span>
       </div>
       {showStart && (

@@ -121,6 +121,7 @@ export function useGanttVirtualization({
           isChild: false,
           hasChildren,
           childCount: children.length,
+          childTasks: children,
           isModularExpanded,
           isHidden: isTaskHidden
         });
