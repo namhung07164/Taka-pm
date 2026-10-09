@@ -299,6 +299,7 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                       <img 
                         src={getCleanUrl(url)} 
                         alt="Layout Fullscreen" 
+                        decoding="async"
                         className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = fallbackSvg;

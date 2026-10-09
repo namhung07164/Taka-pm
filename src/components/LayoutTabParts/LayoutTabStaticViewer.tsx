@@ -102,6 +102,8 @@ export function LayoutTabStaticViewer({
               <img 
                 src={getCleanUrl(url)} 
                 alt="Layout Scroll Preview" 
+                loading="lazy"
+                decoding="async"
                 className="max-w-full max-h-full object-contain shadow-lg rounded-lg border border-slate-200 bg-white cursor-grab active:cursor-grabbing"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = fallbackSvg;

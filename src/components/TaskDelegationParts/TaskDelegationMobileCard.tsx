@@ -71,7 +71,7 @@ export const TaskDelegationMobileCard = React.memo(function TaskDelegationMobile
     <div
       id={`delegation-group-mobile-${group.id}`}
       key={group.id}
-      className="bg-white dark:bg-[#1e1e20] rounded-xl shadow-sm border border-slate-200 dark:border-[#444446] flex flex-col"
+      className="mobile-card-optimized bg-white dark:bg-[#1e1e20] rounded-xl shadow-sm border border-slate-200 dark:border-[#444446] flex flex-col"
     >
       <div
         className="p-3 bg-slate-100 dark:bg-[#1e1e20]/50 border-b border-slate-100 dark:border-[#333336] flex items-start justify-between cursor-pointer"

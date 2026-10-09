@@ -448,8 +448,15 @@ body.print-preview-active .print\:overflow-hidden {
   contain-intrinsic-size: auto 42px;
 }
 
+/* High-Performance Mobile Card Virtualization (Rendering Economy) */
+.mobile-card-optimized {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
 @media print {
   .table-row-optimized,
+  .mobile-card-optimized,
   .project-row,
   .task-row {
     content-visibility: visible !important;
@@ -458,9 +465,11 @@ body.print-preview-active .print\:overflow-hidden {
 }
 
 .exporting-active .table-row-optimized,
+.exporting-active .mobile-card-optimized,
 .exporting-active .project-row,
 .exporting-active .task-row,
 .print-preview-content-active .table-row-optimized,
+.print-preview-content-active .mobile-card-optimized,
 .print-preview-content-active .project-row,
 .print-preview-content-active .task-row {
   content-visibility: visible !important;

@@ -62,7 +62,7 @@ export const BudgetMobileCard = memo(function BudgetMobileCard({
   return (
     <div 
       className={cn(
-        "rounded-xl p-3.5 flex flex-col gap-2.5 transition-all",
+        "mobile-card-optimized rounded-xl p-3.5 flex flex-col gap-2.5 transition-all",
         cardStyle
       )}
     >

@@ -37,6 +37,7 @@ export function LazyImage({ src, alt, className }: { src: string, alt: string, c
           alt={alt}
           className={cn("w-full h-auto rounded object-contain border border-black/10 dark:border-white/10 shadow-sm", className)}
           loading="lazy"
+          decoding="async"
           onError={(e) => {
             (e.target as HTMLElement).style.display = 'none';
             if (imgRef.current) {

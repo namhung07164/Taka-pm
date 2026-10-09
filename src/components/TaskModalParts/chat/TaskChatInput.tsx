@@ -258,6 +258,8 @@ export const TaskChatInput = React.memo(
                   <img
                     src={url}
                     alt="preview"
+                    loading="lazy"
+                    decoding="async"
                     className="h-24 w-auto rounded-lg border border-slate-200 dark:border-[#444446] object-cover"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />

@@ -1364,6 +1364,9 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Toàn bộ hành vi chỉnh sửa ô nhanh (Inline Edit), tick chọn nhiều dòng (Shift + Click), kéo thả sắp xếp (Drag-and-Drop) chỉ kích hoạt re-render cục bộ tại chính dòng tương tác, triệt tiêu 100% hiện tượng re-render toàn bộ bảng tính.
    - **Lập Bản Đồ Dữ Liệu Tối Ưu (Pre-computed Lookup Maps)**:
      + Các phép tính nặng như sinh mã nhiệm vụ phụ (`taskCodeMap`) và giải mã trạng thái ủy quyền thực tế (`taskActualStatusMap`) được tiền tính toán một lần thông qua `useMemo`, chuyển độ phức tạp từ O(N) trong vòng lặp hiển thị về truy xuất tức thì O(1).
+   - **Tối Ưu Hóa Giao Diện Di Động & Hình Ảnh (Mobile Card Virtualization & Async Image Decoding)**:
+     + **CSS Content-Visibility (`.mobile-card-optimized`)**: Áp dụng cho các card dự án và danh sách công việc trên điện thoại (`DetailMobileView`, `CostMobileView`, `GeneralMobileView`, `BudgetMobileView`, `TaskDelegationMobileView`), giúp trình duyệt mobile bỏ qua việc tính toán layout và render các phần tử nằm ngoài màn hình, nâng tốc độ cuộn chạm đạt chuẩn 60–120 FPS.
+     + **Giải Mã Hình Ảnh Bất Đồng Bộ (`loading="lazy" & decoding="async"`)**: Áp dụng đồng bộ trên toàn bộ ảnh thumbnail đính kèm và trình xem ảnh, loại bỏ hoàn toàn hiện tượng nghẽn luồng xử lý chính (Main Thread jank) khi xem các hạng mục có nhiều ảnh hiện trường.
 
 12. **Bộ So Sánh Biến Động Trực Quan & Kiểm Toán Bất Biến (Visual Diff Viewer - Chuẩn GitHub, Linear & Jira)**:
    - **Mục Đích**: Giúp cấp Quản lý và Kiểm toán viên xem chính xác từng trường thông tin bị thay đổi (Trước & Sau khi sửa) một cách trực quan, không cần phải đọc mã JSON thô.

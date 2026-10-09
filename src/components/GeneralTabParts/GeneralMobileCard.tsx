@@ -124,7 +124,7 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
               : isPinned
                 ? 'border-blue-300/80 dark:border-blue-900/60 shadow-xs'
                 : 'border-slate-200 dark:border-[#333336] shadow-2xs'
-        } ${borderAccentClass} rounded-xl p-3 flex flex-col gap-2.5 cursor-pointer active:scale-[0.99] transition-all touch-manipulation`}
+        } ${borderAccentClass} mobile-card-optimized rounded-xl p-3 flex flex-col gap-2.5 cursor-pointer active:scale-[0.99] transition-all touch-manipulation`}
       >
         {/* Success badge for just dropped items */}
         {isJustDropped && (

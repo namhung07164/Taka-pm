@@ -310,6 +310,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
                 ref={imgRef}
                 src={currentSrc}
                 alt={activeTitle}
+                decoding="async"
                 className="max-w-[95vw] max-h-[85vh] object-contain drop-shadow-2xl"
                 onLoad={handleImageLoad}
                 onError={handleImageError}

@@ -1147,7 +1147,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                 </div>
                 
                 <div className="flex-1 overflow-auto p-4 sm:p-6 bg-bg-dark flex justify-center items-center custom-scrollbar min-h-0">
-                    {shareImage && <img src={shareImage} alt="Share preview" className="max-w-full max-h-full object-contain rounded-xl border border-slate-800 shadow-xl" />}
+                    {shareImage && <img src={shareImage} alt="Share preview" loading="lazy" decoding="async" className="max-w-full max-h-full object-contain rounded-xl border border-slate-800 shadow-xl" />}
                 </div>
 
                 <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row gap-3 shrink-0">

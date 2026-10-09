@@ -141,6 +141,8 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
         <img
           src={normalizeImageUrl(img.url)}
           alt={img.title}
+          loading="lazy"
+          decoding="async"
           onError={() => setIsImgError(true)}
           onClick={handleClick}
           style={{

@@ -74,7 +74,7 @@ export const CostMobileCard = React.memo(function CostMobileCard({
   return (
     <div
       className={cn(
-        'rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3.5 flex flex-col gap-2.5 transition-all bg-white dark:bg-[#1e1e20]',
+        'mobile-card-optimized rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3.5 flex flex-col gap-2.5 transition-all bg-white dark:bg-[#1e1e20]',
         totalBalance >= 0
           ? 'border-l-[5px] border-l-emerald-500'
           : 'border-l-[5px] border-l-rose-500'

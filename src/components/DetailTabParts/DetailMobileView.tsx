@@ -242,7 +242,7 @@ export const DetailMobileView = memo(function DetailMobileView({
               data-project-year={p.year || ''}
               data-project-store={p.store || ''}
               className={cn(
-                "rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3 flex flex-col gap-2.5 relative transition-all",
+                "mobile-card-optimized rounded-xl border border-slate-200/90 dark:border-[#38383b] shadow-xs hover:shadow-md p-3 flex flex-col gap-2.5 relative transition-all",
                 bgCardTint,
                 borderAccentClass
               )}

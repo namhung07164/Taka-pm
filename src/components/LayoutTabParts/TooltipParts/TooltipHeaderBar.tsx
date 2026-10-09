@@ -115,6 +115,8 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
                   src={normalizeImageUrl(allUnitImages[0].url)} 
                   alt="Thumbnail" 
                   className="w-full h-full object-cover"
+                  loading="lazy"
+                  decoding="async"
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';
                     const parent = (e.target as HTMLElement).parentElement;

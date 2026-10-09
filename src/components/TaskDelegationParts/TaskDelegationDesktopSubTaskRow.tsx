@@ -305,7 +305,7 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                       >
                         <div className="w-8 h-8 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
                           {isImg ? (
-                            <img src={att.url} alt="Attached preview" className="w-full h-full object-cover" />
+                            <img src={att.url} alt="Attached preview" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           ) : (
                             <Paperclip className="w-4 h-4 text-blue-500" />
                           )}
@@ -343,7 +343,7 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                     >
                       <div className="w-10 h-10 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
                         {isImg ? (
-                          <img src={fileUrl} alt="Attached preview" className="w-full h-full object-cover" />
+                          <img src={fileUrl} alt="Attached preview" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         ) : (
                           <Paperclip className="w-5 h-5 text-blue-500" />
                         )}

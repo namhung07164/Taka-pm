@@ -289,6 +289,7 @@ export function LayoutUnitLightboxModal({
                   ref={imgRef}
                   src={currentSrc}
                   alt={enlargedImage.title || 'Enlarged Preview'}
+                  decoding="async"
                   onLoad={handleImageLoad}
                   onError={handleImageError}
                   className="max-w-full max-h-[75vh] object-contain rounded-xl select-none"
