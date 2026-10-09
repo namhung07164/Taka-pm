@@ -114,20 +114,6 @@ export function GanttBarTooltip({
           <span className="truncate">{label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {rawTaskId && (
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                useAppStore.getState().setGanttTabFocusTaskId(rawTaskId);
-              }}
-              className="p-1 text-slate-400 hover:text-amber-400 rounded hover:bg-slate-700 transition-colors cursor-pointer"
-              title="Focus on this task (Center & Highlight)"
-            >
-              <Target className="w-3.5 h-3.5" />
-            </button>
-          )}
           {extraVars?.task?.id && (
             <button
               type="button"
@@ -269,14 +255,13 @@ export function GanttBarTooltip({
                     key={ct.id}
                     onClick={(e) => {
                       e.stopPropagation();
-                      useAppStore.getState().setGanttTabFocusTaskId(ct.id);
                       if (extraVars?.onNavigateToTaskDetail) {
                         setActiveTooltip(null);
                         extraVars.onNavigateToTaskDetail(ct.id);
                       }
                     }}
                     className="p-1.5 rounded-lg bg-slate-800/90 border border-slate-700 hover:border-blue-400/80 hover:bg-slate-700/80 transition-all cursor-pointer group/ct"
-                    title={`Click to view ${ct.name} in Task Detail / Focus`}
+                    title={`Click to view ${ct.name} in Task Detail`}
                   >
                     <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-200">
                       <div className="flex items-center gap-1 min-w-0">

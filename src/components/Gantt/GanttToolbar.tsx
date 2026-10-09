@@ -332,29 +332,7 @@ export function GanttToolbar({
             </div>
           )}
 
-          {/* Focused Task badge & clear button */}
-          {activeFocusTaskId && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold rounded-lg text-xs shadow-xs">
-              <Target className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
-              <span className="font-semibold text-slate-700 dark:text-slate-300">Focus Active:</span>
-              {focusedTask?.taskCodePhu && (
-                <span className="font-mono text-[10px] px-1 py-0.2 rounded bg-amber-500/25 text-amber-800 dark:text-amber-200 border border-amber-500/30 shrink-0">
-                  {focusedTask.taskCodePhu}
-                </span>
-              )}
-              <span className="max-w-[120px] sm:max-w-[200px] truncate" title={focusedTask?.name || activeFocusTaskId}>
-                {focusedTask?.name || activeFocusTaskId}
-              </span>
-              <button
-                type="button"
-                onClick={handleClearFocus}
-                className="ml-1 p-0.5 hover:bg-amber-500/25 rounded transition-colors text-amber-700 dark:text-amber-300 cursor-pointer"
-                title="Clear focus (Esc)"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
+
         </div>
       </div>
 

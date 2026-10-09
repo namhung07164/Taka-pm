@@ -2,7 +2,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from "react";
 import { useDataStore } from '../DataContext';
 import { useAppStore } from '../../../store/useAppStore';
-import { getStatus, computeProjectActStatus, enrichProjects, extractAllProjectCodes, projectMatchesUnitCode } from '../../../lib/utils';
+import { getStatus, computeProjectActStatus, enrichProjects, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { UnitInfo, SalesInfo } from "../types";
 
 export interface SummaryDataItem extends UnitInfo {
@@ -46,6 +46,9 @@ export function calculateSummaryData({
   projectLink: projectLinkData,
   basePlan,
   units: unitsData,
+  store,
+  location,
+  year,
 }: {
   unitInfo?: any[];
   classInfo?: any[];
@@ -58,6 +61,9 @@ export function calculateSummaryData({
   projectLink?: any[];
   basePlan?: any[];
   units?: any[];
+  store?: string;
+  location?: string;
+  year?: string;
 }): SummaryDataItem[] {
   // 1. Build Index Maps for fast lookup
   const normalize = (s: any) => String(s || "").toLowerCase().trim();
@@ -118,9 +124,34 @@ export function calculateSummaryData({
   const appProjects = useAppStore.getState().projects || [];
   const appTasks = useAppStore.getState().tasks || [];
   const appDelegations = useAppStore.getState().delegationGroups || [];
-  const enrichedAppProjects = enrichProjects(appProjects, appTasks);
+  const enrichedAppProjects = enrichProjects(appProjects, appTasks).filter(p => {
+    const pMeta = extractProjectMetadata(p);
+    return projectMatchesScope(pMeta, { store, location, year });
+  });
 
-  return (unitInfo || []).map((unit) => {
+  const filteredUnitInfo = (unitInfo || []).filter((unit) => {
+    if (store && store !== 'all') {
+      const uStore = String(unit.store || '').toUpperCase().trim();
+      if (uStore && uStore !== 'ALL' && uStore !== store.toUpperCase().trim()) return false;
+    }
+    if (location && location !== 'all') {
+      let targetLoc = location.toUpperCase().trim();
+      if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
+      let uLoc = String(unit.floor || unit.location || '').toUpperCase().trim();
+      if (uLoc.endsWith('F')) uLoc = `L${uLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(uLoc)) uLoc = uLoc.slice(0, -1);
+      const isStorewide = uLoc === 'ALL' || uLoc === 'STORE' || uLoc === 'STOREWIDE' || uLoc === 'WHOLE STORE' || uLoc === 'ALL FLOORS';
+      if (uLoc && !isStorewide && uLoc !== targetLoc) return false;
+    }
+    if (year && year !== 'all') {
+      const uYear = String(unit.year || '').trim();
+      if (uYear && uYear !== 'ALL' && uYear !== String(year).trim()) return false;
+    }
+    return true;
+  });
+
+  return filteredUnitInfo.map((unit) => {
     let salesAmount = 0;
     let salesByCpAmount = 0;
 
@@ -312,7 +343,15 @@ export function calculateSummaryData({
   });
 }
 
-export function useSummaryData() {
+export function useSummaryData(scope?: { store?: string; location?: string; year?: string }) {
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+
+  const targetStore = scope?.store || (globalStoreFilter !== 'all' ? globalStoreFilter : undefined);
+  const targetLocation = scope?.location || (globalLocationFilter[0] && globalLocationFilter[0] !== 'ALL' ? globalLocationFilter[0] : undefined);
+  const targetYear = scope?.year || (globalYearFilter !== 'all' ? globalYearFilter : undefined);
+
   const { 
     unitInfo,
     classInfo,
@@ -352,8 +391,11 @@ export function useSummaryData() {
       projectLink: projectLinkData,
       basePlan,
       units: unitsData,
+      store: targetStore,
+      location: targetLocation,
+      year: targetYear,
     });
-  }, [unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData, mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData]);
+  }, [unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData, mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData, targetStore, targetLocation, targetYear]);
 
   return summaryData;
 }

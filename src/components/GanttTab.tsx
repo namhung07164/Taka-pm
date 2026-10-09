@@ -16,7 +16,6 @@ import { useGanttBatchOps } from './Gantt/useGanttBatchOps';
 import { useGanttExport } from './Gantt/useGanttExport';
 import { GanttToolbar } from './Gantt/GanttToolbar';
 import { GanttTableView } from './Gantt/GanttTableView';
-import { GanttFocusControls } from './Gantt/GanttFocusControls';
 import { useGanttFocus } from './Gantt/useGanttFocus';
 import { getBarColor } from './Gantt/GanttUtils';
 
@@ -481,16 +480,6 @@ export function GanttTab({
         </Suspense>
       )}
 
-      {/* Floating Focus Controls Widget */}
-      {Boolean(activeFocusId && focusedTask) && (
-        <GanttFocusControls
-          task={focusedTask}
-          project={focusedProject}
-          onLocate={locateTask}
-          onNavigateToTaskDetail={onNavigateToTaskDetail}
-          onClearFocus={handleClearFocus}
-        />
-      )}
     </div>
   );
 }

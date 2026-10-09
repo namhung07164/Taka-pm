@@ -1,5 +1,4 @@
-import React from 'react';
-import { ChevronDown, ChevronRight, GripVertical, EyeOff, Target } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, EyeOff } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { cn } from './GanttUtils';
 import { computeTaskCode } from '../../lib/ganttUtils';
@@ -111,25 +110,6 @@ export function GanttTaskLeftColumns({
           </button>
         )}
 
-        {/* Focus Target Button */}
-        {!isEditMode && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              useAppStore.getState().setGanttTabFocusTaskId(t.id);
-            }}
-            className={cn(
-              "p-0.5 rounded shrink-0 transition-all cursor-pointer active:scale-90",
-              isFocused
-                ? "text-amber-500 bg-amber-500/20 ring-1 ring-amber-400 shadow-2xs"
-                : "text-slate-400 hover:text-amber-500 hover:bg-amber-500/10 opacity-70 hover:opacity-100"
-            )}
-            title="Focus on this task (Center & Highlight)"
-          >
-            <Target className="w-3 h-3" />
-          </button>
-        )}
 
         <div 
           onClick={(e) => {

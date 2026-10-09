@@ -237,21 +237,21 @@ export function useLayoutFloorData({
     const vLoc = (finalVersion.location || targetLoc || '').toUpperCase().trim();
 
     let candidateUnits: any[] = [];
-    if (localStore === targetStoreParam && String(localLocation).toUpperCase().trim() === tLoc && Array.isArray(localMapUnits) && localMapUnits.length > 0) {
+    if (Array.isArray(finalVersion?.mapUnits) && finalVersion.mapUnits.length > 0) {
+      candidateUnits = finalVersion.mapUnits;
+    } else if (localStore === targetStoreParam && String(localLocation).toUpperCase().trim() === tLoc && Array.isArray(localMapUnits) && localMapUnits.length > 0) {
       candidateUnits = localMapUnits;
     } else if (localStoreLocationData?.[pKey]?.mapUnits && Array.isArray(localStoreLocationData[pKey].mapUnits) && localStoreLocationData[pKey].mapUnits.length > 0) {
       candidateUnits = localStoreLocationData[pKey].mapUnits;
     } else if (config?.storeLocationData?.[pKey]?.mapUnits && Array.isArray(config.storeLocationData[pKey].mapUnits) && config.storeLocationData[pKey].mapUnits.length > 0) {
       candidateUnits = config.storeLocationData[pKey].mapUnits;
-    } else if (Array.isArray(finalVersion?.mapUnits) && finalVersion.mapUnits.length > 0) {
-      candidateUnits = finalVersion.mapUnits;
     } else if (targetStoreParam === 'HCM' && Array.isArray(config?.mapUnits) && config.mapUnits.length > 0) {
       candidateUnits = config.mapUnits;
     } else if (targetStoreParam === 'HCM' && Array.isArray(config?.units) && config.units.length > 0) {
       candidateUnits = config.units;
     }
 
-    // Sanitize, filter strictly to target floor, and deduplicate overlapping ghost shapes
+    // Sanitize, filter strictly to target floor & year, and deduplicate overlapping ghost shapes
     const unitsMap = new Map<string, any>();
     const seenCoordinates = new Map<string, string>(); // geometryKey -> id
     const seenUnitNames = new Map<string, string>(); // lowercase clean unit name -> id
@@ -265,6 +265,10 @@ export function useLayoutFloorData({
 
       // Store check
       if (uStore && uStore !== 'ALL' && uStore !== targetStoreParam) return;
+
+      // Year check
+      const uYr = String(u.year || '').trim();
+      if (uYr && uYr !== 'ALL' && activeYear && activeYear !== 'all' && uYr !== activeYear) return;
 
       // Strict Floor check: accept units explicitly matching current floor, matching active version floor, or storewide
       const isStorewideUnit = uLoc === 'STORE' || uLoc === 'ALL' || uLoc === 'STOREWIDE' || uLoc === 'ALL FLOORS';

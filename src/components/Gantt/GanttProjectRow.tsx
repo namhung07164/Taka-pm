@@ -230,8 +230,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
               onClick={(e) => {
                 if (isEditMode) return;
                 e.stopPropagation();
-                // Clear any lingering task focus when user explicitly clicks the Project row
-                useAppStore.getState().setGanttTabFocusTaskId("");
+                // Open Quick Nav when clicking project row
                 setQuickNavTarget({
                   project: p,
                   task: undefined,

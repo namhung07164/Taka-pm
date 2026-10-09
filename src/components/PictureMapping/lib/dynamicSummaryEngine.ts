@@ -255,6 +255,12 @@ export function useDynamicUnitSummary({
     const tasksByProjIdMap = new Map<string, any[]>();
     tasks.forEach((t) => {
       if (!t || !t.name) return;
+      const tStore = String(t.projectStore || (t as any).store || '').toUpperCase().trim();
+      const currentStore = String(store || '').trim();
+      if (tStore && tStore !== 'ALL' && currentStore && currentStore !== 'all' && tStore !== currentStore.toUpperCase()) return;
+      const tYear = String(t.projectYear || (t as any).year || '').trim();
+      if (tYear && tYear !== 'ALL' && effectiveYear && effectiveYear !== 'all' && tYear !== String(effectiveYear).trim()) return;
+
       if (t.projectId) {
         const pId = String(t.projectId).trim().toLowerCase();
         let list = tasksByProjIdMap.get(pId);

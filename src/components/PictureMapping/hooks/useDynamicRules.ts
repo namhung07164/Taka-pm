@@ -238,6 +238,12 @@ export function useDynamicRules(
     const tasksByCodeMap = new Map<string, any[]>();
     tasks.forEach((t) => {
       if (!t || !t.name || !t.projectCode) return;
+      const tStore = String(t.projectStore || (t as any).store || '').toUpperCase().trim();
+      const currentStore = String(store || '').trim();
+      if (tStore && tStore !== 'ALL' && currentStore && currentStore !== 'all' && tStore !== currentStore.toUpperCase()) return;
+      const tYear = String(t.projectYear || (t as any).year || '').trim();
+      if (tYear && tYear !== 'ALL' && effectiveYear && effectiveYear !== 'all' && tYear !== String(effectiveYear).trim()) return;
+
       const rawCode = String(t.projectCode).trim().toLowerCase();
       const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
       codeParts.forEach((c) => {

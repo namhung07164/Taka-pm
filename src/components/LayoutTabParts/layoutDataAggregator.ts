@@ -85,11 +85,16 @@ export function buildAggregatedUnitData({
     }
   });
 
-  // Pre-index tasks by code map and projectId for O(1) lookup to eliminate O(N*M) loop
+  // Pre-index tasks by code map and projectId for O(1) lookup (Filtered by store and year)
   const tasksByCodeMap = new Map<string, any[]>();
   const tasksByProjIdMap = new Map<string, any[]>();
   tasks.forEach(t => {
     if (!t || !t.name) return;
+    const tStore = String(t.projectStore || t.store || '').toUpperCase().trim();
+    if (tStore && tStore !== 'ALL' && storeFilter && storeFilter !== 'all' && tStore !== storeFilter.toUpperCase().trim()) return;
+    const tYear = String(t.projectYear || t.year || '').trim();
+    if (tYear && tYear !== 'ALL' && effectiveLayoutYear && effectiveLayoutYear !== 'all' && tYear !== String(effectiveLayoutYear).trim()) return;
+
     if (t.projectId) {
       const pId = String(t.projectId).trim().toLowerCase();
       let list = tasksByProjIdMap.get(pId);

@@ -46,7 +46,7 @@ export function useLayoutAggregates({
   const currUser = useAppStore(state => state.currentUser);
   const delegationGroups = useAppStore(state => state.delegationGroups);
   const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
-  const summaryData = useSummaryData();
+  const summaryData = useSummaryData({ store: storeFilter, location: targetLoc, year: effectiveLayoutYear });
 
   // Compute set of project codes that the current user is NOT allowed to access (RBAC)
   const restrictedProjectCodes = useMemo(() => {
