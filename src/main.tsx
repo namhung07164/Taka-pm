@@ -147,12 +147,13 @@ console.warn = (...args) => {
   originalConsoleWarn(...args);
 };
 
-// Register Service Worker for PWA notifications
+// Register Service Worker for PWA notifications and Static Asset Caching
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/firebase-messaging-sw.js')
       .then(registration => {
         console.log('SW registered: ', registration);
+        registration.update().catch(() => {});
       })
       .catch(registrationError => {
         console.log('SW registration failed: ', registrationError);

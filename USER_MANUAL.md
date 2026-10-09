@@ -919,6 +919,11 @@ Bản đồ số định vị vị trí các dự án trực tiếp trên sơ đ
   - **Trên iOS Safari / PWA**: Đăng ký quyền lưu trữ vĩnh viễn với iOS, loại bỏ chính sách 7-day auto-purge và giải phóng bộ nhớ tự động của Apple.
   - **Trên Android (Chrome PWA)**: Tự động cấp quyền `persistent: true` khi người dùng cài đặt PWA hoặc thêm vào màn hình chính, bảo vệ IndexedDB khỏi việc hệ điều hành dọn dẹp khi bộ nhớ đầy.
   - **Trên Desktop (Chrome, Edge, Firefox, macOS/Windows)**: Duy trì bộ nhớ đệm vĩnh viễn với hạn mức lưu trữ lên tới hàng chục GB, giúp app mở tức thì và đạt 0 lượt đọc Cloud Firestore cho các dữ liệu đã lưu trong bộ nhớ máy.
+- **Bộ Nhớ Đệm Mã Nguồn & Shell Ứng Dụng (Static Asset & Service Worker Cache)**:
+  - Toàn bộ file mã nguồn (`.js`, `.css`), font chữ và icon ứng dụng được tự động lưu vào Cache Storage của iPhone và trình duyệt qua Service Worker:
+    + **Cache-First (0ms)**: Áp dụng cho các bundle mã nguồn (Vite Chunks có hash nội dung). Trình duyệt nạp trực tiếp từ ổ cứng thiết bị chỉ trong 0ms, triệt tiêu độ trễ mạng khi chuyển trang hoặc mở lại ứng dụng.
+    + **Network-First**: Áp dụng cho trang khởi động `index.html`. Khi có mạng, ứng dụng luôn lấy phiên bản mới nhất từ server; nếu mất kết nối hoặc mạng chập chờn, tự động nạp từ cache trên máy để không bị lỗi màn hình trắng.
+    + **Bảo Toàn Tuyệt Đối Dữ Liệu Thời Gian Thực**: Mọi truy vấn Firestore, WebSocket, xác thực tài khoản và tác vụ tải file R2 được cấu hình vượt rào (bypass) hoàn toàn, đảm bảo tính tức thời 100% của số liệu dự án và không bao giờ xung đột với dữ liệu của các phòng ban khác.
 
 ### 🚀 Tối Ưu Hiệu Năng Giao Diện & Kiến Trúc Tải Dữ Liệu
 - **Bảng Điều Khiển Siêu Tốc (Pre-computed Dashboard)**: Tổng quan chung (General Tab) đã được tái cấu trúc hoàn toàn. Thay vì đọc hàng ngàn thẻ Công việc (Task) để tính toán phần trăm tiến độ, hệ thống tự động ghi sẵn tiến độ và tổng hợp danh sách công việc đang thực hiện trực tiếp vào thẻ Dự án mỗi khi có sự thay đổi. Điều này giúp Dashboard đạt tốc độ tải tức thì và chỉ tốn 1 lượt đọc (1 Read) duy nhất cho mỗi dự án.
