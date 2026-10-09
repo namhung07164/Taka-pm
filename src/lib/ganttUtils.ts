@@ -409,18 +409,21 @@ export function sortTasksByPredecessorsAndDates(
 ): Task[] {
   if (!Array.isArray(groupTasks) || groupTasks.length <= 1) return groupTasks || [];
   
-  const pool = allTasks.length > 0 ? allTasks : groupTasks;
+  const pool = groupTasks.length > 0 ? groupTasks : (allTasks.length > 0 ? allTasks : []);
   const taskNoMap = buildTaskNoMap(projects, pool);
   const taskMap = new Map<string, Task>();
   groupTasks.forEach(t => { if (t && t.id) taskMap.set(t.id, t); });
 
-  // Directed graph: adjMap[u] = list of tasks v that depend on u (u -> v, so u must come before v)
+  // Directed graph: adjMap[u] = list of tasks v that depend on u (u -> v)
+  // Undirected graph: undirectedAdj[u] = list of tasks connected to u (u <-> v)
   const adjMap = new Map<string, string[]>();
   const inDegree = new Map<string, number>();
+  const undirectedAdj = new Map<string, Set<string>>();
 
   groupTasks.forEach(t => {
     adjMap.set(t.id, []);
     inDegree.set(t.id, 0);
+    undirectedAdj.set(t.id, new Set());
   });
 
   groupTasks.forEach(t => {
@@ -436,12 +439,43 @@ export function sortTasksByPredecessorsAndDates(
             adjMap.set(u, neighbors);
             inDegree.set(v, (inDegree.get(v) || 0) + 1);
           }
+          undirectedAdj.get(u)?.add(v);
+          undirectedAdj.get(v)?.add(u);
         }
       });
     }
   });
 
-  // Comparator for picking ready tasks
+  // 1. Partition groupTasks into connected components (dependency chains) using BFS
+  const visited = new Set<string>();
+  const components: Task[][] = [];
+
+  groupTasks.forEach(t => {
+    if (visited.has(t.id)) return;
+
+    const compTasks: Task[] = [];
+    const queue = [t.id];
+    visited.add(t.id);
+
+    while (queue.length > 0) {
+      const currId = queue.shift()!;
+      const currTask = taskMap.get(currId);
+      if (currTask) compTasks.push(currTask);
+
+      const neighbors = undirectedAdj.get(currId);
+      if (neighbors) {
+        neighbors.forEach(neighborId => {
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            queue.push(neighborId);
+          }
+        });
+      }
+    }
+    components.push(compTasks);
+  });
+
+  // Task comparator for topological queue
   const compareTasks = (a: Task, b: Task) => {
     const startA = a.start || '9999-12-31';
     const startB = b.start || '9999-12-31';
@@ -458,50 +492,94 @@ export function sortTasksByPredecessorsAndDates(
     return String(a.id || '').localeCompare(String(b.id || ''));
   };
 
-  // Kahn's algorithm with priority queue
-  const ready: Task[] = [];
-  groupTasks.forEach(t => {
-    if ((inDegree.get(t.id) || 0) === 0) {
-      ready.push(t);
-    }
-  });
+  // 2. Topologically sort each component internally using Kahn's algorithm
+  const sortedComponents = components.map(compTasks => {
+    if (compTasks.length <= 1) return compTasks;
 
-  ready.sort(compareTasks);
+    const compSet = new Set(compTasks.map(ct => ct.id));
+    const compInDegree = new Map<string, number>();
+    compTasks.forEach(ct => {
+      let deg = 0;
+      groupTasks.forEach(other => {
+        if (compSet.has(other.id) && other.id !== ct.id) {
+          const neighbors = adjMap.get(other.id) || [];
+          if (neighbors.includes(ct.id)) deg++;
+        }
+      });
+      compInDegree.set(ct.id, deg);
+    });
 
-  const result: Task[] = [];
-  const processed = new Set<string>();
+    const ready: Task[] = compTasks.filter(ct => (compInDegree.get(ct.id) || 0) === 0);
+    ready.sort(compareTasks);
 
-  while (ready.length > 0) {
-    const u = ready.shift()!;
-    result.push(u);
-    processed.add(u.id);
+    const compResult: Task[] = [];
+    const compProcessed = new Set<string>();
 
-    const neighbors = adjMap.get(u.id) || [];
-    let newlyReady = false;
-    for (const vId of neighbors) {
-      const currentDeg = (inDegree.get(vId) || 0) - 1;
-      inDegree.set(vId, currentDeg);
-      if (currentDeg === 0 && !processed.has(vId)) {
-        const vTask = taskMap.get(vId);
-        if (vTask) {
-          ready.push(vTask);
-          newlyReady = true;
+    while (ready.length > 0) {
+      const u = ready.shift()!;
+      compResult.push(u);
+      compProcessed.add(u.id);
+
+      const neighbors = adjMap.get(u.id) || [];
+      let newlyReady = false;
+      for (const vId of neighbors) {
+        if (!compSet.has(vId)) continue;
+        const currentDeg = (compInDegree.get(vId) || 0) - 1;
+        compInDegree.set(vId, currentDeg);
+        if (currentDeg === 0 && !compProcessed.has(vId)) {
+          const vTask = taskMap.get(vId);
+          if (vTask) {
+            ready.push(vTask);
+            newlyReady = true;
+          }
         }
       }
+      if (newlyReady) {
+        ready.sort(compareTasks);
+      }
     }
-    if (newlyReady) {
-      ready.sort(compareTasks);
+
+    if (compResult.length < compTasks.length) {
+      const remaining = compTasks.filter(ct => !compProcessed.has(ct.id));
+      remaining.sort(compareTasks);
+      compResult.push(...remaining);
     }
-  }
 
-  // If there are cycle-locked tasks or remaining tasks, append them sorted by date
-  if (result.length < groupTasks.length) {
-    const remaining = groupTasks.filter(t => !processed.has(t.id));
-    remaining.sort(compareTasks);
-    result.push(...remaining);
-  }
+    return compResult;
+  });
 
-  return result;
+  // 3. Sort components relative to each other by earliest start date of the chain
+  sortedComponents.sort((compA, compB) => {
+    const getEarliestStart = (comp: Task[]) => {
+      let minStart = '9999-12-31';
+      comp.forEach(t => {
+        if (t.start && t.start < minStart) minStart = t.start;
+      });
+      return minStart;
+    };
+    const getEarliestFinish = (comp: Task[]) => {
+      let minFinish = '9999-12-31';
+      comp.forEach(t => {
+        if (t.finish && t.finish < minFinish) minFinish = t.finish;
+      });
+      return minFinish;
+    };
+
+    const startA = getEarliestStart(compA);
+    const startB = getEarliestStart(compB);
+    if (startA !== startB) return startA < startB ? -1 : 1;
+
+    const finishA = getEarliestFinish(compA);
+    const finishB = getEarliestFinish(compB);
+    if (finishA !== finishB) return finishA < finishB ? -1 : 1;
+
+    if (compA.length !== compB.length) return compB.length - compA.length;
+
+    return compareTasks(compA[0], compB[0]);
+  });
+
+  // 4. Flatten sorted component chains into single contiguous array
+  return sortedComponents.flat();
 }
 
 export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, Task[]> {
