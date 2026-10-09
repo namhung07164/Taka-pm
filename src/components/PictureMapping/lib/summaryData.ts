@@ -89,12 +89,62 @@ export function calculateSummaryData({
 
   const projectStatusMap = new Map();
   (projectStatusData || []).forEach(ps => {
-    if (ps?.unit) projectStatusMap.set(ps.unit, ps);
+    if (!ps?.unit) return;
+    if (store && store !== 'all') {
+      const psStore = String(ps.store || '').toUpperCase().trim();
+      if (psStore && psStore !== 'ALL' && psStore !== store.toUpperCase().trim()) return;
+    }
+    if (location && location !== 'all') {
+      let targetLoc = location.toUpperCase().trim();
+      if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
+      let psLoc = String(ps.floor || ps.location || '').toUpperCase().trim();
+      if (psLoc.endsWith('F')) psLoc = `L${psLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(psLoc)) psLoc = psLoc.slice(0, -1);
+      const isStorewide = psLoc === 'ALL' || psLoc === 'STORE' || psLoc === 'STOREWIDE' || psLoc === 'WHOLE STORE' || psLoc === 'ALL FLOORS';
+      if (psLoc && !isStorewide && psLoc !== targetLoc) return;
+    }
+    if (year && year !== 'all') {
+      const targetYear = String(year).trim();
+      let psYear = String(ps.year || ps.projectYear || '').trim();
+      if (!psYear) {
+        const dStr = `${ps.startDate || ''} ${ps.endDate || ''} ${ps.code || ''}`;
+        const m = dStr.match(/\b(202\d|203\d)\b/);
+        if (m) psYear = m[1];
+      }
+      if (psYear && psYear !== 'ALL' && psYear !== targetYear) return;
+    }
+    projectStatusMap.set(ps.unit, ps);
   });
 
   const projectLinkMap = new Map();
   (projectLinkData || []).forEach(pl => {
-    if (pl?.unit) projectLinkMap.set(pl.unit, pl);
+    if (!pl?.unit) return;
+    if (store && store !== 'all') {
+      const plStore = String(pl.store || '').toUpperCase().trim();
+      if (plStore && plStore !== 'ALL' && plStore !== store.toUpperCase().trim()) return;
+    }
+    if (location && location !== 'all') {
+      let targetLoc = location.toUpperCase().trim();
+      if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
+      let plLoc = String(pl.floor || pl.location || '').toUpperCase().trim();
+      if (plLoc.endsWith('F')) plLoc = `L${plLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(plLoc)) plLoc = plLoc.slice(0, -1);
+      const isStorewide = plLoc === 'ALL' || plLoc === 'STORE' || plLoc === 'STOREWIDE' || plLoc === 'WHOLE STORE' || plLoc === 'ALL FLOORS';
+      if (plLoc && !isStorewide && plLoc !== targetLoc) return;
+    }
+    if (year && year !== 'all') {
+      const targetYear = String(year).trim();
+      let plYear = String(pl.year || pl.projectYear || '').trim();
+      if (!plYear) {
+        const dStr = `${pl.startDate || ''} ${pl.endDate || ''} ${pl.code || ''} ${pl.projectCode || ''}`;
+        const m = dStr.match(/\b(202\d|203\d)\b/);
+        if (m) plYear = m[1];
+      }
+      if (plYear && plYear !== 'ALL' && plYear !== targetYear) return;
+    }
+    projectLinkMap.set(pl.unit, pl);
   });
 
   const classInfoMap = new Map();

@@ -43,11 +43,16 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       'HCM'
     ).toUpperCase().trim();
 
+    const expectedYear = String(data.year || useAppStore.getState().globalYearFilter || '').trim();
+
     if (initialP?.id) {
       const found = projects.find(item => item.id === initialP.id);
       if (found) {
-        const itemStore = extractProjectMetadata(found).store;
-        if (!expectedStore || !itemStore || itemStore === expectedStore) {
+        const itemMeta = extractProjectMetadata(found);
+        const itemStore = itemMeta.store;
+        const itemYear = itemMeta.year;
+        if ((!expectedStore || !itemStore || itemStore === expectedStore) &&
+            (!expectedYear || expectedYear === 'all' || !itemYear || itemYear === 'ALL' || itemYear === expectedYear)) {
           return found;
         }
       }
@@ -55,8 +60,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
     if (targetCode) {
       const found = projects.find(item => {
-        const itemStore = extractProjectMetadata(item).store;
-        if (expectedStore && itemStore && itemStore !== expectedStore) {
+        const itemMeta = extractProjectMetadata(item);
+        if (expectedStore && itemMeta.store && itemMeta.store !== expectedStore) {
+          return false;
+        }
+        if (expectedYear && expectedYear !== 'all' && itemMeta.year && itemMeta.year !== 'ALL' && itemMeta.year !== expectedYear) {
           return false;
         }
         const itemUnitCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
@@ -65,17 +73,24 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       if (found) return found;
     }
     if (initialP) {
-      const initStore = extractProjectMetadata(initialP).store;
-      if (!expectedStore || !initStore || initStore === expectedStore) {
+      const itemMeta = extractProjectMetadata(initialP);
+      const initStore = itemMeta.store;
+      const initYear = itemMeta.year;
+      if ((!expectedStore || !initStore || initStore === expectedStore) &&
+          (!expectedYear || expectedYear === 'all' || !initYear || initYear === 'ALL' || initYear === expectedYear)) {
         return initialP;
       }
     }
     return undefined;
-  }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, data.store, hoverInfo.unitName, projects, storeFilter]);
+  }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, data.store, data.year, hoverInfo.unitName, projects, storeFilter]);
+
+  const activeYearFilter = String(data.year || useAppStore.getState().globalYearFilter || '').trim();
+  const isDataMatchingActiveYear = !data.hasAppProject || !data.year || data.year === 'all' || activeYearFilter === 'all' || data.year === activeYearFilter;
+  const hasProject = Boolean(p || (data.hasAppProject && isDataMatchingActiveYear));
 
   const unitCode = p?.code || hoverInfo.unitName;
   const storeDisplay = (p?.store || data.store || storeFilter || 'HCM').toUpperCase().trim();
-  const projectName = p?.name || data.projectName || data.brandName || '';
+  const projectName = p?.name || (hasProject ? (data.projectName || data.brandName || '') : '');
   const floorValue = data.floor || (p as any)?.floor;
 
   const targetProject: Project = p || ({
@@ -87,7 +102,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   } as Project);
 
   // Status computation
-  const status = p?.computedStatus || data.appProjectStatus || data.status || 'On process';
+  const status = hasProject ? (p?.computedStatus || data.appProjectStatus || data.status || 'On process') : '';
   
   let statusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
   const lowerStatus = String(status).toLowerCase();
@@ -111,12 +126,12 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const mdStatusColorClass = getMdStatusColorClass(mdStatus);
 
   // Progress metrics
-  const planProgressPercent = p?.computedPlanProgress ?? data.planProgressPercent ?? 0;
-  const actProgressPercent = p?.computedActProgress ?? data.actProgressPercent ?? 0;
+  const planProgressPercent = hasProject ? (p?.computedPlanProgress ?? data.planProgressPercent ?? 0) : 0;
+  const actProgressPercent = hasProject ? (p?.computedActProgress ?? data.actProgressPercent ?? 0) : 0;
 
   // Dates & Comments
-  const computedTakStart = p?.computedTakStart || p?.start || data.startDate || '';
-  const computedTakCompl = p?.computedTakCompl || p?.handover || data.handoverDate || '';
+  const computedTakStart = hasProject ? (p?.computedTakStart || p?.start || data.startDate || '') : '';
+  const computedTakCompl = hasProject ? (p?.computedTakCompl || p?.handover || data.handoverDate || '') : '';
   const commentsCount = p?.comments?.length || 0;
 
   // Task lines & Details (Strictly matching General Tab logic - pure work tasks only)
