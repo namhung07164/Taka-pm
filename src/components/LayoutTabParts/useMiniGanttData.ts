@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { parseDateTime, getTaskStatus } from '../../lib/utils';
@@ -60,26 +60,35 @@ export interface MiniGanttRow {
 export function useMiniGanttData(project: Project | null, onClose: () => void) {
   const tasks = useAppStore((state) => state.tasks);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const isTasksRequested = useAppStore((state) => state.isTasksRequested);
+  const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
 
-  // Raw tasks for this project
+  // Ensure tasks are fetched from Firestore when Mini Gantt is opened
+  useEffect(() => {
+    if (project && !isTasksRequested) {
+      setIsTasksRequested(true);
+    }
+  }, [project, isTasksRequested, setIsTasksRequested]);
+
+  // Raw tasks for this project (matching Main Gantt getGroupTasksForProject logic)
   const rawProjectTasks = useMemo(() => {
     if (!project) return [];
 
-    const pId = project.id;
-    const pCode = (project.code || '').trim().toLowerCase();
+    const pId = project.id ? String(project.id) : '';
+    const pCode = (project.code || '').trim().toUpperCase();
     const pYear = project.year ? String(project.year).trim() : '';
-    const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+    const pStore = project.store ? String(project.store).trim().toUpperCase() : '';
 
     const matchedZustandTasks = tasks.filter((t) => {
       if (t.isDeleted) return false;
-      if (pId && t.projectId === pId) return true;
-      if (pCode && String(t.projectCode || '').trim().toLowerCase() === pCode) {
-        if (pYear && t.projectYear && String(t.projectYear).trim() !== pYear) return false;
-        if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore)
-          return false;
-        return true;
-      }
-      return false;
+      if (pId && t.projectId && String(t.projectId) === pId) return true;
+      const tCode = String(t.projectCode || '').trim().toUpperCase();
+      if (!tCode || tCode !== pCode) return false;
+      const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+      const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+      if (pYear && tYear && tYear !== pYear) return false;
+      if (pStore && tStore && tStore !== pStore) return false;
+      return true;
     });
 
     if (matchedZustandTasks.length > 0) {
@@ -94,7 +103,7 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
             ? subtaskNum - 1
             : ts.orderIndex !== undefined && ts.orderIndex !== null
             ? ts.orderIndex
-            : null;
+            : idx;
         const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
 
         let durStr = '1';
@@ -103,7 +112,7 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
         }
 
         return {
-          id: `ts_${idx}`,
+          id: ts.id || ts.taskId || `ts_${idx}`,
           name: ts.name || 'Task',
           start: ts.start || '',
           finish: ts.finish || '',
@@ -123,48 +132,51 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     return [];
   }, [project, tasks]);
 
-  // Exact GanttTab task ordering with sortGroupTasks and parent-child tree hierarchy
+  // Exact Main Gantt (useGanttVirtualization.ts) task ordering & hierarchy
   const orderedGanttRows: MiniGanttRow[] = useMemo(() => {
     if (rawProjectTasks.length === 0) return [];
 
-    const sortedRawTasks = sortGroupTasks(rawProjectTasks);
+    const pTasks = sortGroupTasks(rawProjectTasks);
 
+    // Group parent and child tasks (identical to Main Gantt)
+    const parentTasks: Task[] = [];
     const childTasksMap = new Map<string, Task[]>();
-    const isChildSet = new Set<string>();
-    const ptMap = new Map(sortedRawTasks.map((pt) => [String(pt.id), pt]));
 
-    sortedRawTasks.forEach((t) => {
-      if (t.parentTaskId) {
-        const currParentId = String(t.parentTaskId);
-        if (ptMap.has(currParentId)) {
-          let rootParentId = currParentId;
-          const visited = new Set<string>([String(t.id), rootParentId]);
-          while (true) {
-            const pTask = ptMap.get(rootParentId);
-            if (pTask && pTask.parentTaskId && !visited.has(String(pTask.parentTaskId))) {
-              if (ptMap.has(String(pTask.parentTaskId))) {
-                rootParentId = String(pTask.parentTaskId);
-                visited.add(rootParentId);
-                continue;
-              }
-            }
-            break;
-          }
-          isChildSet.add(String(t.id));
-          const list = childTasksMap.get(rootParentId) || [];
-          list.push(t);
-          childTasksMap.set(rootParentId, list);
-        }
+    // Index tasks in project by ID and taskCodePhu for robust parent matching
+    const projectTaskById = new Map<string, Task>();
+    const projectTaskByCode = new Map<string, Task>();
+    pTasks.forEach((t) => {
+      if (t.id) projectTaskById.set(String(t.id), t);
+      if (t.taskCodePhu) {
+        projectTaskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
       }
     });
 
+    pTasks.forEach((t) => {
+      const rawParentId = t.parentTaskId || (t as any).parentId;
+      if (rawParentId) {
+        const parentKey = String(rawParentId).trim().toLowerCase();
+        const matchedParent =
+          projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
+        const effectiveParentId = matchedParent ? matchedParent.id : String(rawParentId);
+
+        if (!childTasksMap.has(effectiveParentId)) {
+          childTasksMap.set(effectiveParentId, []);
+        }
+        childTasksMap.get(effectiveParentId)!.push(t);
+      } else {
+        parentTasks.push(t);
+      }
+    });
+
+    // Exactly like Main Gantt: sort parent tasks independently
+    const sortedParentTasks = sortGroupTasks(parentTasks);
+
     const rows: MiniGanttRow[] = [];
 
-    sortedRawTasks.forEach((t) => {
-      const tIdStr = String(t.id);
-      if (isChildSet.has(tIdStr)) return;
-
-      const rawChildren = childTasksMap.get(tIdStr) || [];
+    sortedParentTasks.forEach((t) => {
+      const rawChildren = childTasksMap.get(t.id) || [];
+      // Exactly like Main Gantt: sort child tasks of this parent independently
       const children = sortGroupTasks(rawChildren);
       const hasChildren = children.length > 0;
 
@@ -326,6 +338,9 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     if (project.code) {
       safeSetItemSession('taka_gantt_search', project.code);
     }
+
+    const targetProjectId = project.id ? String(project.id) : (project.code || '');
+    useAppStore.getState().setGanttTabFilterProjectId(targetProjectId);
 
     const currentExpanded = useAppStore.getState().expandedProjectIds;
     if (project.id && !currentExpanded.includes(project.id)) {
