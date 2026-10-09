@@ -409,6 +409,19 @@ export function useLayoutTabData({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
+  // When activeStore, locFilterStr, or effectiveYear changes, reset search & focus states to default
+  const prevFilterStateRef = useRef({ store: activeStore, loc: locFilterStr, yr: effectiveYear });
+  useEffect(() => {
+    const prev = prevFilterStateRef.current;
+    if (prev.store !== activeStore || prev.loc !== locFilterStr || prev.yr !== effectiveYear) {
+      prevFilterStateRef.current = { store: activeStore, loc: locFilterStr, yr: effectiveYear };
+      setUnitSearchInput('');
+      setTargetUnitSearch(null);
+      setShowSuggestions(false);
+      onClearFocus?.();
+    }
+  }, [activeStore, locFilterStr, effectiveYear, onClearFocus]);
+
   return {
     allowedStores, activeStore, setGlobalStoreFilter,
     globalLocationFilter, setGlobalLocationFilter,

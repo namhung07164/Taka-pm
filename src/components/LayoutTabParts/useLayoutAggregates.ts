@@ -252,6 +252,12 @@ export function useLayoutAggregates({
           pathStr += ' Z';
           svgPath = pathStr;
           if (minX === Infinity) { minX = 0; maxX = 100; minY = 0; maxY = 30; }
+          const offsetX = unit.x || 0;
+          const offsetY = unit.y || 0;
+          minX = minX + offsetX;
+          maxX = maxX + offsetX;
+          minY = minY + offsetY;
+          maxY = maxY + offsetY;
           textX = minX;
           textY = minY;
           textWidth = Math.max(20, maxX - minX);
@@ -293,7 +299,7 @@ export function useLayoutAggregates({
 
     let filtered = displayedUnits;
     if (scale > 0.35 && displayedUnits.length > 40) {
-      const bufferPadding = Math.max(150, 300 / scale);
+      const bufferPadding = Math.max(400, 800 / Math.max(scale, 0.1));
       const minWorldX = (-stagePos.x / scale) - bufferPadding;
       const maxWorldX = ((vpW - stagePos.x) / scale) + bufferPadding;
       const minWorldY = (-stagePos.y / scale) - bufferPadding;
@@ -317,7 +323,7 @@ export function useLayoutAggregates({
       return displayedUnits;
     }
 
-    const key = filtered.map((u: any) => u.id).join('|');
+    const key = filtered.map((u: any) => `${u.id}_${u.targetColor || ''}_${u.targetOpacity || ''}_${u.targetGroupId || ''}`).join('|');
     if (key === prevVisibleUnitsKeyRef.current) {
       return prevVisibleUnitsRef.current;
     }

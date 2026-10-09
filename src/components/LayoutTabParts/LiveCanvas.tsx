@@ -179,6 +179,26 @@ export const LiveCanvas = React.memo(function LiveCanvas({
     prevIsAnyModalActiveRef.current = isAnyModalActive;
   }, [isAnyModalActive, stageInteractions]);
 
+  // Reset focus, tooltips, alert filters, legend filters, mini gantt, and fit screen whenever store, location, or year changes
+  const prevFilterScopeRef = React.useRef<string>('');
+  useEffect(() => {
+    const currentScope = `${storeFilter}_${targetLoc}_${effectiveLayoutYear}`;
+    if (prevFilterScopeRef.current && prevFilterScopeRef.current !== currentScope) {
+      stageInteractions.setFocusedUnitId(null);
+      stageInteractions.setHoverInfo(null);
+      stageInteractions.isPinnedRef.current = false;
+      savedTooltipStateRef.current = null;
+      setFilterOnlyAlerts(false);
+      setSelectedLegendGroupId(null);
+      setMiniGanttProject(null);
+      setShowLegendModal(false);
+      if (stageInteractions.focusedTimerRef.current) clearTimeout(stageInteractions.focusedTimerRef.current);
+      onClearFocus?.();
+      stageInteractions.fitToScreen(true);
+    }
+    prevFilterScopeRef.current = currentScope;
+  }, [storeFilter, targetLoc, effectiveLayoutYear, onClearFocus, stageInteractions]);
+
   // Listen for Edit Mode trigger from hamburger menu
   useEffect(() => {
     const handleOpenEditMode = () => {

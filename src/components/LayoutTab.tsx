@@ -77,11 +77,7 @@ export function LayoutTab({
           locFilterStr={locFilterStr}
           effectiveYear={effectiveYear}
           targetUnitSearch={targetUnitSearch}
-          onUnitSelected={(unit) => {
-            if (unit?.name) {
-              setUnitSearchInput(unit.name);
-            }
-          }}
+          onUnitSelected={undefined}
           onClearFocus={handleClearSearchAndFocus}
           isLiveMapMode={isLiveMapMode}
           url={url}
@@ -142,11 +138,7 @@ export function LayoutTab({
               locationFilter={locFilterStr} 
               yearFilter={effectiveYear}
               targetUnitSearch={targetUnitSearch}
-              onUnitSelected={(unit) => {
-                if (unit?.name) {
-                  setUnitSearchInput(unit.name);
-                }
-              }}
+              onUnitSelected={undefined}
               onClearFocus={handleClearSearchAndFocus}
             />
           ) : (
