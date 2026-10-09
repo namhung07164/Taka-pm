@@ -299,7 +299,7 @@ export function useLayoutAggregates({
 
     let filtered = displayedUnits;
     if (scale > 0.35 && displayedUnits.length > 40) {
-      const bufferPadding = Math.max(400, 800 / Math.max(scale, 0.1));
+      const bufferPadding = Math.max(150, 300 / scale);
       const minWorldX = (-stagePos.x / scale) - bufferPadding;
       const maxWorldX = ((vpW - stagePos.x) / scale) + bufferPadding;
       const minWorldY = (-stagePos.y / scale) - bufferPadding;
@@ -323,7 +323,7 @@ export function useLayoutAggregates({
       return displayedUnits;
     }
 
-    const key = filtered.map((u: any) => `${u.id}_${u.targetColor || ''}_${u.targetOpacity || ''}_${u.targetGroupId || ''}`).join('|');
+    const key = filtered.map((u: any) => u.id).join('|');
     if (key === prevVisibleUnitsKeyRef.current) {
       return prevVisibleUnitsRef.current;
     }

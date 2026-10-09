@@ -88,7 +88,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
             strokeWidth: isFocused ? 3 : (hasColor ? 1.5 : 1),
             strokeScaleEnabled: false,
-            perfectDrawEnabled: true,
+            perfectDrawEnabled: false,
             x: unit.x || 0,
             y: unit.y || 0,
             rotation: unit.rotation || 0,
