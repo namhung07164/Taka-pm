@@ -227,11 +227,18 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
  */
 export async function getLocalTasks(year?: string): Promise<Task[]> {
   try {
-    let collection = localDb.tasks.toCollection();
-    if (year && year !== 'all' && year !== 'ALL') {
-      collection = localDb.tasks.where('year').equals(String(year));
+    if (!year || year === 'all' || year === 'ALL') {
+      return await localDb.tasks.toArray();
     }
-    return await collection.toArray();
+    const strYear = String(year);
+    const [byYear, byProjYear] = await Promise.all([
+      localDb.tasks.where('year').equals(strYear).toArray().catch(() => []),
+      localDb.tasks.where('projectYear').equals(strYear).toArray().catch(() => []),
+    ]);
+    const merged = new Map<string, Task>();
+    for (const t of byYear) if (t && t.id) merged.set(t.id, t);
+    for (const t of byProjYear) if (t && t.id) merged.set(t.id, t);
+    return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalTasks error:', err);
     return [];
@@ -243,11 +250,18 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
  */
 export async function getLocalCosts(year?: string): Promise<Cost[]> {
   try {
-    let collection = localDb.costs.toCollection();
-    if (year && year !== 'all' && year !== 'ALL') {
-      collection = localDb.costs.where('year').equals(String(year));
+    if (!year || year === 'all' || year === 'ALL') {
+      return await localDb.costs.toArray();
     }
-    return await collection.toArray();
+    const strYear = String(year);
+    const [byYear, byProjYear] = await Promise.all([
+      localDb.costs.where('year').equals(strYear).toArray().catch(() => []),
+      localDb.costs.where('projectYear').equals(strYear).toArray().catch(() => []),
+    ]);
+    const merged = new Map<string, Cost>();
+    for (const c of byYear) if (c && c.id) merged.set(c.id, c);
+    for (const c of byProjYear) if (c && c.id) merged.set(c.id, c);
+    return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalCosts error:', err);
     return [];

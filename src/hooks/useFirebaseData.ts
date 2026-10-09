@@ -26,7 +26,8 @@ import {
   NotificationRule,
 } from "../types";
 import { setupStaticConfigSync } from "../lib/configCacheService";
-import { startDeltaSyncService, pullAndApplyDeltas } from "../lib/deltaSyncService";
+import { startDeltaSyncService, pullAndApplyDeltas, triggerImmediateDeltaSync } from "../lib/deltaSyncService";
+import { enforceStorageBudget } from "../lib/storageBudgetService";
 import {
   bootstrapLocalStore,
   offloadPersistSnapshot,
@@ -101,6 +102,85 @@ export function useFirebaseData() {
   // We use user to trigger data fetch
   const user = useAppStore((state) => state.user);
 
+  // Hoisted listener pools & TTL timeouts for access by both query effects and SleepWakeGuard
+  const tasksPool = useRef<Map<string, () => void>>(new Map());
+  const tasksTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const costsPool = useRef<Map<string, () => void>>(new Map());
+  const costsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const delegationsPool = useRef<Map<string, () => void>>(new Map());
+  const delegationsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const yearDelegationsCache = useRef<Map<string, Map<string, DelegationGroup>>>(new Map());
+  const knownHydratedProjectCodes = useRef<Set<string>>(new Set());
+  const lastActiveTimestampRef = useRef<number>(Date.now());
+  const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+  // iOS Sleep/Wake Guard (Giai đoạn 1: Triệt tiêu bão đọc sau 2-4-8h)
+  useEffect(() => {
+    const handleSleepWake = () => {
+      const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
+      if (!isVisible) {
+        lastActiveTimestampRef.current = Date.now();
+        return;
+      }
+
+      const now = Date.now();
+      const elapsedSleepMs = now - lastActiveTimestampRef.current;
+      lastActiveTimestampRef.current = now;
+
+      // Nếu máy ngủ hoặc tab không hoạt động > 10 phút (2h, 4h, 8h)
+      const IS_LONG_SLEEP = elapsedSleepMs > 10 * 60 * 1000;
+      if (IS_LONG_SLEEP) {
+        // 1. Dọn sạch các listener cũ để chống lỗi token hết hạn gây full-scan read storm
+        tasksPool.current.forEach((u) => u());
+        tasksPool.current.clear();
+        tasksTTLTimeouts.current.forEach((t) => clearTimeout(t));
+        tasksTTLTimeouts.current.clear();
+
+        costsPool.current.forEach((u) => u());
+        costsPool.current.clear();
+        costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
+        costsTTLTimeouts.current.clear();
+
+        delegationsPool.current.forEach((u) => u());
+        delegationsPool.current.clear();
+        delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
+        delegationsTTLTimeouts.current.clear();
+
+        // 2. Tái nạp 0ms từ IndexedDB (Dexie) nếu Safari dọn sạch bộ nhớ
+        hydrateProjectsFromLocal().catch(() => {});
+        if (useAppStore.getState().isTasksRequested) {
+          hydrateTasksFromLocal().catch(() => {});
+        }
+        if (useAppStore.getState().isCostsRequested) {
+          hydrateCostsFromLocal().catch(() => {});
+        }
+        if (useAppStore.getState().isDelegationsRequested) {
+          hydrateDelegationsFromLocal().catch(() => {});
+        }
+
+        // 3. Kích hoạt Delta Sync tức thì (chỉ kéo các thay đổi mới phát sinh trong thời gian ngủ)
+        triggerImmediateDeltaSync(useAppStore.getState().globalYearFilter).catch(() => {});
+
+        // 4. Kiểm tra ngân sách bộ nhớ 40MB iOS và ghi nhận kiểm toán thức giấc
+        enforceStorageBudget().catch(() => {});
+        const sleepMinutes = Math.round(elapsedSleepMs / 60000);
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('sleep_wake_recovery', true, 0, `Awoke after ${sleepMinutes}m sleep - Zero Read Delta Sync bypass`);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSleepWake);
+    window.addEventListener('pageshow', handleSleepWake);
+    window.addEventListener('focus', handleSleepWake);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSleepWake);
+      window.removeEventListener('pageshow', handleSleepWake);
+      window.removeEventListener('focus', handleSleepWake);
+    };
+  }, []);
+
   // Lazy trigger & Visibility Tracker
   useEffect(() => {
     const evaluate = () => {
@@ -151,8 +231,12 @@ export function useFirebaseData() {
 
     evaluate();
     document.addEventListener('visibilitychange', evaluate);
+    window.addEventListener('pageshow', evaluate);
+    window.addEventListener('focus', evaluate);
     return () => {
       document.removeEventListener('visibilitychange', evaluate);
+      window.removeEventListener('pageshow', evaluate);
+      window.removeEventListener('focus', evaluate);
     };
   }, [activeTab, isTaskModalOpen, isProjectModalOpen, modalInitialTab, setIsTasksRequested, setIsCostsRequested, setIsDelegationsRequested]);
 
@@ -685,11 +769,8 @@ export function useFirebaseData() {
   }, [querySignature, isTasksRequested]);
 
   // 2.3 Unified Global Delta Sync for Tasks (Native Firebase Cache with TTL)
-  const tasksPool = useRef<Map<string, () => void>>(new Map());
   const prevQuerySigTasks = useRef<string>("");
   const prevSigTasks = useRef<string>("");
-  const tasksTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
   useEffect(() => {
     return () => {
@@ -739,11 +820,14 @@ export function useFirebaseData() {
     }
 
     // Instant 0ms Dexie Local-First Hydration for active projects
-    hydrateTasksForProjects(activeProjectIds).catch(() => {});
+    let isCancelled = false;
+    const runTasksSync = async () => {
+      await hydrateTasksForProjects(activeProjectIds);
+      if (isCancelled) return;
 
-    setIsTasksLoading(true);
+      setIsTasksLoading(true);
 
-    const currentProjects = useAppStore.getState().projects || [];
+      const currentProjects = useAppStore.getState().projects || [];
     // Group active projects by year to optimize: if > 10 projects in a year, use 1 consolidated query for that year
     const projectsByYear = new Map<string, Array<{ id: string; code: string }>>();
     
@@ -793,29 +877,41 @@ export function useFirebaseData() {
         });
 
         if (!tasksPool.current.has(yearKey)) {
-          const qTasks = buildStoreAndYearQuery(
-            collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-            "projectStore",
-            "projectYear",
-            year
-          );
+          const currentTasks = useAppStore.getState().tasks || [];
+          const hasLocalYearTasks = currentTasks.some(t => String(t.projectYear || '') === String(year));
 
-          usePerformanceStore.getState().registerListener(`taka_tasks_${yearKey}`);
-          const unsub = onSnapshot(
-            qTasks,
-            (snapshot) => {
-              usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
-              setIsTasksLoading(false);
-              batchTasksUpdate(snapshot.docChanges());
-              setCloudStatus("online");
-            },
-            (e) => {
-              setIsTasksLoading(false);
-              console.error("Tasks consolidated listener error:", e);
-              setCloudStatus("offline");
-            }
-          );
-          tasksPool.current.set(yearKey, unsub);
+          if (hasLocalYearTasks) {
+            // Local-First: Đã có tasks của năm này trong Dexie/Zustand -> Giữ pool hoạt động (0 Read full collection)
+            // và đồng bộ các thay đổi mới qua Delta Pipeline (0-2 reads)
+            tasksPool.current.set(yearKey, () => {});
+            setIsTasksLoading(false);
+            pullAndApplyDeltas(year).catch(() => {});
+            usePerformanceStore.getState().trackGetDoc(`taka_tasks_${yearKey}`, true, currentTasks.length, 'Dexie Local-First Tasks (0 Read full collection)');
+          } else {
+            const qTasks = buildStoreAndYearQuery(
+              collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+              "projectStore",
+              "projectYear",
+              year
+            );
+
+            usePerformanceStore.getState().registerListener(`taka_tasks_${yearKey}`);
+            const unsub = onSnapshot(
+              qTasks,
+              (snapshot) => {
+                usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
+                setIsTasksLoading(false);
+                batchTasksUpdate(snapshot.docChanges());
+                setCloudStatus("online");
+              },
+              (e) => {
+                setIsTasksLoading(false);
+                console.error("Tasks consolidated listener error:", e);
+                setCloudStatus("offline");
+              }
+            );
+            tasksPool.current.set(yearKey, unsub);
+          }
         }
       } else {
         // Individual listeners for <= 10 projects
@@ -845,57 +941,79 @@ export function useFirebaseData() {
           }
 
           if (!tasksPool.current.has(projKey)) {
-            const qTasks = query(
-              collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-              where("projectCode", "==", p.code)
-            );
+            const currentTasks = useAppStore.getState().tasks || [];
+            const hasLocalProjTasks = currentTasks.some(t => String(t.projectCode || '') === String(p.code)) || knownHydratedProjectCodes.current.has(p.code);
 
-            usePerformanceStore.getState().registerListener(`taka_tasks_${projKey}`);
-            const unsub = onSnapshot(
-              qTasks,
-              (snapshot) => {
-                usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
-                setIsTasksLoading(false);
-                batchTasksUpdate(snapshot.docChanges());
-                setCloudStatus("online");
-              },
-              (e) => {
-                setIsTasksLoading(false);
-                console.error("Tasks listener error:", e);
-                setCloudStatus("offline");
-              }
-            );
-            tasksPool.current.set(projKey, unsub);
+            if (hasLocalProjTasks) {
+              // Local-First: Đã có tasks của dự án này trong Dexie/Zustand -> Giữ pool hoạt động (0 Read)
+              tasksPool.current.set(projKey, () => {});
+              setIsTasksLoading(false);
+              pullAndApplyDeltas(year).catch(() => {});
+              usePerformanceStore.getState().trackGetDoc(`taka_tasks_${projKey}`, true, 1, 'Dexie Local-First Project Tasks (0 Read)');
+            } else {
+              const qTasks = query(
+                collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                where("projectCode", "==", p.code)
+              );
+
+              usePerformanceStore.getState().registerListener(`taka_tasks_${projKey}`);
+              const unsub = onSnapshot(
+                qTasks,
+                (snapshot) => {
+                  knownHydratedProjectCodes.current.add(p.code);
+                  usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
+                  setIsTasksLoading(false);
+                  batchTasksUpdate(snapshot.docChanges());
+                  setCloudStatus("online");
+                },
+                (e) => {
+                  setIsTasksLoading(false);
+                  console.error("Tasks listener error:", e);
+                  setCloudStatus("offline");
+                }
+              );
+              tasksPool.current.set(projKey, unsub);
+            }
           }
         });
       }
     });
 
     // Clean up or start TTL on listeners no longer needed
-    Array.from(tasksPool.current.keys()).forEach(key => {
-      if (!neededKeys.has(key)) {
-        if (!tasksTTLTimeouts.current.has(key)) {
-          const timeoutId = setTimeout(() => {
-            const unsub = tasksPool.current.get(key);
-            if (unsub) unsub();
-            tasksPool.current.delete(key);
-            tasksTTLTimeouts.current.delete(key);
-            usePerformanceStore.getState().unregisterListener(`taka_tasks_${key}`);
-          }, TTL_DURATION_MS);
-          tasksTTLTimeouts.current.set(key, timeoutId);
+      Array.from(tasksPool.current.keys()).forEach(key => {
+        if (!neededKeys.has(key)) {
+          if (!tasksTTLTimeouts.current.has(key)) {
+            const timeoutId = setTimeout(() => {
+              const unsub = tasksPool.current.get(key);
+              if (unsub) unsub();
+              tasksPool.current.delete(key);
+              tasksTTLTimeouts.current.delete(key);
+              usePerformanceStore.getState().unregisterListener(`taka_tasks_${key}`);
+            }, TTL_DURATION_MS);
+            tasksTTLTimeouts.current.set(key, timeoutId);
+          }
         }
-      }
+      });
+    };
+
+    runTasksSync().catch(err => {
+      console.warn("[useFirebaseData] runTasksSync error:", err);
     });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds, visibleActiveProjectIds, globalYearFilter, buildStoreAndYearQuery]);
 
   // 2.4 Delta Sync for Costs (Native Firebase Cache for active target years with Keep-Alive Pool)
-  const costsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigCosts = useRef<string>("");
 
   useEffect(() => {
     return () => {
       costsPool.current.forEach(u => u());
       costsPool.current.clear();
+      costsTTLTimeouts.current.forEach(t => clearTimeout(t));
+      costsTTLTimeouts.current.clear();
     };
   }, []);
 
@@ -903,9 +1021,26 @@ export function useFirebaseData() {
     if (!querySignature || !isCostsRequested) {
       if (!isCostsRequested) {
         setIsCostsLoading(false);
+        // Start TTL cleanup for costs listeners if not requested (15 min)
+        Array.from(costsPool.current.keys()).forEach(key => {
+          if (!costsTTLTimeouts.current.has(key)) {
+            const timeoutId = setTimeout(() => {
+              const unsub = costsPool.current.get(key);
+              if (unsub) unsub();
+              costsPool.current.delete(key);
+              costsTTLTimeouts.current.delete(key);
+              usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+            }, TTL_DURATION_MS);
+            costsTTLTimeouts.current.set(key, timeoutId);
+          }
+        });
       }
       return;
     }
+
+    // Cancel pending TTL timeouts when costs requested
+    costsTTLTimeouts.current.forEach(t => clearTimeout(t));
+    costsTTLTimeouts.current.clear();
 
     if (prevSigCosts.current !== querySignature) {
       costsPool.current.forEach(u => u());
@@ -920,42 +1055,52 @@ export function useFirebaseData() {
 
     liveTargetYears.forEach(year => {
       if (!costsPool.current.has(year)) {
-        const qCosts = buildStoreAndYearQuery(
-          collection(db, "artifacts", APP_ID, "public", "data", "taka_costs"),
-          "projectStore",
-          "projectYear",
-          year
-        );
+        const currentCosts = useAppStore.getState().costs || [];
+        const hasLocalCosts = currentCosts.some(c => String(c.projectYear || '') === String(year));
 
-        usePerformanceStore.getState().registerListener(`taka_costs_${year}`);
-        const unsub = onSnapshot(
-          qCosts,
-          (snapshot) => {
-            usePerformanceStore.getState().trackSnapshot(`taka_costs_${year}`, snapshot);
-            setIsCostsLoading(false);
+        if (hasLocalCosts) {
+          costsPool.current.set(year, () => {});
+          setIsCostsLoading(false);
+          pullAndApplyDeltas(year).catch(() => {});
+          usePerformanceStore.getState().trackGetDoc(`taka_costs_${year}`, true, currentCosts.length, 'Dexie Local-First Costs (0 Read full collection)');
+        } else {
+          const qCosts = buildStoreAndYearQuery(
+            collection(db, "artifacts", APP_ID, "public", "data", "taka_costs"),
+            "projectStore",
+            "projectYear",
+            year
+          );
 
-            const currentCosts = useAppStore.getState().costs || [];
-            const costMap = new Map<string, Cost>();
-            currentCosts.forEach(c => costMap.set(c.id, c));
+          usePerformanceStore.getState().registerListener(`taka_costs_${year}`);
+          const unsub = onSnapshot(
+            qCosts,
+            (snapshot) => {
+              usePerformanceStore.getState().trackSnapshot(`taka_costs_${year}`, snapshot);
+              setIsCostsLoading(false);
 
-            snapshot.docChanges().forEach((change) => {
-              const data = { id: change.doc.id, ...change.doc.data() } as Cost;
-              if (change.type === "removed" || data.isDeleted) {
-                costMap.delete(change.doc.id);
-              } else {
-                costMap.set(change.doc.id, data);
-              }
-            });
+              const currentCosts = useAppStore.getState().costs || [];
+              const costMap = new Map<string, Cost>();
+              currentCosts.forEach(c => costMap.set(c.id, c));
 
-            const updatedList = Array.from(costMap.values());
-            useAppStore.getState().setCosts(updatedList);
-          },
-          (e) => {
-            setIsCostsLoading(false);
-            console.error("Costs listener error:", e);
-          }
-        );
-        costsPool.current.set(year, unsub);
+              snapshot.docChanges().forEach((change) => {
+                const data = { id: change.doc.id, ...change.doc.data() } as Cost;
+                if (change.type === "removed" || data.isDeleted) {
+                  costMap.delete(change.doc.id);
+                } else {
+                  costMap.set(change.doc.id, data);
+                }
+              });
+
+              const updatedList = Array.from(costMap.values());
+              useAppStore.getState().setCosts(updatedList);
+            },
+            (e) => {
+              setIsCostsLoading(false);
+              console.error("Costs listener error:", e);
+            }
+          );
+          costsPool.current.set(year, unsub);
+        }
       } else {
         setIsCostsLoading(false);
       }
@@ -1003,11 +1148,8 @@ export function useFirebaseData() {
   }, [querySignature, isCostsRequested, buildStoreAndYearQuery, globalYearFilter]);
 
   // 2.5 Delta Sync for Delegation Groups (Native Firebase Cache with TTL)
-  const delegationsPool = useRef<Map<string, () => void>>(new Map());
   const prevQuerySigDelegations = useRef<string>("");
   const prevSigDelegations = useRef<string>("");
-  const delegationsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const yearDelegationsCache = useRef<Map<string, Map<string, DelegationGroup>>>(new Map());
 
   useEffect(() => {
     return () => {
@@ -1073,16 +1215,25 @@ export function useFirebaseData() {
 
     targetYears.forEach(year => {
       if (!delegationsPool.current.has(year)) {
-        const qDelegations = buildStoreAndYearQuery(
-          collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups"),
-          "projectStore",
-          "projectYear",
-          year
-        );
-        
-        usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
-        const unsub = onSnapshot(
-          qDelegations,
+        const currentDelegations = useAppStore.getState().delegationGroups || [];
+        const hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
+
+        if (hasLocalDelegations) {
+          delegationsPool.current.set(year, () => {});
+          setIsDelegationsLoading(false);
+          pullAndApplyDeltas(year).catch(() => {});
+          usePerformanceStore.getState().trackGetDoc(`taka_delegation_groups_${year}`, true, currentDelegations.length, 'Dexie Local-First Delegations (0 Read full collection)');
+        } else {
+          const qDelegations = buildStoreAndYearQuery(
+            collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups"),
+            "projectStore",
+            "projectYear",
+            year
+          );
+          
+          usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
+          const unsub = onSnapshot(
+            qDelegations,
           (snapshot) => {
             usePerformanceStore.getState().trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
@@ -1128,7 +1279,8 @@ export function useFirebaseData() {
         );
         delegationsPool.current.set(year, unsub);
       }
-    });
+    }
+  });
 
   }, [querySignature, isDelegationsRequested, buildStoreAndYearQuery, globalYearFilter]);
 

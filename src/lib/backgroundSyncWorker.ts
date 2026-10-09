@@ -20,6 +20,7 @@ import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
 import { deduplicateTasks } from './taskDeduplicationService';
 import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
+import { enforceStorageBudget } from './storageBudgetService';
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
@@ -59,6 +60,11 @@ export async function bootstrapLocalStore(): Promise<{
         .getState()
         .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
     }
+
+    // Tự động kiểm tra và bảo đảm ngân sách bộ nhớ 40MB iOS
+    setTimeout(() => {
+      enforceStorageBudget().catch(() => {});
+    }, 1000);
 
     return {
       projectCount: projects.length,

@@ -158,25 +158,46 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
   const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
 
   try {
-    let q = query(
-      colRef,
-      where('numericTime', '>', lastSyncTime),
-      orderBy('numericTime', 'asc'),
-      limit(200)
-    );
+    const deltas: TakaDelta[] = [];
+    let currentSince = lastSyncTime;
+    let iteration = 0;
+    const MAX_PAGES = 5;
 
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) {
+    while (iteration < MAX_PAGES) {
+      iteration++;
+      const q = query(
+        colRef,
+        where('numericTime', '>', currentSince),
+        orderBy('numericTime', 'asc'),
+        limit(200)
+      );
+
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        break;
+      }
+
+      let pageMaxTime = currentSince;
+      snapshot.forEach((d) => {
+        const item = d.data() as TakaDelta;
+        deltas.push(item);
+        if (item.numericTime > pageMaxTime) {
+          pageMaxTime = item.numericTime;
+        }
+      });
+
+      currentSince = pageMaxTime;
+      if (snapshot.size < 200) {
+        break;
+      }
+    }
+
+    if (deltas.length === 0) {
       // Advance lastSyncTime with 60s clock skew buffer so Heartbeat Fingerprint bypass stays active (0-Read)
       const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
       safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
       return 0;
     }
-
-    const deltas: TakaDelta[] = [];
-    snapshot.forEach((d) => {
-      deltas.push(d.data() as TakaDelta);
-    });
 
     // Ghi nhận vào Performance Store để giám sát
     usePerformanceStore
@@ -448,7 +469,17 @@ export function startDeltaSyncService(intervalMs: number = 25000): () => void {
     }
   };
 
+  const handlePageShow = () => {
+    wakeAndSync();
+  };
+
+  const handleFocus = () => {
+    wakeAndSync();
+  };
+
   window.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('pageshow', handlePageShow);
+  window.addEventListener('focus', handleFocus);
   window.addEventListener('online', handleOnline);
   window.addEventListener('pointerdown', handleUserActivity, { passive: true });
   window.addEventListener('keydown', handleUserActivity, { passive: true });
@@ -457,9 +488,20 @@ export function startDeltaSyncService(intervalMs: number = 25000): () => void {
   return () => {
     stopPolling();
     window.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('pageshow', handlePageShow);
+    window.removeEventListener('focus', handleFocus);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('pointerdown', handleUserActivity);
     window.removeEventListener('keydown', handleUserActivity);
     window.removeEventListener('touchstart', handleUserActivity);
   };
+}
+
+/**
+ * Kích hoạt đồng bộ Delta ngay lập tức khi ứng dụng thức giấc từ trạng thái ngủ sâu (iOS Sleep/Wake Guard)
+ */
+export async function triggerImmediateDeltaSync(year?: string): Promise<number> {
+  lastActivityTime = Date.now();
+  isHibernating = false;
+  return pullAndApplyDeltas(year || useAppStore.getState().globalYearFilter);
 }

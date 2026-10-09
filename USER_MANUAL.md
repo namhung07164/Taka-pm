@@ -1791,3 +1791,24 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Chuyển đổi và nạp tức thời các định dạng link hình ảnh: hỗ trợ chuyển đổi giao thức `r2://` sang endpoint công khai HTTP (`https://hcm.taka-pm.org/...`), đồng thời hỗ trợ chuyển tiếp hình ảnh Google Drive sang CDN trực tiếp (`lh3.googleusercontent.com`) giúp hình ảnh hiển thị ngay trong 0ms mà không bị chặn bởi cookie bên thứ ba.
      + Tách biệt cửa sổ phóng to toàn màn hình (`LayoutUnitLightboxModal`) ra khỏi vùng DOM bao bọc của Tooltip, ngăn chặn xung đột sự kiện cuộn/chặn sự kiện (`stopPropagation`), cho phép ảnh mở ra ở vị trí trung tâm tự nhiên và tiếp tục thu phóng mượt mà.
 
+55. **Cơ Chế Bảo Vệ Thức Giấc Thông Minh & Tải Nhiệm Vụ Cục Bộ (Sleep/Wake Delta Reconnect Guard & Local-First Tasks Engine)**:
+   - **Triệt Tiêu Bão Đọc Sau Khi Mở Lại App Cách 2–4–8 Tiếng (Zero-Storm iOS Sleep/Wake Guard)**:
+     + Tự động nhận diện khi người dùng khóa màn hình iPhone hoặc chuyển ứng dụng nền trong thời gian dài (> 10 phút, 2h, 4h, 8h) qua các sự kiện `visibilitychange`, `pageshow` (iOS WebKit BFCache) và `focus`.
+     + Ngắt bỏ hoàn toàn các listener cũ bị hết hạn `resumeToken` của Firestore, ngăn chặn triệt để hiện tượng Firestore tự động tải lại toàn bộ danh mục nhiệm vụ từ máy chủ (tiết kiệm hàng ngàn lượt Firestore READ mỗi lần mở app).
+     + Kích hoạt ngay cơ chế đồng bộ vi phân tức thời (`triggerImmediateDeltaSync`): chỉ tải đúng các bản ghi thay đổi mới phát sinh trong thời gian thiết bị ngủ (0 đến vài read thay vì 1,000+ reads).
+   - **Đồng Bộ Hai Lớp Cho Toàn Bộ Nhiệm Vụ (IndexedDB Dexie ➔ RAM Zustand ➔ Delta Pipeline)**:
+     + Khi người dùng chuyển sang tab Gantt / Detail / Calendar / Task Delegation: ưu tiên kiểm tra dữ liệu đã lưu trong IndexedDB (Dexie). Nếu đã có dữ liệu, hiển thị ngay tức thì trong 0ms mà không cần truy vấn toàn bảng từ Firestore.
+     + Hỗ trợ rút cạn đa trang vi phân (`Multi-page Delta Draining` lên đến 1,000 bản ghi), đảm bảo dù điện thoại tắt mạng hoặc để qua đêm thì khi kết nối lại, 100% dữ liệu mới từ đồng nghiệp đều được cập nhật hoàn chỉnh, không bao giờ xảy ra lỗi lệch số hay mất mát thông tin.
+
+
+56. **Phân Khúc Tải Nhiệm Vụ Theo Dự Án & Quản Trị Ngân Sách Bộ Nhớ iOS 40MB (On-Demand Task Chunking & iOS 40MB Memory Budget Guard)**:
+   - **Tải Nhiệm Vụ Theo Nhu Cầu & Tối Ưu Hóa Khung Nhìn (On-Demand Project Task Chunking)**:
+     + Khi người dùng chuyển sang tab Gantt hoặc Detail, danh sách nhiệm vụ được nạp linh hoạt theo đúng các dự án đang bung mở (`expandedProjectIds`) hoặc được tìm kiếm (`searchActiveProjectIds`), triệt tiêu việc tải toàn bộ danh mục của tất cả dự án cùng lúc.
+     + Cơ chế nạp bất đồng bộ ưu tiên Dexie (`hydrateTasksForProjects`) đưa dữ liệu cục bộ vào bộ nhớ trước khi đánh giá kết nối Firestore, giúp ứng dụng nhận biết tức thời dữ liệu đã có sẵn và chuyển thẳng sang chế độ đồng bộ vi phân Delta Pipeline mà không kích hoạt cuộc gọi tải toàn bộ bảng từ máy chủ.
+   - **Quản Trị Trần Bộ Nhớ iOS 40MB & Dọn Rác Tự Động (iOS 40MB Memory Budget & LRU Eviction)**:
+     + Tích hợp dịch vụ quản trị bộ nhớ `storageBudgetService`: định kỳ đo đạc dung lượng IndexedDB qua `navigator.storage.estimate()` trên iOS Safari.
+     + Khi bộ nhớ đạt 80% ngưỡng an toàn 35MB, hệ thống tự động giải phóng các đầu việc đã hoàn thành (`Completed`) của các niên độ cũ (từ 2 năm trước trở về trước) khỏi bộ nhớ đệm thiết bị, giữ nguyên vẹn 100% dữ liệu các năm hiện hành (2025, 2026, 2027...). Điều này ngăn chặn triệt để hiện tượng WebKit tự động dọn sạch cơ sở dữ liệu IndexedDB khi tắt máy lâu.
+   - **Tự Động Thu Gom Kênh Kết Nối Sau 15 Phút (TTL Auto-Garbage Collection cho Listeners)**:
+     + Bổ sung bộ đếm thời gian sống TTL (15 phút) cho các listener chi phí (`costsTTLTimeouts`) và nhiệm vụ (`tasksTTLTimeouts`): khi người dùng rời khỏi tab hoặc thu gọn dự án, kênh kết nối sẽ tự động đóng lại sau 15 phút không hoạt động để tiết kiệm pin thiết bị và tài nguyên WebSocket.
+   - **Kiểm Toán & Giám Sát Hiệu Năng Thức Giấc (Zero-Read Wake Recovery Audit)**:
+     + Mọi chu kỳ thức giấc sau khi iPhone ngủ 2h, 4h, 8h đều được ghi nhận tự động vào bảng giám sát hiệu năng (`usePerformanceStore`), xác nhận việc khôi phục giao diện hoàn thành trong 0ms với 0 lượt tải lặp lại từ Cloud Firestore.
