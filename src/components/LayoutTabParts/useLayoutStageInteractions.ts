@@ -185,7 +185,7 @@ export function useLayoutStageInteractions({
     if (version?.backgroundUrl && !bgImage) {
       return;
     }
-    const currentKey = `${storeFilter}_${targetLoc}_${version?.id || ''}`;
+    const currentKey = `${storeFilter}_${targetLoc}_${version?.year || ''}_${version?.id || ''}`;
     const floorChanged = lastFloorVersionKeyRef.current !== currentKey;
     if (floorChanged) {
       lastFloorVersionKeyRef.current = currentKey;
@@ -193,7 +193,7 @@ export function useLayoutStageInteractions({
         fitToScreenRef.current();
       }
     }
-  }, [storeFilter, targetLoc, version?.id, version?.backgroundUrl, bgImage, targetUnitSearch, focusedUnitId]);
+  }, [storeFilter, targetLoc, version?.year, version?.id, version?.backgroundUrl, bgImage, targetUnitSearch, focusedUnitId]);
 
   // Sync with incoming targetUnitSearch prop from toolbar / Quick Navigation
   useEffect(() => {

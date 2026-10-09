@@ -323,14 +323,14 @@ export function useLayoutAggregates({
       return displayedUnits;
     }
 
-    const key = filtered.map((u: any) => u.id).join('|');
+    const key = `${effectiveLayoutYear}_${storeFilter}_${targetLoc}_` + filtered.map((u: any) => `${u.id}:${u.targetColor || ''}:${u.targetGroupId || ''}:${u.targetOpacity ?? ''}`).join('|');
     if (key === prevVisibleUnitsKeyRef.current) {
       return prevVisibleUnitsRef.current;
     }
     prevVisibleUnitsKeyRef.current = key;
     prevVisibleUnitsRef.current = filtered;
     return filtered;
-  }, [displayedUnits, stageScale, stagePos.x, stagePos.y, dimensions.width, dimensions.height, focusedUnitId, deferredSearchQuery]);
+  }, [displayedUnits, stageScale, stagePos.x, stagePos.y, dimensions.width, dimensions.height, focusedUnitId, deferredSearchQuery, effectiveLayoutYear, storeFilter, targetLoc]);
 
   // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout
   const hasUserAccessInStoreYear = useMemo(() => {
