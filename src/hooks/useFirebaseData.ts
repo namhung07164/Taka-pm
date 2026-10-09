@@ -634,8 +634,8 @@ export function useFirebaseData() {
         // Step 1: Instant Local-First Dexie Hydration (0ms, 0 Read)
         const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
         
-        // Metadata Fingerprinting check: If local cache is valid or data is already hydrated
-        const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+        // Metadata Fingerprinting check: If local cache is valid or data is already hydrated for PAST/CLOSED years (< 2026)
+        const isClosedOrPastYear = Number(year) < 2026;
         const hasLocalData = localCount > 0 || (useAppStore.getState().projects || []).some(p => String(p.year) === String(year));
 
         if (hasLocalData && isClosedOrPastYear) {
@@ -884,7 +884,7 @@ export function useFirebaseData() {
         if (!tasksPool.current.has(yearKey)) {
           const currentTasks = useAppStore.getState().tasks || [];
           const hasLocalYearTasks = currentTasks.some(t => String(t.projectYear || '') === String(year));
-          const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+          const isClosedOrPastYear = Number(year) < 2026;
 
           if (hasLocalYearTasks && isClosedOrPastYear) {
             // Local-First: Đã có tasks của năm cũ trong Dexie/Zustand -> Giữ pool hoạt động (0 Read full collection)
@@ -949,7 +949,7 @@ export function useFirebaseData() {
           if (!tasksPool.current.has(projKey)) {
             const currentTasks = useAppStore.getState().tasks || [];
             const hasLocalProjTasks = currentTasks.some(t => String(t.projectCode || '') === String(p.code)) || knownHydratedProjectCodes.current.has(p.code);
-            const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+            const isClosedOrPastYear = Number(year) < 2026;
 
             if (hasLocalProjTasks && isClosedOrPastYear) {
               // Local-First: Đã có tasks của dự án năm cũ trong Dexie/Zustand -> Giữ pool hoạt động (0 Read)
@@ -1064,7 +1064,7 @@ export function useFirebaseData() {
       if (!costsPool.current.has(year)) {
         const currentCosts = useAppStore.getState().costs || [];
         const hasLocalCosts = currentCosts.some(c => String(c.projectYear || '') === String(year));
-        const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+        const isClosedOrPastYear = Number(year) < 2026;
 
         if (hasLocalCosts && isClosedOrPastYear) {
           costsPool.current.set(year, () => {});
@@ -1225,7 +1225,7 @@ export function useFirebaseData() {
       if (!delegationsPool.current.has(year)) {
         const currentDelegations = useAppStore.getState().delegationGroups || [];
         let hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
-        const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
+        const isClosedOrPastYear = Number(year) < 2026;
 
         if (!hasLocalDelegations && isClosedOrPastYear) {
           // Kiểm tra Dexie trước khi fallback ra Firestore full query để triệt tiêu Firestore Read (0 read)

@@ -84,9 +84,29 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         }
         if (minStart) computedTakStart = minStart;
         if (maxFinish) computedTakCompl = maxFinish;
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        let minStart: string | undefined = undefined;
+        let maxFinish: string | undefined = undefined;
+        for (let i = 0; i < p.taskSummaries.length; i++) {
+          const ts = p.taskSummaries[i];
+          if (ts.start && (!minStart || ts.start < minStart)) {
+            minStart = ts.start;
+          }
+          if (ts.finish && (!maxFinish || ts.finish > maxFinish)) {
+            maxFinish = ts.finish;
+          }
+          const name = String(ts.name || '').toLowerCase();
+          if (name.includes('opening') || name.includes('open')) {
+            if (ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+              computedOpening = ts.finish;
+            }
+          }
+        }
+        if (minStart) computedTakStart = minStart;
+        if (maxFinish) computedTakCompl = maxFinish;
       }
 
-      const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+      const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
       const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
       const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
       map.set(pUniqueKey, {
@@ -139,9 +159,25 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       }
       if (minStart) computedTakStart = minStart;
       if (maxFinish) computedTakCompl = maxFinish;
+    } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+      let minStart: string | undefined = undefined;
+      let maxFinish: string | undefined = undefined;
+      for (let i = 0; i < p.taskSummaries.length; i++) {
+        const ts = p.taskSummaries[i];
+        if (ts.start && (!minStart || ts.start < minStart)) minStart = ts.start;
+        if (ts.finish && (!maxFinish || ts.finish > maxFinish)) maxFinish = ts.finish;
+        const name = String(ts.name || '').toLowerCase();
+        if (name.includes('opening') || name.includes('open')) {
+          if (ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+            computedOpening = ts.finish;
+          }
+        }
+      }
+      if (minStart) computedTakStart = minStart;
+      if (maxFinish) computedTakCompl = maxFinish;
     }
 
-    const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+    const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
     return { status, start: computedTakStart || '9999-12-31', finish, sortedTasks, computedTakStart, computedTakCompl, computedOpening };
   }, [projectInfoMap, tasksByProjectKey, tasksByCodeMap]);

@@ -332,6 +332,96 @@ export function getStatus(
   return "On process";
 }
 
+export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
+  let computedTakStart = p.computedTakStart || p.start;
+  let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl;
+  let computedOpening = p.computedOpening || p.opening;
+
+  let derivedFromTasks = false;
+  if (tasks && tasks.length > 0) {
+    const pCode = String(p.code || "").trim().toLowerCase();
+    const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
+    const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
+
+    tasks.forEach(t => {
+      if (!t.projectCode) return;
+      const tCode = String(t.projectCode).trim().toLowerCase();
+      if (tCode !== pCode) return;
+      if (pYear && t.projectYear !== undefined && t.projectYear !== null && String(t.projectYear).trim() !== pYear) return;
+      if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore) return;
+
+      derivedFromTasks = true;
+      if (t.start && (!computedTakStart || t.start < computedTakStart)) {
+        computedTakStart = t.start;
+      }
+      if (t.finish && (!computedTakCompl || t.finish > computedTakCompl)) {
+        computedTakCompl = t.finish;
+      }
+      const name = t.name ? String(t.name).toLowerCase() : "";
+      if ((name.includes("opening") || name.includes("open")) && t.finish && (!computedOpening || t.finish > computedOpening)) {
+        computedOpening = t.finish;
+      }
+    });
+  }
+
+  if (!derivedFromTasks && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+    p.taskSummaries.forEach(ts => {
+      if (ts.start && (!computedTakStart || ts.start < computedTakStart)) {
+        computedTakStart = ts.start;
+      }
+      if (ts.finish && (!computedTakCompl || ts.finish > computedTakCompl)) {
+        computedTakCompl = ts.finish;
+      }
+      const name = ts.name ? String(ts.name).toLowerCase() : "";
+      if ((name.includes("opening") || name.includes("open")) && ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+        computedOpening = ts.finish;
+      }
+    });
+  }
+
+  const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+
+  return {
+    computedTakStart,
+    computedTakCompl,
+    computedOpening,
+    status
+  };
+}
+
+export function matchProjectStatusFilter(
+  status: string | undefined,
+  filterValue: string,
+  startStr?: string
+): boolean {
+  if (!filterValue || filterValue === 'all') return true;
+
+  const currentStatus = status || 'Upcoming';
+
+  if (filterValue === 'On process & Upcoming' || filterValue === 'On process + Upcoming') {
+    return currentStatus === 'On process' || currentStatus === 'Upcoming' || currentStatus === 'Handover';
+  }
+
+  if (filterValue === 'On process + Upcoming 3 days') {
+    if (currentStatus === 'On process' || currentStatus === 'Handover') {
+      return true;
+    }
+    if (currentStatus === 'Upcoming') {
+      if (!startStr) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const dStart = parseDateTime(startStr);
+      if (!dStart) return false;
+      dStart.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((dStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return diffDays <= 3 && diffDays >= 0;
+    }
+    return false;
+  }
+
+  return currentStatus.toLowerCase() === filterValue.toLowerCase();
+}
+
 const INVALID_UNIT_TOKENS = new Set([
   'b1', 'b2', 'b3', 'l1', 'l2', 'l3', 'l4', 'l5',
   '1f', '2f', '3f', '4f', '5f', 'gf', 'ug', 'mz',

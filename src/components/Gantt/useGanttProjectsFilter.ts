@@ -3,6 +3,8 @@ import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { 
   getStatus, 
+  getProjectDatesAndStatus,
+  matchProjectStatusFilter,
   parseDateTime, 
   getUserAllowedStores, 
   getEffectiveStoreFilter, 
@@ -177,41 +179,13 @@ export function useGanttProjectsFilter({
         return isTarget;
       }
 
-      const pStart = p.computedTakStart || p.start || (p as any).takStart;
-      const pCompl = p.computedTakCompl || p.handover || (p as any).takCompl;
-      const pOpening = p.computedOpening || p.opening;
-
-      const pYear = p.year ? String(p.year).trim() : (pStart ? String(pStart).substring(0, 4) : null);
+      const { computedTakStart, status } = getProjectDatesAndStatus(p, tasks);
+      const pYear = p.year ? String(p.year).trim() : (computedTakStart ? String(computedTakStart).substring(0, 4) : null);
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
       const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
 
-      const computedStatus = getStatus(pStart, pCompl, pOpening, p.code);
-      const status = p.computedActStatus && p.computedActStatus !== 'Planned'
-        ? p.computedActStatus
-        : (p.computedStatus || computedStatus);
-
-      let matchesStatus = true;
-      if (filterProjectStatus === 'On process + Upcoming 3 days') {
-        if (status === 'On process') {
-          matchesStatus = true;
-        } else if (status === 'Upcoming') {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const dStart = parseDateTime(pStart);
-          if (dStart) {
-            dStart.setHours(0, 0, 0, 0);
-            const diffDays = Math.ceil((dStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            matchesStatus = diffDays <= 3 && diffDays >= 0;
-          } else {
-            matchesStatus = false;
-          }
-        } else {
-          matchesStatus = false;
-        }
-      } else {
-        matchesStatus = filterProjectStatus === 'all' || status === filterProjectStatus;
-      }
+      const matchesStatus = matchProjectStatusFilter(status, filterProjectStatus, computedTakStart);
 
       if (!matchesYear || !matchesStore || !matchesLocation || !matchesStatus) return false;
 

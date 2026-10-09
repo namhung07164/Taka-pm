@@ -3,6 +3,8 @@ import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { 
   getStatus, 
+  getProjectDatesAndStatus,
+  matchProjectStatusFilter,
   parseDateTime, 
   getUserAllowedStores, 
   getEffectiveStoreFilter, 
@@ -157,43 +159,15 @@ export function useGeneralData({
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      const pStart = p.computedTakStart || p.start || (p as any).takStart;
-      const pCompl = p.computedTakCompl || p.handover || (p as any).takCompl;
-      const pOpening = p.computedOpening || p.opening;
-      const computedStatus = getStatus(pStart, pCompl, pOpening, p.code);
-      const status = p.computedActStatus && p.computedActStatus !== 'Planned'
-        ? p.computedActStatus
-        : (p.computedStatus || computedStatus);
-
+      const { computedTakStart, computedTakCompl, computedOpening, status } = getProjectDatesAndStatus(p, tasks);
       const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
       const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
-      const pYear = p.year ? String(p.year).trim() : (pStart ? String(pStart).substring(0, 4) : null);
+      const pYear = p.year ? String(p.year).trim() : (computedTakStart ? String(computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
       const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
 
-      let matchesStatus = true;
-      if (statusFilter === 'On process + Upcoming 3 days') {
-        if (status === 'On process') {
-          matchesStatus = true;
-        } else if (status === 'Upcoming') {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const dStart = parseDateTime(pStart);
-          if (dStart) {
-            dStart.setHours(0, 0, 0, 0);
-            const diffTime = dStart.getTime() - today.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            matchesStatus = diffDays <= 3 && diffDays >= 0;
-          } else {
-            matchesStatus = false;
-          }
-        } else {
-          matchesStatus = false;
-        }
-      } else {
-        matchesStatus = statusFilter === 'all' || status === statusFilter;
-      }
+      const matchesStatus = matchProjectStatusFilter(status, statusFilter, computedTakStart);
 
       return matchesSearch && matchesYear && matchesStore && matchesLocation && matchesStatus;
     }).sort((a, b) => {
@@ -209,18 +183,21 @@ export function useGeneralData({
         if (orderA !== orderB) return orderA - orderB;
       }
 
+      const infoA = getProjectDatesAndStatus(a, tasks);
+      const infoB = getProjectDatesAndStatus(b, tasks);
+
       if (sortConfig) {
         let valA = '';
         let valB = '';
         if (sortConfig.key === 'start') {
-          valA = a.computedTakStart || '9999-12-31';
-          valB = b.computedTakStart || '9999-12-31';
+          valA = infoA.computedTakStart || '9999-12-31';
+          valB = infoB.computedTakStart || '9999-12-31';
         } else if (sortConfig.key === 'handover') {
-          valA = a.computedTakCompl || '9999-12-31';
-          valB = b.computedTakCompl || '9999-12-31';
+          valA = infoA.computedTakCompl || '9999-12-31';
+          valB = infoB.computedTakCompl || '9999-12-31';
         } else if (sortConfig.key === 'opening') {
-          valA = a.computedOpening || a.opening || '9999-12-31';
-          valB = b.computedOpening || b.opening || '9999-12-31';
+          valA = infoA.computedOpening || a.opening || '9999-12-31';
+          valB = infoB.computedOpening || b.opening || '9999-12-31';
         }
         
         if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -228,8 +205,8 @@ export function useGeneralData({
         return 0;
       }
 
-      const statusA = getStatus(a.computedTakStart, a.computedTakCompl, a.computedOpening || a.opening, a.code);
-      const statusB = getStatus(b.computedTakStart, b.computedTakCompl, b.computedOpening || b.opening, b.code);
+      const statusA = infoA.status;
+      const statusB = infoB.status;
       
       const weightA = statusWeight[statusA] || 99;
       const weightB = statusWeight[statusB] || 99;
