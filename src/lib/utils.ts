@@ -348,10 +348,8 @@ function normalizeUnitCodeBase(code: string): string {
   let str = code.toLowerCase().trim();
   // Remove leading 'unit ' or 'shop ' or 'lot ' or 'booth '
   str = str.replace(/^(unit|shop|lot|booth|kiosk|store)\s*[-_:]?\s*/i, '');
-  // Remove flexible PM prefix like 'pm-l1-hcm-2026-', 'pm-b1-hcm-', 'pm-hcm-l1-', 'pm-l2-hn-', 'pm-hn-l2-', 'pm-l2-', 'pm-2027-l2-'
-  str = str.replace(/^pm-(?:(?:b\d|l\d|\d+f|gf|ug|hcm|hn|20\d\d|y\d\d)[-_:]\s*)+/i, '');
-  // Remove store prefix like 'hn-', 'hcm-' if followed by floor or unit (e.g. 'hn-l2-201' -> 'l2-201')
-  str = str.replace(/^(?:hcm|hn)[-_:]\s*/i, '');
+  // Remove PM prefix like 'pm-l1-hcm-2026-', 'pm-b1-hcm-', 'pm-hcm-l1-'
+  str = str.replace(/^pm-(?:b\d|l\d|\d+f|gf|ug|hcm|hn)-(?:hcm|hn|b\d|l\d|\d+f|gf|ug)(?:-(?:20\d\d|y\d\d))?[-_:]\s*/i, '');
   // Remove floor prefixes like l1-, l2-, f1-, 1f-, 2f-, b1-, b2-, gf-, ug- (strictly 1-2 digits to avoid stripping unit numbers like 219-)
   str = str.replace(/^(?:[blf]\d{1,2}|\d{1,2}f|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
   return str.trim();
@@ -453,56 +451,19 @@ export function extractProjectMetadata(p: any): { year: string; store: string; l
   }
 
   // 3. Location (Floor)
-  let rawLoc = String((p as any).floor || p.location || (p as any).projectLocation || '').trim().toUpperCase();
-  let location = '';
-  if (rawLoc && rawLoc !== 'UNDEFINED' && rawLoc !== 'NULL') {
-    const m = rawLoc.match(/(?:^|[^a-zA-Z0-9])(B\d|L\d|\d+F|\d+L|GF|MF|RF|BASEMENT\s*\d?|LEVEL\s*\d+[a-zA-Z]?|FLOOR\s*\d+[a-zA-Z]?)(?:[^a-zA-Z0-9]|$)/i);
-    if (m) {
-      let token = m[1].toUpperCase().replace(/\s+/g, '');
-      if (token.startsWith('BASEMENT')) token = token.replace('BASEMENT', 'B') || 'B1';
-      if (token.startsWith('LEVEL')) {
-        const num = token.match(/LEVEL(\d+)/i);
-        token = num ? `L${num[1]}` : 'L1';
-      }
-      if (token.startsWith('FLOOR')) {
-        const num = token.match(/FLOOR(\d+)/i);
-        token = num ? `L${num[1]}` : 'L1';
-      }
-      if (/^\d+F$/.test(token)) token = 'L' + token.replace('F', '');
-      if (/^\d+L$/.test(token)) token = 'L' + token.replace('L', '');
-      if (/^L\d+[A-Z]$/i.test(token)) token = token.slice(0, -1);
-      location = token;
-    } else {
-      location = rawLoc;
-    }
-  }
-
+  let location = String((p as any).floor || p.location || (p as any).projectLocation || '').trim().toUpperCase();
   if (!location || location === 'UNDEFINED' || location === 'NULL') {
     const rawSearch = `${p.code || ''} ${p.linkCodes || ''} ${p.name || ''}`;
-    const m = rawSearch.match(/(?:^|[^a-zA-Z0-9])(B\d|L\d|\d+F|\d+L|GF|MF|RF|BASEMENT\s*\d?|LEVEL\s*\d+[a-zA-Z]?|FLOOR\s*\d+[a-zA-Z]?)(?:[^a-zA-Z0-9]|$)/i);
-    if (m) {
-      let token = m[1].toUpperCase().replace(/\s+/g, '');
-      if (token.startsWith('BASEMENT')) token = token.replace('BASEMENT', 'B') || 'B1';
-      if (token.startsWith('LEVEL')) {
-        const num = token.match(/LEVEL(\d+)/i);
-        token = num ? `L${num[1]}` : 'L1';
-      }
-      if (token.startsWith('FLOOR')) {
-        const num = token.match(/FLOOR(\d+)/i);
-        token = num ? `L${num[1]}` : 'L1';
-      }
-      if (/^\d+F$/.test(token)) token = 'L' + token.replace('F', '');
-      if (/^\d+L$/.test(token)) token = 'L' + token.replace('L', '');
-      if (/^L\d+[A-Z]$/i.test(token)) token = token.slice(0, -1);
-      location = token;
+    const locMatch = rawSearch.match(/(?:^|[^a-zA-Z0-9])(B1|B2|B3|L1|L2|L3|L4|L5|1F|2F|3F|4F|5F)(?:[^a-zA-Z0-9]|$)/i);
+    if (locMatch) {
+      let l = locMatch[1].toUpperCase();
+      if (l.endsWith('F')) l = `L${l[0]}`; // 1F -> L1, 2F -> L2
+      location = l;
     }
   }
 
   if (location && location.endsWith('F')) {
     location = `L${location[0]}`;
-  }
-  if (/^L\d+[A-Z]$/i.test(location)) {
-    location = location.slice(0, -1);
   }
 
   return { year, store, location };
@@ -525,11 +486,9 @@ export function projectMatchesScope(
   if (scope.location && scope.location !== 'all') {
     let targetLoc = scope.location.toUpperCase().trim();
     if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
-    if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
     if (meta.location) {
       let pLoc = meta.location.toUpperCase().trim();
       if (pLoc.endsWith('F')) pLoc = `L${pLoc[0]}`;
-      if (/^L\d+[A-Z]$/i.test(pLoc)) pLoc = pLoc.slice(0, -1);
       const isStorewide = pLoc === 'ALL' || pLoc === 'STORE' || pLoc === 'STOREWIDE' || pLoc === 'WHOLE STORE' || pLoc === 'ALL FLOORS';
       if (!isStorewide && pLoc !== targetLoc) return false;
     }

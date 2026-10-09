@@ -4,7 +4,6 @@ import { Project, Task, AppUser, DelegationGroup, DelegationSubTask } from '../.
 import { db, APP_ID } from '../../lib/firebase';
 import { generateId, getTaskStatus, getStatus, resolveActualStatus } from '../../lib/utils';
 import { useAppStore } from '../../store/useAppStore';
-import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
 import { DelegatableItem, resolveGroupParentProject, computeFallbackYear } from './taskDelegationTypes';
 import { checkAndSyncRealtimeSubTaskCompletion } from './delegationAutoSync';
 
@@ -224,12 +223,6 @@ export function useTaskDelegationMutations({
       title: 'Delete Delegation Group',
       message: 'Delete this delegation group?',
       onConfirm: async () => {
-        // Deep clean attachments on Firebase Storage
-        const urlsToDelete = extractStorageUrls(group);
-        if (urlsToDelete.length > 0) {
-          deleteStorageFiles(urlsToDelete).catch(console.error);
-        }
-
         deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id));
 
         if (group.parentTaskId) {
@@ -386,14 +379,6 @@ export function useTaskDelegationMutations({
       title: 'Delete Delegation Task',
       message: 'Delete this delegation task?',
       onConfirm: async () => {
-        const targetSubTask = group.subTasks.find((st) => st.id === subTaskId);
-        if (targetSubTask) {
-          const urlsToDelete = extractStorageUrls(targetSubTask);
-          if (urlsToDelete.length > 0) {
-            deleteStorageFiles(urlsToDelete).catch(console.error);
-          }
-        }
-
         const updatedSubTasks = group.subTasks.filter((st) => st.id !== subTaskId);
         if (updatedSubTasks.length === 0) {
           deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id));

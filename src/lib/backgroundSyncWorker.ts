@@ -236,24 +236,10 @@ export async function hydrateDelegationsFromLocal(year?: string): Promise<number
 export async function hydrateDelegationsForProjects(projectIdsOrCodes: string[]): Promise<number> {
   if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return 0;
   try {
-    const store = useAppStore.getState();
-    const currentProjects = store.projects || [];
-    const expandedKeys = new Set<string>();
-
-    projectIdsOrCodes.forEach((key) => {
-      const trimmed = String(key).trim();
-      if (!trimmed) return;
-      expandedKeys.add(trimmed);
-      const matched = currentProjects.find(
-        (p) => String(p.id) === trimmed || String(p.code) === trimmed || String(p.no) === trimmed
-      );
-      if (matched?.code) expandedKeys.add(String(matched.code).trim());
-      if (matched?.id) expandedKeys.add(String(matched.id).trim());
-    });
-
-    const localDelegations = await getLocalDelegationsForProjects(Array.from(expandedKeys));
+    const localDelegations = await getLocalDelegationsForProjects(projectIdsOrCodes);
     if (!localDelegations || localDelegations.length === 0) return 0;
 
+    const store = useAppStore.getState();
     const existing = store.delegationGroups || [];
     const dMap = new Map(existing.map(d => [d.id, d]));
     let hasNew = false;

@@ -430,8 +430,8 @@ export function useLayoutFloorData({
   }, [locationFilter, storeFilter, globalYearFilter]);
 
   const effectiveLayoutYear = String(
-    activeYear || 
     version?.year || 
+    activeYear || 
     (storeFilter === 'HN' ? '2027' : '2026')
   ).trim();
 
