@@ -141,10 +141,7 @@ export function updatePredecessorsStrings(
   for (const v of normalizedMap.values()) knownCodes.add(v.toLowerCase());
   allTasks.forEach(t => {
     if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
-    if (t.projectCode && projects) {
-      const c = computeTaskCode(projects, allTasks, t);
-      if (c) knownCodes.add(c.toLowerCase());
-    }
+    if (t.projectCode) knownCodes.add(t.projectCode.toLowerCase());
   });
 
   allTasks.forEach(t => {
@@ -509,20 +506,8 @@ export function sortTasksByPredecessorsAndDates(
 
 export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, Task[]> {
   const map = new Map<string, Task[]>();
-  const tasksByProjectCode = new Map<string, Task[]>();
   const safeTasks = Array.isArray(tasks) ? tasks : [];
   const safeProjects = Array.isArray(projects) ? projects : [];
-
-  for (const t of safeTasks) {
-    if (!t) continue;
-    const code = String(t.projectCode || '').trim().toLowerCase();
-    let arr = tasksByProjectCode.get(code);
-    if (!arr) {
-      arr = [];
-      tasksByProjectCode.set(code, arr);
-    }
-    arr.push(t);
-  }
 
   const addKey = (t: Task, rawKey?: string | number | null) => {
     if (rawKey === undefined || rawKey === null) return;
@@ -535,53 +520,49 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     }
   };
 
+  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
+
   safeProjects.forEach((p) => {
     if (!p) return;
-    const pCode = String(p.code || '').trim().toLowerCase();
-    const pTasks = tasksByProjectCode.get(pCode) || [];
-    const groupTasks = sortGroupTasks(pTasks.filter(t => 
-       t &&
-       (p.id && t.projectId ? t.projectId === p.id : true) &&
-       (p.year ? String(t.projectYear || '') === String(p.year) : true) &&
-       (p.store ? String(t.projectStore || '') === String(p.store) : true) &&
-       (p.location && t.location ? String(t.location || '').trim().toLowerCase() === String(p.location || '').trim().toLowerCase() : true)
-    ));
+    const pCode = String(p.code || '').trim();
+    if (!pCode) return;
+
+    const pTasks = safeTasks.filter(t => 
+      t &&
+      ((p.id && t.projectId ? t.projectId === p.id : false) || 
+       (t.projectCode && String(t.projectCode).trim().toLowerCase() === pCode.toLowerCase()))
+    );
+    const groupTasks = sortGroupTasks(pTasks);
     groupTasks.forEach((t, i) => {
       if (!t) return;
-      // 1. Task canonical computed code
-      const computed = computeTaskCode(projects, tasks, t);
+      const computed = taskCodeMap.get(t.id) || t.taskCodePhu || `${pCode}#${i + 1}`;
       if (computed) {
         addKey(t, computed);
         if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
         if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
       }
 
-      // 2. Task secondary code (taskCodePhu) if any
       if (t.taskCodePhu) {
         addKey(t, t.taskCodePhu);
         if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
         if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
       }
 
-      // 3. Sequential code within project: ${p.code}#${i + 1} and legacy ${p.code}-${i + 1}
-      addKey(t, `${p.code || ''}#${i + 1}`);
-      addKey(t, `${p.code || ''}-${i + 1}`);
+      addKey(t, `${pCode}#${i + 1}`);
+      addKey(t, `${pCode}-${i + 1}`);
 
-      // 4. OrderIndex-based code if defined
       if (t.orderIndex !== undefined && t.orderIndex !== null) {
-        addKey(t, `${p.code || ''}#${Number(t.orderIndex) + 1}`);
-        addKey(t, `${p.code || ''}-${Number(t.orderIndex) + 1}`);
+        addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
+        addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
       }
 
-      // 5. Raw task ID
       if (t.id) addKey(t, t.id);
     });
   });
 
-  // Also index all tasks directly to ensure unparented or cross-project tasks are reachable
   safeTasks.forEach(t => {
     if (!t) return;
-    const computed = computeTaskCode(projects, tasks, t);
+    const computed = taskCodeMap.get(t.id) || t.taskCodePhu || '';
     if (computed) {
       addKey(t, computed);
       if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
@@ -609,38 +590,25 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   }
   if (!projects || !Array.isArray(projects) || !tasks || !Array.isArray(tasks)) return '';
 
-  const taskPCode = String(task.projectCode || '').trim().toLowerCase();
-  
-  const p = projects.find(proj => {
-    if (!proj) return false;
-    if (task.projectId && proj.id && proj.id === task.projectId) return true;
-    if (!proj.code) return false;
-    const projCode = String(proj.code).trim().toLowerCase();
-    const matchesCode = projCode === taskPCode || projCode.includes(taskPCode) || taskPCode.includes(projCode);
-    const matchesYear = proj.year ? String(task.projectYear || '').trim().toLowerCase() === String(proj.year).trim().toLowerCase() : true;
-    const matchesStore = proj.store ? String(task.projectStore || '').trim().toLowerCase() === String(proj.store).trim().toLowerCase() : true;
-    const matchesLocation = proj.location && task.location ? String(task.location || '').trim().toLowerCase() === String(proj.location).trim().toLowerCase() : true;
-    return matchesCode && matchesYear && matchesStore && matchesLocation;
-  });
+  const taskPCode = String(task.projectCode || '').trim();
+  if (!taskPCode && !task.projectId) return '';
 
-  const currentPCode = p ? String(p.code).trim() : String(task.projectCode || '').trim();
+  const p = (task.projectId ? projects.find(proj => proj.id === task.projectId) : undefined) ||
+            (taskPCode ? projects.find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
 
-  const groupTasks = sortGroupTasks((tasks || []).filter(t => {
-    if (!t) return false;
-    if (p && p.id && t.projectId && p.id === t.projectId) return true;
-    if (!t.projectCode) return false;
-    const tPCode = String(t.projectCode).trim().toLowerCase();
-    const targetCode = currentPCode.toLowerCase();
-    const matchesCode = tPCode === targetCode || tPCode.includes(targetCode) || targetCode.includes(tPCode);
-    const matchesYear = p && p.year ? String(t.projectYear || '').trim().toLowerCase() === String(p.year).trim().toLowerCase() : true;
-    const matchesStore = p && p.store ? String(t.projectStore || '').trim().toLowerCase() === String(p.store).trim().toLowerCase() : true;
-    const matchesLocation = p && p.location && t.location ? String(t.location || '').trim().toLowerCase() === String(p.location).trim().toLowerCase() : true;
-    return matchesCode && matchesYear && matchesStore && matchesLocation;
-  }));
+  const currentPCode = p ? String(p.code).trim() : taskPCode;
+  if (!currentPCode) return '';
 
-  const i = groupTasks.findIndex(t => t.id === task.id);
-  const orderNum = i !== -1 ? i + 1 : ((task.orderIndex !== undefined ? task.orderIndex : 0) + 1);
-  return currentPCode ? `${currentPCode}#${orderNum}` : '';
+  if (task.orderIndex !== undefined && task.orderIndex !== null) {
+    return `${currentPCode}#${Number(task.orderIndex) + 1}`;
+  }
+
+  const pTasks = tasks.filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
+  const sorted = sortGroupTasks(pTasks);
+  const idx = sorted.findIndex(t => t.id === task.id);
+  const orderNum = idx !== -1 ? idx + 1 : 1;
+
+  return `${currentPCode}#${orderNum}`;
 }
 
 /**
@@ -1264,28 +1232,25 @@ export function reorderAndCalculateTasks(
 export function normalizeAndHealTaskPredecessors(
   task: Task,
   allTasks: Task[],
-  projects: Project[]
+  projects: Project[],
+  cachedTaskNoMap?: Map<string, Task[]>,
+  cachedKnownCodes?: Set<string>
 ): { changed: boolean; newPredecessor: string } {
   if (!task || !task.predecessor || typeof task.predecessor !== 'string' || !task.predecessor.trim()) {
     return { changed: false, newPredecessor: task?.predecessor || '' };
   }
 
-  // Ensure allTasks has updated taskCodePhu derived from computeTaskCode if needed
-  const updatedAllTasks = (allTasks || []).map(t => {
-    const c = computeTaskCode(projects, allTasks, t);
-    return c && c !== t.taskCodePhu ? { ...t, taskCodePhu: c } : t;
-  });
-
-  const taskNoMap = buildTaskNoMap(projects, updatedAllTasks);
-  const knownCodes = new Set<string>();
-  for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
-  updatedAllTasks.forEach(t => {
-    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
-    if (t.projectCode && projects) {
-      const c = computeTaskCode(projects, updatedAllTasks, t);
-      if (c) knownCodes.add(c.toLowerCase());
-    }
-  });
+  const updatedAllTasks = allTasks || [];
+  const taskNoMap = cachedTaskNoMap || buildTaskNoMap(projects, updatedAllTasks);
+  const knownCodes = cachedKnownCodes || (() => {
+    const set = new Set<string>();
+    for (const k of taskNoMap.keys()) set.add(k.toLowerCase());
+    updatedAllTasks.forEach(t => {
+      if (t.taskCodePhu) set.add(t.taskCodePhu.toLowerCase());
+      if (t.projectCode) set.add(t.projectCode.toLowerCase());
+    });
+    return set;
+  })();
 
   const tokens = splitPredecessors(task.predecessor, knownCodes);
   let changed = false;
@@ -1340,7 +1305,7 @@ export function normalizeAndHealTaskPredecessors(
             }
           }
           if (targetTask) {
-            const currentTargetCode = computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu;
+            const currentTargetCode = targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask);
             if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
               changed = true;
               return `${currentTargetCode.trim()}${remainder}`;
@@ -1409,13 +1374,13 @@ export function normalizeAndHealTaskPredecessors(
 
         if (!targetTask) {
           targetTask = sameProjectTasks.find(t => {
-            const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
+            const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
             return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
           });
         }
 
         if (targetTask) {
-          const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}#${subIndexNum}`).trim();
+          const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${currentPCode}#${subIndexNum}`).trim();
           if (newCode) {
             changed = true;
             return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -1449,13 +1414,13 @@ export function normalizeAndHealTaskPredecessors(
 
           if (!targetTask) {
             targetTask = targetTasks.find(t => {
-              const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
+              const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
               return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
             });
           }
 
           if (targetTask) {
-            const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}#${subIndexNum}`).trim();
+            const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${matchedProj.code}#${subIndexNum}`).trim();
             if (newCode) {
               changed = true;
               return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -1488,26 +1453,33 @@ export function healAllTasksPredecessors(
 } {
   const updatesToSave: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }[] = [];
   let changedCount = 0;
+  const safeTasks = Array.isArray(allTasks) ? allTasks : [];
+  const safeProjects = Array.isArray(projects) ? projects : [];
 
-  // 1. First build version of allTasks where every task has updated taskCodePhu
-  const allTasksWithUpdatedCodes = (allTasks || []).map(t => {
-    const computedCode = computeTaskCode(projects, allTasks, t);
-    return computedCode ? { ...t, taskCodePhu: computedCode } : t;
+  // Precompute task codes and taskNoMap once for all tasks
+  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
+  const taskNoMap = buildTaskNoMap(safeProjects, safeTasks);
+  const knownCodes = new Set<string>();
+  for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
+  safeTasks.forEach(t => {
+    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
+    if (t.projectCode) knownCodes.add(t.projectCode.toLowerCase());
   });
 
-  const updatedTasks = (allTasks || []).map(t => {
+  const updatedTasks = safeTasks.map(t => {
     let taskChanged = false;
     let newPred = t.predecessor || '';
     const originalTask = t;
 
-    const computedCode = computeTaskCode(projects, allTasks, t);
-    const newPhu = computedCode || t.taskCodePhu || '';
+    const newPhu = t.taskCodePhu || taskCodeMap.get(t.id) || '';
 
     if (t.predecessor) {
       const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
         { ...t, taskCodePhu: newPhu }, 
-        allTasksWithUpdatedCodes, 
-        projects
+        safeTasks, 
+        safeProjects,
+        taskNoMap,
+        knownCodes
       );
       if (changed && newPredecessor !== t.predecessor) {
         newPred = newPredecessor;
