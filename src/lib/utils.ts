@@ -622,8 +622,8 @@ export function extractProjectMetadata(p: any): { year: string; store: string; l
       const yrShortMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)(2[4-9]|3[0-5])(?:[^0-9a-zA-Z]|$)/i);
       if (yrShortMatch) {
         year = `20${yrShortMatch[1]}`;
-      } else if (p.start || p.opening || p.handover) {
-        const dStr = p.start || p.opening || p.handover;
+      } else if (p.start || p.opening || p.handover || p.computedTakStart || p.computedTakCompl || p.takStart || p.takCompl) {
+        const dStr = p.start || p.opening || p.handover || p.computedTakStart || p.computedTakCompl || p.takStart || p.takCompl;
         const dMatch = String(dStr).match(/\b(202\d|203\d)\b/);
         if (dMatch) year = dMatch[1];
       }

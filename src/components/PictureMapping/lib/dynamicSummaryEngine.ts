@@ -433,6 +433,12 @@ export function useDynamicUnitSummary({
         const itemLoc = (item.location || location || '').toUpperCase().trim();
         const itemYear = String(item.year || effectiveYear || '').trim();
 
+        // Strict Store, Location, and Year Isolation
+        if (pMeta.store && itemStore && itemStore !== 'ALL' && itemStore !== 'all' && pMeta.store !== itemStore) return;
+        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+        if (pMeta.location && itemLoc && !isStorewide && pMeta.location !== itemLoc) return;
+        if (pMeta.year && itemYear && itemYear !== 'ALL' && itemYear !== 'all' && pMeta.year !== itemYear) return;
+
         const linkedCodes = [
           ...(unitToProjectCodesMap.get(item.unitName.toLowerCase()) || []),
           ...(unitToProjectCodesMap.get(item.unitId.toLowerCase()) || []),
@@ -440,13 +446,6 @@ export function useDynamicUnitSummary({
         const isLinkedViaProjectLink = linkedCodes.some(lc => 
           pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
         );
-
-        if (!isLinkedViaProjectLink) {
-          if (pMeta.store && itemStore && pMeta.store !== itemStore) return;
-          const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-          if (pMeta.location && itemLoc && !isStorewide && pMeta.location !== itemLoc) return;
-          if (pMeta.year && itemYear && pMeta.year !== itemYear) return;
-        }
 
         const isExactCode = pCodes.some(c => c.toLowerCase() === item.unitName.toLowerCase() || c.toLowerCase() === item.unitId.toLowerCase());
         const isMatch = isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, item.unitName || item.unitId);

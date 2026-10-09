@@ -235,6 +235,12 @@ export function buildAggregatedUnitData({
       const uLoc = (uEntry.location || targetLoc || '').toUpperCase().trim();
       const uYr = String(uEntry.year || effectiveLayoutYear || '').trim();
 
+      // Strict Store, Location, and Year Isolation
+      if (pMeta.store && uStore && uStore !== 'ALL' && uStore !== 'all' && pMeta.store !== uStore) return;
+      const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+      if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
+      if (pMeta.year && uYr && uYr !== 'ALL' && uYr !== 'all' && pMeta.year !== uYr) return;
+
       const linkedCodes = [
         ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
         ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
@@ -243,13 +249,6 @@ export function buildAggregatedUnitData({
       const isLinkedViaProjectLink = linkedCodes.some(lc => 
         pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
       );
-
-      if (!isLinkedViaProjectLink) {
-        if (pMeta.store && uStore && uStore !== 'all' && pMeta.store !== uStore) return;
-        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-        if (pMeta.year && uYr && uYr !== 'all' && pMeta.year !== uYr) return;
-      }
 
       const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
       if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
