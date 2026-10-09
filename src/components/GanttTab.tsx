@@ -16,6 +16,8 @@ import { useGanttBatchOps } from './Gantt/useGanttBatchOps';
 import { useGanttExport } from './Gantt/useGanttExport';
 import { GanttToolbar } from './Gantt/GanttToolbar';
 import { GanttTableView } from './Gantt/GanttTableView';
+import { GanttFocusControls } from './Gantt/GanttFocusControls';
+import { useGanttFocus } from './Gantt/useGanttFocus';
 import { getBarColor } from './Gantt/GanttUtils';
 
 const TaskModularModal = lazyWithRetry(
@@ -279,12 +281,30 @@ export function GanttTab({
     return () => clearTimeout(timer);
   }, [handleTodayClick]);
 
-  const handleClearFocus = useCallback(() => {
-    setGanttTabFocusTaskId(null);
-    setGanttTabFilterProjectId('');
-    setSearchTerm('');
-    if (onClearFocus) onClearFocus();
-  }, [onClearFocus, setGanttTabFocusTaskId, setGanttTabFilterProjectId, setSearchTerm]);
+  // 9. Focus Mode, Auto-Reveal & Auto-Center
+  const {
+    activeFocusId,
+    focusedTask,
+    focusedProject,
+    locateTask,
+    handleClearFocus
+  } = useGanttFocus({
+    tasks,
+    projects,
+    initialFocusTaskId,
+    ganttTabFocusTaskId,
+    setGanttTabFocusTaskId,
+    setExpandedModularTasks,
+    mainScrollRef,
+    topScrollRef,
+    startDate,
+    dayWidth,
+    sideWidth,
+    onClearFocus: () => {
+      setSearchTerm('');
+      if (onClearFocus) onClearFocus();
+    }
+  });
 
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (
@@ -444,8 +464,6 @@ export function GanttTab({
             projects={projects}
             onGroupTasks={handleGroupModularTasks}
             onUnlinkTasks={handleUnlinkModularTasks}
-            onGroup={handleGroupModularTasks}
-            onUnlink={handleUnlinkModularTasks}
           />
         </Suspense>
       )}
@@ -461,6 +479,17 @@ export function GanttTab({
             onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
           />
         </Suspense>
+      )}
+
+      {/* Floating Focus Controls Widget */}
+      {Boolean(activeFocusId && focusedTask) && (
+        <GanttFocusControls
+          task={focusedTask}
+          project={focusedProject}
+          onLocate={locateTask}
+          onNavigateToTaskDetail={onNavigateToTaskDetail}
+          onClearFocus={handleClearFocus}
+        />
       )}
     </div>
   );

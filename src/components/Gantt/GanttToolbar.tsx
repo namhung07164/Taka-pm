@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Loader2, Edit2, X } from 'lucide-react';
+import { Search, Loader2, Edit2, X, Target } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { useAppStore } from '../../store/useAppStore';
@@ -160,6 +160,12 @@ export function GanttToolbar({
 }: GanttToolbarProps) {
   const { t } = useLanguage();
   const tasks = useAppStore((state) => state.tasks);
+
+  const activeFocusTaskId = initialFocusTaskId || ganttTabFocusTaskId;
+  const focusedTask = React.useMemo(() => {
+    if (!activeFocusTaskId || !tasks) return null;
+    return tasks.find(t => String(t.id) === String(activeFocusTaskId)) || null;
+  }, [activeFocusTaskId, tasks]);
 
   return (
     <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
@@ -326,17 +332,28 @@ export function GanttToolbar({
             </div>
           )}
 
-          {/* Focused Task clear button - only for focused task, NOT for project search */}
-          {(initialFocusTaskId || ganttTabFocusTaskId) && (
-            <button
-              type="button"
-              onClick={handleClearFocus}
-              className="flex items-center gap-1 px-2 py-1 bg-amber-950/70 text-amber-300 border border-amber-800/80 font-bold rounded-lg text-xs transition-colors cursor-pointer"
-              title="Clear single task focus"
-            >
-              <span>Focus Active</span>
-              <X className="w-3 h-3" />
-            </button>
+          {/* Focused Task badge & clear button */}
+          {activeFocusTaskId && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold rounded-lg text-xs shadow-xs">
+              <Target className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
+              <span className="font-semibold text-slate-700 dark:text-slate-300">Focus Active:</span>
+              {focusedTask?.taskCodePhu && (
+                <span className="font-mono text-[10px] px-1 py-0.2 rounded bg-amber-500/25 text-amber-800 dark:text-amber-200 border border-amber-500/30 shrink-0">
+                  {focusedTask.taskCodePhu}
+                </span>
+              )}
+              <span className="max-w-[120px] sm:max-w-[200px] truncate" title={focusedTask?.name || activeFocusTaskId}>
+                {focusedTask?.name || activeFocusTaskId}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearFocus}
+                className="ml-1 p-0.5 hover:bg-amber-500/25 rounded transition-colors text-amber-700 dark:text-amber-300 cursor-pointer"
+                title="Clear focus (Esc)"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           )}
         </div>
       </div>

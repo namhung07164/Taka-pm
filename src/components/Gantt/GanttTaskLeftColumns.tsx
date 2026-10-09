@@ -1,8 +1,9 @@
 import React from 'react';
-import { ChevronDown, ChevronRight, GripVertical, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, EyeOff, Target } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { cn } from './GanttUtils';
 import { computeTaskCode } from '../../lib/ganttUtils';
+import { useAppStore } from '../../store/useAppStore';
 
 interface GanttTaskLeftColumnsProps {
   t: Task;
@@ -23,6 +24,7 @@ interface GanttTaskLeftColumnsProps {
   handleTaskDragStart: (e: React.DragEvent, id: string) => void;
   handleTaskDragEnd: () => void;
   isEditMode?: boolean;
+  isFocused?: boolean;
   onNavigateToTaskDetail?: (taskId: string) => void;
 }
 
@@ -44,6 +46,7 @@ export function GanttTaskLeftColumns({
   handleTaskDragStart,
   handleTaskDragEnd,
   isEditMode = false,
+  isFocused = false,
   onNavigateToTaskDetail
 }: GanttTaskLeftColumnsProps) {
   const isSelected = selectedTaskSet.has(t.id);
@@ -105,6 +108,26 @@ export function GanttTaskLeftColumns({
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-white font-bold stroke-[2.5]" />
             )}
+          </button>
+        )}
+
+        {/* Focus Target Button */}
+        {!isEditMode && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              useAppStore.getState().setGanttTabFocusTaskId(t.id);
+            }}
+            className={cn(
+              "p-0.5 rounded shrink-0 transition-all cursor-pointer active:scale-90",
+              isFocused
+                ? "text-amber-500 bg-amber-500/20 ring-1 ring-amber-400 shadow-2xs"
+                : "text-slate-400 hover:text-amber-500 hover:bg-amber-500/10 opacity-70 hover:opacity-100"
+            )}
+            title="Focus on this task (Center & Highlight)"
+          >
+            <Target className="w-3 h-3" />
           </button>
         )}
 

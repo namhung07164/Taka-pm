@@ -1825,3 +1825,22 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
      + Bổ sung bộ đếm thời gian sống TTL (15 phút) cho các listener chi phí (`costsTTLTimeouts`) và nhiệm vụ (`tasksTTLTimeouts`): khi người dùng rời khỏi tab hoặc thu gọn dự án, kênh kết nối sẽ tự động đóng lại sau 15 phút không hoạt động để tiết kiệm pin thiết bị và tài nguyên WebSocket.
    - **Kiểm Toán & Giám Sát Hiệu Năng Thức Giấc (Zero-Read Wake Recovery Audit)**:
      + Mọi chu kỳ thức giấc sau khi iPhone ngủ 2h, 4h, 8h đều được ghi nhận tự động vào bảng giám sát hiệu năng (`usePerformanceStore`), xác nhận việc khôi phục giao diện hoàn thành trong 0ms với 0 lượt tải lặp lại từ Cloud Firestore.
+
+
+57. **Nâng Cấp Tab Gantt: Tắt Tooltip Dứt Điểm, Mũi Tên Tím Độc Lập & Chế Độ Focus Active Toàn Diện (Gantt UX & Focus Engine)**:
+   - **Nút "X" Tắt Tooltip Nhạy Bén & Dứt Điểm (Zero-Sticking Tooltip Dismissal)**:
+     + Khắc phục triệt để hiện tượng nhấn "X" nhưng tooltip không đóng hoặc bị ghim lại: phân lập hoàn toàn `e.stopPropagation()` và chặn quyền chiếm con trỏ `setPointerCapture` của tính năng kéo thả khi tương tác trên các nút điều khiển tiêu đề (X, Pin, Open Detail, Focus 🎯).
+     + Bổ sung cờ trạng thái `isDismissed` và callback `onClose` trên thanh GanttBar: khi bấm "X", tooltip đóng tức thì (0ms) và dập tắt hoàn toàn trạng thái hover của thanh công việc cho đến khi người dùng di chuột rời hẳn khỏi thanh bar (`onMouseLeave`), loại bỏ 100% cảm giác dính tooltip ngoài ý muốn.
+   - **Nút Mũi Tên Tím Tự Động Quay Xuống (ChevronDown) Khi Có Task Con Gộp Mở**:
+     + Chuẩn hóa logic kiểm tra từ `.every()` sang `.some()` (`currentModularParentIds.some(...)`): ngay khi có bất kỳ nhóm công việc con gộp nào đang được mở rộng, nút mũi tên tím ở tiêu đề cột lập tức chuyển sang trạng thái quay xuống (`ChevronDown`) với màu tím nổi bật (`bg-purple-600 text-white`).
+     + Cho phép người dùng thu gọn nhanh toàn bộ các nhóm task con gộp (Collapse All Modular Groups) chỉ với 1 chạm duy nhất.
+   - **Tôn Trọng 100% Trạng Thái Đóng / Mở Dự Án Khi Nhấn Mũi Tên Tím**:
+     + Loại bỏ hoàn toàn các lệnh tự động ép mở dự án (`handleToggle(p.id)` và `setExpandedProjectIds`) khi người dùng nhấn nút mũi tên tím ở cả tiêu đề cột và ở từng dòng dự án.
+     + Nếu dự án đang đóng, hệ thống tôn trọng tuyệt đối trạng thái đóng của dự án và chỉ điều khiển trạng thái mở/đóng của các nhóm task con gộp bên trong, ngăn chặn xáo trộn bố cục bảng Gantt.
+   - **Chế Độ Focus Active Toàn Diện Trên Tab Gantt (Gantt Focus Active Engine)**:
+     + **Tự Động Mở Rộng & Định Vị Tâm Điểm (Auto-Reveal & Auto-Center)**: Khi kích hoạt Focus (nhấn nút 🎯 trên dòng công việc, trong Tooltip, hoặc điều hướng từ Task Detail / Command Palette), hệ thống tự động bung mở dự án cha (nếu đang đóng) và nhóm task mẹ (nếu là task con). Đồng thời tự động cuộn mượt định vị chính xác vị trí dòng task (Vertical Scroll) và canh giữa thanh tiến độ trên dòng thời gian Timeline (Horizontal Scroll).
+     + **Thanh Điều Khiển Nổi (`GanttFocusControls` Widget)**: Cụm điều khiển nổi đặt tại góc dưới bên phải màn hình hiển thị trực quan mã task (Mono badge), tên task, dự án liên quan cùng 3 nút hành động tiện lợi:
+       * **Locate (🎯)**: Tái định vị tâm điểm dòng thời gian và dòng task bất kỳ lúc nào.
+       * **Task Detail (↗️)**: Mở ngay cửa sổ chi tiết công việc.
+       * **Exit / Clear (Esc)**: Thoát khỏi chế độ Focus.
+     + **Huy Hiệu Focus Active & Phím Tắt Thoát Nhanh (Escape Shortcut)**: Thanh công cụ Gantt hiển thị huy hiệu Focus Active nổi bật kèm mã phụ và tên task; người dùng có thể nhấn phím `Escape` bất kỳ lúc nào trên bàn phím để thoát ngay chế độ Focus.

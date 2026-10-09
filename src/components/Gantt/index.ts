@@ -26,3 +26,5 @@ export * from './useGanttBatchOps';
 export * from './useGanttExport';
 export * from './useGanttColumnResize';
 export * from './GanttTableView';
+export * from './GanttFocusControls';
+export * from './useGanttFocus';

@@ -34,6 +34,9 @@ export class TakaLocalDB extends Dexie {
       delegations: '&id, projectId, projectCode, code, projectStore, projectYear, store, year, status, updatedAt',
       syncMeta: '&key, updatedAt',
     });
+    this.version(3).stores({
+      delegations: '&id, projectId, projectCode, parentTaskId, code, projectStore, projectYear, store, year, status, updatedAt',
+    });
   }
 }
 
@@ -269,13 +272,86 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
 }
 
 /**
- * Đọc toàn bộ Delegations từ Local Database
+ * Đọc toàn bộ Delegations từ Local Database (hỗ trợ lọc theo năm)
  */
-export async function getLocalDelegations(): Promise<DelegationGroup[]> {
+export async function getLocalDelegations(year?: string): Promise<DelegationGroup[]> {
   try {
-    return await localDb.delegations.toArray();
+    if (!year || year === 'all' || year === 'ALL') {
+      return await localDb.delegations.toArray();
+    }
+    const strYear = String(year);
+    const numYear = Number(year);
+    const queries = [
+      localDb.delegations.where('year').equals(strYear).toArray().catch(() => []),
+      localDb.delegations.where('projectYear').equals(strYear).toArray().catch(() => []),
+    ];
+    if (!isNaN(numYear)) {
+      queries.push(
+        localDb.delegations.where('projectYear').equals(numYear).toArray().catch(() => [])
+      );
+    }
+    const results = await Promise.all(queries);
+    const merged = new Map<string, DelegationGroup>();
+    for (const list of results) {
+      for (const d of list) {
+        if (d && d.id) merged.set(d.id, d);
+      }
+    }
+    return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalDelegations error:', err);
+    return [];
+  }
+}
+
+/**
+ * Đọc Delegations từ Local Database theo danh sách Project IDs hoặc Project Codes
+ */
+export async function getLocalDelegationsForProjects(projectIdsOrCodes: string[]): Promise<DelegationGroup[]> {
+  if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return [];
+  try {
+    const rawKeys = projectIdsOrCodes.map(k => String(k).trim()).filter(Boolean);
+    if (rawKeys.length === 0) return [];
+
+    const [byProjCode, byProjId, byCode] = await Promise.all([
+      localDb.delegations.where('projectCode').anyOf(rawKeys).toArray().catch(() => []),
+      localDb.delegations.where('projectId').anyOf(rawKeys).toArray().catch(() => []),
+      localDb.delegations.where('code').anyOf(rawKeys).toArray().catch(() => []),
+    ]);
+
+    const merged = new Map<string, DelegationGroup>();
+    for (const d of byProjCode) if (d && d.id) merged.set(d.id, d);
+    for (const d of byProjId) if (d && d.id) merged.set(d.id, d);
+    for (const d of byCode) if (d && d.id) merged.set(d.id, d);
+
+    return Array.from(merged.values());
+  } catch (err) {
+    console.warn('[localDb] getLocalDelegationsForProjects error:', err);
+    return [];
+  }
+}
+
+/**
+ * Đọc Delegations từ Local Database theo danh sách Task IDs
+ */
+export async function getLocalDelegationsForTasks(taskIds: string[]): Promise<DelegationGroup[]> {
+  if (!taskIds || taskIds.length === 0) return [];
+  try {
+    const rawIds = taskIds.map(id => String(id).trim()).filter(Boolean);
+    if (rawIds.length === 0) return [];
+
+    const [byParentTaskId, byId] = await Promise.all([
+      localDb.delegations.where('parentTaskId').anyOf(rawIds).toArray().catch(() => []),
+      localDb.delegations.where('id').anyOf(rawIds).toArray().catch(() => []),
+    ]);
+
+    const merged = new Map<string, DelegationGroup>();
+    for (const d of byParentTaskId) if (d && d.id) merged.set(d.id, d);
+    for (const d of byId) if (d && d.id) merged.set(d.id, d);
+
+    return Array.from(merged.values());
+  } catch (err) {
+    console.warn('[localDb] getLocalDelegationsForTasks error:', err);
     return [];
   }
 }

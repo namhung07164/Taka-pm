@@ -207,15 +207,15 @@ export function GanttTableView({
   }, [currentProjects, getGroupTasksForProject]);
 
   const hasModularTasks = currentModularParentIds.length > 0;
-  const isAllModularExpanded =
+  const isAnyModularExpanded =
     hasModularTasks &&
-    currentModularParentIds.every((id) => expandedModularTasks.includes(id));
+    currentModularParentIds.some((id) => expandedModularTasks.includes(id));
 
   const handleToggleExpandAllModular = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!hasModularTasks || !setExpandedModularTasks) return;
 
-    if (isAllModularExpanded) {
+    if (isAnyModularExpanded) {
       const toRemove = new Set(currentModularParentIds);
       setExpandedModularTasks((prev) => {
         const next = prev.filter((id) => !toRemove.has(id));
@@ -228,9 +228,6 @@ export function GanttTableView({
         safeSetItemSession("taka_gantt_modular_expanded", JSON.stringify(next));
         return next;
       });
-      // Also expand currently displayed projects if not expanded yet
-      const curProjectIds = currentProjects.map((p) => p.id!).filter(Boolean) as string[];
-      setExpandedProjectIds(Array.from(new Set([...expandedProjects, ...curProjectIds])));
     }
   };
 
@@ -274,7 +271,7 @@ export function GanttTableView({
           handleToggleSelectAll={handleToggleSelectAll}
           isAllExpanded={isAllExpanded}
           handleToggleExpandAll={handleToggleExpandAll}
-          isAllModularExpanded={isAllModularExpanded}
+          isAllModularExpanded={isAnyModularExpanded}
           handleToggleExpandAllModular={handleToggleExpandAllModular}
           hasModularTasks={hasModularTasks}
           visibleColumns={visibleColumns}

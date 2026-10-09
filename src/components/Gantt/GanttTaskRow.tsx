@@ -275,6 +275,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
             handleTaskDragStart={handleTaskDragStart}
             handleTaskDragEnd={handleTaskDragEnd}
             isEditMode={isEditMode}
+            isFocused={isFocused}
             onNavigateToTaskDetail={onNavigateToTaskDetail}
           />
         </div>
