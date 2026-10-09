@@ -25,6 +25,47 @@ interface UseGanttDependenciesParams {
   predecessorColWidth?: number;
 }
 
+function generateOrthogonalPath(x1: number, y1: number, x2: number, y2: number): string {
+  const r = 5;
+  const minGap = 20;
+
+  if (Math.abs(y1 - y2) < 1) {
+    return `M ${x1} ${y1} L ${x2} ${y2}`;
+  }
+
+  const isDown = y2 > y1;
+  const dy = isDown ? r : -r;
+
+  if (x2 >= x1 + minGap) {
+    const xMid = Math.round(x1 + Math.min(24, (x2 - x1) / 2));
+    return [
+      `M ${x1} ${y1}`,
+      `L ${xMid - r} ${y1}`,
+      `Q ${xMid} ${y1} ${xMid} ${y1 + dy}`,
+      `L ${xMid} ${y2 - dy}`,
+      `Q ${xMid} ${y2} ${xMid + r} ${y2}`,
+      `L ${x2} ${y2}`,
+    ].join(' ');
+  }
+
+  const marginOut = 14;
+  const marginIn = 14;
+  const yMid = Math.round(y1 + (y2 - y1) / 2);
+
+  return [
+    `M ${x1} ${y1}`,
+    `L ${x1 + marginOut - r} ${y1}`,
+    `Q ${x1 + marginOut} ${y1} ${x1 + marginOut} ${y1 + dy}`,
+    `L ${x1 + marginOut} ${yMid - dy}`,
+    `Q ${x1 + marginOut} ${yMid} ${x1 + marginOut - r} ${yMid}`,
+    `L ${x2 - marginIn + r} ${yMid}`,
+    `Q ${x2 - marginIn} ${yMid} ${x2 - marginIn} ${yMid + dy}`,
+    `L ${x2 - marginIn} ${y2 - dy}`,
+    `Q ${x2 - marginIn} ${y2} ${x2 - marginIn + r} ${y2}`,
+    `L ${x2} ${y2}`,
+  ].join(' ');
+}
+
 export function useGanttDependencies({
   tasks,
   projects,
@@ -147,15 +188,18 @@ export function useGanttDependencies({
         const x2 = succPos.xStart;
         const y2 = succPos.yCenter;
 
-        const dx = Math.max(16, Math.abs(x2 - x1) * 0.4);
-        const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+        const d = generateOrthogonalPath(x1, y1, x2, y2);
 
         lines.push({
           id: `${predPos.t.id}->${succTask.id}`,
           d,
           fromTaskId: predPos.t.id,
           toTaskId: succTask.id,
-          color: '#3b82f6',
+          fromTaskCode: predPos.t.taskCodePhu || computeTaskCode(projects, tasks, predPos.t),
+          fromTaskName: predPos.t.name,
+          toTaskCode: succTask.taskCodePhu || computeTaskCode(projects, tasks, succTask),
+          toTaskName: succTask.name,
+          color: '#2563eb',
         });
       });
     });

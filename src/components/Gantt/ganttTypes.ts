@@ -31,6 +31,10 @@ export interface DependencyLine {
   isAnimated?: boolean;
   fromTaskId?: string;
   toTaskId?: string;
+  fromTaskCode?: string;
+  fromTaskName?: string;
+  toTaskCode?: string;
+  toTaskName?: string;
 }
 
 export type GanttTableRow = 
