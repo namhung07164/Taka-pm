@@ -1220,6 +1220,9 @@ export function useFirebaseData() {
 
     targetYears.forEach(async (year) => {
       if (!delegationsPool.current.has(year)) {
+        // Concurrency guard: Mark pending immediately so duplicate onSnapshot listeners cannot be created concurrently
+        delegationsPool.current.set(year, () => {});
+
         const currentDelegations = useAppStore.getState().delegationGroups || [];
         let hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
 
@@ -1237,7 +1240,6 @@ export function useFirebaseData() {
         }
 
         if (hasLocalDelegations) {
-          delegationsPool.current.set(year, () => {});
           setIsDelegationsLoading(false);
           pullAndApplyDeltas(year).catch(() => {});
           usePerformanceStore.getState().trackGetDoc(`taka_delegation_groups_${year}`, true, currentDelegations.length, 'Dexie Local-First Delegations (0 Read full collection)');
@@ -1291,6 +1293,7 @@ export function useFirebaseData() {
             offloadPersistSnapshot('taka_delegations', loaded);
           },
           (e) => {
+            delegationsPool.current.delete(year);
             setIsDelegationsLoading(false);
             console.error("Delegation groups listener error:", e);
           }

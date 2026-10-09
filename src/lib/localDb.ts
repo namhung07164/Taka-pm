@@ -313,14 +313,16 @@ export async function getLocalDelegationsForProjects(projectIdsOrCodes: string[]
     const rawKeys = projectIdsOrCodes.map(k => String(k).trim()).filter(Boolean);
     if (rawKeys.length === 0) return [];
 
-    const [byProjCode, byProjId] = await Promise.all([
+    const [byProjCode, byProjId, byCode] = await Promise.all([
       localDb.delegations.where('projectCode').anyOf(rawKeys).toArray().catch(() => []),
       localDb.delegations.where('projectId').anyOf(rawKeys).toArray().catch(() => []),
+      localDb.delegations.where('code').anyOf(rawKeys).toArray().catch(() => []),
     ]);
 
     const merged = new Map<string, DelegationGroup>();
     for (const d of byProjCode) if (d && d.id) merged.set(d.id, d);
     for (const d of byProjId) if (d && d.id) merged.set(d.id, d);
+    for (const d of byCode) if (d && d.id) merged.set(d.id, d);
 
     return Array.from(merged.values());
   } catch (err) {
