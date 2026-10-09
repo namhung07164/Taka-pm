@@ -1077,17 +1077,22 @@ export default function App() {
           if (effectiveFilterCode) {
             safeSetItemSession("taka_gantt_search", effectiveFilterCode);
           }
-          if (task?.id) {
-            updates.ganttTabFocusTaskId = task.id;
-          }
+          // Requirement: Khi mở gantt từ quick navigation chỉ mở project, ko focus task, ko mở task ở trong project (giữ thu gọn giống trong hình)
+          updates.ganttTabFocusTaskId = "";
+
+          // Giữ project ở trạng thái thu gọn (collapsed), không mở rộng tasks con
           if (p?.id) {
             const currentExpanded = useAppStore.getState().expandedProjectIds || [];
-            const newExpanded = new Set(currentExpanded);
-            newExpanded.add(String(p.id));
-            updates.expandedProjectIds = Array.from(newExpanded);
-            updates.isTasksRequested = true;
+            updates.expandedProjectIds = currentExpanded.filter(id => id !== String(p.id));
           }
-          updates.globalLocationFilter = [];
+
+          // Giữ bộ lọc tầng/location của project (vd: L2 như trong hình)
+          if (p?.location && p.location !== 'all' && p.location !== 'ALL') {
+            updates.globalLocationFilter = [p.location];
+          } else {
+            updates.globalLocationFilter = [];
+          }
+
           safeSetItemSession("taka_gantt_status_filter", "all");
           safeSetItemSession("taka_gantt_trigger_today", "true");
           triggerGanttToday();

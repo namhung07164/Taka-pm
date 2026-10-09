@@ -342,11 +342,16 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     const targetProjectId = project.id ? String(project.id) : (project.code || '');
     useAppStore.getState().setGanttTabFilterProjectId(targetProjectId);
 
-    const currentExpanded = useAppStore.getState().expandedProjectIds;
-    if (project.id && !currentExpanded.includes(project.id)) {
-      useAppStore.getState().setExpandedProjectIds([...currentExpanded, project.id]);
+    if (project.location && project.location !== 'all' && project.location !== 'ALL') {
+      useAppStore.getState().setGlobalLocationFilter([project.location]);
+    } else {
+      useAppStore.getState().setGlobalLocationFilter([]);
     }
-    useAppStore.getState().setIsTasksRequested(true);
+
+    const currentExpanded = useAppStore.getState().expandedProjectIds;
+    if (project.id && currentExpanded.includes(project.id)) {
+      useAppStore.getState().setExpandedProjectIds(currentExpanded.filter(id => id !== project.id));
+    }
 
     safeSetItemSession('taka_gantt_trigger_today', 'true');
     useAppStore.getState().triggerGanttToday();
