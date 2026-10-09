@@ -81,11 +81,17 @@ export function useDetailTaskReorder({
       });
 
       const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
-      predUpdates.forEach(pu => {
-        const existingUpdates = updatesPerTask.get(pu.id) || {};
-        updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-        allUpdatedTasks = allUpdatedTasks.map(t => t.id === pu.id ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t);
-      });
+      if (predUpdates.length > 0) {
+        const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+        predUpdates.forEach(pu => {
+          const existingUpdates = updatesPerTask.get(pu.id) || {};
+          updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        });
+        allUpdatedTasks = allUpdatedTasks.map(t => {
+          const pu = predMap.get(t.id);
+          return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+        });
+      }
 
       // Heal all remaining legacy or out-of-sync predecessors
       const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
@@ -183,11 +189,17 @@ export function useDetailTaskReorder({
       });
 
       const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
-      predUpdates.forEach(pu => {
-        const existingUpdates = updatesPerTask.get(pu.id) || {};
-        updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-        allUpdatedTasks = allUpdatedTasks.map(t => t.id === pu.id ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t);
-      });
+      if (predUpdates.length > 0) {
+        const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+        predUpdates.forEach(pu => {
+          const existingUpdates = updatesPerTask.get(pu.id) || {};
+          updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        });
+        allUpdatedTasks = allUpdatedTasks.map(t => {
+          const pu = predMap.get(t.id);
+          return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+        });
+      }
 
       // Heal any remaining legacy or out-of-sync predecessors
       const healed = healAllTasksPredecessors(allUpdatedTasks, projects);

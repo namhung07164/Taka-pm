@@ -158,8 +158,20 @@ export function useGeneralData({
   }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
 
   const filteredProjects = useMemo(() => {
+    // Pre-calculate project dates & status once (O(N)) to eliminate O(N log N) recalculations during sorting
+    const infoMap = new Map<string, ReturnType<typeof getProjectDatesAndStatus>>();
+    projects.forEach(p => {
+      const pKey = p.id || p.code || String(p.no || '');
+      infoMap.set(pKey, getProjectDatesAndStatus(p, tasks));
+    });
+
+    const getMemoizedInfo = (p: Project) => {
+      const pKey = p.id || p.code || String(p.no || '');
+      return infoMap.get(pKey) || getProjectDatesAndStatus(p, tasks);
+    };
+
     return projects.filter(p => {
-      const { computedTakStart, computedTakCompl, computedOpening, status } = getProjectDatesAndStatus(p, tasks);
+      const { computedTakStart, computedTakCompl, computedOpening, status } = getMemoizedInfo(p);
       const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
       const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
       const pYear = p.year ? String(p.year).trim() : (computedTakStart ? String(computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
@@ -183,8 +195,8 @@ export function useGeneralData({
         if (orderA !== orderB) return orderA - orderB;
       }
 
-      const infoA = getProjectDatesAndStatus(a, tasks);
-      const infoB = getProjectDatesAndStatus(b, tasks);
+      const infoA = getMemoizedInfo(a);
+      const infoB = getMemoizedInfo(b);
 
       if (sortConfig) {
         let valA = '';
@@ -255,7 +267,7 @@ export function useGeneralData({
       
       return a.code.localeCompare(b.code) || String(a.year || '').localeCompare(String(b.year || ''));
     });
-  }, [projects, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
+  }, [projects, tasks, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
 
   useEffect(() => {
     const interval = setInterval(() => setFlashToggle(prev => !prev), 600);
