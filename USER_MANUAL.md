@@ -536,6 +536,10 @@ Quản lý các công việc giao cho cá nhân, phòng ban hoặc đối tác b
 5. **Theo dõi trạng thái**: Khi người nhận việc cập nhật trạng thái (*Assigned ➔ Accepted ➔ On process ➔ Completed*), tiến độ sẽ tự động cập nhật về Dự án gốc.
 6. **Xem trên Delegation Calendar**: Bấm sang tab con `Delegation Calendar` để theo dõi toàn bộ deadline dưới dạng lưới lịch tháng.
 7. **Cơ chế Tự động Đồng bộ Năm Dữ liệu (Auto-Fallback Project Year)**: Toàn bộ quá trình tạo mới ủy quyền hoặc chỉnh sửa nhiệm vụ luôn tự động kế thừa và chuẩn hóa `projectYear` dạng số (`Number`) từ dự án mẹ hoặc năm hiện tại, đảm bảo bộ lọc dữ liệu Firestore hoạt động chính xác 100% và ngăn ngừa triệt để lỗi quét dữ liệu dư thừa.
+8. **Kiến Trúc Tải Nhắm Mục Tiêu Theo Dự Án & Boot 0-Read (Targeted JIT Delegation Hydration & Zero-Read Boot)**:
+   - **Tối ưu Tri-Gate Boot (0 Read Server & 0 Cache Load khi mở app)**: Khi khởi động ứng dụng, hệ thống áp dụng triệt để cơ chế chặn lazy Tri-Gate, hoàn toàn không tải trước 4.000 bản ghi phân quyền vào RAM khi người dùng đang ở tab General hay các màn hình không yêu cầu. Tiết kiệm 100% bộ nhớ đệm và triệt tiêu độ trễ khởi động.
+   - **Tải Nhắm Mục Tiêu Theo Dự Án (Targeted Hydration)**: Khi người dùng mở rộng (Expand) một dự án trên Gantt Chart, mở hộp thoại Task Detail hoặc Project Modal, hệ thống chỉ truy vấn và nạp đúng các nhóm phân quyền liên quan trực tiếp đến mã dự án (`projectCode`), mã nhiệm vụ (`parentTaskId` / `taskId`) đó từ Dexie IndexedDB (0ms UI, 0 Firestore Read).
+   - **Lọc Theo Niên Độ Khi Vào Tab Delegation**: Khi người dùng chuyển sang tab `Task Delegation` hoặc `Delegation Calendar`, hệ thống chỉ nạp các bản ghi thuộc đúng năm đang xem (ví dụ năm 2026: ~300 bản ghi thay vì toàn bộ 4.000 bản ghi của mọi năm), sau đó duy trì đồng bộ qua kênh vi mô Delta Pipeline, đạt 0 lượt Firestore Read cho toàn bộ kho dữ liệu.
 
 ---
 

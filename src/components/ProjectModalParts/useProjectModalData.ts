@@ -8,6 +8,7 @@ import { db, APP_ID } from '../../lib/firebase';
 import { bumpConfigVersion } from '../../lib/configCacheService';
 import { getLinkCodesValidationError } from './projectModalTypes';
 import { useProjectModalMutations } from './useProjectModalMutations';
+import { hydrateDelegationsForProjects } from '../../lib/backgroundSyncWorker';
 
 interface UseProjectModalDataParams {
   isOpen: boolean;
@@ -48,6 +49,16 @@ export function useProjectModalData({
     message: '',
     onConfirm: () => {}
   });
+
+  // JIT Targeted Local-First Delegation Hydration for Project (0ms, 0 Read)
+  useEffect(() => {
+    if (isOpen && project) {
+      const keys = [project.id, project.code].filter(Boolean) as string[];
+      if (keys.length > 0) {
+        hydrateDelegationsForProjects(keys).catch(() => {});
+      }
+    }
+  }, [isOpen, project?.id, project?.code]);
 
   const [formData, setFormData] = useState<Partial<Project>>({
     store: 'HCM',
