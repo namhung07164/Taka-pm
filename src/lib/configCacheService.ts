@@ -246,6 +246,7 @@ export function setupStaticConfigSync(): Unsubscribe {
     versionRef,
     async (docSnap) => {
       usePerformanceStore.getState().trackSnapshot("taka_config/versions", docSnap);
+      useAppStore.getState().setCloudStatus("online");
       const localVersions = getLocalConfigVersions();
       const store = useAppStore.getState();
 

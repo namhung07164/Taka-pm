@@ -1844,3 +1844,12 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
        * **Task Detail (↗️)**: Mở ngay cửa sổ chi tiết công việc.
        * **Exit / Clear (Esc)**: Thoát khỏi chế độ Focus.
      + **Huy Hiệu Focus Active & Phím Tắt Thoát Nhanh (Escape Shortcut)**: Thanh công cụ Gantt hiển thị huy hiệu Focus Active nổi bật kèm mã phụ và tên task; người dùng có thể nhấn phím `Escape` bất kỳ lúc nào trên bàn phím để thoát ngay chế độ Focus.
+
+
+58. **Khắc Phục Lỗi Kẹt OFFLINE & Tải Dự Án L3 HCM Mới Cho Niên Độ Active (Current Active Year Realtime Sync Guard)**:
+   - **Xử Lý Lỗi Bỏ Qua `onSnapshot` Cho Năm Hiện Hành (`!isClosedOrPastYear`)**:
+     + **Nguyên nhân trước đó**: Khi bộ nhớ đệm thiết bị (Dexie/IndexedDB) đã chứa sẵn một vài dự án năm 2026, cờ `hasLocalData` trong `useFirebaseData.ts` tự động kích hoạt chế độ local-first và ngắt kết nối `onSnapshot` cho năm 2026, khiến cờ kết nối trên Header bị kẹt ở trạng thái **OFFLINE** (màu đỏ) và không nạp tiếp các dự án L3 HCM mới tạo trên Cloud.
+     + **Khắc phục**: Thêm điều kiện ràng buộc `hasLocalData && isClosedOrPastYear`: chỉ cho phép bỏ qua `onSnapshot` đối với các niên độ cũ đã đóng (`isClosedOrPastYear`, ví dụ 2024, 2025). Đối với các niên độ active hiện hành (2026, 2027...), dữ liệu vẫn được nạp ngay tức thì từ Dexie trong 0ms (không giật đơ UI), đồng thời kênh `onSnapshot` được kích hoạt liên tục bên dưới background để cập nhật trạng thái **ONLINE** (màu xanh) và tự động kéo các dự án L3 HCM mới về thiết bị theo thời gian thực.
+   - **Đồng Bộ Trạng Thái Kết Nối Cho Các Kênh Dữ Liệu (Projects, Tasks, Costs, Delegations & Configs)**:
+     + Áp dụng đồng bộ quy tắc `isClosedOrPastYear` cho toàn bộ các kênh theo dõi Dự án, Nhiệm vụ, Chi phí và Phân công.
+     + Tích hợp cập nhật `setCloudStatus("online")` ngay khi nhận được snapshot cấu hình tĩnh (`taka_config/versions`), đảm bảo chỉ số trạng thái kết nối luôn phản ánh chính xác trạng thái Firestore tức thì.

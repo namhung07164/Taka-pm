@@ -35,8 +35,10 @@ import {
   hydrateTasksFromLocal,
   hydrateTasksForProjects,
   hydrateCostsFromLocal,
-  hydrateDelegationsFromLocal
+  hydrateDelegationsFromLocal,
+  hydrateDelegationsForProjects
 } from "../lib/backgroundSyncWorker";
+import { getLocalDelegations } from "../lib/localDb";
 import { loadNotificationTasks } from "../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../lib/taskDeduplicationService";
 import {
@@ -155,7 +157,7 @@ export function useFirebaseData() {
           hydrateCostsFromLocal().catch(() => {});
         }
         if (useAppStore.getState().isDelegationsRequested) {
-          hydrateDelegationsFromLocal().catch(() => {});
+          hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
         }
 
         // 3. Kích hoạt Delta Sync tức thì (chỉ kéo các thay đổi mới phát sinh trong thời gian ngủ)
@@ -225,7 +227,7 @@ export function useFirebaseData() {
       }
       if (needsDelegations) {
         setIsDelegationsRequested(true);
-        hydrateDelegationsFromLocal().catch(() => {});
+        hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
     };
 
@@ -636,11 +638,11 @@ export function useFirebaseData() {
         const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
         const hasLocalData = localCount > 0 || (useAppStore.getState().projects || []).some(p => String(p.year) === String(year));
 
-        if (isClosedOrPastYear && hasLocalData) {
-          // If we already have local projects for closed/past years, mark pool as active (0 Read full table query)
+        if (hasLocalData && isClosedOrPastYear) {
+          // If we already have local projects for a PAST/CLOSED year, mark pool as active (0 Read full table query)
           // and catch any latest changes via lightweight Delta Sync Pipeline (0-2 reads)
           projectsPool.current.set(year, () => {});
-          pullAndApplyDeltas(year).catch(() => {});
+          pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
           usePerformanceStore.getState().trackGetDoc(`taka_projects_${year}`, true, localCount, 'Dexie Local-First Projects Hydration (0 Read full collection)');
           return;
         }
@@ -822,7 +824,10 @@ export function useFirebaseData() {
     // Instant 0ms Dexie Local-First Hydration for active projects
     let isCancelled = false;
     const runTasksSync = async () => {
-      await hydrateTasksForProjects(activeProjectIds);
+      await Promise.all([
+        hydrateTasksForProjects(activeProjectIds),
+        hydrateDelegationsForProjects(activeProjectIds)
+      ]);
       if (isCancelled) return;
 
       setIsTasksLoading(true);
@@ -879,13 +884,14 @@ export function useFirebaseData() {
         if (!tasksPool.current.has(yearKey)) {
           const currentTasks = useAppStore.getState().tasks || [];
           const hasLocalYearTasks = currentTasks.some(t => String(t.projectYear || '') === String(year));
+          const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
 
-          if (hasLocalYearTasks) {
-            // Local-First: Đã có tasks của năm này trong Dexie/Zustand -> Giữ pool hoạt động (0 Read full collection)
+          if (hasLocalYearTasks && isClosedOrPastYear) {
+            // Local-First: Đã có tasks của năm cũ trong Dexie/Zustand -> Giữ pool hoạt động (0 Read full collection)
             // và đồng bộ các thay đổi mới qua Delta Pipeline (0-2 reads)
             tasksPool.current.set(yearKey, () => {});
             setIsTasksLoading(false);
-            pullAndApplyDeltas(year).catch(() => {});
+            pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
             usePerformanceStore.getState().trackGetDoc(`taka_tasks_${yearKey}`, true, currentTasks.length, 'Dexie Local-First Tasks (0 Read full collection)');
           } else {
             const qTasks = buildStoreAndYearQuery(
@@ -943,12 +949,13 @@ export function useFirebaseData() {
           if (!tasksPool.current.has(projKey)) {
             const currentTasks = useAppStore.getState().tasks || [];
             const hasLocalProjTasks = currentTasks.some(t => String(t.projectCode || '') === String(p.code)) || knownHydratedProjectCodes.current.has(p.code);
+            const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
 
-            if (hasLocalProjTasks) {
-              // Local-First: Đã có tasks của dự án này trong Dexie/Zustand -> Giữ pool hoạt động (0 Read)
+            if (hasLocalProjTasks && isClosedOrPastYear) {
+              // Local-First: Đã có tasks của dự án năm cũ trong Dexie/Zustand -> Giữ pool hoạt động (0 Read)
               tasksPool.current.set(projKey, () => {});
               setIsTasksLoading(false);
-              pullAndApplyDeltas(year).catch(() => {});
+              pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
               usePerformanceStore.getState().trackGetDoc(`taka_tasks_${projKey}`, true, 1, 'Dexie Local-First Project Tasks (0 Read)');
             } else {
               const qTasks = query(
@@ -1057,11 +1064,12 @@ export function useFirebaseData() {
       if (!costsPool.current.has(year)) {
         const currentCosts = useAppStore.getState().costs || [];
         const hasLocalCosts = currentCosts.some(c => String(c.projectYear || '') === String(year));
+        const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
 
-        if (hasLocalCosts) {
+        if (hasLocalCosts && isClosedOrPastYear) {
           costsPool.current.set(year, () => {});
           setIsCostsLoading(false);
-          pullAndApplyDeltas(year).catch(() => {});
+          pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
           usePerformanceStore.getState().trackGetDoc(`taka_costs_${year}`, true, currentCosts.length, 'Dexie Local-First Costs (0 Read full collection)');
         } else {
           const qCosts = buildStoreAndYearQuery(
@@ -1213,17 +1221,33 @@ export function useFirebaseData() {
 
     setIsDelegationsLoading(true);
 
-    targetYears.forEach(year => {
+    targetYears.forEach(async (year) => {
       if (!delegationsPool.current.has(year)) {
         const currentDelegations = useAppStore.getState().delegationGroups || [];
-        const hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
+        let hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
+        const isClosedOrPastYear = Number(year) < 2026 || remoteYearsMetaRef.current[year]?.closed;
 
-        if (hasLocalDelegations) {
+        if (!hasLocalDelegations && isClosedOrPastYear) {
+          // Kiểm tra Dexie trước khi fallback ra Firestore full query để triệt tiêu Firestore Read (0 read)
+          const localItems = await getLocalDelegations(year);
+          if (localItems && localItems.length > 0) {
+            const store = useAppStore.getState();
+            const existing = store.delegationGroups || [];
+            const dMap = new Map(existing.map(d => [d.id, d]));
+            localItems.forEach(d => dMap.set(d.id, d));
+            store.setDelegationGroups(Array.from(dMap.values()));
+            hasLocalDelegations = true;
+          }
+        }
+
+        if (hasLocalDelegations && isClosedOrPastYear) {
           delegationsPool.current.set(year, () => {});
           setIsDelegationsLoading(false);
-          pullAndApplyDeltas(year).catch(() => {});
+          pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
           usePerformanceStore.getState().trackGetDoc(`taka_delegation_groups_${year}`, true, currentDelegations.length, 'Dexie Local-First Delegations (0 Read full collection)');
         } else {
+          // Concurrency guard: Mark pending immediately so duplicate onSnapshot listeners cannot be created concurrently
+          delegationsPool.current.set(year, () => {});
           const qDelegations = buildStoreAndYearQuery(
             collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups"),
             "projectStore",
@@ -1273,6 +1297,7 @@ export function useFirebaseData() {
             offloadPersistSnapshot('taka_delegations', loaded);
           },
           (e) => {
+            delegationsPool.current.delete(year);
             setIsDelegationsLoading(false);
             console.error("Delegation groups listener error:", e);
           }
