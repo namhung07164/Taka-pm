@@ -177,12 +177,20 @@ export function useGanttProjectsFilter({
         return isTarget;
       }
 
-      const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
+      const pStart = p.computedTakStart || p.start || (p as any).takStart;
+      const pCompl = p.computedTakCompl || p.handover || (p as any).takCompl;
+      const pOpening = p.computedOpening || p.opening;
+
+      const pYear = p.year ? String(p.year).trim() : (pStart ? String(pStart).substring(0, 4) : null);
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
       const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
 
-      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      const computedStatus = getStatus(pStart, pCompl, pOpening, p.code);
+      const status = p.computedActStatus && p.computedActStatus !== 'Planned'
+        ? p.computedActStatus
+        : (p.computedStatus || computedStatus);
+
       let matchesStatus = true;
       if (filterProjectStatus === 'On process + Upcoming 3 days') {
         if (status === 'On process') {
@@ -190,7 +198,7 @@ export function useGanttProjectsFilter({
         } else if (status === 'Upcoming') {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          const dStart = parseDateTime(p.computedTakStart);
+          const dStart = parseDateTime(pStart);
           if (dStart) {
             dStart.setHours(0, 0, 0, 0);
             const diffDays = Math.ceil((dStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));

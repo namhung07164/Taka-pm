@@ -157,10 +157,17 @@ export function useGeneralData({
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
-      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      const pStart = p.computedTakStart || p.start || (p as any).takStart;
+      const pCompl = p.computedTakCompl || p.handover || (p as any).takCompl;
+      const pOpening = p.computedOpening || p.opening;
+      const computedStatus = getStatus(pStart, pCompl, pOpening, p.code);
+      const status = p.computedActStatus && p.computedActStatus !== 'Planned'
+        ? p.computedActStatus
+        : (p.computedStatus || computedStatus);
+
       const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
       const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
-      const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      const pYear = p.year ? String(p.year).trim() : (pStart ? String(pStart).substring(0, 4) : null);
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
       const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
@@ -172,7 +179,7 @@ export function useGeneralData({
         } else if (status === 'Upcoming') {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          const dStart = parseDateTime(p.computedTakStart);
+          const dStart = parseDateTime(pStart);
           if (dStart) {
             dStart.setHours(0, 0, 0, 0);
             const diffTime = dStart.getTime() - today.getTime();
