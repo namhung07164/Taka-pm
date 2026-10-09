@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Project, DelegationGroup } from '../../types';
-import { matchesAdvancedSearch } from '../../lib/utils';
+import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
 
@@ -110,8 +110,18 @@ export function useDetailFlatRows({
           : groupTasks;
 
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : groupTasks.length;
-      const planProgressPercent = (p as any).planProgressPercent !== undefined ? (p as any).planProgressPercent : 0;
-      const actProgressPercent = (p as any).actProgressPercent !== undefined ? (p as any).actProgressPercent : 0;
+      let planProgressPercent = 0;
+      let actProgressPercent = 0;
+      if (groupTasks.length > 0) {
+        planProgressPercent = computePlanProgressPercent(groupTasks);
+        actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
+        actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
+      } else {
+        planProgressPercent = p.computedPlanProgress ?? 0;
+        actProgressPercent = p.computedActProgress ?? 0;
+      }
 
       rows.push({
         type: 'project',

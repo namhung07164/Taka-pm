@@ -11,6 +11,8 @@ import {
   calculateDays, 
   computePlanProgressPercent, 
   computeActProgressPercent,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries,
   matchesAdvancedSearch,
   parseDateTime,
   getStatus
@@ -210,8 +212,18 @@ export const DetailMobileView = memo(function DetailMobileView({
             (p.code ? expandedCodes.includes(p.code) : false) ||
             (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
 
-          const planProgressPercent = groupTasks.length > 0 ? computePlanProgressPercent(groupTasks) : (p.computedPlanProgress ?? 0);
-          const actProgressPercent = groupTasks.length > 0 ? computeActProgressPercent(groupTasks, delegationGroups) : (p.computedActProgress ?? 0);
+          let planProgressPercent = 0;
+          let actProgressPercent = 0;
+          if (groupTasks.length > 0) {
+            planProgressPercent = computePlanProgressPercent(groupTasks);
+            actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
+          } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+            planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
+            actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
+          } else {
+            planProgressPercent = p.computedPlanProgress ?? 0;
+            actProgressPercent = p.computedActProgress ?? 0;
+          }
 
           const isProjectMatch = lowerSearchTerm
             ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])

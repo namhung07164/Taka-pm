@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget } from './generalTypes';
-import { getStatus, formatDisplayDateMain } from '../../lib/utils';
+import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { Pin, GripVertical, ChevronUp, ChevronDown, CheckCircle2 } from 'lucide-react';
 
@@ -76,8 +76,12 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
     storeBadgeClass = 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-200/80 dark:border-amber-800 font-bold';
   }
 
-  const progressPercent = p.computedPlanProgress ?? 0;
-  const actProgressPercent = p.computedActProgress ?? 0;
+  const progressPercent = (p.computedPlanProgress && p.computedPlanProgress > 0)
+    ? p.computedPlanProgress
+    : (p.taskSummaries && p.taskSummaries.length > 0 ? computePlanProgressFromSummaries(p.taskSummaries) : (p.computedPlanProgress ?? 0));
+  const actProgressPercent = (p.computedActProgress && p.computedActProgress > 0)
+    ? p.computedActProgress
+    : (p.taskSummaries && p.taskSummaries.length > 0 ? computeActProgressFromSummaries(p.taskSummaries) : (p.computedActProgress ?? 0));
   
   const now = new Date();
   let activeTaskNames: string[] = [];

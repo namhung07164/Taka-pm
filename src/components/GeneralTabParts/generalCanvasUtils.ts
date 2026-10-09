@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project } from '../../types';
-import { getStatus, formatDisplayDateMain } from '../../lib/utils';
+import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { SortConfig } from './generalTypes';
 
 interface DrawGeneralCanvasParams {
@@ -92,8 +92,12 @@ export function drawGeneralCanvas({
       let progressPercent = 0;
       let actProgressPercent = 0;
       if (col.key === 'status') {
-          progressPercent = item.computedPlanProgress ?? 0;
-          actProgressPercent = item.computedActProgress ?? 0;
+          progressPercent = (item.computedPlanProgress && item.computedPlanProgress > 0)
+            ? item.computedPlanProgress
+            : (item.taskSummaries && item.taskSummaries.length > 0 ? computePlanProgressFromSummaries(item.taskSummaries) : (item.computedPlanProgress ?? 0));
+          actProgressPercent = (item.computedActProgress && item.computedActProgress > 0)
+            ? item.computedActProgress
+            : (item.taskSummaries && item.taskSummaries.length > 0 ? computeActProgressFromSummaries(item.taskSummaries) : (item.computedActProgress ?? 0));
       }
       
       let activeTaskNames: string[] = [];

@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
 import { Project, Task } from '../../types';
-import { getStatus, computeActProgressPercent } from '../../lib/utils';
+import { getStatus, computeActProgressPercent, computeActProgressFromSummaries } from '../../lib/utils';
 import { formatGanttDate, renderGanttDateCell } from './GanttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
@@ -79,9 +79,11 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   }
 
   const baseStatus = p.computedStatus || getStatus(pStart, pEnd, p.computedOpening || p.opening, p.code);
-  const pActPrg = projectTasks.length > 0
+  const pActPrg = projectTasks && projectTasks.length > 0
     ? computeActProgressPercent(projectTasks, delegationGroups)
-    : (p.computedActProgress ?? 0);
+    : (p.computedActProgress && p.computedActProgress > 0 
+        ? p.computedActProgress 
+        : (p.taskSummaries && p.taskSummaries.length > 0 ? computeActProgressFromSummaries(p.taskSummaries) : (p.computedActProgress ?? 0)));
   const effectiveProjectStatus = pActPrg >= 100 
     ? 'Completed' 
     : (p.computedActStatus && p.computedActStatus !== 'Planned' ? p.computedActStatus : baseStatus);

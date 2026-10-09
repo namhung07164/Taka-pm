@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 
 export interface ComputedProjectDates {
@@ -133,14 +133,6 @@ export function calculateProjectComputedDates(
     }
   }
 
-  const planProgressPercent = projectTasks && projectTasks.length > 0 
-    ? computePlanProgressPercent(projectTasks) 
-    : (project.computedPlanProgress ?? 0);
-  
-  const actProgressPercent = projectTasks && projectTasks.length > 0
-    ? computeActProgressPercent(projectTasks, delegationGroups)
-    : (project.computedActProgress ?? 0);
-
   const sortedProjTasks = sortGroupTasks(projectTasks || []);
 
   const taskSummaries = sortedProjTasks
@@ -165,6 +157,20 @@ export function calculateProjectComputedDates(
       if (t.party) summary.party = t.party;
       return summary;
     });
+
+  const effectiveSummaries = taskSummaries.length > 0 ? taskSummaries : (project.taskSummaries || []);
+
+  const planProgressPercent = projectTasks && projectTasks.length > 0 
+    ? computePlanProgressPercent(projectTasks) 
+    : (effectiveSummaries.length > 0 
+        ? computePlanProgressFromSummaries(effectiveSummaries) 
+        : (project.computedPlanProgress ?? 0));
+  
+  const actProgressPercent = projectTasks && projectTasks.length > 0
+    ? computeActProgressPercent(projectTasks, delegationGroups)
+    : (effectiveSummaries.length > 0 
+        ? computeActProgressFromSummaries(effectiveSummaries) 
+        : (project.computedActProgress ?? 0));
 
   const taskCount = projectTasks && projectTasks.length > 0 
     ? projectTasks.length 

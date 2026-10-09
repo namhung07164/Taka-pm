@@ -332,12 +332,93 @@ export function getStatus(
   return "On process";
 }
 
+export function computePlanProgressFromSummaries(
+  summaries: Array<{ start?: string; finish?: string; [key: string]: any }>
+): number {
+  if (!summaries || summaries.length === 0) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayTime = today.getTime();
+
+  let totalScore = 0;
+  let validCount = 0;
+
+  for (const s of summaries) {
+    if (!s.start && !s.finish) continue;
+    validCount++;
+
+    const start = parseDateTime(s.start);
+    if (start) start.setHours(0, 0, 0, 0);
+    const finish = parseDateTime(s.finish);
+    if (finish) finish.setHours(0, 0, 0, 0);
+
+    if (finish && todayTime > finish.getTime()) {
+      totalScore += 1;
+    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
+      const totalDuration = finish.getTime() - start.getTime();
+      if (totalDuration > 0) {
+        const passed = todayTime - start.getTime();
+        totalScore += passed / totalDuration;
+      } else {
+        totalScore += 1;
+      }
+    }
+  }
+
+  if (validCount === 0) return 0;
+  return Math.round((totalScore / validCount) * 100);
+}
+
+export function computeActProgressFromSummaries(
+  summaries: Array<{ start?: string; finish?: string; runningStatus?: string; approval?: string; [key: string]: any }>
+): number {
+  if (!summaries || summaries.length === 0) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayTime = today.getTime();
+
+  let totalScore = 0;
+  let validCount = 0;
+
+  for (const s of summaries) {
+    if (!s.start && !s.finish && !s.runningStatus) continue;
+    validCount++;
+
+    const statusStr = String(s.runningStatus || '').toLowerCase();
+    if (statusStr.includes('complete') || statusStr.includes('finished') || s.approval === 'Approved') {
+      totalScore += 1;
+      continue;
+    }
+
+    const start = parseDateTime(s.start);
+    if (start) start.setHours(0, 0, 0, 0);
+    const finish = parseDateTime(s.finish);
+    if (finish) finish.setHours(0, 0, 0, 0);
+
+    if (finish && todayTime > finish.getTime()) {
+      totalScore += 1;
+    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
+      const totalDuration = finish.getTime() - start.getTime();
+      if (totalDuration > 0) {
+        const passed = todayTime - start.getTime();
+        totalScore += passed / totalDuration;
+      } else {
+        totalScore += 1;
+      }
+    }
+  }
+
+  if (validCount === 0) return 0;
+  return Math.round((totalScore / validCount) * 100);
+}
+
 export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
   let computedTakStart = p.computedTakStart || p.start;
   let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl;
   let computedOpening = p.computedOpening || p.opening;
 
   let derivedFromTasks = false;
+  let projectTasks: Task[] = [];
   if (tasks && tasks.length > 0) {
     const pCode = String(p.code || "").trim().toLowerCase();
     const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
@@ -351,6 +432,7 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
       if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore) return;
 
       derivedFromTasks = true;
+      projectTasks.push(t);
       if (t.start && (!computedTakStart || t.start < computedTakStart)) {
         computedTakStart = t.start;
       }
@@ -381,11 +463,28 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
 
   const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
 
+  let planProgressPercent = p.computedPlanProgress;
+  let actProgressPercent = p.computedActProgress;
+
+  if (projectTasks.length > 0) {
+    planProgressPercent = computePlanProgressPercent(projectTasks);
+    actProgressPercent = computeActProgressPercent(projectTasks, []);
+  } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+    if (planProgressPercent === undefined || planProgressPercent === null || planProgressPercent === 0) {
+      planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
+    }
+    if (actProgressPercent === undefined || actProgressPercent === null || actProgressPercent === 0) {
+      actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
+    }
+  }
+
   return {
     computedTakStart,
     computedTakCompl,
     computedOpening,
-    status
+    status,
+    planProgressPercent: planProgressPercent ?? 0,
+    actProgressPercent: actProgressPercent ?? 0
   };
 }
 
@@ -981,11 +1080,15 @@ export function enrichProjects(
 
     const planProgressPercent = projectTasks.length > 0 
       ? computePlanProgressPercent(projectTasks)
-      : (p.computedPlanProgress ?? 0);
+      : (p.computedPlanProgress && p.computedPlanProgress > 0 
+          ? p.computedPlanProgress 
+          : (taskSummaries.length > 0 ? computePlanProgressFromSummaries(taskSummaries) : (p.computedPlanProgress ?? 0)));
 
     const actProgressPercent = projectTasks.length > 0
       ? computeActProgressPercent(projectTasks, delegationGroups)
-      : (p.computedActProgress ?? 0);
+      : (p.computedActProgress && p.computedActProgress > 0 
+          ? p.computedActProgress 
+          : (taskSummaries.length > 0 ? computeActProgressFromSummaries(taskSummaries) : (p.computedActProgress ?? 0)));
 
     const taskCount = projectTasks.length > 0
       ? projectTasks.length
