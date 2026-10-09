@@ -344,9 +344,9 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (!a) return 1;
     if (!b) return -1;
 
-    // 1. Prioritize natural subtask index extracted from taskCodePhu (e.g. #1, -1, #13, -13)
-    const codeA = a.taskCodePhu || '';
-    const codeB = b.taskCodePhu || '';
+    // 1. Prioritize natural subtask index extracted from taskCodePhu (e.g. #1, -1, #13, -13) or orderIndex/name
+    const codeA = a.taskCodePhu || (a.projectCode && a.orderIndex !== undefined ? `${a.projectCode}#${a.orderIndex + 1}` : a.name || '');
+    const codeB = b.taskCodePhu || (b.projectCode && b.orderIndex !== undefined ? `${b.projectCode}#${b.orderIndex + 1}` : b.name || '');
     const numA = extractSubtaskIndex(codeA);
     const numB = extractSubtaskIndex(codeB);
 

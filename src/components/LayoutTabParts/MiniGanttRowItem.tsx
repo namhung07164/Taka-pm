@@ -88,11 +88,15 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
                 ↳
               </span>
             )}
-            {t.taskCodePhu && (
-              <span className="font-mono text-[10px] text-blue-600 dark:text-[#8ab4f8] font-bold shrink-0">
-                {t.taskCodePhu}
-              </span>
-            )}
+            {(() => {
+              const displayCode = t.taskCodePhu || (t.orderIndex !== undefined && t.orderIndex !== null ? `#${t.orderIndex + 1}` : '');
+              if (!displayCode) return null;
+              return (
+                <span className="font-mono text-[10px] text-blue-600 dark:text-[#8ab4f8] font-bold shrink-0">
+                  {displayCode}
+                </span>
+              );
+            })()}
             <span
               className={cn(
                 'text-xs truncate flex-1',
@@ -100,7 +104,7 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
                   ? 'text-slate-600 dark:text-slate-300 font-normal'
                   : 'text-slate-800 dark:text-slate-100 font-medium'
               )}
-              title={`${t.taskCodePhu ? `${t.taskCodePhu} ` : ''}${t.name}${
+              title={`${t.taskCodePhu || (t.orderIndex !== undefined ? `#${t.orderIndex + 1} ` : '')}${t.name}${
                 sFormatted || fFormatted ? ` (${sFormatted || ''} - ${fFormatted || ''})` : ''
               }`}
             >
