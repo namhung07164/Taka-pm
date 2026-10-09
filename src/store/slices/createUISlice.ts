@@ -335,6 +335,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setDetailReturnScrollId: (detailReturnScrollId) => set({ detailReturnScrollId }),
   ganttTabFocusTaskId: "",
   setGanttTabFocusTaskId: (ganttTabFocusTaskId) => set({ ganttTabFocusTaskId }),
+  ganttTabFilterProjectId: "",
+  setGanttTabFilterProjectId: (ganttTabFilterProjectId) => set({ ganttTabFilterProjectId }),
   ganttTriggerToday: 0,
   triggerGanttToday: () => set({ ganttTriggerToday: Date.now() }),
   layoutTabFilters: null,

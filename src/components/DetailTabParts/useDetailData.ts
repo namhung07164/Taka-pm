@@ -270,6 +270,20 @@ export function useDetailData({
     });
   }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
 
+  // Ensure visibleCount is large enough to render target project row
+  useEffect(() => {
+    if (!initialFilterCode) return;
+    const filterClean = String(initialFilterCode).trim().toUpperCase();
+    const projIdx = filteredProjects.findIndex(p => {
+      const pCode = String(p.code || '').trim().toUpperCase();
+      const pId = String(p.id || '').trim().toUpperCase();
+      return pId === filterClean || pCode === filterClean || (pCode && filterClean.startsWith(pCode));
+    });
+    if (projIdx >= 0 && projIdx >= visibleCount) {
+      setVisibleCount(projIdx + 25);
+    }
+  }, [initialFilterCode, filteredProjects, visibleCount]);
+
   const prevVisibleIdsRef = useRef<string>("");
   useEffect(() => {
     const targetProjects = filteredProjects.length > 0

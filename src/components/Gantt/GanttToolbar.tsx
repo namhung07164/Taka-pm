@@ -94,6 +94,7 @@ export interface GanttToolbarProps {
   setSearchTerm: (term: string) => void;
   initialFocusTaskId?: string;
   ganttTabFocusTaskId?: string | null;
+  ganttTabFilterProjectId?: string | null;
   handleClearFocus: () => void;
 }
 
@@ -154,6 +155,7 @@ export function GanttToolbar({
   setSearchTerm,
   initialFocusTaskId,
   ganttTabFocusTaskId,
+  ganttTabFilterProjectId,
   handleClearFocus,
 }: GanttToolbarProps) {
   const { t } = useLanguage();
@@ -324,12 +326,13 @@ export function GanttToolbar({
             </div>
           )}
 
-          {/* Focused Task clear button */}
-          {(initialFocusTaskId || ganttTabFocusTaskId) && (
+          {/* Focused Task / Single Project clear button */}
+          {(initialFocusTaskId || ganttTabFocusTaskId || ganttTabFilterProjectId) && (
             <button
               type="button"
               onClick={handleClearFocus}
-              className="flex items-center gap-1 px-2 py-1 bg-amber-950/70 text-amber-300 border border-amber-800/80 font-bold rounded-lg text-xs transition-colors"
+              className="flex items-center gap-1 px-2 py-1 bg-amber-950/70 text-amber-300 border border-amber-800/80 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+              title="Clear single project focus and show all projects"
             >
               <span>Focus Active</span>
               <X className="w-3 h-3" />

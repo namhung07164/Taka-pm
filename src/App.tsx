@@ -49,6 +49,7 @@ import { useAppStore } from "./store/useAppStore";
 import { PrintFilterHeader } from "./components/PrintFilterHeader";
 import { getPrintFilterContext } from "./lib/printFilterHelper";
 import { exportToExcel, exportToPdf } from "./lib/exportPdfEngine";
+import { triggerChangeFlash } from "./lib/changeFlashService";
 
 export default function App() {
   
@@ -1071,14 +1072,28 @@ export default function App() {
           break;
         }
         case "gantt": {
+          const targetProjectId = p?.id ? String(p.id) : (p?.code || "");
+          updates.ganttTabFilterProjectId = targetProjectId;
           if (effectiveFilterCode) {
             safeSetItemSession("taka_gantt_search", effectiveFilterCode);
           }
           if (task?.id) {
             updates.ganttTabFocusTaskId = task.id;
           }
+          if (p?.id) {
+            const currentExpanded = useAppStore.getState().expandedProjectIds || [];
+            const newExpanded = new Set(currentExpanded);
+            newExpanded.add(String(p.id));
+            updates.expandedProjectIds = Array.from(newExpanded);
+            updates.isTasksRequested = true;
+          }
+          updates.globalLocationFilter = [];
+          safeSetItemSession("taka_gantt_status_filter", "all");
           safeSetItemSession("taka_gantt_trigger_today", "true");
           triggerGanttToday();
+          if (p?.id) {
+            triggerChangeFlash(String(p.id), "projects", "QuickNav");
+          }
           break;
         }
         case "detail": {
@@ -1102,6 +1117,10 @@ export default function App() {
             updates.detailTabStoreFilter = p?.store || task?.projectStore || "";
           }
 
+          // Reset location and status filter so target project is never hidden in Task Detail
+          updates.globalLocationFilter = [];
+          safeSetItemSession("taka_detail_status_filter", "all");
+
           // Requirement: Khi chuyển qua project qua quick navigation thì chỉ mở project, 
           // chưa expand task con để không kích hoạt tải tasks từ Firestore về.
           // Chỉ mở rộng task con nếu đích đến là một công việc (task) cụ thể.
@@ -1115,6 +1134,10 @@ export default function App() {
             // Khi chọn chuyển tới Project: đảm bảo focus task bị xóa sạch và không kích hoạt useDetailFocusTracking
             updates.detailTabFocusTaskId = "";
             updates.ganttTabFocusTaskId = "";
+          }
+
+          if (p?.id) {
+            triggerChangeFlash(String(p.id), "projects", "QuickNav");
           }
           break;
         }

@@ -197,6 +197,7 @@ export function DetailTab({
   } = useDetailVirtualization({
     flatTableRows,
     initialFocusTaskId,
+    initialFilterCode,
     visibleCount,
     setVisibleCount,
     filteredProjectsLength: filteredProjects.length,

@@ -42,6 +42,8 @@ export function GanttTab({
   const setIsTasksRequested = useAppStore(state => state.setIsTasksRequested);
   const ganttTabFocusTaskId = useAppStore(state => state.ganttTabFocusTaskId);
   const setGanttTabFocusTaskId = useAppStore(state => state.setGanttTabFocusTaskId);
+  const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
+  const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
 
@@ -277,8 +279,10 @@ export function GanttTab({
 
   const handleClearFocus = useCallback(() => {
     setGanttTabFocusTaskId(null);
+    setGanttTabFilterProjectId('');
+    setSearchTerm('');
     if (onClearFocus) onClearFocus();
-  }, [onClearFocus, setGanttTabFocusTaskId]);
+  }, [onClearFocus, setGanttTabFocusTaskId, setGanttTabFilterProjectId, setSearchTerm]);
 
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (
@@ -351,6 +355,7 @@ export function GanttTab({
         setSearchTerm={setSearchTerm}
         initialFocusTaskId={initialFocusTaskId}
         ganttTabFocusTaskId={ganttTabFocusTaskId}
+        ganttTabFilterProjectId={ganttTabFilterProjectId}
         handleClearFocus={handleClearFocus}
       />
 

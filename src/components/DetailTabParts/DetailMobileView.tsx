@@ -237,6 +237,7 @@ export const DetailMobileView = memo(function DetailMobileView({
               key={p.id || `${p.code}-${p.year}-${p.no}`} 
               id={`detail-project-${p.no ?? p.code}`}
               data-project-item="true"
+              data-project-id={String(p.id || p.no || p.code)}
               data-project-code={p.code}
               data-project-year={p.year || ''}
               data-project-store={p.store || ''}

@@ -138,6 +138,8 @@ export interface UISlice {
   setDetailReturnScrollId: (id: string) => void;
   ganttTabFocusTaskId: string;
   setGanttTabFocusTaskId: (id: string) => void;
+  ganttTabFilterProjectId: string;
+  setGanttTabFilterProjectId: (id: string) => void;
   ganttTriggerToday: number;
   triggerGanttToday: () => void;
   layoutTabFilters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string; _ts?: number } | null;

@@ -32,9 +32,24 @@ export function useGanttProjectsFilter({
   const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
   const setExpandedProjects = useAppStore(state => state.setExpandedProjectIds);
+  const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
+  const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
 
   const [searchTerm, setSearchTerm] = useState(() => safeGetItemSession("taka_gantt_search") || "");
   const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  // Sync QuickNav targeted project filter
+  useEffect(() => {
+    if (ganttTabFilterProjectId) {
+      const targetProj = projects.find(
+        p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+             (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+      );
+      const codeToDisplay = targetProj?.code || ganttTabFilterProjectId;
+      setSearchTerm(codeToDisplay);
+      setFilterProjectStatus('all');
+    }
+  }, [ganttTabFilterProjectId, projects]);
 
   const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
     if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
@@ -50,9 +65,19 @@ export function useGanttProjectsFilter({
   useEffect(() => {
     const timer = setTimeout(() => {
       safeSetItemSession("taka_gantt_search", searchTerm);
+      if (ganttTabFilterProjectId) {
+        const targetProj = projects.find(
+          p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+               (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+        );
+        const expectedCode = targetProj?.code || ganttTabFilterProjectId;
+        if (!searchTerm.trim() || searchTerm.trim().toUpperCase() !== expectedCode.trim().toUpperCase()) {
+          setGanttTabFilterProjectId('');
+        }
+      }
     }, 350);
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [searchTerm, ganttTabFilterProjectId, setGanttTabFilterProjectId, projects]);
 
   const onStatusFilterChange = useCallback((status: string) => {
     setFilterProjectStatus(status);
@@ -145,6 +170,13 @@ export function useGanttProjectsFilter({
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
+      // Strict single-project isolation when navigated via Quick Navigation
+      if (ganttTabFilterProjectId) {
+        const isTarget = (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+                         (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase());
+        return isTarget;
+      }
+
       const pYear = p.year ? String(p.year).trim() : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
@@ -187,6 +219,7 @@ export function useGanttProjectsFilter({
     });
   }, [
     projects,
+    ganttTabFilterProjectId,
     globalYearFilter,
     effectiveStore,
     globalLocationFilter,

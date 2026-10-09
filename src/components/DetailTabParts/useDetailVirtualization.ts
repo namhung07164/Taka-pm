@@ -5,6 +5,7 @@ import { useAppStore } from '../../store/useAppStore';
 export interface UseDetailVirtualizationParams {
   flatTableRows: DetailTableRow[];
   initialFocusTaskId?: string;
+  initialFilterCode?: string;
   visibleCount: number;
   setVisibleCount: React.Dispatch<React.SetStateAction<number>>;
   filteredProjectsLength: number;
@@ -15,6 +16,7 @@ const OVERSCAN = 10;
 export function useDetailVirtualization({
   flatTableRows,
   initialFocusTaskId,
+  initialFilterCode,
   visibleCount,
   setVisibleCount,
   filteredProjectsLength,
@@ -121,14 +123,47 @@ export function useDetailVirtualization({
     return () => ro.disconnect();
   }, []);
 
+  const lastScrolledTargetRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!initialFocusTaskId || !tableContainerRef.current) return;
-    const idx = flatTableRows.findIndex(r => r.type === 'task' && r.task.id === initialFocusTaskId);
-    if (idx >= 0 && rowOffsets[idx] !== undefined) {
-      const targetScroll = Math.max(0, rowOffsets[idx] - 120);
-      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    if (!tableContainerRef.current) return;
+    const targetKey = `${initialFocusTaskId || ''}_${initialFilterCode || ''}`;
+    if (targetKey === '_') {
+      lastScrolledTargetRef.current = null;
+      return;
     }
-  }, [initialFocusTaskId, flatTableRows, rowOffsets]);
+    if (lastScrolledTargetRef.current === targetKey) return;
+
+    let targetIdx = -1;
+    let offsetAdjustment = 40;
+
+    // 1. Prioritize task if explicit initialFocusTaskId provided
+    if (initialFocusTaskId) {
+      targetIdx = flatTableRows.findIndex(
+        r => r.type === 'task' && r.task.id === initialFocusTaskId
+      );
+      offsetAdjustment = 100;
+    }
+
+    // 2. Fallback to project row if navigated to project or task row not yet expanded
+    if (targetIdx === -1 && initialFilterCode) {
+      const filterClean = String(initialFilterCode).trim().toUpperCase();
+      targetIdx = flatTableRows.findIndex(r => {
+        if (r.type !== 'project' || !r.project) return false;
+        const p = r.project;
+        const pCode = String(p.code || '').trim().toUpperCase();
+        const pId = String(p.id || '').trim().toUpperCase();
+        return pId === filterClean || pCode === filterClean || (pCode && filterClean.startsWith(pCode));
+      });
+      offsetAdjustment = 30;
+    }
+
+    if (targetIdx >= 0 && rowOffsets[targetIdx] !== undefined) {
+      const targetScroll = Math.max(0, rowOffsets[targetIdx] - offsetAdjustment);
+      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      lastScrolledTargetRef.current = targetKey;
+    }
+  }, [initialFocusTaskId, initialFilterCode, flatTableRows, rowOffsets]);
 
   useEffect(() => {
     if (!flatTableRows || flatTableRows.length === 0) return;

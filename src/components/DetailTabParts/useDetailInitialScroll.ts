@@ -61,7 +61,7 @@ export function useDetailInitialScroll({
       // Keep parent row collapsed by default (Tri-Gate Lazy Loading rule).
       // If initialFocusTaskId is present, useDetailFocusTracking will scroll directly to the task.
       if (!initialFocusTaskId) {
-        setTimeout(() => {
+        const tryScrollToProject = (attempts = 0) => {
           let el: HTMLElement | null = null;
           if (filterUpper.includes('#')) {
             const matchedTask = tasks.find((t) => 
@@ -73,18 +73,25 @@ export function useDetailInitialScroll({
             }
           }
           if (!el) {
+            const pCode = matchedProj?.code || initialFilterCode;
+            const pId = matchedProj?.id;
             el =
               (matchedProj
                 ? document.getElementById(
                     `detail-project-${matchedProj.no ?? matchedProj.code}`
                   )
                 : null) ||
-              document.querySelector(`[data-project-code="${initialFilterCode}"]`);
+              (pCode ? document.querySelector(`[data-project-code="${pCode}"]`) : null) ||
+              (pCode ? document.querySelector(`[data-project-code="${pCode.toUpperCase()}"]`) : null) ||
+              (pId ? document.querySelector(`[data-project-id="${pId}"]`) : null);
           }
           if (el && el instanceof HTMLElement) {
             scrollToElement(el);
+          } else if (attempts < 12) {
+            setTimeout(() => tryScrollToProject(attempts + 1), 80);
           }
-        }, 300);
+        };
+        requestAnimationFrame(() => tryScrollToProject(0));
       }
     } else if (
       !initialFilterCode &&
