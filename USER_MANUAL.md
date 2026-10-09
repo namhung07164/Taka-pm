@@ -333,18 +333,9 @@ Trực quan hóa kế hoạch và tiến độ thực tế theo thời gian.
         - Khi nhấn **Enter** hoặc chọn gợi ý, hệ thống tự động tính toán lại các mốc ngày `Start`, `Finish`, `Duration` và tự động dịch chuyển (cascade) các công việc phụ thuộc phía sau trong 0ms (Optimistic UI), đồng thời lưu ngầm lên Firestore.
         - Hỗ trợ nút `[ ✓ Apply ]` để xác nhận hoặc `[ ✕ Cancel / Phím Escape ]` để hủy thao tác nhanh chóng.
     - **Nút Mở Rộng / Đóng All Tím Cho Task Gộp (Master Purple Modular Toggle Button)**:
-      * **Vị trí**: Nằm ở ô tiêu đề cột **Project / Task** trên thanh header bảng Gantt, được đặt ngay phía dưới nút mũi tên xanh/xám mở rộng/thu gọn tất cả dự án (`ChevronDown / ChevronRight`), và tại từng dòng dự án có task con gộp.
-      * **Chức năng**: Mở rộng hoặc thu gọn các nhóm Task gộp (Modular Group Tasks).
-      * **Trạng thái thông minh khi có Task con gộp đang mở**: Khi bất kỳ task nào có task con gộp được mở rộng trên màn hình, nút mũi tên tím tự động chuyển sang chế độ quay xuống (`ChevronDown`) để người dùng có thể nhấp vào và thu gọn tất cả (`collapse all`) một cách nhanh chóng và thuận tiện.
-      * **Bảo toàn trạng thái Dự án (Không tự ý mở rộng dự án)**: Khi nhấn nút mũi tên tím, hệ thống tuyệt đối không tự động mở rộng các dự án nếu các dự án đó chưa được người dùng mở rộng (`isExpanded = false`). Dự án đang đóng sẽ vẫn giữ nguyên trạng thái đóng.
-    - **Đóng Bảng Thông Tin Nổi Tooltip (Tooltip Close Button & Interactions)**:
-      * **Nút "X" tắt Tooltip**: Bấm nút "X" ở góc trên bên phải của bảng thông tin nổi (Tooltip) sẽ lập tức đóng hoàn toàn Tooltip ngay cả khi con trỏ chuột vẫn đang nằm trong khu vực thanh hoặc tooltip, không bị hiện tượng kẹt chuột hoặc tự động mở lại.
-      * **Các nút chức năng trên Tooltip**: Hỗ trợ nút **Ghim (Pin)**, nút **🎯 Focus trong Gantt (Focus in Gantt)**, nút **Mở chi tiết công việc (Open in Task Detail)** và nút **Sửa/thêm quan hệ tiền nhiệm (Predecessors)**.
-    - **Chế Độ Focus Active Toàn Diện Tại Tab Gantt (Gantt Focus Active Mode)**:
-      * **Kích hoạt linh hoạt**: Người dùng có thể kích hoạt chế độ Focus cho bất kỳ công việc nào bằng cách bấm biểu tượng mục tiêu **🎯 (Focus in Gantt)** trên dòng task (cột Project/Task) hoặc trong bảng Tooltip, hoặc điều hướng trực tiếp từ Task Detail / Command Palette (`Ctrl+K`).
-      * **Tự động mở dự án & định vị dòng thời gian**: Khi ở chế độ Focus Active, hệ thống tự động mở rộng dự án cha và nhóm task gộp (nếu là task con), đồng thời tự động cuộn mượt định vị chính xác vị trí dòng task trên màn hình (Vertical Scroll) và canh giữa thanh tiến độ trên dòng thời gian Timeline (Horizontal Scroll).
-      * **Thanh điều khiển nổi (Floating Focus Controls Widget)**: Góc dưới bên phải hiển thị cụm điều khiển nổi sang trọng và tiện lợi: hiển thị mã/tên task đang focus, nút **Locate** (định vị lại tâm điểm), nút **Task Detail** (mở modal chi tiết), và nút **Clear (Esc)**.
-      * **Phím tắt**: Người dùng có thể nhấn phím `Escape` bất kỳ lúc nào để thoát nhanh khỏi chế độ Focus Active.
+      * **Vị trí**: Nằm ở ô tiêu đề cột **Project / Task** trên thanh header bảng Gantt, được đặt ngay phía dưới nút mũi tên xanh/xám mở rộng/thu gọn tất cả dự án (`ChevronDown / ChevronRight`).
+      * **Chức năng**: Mở rộng hoặc thu gọn toàn bộ các nhóm Task gộp (Modular Group Tasks) đối với tất cả các dự án đang xem, đang tìm kiếm hoặc đang hiển thị trên màn hình hiện tại.
+      * **Trạng thái trực quan**: Màu tím nổi bật (`bg-purple-600` khi đang mở rộng all, `bg-purple-100 dark:bg-purple-900/60` khi đang đóng all). Khi kích hoạt mở rộng all, hệ thống đồng thời tự động mở rộng các dự án đang đóng để hiển thị ngay lập tức toàn bộ cây công việc con gộp trên giao diện.
     - **Tương Tác Tooltip Task Gộp Mẹ Hiển Thị Các Task Con Gom Đang On Process**:
       * **Mục tiêu**: Nắm bắt nhanh tiến độ của các công việc con đang trong giai đoạn triển khai (`On Process`) của một nhóm việc cha mà không cần phải cuộn tìm kiếm.
       * **Thao tác**: Nhấp vào thanh biểu đồ Gantt hoặc nhấp vào Tooltip của Task gộp mẹ để ghim và kích hoạt tương tác (`isPinned`).
@@ -545,10 +536,6 @@ Quản lý các công việc giao cho cá nhân, phòng ban hoặc đối tác b
 5. **Theo dõi trạng thái**: Khi người nhận việc cập nhật trạng thái (*Assigned ➔ Accepted ➔ On process ➔ Completed*), tiến độ sẽ tự động cập nhật về Dự án gốc.
 6. **Xem trên Delegation Calendar**: Bấm sang tab con `Delegation Calendar` để theo dõi toàn bộ deadline dưới dạng lưới lịch tháng.
 7. **Cơ chế Tự động Đồng bộ Năm Dữ liệu (Auto-Fallback Project Year)**: Toàn bộ quá trình tạo mới ủy quyền hoặc chỉnh sửa nhiệm vụ luôn tự động kế thừa và chuẩn hóa `projectYear` dạng số (`Number`) từ dự án mẹ hoặc năm hiện tại, đảm bảo bộ lọc dữ liệu Firestore hoạt động chính xác 100% và ngăn ngừa triệt để lỗi quét dữ liệu dư thừa.
-8. **Kiến Trúc Tải Nhắm Mục Tiêu Theo Dự Án & Boot 0-Read (Targeted JIT Delegation Hydration & Zero-Read Boot)**:
-   - **Tối ưu Tri-Gate Boot (0 Read Server & 0 Cache Load khi mở app)**: Khi khởi động ứng dụng, hệ thống áp dụng triệt để cơ chế chặn lazy Tri-Gate, hoàn toàn không tải trước 4.000 bản ghi phân quyền vào RAM khi người dùng đang ở tab General hay các màn hình không yêu cầu. Tiết kiệm 100% bộ nhớ đệm và triệt tiêu độ trễ khởi động.
-   - **Tải Nhắm Mục Tiêu Theo Dự Án (Targeted Hydration)**: Khi người dùng mở rộng (Expand) một dự án trên Gantt Chart, mở hộp thoại Task Detail hoặc Project Modal, hệ thống chỉ truy vấn và nạp đúng các nhóm phân quyền liên quan trực tiếp đến mã dự án (`projectCode`), mã nhiệm vụ (`parentTaskId` / `taskId`) đó từ Dexie IndexedDB (0ms UI, 0 Firestore Read).
-   - **Lọc Theo Niên Độ Khi Vào Tab Delegation**: Khi người dùng chuyển sang tab `Task Delegation` hoặc `Delegation Calendar`, hệ thống chỉ nạp các bản ghi thuộc đúng năm đang xem (ví dụ năm 2026: ~300 bản ghi thay vì toàn bộ 4.000 bản ghi của mọi năm), sau đó duy trì đồng bộ qua kênh vi mô Delta Pipeline, đạt 0 lượt Firestore Read cho toàn bộ kho dữ liệu.
 
 ---
 

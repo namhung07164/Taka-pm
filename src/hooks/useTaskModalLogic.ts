@@ -5,7 +5,6 @@ import { useAppStore } from "../store/useAppStore";
 import { useEnrichedData } from './useEnrichedData';
 import { useTaskModalFormState } from './taskModal/useTaskModalFormState';
 import { executeTaskSave } from './taskModal/taskModalSaveService';
-import { hydrateDelegationsForProjects, hydrateDelegationsForTasks } from '../lib/backgroundSyncWorker';
 
 export interface UseTaskModalLogicProps {
   task: Task | null;
@@ -93,19 +92,6 @@ export function useTaskModalLogic({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, confirmModal.isOpen]);
-
-  // JIT Targeted Local-First Delegation Hydration (0ms, 0 Read)
-  useEffect(() => {
-    if (isOpen && task) {
-      const keys = [task.projectId, task.projectCode].filter(Boolean) as string[];
-      if (keys.length > 0) {
-        hydrateDelegationsForProjects(keys).catch(() => {});
-      }
-      if (task.id) {
-        hydrateDelegationsForTasks([task.id]).catch(() => {});
-      }
-    }
-  }, [isOpen, task?.id, task?.projectId, task?.projectCode]);
 
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);

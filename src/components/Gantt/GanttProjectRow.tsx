@@ -120,6 +120,9 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
       setExpandedModularTasks((prev) =>
         Array.from(new Set([...prev, ...projectModularParentIds]))
       );
+      if (!isExpanded) {
+        if (handleToggle) handleToggle(p.id!);
+      }
     }
   };
 

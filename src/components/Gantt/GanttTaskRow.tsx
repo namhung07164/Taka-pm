@@ -222,7 +222,6 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     tasks,
     projects,
     canWrite,
-    isFocused,
     onNavigateToTaskDetail,
     onProcessChildTasks,
   };
@@ -244,7 +243,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
         "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-all duration-700 relative group",
         getRowVisibilityClass(`task-${t.id}`),
         isSelected ? "bg-blue-50/50 dark:bg-blue-950/30" : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
-        isFocused && "ring-2 ring-blue-500 z-20 bg-blue-50/90 dark:bg-blue-900/40 shadow-sm",
+        isFocused && "ring-2 ring-blue-500 z-20 bg-blue-50/70 dark:bg-blue-900/30",
         isDragging && "opacity-40",
         isTarget && dropPosition === 'before' && "border-t-2 border-t-blue-500",
         isTarget && dropPosition === 'after' && "border-b-2 border-b-blue-500",
@@ -253,10 +252,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     >
       {/* Left Side Columns Container */}
       <div
-        className={cn(
-          "sticky left-0 z-20 flex border-r border-slate-200 dark:border-slate-800 shrink-0 h-full items-center overflow-hidden transition-colors",
-          isFocused ? "bg-blue-50/90 dark:bg-blue-950/70" : "bg-white dark:bg-[#1e1e20]"
-        )}
+        className="sticky left-0 z-20 bg-white dark:bg-[#1e1e20] flex border-r border-slate-200 dark:border-slate-800 shrink-0 h-full items-center overflow-hidden"
         style={{ width: `${sideWidth}px` }}
       >
         <div className="flex-1 min-w-0 h-full flex items-center overflow-hidden">
@@ -279,7 +275,6 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
             handleTaskDragStart={handleTaskDragStart}
             handleTaskDragEnd={handleTaskDragEnd}
             isEditMode={isEditMode}
-            isFocused={isFocused}
             onNavigateToTaskDetail={onNavigateToTaskDetail}
           />
         </div>

@@ -327,27 +327,17 @@ export function GanttToolbar({
           )}
 
           {/* Focused Task clear button - only for focused task, NOT for project search */}
-          {(initialFocusTaskId || ganttTabFocusTaskId) && (() => {
-            const fId = initialFocusTaskId || ganttTabFocusTaskId;
-            const fTask = tasks?.find(t => t.id === fId);
-            return (
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold shrink-0 shadow-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                <span>Focus Active:</span>
-                <span className="font-mono font-bold max-w-[120px] sm:max-w-[160px] truncate text-slate-900 dark:text-white" title={fTask?.name}>
-                  {fTask?.taskCodePhu || (fTask as any)?.taskCode || fTask?.name || 'Task'}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleClearFocus}
-                  className="p-0.5 hover:bg-amber-500/25 rounded transition-colors text-slate-500 hover:text-rose-500 cursor-pointer ml-0.5"
-                  title="Clear single task focus (Esc)"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            );
-          })()}
+          {(initialFocusTaskId || ganttTabFocusTaskId) && (
+            <button
+              type="button"
+              onClick={handleClearFocus}
+              className="flex items-center gap-1 px-2 py-1 bg-amber-950/70 text-amber-300 border border-amber-800/80 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+              title="Clear single task focus"
+            >
+              <span>Focus Active</span>
+              <X className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
 

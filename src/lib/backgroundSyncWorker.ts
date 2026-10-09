@@ -12,8 +12,6 @@ import {
   getLocalTasksForProjects,
   getLocalCosts,
   getLocalDelegations,
-  getLocalDelegationsForProjects,
-  getLocalDelegationsForTasks,
 } from './localDb';
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
@@ -34,17 +32,14 @@ export async function bootstrapLocalStore(): Promise<{
 }> {
   const start = performance.now();
   try {
-    const store = useAppStore.getState();
-    const currentYear = store.globalYearFilter;
-
-    // Boot siêu tốc (~5ms, 0 read): Chỉ nạp Projects cần thiết của năm hiện tại
-    // Tuân thủ triệt để Tri-Gate lazy loading: KHÔNG đọc Task, Cost hay Delegation khi chưa kích hoạt cờ
     const [projects, tasks, costs, delegations] = await Promise.all([
-      getLocalProjects(currentYear),
-      store.isTasksRequested ? getLocalTasks(currentYear) : Promise.resolve([]),
-      store.isCostsRequested ? getLocalCosts(currentYear) : Promise.resolve([]),
-      store.isDelegationsRequested ? getLocalDelegations(currentYear) : Promise.resolve([]),
+      getLocalProjects(),
+      getLocalTasks(),
+      getLocalCosts(),
+      getLocalDelegations(),
     ]);
+
+    const store = useAppStore.getState();
 
     if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
       store.setProjects(projects);
@@ -194,106 +189,26 @@ export async function hydrateCostsFromLocal(): Promise<number> {
 }
 
 /**
- * Nạp tức thời Delegations từ Dexie khi người dùng chuyển sang tab Phân quyền (0ms UI, lọc theo năm)
+ * Nạp tức thời Delegations từ Dexie khi người dùng chuyển sang tab Phân quyền (0ms UI)
  */
-export async function hydrateDelegationsFromLocal(year?: string): Promise<number> {
+export async function hydrateDelegationsFromLocal(): Promise<number> {
   try {
     const store = useAppStore.getState();
-    const targetYear = year || store.globalYearFilter;
-
-    // Nếu store đã nạp delegations của năm này, giữ nguyên (0 Read)
-    if (store.delegationGroups && store.delegationGroups.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') {
-        return store.delegationGroups.length;
-      }
-      const hasForYear = store.delegationGroups.some(d => String(d.projectYear || '') === String(targetYear));
-      if (hasForYear) return store.delegationGroups.length;
-    }
-
-    const localDelegations = await getLocalDelegations(targetYear);
+    if (store.delegationGroups && store.delegationGroups.length > 0) return store.delegationGroups.length;
+    const localDelegations = await getLocalDelegations();
     if (localDelegations && localDelegations.length > 0) {
       const currentStore = useAppStore.getState();
-      const existing = currentStore.delegationGroups || [];
-      const dMap = new Map(existing.map(d => [d.id, d]));
-      localDelegations.forEach(d => dMap.set(d.id, d));
-      const merged = Array.from(dMap.values());
-      currentStore.setDelegationGroups(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_delegations_hydration', true, localDelegations.length, `Instant Local-First Delegations Hydration for ${targetYear || 'all'} (0ms, 0 Read)`);
-      return localDelegations.length;
+      if (!currentStore.delegationGroups || currentStore.delegationGroups.length === 0) {
+        currentStore.setDelegationGroups(localDelegations);
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_delegations_hydration', true, localDelegations.length, 'Instant Local-First Delegations Hydration (0ms)');
+        return localDelegations.length;
+      }
     }
     return 0;
   } catch (err) {
     console.warn('[backgroundSyncWorker] hydrateDelegationsFromLocal error:', err);
-    return 0;
-  }
-}
-
-/**
- * Nạp tức thì Delegations của các dự án cụ thể từ Dexie vào Zustand (0ms UI, không tải cả kho 4000 items)
- */
-export async function hydrateDelegationsForProjects(projectIdsOrCodes: string[]): Promise<number> {
-  if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return 0;
-  try {
-    const localDelegations = await getLocalDelegationsForProjects(projectIdsOrCodes);
-    if (!localDelegations || localDelegations.length === 0) return 0;
-
-    const store = useAppStore.getState();
-    const existing = store.delegationGroups || [];
-    const dMap = new Map(existing.map(d => [d.id, d]));
-    let hasNew = false;
-    localDelegations.forEach(d => {
-      if (!dMap.has(d.id)) {
-        dMap.set(d.id, d);
-        hasNew = true;
-      }
-    });
-
-    if (hasNew) {
-      store.setDelegationGroups(Array.from(dMap.values()));
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_delegations_by_project', true, localDelegations.length, `Instant Delegations Hydration for ${projectIdsOrCodes.length} projects (0ms)`);
-      return localDelegations.length;
-    }
-    return 0;
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] hydrateDelegationsForProjects error:', err);
-    return 0;
-  }
-}
-
-/**
- * Nạp tức thì Delegations của các task cụ thể từ Dexie vào Zustand (0ms UI)
- */
-export async function hydrateDelegationsForTasks(taskIds: string[]): Promise<number> {
-  if (!taskIds || taskIds.length === 0) return 0;
-  try {
-    const localDelegations = await getLocalDelegationsForTasks(taskIds);
-    if (!localDelegations || localDelegations.length === 0) return 0;
-
-    const store = useAppStore.getState();
-    const existing = store.delegationGroups || [];
-    const dMap = new Map(existing.map(d => [d.id, d]));
-    let hasNew = false;
-    localDelegations.forEach(d => {
-      if (!dMap.has(d.id)) {
-        dMap.set(d.id, d);
-        hasNew = true;
-      }
-    });
-
-    if (hasNew) {
-      store.setDelegationGroups(Array.from(dMap.values()));
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_delegations_by_task', true, localDelegations.length, `Instant Delegations Hydration for ${taskIds.length} tasks (0ms)`);
-      return localDelegations.length;
-    }
-    return 0;
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] hydrateDelegationsForTasks error:', err);
     return 0;
   }
 }

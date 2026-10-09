@@ -35,10 +35,8 @@ import {
   hydrateTasksFromLocal,
   hydrateTasksForProjects,
   hydrateCostsFromLocal,
-  hydrateDelegationsFromLocal,
-  hydrateDelegationsForProjects
+  hydrateDelegationsFromLocal
 } from "../lib/backgroundSyncWorker";
-import { getLocalDelegations } from "../lib/localDb";
 import { loadNotificationTasks } from "../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../lib/taskDeduplicationService";
 import {
@@ -157,7 +155,7 @@ export function useFirebaseData() {
           hydrateCostsFromLocal().catch(() => {});
         }
         if (useAppStore.getState().isDelegationsRequested) {
-          hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+          hydrateDelegationsFromLocal().catch(() => {});
         }
 
         // 3. Kích hoạt Delta Sync tức thì (chỉ kéo các thay đổi mới phát sinh trong thời gian ngủ)
@@ -227,7 +225,7 @@ export function useFirebaseData() {
       }
       if (needsDelegations) {
         setIsDelegationsRequested(true);
-        hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+        hydrateDelegationsFromLocal().catch(() => {});
       }
     };
 
@@ -824,10 +822,7 @@ export function useFirebaseData() {
     // Instant 0ms Dexie Local-First Hydration for active projects
     let isCancelled = false;
     const runTasksSync = async () => {
-      await Promise.all([
-        hydrateTasksForProjects(activeProjectIds),
-        hydrateDelegationsForProjects(activeProjectIds)
-      ]);
+      await hydrateTasksForProjects(activeProjectIds);
       if (isCancelled) return;
 
       setIsTasksLoading(true);
@@ -1218,23 +1213,10 @@ export function useFirebaseData() {
 
     setIsDelegationsLoading(true);
 
-    targetYears.forEach(async (year) => {
+    targetYears.forEach(year => {
       if (!delegationsPool.current.has(year)) {
         const currentDelegations = useAppStore.getState().delegationGroups || [];
-        let hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
-
-        if (!hasLocalDelegations) {
-          // Kiểm tra Dexie trước khi fallback ra Firestore full query để triệt tiêu Firestore Read (0 read)
-          const localItems = await getLocalDelegations(year);
-          if (localItems && localItems.length > 0) {
-            const store = useAppStore.getState();
-            const existing = store.delegationGroups || [];
-            const dMap = new Map(existing.map(d => [d.id, d]));
-            localItems.forEach(d => dMap.set(d.id, d));
-            store.setDelegationGroups(Array.from(dMap.values()));
-            hasLocalDelegations = true;
-          }
-        }
+        const hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
 
         if (hasLocalDelegations) {
           delegationsPool.current.set(year, () => {});
