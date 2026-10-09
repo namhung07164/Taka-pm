@@ -52,16 +52,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         }
       }
     }
-    // Only resolve project if unit actually has an associated app project
-    if (!data.hasAppProject && !data.matchedProject && !data.appProjectCode) {
-      if (initialP) {
-        const initStore = extractProjectMetadata(initialP).store;
-        if (!expectedStore || !initStore || initStore === expectedStore) {
-          return initialP;
-        }
-      }
-      return undefined;
-    }
     const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
     if (targetCode) {
       const found = projects.find(item => {
