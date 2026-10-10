@@ -236,6 +236,8 @@ export interface NotificationRule {
   icon?: string;
 }
 
+export type NotificationPriority = 'critical' | 'urgent' | 'action_required' | 'info';
+
 export interface ActiveNotification {
   id: string;
   title: string;
@@ -250,8 +252,11 @@ export interface ActiveNotification {
   projectCode?: string;
   projectStore?: string;
   projectYear?: string | number;
-  action?: 'cross_year_rollover';
+  action?: 'cross_year_rollover' | 'complete_task' | 'approve_delegation';
   actionData?: any;
+  priority?: NotificationPriority;
+  isAssignedToMe?: boolean;
+  party?: string;
 }
 
 export interface DelegationSubTask {

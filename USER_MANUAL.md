@@ -1867,3 +1867,23 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
     - **Tổng Hợp Tiến Độ Dự Án Đa Tầng (`computeActProgressPercent`)**:
       + Đối với các công việc có ủy quyền (`Delegation`): Tiến độ công việc mẹ được tính bằng trung bình cộng chính xác điểm số tiến độ của tất cả các subtask con, phản ánh chân thực tiến độ thực thi thực tế của từng phòng ban.
       + Đối với các công việc thuần túy không qua ủy quyền: Tự động ghi nhận 100% khi có `runningStatus === 'Completed'` hoặc `approval === 'Approved'`, và 50% khi `On process` / `Delayed`, loại bỏ hoàn toàn lỗi hiển thị 0% tiến độ cho các công việc không có nhóm ủy quyền.
+
+60. **Tối Ưu Hóa Hệ Thống Thông Báo Doanh Nghiệp (Enterprise Notification System - 4 Pillars)**:
+    - **Đề Xuất 1: Phân Cấp Mức Độ Khẩn Cấp & Độ Ưu Tiên (Priority & Urgency Tiering)**:
+      + Phân tầng thông báo theo 4 mức độ trực quan chuẩn quốc tế (Asana/Jira/Linear):
+        * **Critical (Nguy Cấp - Đỏ/Rose)**: Công việc hoặc dự án đã quá hạn (`Overdue`), hoặc yêu cầu ủy quyền bị từ chối (`Rejected`). Có đường viền đỏ nổi bật bên trái thẻ và huy hiệu `CRITICAL`.
+        * **Due Soon (Sắp Đến Hạn - Hổ Phách/Amber)**: Công việc/mốc bàn giao sắp đến hạn trong vòng 48 giờ. Có đường viền màu vàng hổ phách và huy hiệu `DUE SOON`.
+        * **Action Req (Cần Thao Tác - Xanh Tím/Indigo)**: Được nhắc tên (`@mention`), yêu cầu duyệt/nhận việc phân công, hoặc chuyển tiếp công việc sang năm mới (`Cross-Year Rollover`). Có huy hiệu `ACTION REQ`.
+        * **Info (Thông Tin - Xanh/Slate)**: Cập nhật thông thường hoặc mốc tiến độ xa hơn 48 giờ.
+      + Bổ sung thanh nút lọc mức độ ưu tiên: `All Priorities`, `Critical`, `Due Soon`, `Action Req` kèm bộ đếm số lượng chưa đọc theo thời gian thực.
+    - **Đề Xuất 2: Nhận Diện Vai Trò & Việc Trực Tiếp Của Tôi (Smart Role & Assignee Relevance)**:
+      + Tự động rà soát và gắn nhãn **Assigned to You** (Xanh lá/Emerald) hoặc **@Mentioned You** khi công việc/ủy quyền thuộc phòng ban/người dùng hiện hành.
+      + Bổ sung nút chuyển nhanh trên thanh công cụ: `All` vs `My Tasks` giúp người quản lý hoặc nhân viên lọc tức thì những việc mình cần trực tiếp xử lý giữa hàng trăm thông báo toàn dự án.
+    - **Đề Xuất 3: Thao Tác Nhanh Trực Tiếp Trên Thẻ Thông Báo & Hoãn Nhắc Việc (Inline Quick Actions & Snooze)**:
+      + **Hoàn Thành Nhanh 1-Chạm (`Complete Task`)**: Nút bấm trực tiếp trên thẻ công việc chưa hoàn thành giúp cập nhật ngay trạng thái `Completed`, ghi nhận tức thì vào Zustand Store, lưu xuống Firestore và tự động đánh dấu đã đọc thông báo.
+      + **Hoãn Nhắc Nhở (`Snooze 1d / 3d`)**: Cho phép người dùng hoãn thông báo 1 ngày hoặc 3 ngày nếu chưa thể xử lý ngay; thông báo tạm thời ẩn khỏi danh sách unread và tự động xuất hiện trở lại khi hết hạn hoãn.
+      + **Mở Nhanh (`Open`)**: Nút mở trực tiếp đến hồ sơ dự án/công việc tương ứng mà không gây nhầm lẫn khi bấm vào thẻ.
+    - **Đề Xuất 4: Chống Quá Tải Thông Báo & Chuẩn Hóa Ngôn Ngữ Doanh Nghiệp (Anti-Fatigue Batching & English UI Mandate)**:
+      + Chuẩn hóa 100% tiếng Anh chuyên nghiệp cho các thông báo gộp nhóm (`Batched X tasks requiring attention`), tuân thủ tuyệt đối quy định giao diện của hệ thống.
+      + Bổ sung nút **Archive >14d**: 1-chạm dọn dẹp và lưu trữ tất cả thông báo quá cũ (hơn 14 ngày), giữ hộp thư thông báo luôn tinh gọn, ngăn ngừa tình trạng quá tải thông báo (notification fatigue).
+

@@ -6,6 +6,7 @@ import {
   Task,
   NotificationRule,
   ActiveNotification,
+  NotificationPriority,
   DelegationGroup,
   AppUser,
 } from "../types";
@@ -1256,6 +1257,7 @@ export function calculateActiveNotifications(
   delegationGroups: DelegationGroup[] = [],
   currentUserId?: string,
   currentUserUsername?: string,
+  currentUserObj?: any,
 ): ActiveNotification[] {
   const now = new Date();
   const fieldLabels: Record<string, string> = {
@@ -1266,6 +1268,15 @@ export function calculateActiveNotifications(
     flow_status: "Flow Status Update",
     mention: "@mention",
     delegation_party: "@delegation party",
+  };
+
+  const isMatchUserParty = (partyStr?: string) => {
+    if (!partyStr) return false;
+    const p = String(partyStr).trim().toLowerCase();
+    if (currentUserUsername && p === currentUserUsername.trim().toLowerCase()) return true;
+    if (currentUserObj?.name && p === currentUserObj.name.trim().toLowerCase()) return true;
+    if (currentUserObj?.partyPermissions && currentUserObj.partyPermissions[partyStr.trim()]) return true;
+    return false;
   };
 
   const notifications: ActiveNotification[] = [];
@@ -1365,6 +1376,7 @@ export function calculateActiveNotifications(
       const pStore = String(task.projectStore || project?.store || "HCM").toUpperCase().trim();
       const pYear = String(task.projectYear || project?.year || "").trim();
 
+      const isMyTask = isMatchUserParty(task.party);
       notifications.push({
         id: `rollover_task_${task.id}`,
         title: "Cross-Year Task Rollover",
@@ -1379,7 +1391,10 @@ export function calculateActiveNotifications(
         projectStore: pStore,
         projectYear: pYear,
         action: 'cross_year_rollover',
-        actionData: { taskId: task.id, newYear: currentActualYear }
+        actionData: { taskId: task.id, newYear: currentActualYear },
+        priority: 'action_required',
+        isAssignedToMe: isMyTask,
+        party: task.party || "",
       });
     }
   });
@@ -1416,6 +1431,9 @@ export function calculateActiveNotifications(
                 projectCode: task.projectCode,
                 projectStore: pStore,
                 projectYear: pYear,
+                priority: 'action_required',
+                isAssignedToMe: true,
+                party: task.party || "",
               });
             }
           }
@@ -1448,6 +1466,8 @@ export function calculateActiveNotifications(
                 projectCode: project.code,
                 projectStore: String(project.store || "HCM").toUpperCase().trim(),
                 projectYear: String(project.year || "").trim(),
+                priority: 'action_required',
+                isAssignedToMe: true,
               });
             }
           }
@@ -1588,6 +1608,9 @@ export function calculateActiveNotifications(
             }
 
             let displayTaskName = subTaskName || group.name || "task";
+            const isMyDelegation = isMatchUserParty(party) || (rule.field === 'mention') || (rule.field === 'delegation_party');
+            const isRejected = String(flowStatus).toLowerCase() === 'rejected';
+            const delPriority: NotificationPriority = isRejected ? 'critical' : 'action_required';
 
             notifications.push({
               id: `${rule.id}_${ps || 'store'}_${group.id}_${targetDate.getTime()}`,
@@ -1602,6 +1625,9 @@ export function calculateActiveNotifications(
               projectCode: group.projectCode || parentTask?.projectCode || parentProject?.code || "",
               projectStore: ps || parentProject?.store || "",
               projectYear: py || parentProject?.year || "",
+              priority: delPriority,
+              isAssignedToMe: isMyDelegation,
+              party: party,
             });
           }
         }
@@ -1687,6 +1713,11 @@ export function calculateActiveNotifications(
               notifId = `${rule.id}_${t.id}`;
             }
 
+            const isDueSoon = !isOverdue && diffMs <= 48 * 60 * 60 * 1000;
+            const itemPriority: NotificationPriority = isOverdue ? 'critical' : isDueSoon ? 'urgent' : 'info';
+            const isMyItem = rule.target === 'task' ? isMatchUserParty((item as Task).party) : false;
+            const taskParty = rule.target === 'task' ? ((item as Task).party || '') : '';
+
             notifications.push({
               id: notifId,
               title: title,
@@ -1703,6 +1734,9 @@ export function calculateActiveNotifications(
               projectCode: itemProjectCode,
               projectStore: itemProjectStore,
               projectYear: itemProjectYear,
+              priority: itemPriority,
+              isAssignedToMe: isMyItem,
+              party: taskParty,
             });
           }
         }
@@ -1755,9 +1789,14 @@ export function calculateActiveNotifications(
       });
 
       const messagePreview =
-        `Gom nhóm <strong>${items.length} công việc</strong> cần chú ý:<br/>` +
+        `Batched <strong>${items.length} tasks</strong> requiring attention:<br/>` +
         summaryList.slice(0, 3).join("<br/>") +
-        (items.length > 3 ? `<br/><em>...và thêm ${items.length - 3} công việc khác</em>` : "");
+        (items.length > 3 ? `<br/><em>...and ${items.length - 3} more tasks</em>` : "");
+
+      const hasCritical = items.some((i) => i.priority === 'critical');
+      const hasUrgent = items.some((i) => i.priority === 'urgent');
+      const batchPriority: NotificationPriority = hasCritical ? 'critical' : hasUrgent ? 'urgent' : 'info';
+      const hasAssignedToMe = items.some((i) => i.isAssignedToMe);
 
       batchedNotifications.push({
         id: `batch_task_${groupKey}_${items.length}`,
@@ -1773,6 +1812,8 @@ export function calculateActiveNotifications(
         projectCode: pCode,
         projectStore: pStore,
         projectYear: pYear,
+        priority: batchPriority,
+        isAssignedToMe: hasAssignedToMe,
       });
     } else {
       batchedNotifications.push(items[0]);

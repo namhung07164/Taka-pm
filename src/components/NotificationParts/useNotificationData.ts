@@ -7,7 +7,10 @@ import {
   NotificationStatusFilter,
   NotificationTypeFilter,
   NotificationStoreFilter,
+  NotificationPriorityFilter,
+  NotificationAssigneeFilter,
 } from './notificationTypes';
+import { safeGetItemLocal } from '../../lib/storage';
 
 interface UseNotificationDataProps {
   activeNotifications: ActiveNotification[];
@@ -35,6 +38,33 @@ export function useNotificationData({
 
   const [statusFilter, setStatusFilter] = useState<NotificationStatusFilter>(initialStatusFilter);
   const [typeFilter, setTypeFilter] = useState<NotificationTypeFilter>('all');
+  const [priorityFilter, setPriorityFilter] = useState<NotificationPriorityFilter>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<NotificationAssigneeFilter>('all');
+  const [snoozedMap, setSnoozedMap] = useState<Record<string, number>>(() => {
+    try {
+      const raw = safeGetItemLocal('taka_snoozed_notifs');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Listen to external snooze changes
+  useEffect(() => {
+    const handleSnoozeChange = () => {
+      try {
+        const raw = safeGetItemLocal('taka_snoozed_notifs');
+        setSnoozedMap(raw ? JSON.parse(raw) : {});
+      } catch {
+        setSnoozedMap({});
+      }
+    };
+    window.addEventListener('taka_snoozed_notifs_changed', handleSnoozeChange);
+    return () => {
+      window.removeEventListener('taka_snoozed_notifs_changed', handleSnoozeChange);
+    };
+  }, []);
+
   const [storeFilter, setStoreFilter] = useState<NotificationStoreFilter>(() => {
     const allowed = getUserAllowedStores(currentUser);
     if (globalStoreFilter === 'HCM' || globalStoreFilter === 'HN') {
@@ -137,18 +167,66 @@ export function useNotificationData({
     [activeNotifications, readNotifs, tasks, projects, delegationGroups]
   );
 
+  const unreadCriticalCount = useMemo(
+    () =>
+      activeNotifications.filter(
+        (n) => n.priority === 'critical' && !readNotifs.includes(n.id)
+      ).length,
+    [activeNotifications, readNotifs]
+  );
+
+  const unreadUrgentCount = useMemo(
+    () =>
+      activeNotifications.filter(
+        (n) => n.priority === 'urgent' && !readNotifs.includes(n.id)
+      ).length,
+    [activeNotifications, readNotifs]
+  );
+
+  const unreadActionCount = useMemo(
+    () =>
+      activeNotifications.filter(
+        (n) => n.priority === 'action_required' && !readNotifs.includes(n.id)
+      ).length,
+    [activeNotifications, readNotifs]
+  );
+
+  const unreadAssignedToMeCount = useMemo(
+    () =>
+      activeNotifications.filter(
+        (n) => n.isAssignedToMe && !readNotifs.includes(n.id)
+      ).length,
+    [activeNotifications, readNotifs]
+  );
+
+  const snoozedCount = useMemo(() => {
+    const now = Date.now();
+    return Object.values(snoozedMap).filter((ts) => ts > now).length;
+  }, [snoozedMap]);
+
   const filteredNotifications = useMemo(() => {
     let result = activeNotifications;
     if (filterId) {
       result = activeNotifications.filter((notif) => notif.id === filterId);
     } else {
+      const now = Date.now();
       result = activeNotifications.filter((notif) => {
+        // Skip snoozed notifications
+        const snoozedUntil = snoozedMap[notif.id];
+        if (snoozedUntil && snoozedUntil > now) {
+          return false;
+        }
+
         const isRead = readNotifs.includes(notif.id);
 
         if (statusFilter === 'read' && !isRead) return false;
         if (statusFilter === 'unread' && isRead) return false;
 
         if (typeFilter !== 'all' && notif.targetType !== typeFilter) return false;
+
+        if (priorityFilter !== 'all' && notif.priority !== priorityFilter) return false;
+
+        if (assigneeFilter === 'assigned_to_me' && !notif.isAssignedToMe) return false;
 
         if (storeFilter !== 'all') {
           const nStore = (
@@ -185,8 +263,11 @@ export function useNotificationData({
     readNotifs,
     statusFilter,
     typeFilter,
+    priorityFilter,
+    assigneeFilter,
     storeFilter,
     filterId,
+    snoozedMap,
     tasks,
     projects,
     delegationGroups,
@@ -198,6 +279,10 @@ export function useNotificationData({
     setStatusFilter,
     typeFilter,
     setTypeFilter,
+    priorityFilter,
+    setPriorityFilter,
+    assigneeFilter,
+    setAssigneeFilter,
     storeFilter,
     setStoreFilter,
     unreadProjectCount,
@@ -205,6 +290,11 @@ export function useNotificationData({
     unreadDelegationCount,
     unreadHcmCount,
     unreadHnCount,
+    unreadCriticalCount,
+    unreadUrgentCount,
+    unreadActionCount,
+    unreadAssignedToMeCount,
+    snoozedCount,
     filteredNotifications,
     tasks,
     projects,

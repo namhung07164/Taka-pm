@@ -16,6 +16,9 @@ export function NotificationTab({
   onNotificationClick,
   onActionAgree,
   onActionReject,
+  onQuickCompleteTask,
+  onSnoozeNotif,
+  onClearStaleNotifs,
 }: NotificationTabProps) {
   const {
     allowedStores,
@@ -23,6 +26,10 @@ export function NotificationTab({
     setStatusFilter,
     typeFilter,
     setTypeFilter,
+    priorityFilter,
+    setPriorityFilter,
+    assigneeFilter,
+    setAssigneeFilter,
     storeFilter,
     setStoreFilter,
     unreadProjectCount,
@@ -30,6 +37,11 @@ export function NotificationTab({
     unreadDelegationCount,
     unreadHcmCount,
     unreadHnCount,
+    unreadCriticalCount,
+    unreadUrgentCount,
+    unreadActionCount,
+    unreadAssignedToMeCount,
+    snoozedCount,
     filteredNotifications,
     tasks,
     projects,
@@ -50,6 +62,10 @@ export function NotificationTab({
         setStatusFilter={setStatusFilter}
         typeFilter={typeFilter}
         setTypeFilter={setTypeFilter}
+        priorityFilter={priorityFilter}
+        setPriorityFilter={setPriorityFilter}
+        assigneeFilter={assigneeFilter}
+        setAssigneeFilter={setAssigneeFilter}
         storeFilter={storeFilter}
         setStoreFilter={setStoreFilter}
         allowedStores={allowedStores}
@@ -58,7 +74,13 @@ export function NotificationTab({
         unreadDelegationCount={unreadDelegationCount}
         unreadHcmCount={unreadHcmCount}
         unreadHnCount={unreadHnCount}
+        unreadCriticalCount={unreadCriticalCount}
+        unreadUrgentCount={unreadUrgentCount}
+        unreadActionCount={unreadActionCount}
+        unreadAssignedToMeCount={unreadAssignedToMeCount}
+        snoozedCount={snoozedCount}
         onMarkAllRead={onMarkAllRead}
+        onClearStaleNotifs={onClearStaleNotifs}
       />
 
       <div className="overflow-y-auto flex-grow p-4 bg-slate-50/50">
@@ -81,6 +103,8 @@ export function NotificationTab({
                 onToggleRead={onToggleRead}
                 onActionAgree={onActionAgree}
                 onActionReject={onActionReject}
+                onQuickCompleteTask={onQuickCompleteTask}
+                onSnoozeNotif={onSnoozeNotif}
               />
             ))
           )}

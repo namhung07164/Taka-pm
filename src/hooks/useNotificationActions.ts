@@ -2,7 +2,8 @@ import { useCallback } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
-import { safeSetItemLocal } from '../lib/storage';
+import { safeSetItemLocal, safeGetItemLocal } from '../lib/storage';
+import { recordDelta } from '../lib/deltaSyncService';
 
 export function useNotificationActions() {
   const currentUser = useAppStore((state) => state.currentUser);
@@ -11,6 +12,7 @@ export function useNotificationActions() {
   const setAppUsers = useAppStore((state) => state.setAppUsers);
   const setToast = useAppStore((state) => state.setToast);
   const tasks = useAppStore((state) => state.tasks);
+  const setTasks = useAppStore((state) => state.setTasks);
   const projects = useAppStore((state) => state.projects);
 
   const onTogglePushEnabled = useCallback(async (enabled: boolean) => {
@@ -158,12 +160,121 @@ export function useNotificationActions() {
     }
   }, [currentUser, appUsers, setCurrentUser, setAppUsers]);
 
+  const onQuickCompleteTask = useCallback(async (notif: any) => {
+    if (!currentUser) return;
+    try {
+      const taskId = String(notif.targetId || notif.actionData?.taskId || '').trim();
+      if (!taskId) return;
+      const targetTask = tasks.find((t: any) => String(t.id) === taskId);
+      const nowIso = new Date().toISOString();
+      const finishDate = targetTask?.finish || nowIso.substring(0, 10);
+
+      const updatedFields = {
+        runningStatus: 'Completed',
+        finish: finishDate,
+        updatedAt: nowIso,
+      };
+
+      if (targetTask) {
+        const updatedTask = { ...targetTask, ...updatedFields };
+        const nextTasks = tasks.map((t: any) => String(t.id) === taskId ? updatedTask : t);
+        setTasks(nextTasks);
+      }
+
+      setDoc(
+        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId),
+        updatedFields,
+        { merge: true }
+      ).catch((err) => console.error("Error updating task in Firestore:", err));
+
+      recordDelta({
+        docId: taskId,
+        collectionName: 'taka_tasks',
+        action: 'update',
+        data: updatedFields,
+        year: targetTask?.projectYear ? String(targetTask.projectYear) : undefined,
+        updatedBy: currentUser.email || currentUser.username,
+      }).catch(console.error);
+
+      await onToggleRead(notif.id);
+
+      setToast({
+        title: "Task Completed",
+        message: `Task "${targetTask?.name || notif.title}" marked as completed.`,
+      });
+    } catch (e) {
+      console.error("Error quick completing task:", e);
+      setToast({ title: "Error", message: "Failed to mark task as completed." });
+    }
+  }, [currentUser, tasks, setTasks, onToggleRead, setToast]);
+
+  const onSnoozeNotif = useCallback((notifId: string, hours: number) => {
+    try {
+      const raw = safeGetItemLocal('taka_snoozed_notifs');
+      let snoozedMap: Record<string, number> = {};
+      if (raw) {
+        try { snoozedMap = JSON.parse(raw); } catch {}
+      }
+      const until = Date.now() + hours * 3600 * 1000;
+      snoozedMap[notifId] = until;
+      safeSetItemLocal('taka_snoozed_notifs', JSON.stringify(snoozedMap));
+      window.dispatchEvent(new CustomEvent('taka_snoozed_notifs_changed'));
+      const durationLabel = hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+      setToast({
+        title: "Notification Snoozed",
+        message: `Reminder snoozed for ${durationLabel}.`,
+      });
+    } catch (e) {
+      console.error("Error snoozing notification:", e);
+    }
+  }, [setToast]);
+
+  const onClearStaleNotifs = useCallback(async (activeNotifications: any[]) => {
+    if (!currentUser) return;
+    try {
+      const fourteenDaysMs = 14 * 24 * 3600 * 1000;
+      const now = Date.now();
+      const staleIds = activeNotifications
+        .filter((n) => (now - n.generatedAt > fourteenDaysMs) || (n.diffMs < -fourteenDaysMs))
+        .map((n) => n.id);
+
+      if (staleIds.length === 0) {
+        setToast({ title: "Clean Inbox", message: "No stale notifications older than 14 days." });
+        return;
+      }
+
+      const prev = currentUser.readNotifs || [];
+      const next = Array.from(new Set([...prev, ...staleIds]));
+      const updatedUser = { ...currentUser, readNotifs: next };
+      setCurrentUser(updatedUser);
+      if (currentUser.id !== "guest") {
+        setAppUsers(appUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+        safeSetItemLocal("taka_auth_v1", JSON.stringify(updatedUser));
+        setDoc(
+          doc(db, "artifacts", APP_ID, "public", "data", "taka_users", currentUser.id),
+          { readNotifs: next },
+          { merge: true }
+        ).catch(console.error);
+      }
+      safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(next));
+      setToast({
+        title: "Stale Notifications Archived",
+        message: `Archived ${staleIds.length} notifications older than 14 days.`,
+      });
+    } catch (e) {
+      console.error("Error clearing stale notifications:", e);
+    }
+  }, [currentUser, appUsers, setCurrentUser, setAppUsers, setToast]);
+
   return {
     onTogglePushEnabled,
     onToggleRead,
     onMarkAllRead,
     onActionAgree,
     onActionReject,
-    onNotificationClick
+    onNotificationClick,
+    onQuickCompleteTask,
+    onSnoozeNotif,
+    onClearStaleNotifs
   };
 }

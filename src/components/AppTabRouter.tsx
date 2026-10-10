@@ -365,6 +365,9 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                     onMarkAllRead={() => notifActions.onMarkAllRead(activeNotifications)}
                     onActionAgree={notifActions.onActionAgree}
                     onActionReject={notifActions.onActionReject}
+                    onQuickCompleteTask={notifActions.onQuickCompleteTask}
+                    onSnoozeNotif={notifActions.onSnoozeNotif}
+                    onClearStaleNotifs={() => notifActions.onClearStaleNotifs(activeNotifications)}
                     onNotificationClick={(notif) => {
                       notifActions.onNotificationClick(notif);
 

@@ -743,6 +743,7 @@ export default function App() {
       visibleDelegationGroups,
       currentUser.id,
       currentUser.username,
+      currentUser,
     );
     setActiveNotifications(notifs);
 
