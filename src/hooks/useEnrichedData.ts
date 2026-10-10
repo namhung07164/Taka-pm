@@ -4,6 +4,16 @@ import { enrichProjects, getUserAllowedStores } from '../lib/utils';
 import { Task, DelegationGroup } from '../types';
 import { deduplicateTasks } from '../lib/taskDeduplicationService';
 
+let _lastProjectsRef: any = null;
+let _lastRawTasksRef: any = null;
+let _lastDelegationGroupsRef: any = null;
+let _lastCurrentUserRef: any = null;
+let _lastEnrichedResult: {
+  enrichedProjects: any[];
+  filteredTasks: any[];
+  visibleDelegationGroups: any[];
+} | null = null;
+
 export function useEnrichedData() {
   const projects = useAppStore(state => state.projects);
   const rawTasks = useAppStore(state => state.tasks);
@@ -11,11 +21,27 @@ export function useEnrichedData() {
   const currentUser = useAppStore(state => state.currentUser)!;
 
   return useMemo(() => {
+    if (
+      _lastProjectsRef === projects &&
+      _lastRawTasksRef === rawTasks &&
+      _lastDelegationGroupsRef === delegationGroups &&
+      _lastCurrentUserRef === currentUser &&
+      _lastEnrichedResult
+    ) {
+      return _lastEnrichedResult;
+    }
+
     const tasks = deduplicateTasks(rawTasks);
     const enriched = enrichProjects(projects, tasks, delegationGroups);
     
     if (!currentUser || currentUser.role === "admin") {
-      return { enrichedProjects: enriched, filteredTasks: tasks, visibleDelegationGroups: delegationGroups };
+      const res = { enrichedProjects: enriched, filteredTasks: tasks, visibleDelegationGroups: delegationGroups };
+      _lastProjectsRef = projects;
+      _lastRawTasksRef = rawTasks;
+      _lastDelegationGroupsRef = delegationGroups;
+      _lastCurrentUserRef = currentUser;
+      _lastEnrichedResult = res;
+      return res;
     }
 
     // 1. Index tasks by project code for O(1) project permission matching
@@ -200,6 +226,12 @@ export function useEnrichedData() {
       return isCreator || isSubTaskInvolved || groupHasParty;
     });
 
-    return { enrichedProjects, filteredTasks, visibleDelegationGroups };
+    const res = { enrichedProjects, filteredTasks, visibleDelegationGroups };
+    _lastProjectsRef = projects;
+    _lastRawTasksRef = rawTasks;
+    _lastDelegationGroupsRef = delegationGroups;
+    _lastCurrentUserRef = currentUser;
+    _lastEnrichedResult = res;
+    return res;
   }, [projects, rawTasks, delegationGroups, currentUser]);
 }

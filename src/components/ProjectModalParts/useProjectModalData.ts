@@ -60,6 +60,16 @@ export function useProjectModalData({
     }
   }, [isOpen, project?.id, project?.code]);
 
+  // Tri-Gate Lazy Loading: Activate delegation pipeline if user selects delegation tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'delegation') {
+      const { isDelegationsRequested, setIsDelegationsRequested } = useAppStore.getState();
+      if (!isDelegationsRequested) {
+        setIsDelegationsRequested(true);
+      }
+    }
+  }, [isOpen, activeTab]);
+
   const [formData, setFormData] = useState<Partial<Project>>({
     store: 'HCM',
     location: '',

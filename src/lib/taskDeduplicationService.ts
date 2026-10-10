@@ -86,6 +86,13 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
   duplicateCount: number;
   removedTaskIds: string[];
 } {
+  if (!tasks || tasks.length === 0) {
+    return { dedupedTasks: [], duplicateCount: 0, removedTaskIds: [] };
+  }
+  if (tasks.length === 1) {
+    return { dedupedTasks: tasks, duplicateCount: 0, removedTaskIds: [] };
+  }
+
   const seenMap = new Map<string, Task>();
   const seenNormMap = new Map<string, string>(); // normKey -> taskId
   const seenCodeMap = new Map<string, string>(); // codeKey -> taskId
@@ -196,11 +203,26 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
   };
 }
 
+let _lastDedupInputTasksRef: Task[] | null = null;
+let _lastDedupInputProjectsRef: Project[] | null = null;
+let _cachedDedupTasksResult: Task[] = [];
+
 /**
  * Convenient helper returning just the deduplicated array of tasks.
+ * Includes reference-equality caching to prevent redundant sorting and map allocations.
  */
 export function deduplicateTasks(tasks: Task[], projects: Project[] = []): Task[] {
-  return deduplicateTasksInMemory(tasks, projects).dedupedTasks;
+  if (!tasks || tasks.length === 0) return [];
+  if (tasks.length === 1) return tasks;
+
+  if (_lastDedupInputTasksRef === tasks && _lastDedupInputProjectsRef === projects && _lastDedupInputTasksRef !== null) {
+    return _cachedDedupTasksResult;
+  }
+
+  _lastDedupInputTasksRef = tasks;
+  _lastDedupInputProjectsRef = projects;
+  _cachedDedupTasksResult = deduplicateTasksInMemory(tasks, projects).dedupedTasks;
+  return _cachedDedupTasksResult;
 }
 
 /**

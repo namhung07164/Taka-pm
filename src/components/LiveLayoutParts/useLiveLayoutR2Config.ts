@@ -295,10 +295,15 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       window.addEventListener('taka_cloud_sync_updated', handleSyncUpdate);
     }
 
-    // Realtime snapshot listener on taka_config/versions
+    let lastVersion = -1;
+    // Realtime snapshot listener on taka_config/versions (version-guarded to eliminate duplicate read on mount)
     const unsubSnapshot = onSnapshot(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), (snap) => {
       if (snap.exists()) {
-        loadConfig();
+        const remoteVersion = (snap.data() as any)?.pictureMappingVersion ?? 0;
+        if (lastVersion !== -1 && remoteVersion !== lastVersion) {
+          loadConfig();
+        }
+        lastVersion = remoteVersion;
       }
     });
 

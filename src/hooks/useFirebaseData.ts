@@ -1060,17 +1060,19 @@ export function useFirebaseData() {
 
     setIsCostsLoading(true);
 
-    liveTargetYears.forEach(year => {
+    liveTargetYears.forEach(async (year) => {
       if (!costsPool.current.has(year)) {
+        const localCount = await hydrateCostsFromLocal();
         const currentCosts = useAppStore.getState().costs || [];
-        const hasLocalCosts = currentCosts.some(c => String(c.projectYear || '') === String(year));
+        const hasLocalCosts = localCount > 0 || currentCosts.some(c => String(c.projectYear || '') === String(year));
         const isClosedOrPastYear = Number(year) < 2026;
 
         if (hasLocalCosts && isClosedOrPastYear) {
           costsPool.current.set(year, () => {});
           setIsCostsLoading(false);
           pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
-          usePerformanceStore.getState().trackGetDoc(`taka_costs_${year}`, true, currentCosts.length, 'Dexie Local-First Costs (0 Read full collection)');
+          usePerformanceStore.getState().trackGetDoc(`taka_costs_${year}`, true, localCount, 'Dexie Local-First Costs (0 Read full collection)');
+          return;
         } else {
           const qCosts = buildStoreAndYearQuery(
             collection(db, "artifacts", APP_ID, "public", "data", "taka_costs"),
@@ -1203,6 +1205,10 @@ export function useFirebaseData() {
             delegationsTTLTimeouts.current.delete(year);
             yearDelegationsCache.current.delete(year);
             usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
+            // Free RAM: If no delegation listeners remain and delegations are not requested, release Zustand array
+            if (delegationsPool.current.size === 0 && !useAppStore.getState().isDelegationsRequested) {
+              useAppStore.getState().setDelegationGroups([]);
+            }
           }, TTL_DURATION_MS);
           delegationsTTLTimeouts.current.set(year, timeoutId);
         }
@@ -1223,41 +1229,48 @@ export function useFirebaseData() {
 
     targetYears.forEach(async (year) => {
       if (!delegationsPool.current.has(year)) {
-        const currentDelegations = useAppStore.getState().delegationGroups || [];
-        let hasLocalDelegations = currentDelegations.some(d => String(d.projectYear || '') === String(year));
+        // Step 1: Instant Local-First Dexie Hydration (0ms, 0 Read)
+        const localCount = await hydrateDelegationsFromLocal(year);
         const isClosedOrPastYear = Number(year) < 2026;
-
-        if (!hasLocalDelegations && isClosedOrPastYear) {
-          // Kiểm tra Dexie trước khi fallback ra Firestore full query để triệt tiêu Firestore Read (0 read)
-          const localItems = await getLocalDelegations(year);
-          if (localItems && localItems.length > 0) {
-            const store = useAppStore.getState();
-            const existing = store.delegationGroups || [];
-            const dMap = new Map(existing.map(d => [d.id, d]));
-            localItems.forEach(d => dMap.set(d.id, d));
-            store.setDelegationGroups(Array.from(dMap.values()));
-            hasLocalDelegations = true;
-          }
-        }
+        const currentDelegations = useAppStore.getState().delegationGroups || [];
+        const hasLocalDelegations = localCount > 0 || currentDelegations.some(d => String(d.projectYear || '') === String(year));
 
         if (hasLocalDelegations && isClosedOrPastYear) {
           delegationsPool.current.set(year, () => {});
           setIsDelegationsLoading(false);
           pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
-          usePerformanceStore.getState().trackGetDoc(`taka_delegation_groups_${year}`, true, currentDelegations.length, 'Dexie Local-First Delegations (0 Read full collection)');
-        } else {
-          // Concurrency guard: Mark pending immediately so duplicate onSnapshot listeners cannot be created concurrently
-          delegationsPool.current.set(year, () => {});
-          const qDelegations = buildStoreAndYearQuery(
-            collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups"),
-            "projectStore",
-            "projectYear",
-            year
-          );
-          
-          usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
-          const unsub = onSnapshot(
-            qDelegations,
+          usePerformanceStore.getState().trackGetDoc(`taka_delegation_groups_${year}`, true, localCount, 'Dexie Local-First Delegations (0 Read full collection)');
+          return;
+        }
+
+        // Concurrency guard: Mark pending immediately so duplicate onSnapshot listeners cannot be created concurrently
+        delegationsPool.current.set(year, () => {});
+        setIsDelegationsLoading(false);
+
+        // Pre-populate yearDelegationsCache with local Dexie items if available to eliminate memory latency
+        if (!yearDelegationsCache.current.has(year)) {
+          yearDelegationsCache.current.set(year, new Map());
+        }
+        const yearMap = yearDelegationsCache.current.get(year)!;
+        if (localCount > 0) {
+          const localItems = await getLocalDelegations(year);
+          localItems.forEach(d => {
+            if (d.id) yearMap.set(d.id, d);
+          });
+          // Catch recent mutations via lightweight delta sync (0-1 read instead of full collection read)
+          pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
+        }
+
+        const qDelegations = buildStoreAndYearQuery(
+          collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups"),
+          "projectStore",
+          "projectYear",
+          year
+        );
+        
+        usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
+        const unsub = onSnapshot(
+          qDelegations,
           (snapshot) => {
             usePerformanceStore.getState().trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
@@ -1265,30 +1278,29 @@ export function useFirebaseData() {
             if (!yearDelegationsCache.current.has(year)) {
               yearDelegationsCache.current.set(year, new Map());
             }
-            const yearMap = yearDelegationsCache.current.get(year)!;
+            const currentYearMap = yearDelegationsCache.current.get(year)!;
 
             snapshot.docChanges().forEach((change) => {
               const data = { id: change.doc.id, ...change.doc.data() } as DelegationGroup;
               if (change.type === "removed") {
-                yearMap.delete(change.doc.id);
+                currentYearMap.delete(change.doc.id);
               } else {
-                yearMap.set(change.doc.id, data);
+                currentYearMap.set(change.doc.id, data);
               }
             });
 
             const loaded: DelegationGroup[] = [];
-            const seenParentTaskIds = new Set<string>();
+            const seenGroupIds = new Set<string>();
 
-            // Aggregate across active year caches
-            yearDelegationsCache.current.forEach((map) => {
-              for (const data of map.values()) {
-                if (data.parentTaskId) {
-                  if (!seenParentTaskIds.has(data.parentTaskId)) {
-                    seenParentTaskIds.add(data.parentTaskId);
+            // Aggregate only across active year caches to keep RAM footprint compact
+            activeYearsSet.forEach((targetYear) => {
+              const map = yearDelegationsCache.current.get(targetYear);
+              if (map) {
+                for (const data of map.values()) {
+                  if (data.id && !seenGroupIds.has(data.id)) {
+                    seenGroupIds.add(data.id);
                     loaded.push(data);
                   }
-                } else {
-                  loaded.push(data);
                 }
               }
             });
@@ -1304,8 +1316,7 @@ export function useFirebaseData() {
         );
         delegationsPool.current.set(year, unsub);
       }
-    }
-  });
+    });
 
   }, [querySignature, isDelegationsRequested, buildStoreAndYearQuery, globalYearFilter]);
 
