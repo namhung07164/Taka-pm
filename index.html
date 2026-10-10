@@ -2,6 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        window.addEventListener('error', function(e) {
+          var f = String((e && e.filename) || '');
+          var m = String((e && e.message) || '');
+          if (f.indexOf('@vite/client') !== -1 || m.indexOf('WebSocket') !== -1 || m.indexOf('vite') !== -1 || m.indexOf('HMR') !== -1) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          var r = String((e && (e.reason && (e.reason.message || e.reason))) || '');
+          if (r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1 || r.indexOf('HMR') !== -1) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }, true);
+      })();
+    </script>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
