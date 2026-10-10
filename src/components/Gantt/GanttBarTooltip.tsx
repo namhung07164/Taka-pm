@@ -207,7 +207,10 @@ export function GanttBarTooltip({
         {/* Status */}
         <div className="flex justify-between items-center gap-2">
           <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status:</span>
-          <span className="font-bold text-amber-400">{extraVars?.actStatus || status}</span>
+          <span className="font-bold text-amber-400">
+            {extraVars?.actStatus || status}
+            {extraVars?.actPrg !== undefined && extraVars.actPrg !== null ? ` (${extraVars.actPrg}%)` : ''}
+          </span>
         </div>
       </div>
 

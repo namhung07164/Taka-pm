@@ -2,7 +2,7 @@ import React from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
 import { FileText, ExternalLink, Pin } from 'lucide-react';
 import { Project, Task, AppUser, DelegationGroup } from '../../../types';
-import { cn, getTaskStatus, resolveActualStatus, getSuggestedCompletionTime, parseDateTime, formatDisplayDateTime } from '../../../lib/utils';
+import { cn, getTaskStatus, resolveActualStatus, getSuggestedCompletionTime, parseDateTime, formatDisplayDateTime, computeDelegationGroupProgressPercent } from '../../../lib/utils';
 import { doc, writeBatch, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
 import { scheduleDependentTasks } from '../../../lib/ganttUtils';
@@ -88,7 +88,7 @@ export const TaskChatDelegationSection: React.FC<TaskChatDelegationSectionProps>
             const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
             return (
               <span className={`text-[10px] px-2 py-1 rounded-full font-bold border whitespace-nowrap ${actualStatus.color}`}>
-                Act: {actualStatus.label}
+                Act: {actualStatus.label} ({computeDelegationGroupProgressPercent(linkedGroup)}%)
               </span>
             );
           })()}

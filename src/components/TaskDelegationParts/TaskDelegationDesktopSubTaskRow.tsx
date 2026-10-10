@@ -1,7 +1,7 @@
 import React from 'react';
 import { Search, Trash2, Paperclip, ExternalLink } from 'lucide-react';
 import { DelegationGroup, DelegationSubTask, AppUser, Project } from '../../types';
-import { cn, formatDisplayDateMain, formatDisplayDateTime, ensureUrlProtocol, resolveActualStatus } from '../../lib/utils';
+import { cn, formatDisplayDateMain, formatDisplayDateTime, ensureUrlProtocol, resolveActualStatus, getActStatusPercent } from '../../lib/utils';
 import { MultiSelectInput } from '../DelegationParts/MultiSelectInput';
 import { useLanguage } from '../../lib/LanguageContext';
 import { useAppStore } from '../../store/useAppStore';
@@ -238,7 +238,7 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                   resolveActualStatus(plStatus, [st]).color
                 }`}
               >
-                Act: {resolveActualStatus(plStatus, [st]).label}
+                Act: {resolveActualStatus(plStatus, [st]).label} ({getActStatusPercent(resolveActualStatus(plStatus, [st]).label)}%)
               </div>
               <button
                 type="button"

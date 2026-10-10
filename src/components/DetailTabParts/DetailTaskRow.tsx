@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project, Task } from '../../types';
-import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays } from '../../lib/utils';
+import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays, getActStatusPercent } from '../../lib/utils';
 import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown } from 'lucide-react';
 import { DetailTableRow } from './detailTypes';
 import { EditableCell } from './EditableCell';
@@ -239,7 +239,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       {visibleColumns.includes('actProgress') && (
         <td className="px-3 py-2">
           <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium inline-block", delStatusColorClass)}>
-            {delStatusText}
+            {delStatusText} ({getActStatusPercent(delStatusText)}%)
           </span>
         </td>
       )}

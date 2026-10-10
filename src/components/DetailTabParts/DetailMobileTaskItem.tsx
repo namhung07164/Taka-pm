@@ -4,7 +4,7 @@ import { Task, Project } from '../../types';
 import { FastToggle } from './FastToggle';
 import { EditableCell } from './EditableCell';
 import { cleanDurationString } from '../../lib/taskImportService';
-import { cn, formatDisplayDateMain, calculateDays, getTaskStatus } from '../../lib/utils';
+import { cn, formatDisplayDateMain, calculateDays, getTaskStatus, getActStatusPercent } from '../../lib/utils';
 
 export interface DetailMobileTaskItemProps {
   task: Task;
@@ -154,7 +154,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
             Pl: {taskStatus}
           </div>
           <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
-            Act: {delStatusText}
+            Act: {delStatusText} ({getActStatusPercent(delStatusText)}%)
           </div>
         </div>
       </div>

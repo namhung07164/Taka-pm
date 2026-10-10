@@ -1,7 +1,7 @@
 import React from 'react';
 import { ChevronRight, ChevronDown, Search, Trash2 } from 'lucide-react';
 import { DelegationGroup, DelegationSubTask, AppUser, Project, Task } from '../../types';
-import { formatDisplayDateMain, getStatus, getTaskStatus, resolveActualStatus } from '../../lib/utils';
+import { formatDisplayDateMain, getStatus, getTaskStatus, resolveActualStatus, computeDelegationGroupProgressPercent } from '../../lib/utils';
 import { resolveGroupParentProject } from './taskDelegationTypes';
 import { TaskDelegationMobileSubTaskItem } from './TaskDelegationMobileSubTaskItem';
 
@@ -110,7 +110,7 @@ export const TaskDelegationMobileCard = React.memo(function TaskDelegationMobile
               Pl: {plStatus}
             </span>
             <span className={`mt-1.5 text-[10px] px-2 py-0.5 rounded flex font-bold border break-words leading-tight text-center items-center justify-center ${resolveActualStatus(plStatus, group.subTasks).color}`}>
-              Act: {resolveActualStatus(plStatus, group.subTasks).label}
+              Act: {resolveActualStatus(plStatus, group.subTasks).label} ({computeDelegationGroupProgressPercent(group)}%)
             </span>
           </div>
           <div className="flex flex-wrap gap-1 mt-2">
@@ -137,7 +137,7 @@ export const TaskDelegationMobileCard = React.memo(function TaskDelegationMobile
                 resolveActualStatus(plStatus, group.subTasks).color
               } shrink-0`}
             >
-              Act: {resolveActualStatus(plStatus, group.subTasks).label}
+              Act: {resolveActualStatus(plStatus, group.subTasks).label} ({computeDelegationGroupProgressPercent(group)}%)
             </div>
             <button
               type="button"

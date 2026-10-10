@@ -331,7 +331,7 @@ export function useDetailData({
       const t = tasks[idx];
       const taskStatus = getTaskStatus(t.start, t.finish);
       const delegationGroup = delegationGroupByParentKey.get(t.id);
-      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || []);
+      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || [], t);
       map.set(t.id, actStatus);
     }
     return map;

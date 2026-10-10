@@ -1853,3 +1853,17 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
    - **Đồng Bộ Trạng Thái Kết Nối Cho Các Kênh Dữ Liệu (Projects, Tasks, Costs, Delegations & Configs)**:
      + Áp dụng đồng bộ quy tắc `isClosedOrPastYear` cho toàn bộ các kênh theo dõi Dự án, Nhiệm vụ, Chi phí và Phân công.
      + Tích hợp cập nhật `setCloudStatus("online")` ngay khi nhận được snapshot cấu hình tĩnh (`taka_config/versions`), đảm bảo chỉ số trạng thái kết nối luôn phản ánh chính xác trạng thái Firestore tức thì.
+
+59. **Chuẩn Hóa Thuật Toán Tính Tiến Độ % & Phân Loại Trạng Thái Thực Tế (Act Status & Progress % Calculation)**:
+    - **Ánh Xạ Tỷ Lệ Tiến Độ % Chuẩn Theo Từng Trạng Thái Thực Tế (`getActStatusPercent` & `getSubTaskProgressScore`)**:
+      + **Completed / Approved / Finish**: Đạt **100%** tiến độ thực tế (công việc đã hoàn thành và được duyệt).
+      + **Pending Approval / Pending Completed / Review Late / ReqApproval**: Đạt **80%** tiến độ (người thực hiện đã làm xong và gửi yêu cầu duyệt nghiệm thu, chờ người giao việc xác nhận).
+      + **Accepted / In Progress / On process / Delayed**: Đạt **50%** tiến độ (người nhận đã tiếp nhận công việc và đang tích cực triển khai; có tính nội suy theo thời gian nếu có ngày thực tế `startAct` và `finishAct`).
+      + **Correction Needed / Needs Rework / Rejected**: Đạt **30%** tiến độ (công việc đã triển khai một phần nhưng bị trả về chỉnh sửa lại).
+      + **Planned / Assigned / Upcoming / Critical Delay / Cancel**: **0%** tiến độ (mới giao hoặc chỉ mới lên kế hoạch, chưa tiếp nhận thực thi).
+    - **Tối Ưu Hóa Phân Loại Trạng Thái Thực Tế Nhóm Ủy Quyền (`resolveActualStatus`)**:
+      + **Khắc phục lỗi nhận diện sai `Accepted`**: Trước đây, các subtask có trạng thái `Accepted` bị đưa vào nhóm mặc định `Assigned`, dẫn đến việc bị gán nhầm thành `Planned` khi chưa đến hạn hoặc `Critical Delay` khi quá hạn kế hoạch. Nay hệ thống tự động phân loại chính xác các subtask `Accepted` / `On process` thành nhóm `In Progress` (hiển thị nhãn **In Progress** màu xanh dương khi trong hạn, hoặc **Delayed** màu vàng hổ phách khi quá hạn kế hoạch).
+      + **Trực Quan Hóa Tỷ Lệ % Trên Huy Hiệu Trạng Thái**: Trên các bảng phân hệ **Task Delegation (Desktop/Mobile)**, **Task Detail**, **Project Modal** và **Gantt Tooltip**, huy hiệu thực tế hiển thị minh bạch cả nhãn trạng thái lẫn tỷ lệ phần trăm tương ứng, ví dụ: `Act: In Progress (50%)`, `Act: Completed (100%)`, `Act: Pending Approval (80%)`, `Act: Delayed (50%)`.
+    - **Tổng Hợp Tiến Độ Dự Án Đa Tầng (`computeActProgressPercent`)**:
+      + Đối với các công việc có ủy quyền (`Delegation`): Tiến độ công việc mẹ được tính bằng trung bình cộng chính xác điểm số tiến độ của tất cả các subtask con, phản ánh chân thực tiến độ thực thi thực tế của từng phòng ban.
+      + Đối với các công việc thuần túy không qua ủy quyền: Tự động ghi nhận 100% khi có `runningStatus === 'Completed'` hoặc `approval === 'Approved'`, và 50% khi `On process` / `Delayed`, loại bỏ hoàn toàn lỗi hiển thị 0% tiến độ cho các công việc không có nhóm ủy quyền.

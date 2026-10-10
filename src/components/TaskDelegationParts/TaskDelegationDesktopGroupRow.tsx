@@ -1,7 +1,7 @@
 import React from 'react';
 import { ChevronRight, ChevronDown, Search, Trash2 } from 'lucide-react';
 import { DelegationGroup, DelegationSubTask, AppUser, Project, Task } from '../../types';
-import { cn, formatDisplayDateMain, getStatus, getTaskStatus, resolveActualStatus, parseDateTime, formatToDatetimeLocal } from '../../lib/utils';
+import { cn, formatDisplayDateMain, getStatus, getTaskStatus, resolveActualStatus, parseDateTime, formatToDatetimeLocal, computeDelegationGroupProgressPercent } from '../../lib/utils';
 import { resolveGroupParentProject } from './taskDelegationTypes';
 import { TaskDelegationDesktopSubTaskRow } from './TaskDelegationDesktopSubTaskRow';
 
@@ -176,7 +176,7 @@ export const TaskDelegationDesktopGroupRow = React.memo(function TaskDelegationD
                   resolveActualStatus(plStatus, group.subTasks).color
                 }`}
               >
-                Act: {resolveActualStatus(plStatus, group.subTasks).label}
+                Act: {resolveActualStatus(plStatus, group.subTasks).label} ({computeDelegationGroupProgressPercent(group)}%)
               </div>
               <button
                 type="button"

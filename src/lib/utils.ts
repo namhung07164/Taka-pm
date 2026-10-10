@@ -193,17 +193,64 @@ export const getDefaultStoreFilter = (
   return "all";
 };
 
-export const resolveActualStatus = (plStatus: string, subTasks: any[]) => {
-  if (!subTasks || subTasks.length === 0) {
-    return {
-      label: "Upcoming",
-      color: "bg-slate-50 text-slate-600 border-slate-200",
-    };
-  }
+export const resolveActualStatus = (
+  plStatus: string,
+  subTasks: any[],
+  task?: { runningStatus?: string; approval?: string; status?: string; [key: string]: any }
+) => {
   if (plStatus === "Canceled") {
     return {
       label: "Cancel",
       color: "bg-slate-400 text-white border-slate-500",
+    };
+  }
+
+  if (!subTasks || subTasks.length === 0) {
+    if (task) {
+      const running = (task.runningStatus || '').toLowerCase();
+      const approval = (task.approval || '').toLowerCase();
+      if (running.includes('complete') || approval === 'approved' || running.includes('finish')) {
+        return {
+          label: "Completed",
+          color: "bg-emerald-50 dark:bg-[#28282a] text-emerald-600 dark:text-[#81c995] border-emerald-200 dark:border-emerald-800",
+        };
+      }
+      if (running.includes('delay')) {
+        return {
+          label: "Delayed",
+          color: "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700",
+        };
+      }
+      if (running.includes('process') || running.includes('progress') || running.includes('accept')) {
+        return {
+          label: "In Progress",
+          color: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700",
+        };
+      }
+      if (running.includes('cancel')) {
+        return {
+          label: "Cancel",
+          color: "bg-slate-400 text-white border-slate-500",
+        };
+      }
+    }
+
+    const pLower = (plStatus || '').toLowerCase();
+    if (pLower === 'completed') {
+      return {
+        label: "Completed",
+        color: "bg-emerald-50 dark:bg-[#28282a] text-emerald-600 dark:text-[#81c995] border-emerald-200 dark:border-emerald-800",
+      };
+    }
+    if (pLower === 'on process' || pLower === 'handover') {
+      return {
+        label: "In Progress",
+        color: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700",
+      };
+    }
+    return {
+      label: "Upcoming",
+      color: "bg-slate-50 dark:bg-[#28282a] text-slate-600 dark:text-[#9aa0a6] border-slate-200 dark:border-[#3c4043]",
     };
   }
 
@@ -212,10 +259,10 @@ export const resolveActualStatus = (plStatus: string, subTasks: any[]) => {
   );
 
   let T_group = "Assigned";
-  if (statuses.some((s) => ["rejected", "needs rework"].includes(s))) {
+  if (statuses.some((s) => ["rejected", "needs rework", "reqreview"].includes(s))) {
     T_group = "Rejected";
   } else if (
-    statuses.every((s) => ["completed", "approved"].includes(s) || s === "")
+    statuses.every((s) => ["completed", "approved", "finish", "finished"].includes(s) || s === "")
   ) {
     if (statuses.some((s) => s !== "")) {
       T_group = "Completed";
@@ -227,13 +274,27 @@ export const resolveActualStatus = (plStatus: string, subTasks: any[]) => {
         "waiting for approval",
         "hold",
         "requested",
+        "reqapproval",
       ].includes(s),
     )
   ) {
     T_group = "Pending Completed";
+  } else if (
+    statuses.some((s) =>
+      [
+        "accepted",
+        "on process",
+        "in progress",
+        "inprogress",
+        "doing",
+        "accepttask",
+      ].includes(s),
+    )
+  ) {
+    T_group = "In Progress";
   }
 
-  const pLower = plStatus.toLowerCase();
+  const pLower = (plStatus || "").toLowerCase();
   const P_group =
     pLower === "completed"
       ? "Completed"
@@ -241,57 +302,64 @@ export const resolveActualStatus = (plStatus: string, subTasks: any[]) => {
         ? "On Process"
         : "Upcoming";
 
-  if (P_group === "Upcoming" && T_group === "Assigned")
+  if (T_group === "Completed") {
     return {
-      label: "Planned",
-      color: "bg-slate-200 text-slate-700 border-slate-300",
+      label: "Completed",
+      color:
+        "bg-emerald-50 dark:bg-[#28282a] text-emerald-600 dark:text-[#81c995] border-emerald-200 dark:border-emerald-800",
     };
-  if (P_group === "On Process" && T_group === "Assigned")
+  }
+
+  if (T_group === "Rejected") {
     return {
-      label: "In Progress",
-      color: "bg-blue-100 text-blue-800 border-blue-300",
+      label: "Correction Needed",
+      color: "bg-red-500 text-white border-red-600",
     };
-  if (P_group === "On Process" && T_group === "Pending Completed")
+  }
+
+  if (T_group === "Pending Completed") {
+    if (P_group === "Completed") {
+      return {
+        label: "Review Late",
+        color: "bg-orange-500 text-white border-orange-600",
+      };
+    }
     return {
       label: "Pending Approval",
-      color: "bg-yellow-100 text-yellow-800 border-yellow-300",
+      color: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700",
     };
-  if (P_group === "Completed" && T_group === "Assigned")
+  }
+
+  if (T_group === "In Progress") {
+    if (P_group === "Completed") {
+      return {
+        label: "Delayed",
+        color: "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700",
+      };
+    }
+    return {
+      label: "In Progress",
+      color: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700",
+    };
+  }
+
+  // T_group === "Assigned"
+  if (P_group === "Completed") {
     return {
       label: "Critical Delay",
       color: "bg-red-800 text-red-100 border-red-900",
     };
-  if (P_group === "Completed" && T_group === "Pending Completed")
+  }
+  if (P_group === "On Process") {
     return {
-      label: "Review Late",
-      color: "bg-orange-500 text-white border-orange-600",
+      label: "In Progress",
+      color: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700",
     };
-  if (P_group === "Completed" && T_group === "Rejected")
-    return {
-      label: "Correction Needed",
-      color: "bg-red-500 text-white border-red-600",
-    };
-  if (T_group === "Completed")
-    return {
-      label: "Completed",
-      color:
-        "bg-emerald-50 dark:bg-[#28282a] text-emerald-600 dark:text-[#81c995] border-emerald-200",
-    };
-
-  if (T_group === "Rejected")
-    return {
-      label: "Correction Needed",
-      color: "bg-red-500 text-white border-red-600",
-    };
-  if (T_group === "Pending Completed")
-    return {
-      label: "Pending Approval",
-      color: "bg-yellow-100 text-yellow-800 border-yellow-300",
-    };
+  }
 
   return {
-    label: "In Progress",
-    color: "bg-blue-100 text-blue-800 border-blue-300",
+    label: "Planned",
+    color: "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700",
   };
 };
 
@@ -381,12 +449,26 @@ export function computeActProgressFromSummaries(
   let validCount = 0;
 
   for (const s of summaries) {
-    if (!s.start && !s.finish && !s.runningStatus) continue;
+    if (!s.start && !s.finish && !s.runningStatus && !s.actStatus && !s.status) continue;
     validCount++;
 
-    const statusStr = String(s.runningStatus || '').toLowerCase();
-    if (statusStr.includes('complete') || statusStr.includes('finished') || s.approval === 'Approved') {
+    const statusStr = String(s.runningStatus || s.actStatus || s.status || s.delegationStatus || '').toLowerCase();
+    const approvalStr = String(s.approval || s.approvalStatus || '').toLowerCase();
+
+    if (statusStr.includes('complete') || statusStr.includes('finished') || approvalStr === 'approved') {
       totalScore += 1;
+      continue;
+    }
+    if (statusStr.includes('pending') || statusStr.includes('reqapproval') || statusStr.includes('waiting') || approvalStr === 'reqapproval' || approvalStr === 'requested') {
+      totalScore += 0.8;
+      continue;
+    }
+    if (statusStr.includes('accept') || statusStr.includes('process') || statusStr.includes('progress') || statusStr.includes('delay') || approvalStr === 'accepttask') {
+      totalScore += 0.5;
+      continue;
+    }
+    if (statusStr.includes('rework') || statusStr.includes('reject') || approvalStr === 'rejected' || approvalStr === 'reqreview') {
+      totalScore += 0.3;
       continue;
     }
 
@@ -886,10 +968,10 @@ export function computeProjectActStatus(
         if (g.actStatus) return g.actStatus;
         return resolveActualStatus(p.computedStatus || 'On process', g.subTasks || []).label;
       });
-      if (statuses.some(s => s === 'Rejected')) return 'Rejected';
+      if (statuses.some(s => s === 'Rejected' || s === 'Correction Needed')) return 'Rejected';
       if (statuses.every(s => s === 'Completed')) return 'Completed';
-      if (statuses.some(s => s === 'Pending Completed')) return 'Pending Completed';
-      if (statuses.some(s => s === 'In Progress' || s === 'On Process')) return 'In Progress';
+      if (statuses.some(s => s === 'Pending Completed' || s === 'Pending Approval' || s === 'Review Late')) return 'Pending Completed';
+      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Delayed' || s === 'Accepted')) return 'In Progress';
       return statuses[0] || 'Planned';
     }
   }
@@ -1794,6 +1876,121 @@ export function computePlanProgressPercent(groupTasks: Task[]): number {
   return Math.round((totalScore / groupTasks.length) * 100);
 }
 
+/**
+ * Trả về tỷ lệ hoàn thành (0 - 1.0) của một subTask ủy quyền dựa trên trạng thái
+ * - Completed / Approved: 1.0 (100%)
+ * - Pending completed / ReqApproval / Waiting for approval / Requested / Hold: 0.8 (80%)
+ * - Accepted / On process / In progress / Doing / AcceptTask: 0.5 (50%)
+ * - Needs Rework / Rejected / ReqReview: 0.3 (30%)
+ * - Assigned / Upcoming / None: 0.0 (0%)
+ */
+export function getSubTaskProgressScore(st: {
+  delegationStatus?: string;
+  status?: string;
+  approvalStatus?: string;
+  [key: string]: any;
+}): number {
+  const status = (st.delegationStatus || st.status || "").toLowerCase();
+  const approval = (st.approvalStatus || "").toLowerCase();
+
+  if (
+    ["completed", "approved", "finish", "finished"].includes(status) ||
+    approval === "approved"
+  ) {
+    return 1.0;
+  }
+  if (
+    [
+      "pending completed",
+      "waiting for approval",
+      "reqapproval",
+      "requested",
+      "hold",
+    ].includes(status) ||
+    approval === "reqapproval" ||
+    approval === "requested"
+  ) {
+    return 0.8;
+  }
+  if (
+    [
+      "accepted",
+      "on process",
+      "in progress",
+      "inprogress",
+      "doing",
+      "accepttask",
+    ].includes(status) ||
+    approval === "accepttask"
+  ) {
+    return 0.5;
+  }
+  if (
+    ["needs rework", "rejected", "reqreview"].includes(status) ||
+    approval === "rejected" ||
+    approval === "reqreview"
+  ) {
+    return 0.3;
+  }
+  return 0.0;
+}
+
+/**
+ * Trả về tỷ lệ phần trăm (0 - 100%) của một nhãn trạng thái thực tế (actStatus)
+ */
+export function getActStatusPercent(status: string | undefined | null): number {
+  if (!status) return 0;
+  const s = String(status).trim().toLowerCase();
+
+  if (["completed", "approved", "finish", "finished"].includes(s)) {
+    return 100;
+  }
+  if (
+    [
+      "pending approval",
+      "pending completed",
+      "review late",
+      "waiting for approval",
+      "reqapproval",
+      "requested",
+      "hold",
+    ].includes(s)
+  ) {
+    return 80;
+  }
+  if (
+    [
+      "accepted",
+      "in progress",
+      "on process",
+      "inprogress",
+      "doing",
+      "accepttask",
+      "delayed",
+    ].includes(s)
+  ) {
+    return 50;
+  }
+  if (
+    ["correction needed", "needs rework", "rejected", "reqreview"].includes(s)
+  ) {
+    return 30;
+  }
+  return 0;
+}
+
+/**
+ * Tính toán tiến độ % thực tế của một nhóm ủy quyền dựa trên trung bình các subtask
+ */
+export function computeDelegationGroupProgressPercent(group: DelegationGroup): number {
+  if (!group || !group.subTasks || group.subTasks.length === 0) return 0;
+  const totalScore = group.subTasks.reduce(
+    (sum, st) => sum + getSubTaskProgressScore(st),
+    0
+  );
+  return Math.round((totalScore / group.subTasks.length) * 100);
+}
+
 export function computeActProgressPercent(
   groupTasks: Task[],
   delegationGroups: DelegationGroup[] | Map<string, DelegationGroup>,
@@ -1806,58 +2003,132 @@ export function computeActProgressPercent(
     return delegationGroups.find((g) => g.parentTaskId === tid);
   };
 
-  const completedTasksACT = groupTasks.filter((t) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayTime = today.getTime();
+
+  // Find max completed timestamp across explicitly completed tasks (direct or subtasks)
+  const completedTaskStartTimestamps: number[] = [];
+
+  for (const t of groupTasks) {
     const delegationGroup = getGroup(t.id);
-    const plStatus = getTaskStatus(t.start, t.finish);
-    const actStatus = resolveActualStatus(
-      plStatus,
-      delegationGroup?.subTasks || [],
-    );
-    return actStatus.label === "Completed";
-  });
+    const subTasks = delegationGroup?.subTasks || [];
+    let isCompleted = false;
 
-  const maxCompletedStartTs = Math.max(
-    0,
-    ...completedTasksACT.map((ct) => parseDateTime(ct.start)?.getTime() || 0),
-  );
-
-  const actProgressScore = groupTasks.reduce((acc, t) => {
-    const delegationGroup = getGroup(t.id);
-    const plStatus = getTaskStatus(t.start, t.finish);
-    const actStatus = resolveActualStatus(
-      plStatus,
-      delegationGroup?.subTasks || [],
-    );
-    const isCompletedDirectly = actStatus.label === "Completed";
-
-    let score = 0;
-    if (isCompletedDirectly) {
-      score = 1;
+    if (subTasks.length > 0) {
+      isCompleted = subTasks.every((st) => {
+        const s = (st.delegationStatus || st.status || "").toLowerCase();
+        const a = (st.approvalStatus || "").toLowerCase();
+        return (
+          ["completed", "approved", "finish", "finished"].includes(s) || a === "approved"
+        );
+      });
     } else {
-      const tFinishTs = parseDateTime(t.finish)?.getTime() || 0;
+      const running = (t.runningStatus || "").toLowerCase();
+      isCompleted = running.includes("complete") || t.approval === "Approved";
+    }
+
+    if (isCompleted) {
+      const startTs = parseDateTime(t.start)?.getTime() || 0;
+      if (startTs > 0) completedTaskStartTimestamps.push(startTs);
+    }
+  }
+
+  const maxCompletedStartTs =
+    completedTaskStartTimestamps.length > 0
+      ? Math.max(...completedTaskStartTimestamps)
+      : 0;
+
+  let totalScore = 0;
+
+  for (const t of groupTasks) {
+    const delegationGroup = getGroup(t.id);
+    const subTasks = delegationGroup?.subTasks || [];
+
+    // Case 1: Task has delegation subtasks
+    if (subTasks.length > 0) {
+      const subScoreSum = subTasks.reduce(
+        (sum, st) => sum + getSubTaskProgressScore(st),
+        0
+      );
+      const avgSubScore = subScoreSum / subTasks.length;
+      totalScore += avgSubScore;
+      continue;
+    }
+
+    // Case 2: Pure task without delegation subtasks
+    const running = (t.runningStatus || "").toLowerCase();
+    const approval = (t.approval || "").toLowerCase();
+
+    if (running.includes("complete") || approval === "approved") {
+      totalScore += 1;
+      continue;
+    }
+
+    // Waterfall predecessor completion: if an end-stream task completed, earlier task is completed
+    const tFinishTs = parseDateTime(t.finish)?.getTime() || 0;
+    if (
+      tFinishTs > 0 &&
+      maxCompletedStartTs > 0 &&
+      tFinishTs <= maxCompletedStartTs
+    ) {
+      totalScore += 1;
+      continue;
+    }
+
+    if (running.includes("process") || running.includes("progress")) {
+      const start = parseDateTime(t.start);
+      const finish = parseDateTime(t.finish);
       if (
-        tFinishTs > 0 &&
-        tFinishTs <= maxCompletedStartTs &&
-        maxCompletedStartTs > 0
+        start &&
+        finish &&
+        todayTime >= start.getTime() &&
+        todayTime <= finish.getTime()
       ) {
-        score = 1;
+        const duration = finish.getTime() - start.getTime();
+        const passed = todayTime - start.getTime();
+        totalScore +=
+          duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5;
       } else {
-        const lbl = actStatus.label?.toLowerCase() || "";
-        if (lbl === "in progress" || lbl === "planned") {
-          score = 0.33;
-        } else if (
-          lbl === "pending approval" ||
-          lbl === "correction needed" ||
-          lbl === "review late"
-        ) {
-          score = 0.66;
-        }
+        totalScore += 0.5;
+      }
+      continue;
+    }
+
+    if (running.includes("delay")) {
+      totalScore += 0.5;
+      continue;
+    }
+
+    if (approval === "pending" || approval === "requested") {
+      totalScore += 0.8;
+      continue;
+    }
+
+    // Fallback to planned timeline
+    const plStatus = getTaskStatus(t.start, t.finish);
+    if (plStatus === "Completed") {
+      totalScore += 1;
+    } else if (plStatus === "On process") {
+      const start = parseDateTime(t.start);
+      const finish = parseDateTime(t.finish);
+      if (
+        start &&
+        finish &&
+        todayTime >= start.getTime() &&
+        todayTime <= finish.getTime()
+      ) {
+        const duration = finish.getTime() - start.getTime();
+        const passed = todayTime - start.getTime();
+        totalScore +=
+          duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5;
+      } else {
+        totalScore += 0.5;
       }
     }
-    return acc + score;
-  }, 0);
+  }
 
-  return Math.round((actProgressScore / groupTasks.length) * 100);
+  return Math.round((totalScore / groupTasks.length) * 100);
 }
 
 export function scrollToElement(el: HTMLElement) {

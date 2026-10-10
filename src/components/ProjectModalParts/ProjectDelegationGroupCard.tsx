@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project, Task, AppUser, DelegationGroup } from '../../types';
-import { getTaskStatus, resolveActualStatus, cn } from '../../lib/utils';
+import { getTaskStatus, resolveActualStatus, cn, computeDelegationGroupProgressPercent } from '../../lib/utils';
 import { FileText, ExternalLink, Trash2 } from 'lucide-react';
 import { ProjectDelegationSubTaskItem } from './ProjectDelegationSubTaskItem';
 
@@ -119,7 +119,7 @@ export const ProjectDelegationGroupCard: React.FC<ProjectDelegationGroupCardProp
               Pro: {proStatus}
             </span>
             <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
-              Act: {actualStatus.label}
+              Act: {actualStatus.label} ({computeDelegationGroupProgressPercent(linkedGroup)}%)
             </span>
           </div>
           <a
