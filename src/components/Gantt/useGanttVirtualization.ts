@@ -106,15 +106,15 @@ export function useGanttVirtualization({
         if (rawParentId) {
           const parentKey = String(rawParentId).trim().toLowerCase();
           const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
-          if (matchedParent && matchedParent.id !== t.id) {
-            parentTaskIdsInProject.add(matchedParent.id);
+          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
+            parentTaskIdsInProject.add(String(matchedParent.id));
           }
         }
       });
 
       // 3. Partition tasks into root parentTasks vs childTasksMap
       pTasks.forEach(t => {
-        const isSelfParent = parentTaskIdsInProject.has(t.id);
+        const isSelfParent = parentTaskIdsInProject.has(String(t.id));
         const rawParentId = t.parentTaskId || (t as any).parentId;
 
         // If t is a parent task containing subtasks, it MUST be a root parent task (cannot be hidden as a child)
@@ -123,8 +123,8 @@ export function useGanttVirtualization({
           const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
 
           // ONLY treat as child if matchedParent exists in this project and is not self
-          if (matchedParent && matchedParent.id !== t.id) {
-            const effectiveParentId = matchedParent.id;
+          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
+            const effectiveParentId = String(matchedParent.id);
             if (!childTasksMap.has(effectiveParentId)) {
               childTasksMap.set(effectiveParentId, []);
             }
@@ -142,10 +142,10 @@ export function useGanttVirtualization({
 
       sortedParentTasks.forEach((t, ptIdx) => {
         const isTaskHidden = hiddenRowsSet.has(`task-${t.id}`);
-        const rawChildren = childTasksMap.get(t.id) || [];
+        const rawChildren = childTasksMap.get(String(t.id)) || childTasksMap.get(t.id) || [];
         const children = sortGroupTasks(rawChildren);
         const hasChildren = children.length > 0;
-        const isModularExpanded = expandedModularSet.has(t.id);
+        const isModularExpanded = expandedModularSet.has(String(t.id)) || expandedModularSet.has(t.id);
         const tIndex = pTaskIndexMap.get(t.id) ?? ptIdx;
 
         rows.push({
@@ -184,9 +184,9 @@ export function useGanttVirtualization({
       });
 
       // 4. Safety Net: Render any leftover tasks in childTasksMap that were not in sortedParentTasks
-      const renderedParentIds = new Set(sortedParentTasks.map(pt => pt.id));
+      const renderedParentIds = new Set(sortedParentTasks.map(pt => String(pt.id)));
       childTasksMap.forEach((leftoverChildren, pId) => {
-        if (!renderedParentIds.has(pId)) {
+        if (!renderedParentIds.has(String(pId))) {
           leftoverChildren.forEach(ct => {
             const isChildHidden = hiddenRowsSet.has(`task-${ct.id}`);
             const ctIndex = pTaskIndexMap.get(ct.id) ?? 0;

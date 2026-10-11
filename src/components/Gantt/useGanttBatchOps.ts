@@ -196,9 +196,11 @@ export function useGanttBatchOps({
     useAppStore.getState().setTasks(updatedTasks);
 
     // Auto-expand the parent task in Gantt view so grouped subtasks appear immediately!
-    if (!expandedModularSet.has(parentIdStr)) {
-      toggleModularParent(parentIdStr);
-    }
+    setExpandedModularTasks(prev => {
+      const nextSet = new Set(prev.map(String));
+      nextSet.add(parentIdStr);
+      return Array.from(nextSet);
+    });
 
     setIsTaskModularModalOpen(false);
     setSelectedTaskIds([]);

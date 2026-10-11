@@ -105,9 +105,8 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
   // All task IDs that will be grouped into the chosen parent
   const allTargetTaskIds = useMemo(() => {
-    const targetSet = new Set<string>();
     const parentIdStr = selectedParentTaskId ? String(selectedParentTaskId) : null;
-    const selectedSet = new Set(selectedTaskIds.map(String));
+    const targetSet = new Set<string>();
 
     selectedTaskIds.forEach((id) => {
       const idStr = String(id);
@@ -116,17 +115,8 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
       }
     });
 
-    tasks.forEach((t) => {
-      const tParentStr = t.parentTaskId ? String(t.parentTaskId) : null;
-      if (tParentStr && selectedSet.has(tParentStr)) {
-        if (String(t.id) !== parentIdStr) {
-          targetSet.add(String(t.id));
-        }
-      }
-    });
-
     return Array.from(targetSet);
-  }, [selectedTaskIds, selectedParentTaskId, tasks]);
+  }, [selectedTaskIds, selectedParentTaskId]);
 
   // Candidate parent tasks:
   // Must be a top-level task (no parentTaskId).
@@ -379,13 +369,14 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
                 </div>
               ) : (
                 candidateParentTasks.map((t) => {
-                  const isSelected = selectedParentTaskId === t.id;
-                  const childCount = childrenCountMap.get(t.id) || 0;
+                  const tIdStr = String(t.id);
+                  const isSelected = selectedParentTaskId !== null && String(selectedParentTaskId) === tIdStr;
+                  const childCount = childrenCountMap.get(tIdStr) || childrenCountMap.get(t.id) || 0;
 
                   return (
                     <div
                       key={t.id}
-                      onClick={() => setSelectedParentTaskId(t.id)}
+                      onClick={() => setSelectedParentTaskId(tIdStr)}
                       className={cn(
                         "p-2.5 rounded-xl border transition-all cursor-pointer select-none flex items-center justify-between gap-3",
                         isSelected
