@@ -123,7 +123,7 @@ export function GanttTaskLeftColumns({
             "flex items-center gap-1.5 truncate flex-1 min-w-0 p-0.5 rounded transition-colors group/tname overflow-hidden",
             !isEditMode ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-[#333336]" : ""
           )}
-          title={!isEditMode ? `Click to view task in Task Detail (${t.name})` : t.name}
+          title={isEditMode ? `Click and drag row to reorder task (${t.name})` : `Click to view task in Task Detail (${t.name})`}
         >
           {isEditMode && (
             (t.party?.toLowerCase().includes('tenant') || t.party?.toLowerCase().includes('contractor') || t.party?.toLowerCase().includes('nt') || t.name?.toLowerCase().includes('tenant') || t.name?.toLowerCase().includes('design guideline') || t.name?.toLowerCase().includes('opening') || t.name?.toLowerCase().includes('fit-out') || t.name?.toLowerCase().includes('shop drawing') || t.name?.toLowerCase().includes('re-instatement')) ? (

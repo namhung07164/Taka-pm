@@ -184,11 +184,17 @@ export const GanttBar = React.memo(function GanttBar({
     <>
       <div
         onClick={(e) => {
+          e.stopPropagation();
+          lastMousePos.current = { x: e.clientX, y: e.clientY };
           if (onBarClick) {
             onBarClick(e);
           } else {
             setIsDismissed(false);
-            setActiveTooltip(isPinned ? null : id);
+            const nextPinned = activeTooltip !== id;
+            setActiveTooltip(nextPinned ? id : null);
+            if (nextPinned && tooltipRef.current) {
+              positionTooltip(tooltipRef.current, e.clientX, e.clientY);
+            }
           }
         }}
         onMouseEnter={handleBarMouseEnter}
@@ -202,7 +208,7 @@ export const GanttBar = React.memo(function GanttBar({
         }}
         onMouseLeave={handleBarMouseLeave}
         className={cn(
-          "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs",
+          "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
           isMilestone ? "w-4 h-4 rotate-45 rounded-[2px] mt-1.5 shadow-md z-20" : "h-6 rounded-md",
           !customColor && barColor,
           isSimulation && "border-2 border-dashed border-purple-400 opacity-80",

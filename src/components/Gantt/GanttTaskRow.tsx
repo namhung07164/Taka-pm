@@ -231,6 +231,17 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   return (
     <div
       id={`gantt-task-row-${t.id}`}
+      draggable={isEditMode}
+      onDragStart={(e) => {
+        if (!isEditMode) return;
+        const target = e.target as HTMLElement;
+        if (target.closest('input, button, a, [role="button"]')) {
+          e.preventDefault();
+          return;
+        }
+        handleTaskDragStart(e, t.id);
+      }}
+      onDragEnd={() => isEditMode && handleTaskDragEnd()}
       onDragOver={(e) => isEditMode && handleTaskDragOver(e, t.id)}
       onDragLeave={(e) => isEditMode && handleTaskDragLeave(e, t.id)}
       onDrop={(e) => isEditMode && handleTaskDrop(e, t, p)}
@@ -238,6 +249,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
         "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-all duration-700 relative group",
         getRowVisibilityClass(`task-${t.id}`),
         isSelected ? "bg-blue-50/50 dark:bg-blue-950/30" : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
+        isEditMode && "cursor-grab active:cursor-grabbing hover:bg-blue-50/70 dark:hover:bg-blue-900/30",
         isDragging && "opacity-40",
         isTarget && dropPosition === 'before' && "border-t-2 border-t-blue-500",
         isTarget && dropPosition === 'after' && "border-b-2 border-b-blue-500",
