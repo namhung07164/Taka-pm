@@ -95,17 +95,17 @@ export const positionTooltip = (
 
   if (x + tw > window.innerWidth) {
     x = window.innerWidth - tw - 15;
-    if (x < 0) x = 10;
+    if (x < 10) x = 10;
   }
 
   if (y + th > window.innerHeight) {
     y = window.innerHeight - th - 15;
-    if (y < 0) x = 10;
+    if (y < 10) y = 10;
   }
 
   tooltip.style.zIndex = '999999';
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
+  tooltip.style.left = `${Math.max(10, x)}px`;
+  tooltip.style.top = `${Math.max(10, y)}px`;
 };
 
 export const getBarColor = (status: string, duration?: string | number): string => {

@@ -19,9 +19,14 @@ import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 import { triggerBatchChangeFlash } from './changeFlashService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { applyFieldPatch } from './deltaPatchService';
+import { getTasksForProject, calculateProjectComputedDates } from './projectDatesService';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
+
+export const CLIENT_SESSION_ID = typeof window !== 'undefined'
+  ? `sess_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
+  : 'server_sess';
 
 /**
  * Ghi lại 1 delta change log khi có mutation phát sinh
@@ -49,6 +54,7 @@ export async function recordDelta(delta: {
     data: delta.data,
     isPatch: delta.isPatch,
     updatedBy: delta.updatedBy || useAppStore.getState().currentUser?.email || 'system',
+    sessionId: CLIENT_SESSION_ID,
     timestamp: nowIso,
     numericTime: now,
   };
@@ -98,6 +104,7 @@ export async function recordBatchDeltas(
     action: 'batch_update',
     batchItems: items,
     updatedBy: updatedBy || useAppStore.getState().currentUser?.email || 'system',
+    sessionId: CLIENT_SESSION_ID,
     timestamp: nowIso,
     numericTime: now,
   };
@@ -227,11 +234,6 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
     ) => {
       if (!docId) return;
 
-      // 2. Lọc theo năm nếu đang chọn năm cụ thể
-      if (yearFilter && yearFilter !== 'all' && year && year !== yearFilter) {
-        return;
-      }
-
       // 3. Tri-Gate Lazy Loading Guards (Rule 3 AGENTS.md):
       if (
         collectionName === 'taka_tasks' &&
@@ -315,11 +317,10 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
         maxTime = delta.numericTime;
       }
 
-      // 1. Skip self-mutations to prevent typing flutter / jitter (Rule 2: Optimistic UI already applied them)
+      // 1. Skip self-mutations on this same tab/session to prevent typing jitter (Rule 2)
       if (
-        delta.updatedBy &&
-        store.currentUser?.email &&
-        delta.updatedBy === store.currentUser.email
+        delta.sessionId &&
+        delta.sessionId === CLIENT_SESSION_ID
       ) {
         return;
       }
@@ -334,6 +335,22 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
     });
 
     // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
+    if (tasksChanged && !projectsChanged) {
+      const delegationGroups = store.delegationGroups || [];
+      updatedProjects = updatedProjects.map(p => {
+        const pTasks = getTasksForProject(p, updatedTasks);
+        if (pTasks.length > 0 || (p.taskSummaries && p.taskSummaries.length > 0)) {
+          const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+          return {
+            ...p,
+            ...computedDates,
+          };
+        }
+        return p;
+      });
+      projectsChanged = true;
+    }
+
     if (projectsChanged) store.setProjects(updatedProjects);
     if (tasksChanged) store.setTasks(updatedTasks);
     if (costsChanged) store.setCosts(updatedCosts);

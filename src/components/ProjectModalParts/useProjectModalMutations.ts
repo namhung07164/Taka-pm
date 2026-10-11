@@ -8,6 +8,7 @@ import { undoManager } from '../../lib/undoManager';
 import { addPendingUpdate } from '../../lib/syncQueue';
 import { calculateProjectComputedDates, getTasksForProject } from '../../lib/projectDatesService';
 import { deleteStorageFiles, extractStorageUrls } from '../../lib/storageUtils';
+import { recordDelta } from '../../lib/deltaSyncService';
 import { LinkCodesValidationError } from './projectModalTypes';
 import { handleProjectIdentityChange } from './projectModalIdentityService';
 
@@ -165,10 +166,20 @@ export function useProjectModalMutations({
           setToast
         });
       } else {
-        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), {
+        const fullProjectPayload = {
           ...dataToSave,
           updatedAt: new Date().toISOString()
-        }, { merge: true });
+        };
+        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), fullProjectPayload, { merge: true });
+
+        // Record delta so Desktop and other devices receive instant realtime update via delta pipeline
+        recordDelta({
+          docId,
+          collectionName: 'taka_projects',
+          action: project ? 'update' : 'create',
+          data: fullProjectPayload,
+          year: String(yearNum),
+        }).catch(console.error);
 
         const rawProjects = useAppStore.getState().projects || [];
         const savedCode = String(formData.code).trim().toLowerCase();
@@ -258,86 +269,24 @@ export function useProjectModalMutations({
     setConfirmModal({
       isOpen: true,
       title: 'Delete Project',
-      message: 'Permanently delete?',
+      message: `Permanently delete project ${project.code || project.name || ''} and all associated tasks?`,
       onConfirm: async () => {
         try {
-          const docId = project.id || String(project.no);
-          const relatedTasks = tasks.filter(t =>
-            t.projectCode === project.code &&
-            (t.projectYear == project.year || (!t.projectYear && !project.year)) &&
-            (t.projectStore == project.store || (!t.projectStore && !project.store))
-          );
-
-          const nowIso = new Date().toISOString();
-          const batch = writeBatch(db);
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), { id: docId, isDeleted: true, updatedAt: nowIso }, { merge: true });
-
-          relatedTasks.forEach(t => {
-            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), { id: t.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+          const { deleteProjectStateUnified } = await import('../../lib/taskStateService');
+          await deleteProjectStateUnified(project.id || String(project.no) || project.code, project);
+          useAppStore.getState().setToast({
+            title: "Success",
+            message: `Deleted project ${project.code} successfully.`,
+            type: "success"
           });
-
-          const storeCosts = useAppStore.getState().costs || [];
-          const relatedCosts = storeCosts.filter(c =>
-            c.projectCode === project.code &&
-            String(c.projectYear || '') === String(project.year || '') &&
-            String(c.projectStore || '') === String(project.store || '')
-          );
-          relatedCosts.forEach(c => {
-            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), { id: c.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
-          });
-
-          const storeDelegations = useAppStore.getState().delegationGroups || [];
-          const relatedDelGroups = storeDelegations.filter(d =>
-            relatedTasks.some(t => t.id === d.parentTaskId) || d.projectCode === project.code
-          );
-          relatedDelGroups.forEach(d => {
-            batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id));
-          });
-
-          const costsToDelete = relatedCosts.map(c => ({ id: c.id, data: c }));
-          const delegationsToDelete = relatedDelGroups.map(d => ({ id: d.id, data: d }));
-
-          const urlsToDelete: string[] = [];
-          urlsToDelete.push(...extractStorageUrls(project));
-          relatedTasks.forEach(t => {
-            urlsToDelete.push(...extractStorageUrls(t));
-          });
-          relatedCosts.forEach(c => {
-            urlsToDelete.push(...extractStorageUrls(c));
-          });
-          if (urlsToDelete.length > 0) {
-            deleteStorageFiles(urlsToDelete).catch(err => console.error("Storage delete failed", err));
-          }
-
-          try {
-            batch.commit().catch(e => console.error("Batch commit failed", e));
-          } catch (error: any) {
-            console.error("Batch commit failed", error);
-            setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-            return;
-          }
-
-          undoManager.push({
-            description: `Delete Project: ${project.code}`,
-            revert: async () => {
-              const revertBatch = writeBatch(db);
-              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), project);
-              relatedTasks.forEach(t => {
-                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
-              });
-              costsToDelete.forEach(c => {
-                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), c.data);
-              });
-              delegationsToDelete.forEach(d => {
-                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d.data);
-              });
-              revertBatch.commit().catch(console.error);
-            }
-          });
-
           onClose();
-        } catch (e) {
-          console.error(e);
+        } catch (e: any) {
+          console.error("Delete project error:", e);
+          useAppStore.getState().setToast({
+            title: "Error",
+            message: e?.message || "Failed to delete project.",
+            type: "error"
+          });
         }
       }
     });

@@ -34,26 +34,82 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
  * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác multi-code, store và year).
  */
 export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
-  if (!project.code || !allTasks || allTasks.length === 0) return [];
-  const pYear = project.year ? String(project.year).trim() : '';
+  if (!project) return [];
+  const safeAllTasks = Array.isArray(allTasks) ? allTasks : [];
+
+  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
   const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
   const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const pIdStr = project.id ? String(project.id) : '';
 
-  return allTasks.filter(t => {
-    if (!t.projectCode) return false;
-    const tCode = String(t.projectCode).trim().toLowerCase();
-    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code) || matchProjectCode(t.projectCode, project.linkCodes);
-    if (!matchesCode) return false;
+  const matchedMap = new Map<string, Task>();
 
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-    if (pStore && tStore && pStore !== tStore) return false;
+  safeAllTasks.forEach(t => {
+    if (!t || !t.id || t.isDeleted) return;
 
-    const tYear = t.projectYear ? String(t.projectYear).trim() : '';
-    if (pYear && tYear && pYear !== tYear) return false;
+    if (pIdStr && t.projectId && String(t.projectId) === pIdStr) {
+      matchedMap.set(String(t.id), t);
+      return;
+    }
 
-    return true;
+    if (t.projectCode && project.code) {
+      const tCode = String(t.projectCode).trim().toLowerCase();
+      const matchesCode = tCode === String(project.code).trim().toLowerCase() ||
+                          pCodeParts.includes(tCode) ||
+                          matchProjectCode(t.projectCode, project.code) ||
+                          matchProjectCode(t.projectCode, project.linkCodes);
+      if (matchesCode) {
+        const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+        if (pStore && tStore && pStore !== tStore) return;
+
+        const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+        if (pYear && tYear && pYear !== tYear) return;
+
+        matchedMap.set(String(t.id), t);
+      }
+    }
   });
+
+  // Also include subtasks whose parent belongs to matchedMap
+  let addedChild = true;
+  while (addedChild) {
+    addedChild = false;
+    safeAllTasks.forEach(t => {
+      if (!t || !t.id || t.isDeleted || matchedMap.has(String(t.id))) return;
+      const rawParent = t.parentTaskId || (t as any).parentId;
+      if (rawParent && matchedMap.has(String(rawParent))) {
+        matchedMap.set(String(t.id), t);
+        addedChild = true;
+      }
+    });
+  }
+
+  const matchedList = Array.from(matchedMap.values());
+  if (matchedList.length > 0) return matchedList;
+
+  // Fallback to taskSummaries ONLY on cold start when allTasks is not loaded yet
+  if (safeAllTasks.length === 0 && project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+    return project.taskSummaries.map((ts, idx) => ({
+      id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+      name: ts.name || `Task ${idx + 1}`,
+      start: ts.start || project.computedTakStart || project.start || '',
+      finish: ts.finish || project.computedTakCompl || project.handover || '',
+      projectCode: project.code || '',
+      projectStore: project.store || 'HCM',
+      projectYear: project.year ? String(project.year) : '',
+      party: ts.party || project.party || '',
+      runningStatus: ts.runningStatus || 'On process',
+      duration: ts.duration || '',
+      parentTaskId: ts.parentTaskId,
+      taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+      orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+      projectId: project.id,
+      ...ts
+    } as Task));
+  }
+
+  return [];
 }
 
 /**
@@ -67,9 +123,9 @@ export function calculateProjectComputedDates(
   projectTasks: Task[],
   delegationGroups: DelegationGroup[] = []
 ): ComputedProjectDates {
-  let computedTakStart = project.computedTakStart || project.start || "";
-  let computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
-  let computedOpening = project.computedOpening || project.opening || "";
+  let computedTakStart = project.start || "";
+  let computedTakCompl = project.handover || (project as any).takCompl || "";
+  let computedOpening = project.opening || "";
 
   if (projectTasks && projectTasks.length > 0) {
     const validStarts = projectTasks
@@ -100,13 +156,15 @@ export function calculateProjectComputedDates(
       if (validFinishes.length > 0) {
         computedOpening = validFinishes[0];
       }
+    } else {
+      computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
     }
   } else if (project.taskSummaries && project.taskSummaries.length > 0) {
     const validStarts = project.taskSummaries
       .map((t) => t.start)
       .filter(Boolean)
       .sort();
-    if (validStarts.length > 0 && !computedTakStart) {
+    if (validStarts.length > 0) {
       computedTakStart = validStarts[0];
     }
 
@@ -114,7 +172,7 @@ export function calculateProjectComputedDates(
       .map((t) => t.finish)
       .filter(Boolean)
       .sort((a, b) => (b || "").localeCompare(a || ""));
-    if (validFinishes.length > 0 && !computedTakCompl) {
+    if (validFinishes.length > 0) {
       computedTakCompl = validFinishes[0];
     }
 
@@ -127,10 +185,14 @@ export function calculateProjectComputedDates(
         .map((t) => t.finish)
         .filter(Boolean)
         .sort((a, b) => (b || "").localeCompare(a || ""));
-      if (validFinishes.length > 0 && !computedOpening) {
+      if (validFinishes.length > 0) {
         computedOpening = validFinishes[0];
       }
+    } else {
+      computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
     }
+  } else {
+    computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
   }
 
   const sortedProjTasks = sortGroupTasks(projectTasks || []);
@@ -155,26 +217,29 @@ export function calculateProjectComputedDates(
       if (t.runningStatus) summary.runningStatus = t.runningStatus;
       if (t.approval) summary.approval = t.approval;
       if (t.party) summary.party = t.party;
+      if (t.delegation !== undefined) summary.delegation = t.delegation;
       return summary;
     });
 
-  const effectiveSummaries = taskSummaries.length > 0 ? taskSummaries : (project.taskSummaries || []);
+  const finalSummaries = projectTasks && projectTasks.length > 0
+    ? taskSummaries
+    : (project.taskSummaries || []);
+
+  const finalTaskCount = projectTasks && projectTasks.length > 0
+    ? projectTasks.length
+    : (project.taskSummaries ? project.taskSummaries.length : (project.taskCount || 0));
 
   const planProgressPercent = projectTasks && projectTasks.length > 0 
     ? computePlanProgressPercent(projectTasks) 
-    : (effectiveSummaries.length > 0 
-        ? computePlanProgressFromSummaries(effectiveSummaries) 
+    : (finalSummaries.length > 0 
+        ? computePlanProgressFromSummaries(finalSummaries) 
         : (project.computedPlanProgress ?? 0));
   
   const actProgressPercent = projectTasks && projectTasks.length > 0
     ? computeActProgressPercent(projectTasks, delegationGroups)
-    : (effectiveSummaries.length > 0 
-        ? computeActProgressFromSummaries(effectiveSummaries) 
+    : (finalSummaries.length > 0 
+        ? computeActProgressFromSummaries(finalSummaries) 
         : (project.computedActProgress ?? 0));
-
-  const taskCount = projectTasks && projectTasks.length > 0 
-    ? projectTasks.length 
-    : (project.taskCount ?? (projectTasks ? projectTasks.length : 0));
 
   return {
     computedTakStart: computedTakStart || "",
@@ -182,8 +247,8 @@ export function calculateProjectComputedDates(
     computedOpening: computedOpening || "",
     computedPlanProgress: planProgressPercent,
     computedActProgress: actProgressPercent,
-    taskCount,
-    taskSummaries: taskSummaries.length > 0 ? taskSummaries : (project.taskSummaries || []),
+    taskCount: finalTaskCount,
+    taskSummaries: finalSummaries,
   };
 }
 
@@ -213,7 +278,7 @@ export async function syncProjectDatesToFirestore(
       Number(existingProject.computedPlanProgress ?? 0) !== Number(dates.computedPlanProgress ?? 0) ||
       Number(existingProject.computedActProgress ?? 0) !== Number(dates.computedActProgress ?? 0) ||
       Number(existingProject.taskCount ?? 0) !== Number(dates.taskCount ?? 0) ||
-      (existingProject.taskSummaries?.length ?? 0) !== (dates.taskSummaries?.length ?? 0);
+      JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(dates.taskSummaries || []);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     if (existingProject) {
@@ -243,26 +308,6 @@ export async function syncProjectDatesToFirestore(
       "taka_projects",
       projectId
     );
-
-    // Dirty-check guard: Skip writing if computed dates and progress are identical
-    const currentProjects = useAppStore.getState().projects || [];
-    const existing = currentProjects.find((p) => p.id === projectId);
-    if (existing) {
-      const isStartSame = (existing.computedTakStart || null) === (dates.computedTakStart || null);
-      const isComplSame = (existing.computedTakCompl || null) === (dates.computedTakCompl || null);
-      const isOpeningSame = (existing.computedOpening || null) === (dates.computedOpening || null);
-      const isPlanSame = (existing.computedPlanProgress ?? null) === (dates.computedPlanProgress ?? null);
-      const isActSame = (existing.computedActProgress ?? null) === (dates.computedActProgress ?? null);
-      const isCountSame = (existing.taskCount ?? null) === (dates.taskCount ?? null);
-      const isSummariesSame = (!dates.taskSummaries && !existing.taskSummaries) ||
-        (Array.isArray(dates.taskSummaries) && Array.isArray(existing.taskSummaries) &&
-         dates.taskSummaries.length === existing.taskSummaries.length &&
-         JSON.stringify(dates.taskSummaries) === JSON.stringify(existing.taskSummaries));
-
-      if (isStartSame && isComplSame && isOpeningSame && isPlanSame && isActSame && isCountSame && isSummariesSame) {
-        return;
-      }
-    }
 
     const updatePayload: Record<string, any> = {
       updatedAt: new Date().toISOString(),
@@ -299,6 +344,17 @@ export async function syncProjectDatesToFirestore(
     }
 
     await setDoc(projectRef, updatePayload, { merge: true });
+
+    // Phát tín hiệu delta của taka_projects để các thiết bị khác đồng bộ real-time
+    const { recordDelta } = await import("./deltaSyncService");
+    recordDelta({
+      docId: projectId,
+      collectionName: "taka_projects",
+      action: "update",
+      isPatch: true,
+      data: updatePayload,
+      year: existingProject?.year ? String(existingProject.year) : undefined,
+    }).catch(() => {});
   } catch (error) {
     console.error(`Error syncing computed dates for project ${projectId}:`, error);
   }

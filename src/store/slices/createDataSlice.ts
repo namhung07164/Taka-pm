@@ -71,6 +71,8 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
 
   undoStack: [],
   setUndoStack: (undoStack) => set({ undoStack }),
+  redoStack: [],
+  setRedoStack: (redoStack) => set({ redoStack }),
 
   currency: 'VND',
   setCurrency: (currency) => set({ currency }),

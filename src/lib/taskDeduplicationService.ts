@@ -129,35 +129,48 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
 
   sorted.forEach(task => {
     if (task.isDeleted) {
-      // Don't index deleted tasks into seenMap, but keep them if needed
+      // Don't index deleted tasks into seenMap
       return;
     }
 
-    const tName = String(task.name || '').trim().toLowerCase();
-    const normName = normalizeTaskNameForComparison(task.name, task.projectCode);
-    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects);
-    const pCode = String(task.projectCode || '').trim().toLowerCase();
+    // Filter out completely empty/corrupt ghost tasks (no name, no start, no finish)
+    if ((!task.name || !String(task.name).trim()) && (!task.start || !String(task.start).trim()) && (!task.finish || !String(task.finish).trim())) {
+      duplicateCount++;
+      if (task.id) removedTaskIds.push(task.id);
+      return;
+    }
+
+    const taskIdStr = String(task.id || '').trim();
+    if (!taskIdStr) {
+      duplicateCount++;
+      return;
+    }
 
     // Check by exact task ID first
-    if (seenMap.has(task.id)) {
+    if (seenMap.has(taskIdStr)) {
       duplicateCount++;
       removedTaskIds.push(task.id);
       return;
     }
 
-    const exactNameKey = prjKey && tName ? `${prjKey}:::exact:::${tName}` : '';
-    const normNameKey = pCode && normName ? `${pCode}:::norm:::${normName}` : '';
+    const tName = String(task.name || '').trim().toLowerCase();
+    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects);
+    const pCode = String(task.projectCode || '').trim().toLowerCase();
     const rawTaskCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
+    const parentIdStr = task.parentTaskId ? String(task.parentTaskId).trim().toLowerCase() : '';
+    const startStr = task.start ? String(task.start).trim() : '';
+    const finishStr = task.finish ? String(task.finish).trim() : '';
+
     const codeKey = pCode && rawTaskCode ? `${pCode}:::code:::${rawTaskCode}` : '';
+    // Require exact match on project, parent, name, start, and finish to prevent falsely merging distinct tasks!
+    const exactTaskKey = prjKey && tName ? `${prjKey}:::parent:${parentIdStr}:::name:${tName}:::start:${startStr}:::finish:${finishStr}` : '';
 
     let matchedExistingId: string | undefined = undefined;
 
-    if (exactNameKey && seenNormMap.has(exactNameKey)) {
-      matchedExistingId = seenNormMap.get(exactNameKey);
-    } else if (normNameKey && seenNormMap.has(normNameKey)) {
-      matchedExistingId = seenNormMap.get(normNameKey);
-    } else if (codeKey && seenCodeMap.has(codeKey)) {
+    if (codeKey && seenCodeMap.has(codeKey)) {
       matchedExistingId = seenCodeMap.get(codeKey);
+    } else if (exactTaskKey && seenNormMap.has(exactTaskKey)) {
+      matchedExistingId = seenNormMap.get(exactTaskKey);
     }
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
@@ -190,9 +203,8 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
       }
     } else {
       seenMap.set(task.id, task);
-      if (exactNameKey) seenNormMap.set(exactNameKey, task.id);
-      if (normNameKey) seenNormMap.set(normNameKey, task.id);
       if (codeKey) seenCodeMap.set(codeKey, task.id);
+      if (exactTaskKey) seenNormMap.set(exactTaskKey, task.id);
     }
   });
 

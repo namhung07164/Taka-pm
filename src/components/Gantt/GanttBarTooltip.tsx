@@ -96,7 +96,7 @@ export function GanttBarTooltip({
         e.stopPropagation();
         if (!isPinned) setActiveTooltip(id);
       }}
-      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs rounded-xl shadow-2xl p-3 max-w-sm border backdrop-blur-md transition-all duration-150 ${
+      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-xs rounded-2xl shadow-2xl p-3.5 w-80 sm:w-96 md:w-[420px] max-w-lg border backdrop-blur-md transition-all duration-150 ${
         isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
       }`}
       style={{
@@ -108,10 +108,15 @@ export function GanttBarTooltip({
       }}
     >
       {/* Header with Title and Pin / Focus / Close Controls */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-2 mb-2">
-        <div className="flex items-center gap-1.5 font-bold text-slate-200 text-xs min-w-0">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-2.5 mb-2.5">
+        <div className="flex items-center gap-2 font-bold text-slate-100 text-xs min-w-0 flex-1">
           <GripHorizontal className="w-4 h-4 text-slate-400 cursor-grab active:cursor-grabbing shrink-0" />
-          <span className="truncate">{label}</span>
+          {extraVars?.taskCode && (
+            <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 font-mono text-[10px] rounded border border-blue-500/30 font-bold shrink-0">
+              {extraVars.taskCode}
+            </span>
+          )}
+          <span className="truncate text-xs font-bold text-white" title={label}>{label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {extraVars?.task?.id && (
@@ -124,7 +129,7 @@ export function GanttBarTooltip({
                   extraVars.onNavigateToTaskDetail(extraVars.task.id);
                 }
               }}
-              className="p-1 text-slate-400 hover:text-blue-400 rounded hover:bg-slate-700 transition-colors cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               title="Open in Task Detail"
             >
               <ExternalLink className="w-3.5 h-3.5" />
@@ -137,8 +142,8 @@ export function GanttBarTooltip({
               e.stopPropagation();
               setActiveTooltip(isPinned ? null : id);
             }}
-            className={`p-1 rounded transition-colors cursor-pointer ${
-              isPinned ? 'text-blue-400 bg-blue-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              isPinned ? 'text-blue-400 bg-blue-500/20 border border-blue-500/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
             title={isPinned ? 'Unpin' : 'Pin tooltip'}
           >
@@ -156,7 +161,7 @@ export function GanttBarTooltip({
                 setIsEditingPredecessor(false);
               }
             }}
-            className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-700 transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
             title="Close tooltip"
           >
             <X className="w-3.5 h-3.5" />
@@ -164,52 +169,50 @@ export function GanttBarTooltip({
         </div>
       </div>
 
-      {/* Main Info with Task Detail Color Palette */}
-      <div className="space-y-2 text-xs text-slate-300">
-        {/* Progress & Duration */}
-        <div className="flex items-center justify-between gap-2 bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-700/60">
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 font-medium">Prog:</span>
+      {/* Main Info Desktop Multi-Column Grid */}
+      <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
+        {/* Start Date Card */}
+        <div className="flex flex-col gap-0.5 bg-sky-950/40 border border-sky-800/50 p-2 rounded-xl">
+          <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">Start Date</span>
+          <span className="font-mono text-xs font-semibold text-sky-100 truncate">
+            {formatGanttDate(startStr)}
+          </span>
+        </div>
+
+        {/* Finish Date Card */}
+        <div className="flex flex-col gap-0.5 bg-pink-950/40 border border-pink-800/50 p-2 rounded-xl">
+          <span className="text-[10px] font-bold text-pink-400 uppercase tracking-wider">Finish Date</span>
+          <span className="font-mono text-xs font-semibold text-pink-100 truncate">
+            {formatGanttDate(endStr)}
+          </span>
+        </div>
+
+        {/* Progress & Duration Card */}
+        <div className="flex items-center justify-between gap-1 bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60">
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400 font-medium text-[10px] uppercase">Prog:</span>
             <span className="font-mono font-bold text-emerald-400">{extraVars?.actPrg ?? 0}%</span>
           </div>
           {extraVars?.duration !== undefined && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 font-medium">Dur:</span>
+            <div className="flex items-center gap-1">
+              <span className="text-slate-400 font-medium text-[10px] uppercase">Dur:</span>
               <span className="font-mono font-bold text-amber-300">{extraVars.duration}d</span>
             </div>
           )}
         </div>
 
-        {/* Start Date */}
-        <div className="flex flex-col gap-0.5 bg-sky-950/40 border border-sky-800/50 p-2 rounded-lg">
-          <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">Start</span>
-          <span className="font-mono text-xs font-semibold text-sky-100">
-            {formatGanttDate(startStr)}
-          </span>
-        </div>
-
-        {/* Finish Date */}
-        <div className="flex flex-col gap-0.5 bg-pink-950/40 border border-pink-800/50 p-2 rounded-lg">
-          <span className="text-[10px] font-bold text-pink-400 uppercase tracking-wider">Finish</span>
-          <span className="font-mono text-xs font-semibold text-pink-100">
-            {formatGanttDate(endStr)}
-          </span>
-        </div>
-
-        {/* Party */}
-        {extraVars?.party && (
-          <div className="flex justify-between items-center gap-2 pt-0.5">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Party:</span>
-            <span className="text-slate-100 font-bold">{extraVars.party}</span>
-          </div>
-        )}
-
-        {/* Status */}
-        <div className="flex justify-between items-center gap-2">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status:</span>
-          <span className="font-bold text-amber-400">
+        {/* Status & Party Card */}
+        <div className="flex items-center justify-between gap-1 bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60 overflow-hidden">
+          {extraVars?.party ? (
+            <div className="flex items-center gap-1 truncate">
+              <span className="text-slate-400 font-medium text-[10px] uppercase shrink-0">Party:</span>
+              <span className="text-slate-100 font-bold truncate">{extraVars.party}</span>
+            </div>
+          ) : (
+            <span className="text-slate-400 text-[10px] uppercase font-medium">Status</span>
+          )}
+          <span className="font-bold text-amber-400 shrink-0 text-[11px]">
             {extraVars?.actStatus || status}
-            {extraVars?.actPrg !== undefined && extraVars.actPrg !== null ? ` (${extraVars.actPrg}%)` : ''}
           </span>
         </div>
       </div>

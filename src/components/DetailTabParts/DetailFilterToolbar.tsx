@@ -1,11 +1,12 @@
 import React, { memo } from 'react';
-import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown } from 'lucide-react';
+import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { ColumnAdder } from '../ColumnAdder';
 import { FullReplaceImport } from '../FullReplaceImport';
 import { Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
 import { doc } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 import { generateId } from '../../lib/utils';
@@ -48,6 +49,8 @@ interface DetailFilterToolbarProps {
   parseCSVDate?: (d: any) => string;
   onSortSubTasks?: () => void;
   isSortingSubTasks?: boolean;
+  selectedTaskCount?: number;
+  onBulkAction?: (action: any) => void;
 }
 
 export const DetailFilterToolbar = memo(function DetailFilterToolbar({
@@ -87,7 +90,9 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
   handleImportTasks,
   parseCSVDate,
   onSortSubTasks,
-  isSortingSubTasks
+  isSortingSubTasks,
+  selectedTaskCount = 0,
+  onBulkAction
 }: DetailFilterToolbarProps) {
   return (
     <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
@@ -241,6 +246,24 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     </span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => onBulkAction && onBulkAction('unlink')}
+                  disabled={selectedTaskCount < 1}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer",
+                    selectedTaskCount >= 1
+                      ? "bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white hover:bg-amber-700"
+                      : "opacity-40 cursor-not-allowed bg-slate-200 dark:bg-[#333336] text-slate-400 border border-slate-300 dark:border-slate-700"
+                  )}
+                  title="Unlink selected tasks from parent modular link"
+                >
+                  <Unlink className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Unlink{selectedTaskCount > 0 ? ` (${selectedTaskCount})` : ''}
+                  </span>
+                </button>
               </>
             )}
 

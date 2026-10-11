@@ -190,6 +190,7 @@ export function GanttTab({
 
   // 4. Virtualization Engine
   const {
+    flatGanttRows,
     visibleGanttRows,
     paddingTop,
     paddingBottom,
@@ -342,6 +343,7 @@ export function GanttTab({
         handleSetTextColor={handleSetTextColor}
         handleSetBaselineSelected={handleSetBaselineSelected}
         handleToggleRealtimeUpdate={handleToggleRealtimeUpdate}
+        handleUnlinkModularTasks={handleUnlinkModularTasks}
         isTaskModularModalOpen={isTaskModularModalOpen}
         setIsTaskModularModalOpen={setIsTaskModularModalOpen}
         sumMode={sumMode}
@@ -387,6 +389,7 @@ export function GanttTab({
         topScrollRef={topScrollRef}
         handleCombinedMainScroll={handleCombinedMainScroll}
         handleTopScroll={handleTopScroll}
+        flatGanttRows={flatGanttRows}
         visibleGanttRows={visibleGanttRows}
         paddingTop={paddingTop}
         paddingBottom={paddingBottom}
@@ -422,6 +425,8 @@ export function GanttTab({
         selectedTaskIds={selectedTaskIds}
         setSelectedTaskIds={setSelectedTaskIds}
         selectedProjectSet={selectedProjectSet}
+        selectedProjectIds={selectedProjectIds}
+        setSelectedProjectIds={setSelectedProjectIds}
         handleTaskCheckboxChange={handleTaskCheckboxChange}
         handleToggleSelectAll={handleToggleSelectAll}
         isAllSelected={isAllSelected}

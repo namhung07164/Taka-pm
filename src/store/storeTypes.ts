@@ -228,6 +228,8 @@ export interface DataSlice {
 
   undoStack: UndoAction[];
   setUndoStack: (stack: UndoAction[]) => void;
+  redoStack: UndoAction[];
+  setRedoStack: (stack: UndoAction[]) => void;
 
   currency: 'VND' | 'JPY' | 'USD';
   setCurrency: (currency: 'VND' | 'JPY' | 'USD') => void;

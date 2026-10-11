@@ -89,11 +89,18 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
     (p.id && String(t.projectId) === String(p.id)) || 
     (p.code && t.projectCode === p.code)
   );
-  const hasProjectDelegation = projectTasks.length > 0
-    ? projectTasks.some(t => Boolean(t.delegation))
-    : (p.taskSummaries && p.taskSummaries.length > 0)
-      ? p.taskSummaries.some(ts => Boolean(ts.delegation))
-      : false;
+  const storeDelegationGroups = useAppStore.getState().delegationGroups || [];
+  const hasProjectDelegation = Boolean(
+    (p as any).delegation ||
+    (p as any).hasDelegation ||
+    (projectTasks.length > 0 && projectTasks.some(t => Boolean(t.delegation))) ||
+    (p.taskSummaries && p.taskSummaries.length > 0 && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+    (storeDelegationGroups && storeDelegationGroups.some(g => 
+      (p.code && g.projectCode === p.code) || 
+      (p.id && (g as any).projectId === p.id) ||
+      (projectTasks.some(t => t.id === g.parentTaskId))
+    ))
+  );
   
   const now = new Date();
   let activeTaskNames: string[] = [];

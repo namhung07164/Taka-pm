@@ -134,7 +134,13 @@ export const DetailMobileView = memo(function DetailMobileView({
         {filteredProjects.slice(0, visibleCount).map((p) => {
           const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
           const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
-          const sortedTasks = pInfo.sortedTasks || [];
+          const rawSorted = pInfo.sortedTasks || [];
+          const sortedTasks = rawSorted.filter((t: Task) => {
+            if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim())) {
+              return false;
+            }
+            return true;
+          });
           const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
             if (!sortConfig) return 0;
             let valA = '';
@@ -233,7 +239,7 @@ export const DetailMobileView = memo(function DetailMobileView({
           const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
             const taskFields = [
               t.taskCodePhu,
-              `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+              `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
               t.name,
               t.duration,
               t.start,

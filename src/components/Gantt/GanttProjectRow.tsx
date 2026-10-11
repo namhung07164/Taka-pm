@@ -19,6 +19,8 @@ export interface GanttProjectRowProps {
   canWrite?: boolean;
   selectedProjectSet?: Set<string>;
   selectedProjectIds?: string[];
+  selectedTaskIds?: string[];
+  selectedTaskSet?: Set<string>;
   setSelectedProjectIds?: (ids: string[]) => void;
   setSelectedTaskIds?: React.Dispatch<React.SetStateAction<string[]>>;
   toggleProject?: (id: string) => void;
@@ -57,7 +59,7 @@ export interface GanttProjectRowProps {
 
 export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   p, pIdx, projectTasks = [], isExpanded, expandedModularTasks = [], setExpandedModularTasks, isEditMode = false, canWrite = false,
-  selectedProjectSet = new Set(), selectedProjectIds = [], setSelectedProjectIds, setSelectedTaskIds,
+  selectedProjectSet = new Set(), selectedProjectIds = [], selectedTaskIds = [], selectedTaskSet = new Set(), setSelectedProjectIds, setSelectedTaskIds,
   toggleProject, toggleProjectExpansion, isResizingSide = false, startResizingSide,
   sideWidth, showStart = false, startColWidth = 80, showFinish = false, finishColWidth = 80, showParty = false, partyColWidth = 70, showDuration = false, durationColWidth = 50, showPredecessor = false, predecessorColWidth = 90,
   timeUnits = [], delegationGroups = [], getRowVisibilityClass = () => '', startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor = () => 'bg-blue-500',
@@ -144,28 +146,100 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
         {/* Project Name Column */}
         <div className="flex-1 min-w-0 p-1.5 flex items-center overflow-hidden">
           <div className="flex items-center gap-1 w-full relative min-w-0">
-            {isEditMode && (
-              <label
-                className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedProjectSet?.has(String(p.no)) || false}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      if (setSelectedProjectIds) setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
-                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
-                    } else {
-                      if (setSelectedProjectIds) setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
-                      const pTasksIds = new Set(projectTasks.map((t) => t.id));
-                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
-                    }
-                  }}
-                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
-                />
-              </label>
-            )}
+            {isEditMode && (() => {
+              const pKey = String(p.id || p.no);
+              const pCodeNorm = String(p.code || '').trim().toLowerCase();
+              const pYearNorm = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+              const pStoreNorm = p.store ? String(p.store).trim().toLowerCase() : '';
+              const allStoreTasks = useAppStore.getState().tasks || [];
+
+              // 1. Gather all tasks directly associated with this project
+              const taskMap = new Map<string, Task>();
+              (projectTasks || []).forEach(t => { if (t && t.id && !t.isDeleted) taskMap.set(t.id, t); });
+
+              allStoreTasks.forEach(t => {
+                if (!t || !t.id || t.isDeleted) return;
+                if (p.id && String(t.projectId) === String(p.id)) {
+                  taskMap.set(t.id, t);
+                  return;
+                }
+                if (t.projectCode) {
+                  const codes = String(t.projectCode).trim().toLowerCase().split(/[,;/]+/).map(s => s.trim());
+                  if (codes.includes(pCodeNorm)) {
+                    if (pYearNorm && t.projectYear && String(t.projectYear).trim() !== pYearNorm) return;
+                    if (pStoreNorm && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStoreNorm) return;
+                    taskMap.set(t.id, t);
+                  }
+                }
+              });
+
+              // 2. Also include any subtasks whose parent belongs to this project
+              const parentIdSet = new Set(Array.from(taskMap.keys()));
+              const parentCodeSet = new Set(
+                Array.from(taskMap.values())
+                  .map(t => t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '')
+                  .filter(Boolean)
+              );
+
+              allStoreTasks.forEach(t => {
+                if (!t || !t.id || t.isDeleted || taskMap.has(String(t.id))) return;
+                const rawParent = t.parentTaskId || (t as any).parentId;
+                if (rawParent) {
+                  const rawStr = String(rawParent).trim().toLowerCase();
+                  if (parentIdSet.has(String(rawParent)) || parentCodeSet.has(rawStr)) {
+                    taskMap.set(String(t.id), t);
+                  }
+                }
+              });
+
+              const allProjectTasks = Array.from(taskMap.values());
+              const pTaskIds = allProjectTasks.map(t => String(t.id)).filter(Boolean);
+              const sTaskSet = selectedTaskSet || new Set((selectedTaskIds || []).map(String));
+              const isAllTasksSelected = pTaskIds.length > 0 && pTaskIds.every(id => sTaskSet.has(id));
+              const isSomeTasksSelected = !isAllTasksSelected && pTaskIds.some(id => sTaskSet.has(id));
+              const isChecked = pTaskIds.length > 0 ? isAllTasksSelected : Boolean(selectedProjectSet?.has(pKey) || selectedProjectSet?.has(String(p.no)) || (p.id && selectedProjectSet?.has(String(p.id))));
+
+              return (
+                <label
+                  className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeTasksSelected;
+                    }}
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) => {
+                      // If not all tasks are selected, clicking toggles ON to select all.
+                      // If all tasks were already selected, clicking toggles OFF to deselect all.
+                      const willCheck = !isAllTasksSelected;
+                      const currentProjectIds = (selectedProjectIds || []).map(String);
+                      const projectKeys = [pKey, String(p.id), String(p.no)].filter(Boolean).map(String);
+
+                      if (willCheck) {
+                        if (setSelectedProjectIds) {
+                          setSelectedProjectIds(Array.from(new Set([...currentProjectIds, ...projectKeys])));
+                        }
+                        if (setSelectedTaskIds) {
+                          setSelectedTaskIds((prev: any) => Array.from(new Set([...(prev || []).map(String), ...pTaskIds])));
+                        }
+                      } else {
+                        if (setSelectedProjectIds) {
+                          const removeSet = new Set(projectKeys);
+                          setSelectedProjectIds(currentProjectIds.filter(id => !removeSet.has(id)));
+                        }
+                        if (setSelectedTaskIds) {
+                          const pTaskSet = new Set(pTaskIds);
+                          setSelectedTaskIds((prev: any) => (prev || []).map(String).filter((id: string) => !pTaskSet.has(id)));
+                        }
+                      }
+                    }}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
+                  />
+                </label>
+              );
+            })()}
             <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
               <button
                 type="button"

@@ -11,6 +11,7 @@ import { useIsRowFlashed } from '../../lib/changeFlashService';
 
 export interface GanttTaskRowProps {
   t: Task;
+  taskIndex?: number;
   isChild: boolean;
   parentTask?: Task;
   hasChildren: boolean;
@@ -59,7 +60,7 @@ export interface GanttTaskRowProps {
   handleTaskDragEnd: () => void;
   dragOverTaskId: string | null;
   dropPosition: 'before' | 'inside' | 'after' | null;
-  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void;
+  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean) => void;
   isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   onNavigateToTaskDetail?: (taskId: string) => void;
@@ -67,6 +68,7 @@ export interface GanttTaskRowProps {
 
 export const GanttTaskRow = React.memo(function GanttTaskRow({
   t,
+  taskIndex,
   isChild,
   parentTask,
   hasChildren,
@@ -120,7 +122,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   toggleHideRow,
   onNavigateToTaskDetail
 }: GanttTaskRowProps) {
-  const isSelected = selectedTaskSet.has(t.id);
+  const isSelected = selectedTaskSet.has(String(t.id)) || selectedTaskSet.has(t.id);
   const isTarget = dragOverTaskId === t.id;
   const isDragging = draggingTaskIds.includes(t.id);
   const isFocused = initialFocusTaskId === t.id || ganttTabFocusTaskId === t.id;
@@ -227,10 +229,25 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   };
 
   const { isFlashed } = useIsRowFlashed(t.id);
+  const isParentTask = hasChildren || childCount > 0 || Boolean((t as any).isModularParent);
 
   return (
     <div
       id={`gantt-task-row-${t.id}`}
+      draggable={isEditMode && !isParentTask}
+      onDragStart={(e) => {
+        if (!isEditMode || isParentTask) {
+          e.preventDefault();
+          return;
+        }
+        const target = e.target as HTMLElement;
+        if (target.closest('input, button, a, [role="button"]')) {
+          e.preventDefault();
+          return;
+        }
+        handleTaskDragStart(e, t.id);
+      }}
+      onDragEnd={() => isEditMode && !isParentTask && handleTaskDragEnd()}
       onDragOver={(e) => isEditMode && handleTaskDragOver(e, t.id)}
       onDragLeave={(e) => isEditMode && handleTaskDragLeave(e, t.id)}
       onDrop={(e) => isEditMode && handleTaskDrop(e, t, p)}
@@ -238,6 +255,8 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
         "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-all duration-700 relative group",
         getRowVisibilityClass(`task-${t.id}`),
         isSelected ? "bg-blue-50/50 dark:bg-blue-950/30" : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
+        isEditMode && !isParentTask && "cursor-grab active:cursor-grabbing hover:bg-blue-50/70 dark:hover:bg-blue-900/30",
+        isEditMode && isParentTask && "hover:bg-purple-50/40 dark:hover:bg-purple-950/20 cursor-default",
         isDragging && "opacity-40",
         isTarget && dropPosition === 'before' && "border-t-2 border-t-blue-500",
         isTarget && dropPosition === 'after' && "border-b-2 border-b-blue-500",
@@ -252,6 +271,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
         <div className="flex-1 min-w-0 h-full flex items-center overflow-hidden">
           <GanttTaskLeftColumns
             t={t}
+            taskIndex={taskIndex}
             taskCode={taskCode}
             projects={projects}
             tasks={tasks}
@@ -271,6 +291,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
             isEditMode={isEditMode}
             isFocused={isFocused}
             onNavigateToTaskDetail={onNavigateToTaskDetail}
+            handleUnlinkModularTasks={handleUnlinkModularTasks}
           />
         </div>
 

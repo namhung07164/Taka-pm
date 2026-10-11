@@ -8,7 +8,7 @@ import { db, APP_ID } from '../../lib/firebase';
 import { bumpConfigVersion } from '../../lib/configCacheService';
 import { getLinkCodesValidationError } from './projectModalTypes';
 import { useProjectModalMutations } from './useProjectModalMutations';
-import { hydrateDelegationsForProjects } from '../../lib/backgroundSyncWorker';
+import { hydrateDelegationsForProjects, hydrateDelegationsFromLocal } from '../../lib/backgroundSyncWorker';
 
 interface UseProjectModalDataParams {
   isOpen: boolean;
@@ -67,6 +67,7 @@ export function useProjectModalData({
       if (!isDelegationsRequested) {
         setIsDelegationsRequested(true);
       }
+      hydrateDelegationsFromLocal().catch(() => {});
     }
   }, [isOpen, activeTab]);
 

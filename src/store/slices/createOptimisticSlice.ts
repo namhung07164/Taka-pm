@@ -34,9 +34,9 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
 
   optimisticDeleteTasks: (taskIds) => set((state) => {
     if (!taskIds || taskIds.length === 0) return state;
-    const idSet = new Set(taskIds);
+    const idSet = new Set(taskIds.map(String));
     return {
-      tasks: state.tasks.filter(t => !idSet.has(t.id))
+      tasks: state.tasks.filter(t => !idSet.has(String(t.id)))
     };
   }),
 

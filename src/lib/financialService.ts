@@ -561,6 +561,18 @@ export async function saveCostWithAtomicSummary(
     data: newCostData,
     year: String(newCostData.projectYear || '2026'),
   }).catch(() => {});
+
+  const latestProjForSave = useAppStore.getState().projects.find(p => p.id === projectId);
+  if (latestProjForSave?.financial) {
+    recordDelta({
+      docId: projectId,
+      collectionName: 'taka_projects',
+      action: 'update',
+      isPatch: true,
+      data: { financial: latestProjForSave.financial, updatedAt: new Date().toISOString() },
+      year: String(latestProjForSave.year || newCostData.projectYear || '2026'),
+    }).catch(() => {});
+  }
 }
 
 export async function deleteCostWithAtomicSummary(
@@ -655,4 +667,16 @@ export async function deleteCostWithAtomicSummary(
     data: { id: costToDelete.id, isDeleted: true },
     year: String(costToDelete.projectYear || '2026'),
   }).catch(() => {});
+
+  const latestProjForDelete = useAppStore.getState().projects.find(p => p.id === projectId);
+  if (latestProjForDelete?.financial) {
+    recordDelta({
+      docId: projectId,
+      collectionName: 'taka_projects',
+      action: 'update',
+      isPatch: true,
+      data: { financial: latestProjForDelete.financial, updatedAt: new Date().toISOString() },
+      year: String(latestProjForDelete.year || year),
+    }).catch(() => {});
+  }
 }

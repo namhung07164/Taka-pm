@@ -115,7 +115,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
               {taskCode || t.taskCodePhu || `${p.code}#${i + 1}`}
             </span>
             <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug">
-              {t.name}
+              {t.name || '(Unnamed Task)'}
             </span>
           </div>
           <div className="flex items-center justify-between mt-1">
