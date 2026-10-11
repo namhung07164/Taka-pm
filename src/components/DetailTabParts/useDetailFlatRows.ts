@@ -88,12 +88,10 @@ export function useDetailFlatRows({
         (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
-      const validGroupTasks = groupTasks.filter(t => {
-        if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim())) {
-          return false;
-        }
-        return true;
-      });
+      const validGroupTasks = groupTasks.map(t => ({
+        ...t,
+        name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
+      }));
 
       const isProjectMatch = lowerSearchTerm
         ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])

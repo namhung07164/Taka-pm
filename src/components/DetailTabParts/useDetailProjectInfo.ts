@@ -19,11 +19,22 @@ interface UseDetailProjectInfoParams {
 }
 
 export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoParams) {
-  const { tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
+  const { tasksByProjectId, tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
+    const idMap = new Map<string, Task[]>();
     const keyMap = new Map<string, Task[]>();
     const codeMap = new Map<string, Task[]>();
     for (let idx = 0; idx < tasks.length; idx++) {
       const t = tasks[idx];
+      if (t.isDeleted) continue;
+      if (t.projectId) {
+        const pIdStr = String(t.projectId);
+        let pList = idMap.get(pIdStr);
+        if (!pList) {
+          pList = [];
+          idMap.set(pIdStr, pList);
+        }
+        pList.push(t);
+      }
       const key = `${t.projectCode || ''}-${t.projectYear || ''}-${t.projectStore || ''}`;
       let list = keyMap.get(key);
       if (!list) {
@@ -41,15 +52,18 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         cList.push(t);
       }
     }
-    return { tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
+    return { tasksByProjectId: idMap, tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
   }, [tasks]);
 
   const projectInfoMap = useMemo(() => {
     const map = new Map<string, ProjectInfo>();
 
     projects.forEach(p => {
-      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-      let rawGroupTasks = tasksByProjectKey.get(key);
+      let rawGroupTasks = p.id ? tasksByProjectId.get(String(p.id)) : undefined;
+      if (!rawGroupTasks || rawGroupTasks.length === 0) {
+        const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+        rawGroupTasks = tasksByProjectKey.get(key);
+      }
       if (!rawGroupTasks || rawGroupTasks.length === 0) {
         const pCode = String(p.code || "").trim().toLowerCase();
         const candidateTasks = tasksByCodeMap.get(pCode) || [];
@@ -58,6 +72,25 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
           return matchesStore && matchesYear;
         });
+      }
+      if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
+          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+          name: ts.name || `Task ${idx + 1}`,
+          start: ts.start || p.computedTakStart || p.start || '',
+          finish: ts.finish || p.computedTakCompl || p.handover || '',
+          projectCode: p.code || '',
+          projectStore: p.store || 'HCM',
+          projectYear: p.year ? String(p.year) : '',
+          party: ts.party || p.party || '',
+          runningStatus: ts.runningStatus || 'On process',
+          duration: ts.duration || '',
+          parentTaskId: ts.parentTaskId,
+          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+          projectId: p.id,
+          ...ts
+        } as Task));
       }
       const sortedTasks = sortGroupTasks(rawGroupTasks || []);
       let computedTakStart = p.computedTakStart || p.start;
@@ -127,8 +160,11 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const cached = projectInfoMap.get(pUniqueKey);
     if (cached) return cached;
     
-    const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-    let rawGroupTasks = tasksByProjectKey.get(key);
+    let rawGroupTasks = p.id ? tasksByProjectId.get(String(p.id)) : undefined;
+    if (!rawGroupTasks || rawGroupTasks.length === 0) {
+      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+      rawGroupTasks = tasksByProjectKey.get(key);
+    }
     if (!rawGroupTasks || rawGroupTasks.length === 0) {
       const pCode = String(p.code || "").trim().toLowerCase();
       const candidateTasks = tasksByCodeMap.get(pCode) || [];
@@ -137,6 +173,25 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
         return matchesStore && matchesYear;
       });
+    }
+    if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+      rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
+        id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+        name: ts.name || `Task ${idx + 1}`,
+        start: ts.start || p.computedTakStart || p.start || '',
+        finish: ts.finish || p.computedTakCompl || p.handover || '',
+        projectCode: p.code || '',
+        projectStore: p.store || 'HCM',
+        projectYear: p.year ? String(p.year) : '',
+        party: ts.party || p.party || '',
+        runningStatus: ts.runningStatus || 'On process',
+        duration: ts.duration || '',
+        parentTaskId: ts.parentTaskId,
+        taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+        projectId: p.id,
+        ...ts
+      } as Task));
     }
     const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;

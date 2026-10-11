@@ -1023,10 +1023,21 @@ export function enrichProjects(
     return _lastEnrichedResult;
   }
 
+  const tasksByProjectId = new Map<string, Task[]>();
   const tasksByFullKey = new Map<string, Task[]>();
   const tasksByCodeOnly = new Map<string, Task[]>();
 
   tasks.forEach(t => {
+    if (t.isDeleted) return;
+    if (t.projectId) {
+      const pid = String(t.projectId);
+      let pList = tasksByProjectId.get(pid);
+      if (!pList) {
+        pList = [];
+        tasksByProjectId.set(pid, pList);
+      }
+      pList.push(t);
+    }
     if (!t.projectCode) return;
     const tCode = String(t.projectCode).trim().toLowerCase();
     const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
@@ -1063,6 +1074,16 @@ export function enrichProjects(
     const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
     const matchedTaskMap = new Map<string, Task>();
+
+    // Check direct ID match first
+    if (p.id) {
+      const idTasks = tasksByProjectId.get(String(p.id));
+      if (idTasks) {
+        for (let i = 0; i < idTasks.length; i++) {
+          matchedTaskMap.set(idTasks[i].id, idTasks[i]);
+        }
+      }
+    }
 
     // Check direct key and part keys
     const directKey = `${pCode}-${pYear}-${pStore}`;

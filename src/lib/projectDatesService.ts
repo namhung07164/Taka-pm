@@ -34,26 +34,52 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
  * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác multi-code, store và year).
  */
 export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
-  if (!project.code || !allTasks || allTasks.length === 0) return [];
-  const pYear = project.year ? String(project.year).trim() : '';
+  if (!allTasks) allTasks = [];
+  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
   const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
   const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
-  return allTasks.filter(t => {
+  const matched = allTasks.filter(t => {
+    if (t.isDeleted) return false;
+    if (t.projectId && project.id && String(t.projectId) === String(project.id)) return true;
     if (!t.projectCode) return false;
     const tCode = String(t.projectCode).trim().toLowerCase();
-    const matchesCode = tCode === String(project.code).trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code) || matchProjectCode(t.projectCode, project.linkCodes);
+    const matchesCode = tCode === String(project.code || '').trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code) || matchProjectCode(t.projectCode, project.linkCodes);
     if (!matchesCode) return false;
 
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
     if (pStore && tStore && pStore !== tStore) return false;
 
-    const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
     if (pYear && tYear && pYear !== tYear) return false;
 
     return true;
   });
+
+  if (matched.length > 0) return matched;
+
+  if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+    return project.taskSummaries.map((ts, idx) => ({
+      id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+      name: ts.name || `Task ${idx + 1}`,
+      start: ts.start || project.computedTakStart || project.start || '',
+      finish: ts.finish || project.computedTakCompl || project.handover || '',
+      projectCode: project.code || '',
+      projectStore: project.store || 'HCM',
+      projectYear: project.year ? String(project.year) : '',
+      party: ts.party || project.party || '',
+      runningStatus: ts.runningStatus || 'On process',
+      duration: ts.duration || '',
+      parentTaskId: ts.parentTaskId,
+      taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}-${idx + 1}` : undefined),
+      orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+      projectId: project.id,
+      ...ts
+    } as Task));
+  }
+
+  return [];
 }
 
 /**
