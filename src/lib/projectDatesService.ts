@@ -155,6 +155,7 @@ export function calculateProjectComputedDates(
       if (t.runningStatus) summary.runningStatus = t.runningStatus;
       if (t.approval) summary.approval = t.approval;
       if (t.party) summary.party = t.party;
+      if (t.delegation !== undefined) summary.delegation = t.delegation;
       return summary;
     });
 

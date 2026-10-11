@@ -310,17 +310,24 @@ export function drawGeneralCanvas({
         ctx.textBaseline = 'middle';
         ctx.fillText(`${progressPercent}% (P)`, textX, planY + 2);
 
-        // Actual Progress Row (Only drawn if project delegation is green)
+        // Actual Progress Row (Only drawn if project delegation is green or has active delegations)
         const allStoreTasks = useAppStore.getState().tasks || [];
+        const storeDelegationGroups = useAppStore.getState().delegationGroups || [];
         const projectTasks = allStoreTasks.filter(t => 
           (item.id && String(t.projectId) === String(item.id)) || 
           (item.code && t.projectCode === item.code)
         );
-        const hasProjectDelegation = projectTasks.length > 0
-          ? projectTasks.some(t => Boolean(t.delegation))
-          : (item.taskSummaries && item.taskSummaries.length > 0)
-            ? item.taskSummaries.some(ts => Boolean(ts.delegation))
-            : false;
+        const hasProjectDelegation = Boolean(
+          (item as any).delegation ||
+          (item as any).hasDelegation ||
+          (projectTasks.length > 0 && projectTasks.some(t => Boolean(t.delegation))) ||
+          (item.taskSummaries && item.taskSummaries.length > 0 && item.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+          (storeDelegationGroups && storeDelegationGroups.some(g => 
+            (item.code && g.projectCode === item.code) || 
+            (item.id && (g as any).projectId === item.id) ||
+            (projectTasks.some(t => t.id === g.parentTaskId))
+          ))
+        );
 
         if (hasProjectDelegation) {
           const actY = planY + 12;
