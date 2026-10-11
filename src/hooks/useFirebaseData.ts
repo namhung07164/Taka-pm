@@ -519,7 +519,7 @@ export function useFirebaseData() {
     });
 
     // Start Background Delta Sync Service (Stage 2 Delta Pipeline)
-    const stopDeltaSync = startDeltaSyncService(25000);
+    const stopDeltaSync = startDeltaSyncService();
     return () => {
       stopDeltaSync();
     };

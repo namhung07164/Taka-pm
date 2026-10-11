@@ -11,6 +11,7 @@ interface TaskPredecessorSectionProps {
   projects: any[];
   resolvedPredecessors: any[];
   handlePredecessorChange: (val: string) => void;
+  handlePredecessorTaskIdsChange: (ids: string[]) => void;
   handleApplyPredecessorDates: () => void;
 }
 
@@ -22,6 +23,7 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
   projects,
   resolvedPredecessors,
   handlePredecessorChange,
+  handlePredecessorTaskIdsChange,
   handleApplyPredecessorDates,
 }: TaskPredecessorSectionProps) {
   return (
@@ -61,6 +63,8 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
         currentProjectStore={formData.projectStore}
         currentProjectLocation={formData.location}
         disabled={!canWrite}
+        predecessorTaskIds={formData.predecessorTaskIds || []}
+        onPredecessorTaskIdsChange={handlePredecessorTaskIdsChange}
       />
 
       {resolvedPredecessors.length > 0 && (

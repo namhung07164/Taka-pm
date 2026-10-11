@@ -132,7 +132,7 @@ export const TaskChatInput = React.memo(
       const textBeforeMention = commentText.substring(0, cursorPosition).replace(/@\S*$/, '');
       const textAfterMention = commentText.substring(cursorPosition);
 
-      setCommentText(`${textBeforeMention}@${user.username} ${textAfterMention}`);
+      setCommentText(`${textBeforeMention}@${user.username || 'user'} ${textAfterMention}`);
       if (!mentions.includes(user.id)) {
         setMentions([...mentions, user.id]);
       }
@@ -145,7 +145,7 @@ export const TaskChatInput = React.memo(
       const textBeforeTask = commentText.substring(0, cursorPosition).replace(/#([^#]*)$/, '');
       const textAfterTask = commentText.substring(cursorPosition);
 
-      setCommentText(`${textBeforeTask}#${targetTask.name}${withApproval ? '-approval' : ''} ${textAfterTask}`);
+      setCommentText(`${textBeforeTask}#${targetTask.name || ''}${withApproval ? '-approval' : ''} ${textAfterTask}`);
       setShowTaskMenu(false);
       inputRef.current?.focus();
     };
@@ -155,11 +155,11 @@ export const TaskChatInput = React.memo(
 
       const lowerCommentText = commentText.toLowerCase();
       const activeMentions = Array.from(new Set([
-        ...mentions.filter(userId => {
-          const user = appUsers.find(u => u.id === userId);
+        ...(mentions || []).filter(userId => {
+          const user = (appUsers || []).find(u => u.id === userId);
           return user && lowerCommentText.includes(`@${user.username.toLowerCase()}`);
         }),
-        ...appUsers.filter(u => lowerCommentText.includes(`@${u.username.toLowerCase()}`)).map(u => u.id)
+        ...(appUsers || []).filter(u => u.username && lowerCommentText.includes(`@${u.username.toLowerCase()}`)).map(u => u.id)
       ]));
 
       activeMentions.forEach(userId => recordMention(userId));
@@ -176,8 +176,8 @@ export const TaskChatInput = React.memo(
         .map((st: any) => st.party?.toLowerCase().trim())
         .filter(Boolean);
 
-      return appUsers
-        .filter(u => u.username.toLowerCase().includes(mentionQuery.toLowerCase()))
+      return (appUsers || [])
+        .filter(u => u.username && u.username.toLowerCase().includes(mentionQuery.toLowerCase()))
         .sort((a, b) => {
           const isPartyA = partyUsernames.includes(a.username.toLowerCase());
           const isPartyB = partyUsernames.includes(b.username.toLowerCase());

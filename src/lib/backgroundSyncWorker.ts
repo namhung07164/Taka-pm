@@ -92,7 +92,8 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
       const currentStore = useAppStore.getState();
       const existing = currentStore.projects || [];
       const pMap = new Map(existing.map(p => [p.id, p]));
-      localProjects.forEach(p => pMap.set(p.id, p));
+      // Store data (from Firestore listeners / deltas) is fresher than Dexie: never overwrite it
+      localProjects.forEach(p => { if (!pMap.has(p.id)) pMap.set(p.id, p); });
       const merged = Array.from(pMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
       currentStore.setProjects(merged);
       usePerformanceStore
@@ -215,7 +216,8 @@ export async function hydrateDelegationsFromLocal(year?: string): Promise<number
       const currentStore = useAppStore.getState();
       const existing = currentStore.delegationGroups || [];
       const dMap = new Map(existing.map(d => [d.id, d]));
-      localDelegations.forEach(d => dMap.set(d.id, d));
+      // Store data (from Firestore listeners / deltas) is fresher than Dexie: never overwrite it
+      localDelegations.forEach(d => { if (!dMap.has(d.id)) dMap.set(d.id, d); });
       const merged = Array.from(dMap.values());
       currentStore.setDelegationGroups(merged);
       usePerformanceStore

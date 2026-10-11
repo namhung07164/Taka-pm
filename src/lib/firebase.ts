@@ -18,6 +18,7 @@ import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported, getToken } from "firebase/messaging";
 import { addPendingUpdate } from "./syncQueue";
 import { validateFirestoreData } from "./validation";
+import { queueAutoDelta } from "./autoDeltaQueue";
 
 export const APP_ID = 'taka-projects-app-v1';
 
@@ -68,6 +69,9 @@ const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 const isPWA = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any)?.standalone);
 
 export const db = initializeFirestore(app, {
+  // iOS Safari/PWA and corporate proxies often break WebChannel streaming (listener looks connected but gets no
+  // updates). Auto-detect falls back to long-polling when streaming fails.
+  experimentalAutoDetectLongPolling: true,
   localCache: persistentLocalCache({ 
     tabManager: (isIframe || isPWA || isDevMode || isIOS) 
       ? persistentSingleTabManager({ forceOwnership: true }) 
@@ -270,6 +274,7 @@ function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, da
 export function setDoc(docRef: any, data: any, options?: any) {
   validateFirestoreData(docRef.path, data, options?.merge === true);
   writeAuditLogAsync("CREATE", docRef, data);
+  queueAutoDelta(docRef.path, docRef.id, 'write');
   return firestoreSetDoc(docRef, data, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('set', docRef, data);
@@ -280,6 +285,7 @@ export function setDoc(docRef: any, data: any, options?: any) {
 export function updateDoc(docRef: any, data: any) {
   validateFirestoreData(docRef.path, data, true);
   writeAuditLogAsync("UPDATE", docRef, data);
+  queueAutoDelta(docRef.path, docRef.id, 'write');
   return firestoreUpdateDoc(docRef, data).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('update', docRef, data);
@@ -289,6 +295,7 @@ export function updateDoc(docRef: any, data: any) {
 
 export function deleteDoc(docRef: any) {
   writeAuditLogAsync("DELETE", docRef);
+  queueAutoDelta(docRef.path, docRef.id, 'delete');
   return firestoreDeleteDoc(docRef).catch(error => {
     console.warn("Network error during deleteDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('delete', docRef);
@@ -326,6 +333,8 @@ export function writeBatch(dbInstance: any): WriteBatch {
   };
 
   (batch as any).commit = () => {
+    // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
+    operations.forEach(op => queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write'));
     return originalCommit().catch(error => {
       console.warn("Network error during batch commit. Saving to local IndexedDB queue.", error);
       operations.forEach(op => {

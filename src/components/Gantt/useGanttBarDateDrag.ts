@@ -1,14 +1,13 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { parseDateTime } from '../../lib/utils';
-import { useAppStore } from '../../store/useAppStore';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { parseDateTime, formatToDatetimeLocal } from '../../lib/utils';
 
 export interface UseGanttBarDateDragParams {
   taskId: string;
   startStr?: string;
   endStr?: string;
   dayWidth: number;
-  startDate: Date;
   isEditMode?: boolean;
+  onUpdateTaskDates?: (taskId: string, start: string, end: string) => void;
 }
 
 export function useGanttBarDateDrag({
@@ -16,11 +15,15 @@ export function useGanttBarDateDrag({
   startStr,
   endStr,
   dayWidth,
-  startDate,
   isEditMode = false,
+  onUpdateTaskDates,
 }: UseGanttBarDateDragParams) {
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingDate, setIsDraggingDate] = useState(false);
   const [dragType, setDragType] = useState<'move' | 'resize-start' | 'resize-end' | null>(null);
+  const [deltaDays, setDeltaDays] = useState(0);
+  const [previewStart, setPreviewStart] = useState(startStr || '');
+  const [previewEnd, setPreviewEnd] = useState(endStr || '');
+
   const dragStartXRef = useRef(0);
   const initialDatesRef = useRef<{ start: Date; end: Date } | null>(null);
 
@@ -33,25 +36,81 @@ export function useGanttBarDateDrag({
       const dEnd = parseDateTime(endStr);
       if (!dStart || !dEnd) return;
 
-      setIsDragging(true);
+      setIsDraggingDate(true);
       setDragType(type);
       dragStartXRef.current = e.clientX;
-      initialDatesRef.current = { start: dStart, end: dEnd };
+      initialDatesRef.current = { start: new Date(dStart), end: new Date(dEnd) };
+      setDeltaDays(0);
+      setPreviewStart(startStr || '');
+      setPreviewEnd(endStr || '');
     },
     [isEditMode, startStr, endStr]
   );
 
-  const handleDragEnd = useCallback(() => {
-    setIsDragging(false);
-    setDragType(null);
-    initialDatesRef.current = null;
-  }, []);
+  const handleBarDragStart = (e: React.MouseEvent | React.PointerEvent) => handleDragStart(e, 'move');
+  const handleLeftResizeStart = (e: React.MouseEvent | React.PointerEvent) => handleDragStart(e, 'resize-start');
+  const handleRightResizeStart = (e: React.MouseEvent | React.PointerEvent) => handleDragStart(e, 'resize-end');
+
+  useEffect(() => {
+    if (!isDraggingDate) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!initialDatesRef.current || !dragType) return;
+
+      const diffX = e.clientX - dragStartXRef.current;
+      const days = Math.round(diffX / dayWidth);
+      setDeltaDays(days);
+
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const newStart = new Date(initialDatesRef.current.start.getTime());
+      const newEnd = new Date(initialDatesRef.current.end.getTime());
+
+      if (dragType === 'move') {
+        newStart.setTime(newStart.getTime() + days * msPerDay);
+        newEnd.setTime(newEnd.getTime() + days * msPerDay);
+      } else if (dragType === 'resize-start') {
+        newStart.setTime(newStart.getTime() + days * msPerDay);
+        if (newStart.getTime() > newEnd.getTime()) {
+          newStart.setTime(newEnd.getTime());
+        }
+      } else if (dragType === 'resize-end') {
+        newEnd.setTime(newEnd.getTime() + days * msPerDay);
+        if (newEnd.getTime() < newStart.getTime()) {
+          newEnd.setTime(newStart.getTime());
+        }
+      }
+
+      setPreviewStart(formatToDatetimeLocal(newStart));
+      setPreviewEnd(formatToDatetimeLocal(newEnd));
+    };
+
+    const handlePointerUp = () => {
+      if (isDraggingDate && onUpdateTaskDates && (previewStart !== startStr || previewEnd !== endStr)) {
+        onUpdateTaskDates(taskId, previewStart, previewEnd);
+      }
+      setIsDraggingDate(false);
+      setDragType(null);
+      initialDatesRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDraggingDate, dragType, dayWidth, taskId, onUpdateTaskDates, previewStart, previewEnd, startStr, endStr]);
 
   return {
-    isDragging,
-    dragType,
-    handleDragStart,
-    handleDragEnd,
+    isDraggingDate,
+    deltaDays,
+    previewStart,
+    previewEnd,
+    handleBarDragStart,
+    handleLeftResizeStart,
+    handleRightResizeStart,
+    handleDragEnd: () => setIsDraggingDate(false), // fallback
   };
 }
 

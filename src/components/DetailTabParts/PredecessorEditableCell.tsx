@@ -3,6 +3,8 @@ import { PredecessorMultiInput } from '../PredecessorMultiInput';
 import { Task, Project } from '../../types';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { useAppStore } from '../../store/useAppStore';
+import { splitPredecessors, computeTaskCode } from '../../lib/ganttUtils';
+import { parsePredecessorToken, findTaskByQueryOrCode } from '../../lib/predecessorMatchUtils';
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
   value,
@@ -13,7 +15,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   projects
 }: {
   value: any,
-  onSave: (val: any) => void,
+  onSave: (updates: Partial<Task>) => void,
   canWrite: boolean,
   task: Task,
   tasks?: Task[],
@@ -40,10 +42,17 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     };
     const effectiveTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().tasks || []);
     const effectiveProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().projects || []);
-    const resolved = resolvePredecessorString(rawVal, effectiveTasks, effectiveProjects, task?.projectCode, context);
+    const resolved = resolvePredecessorString(rawVal, effectiveTasks, effectiveProjects, task?.projectCode, context, task.predecessorTaskIds);
     setVal(resolved);
     if (resolved !== (value || '')) {
-      onSave(resolved);
+      const finalTokens = splitPredecessors(resolved, effectiveTasks.map(t => computeTaskCode(effectiveProjects, effectiveTasks, t)));
+      const newIds = finalTokens.map(tok => {
+        const { query } = parsePredecessorToken(tok);
+        if (!query) return '';
+        const t = findTaskByQueryOrCode(query, effectiveTasks, effectiveProjects, context);
+        return t ? t.id : '';
+      });
+      onSave({ predecessor: resolved, predecessorTaskIds: newIds });
     }
   };
 
@@ -59,7 +68,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isEditing, val, value, onSave, tasks, projects, task?.projectCode, task?.projectId, task?.projectYear, task?.projectStore, task?.location]);
+  }, [isEditing, val, value, onSave, tasks, projects, task?.projectCode, task?.projectId, task?.projectYear, task?.projectStore, task?.location, task.predecessorTaskIds]);
 
   const displayVal = isEditing ? val : (value !== undefined && value !== null ? value : '');
 
@@ -93,6 +102,10 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
           currentProjectYear={task.projectYear}
           currentProjectStore={task.projectStore}
           currentProjectLocation={task.location}
+          predecessorTaskIds={task.predecessorTaskIds || []}
+          onPredecessorTaskIdsChange={(ids) => {
+             // Handled in commitSave
+          }}
         />
       </div>
     );

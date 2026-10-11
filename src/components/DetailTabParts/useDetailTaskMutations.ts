@@ -17,6 +17,10 @@ import {
 import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/utils';
 import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
 import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import {
+  parsePredecessorToken,
+  findTaskByQueryOrCode 
+} from '../../lib/predecessorMatchUtils';
 import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
 import { recordBatchDeltas } from '../../lib/deltaSyncService';
 import { createPatchDeltaItem } from '../../lib/deltaPatchService';
@@ -141,7 +145,18 @@ export function useDetailTaskMutations({
           }
           updates.predecessor = parts.join(', ');
         }
-        parsePredecessors(updates.predecessor, taskNoMap, t);
+
+        if (updates.predecessorTaskIds === undefined) {
+          const finalTokens = splitPredecessors(updates.predecessor, taskNoMap);
+          updates.predecessorTaskIds = finalTokens.map(tok => {
+            const { query } = parsePredecessorToken(tok);
+            if (!query) return '';
+            const match = findTaskByQueryOrCode(query, tasks, projects, t);
+            return match ? match.id : '';
+          });
+        }
+
+        parsePredecessors(updates.predecessor, taskNoMap, { ...t, ...updates });
       }
 
       let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
-import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap } from '../../lib/ganttUtils';
+import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap, splitPredecessors, computeTaskCode } from '../../lib/ganttUtils';
+import { findTaskByQueryOrCode, parsePredecessorToken } from '../../lib/predecessorMatchUtils';
 import { useAppStore } from '../../store/useAppStore';
 
 export interface UseTaskModalFormStateProps {
@@ -58,9 +59,27 @@ export function useTaskModalFormState({
   useEffect(() => {
     if (!isOpen) return;
     if (task) {
+      const initialIds = task.predecessorTaskIds || [];
+      let finalIds = initialIds;
+      
+      // Auto-backfill IDs for old tasks that only have the string field
+      if (task.predecessor && initialIds.length === 0) {
+        try {
+          const knownCodes = tasks.map(t => computeTaskCode(projects, tasks, t));
+          const tokens = splitPredecessors(task.predecessor, knownCodes);
+          finalIds = tokens.map(tok => {
+            const { query } = parsePredecessorToken(tok);
+            if (!query) return '';
+            const matched = findTaskByQueryOrCode(query, tasks, projects, task);
+            return matched ? matched.id : '';
+          });
+        } catch (e) {}
+      }
+
       setFormData({
         ...task,
-        predecessor: task.predecessor || ''
+        predecessor: task.predecessor || '',
+        predecessorTaskIds: finalIds
       });
     } else {
       const defaultDate = getDefaultDatetimeLocal();
@@ -150,6 +169,7 @@ export function useTaskModalFormState({
           finishManual: updated.finishManual ?? false
         };
         const parsed = parsePredecessors(val, taskNoMap, dummyTask);
+        updated.predecessorTaskIds = parsed.map(p => p.task?.id || '');
 
         if (parsed.length > 0) {
           const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);
@@ -173,6 +193,10 @@ export function useTaskModalFormState({
     }
 
     setFormData(updated);
+  };
+
+  const handlePredecessorTaskIdsChange = (ids: string[]) => {
+    setFormData(prev => ({ ...prev, predecessorTaskIds: ids }));
   };
 
   const handleApplyPredecessorDates = () => {
@@ -296,6 +320,7 @@ export function useTaskModalFormState({
     currentProject,
     resolvedPredecessors,
     handlePredecessorChange,
+    handlePredecessorTaskIdsChange,
     handleApplyPredecessorDates,
     handleDateChange,
     handleDurationChange,

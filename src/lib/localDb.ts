@@ -137,10 +137,9 @@ export async function patchLocalRecord(
         case 'taka_delegations': return localDb.delegations;
       }
     })();
-    const updatedCount = await (table as any).update(id, patch);
-    if (updatedCount === 0) {
-      await (table as any).put({ id, ...patch });
-    }
+    // Patch only existing rows. Creating a row from a partial patch produced incomplete records
+    // (missing year/code/store) that later hydrated into the UI as broken data.
+    await (table as any).update(id, patch);
   } catch (err) {
     console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
   }

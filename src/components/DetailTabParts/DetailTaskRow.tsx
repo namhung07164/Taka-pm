@@ -255,7 +255,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         <td className="px-3 py-2">
           <PredecessorEditableCell
             value={t.predecessor}
-            onSave={(val) => onUpdateTask(t, { predecessor: val })}
+            onSave={(updates) => onUpdateTask(t, updates)}
             canWrite={canWrite}
             task={t}
             tasks={tasks}

@@ -322,6 +322,8 @@ export interface TakaDeltaItem {
   year?: string;
   data?: Record<string, any>;
   isPatch?: boolean;
+  /** Signal-only item: receivers re-read this doc from the server (used for writes that carry no patch). */
+  invalidate?: boolean;
 }
 
 export interface TakaDelta {

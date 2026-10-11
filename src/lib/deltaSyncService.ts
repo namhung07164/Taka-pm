@@ -20,9 +20,19 @@ import { triggerBatchChangeFlash } from './changeFlashService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { applyFieldPatch } from './deltaPatchService';
 import { getTasksForProject, calculateProjectComputedDates } from './projectDatesService';
+import { initNetworkRecovery, resyncIfStale } from './syncResilience';
+import { markExplicitDelta } from './autoDeltaQueue';
+import { resolveInvalidations } from './deltaInvalidateService';
+import { startDeltaRealtimeListener } from './deltaRealtimeListener';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
+
+// Deltas carry the writer's client clock (numericTime). Re-read a small overlap window so a writer whose
+// clock is slightly behind is not skipped; already-applied delta ids are filtered out below.
+const CLOCK_SKEW_OVERLAP_MS = 2 * 60 * 1000;
+const appliedDeltaIds = new Set<string>();
+const MAX_APPLIED_IDS = 3000;
 
 export const CLIENT_SESSION_ID = typeof window !== 'undefined'
   ? `sess_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
@@ -41,6 +51,7 @@ export async function recordDelta(delta: {
   updatedBy?: string;
   isPatch?: boolean;
 }): Promise<void> {
+  markExplicitDelta([{ docId: delta.docId, collectionName: delta.collectionName }]);
   const now = Date.now();
   const deltaId = `delta_${now}_${Math.random().toString(36).substring(2, 8)}`;
   const nowIso = new Date(now).toISOString();
@@ -68,7 +79,7 @@ export async function recordDelta(delta: {
       touchYearMeta(delta.year).catch(() => {});
     }
 
-    // Phát tín hiệu tức thì sang các tab khác trong cùng trình duyệt (0 Read)
+    // Phát tín hiệu tức thì sang các máy trạm khác trong cùng trình duyệt (0 Read)
     broadcastAppliedDeltas([deltaPayload]);
   } catch (err) {
     console.warn('[deltaSync] Failed to record delta to Firestore:', err);
@@ -83,7 +94,8 @@ export async function recordBatchDeltas(
   updatedBy?: string
 ): Promise<void> {
   if (!items || items.length === 0) return;
-  if (items.length === 1) {
+  markExplicitDelta(items.filter((i) => !i.invalidate));
+  if (items.length === 1 && !items[0].invalidate) {
     const item = items[0];
     return recordDelta({
       docId: item.docId,
@@ -117,7 +129,7 @@ export async function recordBatchDeltas(
     const affectedYears = new Set(items.map((i) => i.year).filter(Boolean));
     affectedYears.forEach((yr) => touchYearMeta(yr!).catch(() => {}));
 
-    // Phát tín hiệu tức thì sang các tab khác (0 Read)
+    // Phát tín hiệu tức thì sang các máy trạm khác (0 Read)
     broadcastAppliedDeltas([deltaPayload]);
   } catch (err) {
     console.warn('[deltaSync] Failed to record batch deltas to Firestore:', err);
@@ -140,33 +152,248 @@ export function getLastDeltaSyncTime(): number {
 }
 
 /**
+ * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
+ * safety poll. Returns the number of deltas processed.
+ */
+export function applyIncomingDeltas(deltas: TakaDelta[]): number {
+  if (!deltas || deltas.length === 0) return 0;
+
+  // Ghi nhận vào Performance Store để giám sát
+  usePerformanceStore
+    .getState()
+    .trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
+
+  const lastSyncTime = getLastDeltaSyncTime();
+  let maxTime = lastSyncTime;
+  const store = useAppStore.getState();
+
+  // Map chứa các thay đổi gộp để cập nhật nguyên tử vào Zustand
+  let updatedProjects = [...(store.projects || [])];
+  let updatedTasks = [...(store.tasks || [])];
+  let updatedCosts = [...(store.costs || [])];
+  let updatedDelegations = [...(store.delegationGroups || [])];
+
+  let projectsChanged = false;
+  let tasksChanged = false;
+  let costsChanged = false;
+  let delegationsChanged = false;
+
+  const invalidations: TakaDeltaItem[] = [];
+
+  const applyItem = (
+    docId: string,
+    collectionName: string,
+    action: 'create' | 'update' | 'delete',
+    data: any,
+    year?: string
+  ) => {
+    if (!docId) return;
+
+    // 3. Tri-Gate Lazy Loading Guards (Rule 3 AGENTS.md):
+    if (
+      collectionName === 'taka_tasks' &&
+      !store.isTasksRequested &&
+      store.tasks.length === 0
+    ) {
+      return;
+    }
+    if (
+      collectionName === 'taka_costs' &&
+      !store.isCostsRequested &&
+      store.costs.length === 0
+    ) {
+      return;
+    }
+    if (
+      collectionName === 'taka_delegations' &&
+      !store.isDelegationsRequested &&
+      store.delegationGroups.length === 0
+    ) {
+      return;
+    }
+
+    switch (collectionName) {
+      case 'taka_projects': {
+        projectsChanged = true;
+        const idx = updatedProjects.findIndex((p) => p.id === docId);
+        if (action === 'delete') {
+          updatedProjects = updatedProjects.filter((p) => p.id !== docId);
+        } else if (idx !== -1) {
+          updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
+          updatedProjects.push({ id: docId, ...data } as Project);
+        }
+        break;
+      }
+
+      case 'taka_tasks': {
+        tasksChanged = true;
+        const idx = updatedTasks.findIndex((t) => t.id === docId);
+        if (action === 'delete') {
+          updatedTasks = updatedTasks.filter((t) => t.id !== docId);
+        } else if (idx !== -1) {
+          updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
+          updatedTasks.push({ id: docId, ...data } as Task);
+        }
+        break;
+      }
+
+      case 'taka_costs': {
+        costsChanged = true;
+        const idx = updatedCosts.findIndex((c) => c.id === docId);
+        if (action === 'delete') {
+          updatedCosts = updatedCosts.filter((c) => c.id !== docId);
+        } else if (idx !== -1) {
+          updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
+          updatedCosts.push({ id: docId, ...data } as Cost);
+        }
+        break;
+      }
+
+      case 'taka_delegations': {
+        delegationsChanged = true;
+        const idx = updatedDelegations.findIndex((g) => g.id === docId);
+        if (action === 'delete') {
+          updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
+        } else if (idx !== -1) {
+          updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
+          updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
+        }
+        break;
+      }
+    }
+  };
+
+  deltas.forEach((delta) => {
+    if (delta.numericTime > maxTime) {
+      maxTime = delta.numericTime;
+    }
+
+    // 1. Skip self-mutations on this same tab/session to prevent typing jitter (Rule 2)
+    if (
+      delta.sessionId &&
+      delta.sessionId === CLIENT_SESSION_ID
+    ) {
+      return;
+    }
+
+    if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+      delta.batchItems.forEach((item) => {
+        if (item.invalidate) {
+          invalidations.push(item);
+          return;
+        }
+        applyItem(item.docId, item.collectionName, item.action, item.data, item.year);
+      });
+    } else if (delta.docId && delta.collectionName) {
+      applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, delta.year);
+    }
+  });
+
+  // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
+  if (tasksChanged && !projectsChanged) {
+    const delegationGroups = store.delegationGroups || [];
+    updatedProjects = updatedProjects.map(p => {
+      const pTasks = getTasksForProject(p, updatedTasks);
+      if (pTasks.length > 0 || (p.taskSummaries && p.taskSummaries.length > 0)) {
+        const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+        return {
+          ...p,
+          ...computedDates,
+        };
+      }
+      return p;
+    });
+    projectsChanged = true;
+  }
+
+  if (projectsChanged) store.setProjects(updatedProjects);
+  if (tasksChanged) store.setTasks(updatedTasks);
+  if (costsChanged) store.setCosts(updatedCosts);
+  if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
+
+  // Trụ cột 3: Kích hoạt Smart Change Flash cho các dòng vừa nhận thay đổi từ đồng nghiệp (Google Sheets standard)
+  const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];
+  deltas.forEach((d) => {
+    if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
+      d.batchItems.forEach((item) => {
+        if (item.action === 'create' || item.action === 'update') {
+          flashEntries.push({ docId: item.docId, collectionName: item.collectionName, updatedBy: d.updatedBy });
+        }
+      });
+    } else if ((d.action === 'create' || d.action === 'update') && d.docId && d.collectionName) {
+      flashEntries.push({ docId: d.docId, collectionName: d.collectionName, updatedBy: d.updatedBy });
+    }
+  });
+  if (flashEntries.length > 0) {
+    triggerBatchChangeFlash(flashEntries);
+  }
+
+  // Lưu các delta vào Dexie Local-First Database ngầm
+  applyDeltasToLocalDatabase(deltas).catch(() => {});
+
+  // Phát tín hiệu delta đã nạp sang các tab khác (giúp các tab phụ không cần gửi request lên Firestore)
+  broadcastAppliedDeltas(deltas);
+
+  // Cập nhật mốc đồng bộ mới nhất
+  safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
+
+  // Resolve signal-only (invalidate) items: re-read just those docs, then apply them like normal deltas
+  if (invalidations.length > 0) {
+    resolveInvalidations(invalidations)
+      .then((synthetic) => {
+        if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+      })
+      .catch((err) => console.warn('[deltaSync] invalidate resolve failed:', err));
+  }
+
+  return deltas.length;
+}
+
+/**
+ * Drops deltas that were already applied on this device (shared across poll + listener).
+ */
+export function filterUnappliedDeltas(items: TakaDelta[]): TakaDelta[] {
+  const fresh: TakaDelta[] = [];
+  for (const item of items) {
+    const id = item.id;
+    if (!id) { fresh.push(item); continue; }
+    if (appliedDeltaIds.has(id)) continue;
+    appliedDeltaIds.add(id);
+    if (appliedDeltaIds.size > MAX_APPLIED_IDS) {
+      const oldest = appliedDeltaIds.values().next().value;
+      if (oldest !== undefined) appliedDeltaIds.delete(oldest);
+    }
+    fresh.push(item);
+  }
+  return fresh;
+}
+
+/**
  * Kéo các delta thay đổi từ server về client kể từ lastSyncTime và áp dụng vào Zustand
  * Tiết kiệm hơn 80% Read so với việc onSnapshot cả collection
  */
 export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
   const lastSyncTime = getLastDeltaSyncTime();
 
-  // 1. Heartbeat Fingerprint Optimization (Rule 15):
-  // Nếu đang xem năm cụ thể và remote metadata updatedAt không mới hơn lastSyncTime,
-  // bỏ qua hoàn toàn truy vấn taka_deltas -> 0 Firestore READ!
-  // Kèm Lớp Bảo hiểm Fail-Safe: Nếu đã quá 2 phút chưa kiểm tra trực tiếp, vẫn chạy query phòng ngừa
-  if (yearFilter && yearFilter !== 'all') {
-    const memMeta = getMemoryYearsMeta();
-    if (memMeta && memMeta[yearFilter]?.updatedAt) {
-      const remoteTime = new Date(memMeta[yearFilter].updatedAt).getTime();
-      const timeSinceLastSync = Date.now() - lastSyncTime;
-      const FAIL_SAFE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes fail-safe
-      if (!isNaN(remoteTime) && remoteTime <= lastSyncTime && timeSinceLastSync < FAIL_SAFE_TIMEOUT_MS) {
-        return 0; // Pure 0-Read bypass
-      }
-    }
-  }
+  // Device offline longer than delta retention -> deltas are gone, do a full resync.
+  if (await resyncIfStale(lastSyncTime, LAST_SYNC_KEY)) return 0;
+
+  // NOTE: The old "Heartbeat Fingerprint" bypass was removed. years_meta was only loaded once at boot, so the
+  // bypass fired on almost every poll and delayed sync by 1-3 minutes. An empty delta query costs 1 read.
 
   const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
 
   try {
     const deltas: TakaDelta[] = [];
-    let currentSince = lastSyncTime;
+    let currentSince = lastSyncTime - CLOCK_SKEW_OVERLAP_MS;
     let iteration = 0;
     const MAX_PAGES = 5;
 
@@ -187,6 +414,16 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
       let pageMaxTime = currentSince;
       snapshot.forEach((d) => {
         const item = d.data() as TakaDelta;
+        const itemId = item.id || d.id;
+        if (appliedDeltaIds.has(itemId)) {
+          if (item.numericTime > pageMaxTime) pageMaxTime = item.numericTime;
+          return;
+        }
+        appliedDeltaIds.add(itemId);
+        if (appliedDeltaIds.size > MAX_APPLIED_IDS) {
+          const oldest = appliedDeltaIds.values().next().value;
+          if (oldest !== undefined) appliedDeltaIds.delete(oldest);
+        }
         deltas.push(item);
         if (item.numericTime > pageMaxTime) {
           pageMaxTime = item.numericTime;
@@ -206,183 +443,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
       return 0;
     }
 
-    // Ghi nhận vào Performance Store để giám sát
-    usePerformanceStore
-      .getState()
-      .trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
-
-    let maxTime = lastSyncTime;
-    const store = useAppStore.getState();
-
-    // Map chứa các thay đổi gộp để cập nhật nguyên tử vào Zustand
-    let updatedProjects = [...(store.projects || [])];
-    let updatedTasks = [...(store.tasks || [])];
-    let updatedCosts = [...(store.costs || [])];
-    let updatedDelegations = [...(store.delegationGroups || [])];
-
-    let projectsChanged = false;
-    let tasksChanged = false;
-    let costsChanged = false;
-    let delegationsChanged = false;
-
-    const applyItem = (
-      docId: string,
-      collectionName: string,
-      action: 'create' | 'update' | 'delete',
-      data: any,
-      year?: string
-    ) => {
-      if (!docId) return;
-
-      // 3. Tri-Gate Lazy Loading Guards (Rule 3 AGENTS.md):
-      if (
-        collectionName === 'taka_tasks' &&
-        !store.isTasksRequested &&
-        store.tasks.length === 0
-      ) {
-        return;
-      }
-      if (
-        collectionName === 'taka_costs' &&
-        !store.isCostsRequested &&
-        store.costs.length === 0
-      ) {
-        return;
-      }
-      if (
-        collectionName === 'taka_delegations' &&
-        !store.isDelegationsRequested &&
-        store.delegationGroups.length === 0
-      ) {
-        return;
-      }
-
-      switch (collectionName) {
-        case 'taka_projects': {
-          projectsChanged = true;
-          const idx = updatedProjects.findIndex((p) => p.id === docId);
-          if (action === 'delete') {
-            updatedProjects = updatedProjects.filter((p) => p.id !== docId);
-          } else if (idx !== -1) {
-            updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
-          } else if (action === 'create' || action === 'update') {
-            updatedProjects.push({ id: docId, ...data } as Project);
-          }
-          break;
-        }
-
-        case 'taka_tasks': {
-          tasksChanged = true;
-          const idx = updatedTasks.findIndex((t) => t.id === docId);
-          if (action === 'delete') {
-            updatedTasks = updatedTasks.filter((t) => t.id !== docId);
-          } else if (idx !== -1) {
-            updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
-          } else if (action === 'create' || action === 'update') {
-            updatedTasks.push({ id: docId, ...data } as Task);
-          }
-          break;
-        }
-
-        case 'taka_costs': {
-          costsChanged = true;
-          const idx = updatedCosts.findIndex((c) => c.id === docId);
-          if (action === 'delete') {
-            updatedCosts = updatedCosts.filter((c) => c.id !== docId);
-          } else if (idx !== -1) {
-            updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
-          } else if (action === 'create' || action === 'update') {
-            updatedCosts.push({ id: docId, ...data } as Cost);
-          }
-          break;
-        }
-
-        case 'taka_delegations': {
-          delegationsChanged = true;
-          const idx = updatedDelegations.findIndex((g) => g.id === docId);
-          if (action === 'delete') {
-            updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
-          } else if (idx !== -1) {
-            updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
-          } else if (action === 'create' || action === 'update') {
-            updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
-          }
-          break;
-        }
-      }
-    };
-
-    deltas.forEach((delta) => {
-      if (delta.numericTime > maxTime) {
-        maxTime = delta.numericTime;
-      }
-
-      // 1. Skip self-mutations on this same tab/session to prevent typing jitter (Rule 2)
-      if (
-        delta.sessionId &&
-        delta.sessionId === CLIENT_SESSION_ID
-      ) {
-        return;
-      }
-
-      if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
-        delta.batchItems.forEach((item) => {
-          applyItem(item.docId, item.collectionName, item.action, item.data, item.year);
-        });
-      } else if (delta.docId && delta.collectionName) {
-        applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, delta.year);
-      }
-    });
-
-    // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
-    if (tasksChanged && !projectsChanged) {
-      const delegationGroups = store.delegationGroups || [];
-      updatedProjects = updatedProjects.map(p => {
-        const pTasks = getTasksForProject(p, updatedTasks);
-        if (pTasks.length > 0 || (p.taskSummaries && p.taskSummaries.length > 0)) {
-          const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
-          return {
-            ...p,
-            ...computedDates,
-          };
-        }
-        return p;
-      });
-      projectsChanged = true;
-    }
-
-    if (projectsChanged) store.setProjects(updatedProjects);
-    if (tasksChanged) store.setTasks(updatedTasks);
-    if (costsChanged) store.setCosts(updatedCosts);
-    if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
-
-    // Trụ cột 3: Kích hoạt Smart Change Flash cho các dòng vừa nhận thay đổi từ đồng nghiệp (Google Sheets standard)
-    const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];
-    deltas.forEach((d) => {
-      if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
-        d.batchItems.forEach((item) => {
-          if (item.action === 'create' || item.action === 'update') {
-            flashEntries.push({ docId: item.docId, collectionName: item.collectionName, updatedBy: d.updatedBy });
-          }
-        });
-      } else if ((d.action === 'create' || d.action === 'update') && d.docId && d.collectionName) {
-        flashEntries.push({ docId: d.docId, collectionName: d.collectionName, updatedBy: d.updatedBy });
-      }
-    });
-    if (flashEntries.length > 0) {
-      triggerBatchChangeFlash(flashEntries);
-    }
-
-    // Lưu các delta vào Dexie Local-First Database ngầm
-    applyDeltasToLocalDatabase(deltas).catch(() => {});
-
-    // Phát tín hiệu delta đã nạp sang các tab khác (giúp các tab phụ không cần gửi request lên Firestore)
-    broadcastAppliedDeltas(deltas);
-
-    // Cập nhật mốc đồng bộ mới nhất
-    safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
-
-    return deltas.length;
+    return applyIncomingDeltas(deltas);
   } catch (err) {
     console.warn('[deltaSync] Error pulling deltas:', err);
     return 0;
@@ -408,10 +469,18 @@ const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity threshold
  * - Khi ẩn tab hoặc người dùng không hoạt động > 5 phút: Tạm dừng định thời hoàn toàn (0 Idle Read).
  * - Khi quay lại tab hoặc tương tác: Lập tức sync tức thì (0ms) và kích hoạt lại interval.
  */
-export function startDeltaSyncService(intervalMs: number = 25000): () => void {
+export function startDeltaSyncService(intervalMs: number = 5 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => {};
 
+  // Real-time channel (onSnapshot). The interval below is only a slow safety-net poll.
+  const stopRealtime = startDeltaRealtimeListener();
+
+  let lastTriggerAt = 0;
   const triggerSync = () => {
+    // focus + pageshow + visibilitychange often fire together: collapse them into 1 query
+    const now = Date.now();
+    if (now - lastTriggerAt < 15000) return;
+    lastTriggerAt = now;
     const year = useAppStore.getState().globalYearFilter;
     pullAndApplyDeltas(year).catch(() => {});
   };
@@ -457,6 +526,7 @@ export function startDeltaSyncService(intervalMs: number = 25000): () => void {
   // 1. Initial boot sync & start timer
   triggerSync();
   startPolling();
+  const stopNetworkRecovery = initNetworkRecovery(() => triggerSync());
 
   // 2. Schedule non-blocking background TTL pruning after boot (15s delay)
   setTimeout(() => {
@@ -504,6 +574,8 @@ export function startDeltaSyncService(intervalMs: number = 25000): () => void {
 
   return () => {
     stopPolling();
+    stopNetworkRecovery();
+    stopRealtime();
     window.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('pageshow', handlePageShow);
     window.removeEventListener('focus', handleFocus);
