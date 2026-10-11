@@ -175,33 +175,83 @@ export function useGanttBatchOps({
 
   // Group / Unlink modular tasks
   const handleGroupModularTasks = async (parentTaskId: string, childTaskIds: string[]) => {
+    if (!parentTaskId || !childTaskIds || childTaskIds.length === 0) return;
+
     const now = new Date().toISOString();
     const prevTasks = useAppStore.getState().tasks;
+    const childIdSet = new Set(childTaskIds.map(String));
+    const parentIdStr = String(parentTaskId);
 
     // 0ms Optimistic UI update
-    const updatedTasks = prevTasks.map((t) =>
-      childTaskIds.includes(t.id)
-        ? { ...t, parentTaskId, parentId: parentTaskId, updatedAt: now }
-        : t
-    );
+    const updatedTasks = prevTasks.map((t) => {
+      const tIdStr = String(t.id);
+      if (childIdSet.has(tIdStr)) {
+        return { ...t, parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now };
+      }
+      if (tIdStr === parentIdStr) {
+        return { ...t, isModularParent: true, updatedAt: now };
+      }
+      return t;
+    });
     useAppStore.getState().setTasks(updatedTasks);
+
+    // Auto-expand the parent task in Gantt view so grouped subtasks appear immediately!
+    if (!expandedModularSet.has(parentIdStr)) {
+      toggleModularParent(parentIdStr);
+    }
+
     setIsTaskModularModalOpen(false);
     setSelectedTaskIds([]);
 
     const batch = writeBatch(db);
     childTaskIds.forEach((id) => {
-      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-      batch.update(docRef, { parentTaskId, parentId: parentTaskId, updatedAt: now });
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(id));
+      batch.set(docRef, { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now }, { merge: true });
     });
+    const parentDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentIdStr);
+    batch.set(parentDocRef, { isModularParent: true, updatedAt: now }, { merge: true });
+
+    // Update Dexie (IndexedDB)
+    try {
+      const { localDb } = await import('../../lib/localDb');
+      await Promise.all([
+        ...childTaskIds.map(id => (localDb.tasks.update as any)(String(id), { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now })),
+        (localDb.tasks.update as any)(parentIdStr, { isModularParent: true, updatedAt: now })
+      ]);
+    } catch (e) {
+      console.warn('[useGanttBatchOps] Dexie update on group failed:', e);
+    }
 
     try {
       await batch.commit();
+      const deltaItems: TakaDeltaItem[] = [
+        ...childTaskIds.map(id => {
+          const t = prevTasks.find(item => String(item.id) === String(id));
+          return {
+            docId: String(id),
+            collectionName: 'taka_tasks' as const,
+            action: 'update' as const,
+            isPatch: true,
+            data: { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now },
+            year: t?.projectYear ? String(t.projectYear) : undefined,
+          };
+        }),
+        {
+          docId: parentIdStr,
+          collectionName: 'taka_tasks' as const,
+          action: 'update' as const,
+          isPatch: true,
+          data: { isModularParent: true, updatedAt: now },
+        }
+      ];
+      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
       useAppStore.getState().setToast({
         title: "Success",
         message: `Grouped ${childTaskIds.length} tasks under parent modular task.`
       });
     } catch (err) {
-      console.error(err);
+      console.error('[handleGroupModularTasks] Batch commit error:', err);
       useAppStore.getState().setTasks(prevTasks);
       useAppStore.getState().setToast({
         title: "Error",
@@ -219,8 +269,6 @@ export function useGanttBatchOps({
     const targetSet = new Set(targetIds.map(String));
 
     // Collect all task IDs that need unlinking:
-    // 1. Directly selected tasks
-    // 2. Any subtasks whose parent is one of the target tasks (or parentTaskId is parent's taskCodePhu)
     const parentCodeSet = new Set<string>();
     prevTasks.forEach(t => {
       if (targetSet.has(String(t.id)) && t.taskCodePhu) {
@@ -257,15 +305,15 @@ export function useGanttBatchOps({
 
     const batch = writeBatch(db);
     unlinkedArray.forEach((id) => {
-      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-      batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(id));
+      batch.set(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now }, { merge: true });
     });
 
     // Update Dexie (IndexedDB)
     try {
       const { localDb } = await import('../../lib/localDb');
       await Promise.all(
-        unlinkedArray.map(id => (localDb.tasks.update as any)(id, { parentTaskId: null, parentId: null, updatedAt: now }))
+        unlinkedArray.map(id => (localDb.tasks.update as any)(String(id), { parentTaskId: null, parentId: null, updatedAt: now }))
       );
     } catch (e) {
       console.warn('[useGanttBatchOps] Dexie update on unlink failed:', e);
@@ -274,9 +322,9 @@ export function useGanttBatchOps({
     try {
       await batch.commit();
       const deltaItems: TakaDeltaItem[] = unlinkedArray.map(id => {
-        const t = prevTasks.find(item => String(item.id) === id);
+        const t = prevTasks.find(item => String(item.id) === String(id));
         return {
-          docId: id,
+          docId: String(id),
           collectionName: 'taka_tasks' as const,
           action: 'update' as const,
           isPatch: true,
@@ -292,7 +340,7 @@ export function useGanttBatchOps({
         message: `Unlinked ${unlinkedArray.length} modular task(s).`
       });
     } catch (err) {
-      console.error(err);
+      console.error('[handleUnlinkModularTasks] Batch commit error:', err);
       useAppStore.getState().setTasks(prevTasks);
       useAppStore.getState().setToast({
         title: "Error",

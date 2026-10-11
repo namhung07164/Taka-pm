@@ -70,8 +70,8 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
   // Selected tasks (child candidates)
   const selectedTasks = useMemo(() => {
-    const set = new Set(selectedTaskIds);
-    return tasks.filter((t) => set.has(t.id));
+    const set = new Set(selectedTaskIds.map(String));
+    return tasks.filter((t) => set.has(String(t.id)));
   }, [tasks, selectedTaskIds]);
 
   // Distinct project codes of selected tasks
@@ -86,7 +86,8 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
     const map = new Map<string, number>();
     tasks.forEach((t) => {
       if (t.parentTaskId) {
-        map.set(t.parentTaskId, (map.get(t.parentTaskId) || 0) + 1);
+        const pKey = String(t.parentTaskId);
+        map.set(pKey, (map.get(pKey) || 0) + 1);
       }
     });
     return map;
@@ -99,24 +100,27 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
   // Selected parent tasks that currently have children
   const selectedParentsWithChildren = useMemo(() => {
-    return selectedTasks.filter((t) => (childrenCountMap.get(t.id) || 0) > 0);
+    return selectedTasks.filter((t) => (childrenCountMap.get(String(t.id)) || 0) > 0);
   }, [selectedTasks, childrenCountMap]);
 
-  // All task IDs that will be grouped into the chosen parent:
-  // RULE (1 Lớp Duy Nhất): Gộp task modular chỉ cho 1 lớp thôi.
-  // Nếu task mẹ nào đã có task modular con và gộp vào task mẹ khác thì sẽ gom các task modular con đó vào trong cùng task mẹ và bỏ đi liên kết cũ.
+  // All task IDs that will be grouped into the chosen parent
   const allTargetTaskIds = useMemo(() => {
     const targetSet = new Set<string>();
+    const parentIdStr = selectedParentTaskId ? String(selectedParentTaskId) : null;
+    const selectedSet = new Set(selectedTaskIds.map(String));
+
     selectedTaskIds.forEach((id) => {
-      if (id !== selectedParentTaskId) {
-        targetSet.add(id);
+      const idStr = String(id);
+      if (idStr !== parentIdStr) {
+        targetSet.add(idStr);
       }
     });
 
     tasks.forEach((t) => {
-      if (t.parentTaskId && selectedTaskIds.includes(t.parentTaskId)) {
-        if (t.id !== selectedParentTaskId) {
-          targetSet.add(t.id);
+      const tParentStr = t.parentTaskId ? String(t.parentTaskId) : null;
+      if (tParentStr && selectedSet.has(tParentStr)) {
+        if (String(t.id) !== parentIdStr) {
+          targetSet.add(String(t.id));
         }
       }
     });
@@ -125,13 +129,11 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   }, [selectedTaskIds, selectedParentTaskId, tasks]);
 
   // Candidate parent tasks:
-  // 1. Cannot be in selectedTaskIds (cannot group into self)
-  // 2. Cannot be a child of any selected task (avoid cycle)
-  // 3. STRICT 1-LEVEL CONSTRAINT: A parent task cannot be a child of another task
+  // Must be a top-level task (no parentTaskId).
+  // Can be one of the selected tasks if the user wants to pick a checked task as the parent!
   const candidateParentTasks = useMemo(() => {
-    const selectedSet = new Set(selectedTaskIds);
     return tasks.filter((t) => {
-      if (selectedSet.has(t.id) || t.parentTaskId) return false;
+      if (t.parentTaskId) return false;
       if (filterScope === "same_project" && selectedProjectCodes.size > 0) {
         const pCode = String(t.projectCode || "").trim().toLowerCase();
         if (!selectedProjectCodes.has(pCode)) return false;
@@ -142,7 +144,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
       }
       return true;
     });
-  }, [tasks, selectedTaskIds, filterScope, selectedProjectCodes, searchTerm]);
+  }, [tasks, filterScope, selectedProjectCodes, searchTerm]);
 
   const zInfo = useOverlayStack({
     layer: 'MODAL_MODULAR',
@@ -153,12 +155,12 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
   if (!isOpen) return null;
 
-  const chosenParentTask = selectedParentTaskId ? tasks.find((t) => t.id === selectedParentTaskId) : null;
+  const chosenParentTask = selectedParentTaskId ? tasks.find((t) => String(t.id) === String(selectedParentTaskId)) : null;
 
   const handleConfirmGroup = () => {
     if (!selectedParentTaskId || allTargetTaskIds.length === 0) return;
     const groupFn = onGroupTasks || onGroup;
-    if (typeof groupFn === 'function') groupFn(selectedParentTaskId, allTargetTaskIds);
+    if (typeof groupFn === 'function') groupFn(String(selectedParentTaskId), allTargetTaskIds);
   };
 
   const handleConfirmUnlink = () => {
