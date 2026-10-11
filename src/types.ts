@@ -105,6 +105,13 @@ export interface TaskComment {
   attachments?: { name: string; url: string; fullPath: string; type?: string }[];
 }
 
+export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface TaskPredecessor {
+  taskId: string;
+  type: PredecessorType;
+}
+
 export interface Task {
   id: string;
   projectId?: string;
@@ -127,6 +134,7 @@ export interface Task {
   party?: string;
   delegation?: boolean;
   predecessor?: string;
+  predecessors?: TaskPredecessor[]; // Mảng chứa Hard Link và Loại liên kết
   notes?: TaskNote[];
   runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming';
   isShared?: boolean;

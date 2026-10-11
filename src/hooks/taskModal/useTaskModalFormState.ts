@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
-import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap, splitPredecessors, computeTaskCode } from '../../lib/ganttUtils';
-import { findTaskByQueryOrCode, parsePredecessorToken } from '../../lib/predecessorMatchUtils';
+import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap } from '../../lib/ganttUtils';
 import { useAppStore } from '../../store/useAppStore';
 
 export interface UseTaskModalFormStateProps {
@@ -52,34 +51,17 @@ export function useTaskModalFormState({
       duration: '0',
       durationManual: true,
       finishManual: false,
-      party: targetProj?.party || 'Takashimaya'
+      party: targetProj?.party || 'Takashimaya',
+      predecessors: task?.predecessors || []
     };
   });
 
   useEffect(() => {
     if (!isOpen) return;
     if (task) {
-      const initialIds = task.predecessorTaskIds || [];
-      let finalIds = initialIds;
-      
-      // Auto-backfill IDs for old tasks that only have the string field
-      if (task.predecessor && initialIds.length === 0) {
-        try {
-          const knownCodes = tasks.map(t => computeTaskCode(projects, tasks, t));
-          const tokens = splitPredecessors(task.predecessor, knownCodes);
-          finalIds = tokens.map(tok => {
-            const { query } = parsePredecessorToken(tok);
-            if (!query) return '';
-            const matched = findTaskByQueryOrCode(query, tasks, projects, task);
-            return matched ? matched.id : '';
-          });
-        } catch (e) {}
-      }
-
       setFormData({
         ...task,
-        predecessor: task.predecessor || '',
-        predecessorTaskIds: finalIds
+        predecessor: task.predecessor || ''
       });
     } else {
       const defaultDate = getDefaultDatetimeLocal();
@@ -103,7 +85,8 @@ export function useTaskModalFormState({
         duration: '0',
         durationManual: true,
         finishManual: false,
-        party: targetProj?.party || 'Takashimaya'
+        party: targetProj?.party || 'Takashimaya',
+        predecessors: []
       });
     }
   }, [task?.id, isOpen, prefillProjectCode, prefillProjectYear, prefillProjectStore]);
@@ -169,7 +152,6 @@ export function useTaskModalFormState({
           finishManual: updated.finishManual ?? false
         };
         const parsed = parsePredecessors(val, taskNoMap, dummyTask);
-        updated.predecessorTaskIds = parsed.map(p => p.task?.id || '');
 
         if (parsed.length > 0) {
           const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);
@@ -193,10 +175,6 @@ export function useTaskModalFormState({
     }
 
     setFormData(updated);
-  };
-
-  const handlePredecessorTaskIdsChange = (ids: string[]) => {
-    setFormData(prev => ({ ...prev, predecessorTaskIds: ids }));
   };
 
   const handleApplyPredecessorDates = () => {
@@ -320,7 +298,6 @@ export function useTaskModalFormState({
     currentProject,
     resolvedPredecessors,
     handlePredecessorChange,
-    handlePredecessorTaskIdsChange,
     handleApplyPredecessorDates,
     handleDateChange,
     handleDurationChange,
