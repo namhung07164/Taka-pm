@@ -99,22 +99,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     }
   };
 
-  // 2. Mouse Wheel & Trackpad Pinch Zoom Detection
-  const handleWheel = (e: React.WheelEvent) => {
-    // Scrolling wheel up (zoom in) or trackpad pinch (e.ctrlKey)
-    if (e.deltaY < 0 || e.ctrlKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      const targetScale = e.ctrlKey ? 1.6 : 1.35;
-      onOpenFullscreen({
-        url: img.url,
-        title: img.title,
-        initialScale: targetScale,
-      });
-    }
-  };
-
-  // 3. Regular click to open fullscreen at 1x
+  // Regular click to open full display mode directly
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onOpenFullscreen({
@@ -131,11 +116,11 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
-      onWheel={handleWheel}
+      onClick={handleClick}
       onMouseEnter={() => setShowZoomHint(true)}
       onMouseLeave={() => setShowZoomHint(false)}
       className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[190px] sm:max-h-[280px] flex items-center justify-center group/thumb p-1 touch-manipulation cursor-pointer"
-      title="Click or pinch/scroll to zoom in fullscreen"
+      title="Click to view full display HD"
     >
       {!isImgError ? (
         <img
@@ -144,7 +129,6 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
           loading="lazy"
           decoding="async"
           onError={() => setIsImgError(true)}
-          onClick={handleClick}
           style={{
             transform: previewScale > 1 ? `scale(${previewScale})` : undefined,
             transition: isPinching ? 'none' : 'transform 0.15s ease-out',
@@ -154,7 +138,6 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
         />
       ) : (
         <div
-          onClick={handleClick}
           className="flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-3 text-center w-full"
         >
           <span className="font-semibold text-slate-600 dark:text-slate-300">
@@ -166,7 +149,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
         </div>
       )}
 
-      {/* Floating Action Bar: Maximize & Zoom Hint */}
+      {/* Floating Action Bar: Maximize & Zoom HD */}
       <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-90 group-hover/thumb:opacity-100 transition-opacity z-10">
         <button
           type="button"
@@ -179,14 +162,14 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
         </button>
       </div>
 
-      {/* Interactive Micro-badge feedback when pinching or hovering */}
+      {/* Interactive Micro-badge feedback */}
       {(showZoomHint || previewScale > 1) && (
         <div className="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur-xs text-white text-[9px] px-2 py-0.5 rounded-full pointer-events-none flex items-center gap-1 font-mono shadow-md animate-in fade-in duration-100 z-10">
           <ZoomIn className="w-2.5 h-2.5 text-blue-400" />
           <span>
             {previewScale > 1
               ? `Zooming ${(previewScale * 100).toFixed(0)}%...`
-              : 'Pinch / Scroll to expand'}
+              : 'Click to open full display'}
           </span>
         </div>
       )}

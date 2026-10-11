@@ -277,8 +277,8 @@ export function LayoutUnitLightboxModal({
               minScale={0.5}
               maxScale={8}
               centerOnInit
-              wheel={{ step: 0.02 }}
-              pinch={{ step: 5 }}
+              wheel={{ step: 0.003 }}
+              pinch={{ step: 2 }}
               doubleClick={{ mode: 'toggle' }}
             >
               <TransformComponent
