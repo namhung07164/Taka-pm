@@ -515,7 +515,7 @@ export function computeActProgressFromSummaries(
 export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
   let computedTakStart = p.computedTakStart || p.start;
   let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl;
-  let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
+  let computedOpening = p.computedOpening || p.opening;
 
   let derivedFromTasks = false;
   let projectTasks: Task[] = [];
@@ -524,7 +524,6 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
     const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
     const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
 
-    let hasOpeningTask = false;
     tasks.forEach(t => {
       if (!t.projectCode) return;
       const tCode = String(t.projectCode).trim().toLowerCase();
@@ -541,20 +540,13 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
         computedTakCompl = t.finish;
       }
       const name = t.name ? String(t.name).toLowerCase() : "";
-      if ((name.includes("opening") || name.includes("open")) && t.finish) {
-        if (!hasOpeningTask || t.finish > computedOpening) {
-          computedOpening = t.finish;
-          hasOpeningTask = true;
-        }
+      if ((name.includes("opening") || name.includes("open")) && t.finish && (!computedOpening || t.finish > computedOpening)) {
+        computedOpening = t.finish;
       }
     });
-    if (!hasOpeningTask && p.openingMode !== 'manual') {
-      computedOpening = '';
-    }
   }
 
   if (!derivedFromTasks && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-    let hasOpeningTask = false;
     p.taskSummaries.forEach(ts => {
       if (ts.start && (!computedTakStart || ts.start < computedTakStart)) {
         computedTakStart = ts.start;
@@ -563,16 +555,10 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
         computedTakCompl = ts.finish;
       }
       const name = ts.name ? String(ts.name).toLowerCase() : "";
-      if ((name.includes("opening") || name.includes("open")) && ts.finish) {
-        if (!hasOpeningTask || ts.finish > computedOpening) {
-          computedOpening = ts.finish;
-          hasOpeningTask = true;
-        }
+      if ((name.includes("opening") || name.includes("open")) && ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+        computedOpening = ts.finish;
       }
     });
-    if (!hasOpeningTask && p.openingMode !== 'manual') {
-      computedOpening = '';
-    }
   }
 
   const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
@@ -1037,21 +1023,10 @@ export function enrichProjects(
     return _lastEnrichedResult;
   }
 
-  const tasksByProjectId = new Map<string, Task[]>();
   const tasksByFullKey = new Map<string, Task[]>();
   const tasksByCodeOnly = new Map<string, Task[]>();
 
   tasks.forEach(t => {
-    if (t.isDeleted) return;
-    if (t.projectId) {
-      const pid = String(t.projectId);
-      let pList = tasksByProjectId.get(pid);
-      if (!pList) {
-        pList = [];
-        tasksByProjectId.set(pid, pList);
-      }
-      pList.push(t);
-    }
     if (!t.projectCode) return;
     const tCode = String(t.projectCode).trim().toLowerCase();
     const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
@@ -1088,16 +1063,6 @@ export function enrichProjects(
     const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
 
     const matchedTaskMap = new Map<string, Task>();
-
-    // Check direct ID match first
-    if (p.id) {
-      const idTasks = tasksByProjectId.get(String(p.id));
-      if (idTasks) {
-        for (let i = 0; i < idTasks.length; i++) {
-          matchedTaskMap.set(idTasks[i].id, idTasks[i]);
-        }
-      }
-    }
 
     // Check direct key and part keys
     const directKey = `${pCode}-${pYear}-${pStore}`;
@@ -1177,10 +1142,9 @@ export function enrichProjects(
 
     let computedTakStart = p.computedTakStart || p.start;
     let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl || undefined;
-    let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
+    let computedOpening = p.computedOpening || p.opening;
 
     if (projectTasks.length > 0) {
-      let hasOpeningTask = false;
       for (let i = 0; i < projectTasks.length; i++) {
         const t = projectTasks[i];
         if (t.start && (!computedTakStart || t.start < computedTakStart)) {
@@ -1190,18 +1154,11 @@ export function enrichProjects(
           computedTakCompl = t.finish;
         }
         const name = t.name ? String(t.name).toLowerCase() : "";
-        if ((name.includes("opening") || name.includes("open")) && t.finish) {
-          if (!hasOpeningTask || t.finish > computedOpening) {
-            computedOpening = t.finish;
-            hasOpeningTask = true;
-          }
+        if ((name.includes("opening") || name.includes("open")) && t.finish && (!computedOpening || t.finish > computedOpening)) {
+          computedOpening = t.finish;
         }
       }
-      if (!hasOpeningTask && p.openingMode !== 'manual') {
-        computedOpening = '';
-      }
     } else if (taskSummaries.length > 0) {
-      let hasOpeningTask = false;
       for (let i = 0; i < taskSummaries.length; i++) {
         const ts = taskSummaries[i];
         if (ts.start && !computedTakStart) {
@@ -1215,15 +1172,9 @@ export function enrichProjects(
           computedTakCompl = ts.finish;
         }
         const name = ts.name ? String(ts.name).toLowerCase() : "";
-        if ((name.includes("opening") || name.includes("open")) && ts.finish) {
-          if (!hasOpeningTask || ts.finish > computedOpening) {
-            computedOpening = ts.finish;
-            hasOpeningTask = true;
-          }
+        if ((name.includes("opening") || name.includes("open")) && ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+          computedOpening = ts.finish;
         }
-      }
-      if (!hasOpeningTask && p.openingMode !== 'manual') {
-        computedOpening = '';
       }
     }
 

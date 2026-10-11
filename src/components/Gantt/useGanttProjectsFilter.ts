@@ -122,19 +122,7 @@ export function useGanttProjectsFilter({
   const uniqueStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const locationOptions = useLocationOptions();
 
-  // Index tasks by project ID, project key, and code
-  const tasksByProjectId = useMemo(() => {
-    const map = new Map<string, Task[]>();
-    tasks.forEach(t => {
-      if (t.projectId) {
-        const pId = String(t.projectId);
-        if (!map.has(pId)) map.set(pId, []);
-        map.get(pId)!.push(t);
-      }
-    });
-    return map;
-  }, [tasks]);
-
+  // Index tasks by project code
   const tasksByProject = useMemo(() => {
     const map = new Map<string, Task[]>();
     tasks.forEach(t => {
@@ -157,40 +145,10 @@ export function useGanttProjectsFilter({
 
   const getGroupTasksForProject = useCallback(
     (p: Project): Task[] => {
-      if (p.id && tasksByProjectId.has(String(p.id))) {
-        const found = tasksByProjectId.get(String(p.id))!;
-        if (found.length > 0) return found;
-      }
       const key = `${String(p.code || '').trim().toUpperCase()}_${String(p.year || '').trim()}_${String(p.store || '').trim().toUpperCase()}`;
-      const foundByKey = tasksByProject.get(key);
-      if (foundByKey && foundByKey.length > 0) return foundByKey;
-
-      const foundByCode = tasksMapByCode.get(String(p.code || '').trim().toUpperCase());
-      if (foundByCode && foundByCode.length > 0) return foundByCode;
-
-      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        return p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
-      }
-
-      return [];
+      return tasksByProject.get(key) || tasksMapByCode.get(String(p.code || '').trim().toUpperCase()) || [];
     },
-    [tasksByProjectId, tasksByProject, tasksMapByCode]
+    [tasksByProject, tasksMapByCode]
   );
 
   // Pre-indexed Search Pool Cache to eliminate Garbage Collection pauses on mobile Safari

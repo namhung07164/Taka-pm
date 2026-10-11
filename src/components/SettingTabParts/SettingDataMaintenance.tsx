@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers, CheckCheck } from "lucide-react";
 import { clearAllIDB } from "../../lib/idb";
-import { clearDexieDatabase } from "../../lib/localDb";
 import { useAppStore } from "../../store/useAppStore";
 import { syncAllProjectsTaskCountsToFirestore } from "../../lib/projectDatesService";
 import { convertAllSubtaskCodesAndPredecessorsToHash } from "../../lib/ganttUtils";
@@ -35,36 +34,14 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
   const [isDeduplicating, setIsDeduplicating] = useState(false);
 
   const handleClearLocalCache = async () => {
-    if (window.confirm("Do you want to clear all local IndexedDB cache, delta markers, and resync fresh data from server?")) {
+    if (window.confirm("Do you want to clear all local IndexedDB cache and resync fresh data from server?")) {
       try {
-        // 1. Wipe Dexie IndexedDB tables
-        await clearDexieDatabase();
-        // 2. Wipe legacy IDB store
+        localStorage.removeItem("taka_expanded_projects");
         await clearAllIDB();
-        
-        // 3. Clear LocalStorage sync timestamps & fingerprint caches
-        const keysToRemove = [
-          "taka_last_delta_sync_time_v1",
-          "taka_years_meta_fingerprint_v1",
-          "taka_expanded_projects",
-        ];
-        if (typeof localStorage !== "undefined") {
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && (k.startsWith("taka_year_data_v1_") || k.startsWith("taka_read_notifs_"))) {
-              keysToRemove.push(k);
-            }
-          }
-          keysToRemove.forEach((k) => localStorage.removeItem(k));
-        }
-        if (typeof sessionStorage !== "undefined") {
-          sessionStorage.clear();
-        }
-
-        useAppStore.getState().setToast({ title: "Cache Cleared", message: "Local cache cleared completely. Reloading app...", type: "success" });
-        setTimeout(() => window.location.reload(), 400);
+        useAppStore.getState().setToast({ title: "Success", message: "Local cache cleared. Reloading app..." });
+        setTimeout(() => window.location.reload(), 600);
       } catch (e) {
-        console.error("Failed to clear cache:", e);
+        console.error(e);
         window.location.reload();
       }
     }

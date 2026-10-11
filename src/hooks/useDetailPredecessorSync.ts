@@ -185,16 +185,7 @@ export function useDetailPredecessorSync({
       isConvertingToHashRef.current = false;
       setIsConvertingToHash(false);
     }
-  }, [tasks, projects, hasWritePermission]);
-
-  useEffect(() => {
-    if (hasAutoHealedRef.current) return;
-    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
-    if (!hasWritePermission) return;
-
-    hasAutoHealedRef.current = true;
-    handleConvertAllSubtasksToHash(false).catch(() => {});
-  }, [tasks, projects, hasWritePermission, handleConvertAllSubtasksToHash]);
+  }, [tasks, projects]);
 
   return {
     isSyncingPredecessors,

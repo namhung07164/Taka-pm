@@ -145,7 +145,7 @@ export function useDetailData({
             const taskMatches = groupTasks.some((t, idx) => {
               const taskFields = [
                 t.taskCodePhu,
-                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
                 t.name,
                 t.duration,
                 t.start,
@@ -245,7 +245,7 @@ export function useDetailData({
             const taskMatches = groupTasks.some((t, idx) => {
               const taskFields = [
                 t.taskCodePhu,
-                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
                 t.name,
                 t.duration,
                 t.start,
@@ -375,30 +375,28 @@ export function useDetailData({
   }, []);
 
   const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
-    const strTaskId = String(taskId);
     setSelectedTaskIds(prev => {
-      const next = new Set(Array.from(prev).map(String));
-      const isChecked = !next.has(strTaskId);
+      const next = new Set(prev);
+      const isChecked = !prev.has(taskId);
       if (isChecked) {
-        if (shiftKey && lastCheckedTaskIdRef.current && lastCheckedTaskIdRef.current !== strTaskId) {
-          const visibleIds = allVisibleTaskIds.map(String);
-          const lastIdx = visibleIds.indexOf(lastCheckedTaskIdRef.current);
-          const currentIdx = visibleIds.indexOf(strTaskId);
+        if (shiftKey && lastCheckedTaskIdRef.current) {
+          const lastIdx = allVisibleTaskIds.indexOf(lastCheckedTaskIdRef.current);
+          const currentIdx = allVisibleTaskIds.indexOf(taskId);
           if (lastIdx !== -1 && currentIdx !== -1) {
             const minIdx = Math.min(lastIdx, currentIdx);
             const maxIdx = Math.max(lastIdx, currentIdx);
             for (let idx = minIdx; idx <= maxIdx; idx++) {
-              next.add(visibleIds[idx]);
+              next.add(allVisibleTaskIds[idx]);
             }
           } else {
-            next.add(strTaskId);
+            next.add(taskId);
           }
         } else {
-          next.add(strTaskId);
+          next.add(taskId);
         }
-        lastCheckedTaskIdRef.current = strTaskId;
+        lastCheckedTaskIdRef.current = taskId;
       } else {
-        next.delete(strTaskId);
+        next.delete(taskId);
         lastCheckedTaskIdRef.current = null;
       }
       return next;

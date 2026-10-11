@@ -50,7 +50,6 @@ export type GanttTableRow =
       type: 'task';
       key: string;
       task: Task;
-      taskIndex?: number;
       project: Project;
       parentTask?: Task;
       isChild: boolean;

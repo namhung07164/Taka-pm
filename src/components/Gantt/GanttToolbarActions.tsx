@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Palette, Play, Layers, Unlink, Trash2, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
+import { Palette, Play, Layers, Trash2, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 import { cn } from '../../lib/utils';
 
@@ -8,7 +8,6 @@ interface GanttToolbarActionsProps {
   selectedTaskIds: string[];
   handleSetTextColor: (color: string | null) => void;
   handleSetBaselineSelected: () => void;
-  handleUnlinkModularTasks?: (childTaskIds?: string[]) => void | Promise<void>;
   setIsTaskModularModalOpen: (val: boolean) => void;
   sumMode: "none" | "duration";
   setSumMode: (val: "none" | "duration") => void;
@@ -35,7 +34,6 @@ export function GanttToolbarActions({
   selectedTaskIds,
   handleSetTextColor,
   handleSetBaselineSelected,
-  handleUnlinkModularTasks,
   setIsTaskModularModalOpen,
   sumMode,
   setSumMode,
@@ -129,31 +127,10 @@ export function GanttToolbarActions({
             ? "bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-100 cursor-pointer"
             : "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 text-slate-400"
         )}
-        title={t('Group selected tasks into a parent modular task')}
+        title={t('Group or unlink selected modular tasks')}
       >
         <Layers className="w-3.5 h-3.5" />
         <span className="hidden xl:inline">{t('Modular')}</span>
-      </button>
-
-      {/* Unlink Selected Tasks from Parent Link */}
-      <button
-        type="button"
-        disabled={selectedTaskIds.length < 1}
-        onClick={() => {
-          if (handleUnlinkModularTasks) {
-            handleUnlinkModularTasks(selectedTaskIds);
-          }
-        }}
-        className={cn(
-          "p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all active:scale-95",
-          selectedTaskIds.length >= 1
-            ? "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-100 cursor-pointer"
-            : "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 text-slate-400"
-        )}
-        title={t('Unlink selected tasks from parent modular link')}
-      >
-        <Unlink className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-        <span>{t('Unlink')}{selectedTaskIds.length > 0 ? ` (${selectedTaskIds.length})` : ''}</span>
       </button>
 
       {/* Sum Duration */}

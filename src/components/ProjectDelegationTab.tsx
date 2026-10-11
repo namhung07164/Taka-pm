@@ -98,60 +98,27 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
 
   const projectGroups = useMemo(() => {
     if (!project) return [];
-    
-    // Normalize current project identifiers
-    const normalizedProjCode = String(project.code || '').trim().toLowerCase();
-    const projCodeParts = normalizedProjCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-    
-    // Collect all task IDs and taskCodePhu belonging to this project
-    const projectTaskIds = new Set<string>();
-    const projectTaskCodePhuSet = new Set<string>();
-
-    tasks.forEach(t => {
-      if (!t) return;
-      const tProjCode = String(t.projectCode || '').trim().toLowerCase();
-      const codeParts = tProjCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-      const matchesCode = projCodeParts.some(cp => codeParts.includes(cp));
-      const matchesId = Boolean(project.id && t.projectId === project.id);
-      
-      if (matchesCode || matchesId) {
-        if (t.id) projectTaskIds.add(t.id);
-        if (t.taskCodePhu) projectTaskCodePhuSet.add(String(t.taskCodePhu).trim().toLowerCase());
-      }
-    });
-
+    const seenParentTaskIds = new Set<string>();
     return (delegationGroups || []).filter(g => {
-      if (!g) return false;
+      if (!g || !g.parentTaskId) return false;
+      if (seenParentTaskIds.has(g.parentTaskId)) return false;
+      seenParentTaskIds.add(g.parentTaskId);
 
-      const gParentTaskId = String(g.parentTaskId || '').trim();
-      const gParentTaskIdLower = gParentTaskId.toLowerCase();
-      const gProjectCode = String(g.projectCode || '').trim().toLowerCase();
-      const gProjectId = String((g as any).projectId || '').trim();
+      const t = tasks.find(x => x && x.id === g.parentTaskId);
+      const isMatchingProject = 
+        (t && t.projectCode === project.code) ||
+        (g.projectCode === project.code) ||
+        (g.parentTaskId === project.code);
 
-      // 1. Direct match with project tasks
-      const matchesTask = Boolean(
-        gParentTaskId && (projectTaskIds.has(gParentTaskId) || projectTaskCodePhuSet.has(gParentTaskIdLower))
-      );
+      const isMatchingYear = 
+        !project.year || !g.projectYear || String(g.projectYear) === String(project.year) || (t && String(t.projectYear) === String(project.year));
 
-      // 2. Direct match with project code or project ID
-      const matchesDirectProject = Boolean(
-        (gProjectCode && projCodeParts.includes(gProjectCode)) ||
-        (gProjectId && project.id && gProjectId === project.id) ||
-        (gParentTaskId && projCodeParts.includes(gParentTaskIdLower)) ||
-        (gParentTaskId && project.id && gParentTaskId === project.id)
-      );
+      const isMatchingStore = 
+        !project.store || !g.projectStore || String(g.projectStore).toLowerCase() === String(project.store).toLowerCase() || (t && String(t.projectStore).toLowerCase() === String(project.store).toLowerCase());
 
-      // 3. Indirect match via parent task's project code
-      const parentTask = tasks.find(x => x && (x.id === g.parentTaskId || (x.taskCodePhu && String(x.taskCodePhu).toLowerCase() === gParentTaskIdLower)));
-      const matchesTaskProjectCode = parentTask ? Boolean(
-        projCodeParts.some(cp => String(parentTask.projectCode || '').trim().toLowerCase().split(/[,;/]+/).map(s => s.trim()).includes(cp)) ||
-        (project.id && parentTask.projectId === project.id)
-      ) : false;
-
-      return matchesTask || matchesDirectProject || matchesTaskProjectCode;
+      return isMatchingProject && isMatchingYear && isMatchingStore;
     }).map(g => {
-      const gParentTaskIdLower = String(g.parentTaskId || '').trim().toLowerCase();
-      const parentTask = tasks.find(t => t && (t.id === g.parentTaskId || (t.taskCodePhu && String(t.taskCodePhu).toLowerCase() === gParentTaskIdLower)));
+      const parentTask = tasks.find(t => t && t.id === g.parentTaskId);
       const isChildTask = parentTask ? Boolean(parentTask.parentTaskId) : false;
       const rootParentTask = isChildTask ? tasks.find(t => t.id === parentTask?.parentTaskId) : null;
       return {

@@ -1,22 +1,19 @@
 import { setDoc } from "../lib/firebase";
-import { safeGetItemLocal } from "./storage";
-import { db, APP_ID } from "./firebase";
-import { collection, doc } from 'firebase/firestore';
-
+import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "./storage";
 export interface UndoAction {
   description: string;
   revert: () => Promise<void>;
-  redo?: () => Promise<void>;
-  timestamp?: number;
 }
 
-type Listener = (undoStack: UndoAction[], redoStack: UndoAction[]) => void;
+type Listener = (stack: UndoAction[]) => void;
 
 let stack: UndoAction[] = [];
-let redoStack: UndoAction[] = [];
 let listeners: Listener[] = [];
 let currentBatch: UndoAction[] | null = null;
 let currentBatchDescription = "";
+
+import { db, APP_ID } from "./firebase";
+import { collection, doc } from 'firebase/firestore';
 
 export const logUserAction = async (description: string) => {
   try {
@@ -59,17 +56,9 @@ export const undoManager = {
     const actionsToRevert = [...currentBatch];
     const batchedAction: UndoAction = {
       description: currentBatchDescription,
-      timestamp: Date.now(),
       revert: async () => {
         for (let i = actionsToRevert.length - 1; i >= 0; i--) {
           await actionsToRevert[i].revert();
-        }
-      },
-      redo: async () => {
-        for (let i = 0; i < actionsToRevert.length; i++) {
-          if (actionsToRevert[i].redo) {
-            await actionsToRevert[i].redo!();
-          }
         }
       }
     };
@@ -86,15 +75,8 @@ export const undoManager = {
       currentBatch.push(action);
       return;
     }
-    if (!action.timestamp) {
-      action.timestamp = Date.now();
-    }
     stack.push(action);
-    if (stack.length > 50) stack.shift(); // Keep last 50 actions in multi-level stack
-    
-    // Clear redo stack on any new user action (standard undo/redo command pattern)
-    redoStack = [];
-    
+    if (stack.length > 50) stack.shift(); // Keep last 50 actions
     notify();
     if (!skipLog) {
       logUserAction(action.description);
@@ -107,9 +89,6 @@ export const undoManager = {
       notify();
       try {
         await action.revert();
-        redoStack.push(action);
-        if (redoStack.length > 50) redoStack.shift();
-        notify();
         logUserAction(`Undo: ${action.description}`);
       } catch (e) {
         console.error("Failed to revert action:", e);
@@ -117,39 +96,10 @@ export const undoManager = {
     }
   },
 
-  redo: async () => {
-    const action = redoStack.pop();
-    if (action) {
-      notify();
-      try {
-        if (action.redo) {
-          await action.redo();
-        }
-        stack.push(action);
-        if (stack.length > 50) stack.shift();
-        notify();
-        logUserAction(`Redo: ${action.description}`);
-      } catch (e) {
-        console.error("Failed to redo action:", e);
-      }
-    }
-  },
-
-  canUndo: () => stack.length > 0,
-  canRedo: () => redoStack.length > 0,
-
   getStack: () => stack,
-  getRedoStack: () => redoStack,
-
-  clear: () => {
-    stack = [];
-    redoStack = [];
-    currentBatch = null;
-    notify();
-  },
 
   subscribe: (listener: Listener) => {
-    listener([...stack], [...redoStack]);
+    listener([...stack]);
     listeners.push(listener);
     return () => {
       listeners = listeners.filter((l) => l !== listener);
@@ -158,7 +108,5 @@ export const undoManager = {
 };
 
 function notify() {
-  const currentStack = [...stack];
-  const currentRedoStack = [...redoStack];
-  listeners.forEach((l) => l(currentStack, currentRedoStack));
+  listeners.forEach((l) => l([...stack]));
 }

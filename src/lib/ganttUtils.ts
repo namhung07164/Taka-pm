@@ -426,17 +426,7 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (!a) return 1;
     if (!b) return -1;
 
-    // 1. Prioritize orderIndex if explicitly assigned (0, 1, 2, 3...)
-    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? Number(a.orderIndex) : null;
-    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? Number(b.orderIndex) : null;
-
-    if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
-      return valAOrder - valBOrder;
-    }
-    if (valAOrder !== null && valBOrder === null) return -1;
-    if (valAOrder === null && valBOrder !== null) return 1;
-
-    // 2. Prioritize natural subtask index extracted from taskCodePhu (e.g. #1, -1, #13, -13)
+    // 1. Prioritize natural subtask index extracted from taskCodePhu (e.g. #1, -1, #13, -13) or orderIndex/name
     const codeA = a.taskCodePhu || (a.projectCode && a.orderIndex !== undefined ? `${a.projectCode}#${a.orderIndex + 1}` : a.name || '');
     const codeB = b.taskCodePhu || (b.projectCode && b.orderIndex !== undefined ? `${b.projectCode}#${b.orderIndex + 1}` : b.name || '');
     const numA = extractSubtaskIndex(codeA);
@@ -449,6 +439,16 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     } else if (numA === null && numB !== null) {
       return 1;
     }
+
+    // 2. Prioritize orderIndex if explicitly assigned
+    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? a.orderIndex : null;
+    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? b.orderIndex : null;
+
+    if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
+      return valAOrder - valBOrder;
+    }
+    if (valAOrder !== null && valBOrder === null) return -1;
+    if (valAOrder === null && valBOrder !== null) return 1;
 
     // 3. If both have taskCodePhu without single trailing number, compare with natural alphanumeric sort
     if (codeA && codeB && codeA !== codeB) {
@@ -727,22 +727,28 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 
 export function computeTaskCode(projects: Project[], tasks: Task[], task: Task): string {
   if (!task) return '';
+  if (task.taskCodePhu && task.taskCodePhu.trim()) {
+    return task.taskCodePhu.trim();
+  }
+  if (!projects || !Array.isArray(projects) || !tasks || !Array.isArray(tasks)) return '';
 
   const taskPCode = String(task.projectCode || '').trim();
-  const p = (task.projectId ? (projects || []).find(proj => proj.id === task.projectId) : undefined) ||
-            (taskPCode ? (projects || []).find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
+  if (!taskPCode && !task.projectId) return '';
+
+  const p = (task.projectId ? projects.find(proj => proj.id === task.projectId) : undefined) ||
+            (taskPCode ? projects.find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
 
   const currentPCode = p ? String(p.code).trim() : taskPCode;
+  if (!currentPCode) return '';
 
-  if (!currentPCode) {
-    if (task.taskCodePhu && task.taskCodePhu.trim()) return task.taskCodePhu.trim();
-    return '';
+  if (task.orderIndex !== undefined && task.orderIndex !== null) {
+    return `${currentPCode}#${Number(task.orderIndex) + 1}`;
   }
 
-  const pTasks = (tasks || []).filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
+  const pTasks = tasks.filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
   const sorted = sortGroupTasks(pTasks);
   const idx = sorted.findIndex(t => t.id === task.id);
-  const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? task.orderIndex + 1 : 1);
+  const orderNum = idx !== -1 ? idx + 1 : 1;
 
   return `${currentPCode}#${orderNum}`;
 }
@@ -768,18 +774,13 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
   const tasksByGroupKey = new Map<string, Task[]>();
   for (let idx = 0; idx < tasks.length; idx++) {
     const t = tasks[idx];
-    if (!t) continue;
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      map.set(t.id, t.taskCodePhu.trim());
+      continue;
+    }
     const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
               (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
     const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
-
-    if (!pCode) {
-      if (t.taskCodePhu && t.taskCodePhu.trim()) {
-        map.set(t.id, t.taskCodePhu.trim());
-      }
-      continue;
-    }
-
     const groupKey = `${pCode}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
     
     let list = tasksByGroupKey.get(groupKey);
@@ -796,8 +797,8 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
       const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
                 (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
       const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
-      const orderNum = i + 1;
-      const code = pCode ? `${pCode}#${orderNum}` : (t.taskCodePhu || '');
+      const orderNum = t.orderIndex !== undefined ? t.orderIndex + 1 : i + 1;
+      const code = pCode ? `${pCode}#${orderNum}` : '';
       map.set(t.id, code);
     });
   });
@@ -1312,7 +1313,7 @@ export function reorderAndCalculateTasks(
 
   reorderedGroupTasks.forEach((t, idx) => {
     const newOrderIndex = idx;
-    const newTaskCodePhu = `${targetPrjCode}#${idx + 1}`;
+    const newTaskCodePhu = `${targetPrjCode}-${idx + 1}`;
     const isMoved = tasksToMoveIds.includes(t.id);
     const hasOrderChanged = t.orderIndex !== newOrderIndex || t.taskCodePhu !== newTaskCodePhu;
 
@@ -1671,24 +1672,47 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
   changedCount: number;
   updatesToSave: Array<{ id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }>;
 } {
-  const sortedProjects = [...(allProjects || [])]
-    .filter(p => p && p.code && p.code.trim())
-    .sort((a, b) => String(b.code).trim().length - String(a.code).trim().length);
-
-  const canonicalTaskCodes = computeAllTaskCodes(allProjects, allTasks);
+  const projectCodes = new Set((allProjects || []).map(p => String(p.code || '').trim()).filter(Boolean));
+  
+  // 1. Build map of old codes to new codes for all tasks
   const taskOldToNewCodeMap = new Map<string, string>();
-
-  const updatedTasksWithCodes = (allTasks || []).map((t, idx) => {
+  
+  const updatedTasksWithCodes = (allTasks || []).map(t => {
     const oldCode = (t.taskCodePhu || '').trim();
-    const newCode = canonicalTaskCodes.get(t.id) || oldCode;
+    let newCode = oldCode;
+    const pCode = String(t.projectCode || '').trim();
 
-    if (oldCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
-      taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
+    if (oldCode) {
+      if (pCode && oldCode.toLowerCase().startsWith(pCode.toLowerCase() + '-')) {
+        const suffix = oldCode.substring(pCode.length + 1);
+        if (/^\d+$/.test(suffix)) {
+          newCode = `${pCode}#${suffix}`;
+        }
+      } else {
+        const dashMatch = oldCode.match(/^(.*)-(\d+)$/);
+        if (dashMatch) {
+          const prefix = dashMatch[1];
+          const digits = dashMatch[2];
+          const isKnown = projectCodes.has(prefix) || 
+            (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
+            (pCode && prefix.toLowerCase() === pCode.toLowerCase());
+          if (isKnown || prefix.length >= 2) {
+            const canonicalPrefix = (allProjects || []).find(p => p.code && p.code.toLowerCase() === prefix.toLowerCase())?.code || prefix;
+            newCode = `${canonicalPrefix}#${digits}`;
+          }
+        }
+      }
+    } else if (pCode) {
+      const order = (t.orderIndex !== undefined ? t.orderIndex : 0) + 1;
+      newCode = `${pCode}#${order}`;
     }
 
+    if (oldCode && oldCode !== newCode) {
+      taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
+    }
+    
     return {
       ...t,
-      orderIndex: (t.orderIndex !== undefined && t.orderIndex !== null) ? t.orderIndex : idx,
       taskCodePhu: newCode
     };
   });
@@ -1724,7 +1748,8 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
         if (dashMatch) {
           const prefix = dashMatch[1];
           const digits = dashMatch[2];
-          const isKnownProj = (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
+          const isKnownProj = projectCodes.has(prefix) || 
+            (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
             (t.projectCode && prefix.toLowerCase() === String(t.projectCode).trim().toLowerCase());
           
           if (isKnownProj) {

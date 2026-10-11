@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { ExternalLink, Unlink, Trash2 } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { TaskModalLogicType } from '../../hooks/useTaskModalLogic';
 import { MultiSelect } from '../MultiSelect';
@@ -7,7 +7,6 @@ import { FastInput } from '../FastInput';
 import { FastToggle } from '../DetailTabParts/FastToggle';
 import { TaskDatesSection } from './TaskDatesSection';
 import { TaskPredecessorSection } from './TaskPredecessorSection';
-import { useAppStore } from '../../store/useAppStore';
 
 export const TaskBasicInfo = memo(function TaskBasicInfo({ 
   logic, 
@@ -24,51 +23,13 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
     projects, tasks, delegationGroups, canWrite, t,
     formData, setFormData, dateErrors,
     handlePredecessorChange, handleApplyPredecessorDates, handleDateChange, handleDurationChange, toggleDurationManual,
-    resolvedPredecessors, parties, appUsers, subAppUsers, nameRef,
-    handleUnlinkParentInModal, handleDeleteTaskInModal
+    resolvedPredecessors, parties, appUsers, subAppUsers, nameRef
   } = logic;
 
   const currentTaskDelegationGroup = React.useMemo(() => {
     if (!task) return null;
     return delegationGroups.find(g => g.parentTaskId === task.id || g.id === task.id);
   }, [task, delegationGroups]);
-
-  const subTasksOfCurrent = React.useMemo(() => {
-    if (!task?.id) return [];
-    const tId = String(task.id);
-    const code = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
-    return tasks.filter(t => {
-      if (String(t.id) === tId) return false;
-      const raw = t.parentTaskId || (t as any).parentId;
-      if (!raw) return false;
-      const rawStr = String(raw).trim().toLowerCase();
-      return String(raw) === tId || (code && rawStr === code);
-    });
-  }, [task, tasks]);
-
-  const handleUnlinkAllSubtasks = async () => {
-    if (subTasksOfCurrent.length === 0) return;
-    try {
-      const { localDb } = await import('../../lib/localDb');
-      const now = new Date().toISOString();
-      const childIds = subTasksOfCurrent.map(c => c.id);
-      const prevAll = useAppStore.getState().tasks;
-      const updated = prevAll.map(t => childIds.includes(t.id) ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t);
-      useAppStore.getState().setTasks(updated);
-      await Promise.all(childIds.map(id => (localDb.tasks.update as any)(id, { parentTaskId: null, parentId: null, updatedAt: now })));
-      const { doc, writeBatch, deleteField } = await import('firebase/firestore');
-      const { db, APP_ID } = await import('../../lib/firebase');
-      const batch = writeBatch(db);
-      childIds.forEach(id => {
-        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-        batch.update(ref, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
-      });
-      await batch.commit();
-      useAppStore.getState().setToast({ title: "Success", message: `Unlinked ${childIds.length} subtask(s).` });
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   return (
     <>
@@ -81,10 +42,10 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
               try {
                 const val = JSON.parse(e.target.value);
                 const matchedProj = projects.find(p => p.code === val.code && String(p.year) === String(val.year) && p.store === val.store) || projects.find(p => p.code === val.code);
-                setFormData({
-                  ...formData,
-                  projectCode: val.code,
-                  projectYear: val.year,
+                setFormData({ 
+                  ...formData, 
+                  projectCode: val.code, 
+                  projectYear: val.year, 
                   projectStore: val.store,
                   ...(!task && !formData.party && matchedProj?.party ? { party: matchedProj.party } : {})
                 });
@@ -146,41 +107,10 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
               <span className={cn("w-2 h-2 rounded-full", formData.delegation ? "bg-green-500 animate-pulse" : "bg-slate-400")}></span>
               {t("Delegation") || "Delegation"}
             </span>
-            {(Boolean(formData.parentTaskId) || Boolean((formData as any).parentId) || Boolean(task?.parentTaskId) || Boolean((task as any)?.parentId)) && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                  ↳ Sub-task Modular
-                </span>
-                {canWrite && handleUnlinkParentInModal && (
-                  <button
-                    type="button"
-                    onClick={handleUnlinkParentInModal}
-                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-900 dark:text-amber-200 border border-amber-400 dark:border-amber-600 transition-colors cursor-pointer active:scale-95"
-                    title="Unlink this task from parent modular link"
-                  >
-                    <Unlink className="w-2.5 h-2.5" />
-                    <span>Unlink Parent</span>
-                  </button>
-                )}
-              </div>
-            )}
-            {subTasksOfCurrent.length > 0 && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-700">
-                  Parent ({subTasksOfCurrent.length} subtasks)
-                </span>
-                {canWrite && (
-                  <button
-                    type="button"
-                    onClick={handleUnlinkAllSubtasks}
-                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-200 hover:bg-purple-300 dark:bg-purple-900/60 dark:hover:bg-purple-800 text-purple-900 dark:text-purple-200 border border-purple-400 dark:border-purple-600 transition-colors cursor-pointer active:scale-95"
-                    title="Unlink all subtasks from this parent task"
-                  >
-                    <Unlink className="w-2.5 h-2.5" />
-                    <span>Unlink Subtasks</span>
-                  </button>
-                )}
-              </div>
+            {task && task.parentTaskId && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                ↳ Sub-task Modular
+              </span>
             )}
           </div>
           <FastToggle 
@@ -254,29 +184,13 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 pt-2">
-        {task && canWrite && handleDeleteTaskInModal ? (
-          <button
-            type="button"
-            onClick={handleDeleteTaskInModal}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer active:scale-95"
-            title="Delete this task"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Delete Task</span>
-          </button>
-        ) : (
-          <div />
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg cursor-pointer">
+          {canWrite ? 'Cancel' : 'Close'}
+        </button>
+        {canWrite && (
+          <button title="Save Task" type="submit" className="px-6 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-sm shadow-xl active:scale-95 transition-all cursor-pointer">Save Task</button>
         )}
-
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg cursor-pointer">
-            {canWrite ? 'Cancel' : 'Close'}
-          </button>
-          {canWrite && (
-            <button title="Save Task" type="submit" className="px-6 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-sm shadow-xl active:scale-95 transition-all cursor-pointer">Save Task</button>
-          )}
-        </div>
       </div>
     </>
   );

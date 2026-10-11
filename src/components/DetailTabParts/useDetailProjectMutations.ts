@@ -33,23 +33,92 @@ export function useDetailProjectMutations({
     setConfirmModal({
       isOpen: true,
       title: 'Delete Project',
-      message: `Delete project ${p.code} and all associated tasks and data?`,
+      message: `Delete project ${p.code} and all Sub-?`,
       onConfirm: async () => {
         try {
-          const { deleteProjectStateUnified } = await import('../../lib/taskStateService');
-          await deleteProjectStateUnified(p.id || String(p.no) || p.code, p);
-          useAppStore.getState().setToast({
-            title: "Success",
-            message: `Deleted project ${p.code} successfully.`,
-            type: "success"
+          const docId = p.id || p.id!;
+          const relatedTasks = tasks.filter(t => 
+            t.projectCode === p.code && 
+            (t.projectYear == p.year || (!t.projectYear && !p.year)) &&
+            (t.projectStore == p.store || (!t.projectStore && !p.store))
+          );
+          
+          const nowIso = new Date().toISOString();
+          const batch = writeBatch(db);
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), { id: docId, isDeleted: true, updatedAt: nowIso }, { merge: true });
+          
+          // Collect storage urls to delete
+          const urlsToDelete: string[] = [];
+          urlsToDelete.push(...extractStorageUrls(p));
+          
+          // Delete related tasks
+          relatedTasks.forEach(t => {
+            urlsToDelete.push(...extractStorageUrls(t));
+            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), { id: t.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
           });
-        } catch (e: any) {
-          console.error("Delete project error:", e);
-          useAppStore.getState().setToast({
-            title: "Error",
-            message: e?.message || "Failed to delete project.",
-            type: "error"
+
+          // Delete related costs from memory store (Zero-read optimization)
+          const storeCosts = useAppStore.getState().costs || [];
+          const relatedCosts = storeCosts.filter(c => 
+            c.projectCode === p.code &&
+            String(c.projectYear || '') === String(p.year || '') &&
+            String(c.projectStore || '') === String(p.store || '')
+          );
+          relatedCosts.forEach(c => {
+            urlsToDelete.push(...extractStorageUrls(c));
+            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), { id: c.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
           });
+
+          // Delete related delegations from memory store (Zero-read optimization)
+          const storeDelegations = useAppStore.getState().delegationGroups || [];
+          const relatedDelGroups = storeDelegations.filter(d => 
+            relatedTasks.some(t => t.id === d.parentTaskId) || d.projectCode === p.code
+          );
+          relatedDelGroups.forEach(d => {
+            batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id));
+          });
+
+          const costsToDelete = relatedCosts.map(c => ({ id: c.id, data: c }));
+          const delegationsToDelete = relatedDelGroups.map(d => ({ id: d.id, data: d }));
+
+          if (urlsToDelete.length > 0) {
+            deleteStorageFiles(urlsToDelete).catch(console.error);
+          }
+
+          try {
+            await batch.commit();
+          } catch (error: any) {
+            console.error("Batch commit failed", error);
+            useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+            return;
+          }
+
+          // Xóa tức thì khỏi Zustand store
+          const updatedProjects = projects.filter(proj => proj.id !== docId);
+          useAppStore.getState().setProjects(updatedProjects);
+          if (relatedTasks.length > 0) {
+            deleteTaskStateUnified(relatedTasks.map(t => t.id));
+          }
+
+          undoManager.push({
+            description: `Delete Project: ${p.name || p.code}`,
+            revert: async () => {
+              const revertBatch = writeBatch(db);
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), p);
+              relatedTasks.forEach(t => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+              });
+              costsToDelete.forEach(c => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), c.data);
+              });
+              delegationsToDelete.forEach(d => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d.data);
+              });
+              revertBatch.commit().catch(console.error);
+            }
+          });
+        } catch (e) {
+          console.error(e);
         }
       }
     });

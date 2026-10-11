@@ -174,19 +174,16 @@ export function useEnrichedData() {
     });
 
     let filteredTasks = tasks.filter((t) => {
-      if (t.isDeleted) return false;
       const taskCode = String(t.projectCode || "").trim().toLowerCase();
       const taskYear = String(t.projectYear || "").trim().toLowerCase();
       const taskStore = String(t.projectStore || "").trim().toLowerCase();
       const taskKey = `${taskCode}_${taskYear}_${taskStore}`;
 
-      const matchesProject =
+      return (
         visibleProjectKeys.has(taskKey) ||
         visibleProjectKeys.has(`${taskCode}__`) ||
-        visibleCodeSet.has(taskCode) ||
-        (t.projectId && enrichedProjects.some(p => String(p.id) === String(t.projectId)));
-
-      return matchesProject;
+        visibleCodeSet.has(taskCode)
+      );
     });
 
     if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
@@ -203,55 +200,6 @@ export function useEnrichedData() {
         return pMatch || tMatch;
       });
     }
-
-    // Consolidate virtual tasks from p.taskSummaries if a project has summaries but no detailed tasks in filteredTasks
-    const existingTaskIds = new Set(filteredTasks.map(t => t.id));
-    enrichedProjects.forEach(p => {
-      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        const pCode = String(p.code || '').trim().toLowerCase();
-        const pYear = String(p.year || '').trim().toLowerCase();
-        const pStore = String(p.store || '').trim().toLowerCase();
-
-        const hasRealTask = filteredTasks.some(ft => {
-          if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
-          if (!ft.projectCode || !pCode) return false;
-          const ftCode = String(ft.projectCode).trim().toLowerCase();
-          const matchesCode = ftCode === pCode;
-          const ftStore = ft.projectStore ? String(ft.projectStore).trim().toLowerCase() : '';
-          const matchesStore = !ftStore || !pStore || ftStore === pStore;
-          const ftYear = ft.projectYear !== undefined && ft.projectYear !== null ? String(ft.projectYear).trim().toLowerCase() : '';
-          const matchesYear = !ftYear || !pYear || ftYear === pYear;
-          return matchesCode && matchesStore && matchesYear;
-        });
-
-        if (!hasRealTask) {
-          p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
-            if (!existingTaskIds.has(tsId)) {
-              const vTask = {
-                id: tsId,
-                name: ts.name || `Task ${idx + 1}`,
-                start: ts.start || p.computedTakStart || p.start || '',
-                finish: ts.finish || p.computedTakCompl || p.handover || '',
-                projectCode: p.code || '',
-                projectStore: p.store || 'HCM',
-                projectYear: p.year ? String(p.year) : '',
-                party: ts.party || p.party || '',
-                runningStatus: ts.runningStatus || 'On process',
-                duration: ts.duration || '',
-                parentTaskId: ts.parentTaskId,
-                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-                orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-                projectId: p.id,
-                ...ts
-              } as Task;
-              filteredTasks.push(vTask);
-              existingTaskIds.add(tsId);
-            }
-          });
-        }
-      }
-    });
 
     // 4. Filter visibleDelegationGroups
     const visibleDelegationGroups = delegationGroups.filter((group) => {

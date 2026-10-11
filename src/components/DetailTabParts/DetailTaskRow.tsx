@@ -107,14 +107,10 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             type="checkbox"
             checked={isSelected}
             onChange={(e) => {
-              const isShift = Boolean(
-                (e.nativeEvent as MouseEvent)?.shiftKey ||
-                (e as any).shiftKey ||
-                (window.event as any)?.shiftKey
-              );
-              onToggleSelectTask(t.id, isShift);
+              const nativeEvent = e.nativeEvent as MouseEvent;
+              onToggleSelectTask(t.id, nativeEvent.shiftKey);
             }}
-            className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 bg-white dark:bg-[#28282a] border-slate-300 dark:border-[#444446] cursor-pointer"
+            className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 bg-white dark:bg-[#28282a] border-slate-300 dark:border-[#444446]"
           />
         </td>
       )}
@@ -176,7 +172,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         <td className="px-3 py-2 font-medium text-slate-800 dark:text-[#f5f5f7]">
           <div className="flex items-center gap-2">
             <EditableCell
-              value={t.name || '(Unnamed Task)'}
+              value={t.name}
               onSave={(val) => onUpdateTask(t, { name: val })}
               canWrite={canWrite}
             />

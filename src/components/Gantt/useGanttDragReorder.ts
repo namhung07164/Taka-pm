@@ -63,21 +63,6 @@ export function useGanttDragReorder({
 
   const handleTaskDragStart = (e: React.DragEvent, taskId: string) => {
     e.stopPropagation();
-    const targetTask = tasks.find(t => String(t.id) === String(taskId));
-    const isParentTask = targetTask && (
-      Boolean((targetTask as any).isModularParent) ||
-      tasks.some(other => {
-        const rawParent = other.parentTaskId || (other as any).parentId;
-        if (!rawParent) return false;
-        const rawStr = String(rawParent).trim().toLowerCase();
-        return String(rawParent) === String(targetTask.id) ||
-          (targetTask.taskCodePhu && rawStr === String(targetTask.taskCodePhu).trim().toLowerCase());
-      })
-    );
-    if (isParentTask) {
-      e.preventDefault();
-      return;
-    }
     setDraggingTaskIds([taskId]);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
@@ -139,48 +124,13 @@ export function useGanttDragReorder({
     }
 
     // Reorder inside the same project & parent group
-    const pCode = targetTask.projectCode || draggedTask.projectCode;
-
-    // Check if draggedTask is a parent task (has child tasks in the store)
-    const childTasksOfDragged = tasks.filter(t => {
-      if (!t || t.id === draggedTask.id) return false;
-      const rawPId = String(t.parentTaskId || (t as any).parentId || '').trim();
-      if (!rawPId) return false;
-      return (
-        rawPId === String(draggedTask.id) ||
-        (draggedTask.taskCodePhu && rawPId.toLowerCase() === String(draggedTask.taskCodePhu).trim().toLowerCase())
-      );
-    });
-    const isParentTask = childTasksOfDragged.length > 0;
-
-    // Determine targetParentId:
-    // 1) If draggedTask is a parent task (task gộp cha), force targetParentId to null (root level).
-    // 2) If draggedTask is a child task, check if targetTask is a parent task or subtask.
-    let targetParentId: string | null = null;
-    if (isParentTask) {
-      targetParentId = null;
-    } else {
-      const targetIsParent = tasks.some(t => {
-        if (!t || t.id === targetTask.id) return false;
-        const rawPId = String(t.parentTaskId || (t as any).parentId || '').trim();
-        return rawPId === String(targetTask.id) || (targetTask.taskCodePhu && rawPId.toLowerCase() === String(targetTask.taskCodePhu).trim().toLowerCase());
-      });
-
-      if (targetIsParent && !targetTask.parentTaskId && !(targetTask as any).parentId) {
-        // Dropped onto a parent task -> attach as child of targetTask
-        targetParentId = targetTask.id;
-      } else {
-        // Otherwise match targetTask's parentTaskId
-        targetParentId = targetTask.parentTaskId || (targetTask as any).parentId || null;
-      }
-    }
+    const pCode = targetTask.projectCode;
+    const targetParentId = targetTask.parentTaskId || (targetTask as any).parentId || null;
+    const draggedParentId = draggedTask.parentTaskId || (draggedTask as any).parentId || null;
 
     // Sibling tasks (either root tasks of the project or child tasks of the same parent)
     const siblingTasks = tasks
-      .filter(t => 
-        (t.projectCode || '') === (pCode || '') && 
-        (t.parentTaskId || (t as any).parentId || null) === targetParentId
-      )
+      .filter(t => t.projectCode === pCode && (t.parentTaskId || (t as any).parentId || null) === targetParentId)
       .sort((a, b) => (a.orderIndex !== undefined ? a.orderIndex : ((a as any).order || 0)) - (b.orderIndex !== undefined ? b.orderIndex : ((b as any).order || 0)));
 
     const cleanList = siblingTasks.filter(t => t.id !== draggedTask.id);
@@ -193,18 +143,13 @@ export function useGanttDragReorder({
       parentTaskId: targetParentId || undefined,
       updatedAt: nowIso
     };
-    if (targetParentId) {
-      (movedTask as any).parentId = targetParentId;
-    } else {
-      delete (movedTask as any).parentId;
-    }
     cleanList.splice(insertIdx, 0, movedTask);
 
     const oldTaskNoMap = buildTaskNoMap(projects, tasks);
 
     const reorderedWithOrder = cleanList.map((t, idx) => {
-      const pCodeVal = t.projectCode || '';
-      const newCode = pCodeVal ? `${pCodeVal}#${idx + 1}` : (t.taskCodePhu || '');
+      const pCode = t.projectCode || '';
+      const newCode = pCode ? `${pCode}#${idx + 1}` : (t.taskCodePhu || '');
       return {
         ...t,
         orderIndex: idx,
@@ -217,33 +162,7 @@ export function useGanttDragReorder({
     const updatesMap = new Map<string, Task>();
     reorderedWithOrder.forEach(t => updatesMap.set(t.id, t));
 
-    // Preserve parent-child relationships: ensure all child tasks point to parent's canonical ID
-    const parentCodeToIdMap = new Map<string, string>();
-    reorderedWithOrder.forEach(pt => {
-      parentCodeToIdMap.set(pt.id, pt.id);
-      if (pt.taskCodePhu) parentCodeToIdMap.set(pt.taskCodePhu.trim().toLowerCase(), pt.id);
-    });
-
-    let allUpdatedTasks = tasks.map(t => {
-      const updatedSibling = updatesMap.get(t.id);
-      if (updatedSibling) return updatedSibling;
-
-      // Check if this task is a child of any reordered parent task
-      const rawPId = String(t.parentTaskId || (t as any).parentId || '').trim();
-      if (rawPId) {
-        const canonicalParentId = parentCodeToIdMap.get(rawPId) || parentCodeToIdMap.get(rawPId.toLowerCase());
-        if (canonicalParentId && (t.parentTaskId !== canonicalParentId || (t as any).parentId !== canonicalParentId)) {
-          const res = {
-            ...t,
-            parentTaskId: canonicalParentId,
-            updatedAt: nowIso
-          };
-          (res as any).parentId = canonicalParentId;
-          return res;
-        }
-      }
-      return t;
-    });
+    let allUpdatedTasks = tasks.map(t => updatesMap.get(t.id) || t);
     const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
     const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
     const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects, oldTaskNoMap);
@@ -264,46 +183,29 @@ export function useGanttDragReorder({
     // 0ms Optimistic UI update in Zustand
     useAppStore.getState().optimisticUpdateTasks(allUpdatedTasks);
 
-    // Save to Firestore in batch with dirty-checking to eliminate redundant writes
+    // Save to Firestore in batch
     const batch = writeBatch(db);
-    let writeCount = 0;
-
     allUpdatedTasks.forEach(t => {
-      const orig = tasks.find(o => o.id === t.id);
-      
-      // Dirty check: Only write to Firestore if fields actually changed
-      const isNew = !orig;
-      const orderChanged = orig ? (orig as any).order !== (t as any).order : true;
-      const orderIndexChanged = orig ? orig.orderIndex !== t.orderIndex : true;
-      const codeChanged = orig ? orig.taskCodePhu !== t.taskCodePhu : true;
-      const predChanged = orig ? orig.predecessor !== t.predecessor : true;
-      const parentChanged = orig ? (orig.parentTaskId || null) !== (t.parentTaskId || null) : true;
-
-      if (isNew || orderChanged || orderIndexChanged || codeChanged || predChanged || parentChanged) {
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-        batch.update(docRef, {
-          order: (t as any).order,
-          orderIndex: t.orderIndex,
-          taskCodePhu: t.taskCodePhu,
-          predecessor: t.predecessor,
-          parentTaskId: t.parentTaskId || null,
-          parentId: t.parentTaskId || null,
-          updatedAt: t.updatedAt
-        });
-        writeCount++;
-      }
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      batch.update(docRef, {
+        order: (t as any).order,
+        orderIndex: t.orderIndex,
+        taskCodePhu: t.taskCodePhu,
+        predecessor: t.predecessor,
+        parentTaskId: t.parentTaskId || null,
+        parentId: t.parentTaskId || null,
+        updatedAt: t.updatedAt
+      });
     });
 
-    if (writeCount > 0) {
-      try {
-        await batch.commit();
-        useAppStore.getState().setToast({
-          title: "Success",
-          message: `Reordered task ${draggedTask.name}`
-        });
-      } catch (err) {
-        console.error("Task reorder error:", err);
-      }
+    try {
+      await batch.commit();
+      useAppStore.getState().setToast({
+        title: "Success",
+        message: `Reordered task ${draggedTask.name}`
+      });
+    } catch (err) {
+      console.error("Task reorder error:", err);
     }
 
     handleTaskDragEnd();

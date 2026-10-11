@@ -5,7 +5,6 @@ import { doc, writeBatch } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { getProjectCodeChangePredecessorUpdates } from '../../lib/ganttUtils';
-import { recordBatchDeltas } from '../../lib/deltaSyncService';
 
 interface HandleProjectIdentityChangeParams {
   project: Project;
@@ -153,25 +152,7 @@ export function handleProjectIdentityChange({
   });
   useAppStore.getState().setProjects(updatedProjects);
 
-  batch.commit().then(() => {
-    recordBatchDeltas([
-      { docId, collectionName: 'taka_projects', action: 'update', data: dataToSave, year: String(yearNum) },
-      ...relatedTasks.map(t => ({
-        docId: t.id,
-        collectionName: 'taka_tasks' as const,
-        action: 'update' as const,
-        data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
-        year: String(yearNum)
-      })),
-      ...relatedCosts.map(c => ({
-        docId: c.id,
-        collectionName: 'taka_costs' as const,
-        action: 'update' as const,
-        data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
-        year: String(yearNum)
-      }))
-    ]).catch(console.error);
-  }).catch(e => {
+  batch.commit().catch(e => {
     console.error("Batch commit failed", e);
     setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
   });

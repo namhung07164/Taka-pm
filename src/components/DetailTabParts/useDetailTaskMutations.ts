@@ -75,7 +75,7 @@ export function useDetailTaskMutations({
           }
 
           // Xóa tức thì khỏi Zustand store & đồng bộ lại tiến độ/mốc ngày của Project
-          deleteTaskStateUnified([t]);
+          deleteTaskStateUnified([t.id]);
           
           undoManager.push({
             description: `Delete Task: ${t.name}`,
@@ -281,8 +281,12 @@ export function useDetailTaskMutations({
 
       batch.set(tRef, newT);
 
-      // Rule 9 Mandate: Parent task rollups are computed 100% in-memory on client.
-      // We keep updatedParents in memory via saveTaskStateUnified below, but do NOT issue Firestore writeBatch for parent tasks.
+      updatedParents.forEach(pt => {
+        if (pt.id !== newT.id && !updatesToDependents.some(d => d.id === pt.id)) {
+          const ptRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pt.id);
+          batch.set(ptRef, { ...pt, updatedAt: new Date().toISOString() });
+        }
+      });
 
       if (updates.delegation === true) {
          const deterministicGroupId = `del_${t.id}`;

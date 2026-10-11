@@ -88,19 +88,14 @@ export function useDetailFlatRows({
         (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
-      const validGroupTasks = groupTasks.map(t => ({
-        ...t,
-        name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
-      }));
-
       const isProjectMatch = lowerSearchTerm
         ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
         : true;
 
       const tasksToRender = isProjectMatch
-        ? validGroupTasks
+        ? groupTasks
         : lowerSearchTerm 
-          ? validGroupTasks.filter(t => {
+          ? groupTasks.filter(t => {
               const code = taskCodeMap.get(t.id) || '';
               const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
               const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
@@ -112,14 +107,14 @@ export function useDetailFlatRows({
                 notesMatch
               );
             })
-          : validGroupTasks;
+          : groupTasks;
 
-      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : validGroupTasks.length;
+      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : groupTasks.length;
       let planProgressPercent = 0;
       let actProgressPercent = 0;
-      if (validGroupTasks.length > 0) {
-        planProgressPercent = computePlanProgressPercent(validGroupTasks);
-        actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
+      if (groupTasks.length > 0) {
+        planProgressPercent = computePlanProgressPercent(groupTasks);
+        actProgressPercent = computeActProgressPercent(groupTasks, delegationGroups);
       } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
         planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
         actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);

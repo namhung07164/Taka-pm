@@ -183,13 +183,12 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
       collection = localDb.projects.where('year').equals(String(year));
     }
     const results = await collection.toArray();
-    const activeProjects = results.filter((p) => !p.isDeleted);
     if (store && store !== 'all' && store !== 'ALL') {
-      return activeProjects.filter(
+      return results.filter(
         (p) => p.store && p.store.toLowerCase() === store.toLowerCase()
       );
     }
-    return activeProjects;
+    return results;
   } catch (err) {
     console.warn('[localDb] getLocalProjects error:', err);
     return [];
@@ -211,13 +210,13 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
     ]);
     const mergedMap = new Map<string, Task>();
     for (const t of byProjId) {
-      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
+      if (t && t.id) mergedMap.set(t.id, t);
     }
     for (const t of byProjCode) {
-      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
+      if (t && t.id) mergedMap.set(t.id, t);
     }
     for (const t of byCode) {
-      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
+      if (t && t.id) mergedMap.set(t.id, t);
     }
     return Array.from(mergedMap.values());
   } catch (err) {
@@ -232,8 +231,7 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
 export async function getLocalTasks(year?: string): Promise<Task[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
-      const all = await localDb.tasks.toArray();
-      return all.filter(t => !t.isDeleted);
+      return await localDb.tasks.toArray();
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
@@ -241,8 +239,8 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
       localDb.tasks.where('projectYear').equals(strYear).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Task>();
-    for (const t of byYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
-    for (const t of byProjYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
+    for (const t of byYear) if (t && t.id) merged.set(t.id, t);
+    for (const t of byProjYear) if (t && t.id) merged.set(t.id, t);
     return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalTasks error:', err);
@@ -382,22 +380,5 @@ export async function setLocalSyncMeta(key: string, value: string): Promise<void
     });
   } catch (err) {
     console.warn('[localDb] setLocalSyncMeta error:', err);
-  }
-}
-
-/**
- * Xóa sạch toàn bộ dữ liệu Dexie IndexedDB (dành cho Resync Cache)
- */
-export async function clearDexieDatabase(): Promise<void> {
-  try {
-    await Promise.all([
-      localDb.projects.clear().catch(() => {}),
-      localDb.tasks.clear().catch(() => {}),
-      localDb.costs.clear().catch(() => {}),
-      localDb.delegations.clear().catch(() => {}),
-      localDb.syncMeta.clear().catch(() => {}),
-    ]);
-  } catch (err) {
-    console.warn('[localDb] clearDexieDatabase error:', err);
   }
 }
