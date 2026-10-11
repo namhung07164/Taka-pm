@@ -76,17 +76,18 @@
 - **Thư Viện Nặng & Code Splitting**: Cấm import tĩnh các thư viện nặng (`xlsx`, `html2canvas`, `konva`, `jspdf`) vào bundle chính. Bắt buộc dùng `await import(...)` hoặc `React.lazy` để file bundle chính luôn dưới 1MB, tối ưu thời gian khởi động (FCP) trên máy POS/di động.
 - **Form Sub-Components**: Form phức tạp tách thành các component con bọc `React.memo` để gõ phím không re-render cả modal.
 
-## 13. Unified Design System & Typography
-- **Year**: Định dạng hiển thị và badge năm đồng nhất (`font-bold`, palette neutral/theme chuẩn).
-- **Project & Task Code**: Dùng font monospace (`font-mono font-extrabold uppercase`), màu xanh thương hiệu (`text-blue-700 dark:text-[#8ab4f8]`).
-- **Store Identifier**: HCM: Blue (`text-blue-600 dark:text-[#8ab4f8]`), HN: Red (`text-red-600 dark:text-red-400`).
-- **Status Badges**: Trạng thái (Completed, On Process, Upcoming, Delay, Overdue) dùng chung màu Tailwind (Emerald, Blue, Amber, Rose) và quy cách bo góc/padding.
-- **Token Reuse**: Buttons, `DebouncedSearchInput`, `MultiCheckboxSelect`, `FastInput` dùng chung token (`rounded-lg`/`rounded-xl`, `active:scale-95 touch-manipulation`, border transition, focus ring).
+## 13. Quy Chuẩn Đồng Bộ Source Code (Single Source of Truth)
 
-## 14. Documentation Maintenance
-- Khi hoàn thành hoặc thay đổi tính năng mới, **bắt buộc** cập nhật các bước thao tác vào `USER_MANUAL.md`.
+1. 🛑 CẤM Cập Nhật Tài Liệu Lắt Nhắt (No Docs Spam)
+Tuyệt đối KHÔNG tự động viết log, tóm tắt, hay cập nhật các file tài liệu (như `manual_usual.md`, `README.md`, v.v.) sau mỗi lần sửa/viết code. Việc thay đổi tính năng chỉ được phản ánh trực tiếp vào code.
 
-## 15. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
+2. 🔄 Cập Nhật Thẳng Vào Mã Nguồn Gốc (Update The Source)
+Sau mỗi lần tái cấu trúc, băm nhỏ file, hoặc viết thêm tính năng mới thành công, AI bắt buộc phải cập nhật (ghi đè đoạn code cũ bằng đoạn code mới) trực tiếp vào file `TAKASHIMAYA_FULL_SOURCE.txt`.
+
+3. 🎯 Nguyên Tắc "Single Source of Truth"
+File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm duy nhất chứa trạng thái code hiện tại. Bất kỳ Agent nào trước khi bắt tay vào sửa logic đều phải đảm bảo mã nguồn trong file này luôn đồng bộ với các thay đổi mới nhất để không ghi đè làm mất các bản vá lỗi (hotfix) hoặc các module vừa được tách nhỏ.
+
+## 14. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
 - **Primary Storage (Dexie.js / IndexedDB)**: Coi `src/lib/localDb.ts` (`TakaLocalDB`) và in-memory Zustand là Primary Data Source cho client. Khi boot app, luôn ưu tiên đọc cache Dexie (`bootstrapLocalStore()`) nạp ngay 100% dữ liệu trong 5ms – 10ms, triệt tiêu hoàn toàn loading spinner.
 - **Delta Sync Pipeline (`taka_deltas`)**: Mọi đột biến (mutation) sau khi xả ghi xuống Firestore bắt buộc ghi nhận bản ghi delta qua `recordDelta()` (`src/lib/deltaSyncService.ts`). Background worker định kỳ kéo delta (`numericTime > lastSyncTime`) và áp dụng nguyên tử vào Zustand + Dexie, cắt giảm 80%–95% lượt Firestore READ.
 - **Non-blocking UI Thread**: Mọi tác vụ ghi nặng (`offloadPersistSnapshot`, `bulkPut`, `applyDeltasToLocalDatabase`) bắt buộc đẩy sang background microtasks (`setTimeout(..., 0)`), cấm thực hiện I/O làm nghẽn luồng render chính của React, bảo đảm 60 FPS.
@@ -94,7 +95,7 @@
 - **Fault-Tolerant Fallback & Sync Queue**: Khi IndexedDB bị chặn (Incognito/Private) hoặc rỗng dữ liệu, tự động fallback về nạp Firestore. Mọi tác vụ ghi tiếp tục được bảo vệ bởi hàng đợi `syncQueue.ts` chống mất mát dữ liệu ngoại tuyến.
 
 
-## 16. Real-time Delta Channel & Auto Delta (Sync Consistency)
+## 15. Real-time Delta Channel & Auto Delta (Sync Consistency)
 - **Realtime**: `deltaRealtimeListener.ts` giữ 1 `onSnapshot` trên `taka_deltas` (thay polling 25s). Polling chỉ còn là safety net 5 phút. Cấm đưa lại polling ngắn hạn.
 - **Auto Delta**: mọi ghi vào `taka_projects/tasks/costs/delegation_groups` qua wrapper trong `firebase.ts` tự phát delta `invalidate` (`autoDeltaQueue.ts`). Code mới KHÔNG cần tự gọi `recordDelta`, nhưng nếu gọi thì phải gọi trong vòng vài giây sau lệnh ghi để tránh phát trùng.
 - **Ghost record guard**: delta `update` cho doc chưa có trong store/Dexie phải bị bỏ qua, cấm tạo bản ghi từ patch một phần.

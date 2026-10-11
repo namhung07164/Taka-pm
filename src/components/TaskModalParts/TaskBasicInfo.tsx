@@ -231,6 +231,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <TaskPredecessorSection 
+          task={task}
           formData={formData}
           canWrite={canWrite}
           t={t}

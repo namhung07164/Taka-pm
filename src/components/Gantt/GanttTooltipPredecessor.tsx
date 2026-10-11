@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, Project } from '../../types';
-import { PredecessorMultiInput } from '../PredecessorMultiInput';
+import { PredecessorHardLinkInput } from '../TaskModalParts/PredecessorHardLinkInput';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { 
   buildTaskNoMap, 
@@ -224,19 +224,10 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
             handleCancel();
           }
         }}>
-          <PredecessorMultiInput
-            value={val}
-            onChange={setVal}
-            onCommit={(finalVal) => handleSave(finalVal)}
-            tasks={tasks}
-            projects={projects}
-            currentProjectId={task.projectId}
-            currentProjectCode={task.projectCode}
-            currentProjectYear={task.projectYear}
-            currentProjectStore={task.projectStore}
-            currentProjectLocation={task.location}
-            disabled={isSaving}
-          />
+        <PredecessorHardLinkInput 
+          task={task}
+          canWrite={canWrite}
+        />
         </div>
       </div>
     );

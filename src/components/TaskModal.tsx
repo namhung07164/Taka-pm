@@ -27,7 +27,6 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { addPendingUpdate } from '../lib/syncQueue';
 import { QRCodeButton } from './QRCodeButton';
-import { PredecessorMultiInput } from "./PredecessorMultiInput";
 import { getZIndexClass } from '../lib/zIndexManager';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 import { FastInput } from './FastInput';
@@ -81,7 +80,6 @@ const PredecessorDatalist = React.memo(({ projects, tasks, currentProjectCode, c
   );
 });
 
-import { TaskPredecessorSelect } from './TaskModalParts/TaskPredecessorSelect';
 import { TaskModalHeader } from './TaskModalParts/TaskModalHeader';
 
 export function TaskModal(props: TaskModalProps) {
@@ -124,16 +122,6 @@ export function TaskModal(props: TaskModalProps) {
             {activeTab === 'details' && (
               <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto flex-grow pb-[env(safe-area-inset-bottom)]">
                 <TaskBasicInfo logic={logic} task={task} onNavigateToDelegation={onNavigateToDelegation} onClose={onClose} />
-                
-                <div className="mt-4">
-                  <TaskPredecessorSelect
-                    currentTaskId={task?.id || ''}
-                    currentProjectCode={formData.projectCode || ''}
-                    allTasks={tasks}
-                    currentPredecessors={formData.predecessors}
-                    canWrite={canWrite}
-                  />
-                </div>
               </form>
             )}
 

@@ -105,13 +105,6 @@ export interface TaskComment {
   attachments?: { name: string; url: string; fullPath: string; type?: string }[];
 }
 
-export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
-
-export interface TaskPredecessor {
-  taskId: string;
-  type: PredecessorType;
-}
-
 export interface Task {
   id: string;
   projectId?: string;
@@ -134,7 +127,6 @@ export interface Task {
   party?: string;
   delegation?: boolean;
   predecessor?: string;
-  predecessors?: TaskPredecessor[]; // Mảng chứa Hard Link và Loại liên kết
   notes?: TaskNote[];
   runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming';
   isShared?: boolean;
@@ -145,6 +137,15 @@ export interface Task {
   taskCodePhu?: string;
   parentTaskId?: string;
   isDeleted?: boolean;
+  predecessors?: TaskPredecessor[]; // Lưu trữ danh sách Hard Link dưới dạng mảng Object
+  predecessorTaskIds?: string[]; // IDs of tasks mentioned in the predecessor string
+}
+
+export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface TaskPredecessor {
+  taskId: string;
+  type: PredecessorType;
 }
 
 export interface Cost {

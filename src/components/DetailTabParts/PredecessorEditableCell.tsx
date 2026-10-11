@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PredecessorMultiInput } from '../PredecessorMultiInput';
+import { PredecessorHardLinkInput } from '../TaskModalParts/PredecessorHardLinkInput';
 import { Task, Project } from '../../types';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { useAppStore } from '../../store/useAppStore';
@@ -91,21 +91,9 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
           setVal(displayVal !== undefined && displayVal !== null ? displayVal : '');
         }
       }}>
-        <PredecessorMultiInput
-          value={val}
-          onChange={setVal}
-          onCommit={(finalVal) => commitSave(finalVal)}
-          tasks={tasks || useAppStore.getState().tasks || []}
-          projects={projects || useAppStore.getState().projects || []}
-          currentProjectId={task.projectId}
-          currentProjectCode={task.projectCode}
-          currentProjectYear={task.projectYear}
-          currentProjectStore={task.projectStore}
-          currentProjectLocation={task.location}
-          predecessorTaskIds={task.predecessorTaskIds || []}
-          onPredecessorTaskIdsChange={(ids) => {
-             // Handled in commitSave
-          }}
+        <PredecessorHardLinkInput 
+          task={task}
+          canWrite={canWrite}
         />
       </div>
     );

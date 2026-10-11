@@ -1,9 +1,11 @@
 import React, { memo } from 'react';
 import { Info } from 'lucide-react';
-import { PredecessorMultiInput } from '../PredecessorMultiInput';
+import { PredecessorHardLinkInput } from './PredecessorHardLinkInput';
+import { Task } from '../../types';
 import { formatDisplayDateTime } from '../../lib/utils';
 
 interface TaskPredecessorSectionProps {
+  task: Task;
   formData: any;
   canWrite: boolean;
   t: (key: string) => string;
@@ -16,6 +18,7 @@ interface TaskPredecessorSectionProps {
 }
 
 export const TaskPredecessorSection = memo(function TaskPredecessorSection({
+  task,
   formData,
   canWrite,
   t,
@@ -52,20 +55,16 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
         )}
       </div>
 
-      <PredecessorMultiInput 
-        value={formData.predecessor || ""}
-        onChange={handlePredecessorChange}
-        tasks={tasks}
-        projects={projects}
-        currentProjectId={formData.projectId}
-        currentProjectCode={formData.projectCode}
-        currentProjectYear={formData.projectYear}
-        currentProjectStore={formData.projectStore}
-        currentProjectLocation={formData.location}
-        disabled={!canWrite}
-        predecessorTaskIds={formData.predecessorTaskIds || []}
-        onPredecessorTaskIdsChange={handlePredecessorTaskIdsChange}
-      />
+      {task ? (
+        <PredecessorHardLinkInput 
+          task={task}
+          canWrite={canWrite}
+        />
+      ) : (
+        <div className="text-[10px] text-slate-500 italic p-2 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
+          Please save the task first to enable predecessor linking.
+        </div>
+      )}
 
       {resolvedPredecessors.length > 0 && (
         <div className="mt-1.5 flex flex-col gap-1.5">
