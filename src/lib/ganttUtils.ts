@@ -741,14 +741,10 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   const currentPCode = p ? String(p.code).trim() : taskPCode;
   if (!currentPCode) return '';
 
-  if (task.orderIndex !== undefined && task.orderIndex !== null) {
-    return `${currentPCode}#${Number(task.orderIndex) + 1}`;
-  }
-
   const pTasks = tasks.filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
   const sorted = sortGroupTasks(pTasks);
   const idx = sorted.findIndex(t => t.id === task.id);
-  const orderNum = idx !== -1 ? idx + 1 : 1;
+  const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? task.orderIndex + 1 : 1);
 
   return `${currentPCode}#${orderNum}`;
 }
@@ -797,7 +793,7 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
       const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
                 (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
       const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
-      const orderNum = t.orderIndex !== undefined ? t.orderIndex + 1 : i + 1;
+      const orderNum = i + 1;
       const code = pCode ? `${pCode}#${orderNum}` : '';
       map.set(t.id, code);
     });

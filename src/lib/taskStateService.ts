@@ -164,8 +164,48 @@ export async function deleteTaskStateUnified(
   const tasksToDelete = currentTasks.filter(t => idSet.has(String(t.id)));
   const affectedProjects = findAffectedProjects(tasksToDelete);
 
-  // 1. Xóa tức thì khỏi Zustand store
-  useAppStore.getState().optimisticDeleteTasks(Array.from(idSet));
+  // Collect codes and IDs of deleted tasks for unlinking and predecessor cleanup
+  const deletedCodesAndIds = new Set<string>();
+  tasksToDelete.forEach(t => {
+    if (t.id) deletedCodesAndIds.add(String(t.id).trim().toLowerCase());
+    if (t.taskCodePhu) deletedCodesAndIds.add(String(t.taskCodePhu).trim().toLowerCase());
+  });
+
+  // 1. Unlink child tasks if a parent task was deleted, and clean stale predecessor strings
+  const now = new Date().toISOString();
+  const tasksAfterDeletion = useAppStore.getState().tasks.filter(t => !idSet.has(String(t.id)));
+  
+  const cleanedTasks = tasksAfterDeletion.map(t => {
+    let updated = t;
+    let modified = false;
+
+    // Check if child task lost its parent
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (rawParent && deletedCodesAndIds.has(String(rawParent).trim().toLowerCase())) {
+      updated = { ...updated, parentTaskId: undefined, updatedAt: now };
+      delete (updated as any).parentId;
+      modified = true;
+    }
+
+    // Clean deleted task codes/IDs from predecessor string
+    if (updated.predecessor && typeof updated.predecessor === 'string') {
+      const predParts = updated.predecessor.split(',').map(p => p.trim()).filter(Boolean);
+      const filteredParts = predParts.filter(part => {
+        // Strip relationship suffixes like SS, FF, SF, FS or lag +2d to extract task code
+        const codeOnly = part.replace(/(?:SS|FF|SF|FS)?\s*(?:[+-]\d+[dwmy]?)?$/i, '').trim().toLowerCase();
+        return !deletedCodesAndIds.has(codeOnly);
+      });
+      const newPred = filteredParts.join(', ');
+      if (newPred !== updated.predecessor) {
+        updated = { ...updated, predecessor: newPred, updatedAt: now };
+        modified = true;
+      }
+    }
+
+    return updated;
+  });
+
+  useAppStore.getState().setTasks(cleanedTasks);
 
   // 2. Xóa tức thì khỏi Dexie (IndexedDB) để ngăn hồi sinh dữ liệu khi re-hydrate
   try {

@@ -63,6 +63,21 @@ export function useGanttDragReorder({
 
   const handleTaskDragStart = (e: React.DragEvent, taskId: string) => {
     e.stopPropagation();
+    const targetTask = tasks.find(t => String(t.id) === String(taskId));
+    const isParentTask = targetTask && (
+      Boolean((targetTask as any).isModularParent) ||
+      tasks.some(other => {
+        const rawParent = other.parentTaskId || (other as any).parentId;
+        if (!rawParent) return false;
+        const rawStr = String(rawParent).trim().toLowerCase();
+        return String(rawParent) === String(targetTask.id) ||
+          (targetTask.taskCodePhu && rawStr === String(targetTask.taskCodePhu).trim().toLowerCase());
+      })
+    );
+    if (isParentTask) {
+      e.preventDefault();
+      return;
+    }
     setDraggingTaskIds([taskId]);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);

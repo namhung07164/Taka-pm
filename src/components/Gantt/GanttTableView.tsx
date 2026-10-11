@@ -420,6 +420,7 @@ export function GanttTableView({
                 <GanttTaskRow
                   key={row.key}
                   t={row.task}
+                  taskIndex={row.taskIndex}
                   p={row.project}
                   isChild={row.isChild}
                   parentTask={row.parentTask}

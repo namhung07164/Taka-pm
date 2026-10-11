@@ -74,6 +74,12 @@ export function useGanttVirtualization({
 
       const pTasks = sortGroupTasks(rawTasks);
 
+      // Create index map for sequential numbering
+      const pTaskIndexMap = new Map<string, number>();
+      pTasks.forEach((t, idx) => {
+        if (t.id) pTaskIndexMap.set(t.id, idx);
+      });
+
       // Group parent and child tasks
       const parentTasks: Task[] = [];
       const childTasksMap = new Map<string, Task[]>();
@@ -129,17 +135,19 @@ export function useGanttVirtualization({
 
       const sortedParentTasks = sortGroupTasks(parentTasks);
 
-      sortedParentTasks.forEach(t => {
+      sortedParentTasks.forEach((t, ptIdx) => {
         const isTaskHidden = hiddenRowsSet.has(`task-${t.id}`);
         const rawChildren = childTasksMap.get(t.id) || [];
         const children = sortGroupTasks(rawChildren);
         const hasChildren = children.length > 0;
         const isModularExpanded = expandedModularSet.has(t.id);
+        const tIndex = pTaskIndexMap.get(t.id) ?? ptIdx;
 
         rows.push({
           type: 'task',
           key: `task-${t.id}`,
           task: t,
+          taskIndex: tIndex,
           project: p,
           isChild: false,
           hasChildren,
@@ -150,12 +158,14 @@ export function useGanttVirtualization({
         });
 
         if (hasChildren && isModularExpanded) {
-          children.forEach(ct => {
+          children.forEach((ct, ctIdx) => {
             const isChildHidden = hiddenRowsSet.has(`task-${ct.id}`);
+            const ctIndex = pTaskIndexMap.get(ct.id) ?? (tIndex + ctIdx + 1);
             rows.push({
               type: 'task',
               key: `task-${ct.id}`,
               task: ct,
+              taskIndex: ctIndex,
               project: p,
               parentTask: t,
               isChild: true,
@@ -174,10 +184,12 @@ export function useGanttVirtualization({
         if (!renderedParentIds.has(pId)) {
           leftoverChildren.forEach(ct => {
             const isChildHidden = hiddenRowsSet.has(`task-${ct.id}`);
+            const ctIndex = pTaskIndexMap.get(ct.id) ?? 0;
             rows.push({
               type: 'task',
               key: `task-${ct.id}`,
               task: ct,
+              taskIndex: ctIndex,
               project: p,
               isChild: false,
               hasChildren: false,

@@ -243,11 +243,14 @@ export function useGanttBatchOps({
     const unlinkedArray = Array.from(allIdsToUnlink);
 
     // 0ms Optimistic UI update
-    const updatedTasks = prevTasks.map((t) =>
-      allIdsToUnlink.has(String(t.id))
-        ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now }
-        : t
-    );
+    const updatedTasks = prevTasks.map((t) => {
+      if (!allIdsToUnlink.has(String(t.id))) return t;
+      const copy: any = { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now };
+      delete copy.parentTask;
+      delete copy.parentTaskCode;
+      delete copy.parentCode;
+      return copy as Task;
+    });
     useAppStore.getState().setTasks(updatedTasks);
     setIsTaskModularModalOpen(false);
     setSelectedTaskIds([]);
