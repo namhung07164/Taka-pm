@@ -283,7 +283,7 @@ export function findTaskByQueryOrCode(
     if (code && code.toLowerCase() === qLower) return t;
   }
 
-  const match = findClosestTaskMatch(query, tasks, projects, tasks, context?.projectCode, 650, context, tokenOrCode);
+  const match = findClosestTaskMatch(query, tasks, projects, tasks, context?.projectCode, 650, context);
   return match?.task || null;
 }
 
@@ -526,23 +526,8 @@ export function findClosestTaskMatch(
   allTasks: Task[],
   currentProjectCode?: string,
   minThreshold: number = 750,
-  context?: PredecessorContext,
-  predecessorTaskId?: string
+  context?: PredecessorContext
 ): RankedPredecessorMatch | null {
-  if (predecessorTaskId) {
-    const exact = candidateTasks.find(t => t.id === predecessorTaskId);
-    if (exact && !exact.isDeleted) {
-      const diff = getTaskProjectDiffDetails(context, exact, projects);
-      return {
-        task: exact,
-        score: 1000000, // Absolute priority for hard-linked ID
-        exactTaskCode: computeTaskCode(projects, allTasks, exact) || exact.taskCodePhu || exact.id,
-        isExternal: diff.isDifferent,
-        diffDetails: diff
-      };
-    }
-  }
-
   const ranked = rankCandidateTasks(query, candidateTasks, projects, allTasks, currentProjectCode, context);
   if (ranked.length > 0 && ranked[0].score >= minThreshold) {
     return ranked[0];
@@ -562,8 +547,7 @@ export function resolvePredecessorString(
   tasks: Task[],
   projects: Project[],
   currentProjectCode?: string,
-  context?: PredecessorContext,
-  predecessorTaskIds?: string[]
+  context?: PredecessorContext
 ): string {
   if (!rawValue || typeof rawValue !== 'string') return '';
   const trimmed = rawValue.trim();
@@ -597,16 +581,7 @@ export function resolvePredecessorString(
     }
 
     // Find the closest matching task with threshold (650+)
-    const match = findClosestTaskMatch(
-      query, 
-      poolTasks, 
-      projects, 
-      poolTasks, 
-      currentProjectCode, 
-      650, 
-      context, 
-      predecessorTaskIds && predecessorTaskIds[index] ? predecessorTaskIds[index] : undefined
-    );
+    const match = findClosestTaskMatch(query, poolTasks, projects, poolTasks, currentProjectCode, 650, context);
     if (match) {
       let finalSuffix = suffix;
       // If it's the second predecessor and has no relationship, default to FF per Gantt rules

@@ -128,7 +128,7 @@ export async function executeTaskSave({
         projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
         projectLocation: formData.location || task?.location || currentProject?.location
       };
-      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
+      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext);
       const taskNoMap = buildTaskNoMap(projects, tasks);
       let parts = splitPredecessors(formData.predecessor, taskNoMap);
       if (parts.length >= 2) {

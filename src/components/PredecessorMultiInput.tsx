@@ -31,9 +31,7 @@ export function PredecessorMultiInput({
   currentProjectYear,
   currentProjectStore,
   currentProjectLocation,
-  disabled,
-  predecessorTaskIds = [],
-  onPredecessorTaskIdsChange
+  disabled
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -46,8 +44,6 @@ export function PredecessorMultiInput({
   currentProjectStore?: string;
   currentProjectLocation?: string;
   disabled?: boolean;
-  predecessorTaskIds?: string[];
-  onPredecessorTaskIdsChange?: (ids: string[]) => void;
 }) {
   const { t: translate } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
@@ -116,7 +112,7 @@ export function PredecessorMultiInput({
       if (triggerCommit) onCommit?.('');
       return;
     }
-    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode, currentContext, predecessorTaskIds);
+    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode, currentContext);
     const merged = enforceRules(resolved, true);
     if (merged !== value) {
       // Check if newly introduced predecessor tokens are from a different project
@@ -150,31 +146,10 @@ export function PredecessorMultiInput({
       }
 
       onChange(merged);
-      
-      // Update Task IDs for the resolved string
-      const finalTokens = splitPredecessors(merged, knownCodes);
-      const newIds = finalTokens.map(tok => {
-        const { query } = parsePredecessorToken(tok);
-        if (!query) return '';
-        const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
-        return t ? t.id : '';
-      });
-      onPredecessorTaskIdsChange?.(newIds);
-
       if (triggerCommit) {
         onCommit?.(merged);
       }
     } else {
-      // Even if string is same, ensure IDs are synced
-      const finalTokens = splitPredecessors(merged, knownCodes);
-      const newIds = finalTokens.map(tok => {
-        const { query } = parsePredecessorToken(tok);
-        if (!query) return '';
-        const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
-        return t ? t.id : '';
-      });
-      onPredecessorTaskIdsChange?.(newIds);
-
       if (triggerCommit) {
         onCommit?.(merged);
       }
@@ -293,16 +268,6 @@ export function PredecessorMultiInput({
     const merged = newSegments.slice(0, 2).join(', ');
     
     onChange(merged);
-    
-    // Update IDs
-    const newIds = newSegments.slice(0, 2).map(seg => {
-      const { query } = parsePredecessorToken(seg);
-      if (!query) return '';
-      const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
-      return t ? t.id : '';
-    });
-    onPredecessorTaskIdsChange?.(newIds);
-
     setIsOpen(false);
     setHighlightedIndex(-1);
 
@@ -451,16 +416,9 @@ export function PredecessorMultiInput({
           placeholder={value ? "" : "e.g. A01-1SS, A02-2FF"}
           className={cn(
             "w-full px-3 py-2 bg-transparent outline-none border-none focus:ring-0 shadow-none m-0 font-mono font-bold text-sm tracking-normal leading-normal text-blue-600 dark:text-[#8ab4f8] placeholder:text-slate-400 dark:placeholder:text-slate-500 caret-blue-600 dark:caret-[#8ab4f8]",
-            value && !disabled ? "pr-8" : "",
-            predecessorTaskIds.some(id => id) ? "pl-9" : ""
+            value && !disabled ? "pr-8" : ""
           )}
         />
-
-        {predecessorTaskIds.some(id => id) && (
-          <div className="absolute left-2.5 flex items-center gap-1 text-blue-500/70 dark:text-blue-400/70 pointer-events-none" title="Linked via Task ID">
-            <ExternalLink className="w-3.5 h-3.5" />
-          </div>
-        )}
 
         {value && !disabled && (
           <button
@@ -518,16 +476,6 @@ export function PredecessorMultiInput({
             handleSelect(confirmExternalModal.task, confirmExternalModal.relationship, true);
           } else if (confirmExternalModal.pendingValue) {
             onChange(confirmExternalModal.pendingValue);
-            
-            // Update IDs for the pending value
-            const finalTokens = splitPredecessors(confirmExternalModal.pendingValue, knownCodes);
-            const newIds = finalTokens.map(tok => {
-              const { query } = parsePredecessorToken(tok);
-              if (!query) return '';
-              const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
-              return t ? t.id : '';
-            });
-            onPredecessorTaskIdsChange?.(newIds);
           }
           setConfirmExternalModal({ isOpen: false });
         }}

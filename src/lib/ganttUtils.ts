@@ -810,37 +810,8 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
   const safeProjects: Project[] = typeof window !== 'undefined' ? (useAppStore.getState?.()?.projects || []) : [];
   const safeTasks: Task[] = typeof window !== 'undefined' ? (useAppStore.getState?.()?.tasks || []) : [];
   const preds = splitPredecessors(predecessorString, taskNoMap);
-  const taskIds = contextTask?.predecessorTaskIds || [];
-
-  return preds.map((pMatches, index) => {
+  return preds.map(pMatches => {
     const lowerMatches = pMatches.toLowerCase();
-    const hardLinkedId = taskIds[index];
-
-    if (hardLinkedId) {
-      const exact = safeTasks.find(t => t.id === hardLinkedId);
-      if (exact && !exact.isDeleted) {
-        const { suffix } = parsePredecessorToken(pMatches);
-        let type = 'FS';
-        let lagSign = '+';
-        let lagValue = 0;
-        if (suffix) {
-          const matchSuffix = suffix.match(/^(FS|SS|FF|SF)?\s*(?:([+-])?\s*(\d+(?:\.\d+)?))?\s*$/i);
-          if (matchSuffix) {
-            if (matchSuffix[1]) type = matchSuffix[1].toUpperCase();
-            if (matchSuffix[2]) lagSign = matchSuffix[2];
-            if (matchSuffix[3]) lagValue = parseFloat(matchSuffix[3]);
-          }
-        }
-        return {
-          no: pMatches,
-          type,
-          lagSign,
-          lagValue,
-          task: exact
-        };
-      }
-    }
-
     let longestMatch = "";
     for (const code of taskNoMap.keys()) {
       if (lowerMatches.startsWith(code) && code.length > longestMatch.length) {
