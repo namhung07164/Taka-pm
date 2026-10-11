@@ -133,6 +133,13 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
       return;
     }
 
+    // Filter out completely empty/corrupt ghost tasks (no name, no start, no finish)
+    if ((!task.name || !String(task.name).trim()) && (!task.start || !String(task.start).trim()) && (!task.finish || !String(task.finish).trim())) {
+      duplicateCount++;
+      if (task.id) removedTaskIds.push(task.id);
+      return;
+    }
+
     const tName = String(task.name || '').trim().toLowerCase();
     const normName = normalizeTaskNameForComparison(task.name, task.projectCode);
     const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects);

@@ -176,7 +176,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         <td className="px-3 py-2 font-medium text-slate-800 dark:text-[#f5f5f7]">
           <div className="flex items-center gap-2">
             <EditableCell
-              value={t.name}
+              value={t.name || '(Unnamed Task)'}
               onSave={(val) => onUpdateTask(t, { name: val })}
               canWrite={canWrite}
             />

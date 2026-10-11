@@ -178,7 +178,7 @@ export function GanttTaskLeftColumns({
           )}
 
           <span className="text-xs text-slate-900 dark:text-slate-100 truncate font-semibold flex-1 min-w-0 group-hover/tname:text-blue-600 dark:group-hover/tname:text-[#8ab4f8]" title={t.name}>
-            {t.name}
+            {t.name || '(Unnamed Task)'}
           </span>
 
           {hasChildren && (

@@ -69,7 +69,12 @@ export function useGanttVirtualization({
 
       if (!isProjectExpanded) return;
 
-      const rawTasks = getGroupTasksForProject(p);
+      const rawTasks = getGroupTasksForProject(p).filter(t => {
+        if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim())) {
+          return false;
+        }
+        return true;
+      });
       if (!rawTasks || rawTasks.length === 0) return;
 
       const pTasks = sortGroupTasks(rawTasks);
