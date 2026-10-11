@@ -41,6 +41,7 @@ import {
 import { getLocalDelegations } from "../lib/localDb";
 import { loadNotificationTasks } from "../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../lib/taskDeduplicationService";
+import { cleanOrphanTasks } from "../lib/taskStateService";
 import {
   fetchYearsMeta,
   setMemoryYearsMeta,
@@ -572,16 +573,17 @@ export function useFirebaseData() {
         const rawList = Array.from(pendingTasksMap.current.values());
         const projects = useAppStore.getState().projects || [];
         const { dedupedTasks, duplicateCount, removedTaskIds } = deduplicateTasksInMemory(rawList, projects);
-        dedupedTasks.sort((a, b) => {
+        const { cleaned: finalTasks } = cleanOrphanTasks(dedupedTasks);
+        finalTasks.sort((a, b) => {
           if (a.projectCode !== b.projectCode) {
             return (a.projectCode || "").localeCompare(b.projectCode || "");
           }
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
-        useAppStore.getState().setTasks(dedupedTasks);
-        offloadPersistSnapshot('taka_tasks', dedupedTasks);
+        useAppStore.getState().setTasks(finalTasks);
+        offloadPersistSnapshot('taka_tasks', finalTasks);
         const setNotifs = useAppStore.getState().setAllTasksForNotifs;
-        if (setNotifs) setNotifs(dedupedTasks);
+        if (setNotifs) setNotifs(finalTasks);
         pendingTasksMap.current = null;
 
         // Clean up duplicate documents from Firestore in background if any found

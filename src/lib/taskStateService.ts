@@ -175,16 +175,16 @@ export async function deleteTaskStateUnified(
   const now = new Date().toISOString();
   const tasksAfterDeletion = useAppStore.getState().tasks.filter(t => !idSet.has(String(t.id)));
   
+  const unlinkedChildTasks: Task[] = [];
   const cleanedTasks = tasksAfterDeletion.map(t => {
     let updated = t;
-    let modified = false;
 
     // Check if child task lost its parent
     const rawParent = t.parentTaskId || (t as any).parentId;
     if (rawParent && deletedCodesAndIds.has(String(rawParent).trim().toLowerCase())) {
       updated = { ...updated, parentTaskId: undefined, updatedAt: now };
       delete (updated as any).parentId;
-      modified = true;
+      unlinkedChildTasks.push(updated);
     }
 
     // Clean deleted task codes/IDs from predecessor string
@@ -198,7 +198,6 @@ export async function deleteTaskStateUnified(
       const newPred = filteredParts.join(', ');
       if (newPred !== updated.predecessor) {
         updated = { ...updated, predecessor: newPred, updatedAt: now };
-        modified = true;
       }
     }
 
@@ -207,11 +206,17 @@ export async function deleteTaskStateUnified(
 
   useAppStore.getState().setTasks(cleanedTasks);
 
-  // 2. Xóa tức thì khỏi Dexie (IndexedDB) để ngăn hồi sinh dữ liệu khi re-hydrate
+  // 2. Xóa tức thì khỏi Dexie (IndexedDB) & lưu cập nhật các task con bị gỡ link
   try {
     const { localDb } = await import('./localDb');
     await localDb.tasks.bulkDelete(Array.from(idSet));
     await localDb.tasks.bulkDelete(taskIds as any);
+
+    if (unlinkedChildTasks.length > 0) {
+      await Promise.all(unlinkedChildTasks.map(c => 
+        (localDb.tasks.update as any)(c.id, { parentTaskId: null, parentId: null, updatedAt: now })
+      ));
+    }
   } catch (e) {
     console.warn('[taskStateService] Dexie bulkDelete tasks error:', e);
   }
@@ -229,11 +234,93 @@ export async function deleteTaskStateUnified(
     }
   } catch (e) {}
 
+  // 4. Đồng bộ cập nhật parentTaskId = null lên Firestore cho các task con bị mồ côi
+  if (unlinkedChildTasks.length > 0) {
+    setTimeout(async () => {
+      try {
+        const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+        const { db, APP_ID } = await import('./firebase');
+        const batch = writeBatch(db);
+        unlinkedChildTasks.forEach(c => {
+          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', c.id);
+          batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+        });
+        await batch.commit();
+      } catch (e) {
+        console.warn('[taskStateService] Failed to persist unlinked child tasks to Firestore:', e);
+      }
+    }, 50);
+  }
+
   if (options?.syncProjects === false) return;
 
-  // 4. Tính lại tiến độ & mốc ngày cho các dự án với danh sách tasks còn lại
+  // 5. Tính lại tiến độ & mốc ngày cho các dự án với danh sách tasks còn lại
   const remainingTasks = useAppStore.getState().tasks;
   await syncAffectedProjects(affectedProjects, remainingTasks);
+}
+
+/**
+ * Tự động phát hiện và xử lý các task mồ côi trong bộ nhớ (task con có parentTaskId chỉ đến task mẹ đã bị xóa)
+ * Tự động chuyển task con mồ côi thành root task và ghi nhận sửa đổi xuống Dexie & Firestore.
+ */
+export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
+  if (!tasks || tasks.length === 0) return { cleaned: tasks, fixedCount: 0 };
+
+  const taskMap = new Map<string, Task>();
+  const taskCodeMap = new Map<string, Task>();
+
+  tasks.forEach(t => {
+    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
+    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  });
+
+  const now = new Date().toISOString();
+  let fixedCount = 0;
+  const orphanTaskUpdates: (Partial<Task> & { id: string })[] = [];
+
+  const cleaned = tasks.map(t => {
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return t;
+
+    const parentStr = String(rawParent).trim().toLowerCase();
+    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+
+    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+      // Parent task deleted or missing -> Promote orphan task to root task
+      fixedCount++;
+      const updated = { ...t, parentTaskId: undefined, updatedAt: now };
+      delete (updated as any).parentId;
+      orphanTaskUpdates.push({ id: t.id, parentTaskId: undefined, updatedAt: now });
+      return updated;
+    }
+
+    return t;
+  });
+
+  if (orphanTaskUpdates.length > 0) {
+    setTimeout(async () => {
+      try {
+        const { localDb } = await import('./localDb');
+        const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+        const { db, APP_ID } = await import('./firebase');
+        const batch = writeBatch(db);
+
+        await Promise.all(orphanTaskUpdates.map(u => 
+          (localDb.tasks.update as any)(u.id, { parentTaskId: null, parentId: null, updatedAt: now })
+        ));
+
+        orphanTaskUpdates.forEach(u => {
+          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id);
+          batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+        });
+        await batch.commit();
+      } catch (e) {
+        console.warn('[taskStateService] Failed to persist orphan task cleanup:', e);
+      }
+    }, 100);
+  }
+
+  return { cleaned, fixedCount };
 }
 
 /**
