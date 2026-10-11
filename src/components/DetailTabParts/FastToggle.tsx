@@ -1,13 +1,27 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
 
-export const FastToggle = ({ value, canWrite, onToggle, isSmall = false }: { value: boolean, canWrite: boolean, onToggle: (val: boolean) => void, isSmall?: boolean }) => {
+export const FastToggle = ({
+  value,
+  canWrite,
+  onToggle,
+  isSmall = false,
+  readOnly = false,
+  title,
+}: {
+  value: boolean;
+  canWrite: boolean;
+  onToggle: (val: boolean) => void;
+  isSmall?: boolean;
+  readOnly?: boolean;
+  title?: string;
+}) => {
   const [localVal, setLocalVal] = React.useState(value);
   React.useEffect(() => { setLocalVal(value); }, [value]);
   
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!canWrite) return;
+    if (readOnly || !canWrite) return;
     const newVal = !localVal;
     setLocalVal(newVal); // Optimistically update local state immediately
     
@@ -21,13 +35,15 @@ export const FastToggle = ({ value, canWrite, onToggle, isSmall = false }: { val
 
   return (
     <button
+      type="button"
       onClick={handleClick}
-      disabled={!canWrite}
+      disabled={readOnly || !canWrite}
+      title={title}
       className={cn(
         "relative inline-flex items-center rounded-full transition-colors focus:outline-none shrink-0",
         isSmall ? "h-3.5 w-6" : "h-4 w-7",
         localVal ? "bg-green-500" : "bg-slate-200 dark:bg-slate-700",
-        !canWrite && "opacity-50 cursor-not-allowed"
+        readOnly ? "cursor-default" : (!canWrite && "opacity-50 cursor-not-allowed")
       )}
     >
       <span

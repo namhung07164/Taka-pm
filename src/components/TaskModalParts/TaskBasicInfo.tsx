@@ -105,7 +105,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-700 dark:text-[#e3e3e3] uppercase tracking-wide flex items-center gap-1.5">
               <span className={cn("w-2 h-2 rounded-full", formData.delegation ? "bg-green-500 animate-pulse" : "bg-slate-400")}></span>
-              {t("Delegation (Ủy Quyền)") || "Delegation (Ủy Quyền)"}
+              {t("Delegation") || "Delegation"}
             </span>
             {task && task.parentTaskId && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
@@ -120,12 +120,12 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           />
         </div>
 
-        {(Boolean(formData.delegation) || !!currentTaskDelegationGroup) && (
+        {(Boolean(formData.delegation) || !!currentTaskDelegationGroup) ? (
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/80 dark:border-[#38383a] text-xs flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Trạng thái Tracker:</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Tracker Status:</span>
               <span className="px-2 py-0.5 rounded-full font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px]">
-                {currentTaskDelegationGroup ? `Đã có ${currentTaskDelegationGroup.subTasks?.length || 0} delegation` : 'Bật Delegation'}
+                {currentTaskDelegationGroup ? `${currentTaskDelegationGroup.subTasks?.length || 0} delegations` : 'Delegation Active'}
               </span>
             </div>
             {task && onNavigateToDelegation && currentTaskDelegationGroup && (
@@ -138,10 +138,14 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors active:scale-95 cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span>Mở Tracker / Delegation</span>
+                <span>Open Tracker / Delegation</span>
               </button>
             )}
           </div>
+        ) : (
+          <p className="text-[11px] text-slate-500 dark:text-[#a3a3a3] italic pt-1 border-t border-slate-200/60 dark:border-[#38383a]">
+            Note: Actual Status (Act Status) will not be updated unless Delegation is toggled ON.
+          </p>
         )}
       </div>
 

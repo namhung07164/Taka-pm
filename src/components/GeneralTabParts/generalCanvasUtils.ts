@@ -309,27 +309,33 @@ export function drawGeneralCanvas({
         ctx.textBaseline = 'middle';
         ctx.fillText(`${progressPercent}% (P)`, textX, planY + 2);
 
-        // Actual Progress Row
-        const actY = planY + 12;
-        ctx.fillStyle = isDark ? '#27272a' : '#e2e8f0';
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(barX, actY, barWidth, barHeight, 2);
-        else ctx.rect(barX, actY, barWidth, barHeight);
-        ctx.fill();
+        // Actual Progress Row (Only drawn if project delegation is green)
+        const hasProjectDelegation = (item.taskSummaries && item.taskSummaries.length > 0)
+          ? item.taskSummaries.some(ts => Boolean(ts.delegation))
+          : Boolean(item.delegation);
 
-        if (actProgressPercent > 0) {
-           ctx.fillStyle = isDark ? '#34d399' : '#10b981';
-           ctx.beginPath();
-           if (ctx.roundRect) ctx.roundRect(barX, actY, Math.min(barWidth, barWidth * (actProgressPercent / 100)), barHeight, 2);
-           else ctx.rect(barX, actY, Math.min(barWidth, barWidth * (actProgressPercent / 100)), barHeight);
-           ctx.fill();
+        if (hasProjectDelegation) {
+          const actY = planY + 12;
+          ctx.fillStyle = isDark ? '#27272a' : '#e2e8f0';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(barX, actY, barWidth, barHeight, 2);
+          else ctx.rect(barX, actY, barWidth, barHeight);
+          ctx.fill();
+
+          if (actProgressPercent > 0) {
+             ctx.fillStyle = isDark ? '#34d399' : '#10b981';
+             ctx.beginPath();
+             if (ctx.roundRect) ctx.roundRect(barX, actY, Math.min(barWidth, barWidth * (actProgressPercent / 100)), barHeight, 2);
+             else ctx.rect(barX, actY, Math.min(barWidth, barWidth * (actProgressPercent / 100)), barHeight);
+             ctx.fill();
+          }
+
+          ctx.fillStyle = isDark ? '#34d399' : '#047857';
+          ctx.font = `700 9.5px ${fontMono}`;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${actProgressPercent}% (A)`, textX, actY + 2);
         }
-
-        ctx.fillStyle = isDark ? '#34d399' : '#047857';
-        ctx.font = `700 9.5px ${fontMono}`;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`${actProgressPercent}% (A)`, textX, actY + 2);
         ctx.textAlign = 'left';
       } else if (col.key === 'name') {
         ctx.textBaseline = 'top';

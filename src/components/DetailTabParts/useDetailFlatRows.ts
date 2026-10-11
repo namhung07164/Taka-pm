@@ -86,7 +86,7 @@ export function useDetailFlatRows({
         expandedCodes.includes(String(p.id || '')) ||
         (p.code ? expandedCodes.includes(p.code) : false) ||
         (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
-      const isProjDelegationOn = !!p.delegation || delegationGroups.some(g => g.projectCode === p.code);
+      const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
       const isProjectMatch = lowerSearchTerm
         ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
@@ -148,6 +148,7 @@ export function useDetailFlatRows({
             project: p,
             projectIndex: pIdx,
             groupTasks,
+            isProjDelegationOn,
           });
         });
       }

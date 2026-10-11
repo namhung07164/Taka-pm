@@ -22,6 +22,7 @@ export type DetailTableRow =
       project: Project;
       projectIndex: number;
       groupTasks: Task[];
+      isProjDelegationOn?: boolean;
     };
 
 export interface DetailTabProps {

@@ -15,6 +15,7 @@ export interface DetailMobileTaskItemProps {
   actStatus: { label: string; color: string };
   isFocused: boolean;
   canWrite: boolean;
+  isProjectDelegationOn?: boolean;
   onEditTask: (t: Task, isReadOnly?: boolean, initialTab?: string) => void;
   handleMoveTask: (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => void;
   handleUpdateTask: (task: Task, updates: Partial<Task>) => void;
@@ -30,6 +31,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
   actStatus,
   isFocused,
   canWrite,
+  isProjectDelegationOn,
   onEditTask,
   handleMoveTask,
   handleUpdateTask,
@@ -46,6 +48,8 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
 
   const delStatusText = actStatus?.label || 'Pending';
   const delStatusColorClass = actStatus?.color || 'bg-slate-50 text-slate-600';
+
+  const showActStatus = Boolean(isProjectDelegationOn && t.delegation);
 
   const taskBorderAccent = taskStatus === 'Completed' 
     ? 'border-l-[4px] border-l-emerald-500' 
@@ -153,9 +157,11 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
           <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${taskStatusColorClass}`}>
             Pl: {taskStatus}
           </div>
-          <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
-            Act: {delStatusText} ({getActStatusPercent(delStatusText)}%)
-          </div>
+          {showActStatus && (
+            <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
+              Act: {delStatusText} ({getActStatusPercent(delStatusText)}%)
+            </div>
+          )}
         </div>
       </div>
     </div>

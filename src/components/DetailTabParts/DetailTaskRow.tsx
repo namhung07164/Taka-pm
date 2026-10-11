@@ -238,9 +238,13 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       )}
       {visibleColumns.includes('actProgress') && (
         <td className="px-3 py-2">
-          <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium inline-block", delStatusColorClass)}>
-            {delStatusText} ({getActStatusPercent(delStatusText)}%)
-          </span>
+          {item.isProjDelegationOn && t.delegation ? (
+            <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium inline-block", delStatusColorClass)}>
+              {delStatusText} ({getActStatusPercent(delStatusText)}%)
+            </span>
+          ) : (
+            <span className="text-slate-400 font-mono text-xs">-</span>
+          )}
         </td>
       )}
       {visibleColumns.includes('predecessor') && (

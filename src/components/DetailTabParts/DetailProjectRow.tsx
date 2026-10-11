@@ -233,17 +233,21 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       )}
       {visibleColumns.includes('actProgress') && (
         <td className="px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <div className="w-12 bg-slate-200 dark:bg-[#333336] rounded-full h-1.5 overflow-hidden shrink-0">
-              <div
-                className="bg-emerald-600 h-1.5 rounded-full transition-all"
-                style={{ width: `${actProgressPercent}%` }}
-              />
+          {isProjDelegationOn ? (
+            <div className="flex items-center gap-1.5">
+              <div className="w-12 bg-slate-200 dark:bg-[#333336] rounded-full h-1.5 overflow-hidden shrink-0">
+                <div
+                  className="bg-emerald-600 h-1.5 rounded-full transition-all"
+                  style={{ width: `${actProgressPercent}%` }}
+                />
+              </div>
+              <span className="text-[11px] font-mono text-slate-600 dark:text-[#a3a3a3]">
+                {actProgressPercent}%
+              </span>
             </div>
-            <span className="text-[11px] font-mono text-slate-600 dark:text-[#a3a3a3]">
-              {actProgressPercent}%
-            </span>
-          </div>
+          ) : (
+            <span className="text-slate-400 font-mono text-xs">-</span>
+          )}
         </td>
       )}
       {visibleColumns.includes('predecessor') && (
@@ -255,9 +259,11 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
             <div className="flex-1 text-slate-400 text-xs">-</div>
             <FastToggle
               value={isProjDelegationOn}
-              canWrite={canWrite}
-              onToggle={(val) => onUpdateProject(p, 'delegation', val)}
+              canWrite={false}
+              readOnly={true}
+              onToggle={() => {}}
               isSmall={true}
+              title="Project delegation status (active when child tasks have delegation enabled)"
             />
           </div>
         </td>

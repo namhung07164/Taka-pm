@@ -212,6 +212,8 @@ export const DetailMobileView = memo(function DetailMobileView({
             (p.code ? expandedCodes.includes(p.code) : false) ||
             (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
 
+          const isProjectDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
+
           let planProgressPercent = 0;
           let actProgressPercent = 0;
           if (groupTasks.length > 0) {
@@ -354,21 +356,23 @@ export const DetailMobileView = memo(function DetailMobileView({
                         </span>
                       </div>
 
-                      {/* ACT PRG */}
-                      <div className="flex items-center gap-2 w-full">
-                        <span className="font-bold text-xs tracking-wider text-slate-400 dark:text-slate-300 w-20 shrink-0">
-                          ACT PRG:
-                        </span>
-                        <div className="flex-1 h-2.5 sm:h-3 bg-slate-700/60 dark:bg-[#333336] rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-emerald-500 rounded-full transition-all duration-300"
-                            style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }}
-                          />
+                      {/* ACT PRG (Shown only if project delegation is green) */}
+                      {isProjectDelegationOn && (
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="font-bold text-xs tracking-wider text-slate-400 dark:text-slate-300 w-20 shrink-0">
+                            ACT PRG:
+                          </span>
+                          <div className="flex-1 h-2.5 sm:h-3 bg-slate-700/60 dark:bg-[#333336] rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }}
+                            />
+                          </div>
+                          <span className="font-mono font-bold text-xs sm:text-sm text-slate-300 dark:text-slate-200 shrink-0 w-10 text-right">
+                            {actProgressPercent}%
+                          </span>
                         </div>
-                        <span className="font-mono font-bold text-xs sm:text-sm text-slate-300 dark:text-slate-200 shrink-0 w-10 text-right">
-                          {actProgressPercent}%
-                        </span>
-                      </div>
+                      )}
                     </div>
 
                     {/* Divider */}
@@ -400,12 +404,13 @@ export const DetailMobileView = memo(function DetailMobileView({
                           </span>
                         ) : null}
 
-                        {/* Delegation Toggle Switch */}
-                        <div className="flex items-center">
+                        {/* Delegation Toggle Switch (Read-only status indicator) */}
+                        <div className="flex items-center" title="Project delegation status (active when child tasks have delegation enabled)">
                           <FastToggle
-                            value={Boolean(p.delegation)}
-                            canWrite={canWrite}
-                            onToggle={(val) => handleUpdateProject(p, 'delegation', val)}
+                            value={isProjectDelegationOn}
+                            canWrite={false}
+                            readOnly={true}
+                            onToggle={() => {}}
                             isSmall={true}
                           />
                         </div>
@@ -469,6 +474,7 @@ export const DetailMobileView = memo(function DetailMobileView({
                         actStatus={actStatus}
                         isFocused={initialFocusTaskId === t.id}
                         canWrite={canWrite}
+                        isProjectDelegationOn={isProjectDelegationOn}
                         onEditTask={onEditTask}
                         handleMoveTask={handleMoveTask}
                         handleUpdateTask={handleUpdateTask}

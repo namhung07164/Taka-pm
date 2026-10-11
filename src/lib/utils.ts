@@ -206,6 +206,17 @@ export const resolveActualStatus = (
     };
   }
 
+  // ⛔ RULE: Nếu không có gạt delegation (task?.delegation !== true và không có subtask ủy quyền),
+  // tuyệt đối KHÔNG ĐƯỢC cập nhật Act Status (không tự động suy diễn hoàn thành theo plan hoặc running status).
+  const hasDelegation = Boolean(task?.delegation || (subTasks && subTasks.length > 0));
+
+  if (!hasDelegation) {
+    return {
+      label: "Not Delegated",
+      color: "bg-slate-100 dark:bg-[#28282a] text-slate-500 dark:text-[#9aa0a6] border-slate-200 dark:border-[#3c4043]",
+    };
+  }
+
   if (!subTasks || subTasks.length === 0) {
     if (task) {
       const running = (task.runningStatus || '').toLowerCase();
@@ -236,21 +247,8 @@ export const resolveActualStatus = (
       }
     }
 
-    const pLower = (plStatus || '').toLowerCase();
-    if (pLower === 'completed') {
-      return {
-        label: "Completed",
-        color: "bg-emerald-50 dark:bg-[#28282a] text-emerald-600 dark:text-[#81c995] border-emerald-200 dark:border-emerald-800",
-      };
-    }
-    if (pLower === 'on process' || pLower === 'handover') {
-      return {
-        label: "In Progress",
-        color: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700",
-      };
-    }
     return {
-      label: "Upcoming",
+      label: "Assigned",
       color: "bg-slate-50 dark:bg-[#28282a] text-slate-600 dark:text-[#9aa0a6] border-slate-200 dark:border-[#3c4043]",
     };
   }
@@ -2054,6 +2052,9 @@ export function computeActProgressPercent(
   for (const t of groupTasks) {
     const delegationGroup = getGroup(t.id);
     const subTasks = delegationGroup?.subTasks || [];
+    const hasDelegation = Boolean(t.delegation || subTasks.length > 0);
+    if (!hasDelegation) continue; // ⛔ Task không gạt delegation thì không cập nhật Act Status!
+
     let isCompleted = false;
 
     if (subTasks.length > 0) {
@@ -2085,6 +2086,13 @@ export function computeActProgressPercent(
   for (const t of groupTasks) {
     const delegationGroup = getGroup(t.id);
     const subTasks = delegationGroup?.subTasks || [];
+    const hasDelegation = Boolean(t.delegation || subTasks.length > 0);
+
+    // ⛔ RULE: Nếu không có gạt delegation (t.delegation !== true và không có subtask),
+    // TUYỆT ĐỐI KHÔNG ĐƯỢC cập nhật Act Status -> Task này 0 điểm (tiến độ thực tế = 0%)
+    if (!hasDelegation) {
+      continue;
+    }
 
     // Case 1: Task has delegation subtasks
     if (subTasks.length > 0) {
@@ -2097,7 +2105,7 @@ export function computeActProgressPercent(
       continue;
     }
 
-    // Case 2: Pure task without delegation subtasks
+    // Case 2: Pure delegated task without subtasks
     const running = (t.runningStatus || "").toLowerCase();
     const approval = (t.approval || "").toLowerCase();
 
@@ -2144,28 +2152,6 @@ export function computeActProgressPercent(
     if (approval === "pending" || approval === "requested") {
       totalScore += 0.8;
       continue;
-    }
-
-    // Fallback to planned timeline
-    const plStatus = getTaskStatus(t.start, t.finish);
-    if (plStatus === "Completed") {
-      totalScore += 1;
-    } else if (plStatus === "On process") {
-      const start = parseDateTime(t.start);
-      const finish = parseDateTime(t.finish);
-      if (
-        start &&
-        finish &&
-        todayTime >= start.getTime() &&
-        todayTime <= finish.getTime()
-      ) {
-        const duration = finish.getTime() - start.getTime();
-        const passed = todayTime - start.getTime();
-        totalScore +=
-          duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5;
-      } else {
-        totalScore += 0.5;
-      }
     }
   }
 

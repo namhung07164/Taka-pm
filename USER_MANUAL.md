@@ -1883,7 +1883,13 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
       + **Hoàn Thành Nhanh 1-Chạm (`Complete Task`)**: Nút bấm trực tiếp trên thẻ công việc chưa hoàn thành giúp cập nhật ngay trạng thái `Completed`, ghi nhận tức thì vào Zustand Store, lưu xuống Firestore và tự động đánh dấu đã đọc thông báo.
       + **Hoãn Nhắc Nhở (`Snooze 1d / 3d`)**: Cho phép người dùng hoãn thông báo 1 ngày hoặc 3 ngày nếu chưa thể xử lý ngay; thông báo tạm thời ẩn khỏi danh sách unread và tự động xuất hiện trở lại khi hết hạn hoãn.
       + **Mở Nhanh (`Open`)**: Nút mở trực tiếp đến hồ sơ dự án/công việc tương ứng mà không gây nhầm lẫn khi bấm vào thẻ.
-    - **Đề Xuất 4: Chống Quá Tải Thông Báo & Chuẩn Hóa Ngôn Ngữ Doanh Nghiệp (Anti-Fatigue Batching & English UI Mandate)**:
-      + Chuẩn hóa 100% tiếng Anh chuyên nghiệp cho các thông báo gộp nhóm (`Batched X tasks requiring attention`), tuân thủ tuyệt đối quy định giao diện của hệ thống.
-      + Bổ sung nút **Archive >14d**: 1-chạm dọn dẹp và lưu trữ tất cả thông báo quá cũ (hơn 14 ngày), giữ hộp thư thông báo luôn tinh gọn, ngăn ngừa tình trạng quá tải thông báo (notification fatigue).
+61. **Tối Ưu Hóa Logic Hiển Thị Nút Delegation & Tiến Độ Thực Tế (Project & Task Delegation UI Logic)**:
+    - **Nút Delegation Ở Cấp Dự Án Mang Tính Chỉ Báo Trạng Thái (Read-Only Status Indicator)**:
+      + Nút công tắc Delegation ở cấp Project được chuyển sang chế độ chỉ đọc (Read-only status indicator), loại bỏ chức năng gạt trực tiếp bằng tay ở cấp dự án.
+      + Công tắc cấp Project chỉ sáng màu xanh lá (ON) khi có ít nhất 1 công việc con (Subtask) trong dự án đó được bật gạt Delegation ON (`groupTasks.some(t => Boolean(t.delegation))`).
+    - **Ẩn Thanh Tiến Độ Thực Tế (`ACT PRG:`) Khi Dự Án Không Có Delegation**:
+      + Khi dự án không có Delegation màu xanh lá (tức không có công việc con nào bật Delegation), thanh progress bar màu xanh lá cây (`ACT PRG:`) sẽ tự động ẩn đi trên cả thẻ di động, bảng chi tiết và sơ đồ mặt bằng General Tab, chỉ giữ lại thanh tiến độ kế hoạch (`PLAN PRG:`).
+    - **Ẩn Huy Hiệu Cập Nhật Act Status % Trong Công Việc Con**:
+      + Đối với các công việc con trong dự án không bật Delegation, hệ thống ẩn hoàn toàn huy hiệu `Act: ... (X%)`, chỉ hiển thị trạng thái kế hoạch `Pl: ...`, bảo đảm giao diện luôn gọn gàng và chính xác theo bản chất nghiệp vụ.
+
 

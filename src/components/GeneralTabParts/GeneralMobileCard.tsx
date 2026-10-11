@@ -83,6 +83,10 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
     ? p.computedActProgress
     : (p.taskSummaries && p.taskSummaries.length > 0 ? computeActProgressFromSummaries(p.taskSummaries) : (p.computedActProgress ?? 0));
   
+  const hasProjectDelegation = (p.taskSummaries && p.taskSummaries.length > 0)
+    ? p.taskSummaries.some(ts => Boolean(ts.delegation))
+    : Boolean(p.delegation);
+  
   const now = new Date();
   let activeTaskNames: string[] = [];
   if (p.taskSummaries) {
@@ -304,13 +308,15 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
             </div>
             <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 w-9 text-right shrink-0">{progressPercent}%</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight w-11 shrink-0">Act:</span>
-            <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${actProgressPercent}%` }}></div>
+          {hasProjectDelegation && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight w-11 shrink-0">Act:</span>
+              <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+                <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" style={{ width: `${actProgressPercent}%` }}></div>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-9 text-right shrink-0">{actProgressPercent}%</span>
             </div>
-            <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-9 text-right shrink-0">{actProgressPercent}%</span>
-          </div>
+          )}
         </div>
         
         {/* Active Subtasks / Description Detail Box */}
