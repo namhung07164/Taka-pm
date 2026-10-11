@@ -139,67 +139,130 @@ export function splitPredecessors(
 export function updatePredecessorsStrings(
   oldCodeToNewCode: Map<string, string>, 
   allTasks: Task[],
-  projects?: Project[]
+  projects?: Project[],
+  oldTaskNoMap?: Map<string, Task[]>
 ): {id: string, predecessor: string, updatedAt: string}[] {
   const updates: {id: string, predecessor: string, updatedAt: string}[] = [];
-  if (!oldCodeToNewCode || oldCodeToNewCode.size === 0) return updates;
+  if ((!oldCodeToNewCode || oldCodeToNewCode.size === 0) && !oldTaskNoMap) return updates;
   
   // Normalize oldCodeToNewCode keys to lowercase for safe matching
   const normalizedMap = new Map<string, string>();
-  for (const [k, v] of oldCodeToNewCode.entries()) {
-    if (k && v) {
-      normalizedMap.set(k.trim().toLowerCase(), v.trim());
+  if (oldCodeToNewCode) {
+    for (const [k, v] of oldCodeToNewCode.entries()) {
+      if (k && v) {
+        normalizedMap.set(k.trim().toLowerCase(), v.trim());
+      }
     }
   }
 
-  if (normalizedMap.size === 0) return updates;
+  // Build taskIdToNewTask map for fast lookup
+  const taskIdToNewTask = new Map<string, Task>();
+  allTasks.forEach(t => {
+    if (t && t.id) taskIdToNewTask.set(t.id, t);
+  });
 
   // Build comprehensive set of known codes so commas inside them are protected
   const knownCodes = new Set<string>();
   for (const k of normalizedMap.keys()) knownCodes.add(k);
   for (const v of normalizedMap.values()) knownCodes.add(v.toLowerCase());
+  if (oldTaskNoMap) {
+    for (const k of oldTaskNoMap.keys()) knownCodes.add(k.toLowerCase());
+  }
   allTasks.forEach(t => {
     if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
     if (t.projectCode) knownCodes.add(t.projectCode.toLowerCase());
   });
 
   allTasks.forEach(t => {
-      if (!t.predecessor) return;
-      const preds = splitPredecessors(t.predecessor, knownCodes);
-      let changed = false;
-      const newPreds = preds.map(pMatches => {
-          const lowerMatches = pMatches.toLowerCase();
-          let longestMatch = "";
-          for (const oldCode of normalizedMap.keys()) {
-            if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
-              const remainder = lowerMatches.substring(oldCode.length);
-              if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
-                longestMatch = oldCode;
-              }
-            }
-          }
-          if (longestMatch) {
-            const newCode = normalizedMap.get(longestMatch)!;
-            if (newCode.toLowerCase() !== longestMatch) {
-              changed = true;
-              let replacementCode = newCode;
-              const originalMatchStr = pMatches.substring(0, longestMatch.length);
-              if (originalMatchStr === originalMatchStr.toUpperCase()) {
-                replacementCode = replacementCode.toUpperCase();
-              }
-              return replacementCode + pMatches.substring(longestMatch.length);
-            }
-          }
-          return pMatches;
-      });
+    if (!t || !t.predecessor) return;
+    const preds = splitPredecessors(t.predecessor, knownCodes);
+    let changed = false;
+    const newPreds = preds.map(pMatches => {
+      const trimmed = pMatches.trim();
+      if (!trimmed) return pMatches;
 
-      if (changed) {
-          updates.push({
-              id: t.id,
-              predecessor: newPreds.join(', '),
-              updatedAt: new Date().toISOString()
-          });
+      // 1. If oldTaskNoMap is provided, resolve target task before reorder via parsePredecessors (Absolute ID binding)
+      if (oldTaskNoMap) {
+        const parsed = parsePredecessors(trimmed, oldTaskNoMap, t);
+        if (parsed.length > 0 && parsed[0]?.task) {
+          const targetTaskObj = parsed[0].task;
+          const updatedTargetTask = taskIdToNewTask.get(targetTaskObj.id);
+          if (updatedTargetTask) {
+            const newPrimaryCode = updatedTargetTask.taskCodePhu || 
+              (updatedTargetTask.projectCode ? `${updatedTargetTask.projectCode}#${(updatedTargetTask.orderIndex ?? 0) + 1}` : updatedTargetTask.id);
+
+            // Extract relation/lag remainder from pMatches
+            let remainder = "";
+            const lowerMatches = trimmed.toLowerCase();
+            if (parsed[0].no && lowerMatches.startsWith(parsed[0].no.toLowerCase())) {
+              remainder = trimmed.substring(parsed[0].no.length);
+            } else {
+              remainder = trimmed.replace(/^[-#\s]*\d+/, '').replace(/^[a-zA-Z0-9_-]+[-#]\d+/, '').trim();
+            }
+
+            // Check if user originally wrote a short index (e.g. "2", "#2", "-2", "2FS+1") within same project
+            const shortMatch = trimmed.match(/^([-#\s]*)(\d+)(.*)$/);
+            const isSameProject = t.projectId && updatedTargetTask.projectId
+              ? t.projectId === updatedTargetTask.projectId
+              : (t.projectCode && updatedTargetTask.projectCode && 
+                 String(t.projectCode).trim().toLowerCase() === String(updatedTargetTask.projectCode).trim().toLowerCase());
+
+            if (shortMatch && isSameProject) {
+              const prefixSymbol = shortMatch[1]; // e.g. "", "#", "-"
+              const newSubtaskNum = (updatedTargetTask.orderIndex !== undefined ? updatedTargetTask.orderIndex : 0) + 1;
+              const restSuffix = shortMatch[3]; // e.g. "FS+1"
+              const reassembled = `${prefixSymbol}${newSubtaskNum}${restSuffix}`;
+              if (reassembled !== trimmed) {
+                changed = true;
+                return reassembled;
+              }
+              return trimmed;
+            } else {
+              // Full project code format
+              const reassembled = `${newPrimaryCode}${remainder}`;
+              if (reassembled !== trimmed) {
+                changed = true;
+                return reassembled;
+              }
+              return trimmed;
+            }
+          }
+        }
       }
+
+      // 2. Fallback to string normalizedMap matching
+      const lowerMatches = trimmed.toLowerCase();
+      let longestMatch = "";
+      for (const oldCode of normalizedMap.keys()) {
+        if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
+          const remainder = lowerMatches.substring(oldCode.length);
+          if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
+            longestMatch = oldCode;
+          }
+        }
+      }
+      if (longestMatch) {
+        const newCode = normalizedMap.get(longestMatch)!;
+        if (newCode.toLowerCase() !== longestMatch) {
+          changed = true;
+          let replacementCode = newCode;
+          const originalMatchStr = trimmed.substring(0, longestMatch.length);
+          if (originalMatchStr === originalMatchStr.toUpperCase()) {
+            replacementCode = replacementCode.toUpperCase();
+          }
+          return replacementCode + trimmed.substring(longestMatch.length);
+        }
+      }
+      return pMatches;
+    });
+
+    if (changed) {
+      updates.push({
+        id: t.id,
+        predecessor: newPreds.join(', '),
+        updatedAt: new Date().toISOString()
+      });
+    }
   });
 
   return updates;
@@ -567,34 +630,14 @@ export function sortTasksByPredecessorsAndDates(
     return compResult;
   });
 
-  // 3. Sort components relative to each other by earliest start date of the chain
+  // 3. Sort components relative to each other by start date & order of the root task in each chain
   sortedComponents.sort((compA, compB) => {
-    const getEarliestStart = (comp: Task[]) => {
-      let minStart = '9999-12-31';
-      comp.forEach(t => {
-        if (t.start && t.start < minStart) minStart = t.start;
-      });
-      return minStart;
-    };
-    const getEarliestFinish = (comp: Task[]) => {
-      let minFinish = '9999-12-31';
-      comp.forEach(t => {
-        if (t.finish && t.finish < minFinish) minFinish = t.finish;
-      });
-      return minFinish;
-    };
-
-    const startA = getEarliestStart(compA);
-    const startB = getEarliestStart(compB);
-    if (startA !== startB) return startA < startB ? -1 : 1;
-
-    const finishA = getEarliestFinish(compA);
-    const finishB = getEarliestFinish(compB);
-    if (finishA !== finishB) return finishA < finishB ? -1 : 1;
-
-    if (compA.length !== compB.length) return compB.length - compA.length;
-
-    return compareTasks(compA[0], compB[0]);
+    const rootA = compA[0];
+    const rootB = compB[0];
+    if (!rootA && !rootB) return 0;
+    if (!rootA) return 1;
+    if (!rootB) return -1;
+    return compareTasks(rootA, rootB);
   });
 
   // 4. Flatten sorted component chains into single contiguous array

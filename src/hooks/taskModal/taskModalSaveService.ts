@@ -232,7 +232,7 @@ export async function executeTaskSave({
       }
     }
 
-    const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects);
+    const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects, oldTaskNoMap);
     const predecessorUpdates = predecessorUpdatesOrig.filter(pu => pu.id !== id);
     const predecessorUpdatesMap = new Map(predecessorUpdates.map(pu => [pu.id, pu]));
 

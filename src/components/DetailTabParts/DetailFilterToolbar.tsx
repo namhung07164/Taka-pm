@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Search, Edit3, Plus, Wand2, Hash, X } from 'lucide-react';
+import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { ColumnAdder } from '../ColumnAdder';
@@ -46,6 +46,8 @@ interface DetailFilterToolbarProps {
   handleExportTasks: () => void;
   handleImportTasks: (e: React.ChangeEvent<HTMLInputElement>) => void;
   parseCSVDate?: (d: any) => string;
+  onSortSubTasks?: () => void;
+  isSortingSubTasks?: boolean;
 }
 
 export const DetailFilterToolbar = memo(function DetailFilterToolbar({
@@ -83,7 +85,9 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
   handleImportProjects,
   handleExportTasks,
   handleImportTasks,
-  parseCSVDate
+  parseCSVDate,
+  onSortSubTasks,
+  isSortingSubTasks
 }: DetailFilterToolbarProps) {
   return (
     <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
@@ -197,6 +201,20 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     {activeProjectInView?.code ? `+ Task (${activeProjectInView.code})` : 'Add New Task'}
                   </span>
                 </button>
+
+                {onSortSubTasks && (
+                  <button 
+                    onClick={onSortSubTasks}
+                    disabled={isSortingSubTasks}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white rounded-lg hover:bg-amber-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title={activeProjectInView?.code ? `Sort sub-tasks for ${activeProjectInView.code} by Start Date & Dependencies` : "Sort sub-tasks by Start Date & Dependencies"}
+                  >
+                    <ArrowUpDown className={`w-4 h-4 pointer-events-none ${isSortingSubTasks ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isSortingSubTasks ? 'Sorting...' : (activeProjectInView?.code ? `Sort (${activeProjectInView.code})` : 'Sort Sub-tasks')}
+                    </span>
+                  </button>
+                )}
 
                 <button 
                   onClick={() => handleSyncAllPredecessors(true)}

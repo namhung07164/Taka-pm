@@ -165,7 +165,7 @@ export function useGanttDragReorder({
     let allUpdatedTasks = tasks.map(t => updatesMap.get(t.id) || t);
     const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
     const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
-    const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
+    const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects, oldTaskNoMap);
 
     if (predUpdates.length > 0) {
       const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
