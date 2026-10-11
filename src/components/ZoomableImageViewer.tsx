@@ -296,9 +296,11 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
             ref={transformRef}
             initialScale={effectiveInitialScale}
             minScale={0.5}
-            maxScale={6}
+            maxScale={8}
             centerOnInit
-            wheel={{ step: 0.003 }}
+            smooth={false}
+            wheel={{ step: 0.05 }}
+            zoomAnimation={{ disabled: true }}
             pinch={{ step: 2 }}
             doubleClick={{ mode: 'toggle' }}
           >

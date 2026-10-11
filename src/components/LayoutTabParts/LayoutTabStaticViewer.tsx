@@ -48,7 +48,9 @@ export function LayoutTabStaticViewer({
         minScale={0.5}
         maxScale={6}
         centerOnInit={true}
-        wheel={{ step: 0.015 }}
+        smooth={false}
+        wheel={{ step: 0.05 }}
+        zoomAnimation={{ disabled: true }}
         pinch={{ step: 5 }}
         panning={{ disabled: false }}
         doubleClick={{

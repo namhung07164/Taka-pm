@@ -277,7 +277,9 @@ export function LayoutUnitLightboxModal({
               minScale={0.5}
               maxScale={8}
               centerOnInit
-              wheel={{ step: 0.003 }}
+              smooth={false}
+              wheel={{ step: 0.05 }}
+              zoomAnimation={{ disabled: true }}
               pinch={{ step: 2 }}
               doubleClick={{ mode: 'toggle' }}
             >

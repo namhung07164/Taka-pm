@@ -119,15 +119,15 @@ export function GanttToolbarActions({
       {/* Group Modular Tasks */}
       <button
         type="button"
-        disabled={selectedTaskIds.length < 2}
+        disabled={selectedTaskIds.length < 1}
         onClick={() => setIsTaskModularModalOpen(true)}
         className={cn(
           "p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all active:scale-95",
-          selectedTaskIds.length >= 2
-            ? "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-100"
+          selectedTaskIds.length >= 1
+            ? "bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-100 cursor-pointer"
             : "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 text-slate-400"
         )}
-        title={t('Group selected tasks into parent-child structure')}
+        title={t('Group or unlink selected modular tasks')}
       >
         <Layers className="w-3.5 h-3.5" />
         <span className="hidden xl:inline">{t('Modular')}</span>

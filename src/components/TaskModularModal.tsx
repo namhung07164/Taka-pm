@@ -168,7 +168,11 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   };
 
   return createPortal(
-    <div className={`fixed inset-0 ${zInfo.zClass} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`} onClick={onClose}>
+    <div 
+      className={`fixed inset-0 ${zInfo.zClass} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`} 
+      style={{ zIndex: zInfo.zValue || 185000 }}
+      onClick={onClose}
+    >
       <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button, input, select">
         <div 
           ref={nodeRef}
