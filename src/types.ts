@@ -334,6 +334,7 @@ export interface TakaDelta {
   isPatch?: boolean;
   batchItems?: TakaDeltaItem[];
   updatedBy?: string;
+  sessionId?: string;
   timestamp: string;
   numericTime: number;
 }
