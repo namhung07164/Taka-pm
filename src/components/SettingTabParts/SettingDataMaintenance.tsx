@@ -13,7 +13,8 @@ import {
   archiveHistoricalData 
 } from "./maintenanceHelpers";
 import { Project, Task } from "../../types";
-import { doc, collection, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, collection, getDocs } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from "../../lib/firebase";
 
 interface SettingDataMaintenanceProps {

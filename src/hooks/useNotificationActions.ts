@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../lib/firestoreWrites';
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { safeSetItemLocal, safeGetItemLocal } from '../lib/storage';

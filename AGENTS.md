@@ -98,3 +98,5 @@
 - **Realtime**: `deltaRealtimeListener.ts` giữ 1 `onSnapshot` trên `taka_deltas` (thay polling 25s). Polling chỉ còn là safety net 5 phút. Cấm đưa lại polling ngắn hạn.
 - **Auto Delta**: mọi ghi vào `taka_projects/tasks/costs/delegation_groups` qua wrapper trong `firebase.ts` tự phát delta `invalidate` (`autoDeltaQueue.ts`). Code mới KHÔNG cần tự gọi `recordDelta`, nhưng nếu gọi thì phải gọi trong vòng vài giây sau lệnh ghi để tránh phát trùng.
 - **Ghost record guard**: delta `update` cho doc chưa có trong store/Dexie phải bị bỏ qua, cấm tạo bản ghi từ patch một phần.
+- **Write imports (BẮT BUỘC)**: file ghi vào `taka_projects/tasks/costs/delegation_groups` phải import `setDoc/updateDoc/deleteDoc/writeBatch` từ `src/lib/firestoreWrites.ts` (hoặc `src/lib/firebase.ts`), CẤM import trực tiếp từ `firebase/firestore`, nếu không các máy khác sẽ không nhận được thay đổi.
+- **Sync cursor**: delta được sắp/lọc theo `serverTime` (serverTimestamp), không dùng `numericTime` (giờ máy) để truy vấn, để delta tạo lúc offline vẫn tới được các máy khác.

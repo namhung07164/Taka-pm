@@ -1,5 +1,6 @@
 import { Task, Project } from '../types';
-import { doc, writeBatch, collection, getDocs } from 'firebase/firestore';
+import { doc, collection, getDocs } from 'firebase/firestore';
+import { writeBatch } from './firestoreWrites';
 import { db, APP_ID } from './firebase';
 
 /**

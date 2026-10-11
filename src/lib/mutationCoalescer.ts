@@ -1,4 +1,5 @@
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc, updateDoc } from './firestoreWrites';
 import { db, APP_ID } from './firebase';
 import { addPendingUpdate } from './syncQueue';
 import { touchYearMeta } from './yearsFingerprintService';

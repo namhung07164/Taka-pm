@@ -2,7 +2,8 @@ import React from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
 import { Task, AppUser, DelegationGroup, Project } from '../../../types';
 import { cn } from '../../../lib/utils';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../../../lib/firestoreWrites';
 import { db, APP_ID } from '../../../lib/firebase';
 
 interface TaskChatApprovalBoardProps {

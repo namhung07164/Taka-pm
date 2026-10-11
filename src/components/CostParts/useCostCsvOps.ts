@@ -1,5 +1,6 @@
 import React from 'react';
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { Cost, Project } from '../../types';
 import { generateCSV, downloadCSV, parseCSV } from '../../lib/csvUtils';

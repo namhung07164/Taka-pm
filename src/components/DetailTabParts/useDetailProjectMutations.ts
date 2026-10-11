@@ -1,7 +1,8 @@
 import React from 'react';
 import { Project, Task, DelegationGroup, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc, writeBatch, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { writeBatch, setDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';

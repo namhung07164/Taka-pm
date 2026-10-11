@@ -8,6 +8,8 @@ import {
   setDoc,
   doc,
   writeBatch,
+  serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
@@ -28,11 +30,19 @@ import { startDeltaRealtimeListener } from './deltaRealtimeListener';
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
 
-// Deltas carry the writer's client clock (numericTime). Re-read a small overlap window so a writer whose
+// The sync cursor is serverTime (server arrival time), NOT numericTime: a delta created offline carries an old
+// client time but arrives later. Only the device clock used for lastSyncTime is skewed; the overlap covers that.
+// (Legacy comment:) Deltas carry the writer's client clock (numericTime). Re-read a small overlap window so a writer whose
 // clock is slightly behind is not skipped; already-applied delta ids are filtered out below.
-const CLOCK_SKEW_OVERLAP_MS = 2 * 60 * 1000;
+const CLOCK_SKEW_OVERLAP_MS = 3 * 60 * 1000;
 const appliedDeltaIds = new Set<string>();
 const MAX_APPLIED_IDS = 3000;
+
+/** Sync cursor time of a delta in ms: server arrival time when known, else the client time. */
+export function deltaTime(d: TakaDelta): number {
+  const ms = (d as any)?.serverTime?.toMillis?.();
+  return typeof ms === 'number' ? ms : d.numericTime || 0;
+}
 
 export const CLIENT_SESSION_ID = typeof window !== 'undefined'
   ? `sess_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
@@ -68,6 +78,7 @@ export async function recordDelta(delta: {
     sessionId: CLIENT_SESSION_ID,
     timestamp: nowIso,
     numericTime: now,
+    serverTime: serverTimestamp() as any,
   };
 
   try {
@@ -119,6 +130,7 @@ export async function recordBatchDeltas(
     sessionId: CLIENT_SESSION_ID,
     timestamp: nowIso,
     numericTime: now,
+    serverTime: serverTimestamp() as any,
   };
 
   try {
@@ -272,8 +284,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   };
 
   deltas.forEach((delta) => {
-    if (delta.numericTime > maxTime) {
-      maxTime = delta.numericTime;
+    if (deltaTime(delta) > maxTime) {
+      maxTime = deltaTime(delta);
     }
 
     // 1. Skip self-mutations on this same tab/session to prevent typing jitter (Rule 2)
@@ -401,8 +413,8 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
       iteration++;
       const q = query(
         colRef,
-        where('numericTime', '>', currentSince),
-        orderBy('numericTime', 'asc'),
+        where('serverTime', '>', Timestamp.fromMillis(currentSince)),
+        orderBy('serverTime', 'asc'),
         limit(200)
       );
 
@@ -416,7 +428,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
         const item = d.data() as TakaDelta;
         const itemId = item.id || d.id;
         if (appliedDeltaIds.has(itemId)) {
-          if (item.numericTime > pageMaxTime) pageMaxTime = item.numericTime;
+          if (deltaTime(item) > pageMaxTime) pageMaxTime = deltaTime(item);
           return;
         }
         appliedDeltaIds.add(itemId);
@@ -425,8 +437,8 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
           if (oldest !== undefined) appliedDeltaIds.delete(oldest);
         }
         deltas.push(item);
-        if (item.numericTime > pageMaxTime) {
-          pageMaxTime = item.numericTime;
+        if (deltaTime(item) > pageMaxTime) {
+          pageMaxTime = deltaTime(item);
         }
       });
 

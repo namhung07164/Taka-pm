@@ -1,7 +1,8 @@
 import React from 'react';
 import { Project, Task, DelegationGroup, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc, writeBatch, deleteField } from 'firebase/firestore';
+import { doc, deleteField } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { generateId } from '../../lib/utils';
 import { saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';

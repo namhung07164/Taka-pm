@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Task, Project, AppUser, TakaDeltaItem } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc, writeBatch, deleteField } from 'firebase/firestore';
+import { doc, deleteField } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { recordBatchDeltas, recordDelta } from '../../lib/deltaSyncService';

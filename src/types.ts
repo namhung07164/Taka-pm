@@ -339,5 +339,7 @@ export interface TakaDelta {
   sessionId?: string;
   timestamp: string;
   numericTime: number;
+  /** Server arrival time (Firestore serverTimestamp). Sync cursor: immune to device clocks and offline delays. */
+  serverTime?: any;
 }
 

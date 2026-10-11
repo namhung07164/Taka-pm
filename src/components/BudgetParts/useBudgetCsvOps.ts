@@ -2,7 +2,8 @@ import React from 'react';
 import { Project } from '../../types';
 import { BudgetTreeNode } from './budgetTypes';
 import { downloadCSV, parseCSV, generateCSV } from '../../lib/csvUtils';
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { useAppStore } from '../../store/useAppStore';
 

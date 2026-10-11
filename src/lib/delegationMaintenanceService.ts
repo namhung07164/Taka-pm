@@ -1,11 +1,5 @@
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  writeBatch,
-  doc
-} from 'firebase/firestore';
+import { collection, query, where, getDocs, doc } from 'firebase/firestore';
+import { writeBatch } from './firestoreWrites';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { DelegationGroup } from '../types';

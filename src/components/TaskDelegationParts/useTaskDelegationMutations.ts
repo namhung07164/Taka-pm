@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc, deleteDoc } from '../../lib/firestoreWrites';
 import { Project, Task, AppUser, DelegationGroup, DelegationSubTask } from '../../types';
 import { db, APP_ID } from '../../lib/firebase';
 import { generateId, getTaskStatus, getStatus, resolveActualStatus } from '../../lib/utils';

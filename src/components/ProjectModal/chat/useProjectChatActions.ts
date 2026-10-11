@@ -1,4 +1,5 @@
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../../lib/firestoreWrites';
 import { db, APP_ID, storage, googleSignIn, getAccessToken } from '../../../lib/firebase';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { generateId } from '../../../lib/utils';

@@ -1,6 +1,0 @@
-{
-  "summary":  "Implementation plan for hard-linking predecessors to exact Task IDs with primary Task ID resolution and code fallback. Includes updates to data schema, matching logic, and UI to ensure unbreakable dependency connections.",
-  "updatedAt":  "2026-10-11T15:17:29.834581049Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Project } from '../../../types';
 import { useAppStore } from '../../../store/useAppStore';
-import { doc, setDoc, deleteField } from 'firebase/firestore';
+import { doc, deleteField } from 'firebase/firestore';
+import { setDoc } from '../../../lib/firestoreWrites';
 import { db, APP_ID } from '../../../lib/firebase';
 import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';

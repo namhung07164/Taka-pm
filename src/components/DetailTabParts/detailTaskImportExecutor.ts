@@ -1,6 +1,7 @@
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';

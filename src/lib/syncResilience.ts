@@ -54,12 +54,17 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     if ((e as PageTransitionEvent).persisted) recover();
   };
 
+  // Network came back (e.g. iPhone was offline): force a clean reconnect so queued offline writes flush now
+  const handleOnline = () => { recover(); };
+
   document.addEventListener('visibilitychange', handleVisibility);
   window.addEventListener('pageshow', handlePageShow);
+  window.addEventListener('online', handleOnline);
 
   return () => {
     document.removeEventListener('visibilitychange', handleVisibility);
     window.removeEventListener('pageshow', handlePageShow);
+    window.removeEventListener('online', handleOnline);
   };
 }
 

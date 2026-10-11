@@ -1,4 +1,5 @@
-import { doc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, collection, query, where, getDocs } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID, storage } from '../../lib/firebase';
 import { ref, uploadString } from 'firebase/storage';
 
