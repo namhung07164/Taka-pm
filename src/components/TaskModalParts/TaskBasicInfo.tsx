@@ -238,6 +238,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           projects={projects}
           resolvedPredecessors={resolvedPredecessors}
           handlePredecessorChange={handlePredecessorChange}
+          handlePredecessorTaskIdsChange={handlePredecessorTaskIdsChange}
           handleApplyPredecessorDates={handleApplyPredecessorDates}
         />
 

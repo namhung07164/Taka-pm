@@ -135,6 +135,7 @@ export interface Task {
   comments?: TaskComment[];
   textColor?: string;
   taskCodePhu?: string;
+  predecessorTaskIds?: string[];
   parentTaskId?: string;
   isDeleted?: boolean;
 }
