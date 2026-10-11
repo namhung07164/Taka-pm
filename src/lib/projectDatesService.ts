@@ -248,7 +248,7 @@ export async function syncProjectDatesToFirestore(
       Number(existingProject.computedPlanProgress ?? 0) !== Number(dates.computedPlanProgress ?? 0) ||
       Number(existingProject.computedActProgress ?? 0) !== Number(dates.computedActProgress ?? 0) ||
       Number(existingProject.taskCount ?? 0) !== Number(dates.taskCount ?? 0) ||
-      (existingProject.taskSummaries?.length ?? 0) !== (dates.taskSummaries?.length ?? 0);
+      JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(dates.taskSummaries || []);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     if (existingProject) {
@@ -334,6 +334,17 @@ export async function syncProjectDatesToFirestore(
     }
 
     await setDoc(projectRef, updatePayload, { merge: true });
+
+    // Phát tín hiệu delta của taka_projects để các thiết bị khác đồng bộ real-time
+    const { recordDelta } = await import("./deltaSyncService");
+    recordDelta({
+      docId: projectId,
+      collectionName: "taka_projects",
+      action: "update",
+      isPatch: true,
+      data: updatePayload,
+      year: existingProject?.year ? String(existingProject.year) : undefined,
+    }).catch(() => {});
   } catch (error) {
     console.error(`Error syncing computed dates for project ${projectId}:`, error);
   }
