@@ -422,6 +422,8 @@ export function GanttTab({
         selectedTaskIds={selectedTaskIds}
         setSelectedTaskIds={setSelectedTaskIds}
         selectedProjectSet={selectedProjectSet}
+        selectedProjectIds={selectedProjectIds}
+        setSelectedProjectIds={setSelectedProjectIds}
         handleTaskCheckboxChange={handleTaskCheckboxChange}
         handleToggleSelectAll={handleToggleSelectAll}
         isAllSelected={isAllSelected}

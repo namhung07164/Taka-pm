@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Palette, Play, Layers, Trash2, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
+import { Palette, Play, Layers, Trash2, Eye, EyeOff, Save, Loader2, Unlink } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 import { cn } from '../../lib/utils';
 
@@ -9,6 +9,7 @@ interface GanttToolbarActionsProps {
   handleSetTextColor: (color: string | null) => void;
   handleSetBaselineSelected: () => void;
   setIsTaskModularModalOpen: (val: boolean) => void;
+  handleUnlinkModularTasks: (childTaskIds: string[]) => void;
   sumMode: "none" | "duration";
   setSumMode: (val: "none" | "duration") => void;
   handleDeleteSelected: () => void;
@@ -127,10 +128,27 @@ export function GanttToolbarActions({
             ? "bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-100 cursor-pointer"
             : "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 text-slate-400"
         )}
-        title={t('Group or unlink selected modular tasks')}
+        title={t('Group or manage selected modular tasks')}
       >
         <Layers className="w-3.5 h-3.5" />
         <span className="hidden xl:inline">{t('Modular')}</span>
+      </button>
+
+      {/* Unlink Modular Tasks */}
+      <button
+        type="button"
+        disabled={selectedTaskIds.length < 1}
+        onClick={() => handleUnlinkModularTasks(selectedTaskIds)}
+        className={cn(
+          "p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-all active:scale-95",
+          selectedTaskIds.length >= 1
+            ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 hover:bg-red-100 cursor-pointer"
+            : "opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-800 text-slate-400"
+        )}
+        title={t('Unlink selected tasks from their parent modular link')}
+      >
+        <Unlink className="w-3.5 h-3.5" />
+        <span className="hidden xl:inline">{t('Unlink')}</span>
       </button>
 
       {/* Sum Duration */}

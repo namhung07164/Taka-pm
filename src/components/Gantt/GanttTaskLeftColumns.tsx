@@ -79,6 +79,9 @@ export function GanttTaskLeftColumns({
               <input
                 type="checkbox"
                 checked={isSelected}
+                onClick={(e) => {
+                  (e.target as any)._shiftKey = e.shiftKey;
+                }}
                 onChange={(e) => handleTaskCheckboxChange(e, t.id)}
                 className="rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
               />

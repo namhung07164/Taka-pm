@@ -60,6 +60,8 @@ interface GanttTableViewProps {
   selectedTaskIds: string[];
   setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
   selectedProjectSet: Set<string>;
+  selectedProjectIds?: string[];
+  setSelectedProjectIds?: (ids: string[]) => void;
   handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void;
   handleToggleSelectAll: () => void;
   isAllSelected: boolean;
@@ -130,6 +132,8 @@ export function GanttTableView({
   selectedTaskIds,
   setSelectedTaskIds,
   selectedProjectSet,
+  selectedProjectIds = [],
+  setSelectedProjectIds,
   handleTaskCheckboxChange,
   handleToggleSelectAll,
   isAllSelected,
@@ -381,6 +385,9 @@ export function GanttTableView({
                     isEditMode={isEditMode}
                     canWrite={canWrite}
                     selectedProjectSet={selectedProjectSet}
+                    selectedProjectIds={selectedProjectIds}
+                    setSelectedProjectIds={setSelectedProjectIds}
+                    setSelectedTaskIds={setSelectedTaskIds}
                     getBarColor={getBarColor}
                     handleTogglePin={handleTogglePin}
                     getRowVisibilityClass={getRowVisibilityClass}

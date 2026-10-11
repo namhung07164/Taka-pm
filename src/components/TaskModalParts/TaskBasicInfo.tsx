@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Unlink } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { TaskModalLogicType } from '../../hooks/useTaskModalLogic';
 import { MultiSelect } from '../MultiSelect';
@@ -30,6 +30,12 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
     if (!task) return null;
     return delegationGroups.find(g => g.parentTaskId === task.id || g.id === task.id);
   }, [task, delegationGroups]);
+
+  const activeParentTask = React.useMemo(() => {
+    const parentId = formData.parentTaskId || task?.parentTaskId;
+    if (!parentId) return null;
+    return tasks.find(pt => pt.id === parentId || (pt.taskCodePhu && String(pt.taskCodePhu).toLowerCase() === String(parentId).toLowerCase()));
+  }, [formData.parentTaskId, task?.parentTaskId, tasks]);
 
   return (
     <>
@@ -85,19 +91,75 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
         </div>
       </div>
 
-      <div className="mb-4">
-        <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Task Name *</label>
-        <FastInput 
-          ref={nameRef}
-          type="text" 
-          inputMode="text"
-          value={formData.name || ''}
-          onChange={(val) => setFormData({ ...formData, name: val })}
-          required 
-          readOnly={!canWrite}
-          className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-slate-50 read-only:text-slate-500"
-        />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="md:col-span-2">
+          <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Task Name *</label>
+          <FastInput 
+            ref={nameRef}
+            type="text" 
+            inputMode="text"
+            value={formData.name || ''}
+            onChange={(val) => setFormData({ ...formData, name: val })}
+            required 
+            readOnly={!canWrite}
+            className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-slate-50 read-only:text-slate-500 font-semibold"
+          />
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase">
+              Taka Words / Mã phụ
+            </label>
+            {formData.taskCodePhu && canWrite && (
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, taskCodePhu: '' })}
+                className="text-[10px] font-bold text-red-500 hover:text-red-600 hover:underline cursor-pointer"
+                title="Xóa Taka Word (sẽ tự động tạo lại mã chuẩn)"
+              >
+                Xóa Taka word
+              </button>
+            )}
+          </div>
+          <FastInput 
+            type="text" 
+            inputMode="text"
+            value={formData.taskCodePhu || ''}
+            onChange={(val) => setFormData({ ...formData, taskCodePhu: val })}
+            placeholder="Tự động nếu để trống..."
+            readOnly={!canWrite}
+            className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-500 read-only:bg-slate-50 read-only:text-slate-500 font-mono font-bold"
+          />
+        </div>
       </div>
+
+      {/* Modular Parent Task Banner if linked */}
+      {(formData.parentTaskId || task?.parentTaskId) && (
+        <div className="mb-4 p-3 rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50/80 dark:bg-purple-950/30 flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="p-1.5 rounded-lg bg-purple-600 text-white font-bold text-xs shrink-0">↳</span>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-purple-900 dark:text-purple-200 truncate">
+                Đang thuộc Task Mẹ: <span className="font-extrabold underline">{activeParentTask ? activeParentTask.name : (formData.parentTaskId || task?.parentTaskId)}</span>
+              </div>
+              <div className="text-[11px] text-purple-700 dark:text-purple-300 italic">
+                Công việc này đang được gộp làm sub-task modular.
+              </div>
+            </div>
+          </div>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, parentTaskId: undefined })}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-white dark:bg-[#1e1e20] hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg border border-red-200 dark:border-red-800 shadow-xs transition-all shrink-0 active:scale-95 cursor-pointer"
+              title="Tách khỏi task mẹ để trở thành công việc độc lập"
+            >
+              <Unlink className="w-3.5 h-3.5" />
+              <span>Tách khỏi Task Mẹ (Unlink)</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Delegation Toggle & Tracker Access Box */}
       <div className="mb-4 p-3 sm:p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] bg-slate-50/80 dark:bg-[#252528] flex flex-col gap-2">

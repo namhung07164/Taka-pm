@@ -1,4 +1,4 @@
-import { doc } from 'firebase/firestore';
+import { doc, deleteField } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from '../../lib/firebase';
 import { addPendingUpdate } from '../../lib/syncQueue';
 import { undoManager } from '../../lib/undoManager';
@@ -196,7 +196,7 @@ export async function executeTaskSave({
       return true;
     }
     
-    let dataToSave = {
+    let dataToSave: any = {
       ...finalFormData,
       id,
       projectYear: Number(currentYear) || new Date().getFullYear(),
@@ -209,6 +209,15 @@ export async function executeTaskSave({
       dataToSave.realtimeUpdate = true;
     } else {
       dataToSave.realtimeUpdate = false;
+    }
+
+    // Explicitly delete fields from Firestore if unlinked or cleared
+    if (task?.parentTaskId && !finalFormData.parentTaskId) {
+      dataToSave.parentTaskId = deleteField();
+      dataToSave.parentId = null;
+    }
+    if (task?.taskCodePhu && (!finalFormData.taskCodePhu || !finalFormData.taskCodePhu.trim())) {
+      dataToSave.taskCodePhu = deleteField();
     }
 
     Object.keys(dataToSave).forEach(key => {

@@ -153,13 +153,14 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                   type="checkbox"
                   checked={selectedProjectSet?.has(String(p.no)) || false}
                   onChange={(e) => {
+                    const currentProjectIds = selectedProjectIds || [];
                     if (e.target.checked) {
-                      if (setSelectedProjectIds) setSelectedProjectIds([...selectedProjectIds, String(p.no)]);
-                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...prev, ...projectTasks.map((t) => t.id)])]);
+                      if (setSelectedProjectIds) setSelectedProjectIds([...currentProjectIds, String(p.no)]);
+                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => [...new Set([...(prev || []), ...projectTasks.map((t) => t.id)])]);
                     } else {
-                      if (setSelectedProjectIds) setSelectedProjectIds(selectedProjectIds.filter((id) => id !== String(p.no)));
+                      if (setSelectedProjectIds) setSelectedProjectIds(currentProjectIds.filter((id) => id !== String(p.no)));
                       const pTasksIds = new Set(projectTasks.map((t) => t.id));
-                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => prev.filter((id: string) => !pTasksIds.has(id)));
+                      if (setSelectedTaskIds) setSelectedTaskIds((prev: any) => (prev || []).filter((id: string) => !pTasksIds.has(id)));
                     }
                   }}
                   className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"

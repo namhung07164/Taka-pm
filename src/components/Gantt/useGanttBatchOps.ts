@@ -76,30 +76,44 @@ export function useGanttBatchOps({
     return hiddenRowsSet.has(id) ? (isHideMode ? "opacity-30 line-through" : "hidden") : "";
   };
 
+  const visualTasksList = useMemo(() => {
+    if (!paginatedProjects || !getGroupTasksForProject) return tasks;
+    return paginatedProjects.flatMap(p => getGroupTasksForProject(p) || []);
+  }, [paginatedProjects, getGroupTasksForProject, tasks]);
+
   // Checkbox selection with Shift-range
   const handleTaskCheckboxChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>, taskId: string) => {
-      const isShift = (e.nativeEvent as MouseEvent).shiftKey;
-      const isChecked = e.target.checked;
+    (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, taskId: string) => {
+      const nativeEv = (e.nativeEvent || e) as any;
+      const isShift = Boolean(
+        nativeEv?.shiftKey || 
+        (e as any).shiftKey || 
+        (e.target as any)?._shiftKey || 
+        (window.event as any)?.shiftKey
+      );
+      const target = (e.target || e.currentTarget) as HTMLInputElement;
+      const isChecked = target ? Boolean(target.checked) : !selectedTaskSet.has(taskId);
 
       if (isChecked) {
         if (isShift && lastSelectedTaskIdRef.current && lastSelectedTaskIdRef.current !== taskId) {
-          const allTaskIds = tasks.map(t => t.id);
-          const startIdx = allTaskIds.indexOf(lastSelectedTaskIdRef.current);
-          const endIdx = allTaskIds.indexOf(taskId);
+          const orderedIds = (visualTasksList.length > 0 ? visualTasksList : tasks).map(t => t.id);
+          const startIdx = orderedIds.indexOf(lastSelectedTaskIdRef.current);
+          const endIdx = orderedIds.indexOf(taskId);
           if (startIdx !== -1 && endIdx !== -1) {
-            const range = allTaskIds.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1);
+            const range = orderedIds.slice(Math.min(startIdx, endIdx), Math.max(startIdx, endIdx) + 1);
             setSelectedTaskIds(prev => Array.from(new Set([...prev, ...range])));
+          } else {
+            setSelectedTaskIds(prev => Array.from(new Set([...prev, taskId])));
           }
         } else {
-          setSelectedTaskIds(prev => [...prev, taskId]);
+          setSelectedTaskIds(prev => Array.from(new Set([...prev, taskId])));
         }
         lastSelectedTaskIdRef.current = taskId;
       } else {
         setSelectedTaskIds(prev => prev.filter(id => id !== taskId));
       }
     },
-    [tasks]
+    [visualTasksList, tasks, selectedTaskSet]
   );
 
   // Group / Unlink modular tasks
@@ -125,6 +139,19 @@ export function useGanttBatchOps({
 
     try {
       await batch.commit();
+      const deltaItems: TakaDeltaItem[] = childTaskIds.map(id => {
+        const t = prevTasks.find(item => item.id === id);
+        return {
+          docId: id,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: { parentTaskId, parentId: parentTaskId, updatedAt: now },
+          year: t?.projectYear ? String(t.projectYear) : undefined,
+        };
+      });
+      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
       useAppStore.getState().setToast({
         title: "Success",
         message: `Grouped ${childTaskIds.length} tasks under parent modular task.`
@@ -160,6 +187,19 @@ export function useGanttBatchOps({
 
     try {
       await batch.commit();
+      const deltaItems: TakaDeltaItem[] = childTaskIds.map(id => {
+        const t = prevTasks.find(item => item.id === id);
+        return {
+          docId: id,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: { parentTaskId: null, parentId: null, updatedAt: now },
+          year: t?.projectYear ? String(t.projectYear) : undefined,
+        };
+      });
+      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
       useAppStore.getState().setToast({
         title: "Success",
         message: `Unlinked ${childTaskIds.length} modular tasks.`
