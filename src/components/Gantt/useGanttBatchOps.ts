@@ -82,6 +82,14 @@ export function useGanttBatchOps({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Shift') isShiftHeldRef.current = true;
+      if (e.key === 'Escape') {
+        const target = e.target as HTMLElement;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+          return;
+        }
+        setSelectedTaskIds((prev) => (prev.length > 0 ? [] : prev));
+        setSelectedProjectIds((prev) => (prev.length > 0 ? [] : prev));
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Shift') isShiftHeldRef.current = false;
