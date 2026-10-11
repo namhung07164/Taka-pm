@@ -234,29 +234,208 @@ export async function deleteTaskStateUnified(
     }
   } catch (e) {}
 
-  // 4. Đồng bộ cập nhật parentTaskId = null lên Firestore cho các task con bị mồ côi
-  if (unlinkedChildTasks.length > 0) {
-    setTimeout(async () => {
-      try {
-        const { doc, writeBatch, deleteField } = await import('firebase/firestore');
-        const { db, APP_ID } = await import('./firebase');
-        const batch = writeBatch(db);
-        unlinkedChildTasks.forEach(c => {
-          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', c.id);
-          batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
-        });
-        await batch.commit();
-      } catch (e) {
-        console.warn('[taskStateService] Failed to persist unlinked child tasks to Firestore:', e);
-      }
-    }, 50);
-  }
+  // 4. Đồng bộ đánh dấu isDeleted = true & Delta Sync lên Firestore cho các task bị xóa
+  setTimeout(async () => {
+    try {
+      const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+      const { db, APP_ID } = await import('./firebase');
+      const { recordBatchDeltas } = await import('./deltaSyncService');
+      const batch = writeBatch(db);
+
+      // Đánh dấu isDeleted = true cho các task bị xóa
+      tasksToDelete.forEach(t => {
+        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+        batch.set(docRef, { id: t.id, isDeleted: true, updatedAt: now }, { merge: true });
+      });
+
+      // Gỡ link parentTaskId cho các task con bị mồ côi
+      unlinkedChildTasks.forEach(c => {
+        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', c.id);
+        batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+      });
+
+      await batch.commit();
+
+      const currentUser = useAppStore.getState().currentUser;
+      const deltaItems: any[] = [
+        ...tasksToDelete.map(t => ({
+          docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
+        })),
+        ...unlinkedChildTasks.map(c => ({
+          docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
+          data: { parentTaskId: null, parentId: null, updatedAt: now }
+        }))
+      ];
+      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+    } catch (e) {
+      console.warn('[taskStateService] Failed to persist task deletion to Firestore:', e);
+    }
+  }, 50);
 
   if (options?.syncProjects === false) return;
 
   // 5. Tính lại tiến độ & mốc ngày cho các dự án với danh sách tasks còn lại
   const remainingTasks = useAppStore.getState().tasks;
   await syncAffectedProjects(affectedProjects, remainingTasks);
+}
+
+/**
+ * Shared State Handler: Xóa Dự Án đồng bộ giữa mọi Tab (DetailTab, ProjectModal, QuickNav)
+ * 1. Optimistic update: Xóa Project, Tasks, Costs, Delegations khỏi Zustand store (0ms UI lag).
+ * 2. Purge khỏi Dexie (IndexedDB) ngay lập tức để tránh re-hydrate lại project & tasks đã xóa.
+ * 3. Batch commit đánh dấu isDeleted = true lên Firestore (projects, tasks, costs) & delete delegations.
+ * 4. Xóa tệp đính kèm trên Firebase Storage.
+ * 5. Ghi Delta log (taka_deltas) để đồng bộ đa màn hình / đa tab.
+ */
+export async function deleteProjectStateUnified(
+  projectIdOrCode: string,
+  projectObj?: Project
+): Promise<void> {
+  if (!projectIdOrCode) return;
+
+  const store = useAppStore.getState();
+  const currentProjects = store.projects;
+  const currentTasks = store.tasks;
+  const currentCosts = store.costs || [];
+  const currentDelegations = store.delegationGroups || [];
+
+  const targetKey = String(projectIdOrCode).trim().toLowerCase();
+
+  // Tìm dự án trong store
+  const targetProject = projectObj || currentProjects.find(p => 
+    (p.id && String(p.id).trim().toLowerCase() === targetKey) ||
+    (p.code && String(p.code).trim().toLowerCase() === targetKey) ||
+    (p.no !== undefined && String(p.no).trim().toLowerCase() === targetKey)
+  );
+
+  const pCode = targetProject?.code ? String(targetProject.code).trim().toLowerCase() : targetKey;
+  const pId = targetProject?.id ? String(targetProject.id) : (targetProject?.no !== undefined ? String(targetProject.no) : projectIdOrCode);
+
+  // Xác định các tasks liên quan
+  const relatedTasks = currentTasks.filter(t => {
+    if (t.projectId && String(t.projectId) === pId) return true;
+    if (t.projectCode && String(t.projectCode).trim().toLowerCase() === pCode) return true;
+    return false;
+  });
+  const relatedTaskIds = new Set(relatedTasks.map(t => String(t.id)));
+
+  // Xác định các costs liên quan
+  const relatedCosts = currentCosts.filter(c => {
+    if ((c as any).projectId && String((c as any).projectId) === pId) return true;
+    if (c.projectCode && String(c.projectCode).trim().toLowerCase() === pCode) return true;
+    return false;
+  });
+  const relatedCostIds = new Set(relatedCosts.map(c => String(c.id)));
+
+  // Xác định các delegations liên quan
+  const relatedDelegations = currentDelegations.filter(d => {
+    if ((d as any).projectId && String((d as any).projectId) === pId) return true;
+    if (d.projectCode && String(d.projectCode).trim().toLowerCase() === pCode) return true;
+    if (d.parentTaskId && relatedTaskIds.has(String(d.parentTaskId))) return true;
+    return false;
+  });
+  const relatedDelegationIds = new Set(relatedDelegations.map(d => String(d.id)));
+
+  const nowIso = new Date().toISOString();
+
+  // 1. Optimistic delete tức thì trong Zustand store
+  const updatedProjects = currentProjects.filter(p => 
+    String(p.id) !== pId && 
+    String(p.code || '').trim().toLowerCase() !== pCode &&
+    String(p.no ?? '') !== pId
+  );
+  const updatedTasks = currentTasks.filter(t => !relatedTaskIds.has(String(t.id)));
+  const updatedCosts = currentCosts.filter(c => !relatedCostIds.has(String(c.id)));
+  const updatedDelegations = currentDelegations.filter(d => !relatedDelegationIds.has(String(d.id)));
+
+  store.setProjects(updatedProjects);
+  store.setTasks(updatedTasks);
+  store.setCosts(updatedCosts);
+  store.setDelegationGroups(updatedDelegations);
+
+  // 2. Clear khỏi Dexie (IndexedDB) lập tức
+  try {
+    const { localDb } = await import('./localDb');
+    await localDb.projects.delete(pId);
+    if (targetProject?.id) await localDb.projects.delete(targetProject.id);
+    if (pCode) {
+      await localDb.projects.where('code').equalsIgnoreCase(pCode).delete().catch(() => {});
+    }
+    if (relatedTaskIds.size > 0) {
+      await localDb.tasks.bulkDelete(Array.from(relatedTaskIds));
+    }
+    if (relatedCostIds.size > 0) {
+      await localDb.costs.bulkDelete(Array.from(relatedCostIds));
+    }
+    if (relatedDelegationIds.size > 0) {
+      await localDb.delegations.bulkDelete(Array.from(relatedDelegationIds));
+    }
+  } catch (e) {
+    console.warn('[taskStateService] Dexie project delete error:', e);
+  }
+
+  // 3. Storage Deep Clean (Rule 4)
+  try {
+    const { extractStorageUrls, deleteStorageFiles } = await import('./storageUtils');
+    const urls: string[] = [];
+    if (targetProject) urls.push(...extractStorageUrls(targetProject));
+    relatedTasks.forEach(t => urls.push(...extractStorageUrls(t)));
+    relatedCosts.forEach(c => urls.push(...extractStorageUrls(c)));
+    if (urls.length > 0) {
+      deleteStorageFiles(urls).catch(() => {});
+    }
+  } catch (e) {}
+
+  // 4. Batch commit đánh dấu isDeleted = true trên Firestore
+  try {
+    const { doc, writeBatch } = await import('firebase/firestore');
+    const { db, APP_ID } = await import('./firebase');
+    const { recordBatchDeltas } = await import('./deltaSyncService');
+
+    const batch = writeBatch(db);
+
+    // Đánh dấu xóa project
+    const projectDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', pId);
+    batch.set(projectDocRef, { id: pId, isDeleted: true, updatedAt: nowIso }, { merge: true });
+
+    // Đánh dấu xóa related tasks
+    relatedTasks.forEach(t => {
+      const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      batch.set(taskRef, { id: t.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+    });
+
+    // Đánh dấu xóa related costs
+    relatedCosts.forEach(c => {
+      const costRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
+      batch.set(costRef, { id: c.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+    });
+
+    // Xóa delegation groups
+    relatedDelegations.forEach(d => {
+      const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id);
+      batch.delete(delRef);
+    });
+
+    await batch.commit();
+
+    // 5. Ghi Delta Log
+    const currentUser = store.currentUser;
+    const deltaItems: any[] = [
+      { docId: pId, collectionName: 'taka_projects', action: 'delete', isPatch: false, data: null },
+      ...relatedTasks.map(t => ({
+        docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
+      })),
+      ...relatedCosts.map(c => ({
+        docId: c.id, collectionName: 'taka_costs', action: 'delete', isPatch: false, data: null
+      })),
+      ...relatedDelegations.map(d => ({
+        docId: d.id, collectionName: 'taka_delegation_groups', action: 'delete', isPatch: false, data: null
+      }))
+    ];
+    recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+  } catch (err) {
+    console.error('[taskStateService] deleteProjectStateUnified Firestore batch commit failed:', err);
+  }
 }
 
 /**

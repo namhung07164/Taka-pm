@@ -183,12 +183,13 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
       collection = localDb.projects.where('year').equals(String(year));
     }
     const results = await collection.toArray();
+    const activeProjects = results.filter((p) => !p.isDeleted);
     if (store && store !== 'all' && store !== 'ALL') {
-      return results.filter(
+      return activeProjects.filter(
         (p) => p.store && p.store.toLowerCase() === store.toLowerCase()
       );
     }
-    return results;
+    return activeProjects;
   } catch (err) {
     console.warn('[localDb] getLocalProjects error:', err);
     return [];
