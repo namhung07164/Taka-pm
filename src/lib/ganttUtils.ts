@@ -5,18 +5,37 @@ import { parsePredecessorToken } from './predecessorMatchUtils';
 
 export function getPredecessorCodeUpdates(oldTaskNoMap: Map<string, Task[]>, newTaskNoMap: Map<string, Task[]>, projects: Project[], newTasks: Task[]): Map<string, string> {
   const oldCodeToNewCode = new Map<string, string>();
-  const taskIdToOldCode = new Map<string, string>();
+  const taskIdToOldCodes = new Map<string, string[]>();
+
   for (const [code, groupTasks] of oldTaskNoMap.entries()) {
-      groupTasks.forEach(t => taskIdToOldCode.set(t.id, code));
+    groupTasks.forEach(t => {
+      if (!t || !t.id) return;
+      const list = taskIdToOldCodes.get(t.id) || [];
+      if (!list.includes(code)) list.push(code);
+      taskIdToOldCodes.set(t.id, list);
+    });
   }
-  for (const [code, groupTasks] of newTaskNoMap.entries()) {
-      groupTasks.forEach(t => {
-          const oldCode = taskIdToOldCode.get(t.id);
-          if (oldCode && oldCode !== code) {
-              oldCodeToNewCode.set(oldCode, code);
-          }
+
+  const taskCodeMap = computeAllTaskCodes(projects, newTasks);
+
+  newTasks.forEach(t => {
+    if (!t || !t.id) return;
+    const oldCodes = taskIdToOldCodes.get(t.id) || [];
+    const newPrimaryCode = taskCodeMap.get(t.id) || t.taskCodePhu || (t.projectCode ? `${t.projectCode}#${(t.orderIndex ?? 0) + 1}` : t.id);
+
+    if (newPrimaryCode) {
+      oldCodes.forEach(oldCode => {
+        if (
+          oldCode &&
+          oldCode.toLowerCase() !== newPrimaryCode.toLowerCase() &&
+          oldCode.toLowerCase() !== t.id.toLowerCase()
+        ) {
+          oldCodeToNewCode.set(oldCode.toLowerCase(), newPrimaryCode);
+        }
       });
-  }
+    }
+  });
+
   return oldCodeToNewCode;
 }
 
@@ -628,10 +647,12 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 
       addKey(t, `${pCode}#${i + 1}`);
       addKey(t, `${pCode}-${i + 1}`);
+      addKey(t, `#${i + 1}`);
 
       if (t.orderIndex !== undefined && t.orderIndex !== null) {
         addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
         addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
+        addKey(t, `#${Number(t.orderIndex) + 1}`);
       }
 
       if (t.id) addKey(t, t.id);

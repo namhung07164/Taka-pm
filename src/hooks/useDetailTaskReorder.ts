@@ -8,7 +8,9 @@ import {
   sortTasksByPredecessorsAndDates, 
   updatePredecessorsStrings, 
   healAllTasksPredecessors, 
-  reorderAndCalculateTasks 
+  reorderAndCalculateTasks,
+  buildTaskNoMap,
+  getPredecessorCodeUpdates
 } from '../lib/ganttUtils';
 import { reorderTasksStateUnified } from '../lib/taskStateService';
 
@@ -36,33 +38,12 @@ export function useDetailTaskReorder({
 
   const handleSortSubTasks = useCallback(async (p: Project, groupTasks: Task[]) => {
     try {
+      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
       const sorted = sortTasksByPredecessorsAndDates(groupTasks, projects, tasks);
-
-      const oldCodeToNewCode = new Map<string, string>();
-      const pCodeParts = String(p.code || '').toLowerCase().split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
-
-      groupTasks.forEach((t, i) => {
-        const oldIndex = i;
-        const newIndex = sorted.findIndex(st => st.id === t.id);
-        const newCode = `${p.code}#${newIndex + 1}`;
-        
-        if (t.taskCodePhu) {
-          oldCodeToNewCode.set(t.taskCodePhu.trim().toLowerCase(), newCode);
-        }
-        oldCodeToNewCode.set(`${p.code}#${oldIndex + 1}`.toLowerCase(), newCode);
-        oldCodeToNewCode.set(`${p.code}-${oldIndex + 1}`.toLowerCase(), newCode);
-
-        // Map any sub-parts of project code (e.g. "l1-115-13" -> "L1-115, L1-113#13")
-        pCodeParts.forEach(part => {
-          oldCodeToNewCode.set(`${part}#${oldIndex + 1}`.toLowerCase(), newCode);
-          oldCodeToNewCode.set(`${part}-${oldIndex + 1}`.toLowerCase(), newCode);
-          oldCodeToNewCode.set(`${part}#${newIndex + 1}`.toLowerCase(), newCode);
-          oldCodeToNewCode.set(`${part}-${newIndex + 1}`.toLowerCase(), newCode);
-        });
-      });
 
       const batch = writeBatch(db);
       const updatesPerTask = new Map<string, any>();
+      const now = new Date().toISOString();
 
       sorted.forEach((t, index) => {
         const newCode = `${p.code}#${index + 1}`;
@@ -70,7 +51,7 @@ export function useDetailTaskReorder({
           updatesPerTask.set(t.id, { 
             orderIndex: index, 
             taskCodePhu: newCode, 
-            updatedAt: new Date().toISOString() 
+            updatedAt: now 
           });
         }
       });
@@ -79,6 +60,9 @@ export function useDetailTaskReorder({
         const up = updatesPerTask.get(t.id);
         return up ? { ...t, ...up } : t;
       });
+
+      const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
+      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
 
       const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
       if (predUpdates.length > 0) {
@@ -142,35 +126,15 @@ export function useDetailTaskReorder({
     if ((direction === 'up' && index === 0) || (direction === 'down' && index === groupTasks.length - 1)) return;
 
     try {
+      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
       const sorted = [...groupTasks];
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
       const [movedTask] = sorted.splice(index, 1);
       sorted.splice(targetIndex, 0, movedTask);
 
-      const oldCodeToNewCode = new Map<string, string>();
-      const pCodeParts = String(p.code || '').toLowerCase().split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
-
-      groupTasks.forEach((t, i) => {
-        const oldIndex = i;
-        const newIndex = sorted.findIndex(st => st.id === t.id);
-        const newCode = `${p.code}#${newIndex + 1}`;
-        
-        if (t.taskCodePhu) {
-          oldCodeToNewCode.set(t.taskCodePhu.trim().toLowerCase(), newCode);
-        }
-        oldCodeToNewCode.set(`${p.code}#${oldIndex + 1}`.toLowerCase(), newCode);
-        oldCodeToNewCode.set(`${p.code}-${oldIndex + 1}`.toLowerCase(), newCode);
-
-        pCodeParts.forEach(part => {
-          oldCodeToNewCode.set(`${part}#${oldIndex + 1}`.toLowerCase(), newCode);
-          oldCodeToNewCode.set(`${part}-${oldIndex + 1}`.toLowerCase(), newCode);
-          oldCodeToNewCode.set(`${part}#${newIndex + 1}`.toLowerCase(), newCode);
-          oldCodeToNewCode.set(`${part}-${newIndex + 1}`.toLowerCase(), newCode);
-        });
-      });
-
       const batch = writeBatch(db);
       const updatesPerTask = new Map<string, any>();
+      const now = new Date().toISOString();
 
       sorted.forEach((t, newIdx) => {
         const newCode = `${p.code}#${newIdx + 1}`;
@@ -178,7 +142,7 @@ export function useDetailTaskReorder({
           updatesPerTask.set(t.id, { 
             orderIndex: newIdx, 
             taskCodePhu: newCode, 
-            updatedAt: new Date().toISOString() 
+            updatedAt: now 
           });
         }
       });
@@ -187,6 +151,9 @@ export function useDetailTaskReorder({
         const up = updatesPerTask.get(t.id);
         return up ? { ...t, ...up } : t;
       });
+
+      const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
+      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
 
       const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
       if (predUpdates.length > 0) {

@@ -1894,6 +1894,10 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
       + Đối với các công việc con trong dự án không bật Delegation, hệ thống ẩn hoàn toàn huy hiệu `Act: ... (X%)`, chỉ hiển thị trạng thái kế hoạch `Pl: ...`, bảo đảm giao diện luôn gọn gàng và chính xác theo bản chất nghiệp vụ.
     - **Quy Tắc Cộng Dồn Tiến Độ Khi Công Việc Con Đạt 100% (`Cumulative Predecessor Completion Rule`)**:
       + Khi một công việc con (Subtask / Task con) bất kỳ được nghiệm thu hoặc cập nhật đạt **100% Act Status (`Completed / Approved / Finish`)**, toàn bộ các công việc con đứng trước nó trong chuỗi thực hiện sẽ tự động được tính **100% tiến độ thực tế** (dù chưa thay đổi nhãn trạng thái riêng) và được cộng dồn giá trị 100% vào tổng tiến độ thanh bar (`ACT PRG:`).
+    - **Bảo Toàn Liên Kết Tiền Nhiệm Tuyệt Đối Theo Task ID Khi Đổi Thứ Tự/Mã Subtask (`Absolute Predecessor Task Binding`)**:
+      + Khi người dùng di chuyển lên/xuống (Move Up/Down), sắp xếp lại theo ngày (Sort Subtasks), hoặc kéo thả (Drag & Drop) làm thay đổi thứ tự và mã hiển thị subtask (ví dụ `#1` chuyển thành `#2`), hệ thống duy trì liên kết tuyệt đối dựa trên `Task ID` cố định của công việc tiền nhiệm.
+      + Chuỗi Predecessor của các công việc phụ thuộc sẽ tự động cập nhật hiển thị theo mã hiển thị mới của đúng công việc tiền nhiệm đó, tuyệt đối không bị đứt gãy hoặc trỏ nhầm sang công việc khác ở vị trí cũ.
+
 
 
 

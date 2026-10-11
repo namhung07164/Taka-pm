@@ -93,7 +93,7 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
     ? projectTasks.some(t => Boolean(t.delegation))
     : (p.taskSummaries && p.taskSummaries.length > 0)
       ? p.taskSummaries.some(ts => Boolean(ts.delegation))
-      : Boolean(p.delegation);
+      : false;
   
   const now = new Date();
   let activeTaskNames: string[] = [];

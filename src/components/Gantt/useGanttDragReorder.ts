@@ -3,6 +3,12 @@ import { Task, Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { doc, writeBatch } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
+import { 
+  buildTaskNoMap, 
+  getPredecessorCodeUpdates, 
+  updatePredecessorsStrings, 
+  healAllTasksPredecessors 
+} from '../../lib/ganttUtils';
 
 interface UseGanttDragReorderParams {
   tasks: Task[];
@@ -139,23 +145,53 @@ export function useGanttDragReorder({
     };
     cleanList.splice(insertIdx, 0, movedTask);
 
-    const reorderedWithOrder = cleanList.map((t, idx) => ({
-      ...t,
-      orderIndex: idx,
-      order: (idx + 1) * 10,
-      updatedAt: nowIso
-    }));
+    const oldTaskNoMap = buildTaskNoMap(projects, tasks);
+
+    const reorderedWithOrder = cleanList.map((t, idx) => {
+      const pCode = t.projectCode || '';
+      const newCode = pCode ? `${pCode}#${idx + 1}` : (t.taskCodePhu || '');
+      return {
+        ...t,
+        orderIndex: idx,
+        order: (idx + 1) * 10,
+        taskCodePhu: newCode || t.taskCodePhu,
+        updatedAt: nowIso
+      };
+    });
+
+    const updatesMap = new Map<string, Task>();
+    reorderedWithOrder.forEach(t => updatesMap.set(t.id, t));
+
+    let allUpdatedTasks = tasks.map(t => updatesMap.get(t.id) || t);
+    const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
+    const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
+    const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects);
+
+    if (predUpdates.length > 0) {
+      const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+      allUpdatedTasks = allUpdatedTasks.map(t => {
+        const pu = predMap.get(t.id);
+        return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+      });
+    }
+
+    const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
+    if (healed.changedCount > 0) {
+      allUpdatedTasks = healed.updatedTasks;
+    }
 
     // 0ms Optimistic UI update in Zustand
-    useAppStore.getState().optimisticUpdateTasks(reorderedWithOrder);
+    useAppStore.getState().optimisticUpdateTasks(allUpdatedTasks);
 
     // Save to Firestore in batch
     const batch = writeBatch(db);
-    reorderedWithOrder.forEach(t => {
+    allUpdatedTasks.forEach(t => {
       const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
       batch.update(docRef, {
-        order: t.order,
+        order: (t as any).order,
         orderIndex: t.orderIndex,
+        taskCodePhu: t.taskCodePhu,
+        predecessor: t.predecessor,
         parentTaskId: t.parentTaskId || null,
         parentId: t.parentTaskId || null,
         updatedAt: t.updatedAt

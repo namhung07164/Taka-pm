@@ -320,7 +320,7 @@ export function drawGeneralCanvas({
           ? projectTasks.some(t => Boolean(t.delegation))
           : (item.taskSummaries && item.taskSummaries.length > 0)
             ? item.taskSummaries.some(ts => Boolean(ts.delegation))
-            : Boolean(item.delegation);
+            : false;
 
         if (hasProjectDelegation) {
           const actY = planY + 12;
