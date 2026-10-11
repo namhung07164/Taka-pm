@@ -63,6 +63,7 @@ export interface GanttTaskRowProps {
   isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   onNavigateToTaskDetail?: (taskId: string) => void;
+  onUpdateTaskDates?: (taskId: string, newStart: string, newFinish: string) => Promise<void> | void;
 }
 
 export const GanttTaskRow = React.memo(function GanttTaskRow({
@@ -118,7 +119,8 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   handleTaskCheckboxChange,
   isHideMode,
   toggleHideRow,
-  onNavigateToTaskDetail
+  onNavigateToTaskDetail,
+  onUpdateTaskDates,
 }: GanttTaskRowProps) {
   const isSelected = selectedTaskSet.has(String(t.id)) || selectedTaskSet.has(t.id);
   const isTarget = dragOverTaskId === t.id;
@@ -359,6 +361,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           setActiveTooltip={setActiveTooltip}
           isEditMode={isEditMode}
           getBarColor={getBarColor}
+          onUpdateTaskDates={onUpdateTaskDates}
         />
       </div>
     </div>

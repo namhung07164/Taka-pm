@@ -212,6 +212,8 @@ export default function App() {
   const setNotificationFilterId = useAppStore(state => state.setNotificationFilterId);
   const undoStack = useAppStore(state => state.undoStack);
   const setUndoStack = useAppStore(state => state.setUndoStack);
+  const redoStack = useAppStore(state => state.redoStack);
+  const setRedoStack = useAppStore(state => state.setRedoStack);
 
 
 
@@ -261,8 +263,11 @@ export default function App() {
   }, [setActiveTab]);
 
   useEffect(() => {
-    return undoManager.subscribe(setUndoStack);
-  }, [setUndoStack]);
+    return undoManager.subscribe((undo, redo) => {
+      setUndoStack(undo);
+      setRedoStack(redo);
+    });
+  }, [setUndoStack, setRedoStack]);
 
   const isAnyModalOpen = useAppStore(state => !!(state.isLoginModalOpen || state.isProjectModalOpen || state.isTaskModalOpen || state.isUserModalOpen));
   const setIsLoginModalOpen = useAppStore(state => state.setIsLoginModalOpen);
@@ -1224,6 +1229,17 @@ export default function App() {
     handleDataUndoRef.current = handleDataUndo;
   });
 
+  const handleDataRedo = async () => {
+    if (redoStack.length > 0) {
+      await undoManager.redo();
+    }
+  };
+
+  const handleDataRedoRef = useRef(handleDataRedo);
+  useEffect(() => {
+    handleDataRedoRef.current = handleDataRedo;
+  });
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeElement = document.activeElement;
@@ -1266,6 +1282,15 @@ export default function App() {
         if (!isTyping) {
           e.preventDefault();
           handleDataUndoRef.current?.();
+        }
+        return;
+      }
+
+      // Ctrl + Y / Cmd + Y OR Ctrl + Shift + Z / Cmd + Shift + Z: Redo action
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
+        if (!isTyping) {
+          e.preventDefault();
+          handleDataRedoRef.current?.();
         }
         return;
       }
@@ -2087,6 +2112,14 @@ export default function App() {
                     : tabHistory.length > 0
                       ? `Go back to previous page`
                       : undefined
+                }
+                onRedo={handleDataRedo}
+                canRedo={redoStack.length > 0}
+                hasDataToRedo={redoStack.length > 0}
+                redoDescription={
+                  redoStack.length > 0
+                    ? `Redo: ${redoStack[redoStack.length - 1].description}`
+                    : undefined
                 }
                 onToggleTheme={toggleTheme}
                 isFocusMode={isFocusMode}

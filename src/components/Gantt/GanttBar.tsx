@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { cn, parseDateTime } from '../../lib/utils';
-import { positionTooltip } from './GanttUtils';
+import { positionTooltip, formatGanttDate } from './GanttUtils';
 import { Task, Project } from '../../types';
 import { GanttBarTooltip } from './GanttBarTooltip';
+import { useGanttBarDateDrag } from './useGanttBarDateDrag';
 
 export interface GanttBarProps {
   startStr: string | undefined;
@@ -43,6 +44,7 @@ export interface GanttBarProps {
   isEditMode: boolean;
   getBarColor: (status: string, duration?: string | number) => string;
   onBarClick?: (ev: React.MouseEvent) => void;
+  onUpdateTaskDates?: (taskId: string, newStart: string, newFinish: string) => Promise<void> | void;
 }
 
 export const getExactDays = (d1: Date, d2: Date) => {
@@ -63,14 +65,39 @@ export const GanttBar = React.memo(function GanttBar({
   isEditMode,
   getBarColor,
   onBarClick,
+  onUpdateTaskDates,
 }: GanttBarProps) {
   const isSimulation = !!extraVars?.isSimulation;
   const isTask = id.startsWith('task-') || id.startsWith('sim-task-');
-  const dStart = parseDateTime(startStr);
-  const dEnd = parseDateTime(endStr);
+  const rawTaskId = id.startsWith('task-') ? id.replace('task-', '') : id;
+
+  const dStartInitial = parseDateTime(startStr);
+  const dEndInitial = parseDateTime(endStr);
   const isMilestone = Number(extraVars?.duration) === 0 ||
-                      (dStart && dEnd && Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000) ||
+                      (dStartInitial && dEndInitial && Math.abs(dStartInitial.getTime() - dEndInitial.getTime()) < 3600000) ||
                       (label.toLowerCase().includes('opening') && Number(extraVars?.duration || 0) <= 1);
+
+  const {
+    isDraggingDate,
+    deltaDays,
+    previewStart,
+    previewEnd,
+    handleBarDragStart,
+    handleLeftResizeStart,
+    handleRightResizeStart,
+  } = useGanttBarDateDrag({
+    taskId: rawTaskId,
+    startStr: startStr || '',
+    endStr: endStr || '',
+    dayWidth,
+    isEditMode: isEditMode && isTask && !isMilestone,
+    onUpdateTaskDates,
+  });
+
+  const activeStart = isDraggingDate ? previewStart : startStr;
+  const activeEnd = isDraggingDate ? previewEnd : endStr;
+  const dStart = parseDateTime(activeStart);
+  const dEnd = parseDateTime(activeEnd);
 
   const customColor = extraVars?.task?.textColor;
   
@@ -224,6 +251,37 @@ export const GanttBar = React.memo(function GanttBar({
           ...(customColor && !isMilestone ? { backgroundColor: customColor, borderColor: customColor } : {})
         }}
       >
+        {/* Left Resize Handle for Start Date */}
+        {isEditMode && isTask && !isMilestone && (
+          <div
+            onPointerDown={handleLeftResizeStart}
+            className="absolute left-0 top-0 bottom-0 w-2.5 cursor-w-resize hover:bg-white/40 active:bg-white/60 z-30 rounded-l-md flex items-center justify-center transition-colors group/hleft"
+            title="Drag to resize Start Date"
+          >
+            <div className="w-0.5 h-3 bg-white/70 rounded-full" />
+          </div>
+        )}
+
+        {/* Center Move Handle for Shifting entire bar */}
+        {isEditMode && isTask && !isMilestone && (
+          <div
+            onPointerDown={handleBarDragStart}
+            className="absolute inset-x-2.5 top-0 bottom-0 cursor-move z-20"
+            title="Drag bar to shift task dates"
+          />
+        )}
+
+        {/* Right Resize Handle for Finish Date */}
+        {isEditMode && isTask && !isMilestone && (
+          <div
+            onPointerDown={handleRightResizeStart}
+            className="absolute right-0 top-0 bottom-0 w-2.5 cursor-e-resize hover:bg-white/40 active:bg-white/60 z-30 rounded-r-md flex items-center justify-center transition-colors group/hright"
+            title="Drag to resize Finish Date"
+          >
+            <div className="w-0.5 h-3 bg-white/70 rounded-full" />
+          </div>
+        )}
+
         {/* Actual Progress Fill */}
         {!isMilestone && actProgress > 0 && (
           <div
@@ -242,6 +300,17 @@ export const GanttBar = React.memo(function GanttBar({
           </div>
         )}
       </div>
+
+      {/* Floating Date Drag Indicator Badge */}
+      {isDraggingDate && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[99999] pointer-events-none bg-slate-900/95 text-white font-mono text-xs px-4 py-2 rounded-full shadow-2xl border border-blue-400 backdrop-blur-md flex items-center gap-2.5 animate-in fade-in">
+          <span className="text-blue-300 font-bold">{label}:</span>
+          <span>{formatGanttDate(previewStart)} ➔ {formatGanttDate(previewEnd)}</span>
+          <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
+            {deltaDays >= 0 ? `+${deltaDays}d` : `${deltaDays}d`}
+          </span>
+        </div>
+      )}
 
       {/* Floating Tooltip via Portal */}
       {!isDismissed && (isHovered || isPinned) && (
