@@ -34,32 +34,62 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
  * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác multi-code, store và year).
  */
 export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
-  if (!allTasks) allTasks = [];
+  if (!project) return [];
+  const safeAllTasks = Array.isArray(allTasks) ? allTasks : [];
+
   const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
   const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
   const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const pIdStr = project.id ? String(project.id) : '';
 
-  const matched = allTasks.filter(t => {
-    if (t.isDeleted) return false;
-    if (t.projectId && project.id && String(t.projectId) === String(project.id)) return true;
-    if (!t.projectCode) return false;
-    const tCode = String(t.projectCode).trim().toLowerCase();
-    const matchesCode = tCode === String(project.code || '').trim().toLowerCase() || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code) || matchProjectCode(t.projectCode, project.linkCodes);
-    if (!matchesCode) return false;
+  const matchedMap = new Map<string, Task>();
 
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-    if (pStore && tStore && pStore !== tStore) return false;
+  safeAllTasks.forEach(t => {
+    if (!t || !t.id || t.isDeleted) return;
 
-    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-    if (pYear && tYear && pYear !== tYear) return false;
+    if (pIdStr && t.projectId && String(t.projectId) === pIdStr) {
+      matchedMap.set(String(t.id), t);
+      return;
+    }
 
-    return true;
+    if (t.projectCode && project.code) {
+      const tCode = String(t.projectCode).trim().toLowerCase();
+      const matchesCode = tCode === String(project.code).trim().toLowerCase() ||
+                          pCodeParts.includes(tCode) ||
+                          matchProjectCode(t.projectCode, project.code) ||
+                          matchProjectCode(t.projectCode, project.linkCodes);
+      if (matchesCode) {
+        const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+        if (pStore && tStore && pStore !== tStore) return;
+
+        const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+        if (pYear && tYear && pYear !== tYear) return;
+
+        matchedMap.set(String(t.id), t);
+      }
+    }
   });
 
-  if (matched.length > 0) return matched;
+  // Also include subtasks whose parent belongs to matchedMap
+  let addedChild = true;
+  while (addedChild) {
+    addedChild = false;
+    safeAllTasks.forEach(t => {
+      if (!t || !t.id || t.isDeleted || matchedMap.has(String(t.id))) return;
+      const rawParent = t.parentTaskId || (t as any).parentId;
+      if (rawParent && matchedMap.has(String(rawParent))) {
+        matchedMap.set(String(t.id), t);
+        addedChild = true;
+      }
+    });
+  }
 
-  if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+  const matchedList = Array.from(matchedMap.values());
+  if (matchedList.length > 0) return matchedList;
+
+  // Fallback to taskSummaries ONLY on cold start when allTasks is not loaded yet
+  if (safeAllTasks.length === 0 && project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
     return project.taskSummaries.map((ts, idx) => ({
       id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,
