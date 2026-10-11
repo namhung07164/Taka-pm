@@ -384,3 +384,20 @@ export async function setLocalSyncMeta(key: string, value: string): Promise<void
     console.warn('[localDb] setLocalSyncMeta error:', err);
   }
 }
+
+/**
+ * Xóa sạch toàn bộ dữ liệu Dexie IndexedDB (dành cho Resync Cache)
+ */
+export async function clearDexieDatabase(): Promise<void> {
+  try {
+    await Promise.all([
+      localDb.projects.clear().catch(() => {}),
+      localDb.tasks.clear().catch(() => {}),
+      localDb.costs.clear().catch(() => {}),
+      localDb.delegations.clear().catch(() => {}),
+      localDb.syncMeta.clear().catch(() => {}),
+    ]);
+  } catch (err) {
+    console.warn('[localDb] clearDexieDatabase error:', err);
+  }
+}
