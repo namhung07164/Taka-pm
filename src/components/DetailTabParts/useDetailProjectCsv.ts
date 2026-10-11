@@ -5,6 +5,7 @@ import { downloadCSV, parseCSV, generateCSV } from '../../lib/csvUtils';
 import { doc, writeBatch, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
+import { recordDelta } from '../../lib/deltaSyncService';
 
 interface UseDetailProjectCsvParams {
   filteredProjects: Project[];
@@ -146,6 +147,13 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
 
             processedProjects.set(key, finalProject);
             setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId!), toSave);
+            recordDelta({
+              docId: docId!,
+              collectionName: 'taka_projects',
+              action: existing ? 'update' : 'create',
+              data: toSave,
+              year: String(toSave.year || '')
+            }).catch(console.error);
             importCount++;
           }
         }

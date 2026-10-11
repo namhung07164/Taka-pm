@@ -12,6 +12,7 @@ import { useAppStore } from "../store/useAppStore";
 import { usePerformanceStore } from "../store/usePerformanceStore";
 import {   auth, db, APP_ID , writeBatch , setDoc } from "../lib/firebase";
 import { getPendingUpdates, clearPendingUpdates } from "../lib/syncQueue";
+import { recordBatchDeltas } from "../lib/deltaSyncService";
 import { getEffectiveStoreFilter, getUserAllowedStores, ACTIVE_YEARS, PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../lib/utils";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { collection, onSnapshot, query, where, doc, getDocs, getDoc, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
@@ -333,6 +334,25 @@ export function useFirebaseData() {
                 title: "Sync Complete",
                 message: "Offline data has been synced to the server.",
               });
+
+              // Record batch deltas for synced items so other trâm machines know
+              const deltaItems = pending.map((u) => {
+                let collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations' = 'taka_projects';
+                if (u.collectionPath.includes('taka_tasks')) collectionName = 'taka_tasks';
+                else if (u.collectionPath.includes('taka_costs')) collectionName = 'taka_costs';
+                else if (u.collectionPath.includes('taka_delegations')) collectionName = 'taka_delegations';
+
+                return {
+                  docId: u.docId,
+                  collectionName,
+                  action: (u.action === 'set' ? 'create' : u.action) as 'create' | 'update' | 'delete',
+                  data: u.data || {},
+                  year: u.data?.year || u.data?.projectYear ? String(u.data?.year || u.data?.projectYear) : undefined,
+                };
+              });
+              if (deltaItems.length > 0) {
+                recordBatchDeltas(deltaItems).catch(() => {});
+              }
             })
             .catch((e) => {
                console.error(e);

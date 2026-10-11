@@ -8,6 +8,7 @@ import { undoManager } from '../../lib/undoManager';
 import { addPendingUpdate } from '../../lib/syncQueue';
 import { calculateProjectComputedDates, getTasksForProject } from '../../lib/projectDatesService';
 import { deleteStorageFiles, extractStorageUrls } from '../../lib/storageUtils';
+import { recordDelta } from '../../lib/deltaSyncService';
 import { LinkCodesValidationError } from './projectModalTypes';
 import { handleProjectIdentityChange } from './projectModalIdentityService';
 
@@ -165,10 +166,20 @@ export function useProjectModalMutations({
           setToast
         });
       } else {
-        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), {
+        const fullProjectPayload = {
           ...dataToSave,
           updatedAt: new Date().toISOString()
-        }, { merge: true });
+        };
+        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), fullProjectPayload, { merge: true });
+
+        // Record delta so Desktop and other devices receive instant realtime update via delta pipeline
+        recordDelta({
+          docId,
+          collectionName: 'taka_projects',
+          action: project ? 'update' : 'create',
+          data: fullProjectPayload,
+          year: String(yearNum),
+        }).catch(console.error);
 
         const rawProjects = useAppStore.getState().projects || [];
         const savedCode = String(formData.code).trim().toLowerCase();

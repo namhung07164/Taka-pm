@@ -97,6 +97,7 @@ export function useNotificationActions() {
               const newProjId = `${oldProj.id}_${newYear}`;
               const newProj = { ...oldProj, id: newProjId, year: newYear, no: Date.now() };
               setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', newProjId), newProj);
+              recordDelta({ docId: newProjId, collectionName: 'taka_projects', action: 'create', data: newProj, year: String(newYear) }).catch(console.error);
             }
           }
           

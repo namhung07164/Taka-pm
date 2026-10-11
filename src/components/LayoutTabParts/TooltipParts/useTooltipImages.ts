@@ -6,6 +6,7 @@ import { db, APP_ID } from '../../../lib/firebase';
 import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
 import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
+import { recordDelta } from '../../../lib/deltaSyncService';
 
 interface UseTooltipImagesParams {
   p?: Project;
@@ -185,15 +186,23 @@ export function useTooltipImages({
 
         // 2. Cloud Firestore persistence for real-time multi-device sync (iOS <-> Desktop)
         if (targetProj.id) {
-          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), {
+          const updateData = {
             taskSummaries: cleanedSummaries,
             imageUrl: updatedProject.imageUrl,
             thumbnail: updatedProject.thumbnail,
             imageLinks: updatedImageLinks,
             updatedAt: new Date().toISOString(),
-          }, { merge: true }).catch(err => {
+          };
+          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), updateData, { merge: true }).catch(err => {
             console.error("Failed to sync to Firestore:", err);
           });
+          recordDelta({
+            docId: targetProj.id,
+            collectionName: 'taka_projects',
+            action: 'update',
+            data: updateData,
+            year: String(targetProj.year || '')
+          }).catch(console.error);
         }
       }
     } catch (err) {
@@ -295,6 +304,13 @@ export function useTooltipImages({
           }
 
           setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), firestoreUpdate, { merge: true }).catch(console.error);
+          recordDelta({
+            docId: targetProj.id,
+            collectionName: 'taka_projects',
+            action: 'update',
+            data: firestoreUpdate,
+            year: String(targetProj.year || '')
+          }).catch(console.error);
         }
       }
     } catch (err) {

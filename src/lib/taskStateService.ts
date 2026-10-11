@@ -313,6 +313,30 @@ export async function deleteTaskStateUnified(
           }
         });
         await batch.commit();
+
+        const { recordBatchDeltas } = await import('./deltaSyncService');
+        const projectDeltaItems = updatedProjects
+          .filter(up => {
+            const orig = currentProjects.find(op => op.id === up.id);
+            return orig && orig !== up;
+          })
+          .map(up => ({
+            docId: up.id,
+            collectionName: 'taka_projects' as const,
+            action: 'update' as const,
+            data: {
+              taskSummaries: up.taskSummaries || [],
+              taskCount: up.taskCount || 0,
+              computedTakStart: up.computedTakStart || '',
+              computedTakCompl: up.computedTakCompl || '',
+              computedOpening: up.computedOpening || '',
+              updatedAt: up.updatedAt || now
+            },
+            year: String(up.year || '')
+          }));
+        if (projectDeltaItems.length > 0) {
+          recordBatchDeltas(projectDeltaItems).catch(() => {});
+        }
       } catch (err) {
         console.warn('[deleteTaskStateUnified] Failed to persist taskSummaries deletion:', err);
       }
