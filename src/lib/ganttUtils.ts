@@ -727,21 +727,34 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 
 export function computeTaskCode(projects: Project[], tasks: Task[], task: Task): string {
   if (!task) return '';
-  if (task.taskCodePhu && task.taskCodePhu.trim()) {
-    return task.taskCodePhu.trim();
-  }
-  if (!projects || !Array.isArray(projects) || !tasks || !Array.isArray(tasks)) return '';
 
   const taskPCode = String(task.projectCode || '').trim();
-  if (!taskPCode && !task.projectId) return '';
-
-  const p = (task.projectId ? projects.find(proj => proj.id === task.projectId) : undefined) ||
-            (taskPCode ? projects.find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
+  const p = (task.projectId ? (projects || []).find(proj => proj.id === task.projectId) : undefined) ||
+            (taskPCode ? (projects || []).find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
 
   const currentPCode = p ? String(p.code).trim() : taskPCode;
+
+  if (task.taskCodePhu && task.taskCodePhu.trim()) {
+    const trimmed = task.taskCodePhu.trim();
+    const lowerPhu = trimmed.toLowerCase();
+    const lowerPCode = currentPCode.toLowerCase();
+
+    if (lowerPCode && lowerPhu !== lowerPCode) {
+      if (trimmed.includes('#')) return trimmed;
+      if (lowerPhu.startsWith(lowerPCode + '-')) {
+        const suffix = trimmed.substring(lowerPCode.length + 1);
+        if (/^\d+$/.test(suffix)) {
+          return `${currentPCode}#${suffix}`;
+        }
+      }
+    } else if (!lowerPCode && trimmed.includes('#')) {
+      return trimmed;
+    }
+  }
+
   if (!currentPCode) return '';
 
-  const pTasks = tasks.filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
+  const pTasks = (tasks || []).filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
   const sorted = sortGroupTasks(pTasks);
   const idx = sorted.findIndex(t => t.id === task.id);
   const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? task.orderIndex + 1 : 1);
@@ -770,13 +783,20 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
   const tasksByGroupKey = new Map<string, Task[]>();
   for (let idx = 0; idx < tasks.length; idx++) {
     const t = tasks[idx];
-    if (t.taskCodePhu && t.taskCodePhu.trim()) {
-      map.set(t.id, t.taskCodePhu.trim());
-      continue;
-    }
     const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
               (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
     const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
+
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      const trimmed = t.taskCodePhu.trim();
+      const lowerPhu = trimmed.toLowerCase();
+      const lowerPCode = pCode.toLowerCase();
+      if (lowerPCode && lowerPhu !== lowerPCode && trimmed.includes('#')) {
+        map.set(t.id, trimmed);
+        continue;
+      }
+    }
+
     const groupKey = `${pCode}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
     
     let list = tasksByGroupKey.get(groupKey);
@@ -1309,7 +1329,7 @@ export function reorderAndCalculateTasks(
 
   reorderedGroupTasks.forEach((t, idx) => {
     const newOrderIndex = idx;
-    const newTaskCodePhu = `${targetPrjCode}-${idx + 1}`;
+    const newTaskCodePhu = `${targetPrjCode}#${idx + 1}`;
     const isMoved = tasksToMoveIds.includes(t.id);
     const hasOrderChanged = t.orderIndex !== newOrderIndex || t.taskCodePhu !== newTaskCodePhu;
 
@@ -1668,48 +1688,72 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
   changedCount: number;
   updatesToSave: Array<{ id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }>;
 } {
-  const projectCodes = new Set((allProjects || []).map(p => String(p.code || '').trim()).filter(Boolean));
-  
-  // 1. Build map of old codes to new codes for all tasks
+  const sortedProjects = [...(allProjects || [])]
+    .filter(p => p && p.code && p.code.trim())
+    .sort((a, b) => String(b.code).trim().length - String(a.code).trim().length);
+
   const taskOldToNewCodeMap = new Map<string, string>();
-  
-  const updatedTasksWithCodes = (allTasks || []).map(t => {
+
+  const updatedTasksWithCodes = (allTasks || []).map((t, idx) => {
     const oldCode = (t.taskCodePhu || '').trim();
-    let newCode = oldCode;
     const pCode = String(t.projectCode || '').trim();
 
-    if (oldCode) {
-      if (pCode && oldCode.toLowerCase().startsWith(pCode.toLowerCase() + '-')) {
-        const suffix = oldCode.substring(pCode.length + 1);
+    let matchedPCode = pCode;
+    if (t.projectId) {
+      const p = sortedProjects.find(proj => proj.id === t.projectId);
+      if (p && p.code) matchedPCode = p.code.trim();
+    } else if (pCode) {
+      const p = sortedProjects.find(proj => proj.code.trim().toLowerCase() === pCode.toLowerCase());
+      if (p && p.code) matchedPCode = p.code.trim();
+    }
+
+    let newCode = oldCode;
+    const lowerOld = oldCode.toLowerCase();
+    const lowerPCode = matchedPCode.toLowerCase();
+
+    if (!oldCode || (lowerPCode && lowerOld === lowerPCode)) {
+      const order = (t.orderIndex !== undefined && t.orderIndex !== null) ? Number(t.orderIndex) + 1 : idx + 1;
+      newCode = matchedPCode ? `${matchedPCode}#${order}` : '';
+    } else if (matchedPCode && lowerOld.startsWith(lowerPCode + '#')) {
+      const suffix = oldCode.substring(matchedPCode.length + 1);
+      if (/^\d+$/.test(suffix)) {
+        newCode = `${matchedPCode}#${suffix}`;
+      }
+    } else if (matchedPCode && lowerOld.startsWith(lowerPCode + '-')) {
+      const suffix = oldCode.substring(matchedPCode.length + 1);
+      if (/^\d+$/.test(suffix)) {
+        newCode = `${matchedPCode}#${suffix}`;
+      }
+    } else {
+      const resolvedProj = sortedProjects.find(p => lowerOld.startsWith(p.code.trim().toLowerCase() + '#') || lowerOld.startsWith(p.code.trim().toLowerCase() + '-'));
+      if (resolvedProj) {
+        const resolvedCode = resolvedProj.code.trim();
+        const suffix = oldCode.substring(resolvedCode.length + 1);
         if (/^\d+$/.test(suffix)) {
-          newCode = `${pCode}#${suffix}`;
+          newCode = `${resolvedCode}#${suffix}`;
         }
       } else {
         const dashMatch = oldCode.match(/^(.*)-(\d+)$/);
         if (dashMatch) {
           const prefix = dashMatch[1];
           const digits = dashMatch[2];
-          const isKnown = projectCodes.has(prefix) || 
-            (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
-            (pCode && prefix.toLowerCase() === pCode.toLowerCase());
-          if (isKnown || prefix.length >= 2) {
-            const canonicalPrefix = (allProjects || []).find(p => p.code && p.code.toLowerCase() === prefix.toLowerCase())?.code || prefix;
-            newCode = `${canonicalPrefix}#${digits}`;
+          const p = sortedProjects.find(proj => proj.code.trim().toLowerCase() === prefix.toLowerCase());
+          if (p) {
+            newCode = `${p.code.trim()}#${digits}`;
+          } else if (matchedPCode) {
+            newCode = `${matchedPCode}#${digits}`;
           }
         }
       }
-    } else if (pCode) {
-      const order = (t.orderIndex !== undefined ? t.orderIndex : 0) + 1;
-      newCode = `${pCode}#${order}`;
     }
 
     if (oldCode && oldCode !== newCode) {
       taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
     }
-    
+
     return {
       ...t,
-      taskCodePhu: newCode
+      taskCodePhu: newCode || (matchedPCode ? `${matchedPCode}#${(t.orderIndex !== undefined ? t.orderIndex : 0) + 1}` : t.taskCodePhu)
     };
   });
 
@@ -1744,8 +1788,7 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
         if (dashMatch) {
           const prefix = dashMatch[1];
           const digits = dashMatch[2];
-          const isKnownProj = projectCodes.has(prefix) || 
-            (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
+          const isKnownProj = (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
             (t.projectCode && prefix.toLowerCase() === String(t.projectCode).trim().toLowerCase());
           
           if (isKnownProj) {

@@ -240,7 +240,7 @@ export function useEnrichedData() {
                 runningStatus: ts.runningStatus || 'On process',
                 duration: ts.duration || '',
                 parentTaskId: ts.parentTaskId,
-                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
                 orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
                 projectId: p.id,
                 ...ts

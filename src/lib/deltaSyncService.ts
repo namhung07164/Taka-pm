@@ -19,6 +19,7 @@ import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 import { triggerBatchChangeFlash } from './changeFlashService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { applyFieldPatch } from './deltaPatchService';
+import { getTasksForProject, calculateProjectComputedDates } from './projectDatesService';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
@@ -334,6 +335,22 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
     });
 
     // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
+    if (tasksChanged && !projectsChanged) {
+      const delegationGroups = store.delegationGroups || [];
+      updatedProjects = updatedProjects.map(p => {
+        const pTasks = getTasksForProject(p, updatedTasks);
+        if (pTasks.length > 0 || (p.taskSummaries && p.taskSummaries.length > 0)) {
+          const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+          return {
+            ...p,
+            ...computedDates,
+          };
+        }
+        return p;
+      });
+      projectsChanged = true;
+    }
+
     if (projectsChanged) store.setProjects(updatedProjects);
     if (tasksChanged) store.setTasks(updatedTasks);
     if (costsChanged) store.setCosts(updatedCosts);

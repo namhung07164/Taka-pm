@@ -239,7 +239,7 @@ export const DetailMobileView = memo(function DetailMobileView({
           const tasksToRender = isProjectMatch ? groupTasks : groupTasks.filter((t, idx) => {
             const taskFields = [
               t.taskCodePhu,
-              `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+              `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
               t.name,
               t.duration,
               t.start,

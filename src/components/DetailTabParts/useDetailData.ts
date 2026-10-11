@@ -145,7 +145,7 @@ export function useDetailData({
             const taskMatches = groupTasks.some((t, idx) => {
               const taskFields = [
                 t.taskCodePhu,
-                `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
                 t.name,
                 t.duration,
                 t.start,
@@ -245,7 +245,7 @@ export function useDetailData({
             const taskMatches = groupTasks.some((t, idx) => {
               const taskFields = [
                 t.taskCodePhu,
-                `${p.code}-${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
                 t.name,
                 t.duration,
                 t.start,
