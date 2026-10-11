@@ -126,6 +126,8 @@ export function calculateProjectComputedDates(
       if (validFinishes.length > 0) {
         computedOpening = validFinishes[0];
       }
+    } else {
+      computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
     }
   } else if (project.taskSummaries && project.taskSummaries.length > 0) {
     const validStarts = project.taskSummaries
@@ -156,7 +158,11 @@ export function calculateProjectComputedDates(
       if (validFinishes.length > 0) {
         computedOpening = validFinishes[0];
       }
+    } else {
+      computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
     }
+  } else {
+    computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
   }
 
   const sortedProjTasks = sortGroupTasks(projectTasks || []);

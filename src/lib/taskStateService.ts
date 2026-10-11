@@ -223,14 +223,13 @@ export async function deleteTaskStateUnified(
 
   useAppStore.getState().setTasks(cleanedTasks);
 
-  // 2. Clear matching summary items from p.taskSummaries for affected or all projects
-  const projectsWithSummariesToClean = currentProjects.filter(p => p.taskSummaries && p.taskSummaries.length > 0);
-  if (projectsWithSummariesToClean.length > 0) {
-    const updatedProjects = currentProjects.map(p => {
-      if (!p.taskSummaries || p.taskSummaries.length === 0) return p;
+  // 2. Clear matching summary items from p.taskSummaries and recalculate project computed dates
+  const updatedProjects = currentProjects.map(p => {
+    let summaryModified = false;
+    let newSummaries = p.taskSummaries ? [...p.taskSummaries] : [];
 
-      let summaryModified = false;
-      const newSummaries = p.taskSummaries.filter((ts, idx) => {
+    if (p.taskSummaries && p.taskSummaries.length > 0) {
+      newSummaries = p.taskSummaries.filter((ts, idx) => {
         const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
         const tsCodePhu = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
@@ -246,7 +245,8 @@ export async function deleteTaskStateUnified(
         for (const dt of tasksToDelete) {
           const matchesProject =
             (dt.projectId && String(dt.projectId) === String(p.id)) ||
-            (dt.projectCode && String(dt.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase());
+            (dt.projectCode && String(dt.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase()) ||
+            (!dt.projectId && !dt.projectCode);
           if (matchesProject) {
             if (dt.name && String(dt.name).trim().toLowerCase() === tsName) {
               summaryModified = true;
@@ -260,25 +260,34 @@ export async function deleteTaskStateUnified(
         }
         return true;
       });
+    }
 
-      if (summaryModified) {
-        const updatedP = {
-          ...p,
-          taskSummaries: newSummaries,
-          taskCount: newSummaries.length,
-          updatedAt: now,
-        };
-        const remainingProjTasks = cleanedTasks.filter(t =>
+    const isProjectAffected = summaryModified || affectedProjects.some(ap => ap.id === p.id) || tasksToDelete.some(dt => 
+      (dt.projectId && String(dt.projectId) === String(p.id)) ||
+      (dt.projectCode && String(dt.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+    );
+
+    if (isProjectAffected || summaryModified) {
+      const updatedP = {
+        ...p,
+        taskSummaries: newSummaries,
+        taskCount: newSummaries.length > 0 ? newSummaries.length : (cleanedTasks.filter(t => 
           (t.projectId && String(t.projectId) === String(p.id)) ||
           (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-        );
-        const computed = calculateProjectComputedDates(updatedP, remainingProjTasks);
-        return { ...updatedP, ...computed };
-      }
-      return p;
-    });
+        ).length),
+        updatedAt: now,
+      };
+      const remainingProjTasks = cleanedTasks.filter(t =>
+        (t.projectId && String(t.projectId) === String(p.id)) ||
+        (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+      );
+      const computed = calculateProjectComputedDates(updatedP, remainingProjTasks);
+      return { ...updatedP, ...computed };
+    }
+    return p;
+  });
 
-    useAppStore.getState().setProjects(updatedProjects);
+  useAppStore.getState().setProjects(updatedProjects);
 
     setTimeout(async () => {
       try {
@@ -308,7 +317,6 @@ export async function deleteTaskStateUnified(
         console.warn('[deleteTaskStateUnified] Failed to persist taskSummaries deletion:', err);
       }
     }, 50);
-  }
 
   // 3. Xóa tức thì khỏi Dexie (IndexedDB)
   try {

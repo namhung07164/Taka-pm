@@ -196,40 +196,50 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;
     let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
-    let computedOpening = p.computedOpening || p.opening;
+    let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
 
     if (sortedTasks.length > 0) {
       let minStart: string | undefined = undefined;
       let maxFinish: string | undefined = undefined;
+      let hasOpeningTask = false;
       for (let i = 0; i < sortedTasks.length; i++) {
         const t = sortedTasks[i];
         if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
         if (t.finish && (!maxFinish || t.finish > maxFinish)) maxFinish = t.finish;
         const name = String(t.name || '').toLowerCase();
         if (name.includes('opening') || name.includes('open')) {
-          if (t.finish && (!computedOpening || t.finish > computedOpening)) {
+          if (t.finish && (!hasOpeningTask || t.finish > computedOpening)) {
             computedOpening = t.finish;
+            hasOpeningTask = true;
           }
         }
       }
       if (minStart) computedTakStart = minStart;
       if (maxFinish) computedTakCompl = maxFinish;
+      if (!hasOpeningTask && p.openingMode !== 'manual') {
+        computedOpening = '';
+      }
     } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
       let minStart: string | undefined = undefined;
       let maxFinish: string | undefined = undefined;
+      let hasOpeningTask = false;
       for (let i = 0; i < p.taskSummaries.length; i++) {
         const ts = p.taskSummaries[i];
         if (ts.start && (!minStart || ts.start < minStart)) minStart = ts.start;
         if (ts.finish && (!maxFinish || ts.finish > maxFinish)) maxFinish = ts.finish;
         const name = String(ts.name || '').toLowerCase();
         if (name.includes('opening') || name.includes('open')) {
-          if (ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+          if (ts.finish && (!hasOpeningTask || ts.finish > computedOpening)) {
             computedOpening = ts.finish;
+            hasOpeningTask = true;
           }
         }
       }
       if (minStart) computedTakStart = minStart;
       if (maxFinish) computedTakCompl = maxFinish;
+      if (!hasOpeningTask && p.openingMode !== 'manual') {
+        computedOpening = '';
+      }
     }
 
     const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
