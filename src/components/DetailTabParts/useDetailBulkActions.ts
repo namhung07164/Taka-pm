@@ -186,7 +186,8 @@ export function useDetailBulkActions({
 
       if (updateCount > 0) {
         if (action === 'delete') {
-          deleteTaskStateUnified(Array.from(selectedTaskIds));
+          const selectedObjs = tasks.filter(t => selectedTaskIds.has(t.id));
+          deleteTaskStateUnified(selectedObjs.length > 0 ? selectedObjs : Array.from(selectedTaskIds));
         } else {
           const updatedTasksList: (Partial<Task> & { id: string })[] = [];
           Array.from(selectedTaskIds).forEach(taskId => {

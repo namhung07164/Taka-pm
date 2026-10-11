@@ -93,9 +93,9 @@ export function calculateProjectComputedDates(
   projectTasks: Task[],
   delegationGroups: DelegationGroup[] = []
 ): ComputedProjectDates {
-  let computedTakStart = project.computedTakStart || project.start || "";
-  let computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
-  let computedOpening = project.computedOpening || project.opening || "";
+  let computedTakStart = project.start || "";
+  let computedTakCompl = project.handover || (project as any).takCompl || "";
+  let computedOpening = project.opening || "";
 
   if (projectTasks && projectTasks.length > 0) {
     const validStarts = projectTasks
@@ -132,7 +132,7 @@ export function calculateProjectComputedDates(
       .map((t) => t.start)
       .filter(Boolean)
       .sort();
-    if (validStarts.length > 0 && !computedTakStart) {
+    if (validStarts.length > 0) {
       computedTakStart = validStarts[0];
     }
 
@@ -140,7 +140,7 @@ export function calculateProjectComputedDates(
       .map((t) => t.finish)
       .filter(Boolean)
       .sort((a, b) => (b || "").localeCompare(a || ""));
-    if (validFinishes.length > 0 && !computedTakCompl) {
+    if (validFinishes.length > 0) {
       computedTakCompl = validFinishes[0];
     }
 
@@ -153,7 +153,7 @@ export function calculateProjectComputedDates(
         .map((t) => t.finish)
         .filter(Boolean)
         .sort((a, b) => (b || "").localeCompare(a || ""));
-      if (validFinishes.length > 0 && !computedOpening) {
+      if (validFinishes.length > 0) {
         computedOpening = validFinishes[0];
       }
     }
@@ -185,23 +185,25 @@ export function calculateProjectComputedDates(
       return summary;
     });
 
-  const effectiveSummaries = taskSummaries.length > 0 ? taskSummaries : (project.taskSummaries || []);
+  const finalSummaries = projectTasks && projectTasks.length > 0
+    ? taskSummaries
+    : (project.taskSummaries || []);
+
+  const finalTaskCount = projectTasks && projectTasks.length > 0
+    ? projectTasks.length
+    : (project.taskSummaries ? project.taskSummaries.length : (project.taskCount || 0));
 
   const planProgressPercent = projectTasks && projectTasks.length > 0 
     ? computePlanProgressPercent(projectTasks) 
-    : (effectiveSummaries.length > 0 
-        ? computePlanProgressFromSummaries(effectiveSummaries) 
+    : (finalSummaries.length > 0 
+        ? computePlanProgressFromSummaries(finalSummaries) 
         : (project.computedPlanProgress ?? 0));
   
   const actProgressPercent = projectTasks && projectTasks.length > 0
     ? computeActProgressPercent(projectTasks, delegationGroups)
-    : (effectiveSummaries.length > 0 
-        ? computeActProgressFromSummaries(effectiveSummaries) 
+    : (finalSummaries.length > 0 
+        ? computeActProgressFromSummaries(finalSummaries) 
         : (project.computedActProgress ?? 0));
-
-  const taskCount = projectTasks && projectTasks.length > 0 
-    ? projectTasks.length 
-    : (project.taskCount ?? (projectTasks ? projectTasks.length : 0));
 
   return {
     computedTakStart: computedTakStart || "",
@@ -209,8 +211,8 @@ export function calculateProjectComputedDates(
     computedOpening: computedOpening || "",
     computedPlanProgress: planProgressPercent,
     computedActProgress: actProgressPercent,
-    taskCount,
-    taskSummaries: taskSummaries.length > 0 ? taskSummaries : (project.taskSummaries || []),
+    taskCount: finalTaskCount,
+    taskSummaries: finalSummaries,
   };
 }
 

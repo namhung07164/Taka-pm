@@ -221,7 +221,7 @@ export function useTaskModalLogic({
 
         // 1. Optimistic delete in Zustand & Dexie & projects sync
         const { deleteTaskStateUnified } = await import('../lib/taskStateService');
-        await deleteTaskStateUnified([taskId]);
+        await deleteTaskStateUnified([task || taskId]);
         if (childrenToUnlink.length > 0) {
           const unlinkedChildIds = new Set(childrenToUnlink.map(c => c.id));
           const tasksAfterUnlink = useAppStore.getState().tasks.map(t => 

@@ -75,7 +75,7 @@ export function useDetailTaskMutations({
           }
 
           // Xóa tức thì khỏi Zustand store & đồng bộ lại tiến độ/mốc ngày của Project
-          deleteTaskStateUnified([t.id]);
+          deleteTaskStateUnified([t]);
           
           undoManager.push({
             description: `Delete Task: ${t.name}`,
