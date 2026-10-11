@@ -4,6 +4,7 @@ import { DragOverTarget } from './generalTypes';
 import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { Pin, GripVertical, ChevronUp, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
 
 interface GeneralMobileCardProps {
   project: Project;
@@ -83,9 +84,16 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
     ? p.computedActProgress
     : (p.taskSummaries && p.taskSummaries.length > 0 ? computeActProgressFromSummaries(p.taskSummaries) : (p.computedActProgress ?? 0));
   
-  const hasProjectDelegation = (p.taskSummaries && p.taskSummaries.length > 0)
-    ? p.taskSummaries.some(ts => Boolean(ts.delegation))
-    : Boolean(p.delegation);
+  const allStoreTasks = useAppStore.getState().tasks || [];
+  const projectTasks = allStoreTasks.filter(t => 
+    (p.id && String(t.projectId) === String(p.id)) || 
+    (p.code && t.projectCode === p.code)
+  );
+  const hasProjectDelegation = projectTasks.length > 0
+    ? projectTasks.some(t => Boolean(t.delegation))
+    : (p.taskSummaries && p.taskSummaries.length > 0)
+      ? p.taskSummaries.some(ts => Boolean(ts.delegation))
+      : Boolean(p.delegation);
   
   const now = new Date();
   let activeTaskNames: string[] = [];

@@ -1887,9 +1887,13 @@ Phân hệ **Picture Mapping** cung cấp công cụ số hóa, vẽ gian hàng 
     - **Nút Delegation Ở Cấp Dự Án Mang Tính Chỉ Báo Trạng Thái (Read-Only Status Indicator)**:
       + Nút công tắc Delegation ở cấp Project được chuyển sang chế độ chỉ đọc (Read-only status indicator), loại bỏ chức năng gạt trực tiếp bằng tay ở cấp dự án.
       + Công tắc cấp Project chỉ sáng màu xanh lá (ON) khi có ít nhất 1 công việc con (Subtask) trong dự án đó được bật gạt Delegation ON (`groupTasks.some(t => Boolean(t.delegation))`).
-    - **Ẩn Thanh Tiến Độ Thực Tế (`ACT PRG:`) Khi Dự Án Không Có Delegation**:
-      + Khi dự án không có Delegation màu xanh lá (tức không có công việc con nào bật Delegation), thanh progress bar màu xanh lá cây (`ACT PRG:`) sẽ tự động ẩn đi trên cả thẻ di động, bảng chi tiết và sơ đồ mặt bằng General Tab, chỉ giữ lại thanh tiến độ kế hoạch (`PLAN PRG:`).
+    - **Ẩn / Hiện Thanh Tiến Độ Thực Tế (`ACT PRG:`) Đồng Bộ Trên Tab General Và Tab Detail**:
+      + Khi dự án không có Delegation màu xanh lá (tức không có công việc con nào bật Delegation), thanh progress bar màu xanh lá cây (`Act:` / `ACT PRG:`) sẽ tự động ẩn đi trên cả thẻ di động (Mobile Card), bảng chi tiết (Detail Table View), sơ đồ mặt bằng General Tab (General Canvas & Cards), chỉ giữ lại thanh tiến độ kế hoạch (`PLAN PRG:`).
+      + Trạng thái ẩn/hiện thanh xanh lá ở Tab General đồng bộ 100% theo đúng trạng thái Delegation của công việc con trong Tab Detail.
     - **Ẩn Huy Hiệu Cập Nhật Act Status % Trong Công Việc Con**:
       + Đối với các công việc con trong dự án không bật Delegation, hệ thống ẩn hoàn toàn huy hiệu `Act: ... (X%)`, chỉ hiển thị trạng thái kế hoạch `Pl: ...`, bảo đảm giao diện luôn gọn gàng và chính xác theo bản chất nghiệp vụ.
+    - **Quy Tắc Cộng Dồn Tiến Độ Khi Công Việc Con Đạt 100% (`Cumulative Predecessor Completion Rule`)**:
+      + Khi một công việc con (Subtask / Task con) bất kỳ được nghiệm thu hoặc cập nhật đạt **100% Act Status (`Completed / Approved / Finish`)**, toàn bộ các công việc con đứng trước nó trong chuỗi thực hiện sẽ tự động được tính **100% tiến độ thực tế** (dù chưa thay đổi nhãn trạng thái riêng) và được cộng dồn giá trị 100% vào tổng tiến độ thanh bar (`ACT PRG:`).
+
 
 

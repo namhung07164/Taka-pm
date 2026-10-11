@@ -206,17 +206,6 @@ export const resolveActualStatus = (
     };
   }
 
-  // ⛔ RULE: Nếu không có gạt delegation (task?.delegation !== true và không có subtask ủy quyền),
-  // tuyệt đối KHÔNG ĐƯỢC cập nhật Act Status (không tự động suy diễn hoàn thành theo plan hoặc running status).
-  const hasDelegation = Boolean(task?.delegation || (subTasks && subTasks.length > 0));
-
-  if (!hasDelegation) {
-    return {
-      label: "Not Delegated",
-      color: "bg-slate-100 dark:bg-[#28282a] text-slate-500 dark:text-[#9aa0a6] border-slate-200 dark:border-[#3c4043]",
-    };
-  }
-
   if (!subTasks || subTasks.length === 0) {
     if (task) {
       const running = (task.runningStatus || '').toLowerCase();
@@ -247,8 +236,21 @@ export const resolveActualStatus = (
       }
     }
 
+    const pLower = (plStatus || '').toLowerCase();
+    if (pLower === 'completed') {
+      return {
+        label: "Completed",
+        color: "bg-emerald-50 dark:bg-[#28282a] text-emerald-600 dark:text-[#81c995] border-emerald-200 dark:border-emerald-800",
+      };
+    }
+    if (pLower === 'on process' || pLower === 'handover') {
+      return {
+        label: "In Progress",
+        color: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700",
+      };
+    }
     return {
-      label: "Assigned",
+      label: "Upcoming",
       color: "bg-slate-50 dark:bg-[#28282a] text-slate-600 dark:text-[#9aa0a6] border-slate-200 dark:border-[#3c4043]",
     };
   }
@@ -444,30 +446,28 @@ export function computeActProgressFromSummaries(
   today.setHours(0, 0, 0, 0);
   const todayTime = today.getTime();
 
-  let totalScore = 0;
-  let validCount = 0;
+  const validScores: number[] = [];
 
   for (const s of summaries) {
     if (!s.start && !s.finish && !s.runningStatus && !s.actStatus && !s.status) continue;
-    validCount++;
 
     const statusStr = String(s.runningStatus || s.actStatus || s.status || s.delegationStatus || '').toLowerCase();
     const approvalStr = String(s.approval || s.approvalStatus || '').toLowerCase();
 
     if (statusStr.includes('complete') || statusStr.includes('finished') || approvalStr === 'approved') {
-      totalScore += 1;
+      validScores.push(1.0);
       continue;
     }
     if (statusStr.includes('pending') || statusStr.includes('reqapproval') || statusStr.includes('waiting') || approvalStr === 'reqapproval' || approvalStr === 'requested') {
-      totalScore += 0.8;
+      validScores.push(0.8);
       continue;
     }
     if (statusStr.includes('accept') || statusStr.includes('process') || statusStr.includes('progress') || statusStr.includes('delay') || approvalStr === 'accepttask') {
-      totalScore += 0.5;
+      validScores.push(0.5);
       continue;
     }
     if (statusStr.includes('rework') || statusStr.includes('reject') || approvalStr === 'rejected' || approvalStr === 'reqreview') {
-      totalScore += 0.3;
+      validScores.push(0.3);
       continue;
     }
 
@@ -477,20 +477,39 @@ export function computeActProgressFromSummaries(
     if (finish) finish.setHours(0, 0, 0, 0);
 
     if (finish && todayTime > finish.getTime()) {
-      totalScore += 1;
+      validScores.push(1.0);
     } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
       const totalDuration = finish.getTime() - start.getTime();
       if (totalDuration > 0) {
         const passed = todayTime - start.getTime();
-        totalScore += passed / totalDuration;
+        validScores.push(Math.max(0.3, Math.min(0.9, passed / totalDuration)));
       } else {
-        totalScore += 1;
+        validScores.push(1.0);
       }
+    } else {
+      validScores.push(0.0);
     }
   }
 
-  if (validCount === 0) return 0;
-  return Math.round((totalScore / validCount) * 100);
+  if (validScores.length === 0) return 0;
+
+  let maxCompletedIdx = -1;
+  for (let i = 0; i < validScores.length; i++) {
+    if (validScores[i] >= 1.0) {
+      maxCompletedIdx = i;
+    }
+  }
+
+  let totalScore = 0;
+  for (let i = 0; i < validScores.length; i++) {
+    if (maxCompletedIdx !== -1 && i <= maxCompletedIdx) {
+      totalScore += 1.0;
+    } else {
+      totalScore += validScores[i];
+    }
+  }
+
+  return Math.round((totalScore / validScores.length) * 100);
 }
 
 export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
@@ -2023,10 +2042,24 @@ export function getActStatusPercent(status: string | undefined | null): number {
  */
 export function computeDelegationGroupProgressPercent(group: DelegationGroup): number {
   if (!group || !group.subTasks || group.subTasks.length === 0) return 0;
-  const totalScore = group.subTasks.reduce(
-    (sum, st) => sum + getSubTaskProgressScore(st),
-    0
-  );
+  
+  const rawScores = group.subTasks.map((st) => getSubTaskProgressScore(st));
+  let maxCompletedIdx = -1;
+  for (let i = 0; i < rawScores.length; i++) {
+    if (rawScores[i] >= 1.0) {
+      maxCompletedIdx = i;
+    }
+  }
+
+  let totalScore = 0;
+  for (let i = 0; i < rawScores.length; i++) {
+    if (maxCompletedIdx !== -1 && i <= maxCompletedIdx) {
+      totalScore += 1.0;
+    } else {
+      totalScore += rawScores[i];
+    }
+  }
+
   return Math.round((totalScore / group.subTasks.length) * 100);
 }
 
@@ -2052,9 +2085,6 @@ export function computeActProgressPercent(
   for (const t of groupTasks) {
     const delegationGroup = getGroup(t.id);
     const subTasks = delegationGroup?.subTasks || [];
-    const hasDelegation = Boolean(t.delegation || subTasks.length > 0);
-    if (!hasDelegation) continue; // ⛔ Task không gạt delegation thì không cập nhật Act Status!
-
     let isCompleted = false;
 
     if (subTasks.length > 0) {
@@ -2081,36 +2111,25 @@ export function computeActProgressPercent(
       ? Math.max(...completedTaskStartTimestamps)
       : 0;
 
-  let totalScore = 0;
+  const rawScores: number[] = [];
 
   for (const t of groupTasks) {
     const delegationGroup = getGroup(t.id);
     const subTasks = delegationGroup?.subTasks || [];
-    const hasDelegation = Boolean(t.delegation || subTasks.length > 0);
-
-    // ⛔ RULE: Nếu không có gạt delegation (t.delegation !== true và không có subtask),
-    // TUYỆT ĐỐI KHÔNG ĐƯỢC cập nhật Act Status -> Task này 0 điểm (tiến độ thực tế = 0%)
-    if (!hasDelegation) {
-      continue;
-    }
 
     // Case 1: Task has delegation subtasks
     if (subTasks.length > 0) {
-      const subScoreSum = subTasks.reduce(
-        (sum, st) => sum + getSubTaskProgressScore(st),
-        0
-      );
-      const avgSubScore = subScoreSum / subTasks.length;
-      totalScore += avgSubScore;
+      const groupPct = computeDelegationGroupProgressPercent(delegationGroup);
+      rawScores.push(groupPct / 100);
       continue;
     }
 
-    // Case 2: Pure delegated task without subtasks
+    // Case 2: Pure task without delegation subtasks
     const running = (t.runningStatus || "").toLowerCase();
     const approval = (t.approval || "").toLowerCase();
 
     if (running.includes("complete") || approval === "approved") {
-      totalScore += 1;
+      rawScores.push(1.0);
       continue;
     }
 
@@ -2121,7 +2140,7 @@ export function computeActProgressPercent(
       maxCompletedStartTs > 0 &&
       tFinishTs <= maxCompletedStartTs
     ) {
-      totalScore += 1;
+      rawScores.push(1.0);
       continue;
     }
 
@@ -2136,22 +2155,65 @@ export function computeActProgressPercent(
       ) {
         const duration = finish.getTime() - start.getTime();
         const passed = todayTime - start.getTime();
-        totalScore +=
-          duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5;
+        rawScores.push(
+          duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5
+        );
       } else {
-        totalScore += 0.5;
+        rawScores.push(0.5);
       }
       continue;
     }
 
     if (running.includes("delay")) {
-      totalScore += 0.5;
+      rawScores.push(0.5);
       continue;
     }
 
     if (approval === "pending" || approval === "requested") {
-      totalScore += 0.8;
+      rawScores.push(0.8);
       continue;
+    }
+
+    // Fallback to planned timeline
+    const plStatus = getTaskStatus(t.start, t.finish);
+    if (plStatus === "Completed") {
+      rawScores.push(1.0);
+    } else if (plStatus === "On process") {
+      const start = parseDateTime(t.start);
+      const finish = parseDateTime(t.finish);
+      if (
+        start &&
+        finish &&
+        todayTime >= start.getTime() &&
+        todayTime <= finish.getTime()
+      ) {
+        const duration = finish.getTime() - start.getTime();
+        const passed = todayTime - start.getTime();
+        rawScores.push(
+          duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5
+        );
+      } else {
+        rawScores.push(0.5);
+      }
+    } else {
+      rawScores.push(0.0);
+    }
+  }
+
+  // Find max index of a task with 100% score
+  let maxCompletedTaskIdx = -1;
+  for (let i = 0; i < rawScores.length; i++) {
+    if (rawScores[i] >= 1.0) {
+      maxCompletedTaskIdx = i;
+    }
+  }
+
+  let totalScore = 0;
+  for (let i = 0; i < rawScores.length; i++) {
+    if (maxCompletedTaskIdx !== -1 && i <= maxCompletedTaskIdx) {
+      totalScore += 1.0;
+    } else {
+      totalScore += rawScores[i];
     }
   }
 

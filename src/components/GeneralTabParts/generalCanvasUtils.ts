@@ -2,6 +2,7 @@ import React from 'react';
 import { Project } from '../../types';
 import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { SortConfig } from './generalTypes';
+import { useAppStore } from '../../store/useAppStore';
 
 interface DrawGeneralCanvasParams {
   canvas: HTMLCanvasElement;
@@ -310,9 +311,16 @@ export function drawGeneralCanvas({
         ctx.fillText(`${progressPercent}% (P)`, textX, planY + 2);
 
         // Actual Progress Row (Only drawn if project delegation is green)
-        const hasProjectDelegation = (item.taskSummaries && item.taskSummaries.length > 0)
-          ? item.taskSummaries.some(ts => Boolean(ts.delegation))
-          : Boolean(item.delegation);
+        const allStoreTasks = useAppStore.getState().tasks || [];
+        const projectTasks = allStoreTasks.filter(t => 
+          (item.id && String(t.projectId) === String(item.id)) || 
+          (item.code && t.projectCode === item.code)
+        );
+        const hasProjectDelegation = projectTasks.length > 0
+          ? projectTasks.some(t => Boolean(t.delegation))
+          : (item.taskSummaries && item.taskSummaries.length > 0)
+            ? item.taskSummaries.some(ts => Boolean(ts.delegation))
+            : Boolean(item.delegation);
 
         if (hasProjectDelegation) {
           const actY = planY + 12;
