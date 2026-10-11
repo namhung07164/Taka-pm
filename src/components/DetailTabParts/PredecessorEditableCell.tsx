@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PredecessorHardLinkInput } from '../TaskModalParts/PredecessorHardLinkInput';
+import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
 import { Task, Project } from '../../types';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { useAppStore } from '../../store/useAppStore';
@@ -63,12 +63,12 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
         return;
       }
       if (isEditing && containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        commitSave(val);
+        setIsEditing(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isEditing, val, value, onSave, tasks, projects, task?.projectCode, task?.projectId, task?.projectYear, task?.projectStore, task?.location, task.predecessorTaskIds]);
+  }, [isEditing]);
 
   const displayVal = isEditing ? val : (value !== undefined && value !== null ? value : '');
 
@@ -84,14 +84,12 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     return (
       <div ref={containerRef} className="w-full relative" onKeyDown={(e) => {
         if (e.defaultPrevented) return;
-        if (e.key === 'Enter') {
-          commitSave(val);
-        } else if (e.key === 'Escape') {
+        if (e.key === 'Escape') {
           setIsEditing(false);
           setVal(displayVal !== undefined && displayVal !== null ? displayVal : '');
         }
       }}>
-        <PredecessorHardLinkInput 
+        <PredecessorSearchSuggest 
           task={task}
           canWrite={canWrite}
         />

@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Info } from 'lucide-react';
-import { PredecessorHardLinkInput } from './PredecessorHardLinkInput';
+import { PredecessorSearchSuggest } from './PredecessorSearchSuggest';
 import { Task } from '../../types';
 import { formatDisplayDateTime } from '../../lib/utils';
 
@@ -13,7 +13,6 @@ interface TaskPredecessorSectionProps {
   projects: any[];
   resolvedPredecessors: any[];
   handlePredecessorChange: (val: string) => void;
-  handlePredecessorTaskIdsChange: (ids: string[]) => void;
   handleApplyPredecessorDates: () => void;
 }
 
@@ -26,7 +25,6 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
   projects,
   resolvedPredecessors,
   handlePredecessorChange,
-  handlePredecessorTaskIdsChange,
   handleApplyPredecessorDates,
 }: TaskPredecessorSectionProps) {
   return (
@@ -56,7 +54,7 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
       </div>
 
       {task ? (
-        <PredecessorHardLinkInput 
+        <PredecessorSearchSuggest 
           task={task}
           canWrite={canWrite}
         />

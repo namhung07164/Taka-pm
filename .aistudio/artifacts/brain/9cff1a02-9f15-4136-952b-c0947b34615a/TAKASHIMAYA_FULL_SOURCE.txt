@@ -1,5 +1,5 @@
-TAKASHIMAYA PROJECT MANAGEMENT SYSTEM - SOURCE CODE EXPORT (UPDATED)
-Generated on: Sun Oct 11 07:20:09 PM UTC 2026
+TAKASHIMAYA PROJECT MANAGEMENT SYSTEM - SOURCE CODE EXPORT
+Generated on: Sun Oct 11 11:17:37 PM UTC 2026
 --------------------------------------------------------------------------------
 
 ================================================================================
@@ -21742,7 +21742,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         <td className="px-3 py-2">
           <PredecessorEditableCell
             value={t.predecessor}
-            onSave={(val) => onUpdateTask(t, { predecessor: val })}
+            onSave={(updates) => onUpdateTask(t, updates)}
             canWrite={canWrite}
             task={t}
             tasks={tasks}
@@ -22080,10 +22080,12 @@ export const FastToggle = ({
 FILE: src/components/DetailTabParts/PredecessorEditableCell.tsx
 ================================================================================
 import React, { useState, useEffect, useRef } from 'react';
-import { PredecessorMultiInput } from '../PredecessorMultiInput';
+import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
 import { Task, Project } from '../../types';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { useAppStore } from '../../store/useAppStore';
+import { splitPredecessors, computeTaskCode } from '../../lib/ganttUtils';
+import { parsePredecessorToken, findTaskByQueryOrCode } from '../../lib/predecessorMatchUtils';
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
   value,
@@ -22094,7 +22096,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   projects
 }: {
   value: any,
-  onSave: (val: any) => void,
+  onSave: (updates: Partial<Task>) => void,
   canWrite: boolean,
   task: Task,
   tasks?: Task[],
@@ -22121,10 +22123,17 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     };
     const effectiveTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().tasks || []);
     const effectiveProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().projects || []);
-    const resolved = resolvePredecessorString(rawVal, effectiveTasks, effectiveProjects, task?.projectCode, context);
+    const resolved = resolvePredecessorString(rawVal, effectiveTasks, effectiveProjects, task?.projectCode, context, task.predecessorTaskIds);
     setVal(resolved);
     if (resolved !== (value || '')) {
-      onSave(resolved);
+      const finalTokens = splitPredecessors(resolved, effectiveTasks.map(t => computeTaskCode(effectiveProjects, effectiveTasks, t)));
+      const newIds = finalTokens.map(tok => {
+        const { query } = parsePredecessorToken(tok);
+        if (!query) return '';
+        const t = findTaskByQueryOrCode(query, effectiveTasks, effectiveProjects, context);
+        return t ? t.id : '';
+      });
+      onSave({ predecessor: resolved, predecessorTaskIds: newIds });
     }
   };
 
@@ -22135,12 +22144,12 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
         return;
       }
       if (isEditing && containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        commitSave(val);
+        setIsEditing(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isEditing, val, value, onSave, tasks, projects, task?.projectCode, task?.projectId, task?.projectYear, task?.projectStore, task?.location]);
+  }, [isEditing]);
 
   const displayVal = isEditing ? val : (value !== undefined && value !== null ? value : '');
 
@@ -22156,24 +22165,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     return (
       <div ref={containerRef} className="w-full relative" onKeyDown={(e) => {
         if (e.defaultPrevented) return;
-        if (e.key === 'Enter') {
-          commitSave(val);
-        } else if (e.key === 'Escape') {
+        if (e.key === 'Escape') {
           setIsEditing(false);
           setVal(displayVal !== undefined && displayVal !== null ? displayVal : '');
         }
       }}>
-        <PredecessorMultiInput
-          value={val}
-          onChange={setVal}
-          onCommit={(finalVal) => commitSave(finalVal)}
-          tasks={tasks || useAppStore.getState().tasks || []}
-          projects={projects || useAppStore.getState().projects || []}
-          currentProjectId={task.projectId}
-          currentProjectCode={task.projectCode}
-          currentProjectYear={task.projectYear}
-          currentProjectStore={task.projectStore}
-          currentProjectLocation={task.location}
+        <PredecessorSearchSuggest 
+          task={task}
+          canWrite={canWrite}
         />
       </div>
     );
@@ -31067,7 +31066,7 @@ FILE: src/components/Gantt/GanttTooltipPredecessor.tsx
 ================================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, Project } from '../../types';
-import { PredecessorMultiInput } from '../PredecessorMultiInput';
+import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { 
   buildTaskNoMap, 
@@ -31266,18 +31265,9 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
             <button
               type="button"
               disabled={isSaving}
-              onClick={() => handleSave(val)}
-              className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/50 rounded transition-colors"
-              title="Apply Predecessor"
-            >
-              <Check className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              disabled={isSaving}
               onClick={handleCancel}
               className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors"
-              title="Cancel"
+              title="Close"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -31285,25 +31275,14 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
         </div>
 
         <div className="w-full relative" onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            handleSave(val);
-          } else if (e.key === 'Escape') {
+          if (e.key === 'Escape') {
             handleCancel();
           }
         }}>
-          <PredecessorMultiInput
-            value={val}
-            onChange={setVal}
-            onCommit={(finalVal) => handleSave(finalVal)}
-            tasks={tasks}
-            projects={projects}
-            currentProjectId={task.projectId}
-            currentProjectCode={task.projectCode}
-            currentProjectYear={task.projectYear}
-            currentProjectStore={task.projectStore}
-            currentProjectLocation={task.location}
-            disabled={isSaving}
-          />
+        <PredecessorSearchSuggest 
+          task={task}
+          canWrite={canWrite}
+        />
         </div>
       </div>
     );
@@ -65665,7 +65644,9 @@ export function PredecessorMultiInput({
   currentProjectYear,
   currentProjectStore,
   currentProjectLocation,
-  disabled
+  disabled,
+  predecessorTaskIds = [],
+  onPredecessorTaskIdsChange
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -65678,6 +65659,8 @@ export function PredecessorMultiInput({
   currentProjectStore?: string;
   currentProjectLocation?: string;
   disabled?: boolean;
+  predecessorTaskIds?: string[];
+  onPredecessorTaskIdsChange?: (ids: string[]) => void;
 }) {
   const { t: translate } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
@@ -65746,7 +65729,7 @@ export function PredecessorMultiInput({
       if (triggerCommit) onCommit?.('');
       return;
     }
-    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode, currentContext);
+    const resolved = resolvePredecessorString(value, tasks, projects, currentProjectCode, currentContext, predecessorTaskIds);
     const merged = enforceRules(resolved, true);
     if (merged !== value) {
       // Check if newly introduced predecessor tokens are from a different project
@@ -65780,10 +65763,31 @@ export function PredecessorMultiInput({
       }
 
       onChange(merged);
+      
+      // Update Task IDs for the resolved string
+      const finalTokens = splitPredecessors(merged, knownCodes);
+      const newIds = finalTokens.map(tok => {
+        const { query } = parsePredecessorToken(tok);
+        if (!query) return '';
+        const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
+        return t ? t.id : '';
+      });
+      onPredecessorTaskIdsChange?.(newIds);
+
       if (triggerCommit) {
         onCommit?.(merged);
       }
     } else {
+      // Even if string is same, ensure IDs are synced
+      const finalTokens = splitPredecessors(merged, knownCodes);
+      const newIds = finalTokens.map(tok => {
+        const { query } = parsePredecessorToken(tok);
+        if (!query) return '';
+        const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
+        return t ? t.id : '';
+      });
+      onPredecessorTaskIdsChange?.(newIds);
+
       if (triggerCommit) {
         onCommit?.(merged);
       }
@@ -65902,6 +65906,16 @@ export function PredecessorMultiInput({
     const merged = newSegments.slice(0, 2).join(', ');
     
     onChange(merged);
+    
+    // Update IDs
+    const newIds = newSegments.slice(0, 2).map(seg => {
+      const { query } = parsePredecessorToken(seg);
+      if (!query) return '';
+      const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
+      return t ? t.id : '';
+    });
+    onPredecessorTaskIdsChange?.(newIds);
+
     setIsOpen(false);
     setHighlightedIndex(-1);
 
@@ -66050,9 +66064,16 @@ export function PredecessorMultiInput({
           placeholder={value ? "" : "e.g. A01-1SS, A02-2FF"}
           className={cn(
             "w-full px-3 py-2 bg-transparent outline-none border-none focus:ring-0 shadow-none m-0 font-mono font-bold text-sm tracking-normal leading-normal text-blue-600 dark:text-[#8ab4f8] placeholder:text-slate-400 dark:placeholder:text-slate-500 caret-blue-600 dark:caret-[#8ab4f8]",
-            value && !disabled ? "pr-8" : ""
+            value && !disabled ? "pr-8" : "",
+            predecessorTaskIds.some(id => id) ? "pl-9" : ""
           )}
         />
+
+        {predecessorTaskIds.some(id => id) && (
+          <div className="absolute left-2.5 flex items-center gap-1 text-blue-500/70 dark:text-blue-400/70 pointer-events-none" title="Linked via Task ID">
+            <ExternalLink className="w-3.5 h-3.5" />
+          </div>
+        )}
 
         {value && !disabled && (
           <button
@@ -66110,6 +66131,16 @@ export function PredecessorMultiInput({
             handleSelect(confirmExternalModal.task, confirmExternalModal.relationship, true);
           } else if (confirmExternalModal.pendingValue) {
             onChange(confirmExternalModal.pendingValue);
+            
+            // Update IDs for the pending value
+            const finalTokens = splitPredecessors(confirmExternalModal.pendingValue, knownCodes);
+            const newIds = finalTokens.map(tok => {
+              const { query } = parsePredecessorToken(tok);
+              if (!query) return '';
+              const t = findTaskByQueryOrCode(query, tasks, projects, currentContext);
+              return t ? t.id : '';
+            });
+            onPredecessorTaskIdsChange?.(newIds);
           }
           setConfirmExternalModal({ isOpen: false });
         }}
@@ -78016,7 +78047,7 @@ export const TaskChatInput = React.memo(
       const textBeforeMention = commentText.substring(0, cursorPosition).replace(/@\S*$/, '');
       const textAfterMention = commentText.substring(cursorPosition);
 
-      setCommentText(`${textBeforeMention}@${user.username} ${textAfterMention}`);
+      setCommentText(`${textBeforeMention}@${user.username || 'user'} ${textAfterMention}`);
       if (!mentions.includes(user.id)) {
         setMentions([...mentions, user.id]);
       }
@@ -78029,7 +78060,7 @@ export const TaskChatInput = React.memo(
       const textBeforeTask = commentText.substring(0, cursorPosition).replace(/#([^#]*)$/, '');
       const textAfterTask = commentText.substring(cursorPosition);
 
-      setCommentText(`${textBeforeTask}#${targetTask.name}${withApproval ? '-approval' : ''} ${textAfterTask}`);
+      setCommentText(`${textBeforeTask}#${targetTask.name || ''}${withApproval ? '-approval' : ''} ${textAfterTask}`);
       setShowTaskMenu(false);
       inputRef.current?.focus();
     };
@@ -78039,11 +78070,11 @@ export const TaskChatInput = React.memo(
 
       const lowerCommentText = commentText.toLowerCase();
       const activeMentions = Array.from(new Set([
-        ...mentions.filter(userId => {
-          const user = appUsers.find(u => u.id === userId);
+        ...(mentions || []).filter(userId => {
+          const user = (appUsers || []).find(u => u.id === userId);
           return user && lowerCommentText.includes(`@${user.username.toLowerCase()}`);
         }),
-        ...appUsers.filter(u => lowerCommentText.includes(`@${u.username.toLowerCase()}`)).map(u => u.id)
+        ...(appUsers || []).filter(u => u.username && lowerCommentText.includes(`@${u.username.toLowerCase()}`)).map(u => u.id)
       ]));
 
       activeMentions.forEach(userId => recordMention(userId));
@@ -78060,8 +78091,8 @@ export const TaskChatInput = React.memo(
         .map((st: any) => st.party?.toLowerCase().trim())
         .filter(Boolean);
 
-      return appUsers
-        .filter(u => u.username.toLowerCase().includes(mentionQuery.toLowerCase()))
+      return (appUsers || [])
+        .filter(u => u.username && u.username.toLowerCase().includes(mentionQuery.toLowerCase()))
         .sort((a, b) => {
           const isPartyA = partyUsernames.includes(a.username.toLowerCase());
           const isPartyB = partyUsernames.includes(b.username.toLowerCase());
@@ -78628,6 +78659,221 @@ export function useTaskChatActions({
 
 
 ================================================================================
+FILE: src/components/TaskModalParts/PredecessorSearchSuggest.tsx
+================================================================================
+import { useState, useMemo, useRef, useEffect, memo } from 'react';
+import { Task, TaskPredecessor, PredecessorType } from '../../types';
+import { useTaskPredecessor } from '../../hooks/useTaskPredecessor';
+import { useAppStore } from '../../store/useAppStore';
+import { X, Search, AlertTriangle, Link as LinkIcon } from 'lucide-react';
+
+interface PredecessorSearchSuggestProps {
+  task: Task;
+  canWrite: boolean;
+}
+
+export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> = memo(({ task, canWrite }) => {
+  const { updatePredecessors } = useTaskPredecessor();
+  const allTasks = useAppStore(state => state.tasks);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [crossProjectWarning, setCrossProjectWarning] = useState<Task | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const currentPredecessors = task.predecessors || [];
+
+  // 1. Xử lý đóng Dropdown khi click ra ngoài
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // 2. Lọc danh sách gợi ý (Trừ task hiện tại và các task đã link)
+  const suggestions = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    
+    return allTasks
+      .filter(t => t.id !== task.id && !currentPredecessors.some(p => p.taskId === t.id))
+      .filter(t => 
+        t.name.toLowerCase().includes(term) || 
+        (t.taskCodePhu && t.taskCodePhu.toLowerCase().includes(term)) ||
+        t.projectCode?.toLowerCase().includes(term)
+      )
+      .slice(0, 15); // Giới hạn 15 kết quả để tối ưu UI
+  }, [allTasks, searchTerm, task.id, currentPredecessors]);
+
+  // 3. Xử lý chọn Task từ Dropdown
+  const handleSelectSuggestion = (selectedTask: Task) => {
+    setIsDropdownOpen(false);
+    setSearchTerm('');
+
+    // Nếu khác dự án -> Bật cảnh báo
+    if (selectedTask.projectCode !== task.projectCode) {
+      setCrossProjectWarning(selectedTask);
+      return;
+    }
+
+    // Nếu cùng dự án -> Add luôn (Mặc định là FS)
+    executeAddPredecessor(selectedTask.id, 'FS');
+  };
+
+  const executeAddPredecessor = async (targetId: string, type: PredecessorType) => {
+    try {
+      const newPred: TaskPredecessor = { taskId: targetId, type };
+      await updatePredecessors(task.id, [...currentPredecessors, newPred]);
+      setCrossProjectWarning(null);
+    } catch (err: any) {
+      useAppStore.getState().setToast({ title: 'Lỗi liên kết', message: err.message, type: 'error' });
+    }
+  };
+
+  const handleRemove = async (removeId: string) => {
+    try {
+      const newIds = currentPredecessors.filter(p => p.taskId !== removeId);
+      await updatePredecessors(task.id, newIds);
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  const handleChangeType = async (taskId: string, newType: PredecessorType) => {
+    try {
+      const newIds = currentPredecessors.map(p => p.taskId === taskId ? { ...p, type: newType } : p);
+      await updatePredecessors(task.id, newIds);
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  if (!canWrite) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {currentPredecessors.map(p => {
+          const t = allTasks.find(x => x.id === p.taskId);
+          return (
+            <span key={p.taskId} className="px-2 py-1 bg-slate-100 dark:bg-[#252528] rounded border border-slate-200 dark:border-[#444446] text-xs font-medium text-slate-700 dark:text-[#e3e3e3]">
+              <strong className="text-indigo-600 dark:text-indigo-400 mr-1">{p.type}</strong>
+              {t ? `${t.taskCodePhu || t.projectCode} - ${t.name}` : 'Unknown'}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 relative" ref={wrapperRef}>
+      {/* Cảnh báo Cross-Project */}
+      {crossProjectWarning && (
+        <div className="absolute z-[100] top-full left-0 right-0 mt-2 p-3 bg-amber-50 dark:bg-amber-950/90 border border-amber-200 dark:border-amber-700 rounded-xl shadow-lg flex flex-col gap-2">
+          <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200 text-xs font-medium">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p>
+              Bạn đang cố gắng liên kết với task <strong>{crossProjectWarning.name}</strong> thuộc dự án khác (<strong>{crossProjectWarning.projectCode}</strong>). 
+              Liên kết chéo dự án có thể làm biểu đồ Gantt trở nên phức tạp. Bạn có chắc chắn không?
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 mt-1">
+            <button onClick={() => setCrossProjectWarning(null)} className="px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-lg transition-colors">
+              Hủy bỏ
+            </button>
+            <button onClick={() => executeAddPredecessor(crossProjectWarning.id, 'FS')} className="px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm transition-colors">
+              Xác nhận liên kết
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hiển thị Tags (Các task đã chọn) */}
+      <div className="flex flex-wrap gap-1.5 mb-1">
+        {currentPredecessors.map(p => {
+          const t = allTasks.find(x => x.id === p.taskId);
+          const isCross = t && t.projectCode !== task.projectCode;
+          
+          return (
+            <div key={p.taskId} className={`flex items-stretch bg-white dark:bg-[#252528] rounded-md border ${isCross ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50/50 dark:bg-amber-950/20' : 'border-slate-200 dark:border-[#444446]'} overflow-hidden shadow-xs`}>
+              <select
+                value={p.type}
+                onChange={(e) => handleChangeType(p.taskId, e.target.value as PredecessorType)}
+                className="bg-indigo-50 dark:bg-[#1a1a1f] text-indigo-700 dark:text-indigo-400 text-[10px] font-extrabold px-1.5 border-r border-slate-200 dark:border-[#444446] outline-none cursor-pointer"
+              >
+                <option value="FS">FS</option><option value="SS">SS</option>
+                <option value="FF">FF</option><option value="SF">SF</option>
+              </select>
+              <div className="px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-[#e3e3e3] flex items-center gap-1 max-w-[200px]">
+                {isCross && (
+                  <span title="Khác dự án">
+                    <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                  </span>
+                )}
+                <span className="truncate" title={t?.name}>{t ? `${t.taskCodePhu || ''} ${t.name}` : 'Unknown'}</span>
+              </div>
+              <button onClick={() => handleRemove(p.taskId)} className="px-1.5 hover:bg-red-50 dark:hover:bg-red-950/50 text-slate-400 hover:text-red-500 border-l border-slate-200 dark:border-[#444446] transition-colors">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Input Autocomplete */}
+      <div className="relative">
+        <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+          <Search className="w-3.5 h-3.5 text-slate-400" />
+        </div>
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setIsDropdownOpen(true);
+          }}
+          onFocus={() => setIsDropdownOpen(true)}
+          placeholder="Tìm tên hoặc mã công việc để liên kết..."
+          className="w-full pl-8 pr-3 py-2 text-xs bg-white dark:bg-[#1e1e20] border border-slate-300 dark:border-[#555] rounded-lg text-slate-800 dark:text-white outline-none focus:ring-1 focus:ring-blue-500"
+        />
+
+        {/* Dropdown Suggestions */}
+        {isDropdownOpen && searchTerm.trim() && (
+          <ul className="absolute z-50 top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-[#252528] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl flex flex-col py-1">
+            {suggestions.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-slate-500 italic text-center">Không tìm thấy công việc phù hợp</li>
+            ) : (
+              suggestions.map(t => {
+                const isCross = t.projectCode !== task.projectCode;
+                return (
+                  <li 
+                    key={t.id} 
+                    onClick={() => handleSelectSuggestion(t)}
+                    className="px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 cursor-pointer flex flex-col gap-0.5 border-b border-slate-100 dark:border-[#333] last:border-0 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 dark:text-[#f3f3f3] truncate">{t.name}</span>
+                      {isCross && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 border border-amber-200 shrink-0">Khác dự án</span>}
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                      <LinkIcon className="w-3 h-3" /> {t.projectCode} {t.taskCodePhu ? `> ${t.taskCodePhu}` : ''}
+                    </div>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+});
+
+
+================================================================================
 FILE: src/components/TaskModalParts/TaskBasicInfo.tsx
 ================================================================================
 import React, { memo } from 'react';
@@ -78863,6 +79109,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <TaskPredecessorSection 
+          task={task}
           formData={formData}
           canWrite={canWrite}
           t={t}
@@ -79367,10 +79614,12 @@ FILE: src/components/TaskModalParts/TaskPredecessorSection.tsx
 ================================================================================
 import React, { memo } from 'react';
 import { Info } from 'lucide-react';
-import { PredecessorMultiInput } from '../PredecessorMultiInput';
+import { PredecessorSearchSuggest } from './PredecessorSearchSuggest';
+import { Task } from '../../types';
 import { formatDisplayDateTime } from '../../lib/utils';
 
 interface TaskPredecessorSectionProps {
+  task: Task;
   formData: any;
   canWrite: boolean;
   t: (key: string) => string;
@@ -79382,6 +79631,7 @@ interface TaskPredecessorSectionProps {
 }
 
 export const TaskPredecessorSection = memo(function TaskPredecessorSection({
+  task,
   formData,
   canWrite,
   t,
@@ -79417,18 +79667,16 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
         )}
       </div>
 
-      <PredecessorMultiInput 
-        value={formData.predecessor || ""}
-        onChange={handlePredecessorChange}
-        tasks={tasks}
-        projects={projects}
-        currentProjectId={formData.projectId}
-        currentProjectCode={formData.projectCode}
-        currentProjectYear={formData.projectYear}
-        currentProjectStore={formData.projectStore}
-        currentProjectLocation={formData.location}
-        disabled={!canWrite}
-      />
+      {task ? (
+        <PredecessorSearchSuggest 
+          task={task}
+          canWrite={canWrite}
+        />
+      ) : (
+        <div className="text-[10px] text-slate-500 italic p-2 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
+          Please save the task first to enable predecessor linking.
+        </div>
+      )}
 
       {resolvedPredecessors.length > 0 && (
         <div className="mt-1.5 flex flex-col gap-1.5">
@@ -79636,7 +79884,6 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { addPendingUpdate } from '../lib/syncQueue';
 import { QRCodeButton } from './QRCodeButton';
-import { PredecessorMultiInput } from "./PredecessorMultiInput";
 import { getZIndexClass } from '../lib/zIndexManager';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 import { FastInput } from './FastInput';
@@ -79690,7 +79937,6 @@ const PredecessorDatalist = React.memo(({ projects, tasks, currentProjectCode, c
   );
 });
 
-import { TaskPredecessorSelect } from './TaskModalParts/TaskPredecessorSelect';
 import { TaskModalHeader } from './TaskModalParts/TaskModalHeader';
 
 export function TaskModal(props: TaskModalProps) {
@@ -79733,16 +79979,6 @@ export function TaskModal(props: TaskModalProps) {
             {activeTab === 'details' && (
               <form onSubmit={handleSubmit} className="p-4 md:p-6 overflow-y-auto flex-grow pb-[env(safe-area-inset-bottom)]">
                 <TaskBasicInfo logic={logic} task={task} onNavigateToDelegation={onNavigateToDelegation} onClose={onClose} />
-                
-                <div className="mt-4">
-                  <TaskPredecessorSelect
-                    currentTaskId={task?.id || ''}
-                    currentProjectCode={formData.projectCode || ''}
-                    allTasks={tasks}
-                    currentPredecessors={formData.predecessors}
-                    canWrite={canWrite}
-                  />
-                </div>
               </form>
             )}
 
@@ -81101,7 +81337,7 @@ export async function executeTaskSave({
         projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
         projectLocation: formData.location || task?.location || currentProject?.location
       };
-      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext);
+      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
       const taskNoMap = buildTaskNoMap(projects, tasks);
       let parts = splitPredecessors(formData.predecessor, taskNoMap);
       if (parts.length >= 2) {
@@ -86380,46 +86616,107 @@ export type TaskModalLogicType = ReturnType<typeof useTaskModalLogic>;
 FILE: src/hooks/useTaskPredecessor.ts
 ================================================================================
 import { useCallback } from 'react';
-import { Task, TaskPredecessor } from '../types';
+import { Task, TaskPredecessor, PredecessorType } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { doc } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { writeBatch } from '../lib/firestoreWrites';
 
+/**
+ * Hook logic for managing task predecessors (Hard Links).
+ * Handles cyclic dependency checks and atomic Firestore updates.
+ */
 export function useTaskPredecessor() {
   const tasks = useAppStore(state => state.tasks);
   const setTasks = useAppStore(state => state.setTasks);
 
-  // Kiểm tra vòng lặp phụ thuộc (đệ quy)
-  const isCyclic = useCallback((taskId: string, targetPredecessorId: string): boolean => {
-    if (taskId === targetPredecessorId) return true;
-    const targetTask = tasks.find(t => t.id === targetPredecessorId);
-    if (!targetTask || !targetTask.predecessors) return false;
+  // 1. DỊCH NGƯỢC: Lấy mảng Object -> Trả ra chuỗi hiển thị UI (VD: "1, 2SS, 4FF")
+  const getDisplayString = useCallback((predecessors: TaskPredecessor[] | undefined, projectCode: string): string => {
+    if (!predecessors || predecessors.length === 0) return '';
     
-    return targetTask.predecessors.some(pred => isCyclic(taskId, pred.taskId));
+    // Lọc task cùng project và sắp xếp theo orderIndex để đồng bộ STT
+    const projectTasks = tasks
+      .filter(t => t.projectCode === projectCode)
+      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+    
+    const parts = predecessors.map(pred => {
+      const targetTask = projectTasks.find(t => t.id === pred.taskId);
+      if (!targetTask) {
+        // Nếu không tìm thấy trong project hiện tại, có thể là cross-project link
+        const crossTask = tasks.find(t => t.id === pred.taskId);
+        if (!crossTask) return '';
+        const typeStr = pred.type === 'FS' ? '' : pred.type;
+        return `${crossTask.projectCode}!${crossTask.taskCodePhu || crossTask.name}${typeStr}`;
+      }
+      
+      const stt = (projectTasks.indexOf(targetTask) + 1).toString();
+      const typeStr = pred.type === 'FS' ? '' : pred.type; 
+      return `${stt}${typeStr}`;
+    });
+
+    return parts.filter(Boolean).join(', ');
   }, [tasks]);
 
+  // 2. NGĂN CHẶN VÒNG LẶP: Quét đệ quy họ hàng phụ thuộc
+  const isCyclic = useCallback((taskId: string, targetId: string, visited = new Set<string>()): boolean => {
+    if (taskId === targetId) return true;
+    if (visited.has(targetId)) return false;
+    visited.add(targetId);
+
+    const targetTask = tasks.find(t => t.id === targetId);
+    if (!targetTask || !targetTask.predecessors) return false;
+    
+    return targetTask.predecessors.some(pred => isCyclic(taskId, pred.taskId, visited));
+  }, [tasks]);
+
+  // 3. CẬP NHẬT: Lưu mảng Object và Chuỗi vào Zustand và Firestore
   const updatePredecessors = async (taskId: string, newPredecessors: TaskPredecessor[]) => {
-    // Validate vòng lặp trước khi lưu
-    const hasCycle = newPredecessors.some(pred => isCyclic(taskId, pred.taskId));
-    if (hasCycle) {
-      throw new Error("Phát hiện vòng lặp phụ thuộc. Không thể liên kết công việc này.");
+    const currentTask = tasks.find(t => t.id === taskId);
+    if (!currentTask) return;
+
+    // Kiểm tra vòng lặp cho từng link mới
+    for (const pred of newPredecessors) {
+      if (isCyclic(taskId, pred.taskId)) {
+        const targetTask = tasks.find(t => t.id === pred.taskId);
+        throw new Error(`Lỗi: Phát hiện vòng lặp phụ thuộc với công việc "${targetTask?.name || pred.taskId}"`);
+      }
     }
 
-    // Cập nhật Optimistic UI vào Zustand
-    setTasks(tasks.map(t => 
-      t.id === taskId ? { ...t, predecessors: newPredecessors } : t
-    ));
+    // Tạo chuỗi hiển thị tương ứng
+    const newPredecessorString = getDisplayString(newPredecessors, currentTask.projectCode);
 
-    // Batch Write lên Firestore
-    const batch = writeBatch(db);
-    const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId);
-    batch.update(taskRef, { predecessors: newPredecessors, updatedAt: new Date().toISOString() });
+    // Nếu cấu trúc không đổi, bỏ qua
+    if (
+      JSON.stringify(currentTask.predecessors || []) === JSON.stringify(newPredecessors) &&
+      currentTask.predecessor === newPredecessorString
+    ) return;
+
+    // Optimistic Update vào Zustand
+    const now = new Date().toISOString();
+    setTasks(tasks.map(t => t.id === taskId ? { 
+      ...t, 
+      predecessors: newPredecessors, 
+      predecessor: newPredecessorString,
+      updatedAt: now 
+    } : t));
     
-    await batch.commit();
+    // Ghi lên Firestore
+    try {
+      const batch = writeBatch(db);
+      const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId);
+      batch.update(taskRef, { 
+        predecessors: newPredecessors, 
+        predecessor: newPredecessorString,
+        updatedAt: now 
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error('[useTaskPredecessor] Update failed:', err);
+      throw err;
+    }
   };
 
-  return { updatePredecessors, isCyclic };
+  return { updatePredecessors, isCyclic, getDisplayString };
 }
 
 
@@ -92352,8 +92649,37 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
   const safeProjects: Project[] = typeof window !== 'undefined' ? (useAppStore.getState?.()?.projects || []) : [];
   const safeTasks: Task[] = typeof window !== 'undefined' ? (useAppStore.getState?.()?.tasks || []) : [];
   const preds = splitPredecessors(predecessorString, taskNoMap);
-  return preds.map(pMatches => {
+  const taskIds = contextTask?.predecessorTaskIds || [];
+
+  return preds.map((pMatches, index) => {
     const lowerMatches = pMatches.toLowerCase();
+    const hardLinkedId = taskIds[index];
+
+    if (hardLinkedId) {
+      const exact = safeTasks.find(t => t.id === hardLinkedId);
+      if (exact && !exact.isDeleted) {
+        const { suffix } = parsePredecessorToken(pMatches);
+        let type = 'FS';
+        let lagSign = '+';
+        let lagValue = 0;
+        if (suffix) {
+          const matchSuffix = suffix.match(/^(FS|SS|FF|SF)?\s*(?:([+-])?\s*(\d+(?:\.\d+)?))?\s*$/i);
+          if (matchSuffix) {
+            if (matchSuffix[1]) type = matchSuffix[1].toUpperCase();
+            if (matchSuffix[2]) lagSign = matchSuffix[2];
+            if (matchSuffix[3]) lagValue = parseFloat(matchSuffix[3]);
+          }
+        }
+        return {
+          no: pMatches,
+          type,
+          lagSign,
+          lagValue,
+          task: exact
+        };
+      }
+    }
+
     let longestMatch = "";
     for (const code of taskNoMap.keys()) {
       if (lowerMatches.startsWith(code) && code.length > longestMatch.length) {
@@ -95948,7 +96274,7 @@ export function findTaskByQueryOrCode(
     if (code && code.toLowerCase() === qLower) return t;
   }
 
-  const match = findClosestTaskMatch(query, tasks, projects, tasks, context?.projectCode, 650, context);
+  const match = findClosestTaskMatch(query, tasks, projects, tasks, context?.projectCode, 650, context, tokenOrCode);
   return match?.task || null;
 }
 
@@ -96191,8 +96517,23 @@ export function findClosestTaskMatch(
   allTasks: Task[],
   currentProjectCode?: string,
   minThreshold: number = 750,
-  context?: PredecessorContext
+  context?: PredecessorContext,
+  predecessorTaskId?: string
 ): RankedPredecessorMatch | null {
+  if (predecessorTaskId) {
+    const exact = candidateTasks.find(t => t.id === predecessorTaskId);
+    if (exact && !exact.isDeleted) {
+      const diff = getTaskProjectDiffDetails(context, exact, projects);
+      return {
+        task: exact,
+        score: 1000000, // Absolute priority for hard-linked ID
+        exactTaskCode: computeTaskCode(projects, allTasks, exact) || exact.taskCodePhu || exact.id,
+        isExternal: diff.isDifferent,
+        diffDetails: diff
+      };
+    }
+  }
+
   const ranked = rankCandidateTasks(query, candidateTasks, projects, allTasks, currentProjectCode, context);
   if (ranked.length > 0 && ranked[0].score >= minThreshold) {
     return ranked[0];
@@ -96212,7 +96553,8 @@ export function resolvePredecessorString(
   tasks: Task[],
   projects: Project[],
   currentProjectCode?: string,
-  context?: PredecessorContext
+  context?: PredecessorContext,
+  predecessorTaskIds?: string[]
 ): string {
   if (!rawValue || typeof rawValue !== 'string') return '';
   const trimmed = rawValue.trim();
@@ -96246,7 +96588,16 @@ export function resolvePredecessorString(
     }
 
     // Find the closest matching task with threshold (650+)
-    const match = findClosestTaskMatch(query, poolTasks, projects, poolTasks, currentProjectCode, 650, context);
+    const match = findClosestTaskMatch(
+      query, 
+      poolTasks, 
+      projects, 
+      poolTasks, 
+      currentProjectCode, 
+      650, 
+      context, 
+      predecessorTaskIds && predecessorTaskIds[index] ? predecessorTaskIds[index] : undefined
+    );
     if (match) {
       let finalSuffix = suffix;
       // If it's the second predecessor and has no relationship, default to FF per Gantt rules
@@ -103961,13 +104312,6 @@ export interface TaskComment {
   attachments?: { name: string; url: string; fullPath: string; type?: string }[];
 }
 
-export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
-
-export interface TaskPredecessor {
-  taskId: string;
-  type: PredecessorType;
-}
-
 export interface Task {
   id: string;
   projectId?: string;
@@ -103990,7 +104334,6 @@ export interface Task {
   party?: string;
   delegation?: boolean;
   predecessor?: string;
-  predecessors?: TaskPredecessor[]; // Mảng chứa Hard Link và Loại liên kết
   notes?: TaskNote[];
   runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming';
   isShared?: boolean;
@@ -104001,6 +104344,15 @@ export interface Task {
   taskCodePhu?: string;
   parentTaskId?: string;
   isDeleted?: boolean;
+  predecessors?: TaskPredecessor[]; // Lưu trữ danh sách Hard Link dưới dạng mảng Object
+  predecessorTaskIds?: string[]; // IDs of tasks mentioned in the predecessor string
+}
+
+export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface TaskPredecessor {
+  taskId: string;
+  type: PredecessorType;
 }
 
 export interface Cost {
@@ -104684,18 +105036,18 @@ FILE: AGENTS.md
 - **Thư Viện Nặng & Code Splitting**: Cấm import tĩnh các thư viện nặng (`xlsx`, `html2canvas`, `konva`, `jspdf`) vào bundle chính. Bắt buộc dùng `await import(...)` hoặc `React.lazy` để file bundle chính luôn dưới 1MB, tối ưu thời gian khởi động (FCP) trên máy POS/di động.
 - **Form Sub-Components**: Form phức tạp tách thành các component con bọc `React.memo` để gõ phím không re-render cả modal.
 
-## 13. Unified Design System & Typography
-- **Year**: Định dạng hiển thị và badge năm đồng nhất (`font-bold`, palette neutral/theme chuẩn).
-- **Project & Task Code**: Dùng font monospace (`font-mono font-extrabold uppercase`), màu xanh thương hiệu (`text-blue-700 dark:text-[#8ab4f8]`).
-- **Store Identifier**: HCM: Blue (`text-blue-600 dark:text-[#8ab4f8]`), HN: Red (`text-red-600 dark:text-red-400`).
-- **Status Badges**: Trạng thái (Completed, On Process, Upcoming, Delay, Overdue) dùng chung màu Tailwind (Emerald, Blue, Amber, Rose) và quy cách bo góc/padding.
-- **Token Reuse**: Buttons, `DebouncedSearchInput`, `MultiCheckboxSelect`, `FastInput` dùng chung token (`rounded-lg`/`rounded-xl`, `active:scale-95 touch-manipulation`, border transition, focus ring).
+## 13. Quy Chuẩn Đồng Bộ Source Code (Single Source of Truth)
 
-## 14. Documentation & Source Code Maintenance
-- Sau mỗi lần cập nhật code, **bắt buộc** tiến hành cập nhật lại toàn bộ mã nguồn mới nhất vào file `TAKASHIMAYA_FULL_SOURCE.txt` (trong thư mục Artifacts) để bảo lưu dữ liệu.
-- Không bắt buộc cập nhật `USER_MANUAL.md` sau mỗi lần viết code, trừ khi có thay đổi đặc biệt quan trọng về UX/UI cần hướng dẫn lại.
+1. 🛑 CẤM Cập Nhật Tài Liệu Lắt Nhắt (No Docs Spam)
+Tuyệt đối KHÔNG tự động viết log, tóm tắt, hay cập nhật các file tài liệu (như `manual_usual.md`, `README.md`, v.v.) sau mỗi lần sửa/viết code. Việc thay đổi tính năng chỉ được phản ánh trực tiếp vào code.
 
-## 15. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
+2. 🔄 Cập Nhật Thẳng Vào Mã Nguồn Gốc (Update The Source)
+Sau mỗi lần tái cấu trúc, băm nhỏ file, hoặc viết thêm tính năng mới thành công, AI bắt buộc phải cập nhật (ghi đè đoạn code cũ bằng đoạn code mới) trực tiếp vào file `TAKASHIMAYA_FULL_SOURCE.txt`.
+
+3. 🎯 Nguyên Tắc "Single Source of Truth"
+File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm duy nhất chứa trạng thái code hiện tại. Bất kỳ Agent nào trước khi bắt tay vào sửa logic đều phải đảm bảo mã nguồn trong file này luôn đồng bộ với các thay đổi mới nhất để không ghi đè làm mất các bản vá lỗi (hotfix) hoặc các module vừa được tách nhỏ.
+
+## 14. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
 - **Primary Storage (Dexie.js / IndexedDB)**: Coi `src/lib/localDb.ts` (`TakaLocalDB`) và in-memory Zustand là Primary Data Source cho client. Khi boot app, luôn ưu tiên đọc cache Dexie (`bootstrapLocalStore()`) nạp ngay 100% dữ liệu trong 5ms – 10ms, triệt tiêu hoàn toàn loading spinner.
 - **Delta Sync Pipeline (`taka_deltas`)**: Mọi đột biến (mutation) sau khi xả ghi xuống Firestore bắt buộc ghi nhận bản ghi delta qua `recordDelta()` (`src/lib/deltaSyncService.ts`). Background worker định kỳ kéo delta (`numericTime > lastSyncTime`) và áp dụng nguyên tử vào Zustand + Dexie, cắt giảm 80%–95% lượt Firestore READ.
 - **Non-blocking UI Thread**: Mọi tác vụ ghi nặng (`offloadPersistSnapshot`, `bulkPut`, `applyDeltasToLocalDatabase`) bắt buộc đẩy sang background microtasks (`setTimeout(..., 0)`), cấm thực hiện I/O làm nghẽn luồng render chính của React, bảo đảm 60 FPS.
@@ -104703,7 +105055,7 @@ FILE: AGENTS.md
 - **Fault-Tolerant Fallback & Sync Queue**: Khi IndexedDB bị chặn (Incognito/Private) hoặc rỗng dữ liệu, tự động fallback về nạp Firestore. Mọi tác vụ ghi tiếp tục được bảo vệ bởi hàng đợi `syncQueue.ts` chống mất mát dữ liệu ngoại tuyến.
 
 
-## 16. Real-time Delta Channel & Auto Delta (Sync Consistency)
+## 15. Real-time Delta Channel & Auto Delta (Sync Consistency)
 - **Realtime**: `deltaRealtimeListener.ts` giữ 1 `onSnapshot` trên `taka_deltas` (thay polling 25s). Polling chỉ còn là safety net 5 phút. Cấm đưa lại polling ngắn hạn.
 - **Auto Delta**: mọi ghi vào `taka_projects/tasks/costs/delegation_groups` qua wrapper trong `firebase.ts` tự phát delta `invalidate` (`autoDeltaQueue.ts`). Code mới KHÔNG cần tự gọi `recordDelta`, nhưng nếu gọi thì phải gọi trong vòng vài giây sau lệnh ghi để tránh phát trùng.
 - **Ghost record guard**: delta `update` cho doc chưa có trong store/Dexie phải bị bỏ qua, cấm tạo bản ghi từ patch một phần.

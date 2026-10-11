@@ -23,7 +23,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
   const {
     projects, tasks, delegationGroups, canWrite, t,
     formData, setFormData, dateErrors,
-    handlePredecessorChange, handlePredecessorTaskIdsChange, handleApplyPredecessorDates, handleDateChange, handleDurationChange, toggleDurationManual,
+    handlePredecessorChange, handleApplyPredecessorDates, handleDateChange, handleDurationChange, toggleDurationManual,
     resolvedPredecessors, parties, appUsers, subAppUsers, nameRef,
     handleUnlinkParentInModal, handleDeleteTaskInModal
   } = logic;
@@ -239,7 +239,6 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           projects={projects}
           resolvedPredecessors={resolvedPredecessors}
           handlePredecessorChange={handlePredecessorChange}
-          handlePredecessorTaskIdsChange={handlePredecessorTaskIdsChange}
           handleApplyPredecessorDates={handleApplyPredecessorDates}
         />
 

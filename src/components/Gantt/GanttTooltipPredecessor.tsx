@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Task, Project } from '../../types';
-import { PredecessorHardLinkInput } from '../TaskModalParts/PredecessorHardLinkInput';
+import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
 import { 
   buildTaskNoMap, 
@@ -199,18 +199,9 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
             <button
               type="button"
               disabled={isSaving}
-              onClick={() => handleSave(val)}
-              className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/50 rounded transition-colors"
-              title="Apply Predecessor"
-            >
-              <Check className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              disabled={isSaving}
               onClick={handleCancel}
               className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors"
-              title="Cancel"
+              title="Close"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -218,13 +209,11 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
         </div>
 
         <div className="w-full relative" onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            handleSave(val);
-          } else if (e.key === 'Escape') {
+          if (e.key === 'Escape') {
             handleCancel();
           }
         }}>
-        <PredecessorHardLinkInput 
+        <PredecessorSearchSuggest 
           task={task}
           canWrite={canWrite}
         />
