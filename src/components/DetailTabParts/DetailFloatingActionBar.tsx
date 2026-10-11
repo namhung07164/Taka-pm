@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { Trash2, Unlink, X } from 'lucide-react';
 
 interface DetailFloatingActionBarProps {
   selectedCount?: number;
@@ -68,6 +68,16 @@ export const DetailFloatingActionBar = memo(function DetailFloatingActionBar({
         Set Baseline
       </button>
       
+      <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-[#333336]" />
+
+      <button 
+        onClick={() => onBulkAction('unlink')} 
+        className="px-3 py-1.5 text-xs font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded-md border border-amber-200 dark:border-amber-800 transition-colors flex items-center gap-1 cursor-pointer active:scale-95 touch-manipulation"
+        title="Unlink selected tasks from parent modular link"
+      >
+        <Unlink className="w-3.5 h-3.5" /> Unlink
+      </button>
+
       <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-[#333336]" />
 
       <button 

@@ -408,6 +408,8 @@ export function DetailTab({
         parseCSVDate={parseCSVDate}
         onSortSubTasks={handleSortActiveOrAll}
         isSortingSubTasks={isSortingSubTasks}
+        selectedTaskCount={selectedTaskIds.size}
+        onBulkAction={handleBulkAction}
       />
 
       {isDesktop && (

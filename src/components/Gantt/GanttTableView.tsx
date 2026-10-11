@@ -25,6 +25,7 @@ interface GanttTableViewProps {
   topScrollRef: React.RefObject<HTMLDivElement | null>;
   handleCombinedMainScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   handleTopScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+  flatGanttRows?: GanttRowType[];
   visibleGanttRows: GanttRowType[];
   paddingTop: number;
   paddingBottom: number;
@@ -62,7 +63,7 @@ interface GanttTableViewProps {
   selectedProjectSet: Set<string>;
   selectedProjectIds?: string[];
   setSelectedProjectIds?: (ids: string[]) => void;
-  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void;
+  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean, orderedTaskIds?: string[]) => void;
   handleToggleSelectAll: () => void;
   isAllSelected: boolean;
   toggleProjectExpansion: (id: string) => void;
@@ -98,6 +99,7 @@ export function GanttTableView({
   topScrollRef,
   handleCombinedMainScroll,
   handleTopScroll,
+  flatGanttRows = [],
   visibleGanttRows,
   paddingTop,
   paddingBottom,
@@ -255,6 +257,21 @@ export function GanttTableView({
     sideWidth
   });
 
+  const allOrderedTaskIds = useMemo(() => {
+    const fromRows = (flatGanttRows && flatGanttRows.length > 0 ? flatGanttRows : visibleGanttRows)
+      .filter(r => r.type === 'task')
+      .map(r => r.task.id);
+    if (fromRows.length > 0) return fromRows;
+    const fallbackIds: string[] = [];
+    currentProjects.forEach(p => {
+      const pTasks = getGroupTasksForProject ? getGroupTasksForProject(p) : [];
+      pTasks.forEach(t => {
+        if (t && t.id && !t.isDeleted && !fallbackIds.includes(t.id)) fallbackIds.push(t.id);
+      });
+    });
+    return fallbackIds;
+  }, [flatGanttRows, visibleGanttRows, currentProjects, getGroupTasksForProject]);
+
   return (
     <div
       ref={tableContainerRef}
@@ -386,6 +403,8 @@ export function GanttTableView({
                     canWrite={canWrite}
                     selectedProjectSet={selectedProjectSet}
                     selectedProjectIds={selectedProjectIds}
+                    selectedTaskSet={selectedTaskSet}
+                    selectedTaskIds={selectedTaskIds}
                     setSelectedProjectIds={setSelectedProjectIds}
                     setSelectedTaskIds={setSelectedTaskIds}
                     getBarColor={getBarColor}
@@ -449,7 +468,7 @@ export function GanttTableView({
                   handleTaskDragEnd={handleTaskDragEnd}
                   dragOverTaskId={dragOverTaskId}
                   dropPosition={dropPosition}
-                  handleTaskCheckboxChange={handleTaskCheckboxChange}
+                  handleTaskCheckboxChange={(e, id, isShift) => handleTaskCheckboxChange(e, id, isShift, allOrderedTaskIds)}
                   isHideMode={isHideMode}
                   toggleHideRow={toggleHideRow}
                   onNavigateToTaskDetail={onNavigateToTaskDetail}

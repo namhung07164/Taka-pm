@@ -375,28 +375,30 @@ export function useDetailData({
   }, []);
 
   const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
+    const strTaskId = String(taskId);
     setSelectedTaskIds(prev => {
-      const next = new Set(prev);
-      const isChecked = !prev.has(taskId);
+      const next = new Set(Array.from(prev).map(String));
+      const isChecked = !next.has(strTaskId);
       if (isChecked) {
-        if (shiftKey && lastCheckedTaskIdRef.current) {
-          const lastIdx = allVisibleTaskIds.indexOf(lastCheckedTaskIdRef.current);
-          const currentIdx = allVisibleTaskIds.indexOf(taskId);
+        if (shiftKey && lastCheckedTaskIdRef.current && lastCheckedTaskIdRef.current !== strTaskId) {
+          const visibleIds = allVisibleTaskIds.map(String);
+          const lastIdx = visibleIds.indexOf(lastCheckedTaskIdRef.current);
+          const currentIdx = visibleIds.indexOf(strTaskId);
           if (lastIdx !== -1 && currentIdx !== -1) {
             const minIdx = Math.min(lastIdx, currentIdx);
             const maxIdx = Math.max(lastIdx, currentIdx);
             for (let idx = minIdx; idx <= maxIdx; idx++) {
-              next.add(allVisibleTaskIds[idx]);
+              next.add(visibleIds[idx]);
             }
           } else {
-            next.add(taskId);
+            next.add(strTaskId);
           }
         } else {
-          next.add(taskId);
+          next.add(strTaskId);
         }
-        lastCheckedTaskIdRef.current = taskId;
+        lastCheckedTaskIdRef.current = strTaskId;
       } else {
-        next.delete(taskId);
+        next.delete(strTaskId);
         lastCheckedTaskIdRef.current = null;
       }
       return next;

@@ -59,7 +59,7 @@ export interface GanttTaskRowProps {
   handleTaskDragEnd: () => void;
   dragOverTaskId: string | null;
   dropPosition: 'before' | 'inside' | 'after' | null;
-  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void;
+  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean) => void;
   isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   onNavigateToTaskDetail?: (taskId: string) => void;
@@ -120,7 +120,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   toggleHideRow,
   onNavigateToTaskDetail
 }: GanttTaskRowProps) {
-  const isSelected = selectedTaskSet.has(t.id);
+  const isSelected = selectedTaskSet.has(String(t.id)) || selectedTaskSet.has(t.id);
   const isTarget = dragOverTaskId === t.id;
   const isDragging = draggingTaskIds.includes(t.id);
   const isFocused = initialFocusTaskId === t.id || ganttTabFocusTaskId === t.id;

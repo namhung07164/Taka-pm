@@ -210,13 +210,13 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
     ]);
     const mergedMap = new Map<string, Task>();
     for (const t of byProjId) {
-      if (t && t.id) mergedMap.set(t.id, t);
+      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
     }
     for (const t of byProjCode) {
-      if (t && t.id) mergedMap.set(t.id, t);
+      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
     }
     for (const t of byCode) {
-      if (t && t.id) mergedMap.set(t.id, t);
+      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
     }
     return Array.from(mergedMap.values());
   } catch (err) {
@@ -231,7 +231,8 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
 export async function getLocalTasks(year?: string): Promise<Task[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
-      return await localDb.tasks.toArray();
+      const all = await localDb.tasks.toArray();
+      return all.filter(t => !t.isDeleted);
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
@@ -239,8 +240,8 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
       localDb.tasks.where('projectYear').equals(strYear).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Task>();
-    for (const t of byYear) if (t && t.id) merged.set(t.id, t);
-    for (const t of byProjYear) if (t && t.id) merged.set(t.id, t);
+    for (const t of byYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
+    for (const t of byProjYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
     return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalTasks error:', err);

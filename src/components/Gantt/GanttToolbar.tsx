@@ -52,9 +52,9 @@ export interface GanttToolbarProps {
   handleSetTextColor: (color: string | null) => void;
   handleSetBaselineSelected: () => void;
   handleToggleRealtimeUpdate: () => void;
+  handleUnlinkModularTasks?: (childTaskIds?: string[]) => void | Promise<void>;
   isTaskModularModalOpen?: boolean;
   setIsTaskModularModalOpen: (val: boolean) => void;
-  handleUnlinkModularTasks: (childTaskIds: string[]) => void;
   sumMode: "none" | "duration";
   setSumMode: (val: "none" | "duration") => void;
   handleDeleteSelected: () => void;
@@ -123,9 +123,9 @@ export function GanttToolbar({
   setSelectedTaskIds,
   handleSetTextColor,
   handleSetBaselineSelected,
+  handleUnlinkModularTasks,
   isTaskModularModalOpen = false,
   setIsTaskModularModalOpen,
-  handleUnlinkModularTasks,
   sumMode,
   setSumMode,
   handleDeleteSelected,
@@ -270,8 +270,8 @@ export function GanttToolbar({
             selectedTaskIds={selectedTaskIds}
             handleSetTextColor={handleSetTextColor}
             handleSetBaselineSelected={handleSetBaselineSelected}
-            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
             handleUnlinkModularTasks={handleUnlinkModularTasks}
+            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
             sumMode={sumMode}
             setSumMode={setSumMode}
             handleDeleteSelected={handleDeleteSelected}

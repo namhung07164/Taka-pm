@@ -159,16 +159,39 @@ export async function deleteTaskStateUnified(
 ): Promise<void> {
   if (!taskIds || taskIds.length === 0) return;
 
+  const idSet = new Set(taskIds.map(String));
   const currentTasks = useAppStore.getState().tasks;
-  const tasksToDelete = currentTasks.filter(t => taskIds.includes(t.id));
+  const tasksToDelete = currentTasks.filter(t => idSet.has(String(t.id)));
   const affectedProjects = findAffectedProjects(tasksToDelete);
 
   // 1. Xóa tức thì khỏi Zustand store
-  useAppStore.getState().optimisticDeleteTasks(taskIds);
+  useAppStore.getState().optimisticDeleteTasks(Array.from(idSet));
+
+  // 2. Xóa tức thì khỏi Dexie (IndexedDB) để ngăn hồi sinh dữ liệu khi re-hydrate
+  try {
+    const { localDb } = await import('./localDb');
+    await localDb.tasks.bulkDelete(Array.from(idSet));
+    await localDb.tasks.bulkDelete(taskIds as any);
+  } catch (e) {
+    console.warn('[taskStateService] Dexie bulkDelete tasks error:', e);
+  }
+
+  // 3. Xóa tệp đính kèm trên Firebase Storage (Storage Deep Clean - Rule 4)
+  try {
+    const { extractStorageUrls, deleteStorageFiles } = await import('./storageUtils');
+    const urls: string[] = [];
+    tasksToDelete.forEach(t => {
+      const extracted = extractStorageUrls(t);
+      if (extracted.length > 0) urls.push(...extracted);
+    });
+    if (urls.length > 0) {
+      deleteStorageFiles(urls).catch(() => {});
+    }
+  } catch (e) {}
 
   if (options?.syncProjects === false) return;
 
-  // 2. Tính lại tiến độ & mốc ngày cho các dự án với danh sách tasks còn lại
+  // 4. Tính lại tiến độ & mốc ngày cho các dự án với danh sách tasks còn lại
   const remainingTasks = useAppStore.getState().tasks;
   await syncAffectedProjects(affectedProjects, remainingTasks);
 }

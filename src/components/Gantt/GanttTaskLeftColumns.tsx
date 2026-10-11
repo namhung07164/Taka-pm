@@ -1,3 +1,4 @@
+import React, { useRef } from 'react';
 import { ChevronDown, ChevronRight, GripVertical, EyeOff } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { cn } from './GanttUtils';
@@ -16,7 +17,7 @@ interface GanttTaskLeftColumnsProps {
   isModularExpanded: boolean;
   toggleModularParent: (taskId: string | number) => void;
   selectedTaskSet: Set<string>;
-  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void;
+  handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean) => void;
   isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   isDragging: boolean;
@@ -48,8 +49,9 @@ export function GanttTaskLeftColumns({
   isFocused = false,
   onNavigateToTaskDetail
 }: GanttTaskLeftColumnsProps) {
-  const isSelected = selectedTaskSet.has(t.id);
+  const isSelected = selectedTaskSet.has(String(t.id)) || selectedTaskSet.has(t.id);
   const taskCode = propTaskCode || (projects.length > 0 && tasks.length > 0 ? computeTaskCode(projects, tasks, t) : (t.taskCodePhu || ''));
+  const shiftClickedRef = useRef(false);
 
   return (
     <div className="flex items-center w-full h-full overflow-hidden">
@@ -79,11 +81,26 @@ export function GanttTaskLeftColumns({
               <input
                 type="checkbox"
                 checked={isSelected}
-                onClick={(e) => {
-                  (e.target as any)._shiftKey = e.shiftKey;
+                onPointerDown={(e) => {
+                  if (e.shiftKey) shiftClickedRef.current = true;
                 }}
-                onChange={(e) => handleTaskCheckboxChange(e, t.id)}
-                className="rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                onMouseDown={(e) => {
+                  if (e.shiftKey) shiftClickedRef.current = true;
+                }}
+                onClick={(e) => {
+                  if (e.shiftKey) shiftClickedRef.current = true;
+                }}
+                onChange={(e) => {
+                  const isShift = Boolean(
+                    shiftClickedRef.current ||
+                    (e.nativeEvent as MouseEvent)?.shiftKey ||
+                    (e as any).shiftKey ||
+                    (window.event as any)?.shiftKey
+                  );
+                  shiftClickedRef.current = false;
+                  handleTaskCheckboxChange(e, String(t.id), isShift);
+                }}
+                className="rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer active:scale-95 touch-manipulation"
               />
             </div>
           )}

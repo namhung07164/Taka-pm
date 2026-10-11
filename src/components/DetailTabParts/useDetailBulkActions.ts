@@ -1,7 +1,7 @@
 import React from 'react';
 import { Project, Task, DelegationGroup, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc, writeBatch, deleteField } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';
 import { generateId } from '../../lib/utils';
 import { saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
@@ -25,17 +25,100 @@ export function useDetailBulkActions({
   delegationGroups,
   currentUser,
 }: UseDetailBulkActionsParams) {
-  const handleBulkAction = async (action: 'delegation_on' | 'delegation_off' | 'flexible_on' | 'flexible_off' | 'baseline' | 'delete') => {
+  const handleBulkAction = async (action: 'delegation_on' | 'delegation_off' | 'flexible_on' | 'flexible_off' | 'baseline' | 'unlink' | 'delete') => {
     if (selectedTaskIds.size === 0) return;
-    
-    if (action === 'delete') {
-      if (!window.confirm(`Are you sure you want to delete ${selectedTaskIds.size} selected tasks?`)) return;
+
+    const now = new Date().toISOString();
+    const prevTasks = useAppStore.getState().tasks;
+
+    // Special handler: Unlink modular tasks
+    if (action === 'unlink') {
+      const targetIds = Array.from(selectedTaskIds);
+      const targetSet = new Set(targetIds);
+
+      const parentCodeSet = new Set<string>();
+      prevTasks.forEach(t => {
+        if (targetSet.has(t.id) && t.taskCodePhu) {
+          parentCodeSet.add(String(t.taskCodePhu).trim().toLowerCase());
+        }
+      });
+
+      const allIdsToUnlink = new Set<string>();
+      targetIds.forEach(id => allIdsToUnlink.add(id));
+      prevTasks.forEach(t => {
+        const rawParent = t.parentTaskId || (t as any).parentId;
+        if (rawParent) {
+          const rawStr = String(rawParent).trim().toLowerCase();
+          if (targetSet.has(String(rawParent)) || parentCodeSet.has(rawStr)) {
+            allIdsToUnlink.add(t.id);
+          }
+        }
+      });
+
+      const unlinkedArray = Array.from(allIdsToUnlink);
+
+      // 1. 0ms Optimistic UI update in Zustand
+      const updatedTasks = prevTasks.map(t =>
+        allIdsToUnlink.has(t.id)
+          ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now }
+          : t
+      );
+      useAppStore.getState().setTasks(updatedTasks);
+      setSelectedTaskIds(new Set());
+      lastCheckedTaskIdRef.current = null;
+
+      // 2. Update Dexie (IndexedDB)
+      try {
+        const { localDb } = await import('../../lib/localDb');
+        await Promise.all(
+          unlinkedArray.map(id => (localDb.tasks.update as any)(id, { parentTaskId: null, parentId: null, updatedAt: now }))
+        );
+      } catch (e) {
+        console.warn('[useDetailBulkActions] Dexie update failed:', e);
+      }
+
+      // 3. Write batch to Firestore
+      const batch = writeBatch(db);
+      unlinkedArray.forEach(id => {
+        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+        batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+      });
+
+      try {
+        await batch.commit();
+        const { recordBatchDeltas } = await import('../../lib/deltaSyncService');
+        const deltaItems: any[] = unlinkedArray.map(id => {
+          const t = prevTasks.find(item => item.id === id);
+          return {
+            docId: id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            isPatch: true,
+            data: { parentTaskId: null, parentId: null, updatedAt: now },
+            year: t?.projectYear ? String(t.projectYear) : undefined,
+          };
+        });
+        if (deltaItems.length > 0) {
+          recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+        }
+        useAppStore.getState().setToast({
+          title: "Success",
+          message: `Unlinked ${unlinkedArray.length} modular task(s).`
+        });
+      } catch (err: any) {
+        console.error(err);
+        useAppStore.getState().setTasks(prevTasks);
+        useAppStore.getState().setToast({
+          title: "Error",
+          message: "Failed to unlink tasks on server. Changes reverted."
+        });
+      }
+      return;
     }
 
     try {
       const batch = writeBatch(db);
       let updateCount = 0;
-      const now = new Date().toISOString();
 
       Array.from(selectedTaskIds).forEach(taskId => {
         const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);

@@ -107,10 +107,14 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             type="checkbox"
             checked={isSelected}
             onChange={(e) => {
-              const nativeEvent = e.nativeEvent as MouseEvent;
-              onToggleSelectTask(t.id, nativeEvent.shiftKey);
+              const isShift = Boolean(
+                (e.nativeEvent as MouseEvent)?.shiftKey ||
+                (e as any).shiftKey ||
+                (window.event as any)?.shiftKey
+              );
+              onToggleSelectTask(t.id, isShift);
             }}
-            className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 bg-white dark:bg-[#28282a] border-slate-300 dark:border-[#444446]"
+            className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 bg-white dark:bg-[#28282a] border-slate-300 dark:border-[#444446] cursor-pointer"
           />
         </td>
       )}

@@ -150,7 +150,121 @@ export function useTaskModalLogic({
     });
   };
 
+  const handleUnlinkParentInModal = async () => {
+    if (!task?.id) return;
+    const now = new Date().toISOString();
+    const prevTasks = useAppStore.getState().tasks;
+
+    // 1. Optimistic update
+    const updatedTasks = prevTasks.map(t =>
+      t.id === task.id ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t
+    );
+    useAppStore.getState().setTasks(updatedTasks);
+    setFormData((prev: any) => ({ ...prev, parentTaskId: undefined, parentId: undefined }));
+
+    // 2. Dexie update
+    try {
+      const { localDb } = await import('../lib/localDb');
+      await (localDb.tasks.update as any)(task.id, { parentTaskId: null, parentId: null, updatedAt: now });
+    } catch (e) {}
+
+    // 3. Firestore update
+    try {
+      const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+      const { db, APP_ID } = await import('../lib/firebase');
+      const { recordDelta } = await import('../lib/deltaSyncService');
+      const batch = writeBatch(db);
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', task.id);
+      batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+      await batch.commit();
+
+      recordDelta({
+        docId: task.id,
+        collectionName: 'taka_tasks',
+        action: 'update',
+        isPatch: true,
+        data: { parentTaskId: null, parentId: null, updatedAt: now },
+        year: task.projectYear ? String(task.projectYear) : undefined,
+        updatedBy: currentUser?.email || currentUser?.username,
+      }).catch(() => {});
+
+      setToast({ title: "Success", message: "Task unlinked from parent modular task." });
+    } catch (err: any) {
+      console.error(err);
+      useAppStore.getState().setTasks(prevTasks);
+      setToast({ title: "Error", message: "Failed to unlink task on server." });
+    }
+  };
+
+  const handleDeleteTaskInModal = () => {
+    if (!task?.id) return;
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Task",
+      message: `Are you sure you want to delete task "${task.name || ''}"? This action cannot be undone.`,
+      onConfirm: async () => {
+        const now = new Date().toISOString();
+        const prevTasks = useAppStore.getState().tasks;
+        const taskId = task.id;
+
+        // Unlink subtasks if this was a parent task
+        const parentCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
+        const childrenToUnlink = prevTasks.filter(t => {
+          if (t.id === taskId) return false;
+          const rawParent = t.parentTaskId || (t as any).parentId;
+          if (rawParent) {
+            const rawStr = String(rawParent).trim().toLowerCase();
+            return String(rawParent) === taskId || (parentCode && rawStr === parentCode);
+          }
+          return false;
+        });
+
+        // 1. Optimistic delete in Zustand & Dexie & projects sync
+        const { deleteTaskStateUnified } = await import('../lib/taskStateService');
+        await deleteTaskStateUnified([taskId]);
+        if (childrenToUnlink.length > 0) {
+          const unlinkedChildIds = new Set(childrenToUnlink.map(c => c.id));
+          const tasksAfterUnlink = useAppStore.getState().tasks.map(t => 
+            unlinkedChildIds.has(t.id) ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t
+          );
+          useAppStore.getState().setTasks(tasksAfterUnlink);
+        }
+
+        // 2. Commit batch to Firestore
+        try {
+          const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+          const { db, APP_ID } = await import('../lib/firebase');
+          const { recordBatchDeltas } = await import('../lib/deltaSyncService');
+          const batch = writeBatch(db);
+          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId));
+          childrenToUnlink.forEach(child => {
+            const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', child.id);
+            batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+          });
+          await batch.commit();
+
+          const deltaItems: any[] = [
+            { docId: taskId, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null },
+            ...childrenToUnlink.map(c => ({
+              docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
+              data: { parentTaskId: null, parentId: null, updatedAt: now }
+            }))
+          ];
+          recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
+          setToast({ title: "Success", message: "Task deleted successfully." });
+          onClose();
+        } catch (err: any) {
+          console.error(err);
+          setToast({ title: "Error", message: "Failed to delete task on server." });
+        }
+      }
+    });
+  };
+
   return {
+    handleUnlinkParentInModal,
+    handleDeleteTaskInModal,
     projects,
     tasks,
     delegationGroups,

@@ -345,7 +345,30 @@ Trực quan hóa kế hoạch và tiến độ thực tế theo thời gian.
 
 ---
 
-6. **Cơ Chế Tải Dữ Liệu Lười Theo Nhu Cầu (On-Demand Expansion Loading & Tiết Kiệm Chi Phí Đọc Firestore)**:
+6. **Chế Độ Chỉnh Sửa Hàng Loạt & Hủy Liên Kết Gộp (Edit Mode, Shift-Selection & Unlink Engine)**:
+   - **Bật Chế Độ Edit Mode**: Nhấp nút **Edit Mode** (màu xanh dương nổi bật) trên thanh công cụ Gantt để kích hoạt các ô checkbox lựa chọn và thanh tác vụ hàng loạt.
+   - **Tích Chọn Cấp Dự Án (Project-Level Bulk Select)**:
+     * Tích vào checkbox của dòng Dự án: Hệ thống sẽ tự động tích chọn **100% toàn bộ công việc** (bao gồm cả task mẹ và task con) thuộc dự án đó.
+     * Khi một số task trong dự án được chọn, checkbox dự án sẽ chuyển sang trạng thái gạch ngang (Indeterminate). Nhấp tiếp vào checkbox sẽ chuyển sang chọn tất cả.
+     * Khi tất cả task trong dự án đã được chọn, nhấp lại vào checkbox sẽ bỏ chọn toàn bộ dự án.
+   - **Chọn Nhanh Dải Nhiệm Vụ Bằng Phím Shift (Shift-Click Range Selection)**:
+     * Nhấp tích chọn checkbox của công việc đầu tiên.
+     * Nhấn giữ phím **Shift** trên bàn phím và nhấp vào checkbox của công việc cuối cùng trong vùng cần chọn.
+     * Hệ thống sẽ tự động quét và tích chọn **toàn bộ các công việc nằm giữa hai mốc** theo đúng thứ tự hiển thị trực quan trên màn hình.
+     * Tính năng này hoạt động đồng bộ và mượt mà trên cả biểu đồ **Gantt Chart** và bảng danh sách **Task Detail**.
+   - **Nút Hủy Liên Kết Gộp (Unlink Modular Tasks)**:
+     * **Tại Tab Gantt**: Trong Edit Mode, khi tích chọn một hoặc nhiều task, nút **Unlink** (màu hổ phách) sẽ sáng lên trên thanh công cụ nổi. Bấm nút để lập tức tách các task đã chọn ra khỏi task gộp cha.
+     * **Tại Tab Task Detail**: Chọn các checkbox của task cần tách và bấm nút **Unlink** trên thanh tác vụ nổi phía dưới màn hình hoặc trên thanh công cụ lọc.
+     * **Trong Cửa Sổ Task Modal**: 
+       - Nếu task đang mở là task con (Sub-task): Có nút **Unlink Parent** để tự tách khỏi nhóm gộp.
+       - Nếu task đang mở là task mẹ (Parent): Có huy hiệu số lượng task con kèm nút **Unlink Subtasks** để giải phóng toàn bộ task con chỉ với 1 cú nhấp chuột.
+   - **Xóa Task Toàn Diện & Chống Hồi Sinh Dữ Liệu (Safe Delete & Clean Storage Engine)**:
+     * Khi xóa một hoặc nhiều task, hệ thống tự động xóa tức thì khỏi Zustand store, xóa sạch trong cơ sở dữ liệu ngoại tuyến Dexie (IndexedDB), dọn sạch tệp đính kèm trên Firebase Storage và commit Firestore Batch.
+     * Nếu task bị xóa là task cha của một nhóm gộp, các task con bên trong sẽ được tự động giải phóng (Unlink) an toàn về task độc lập, ngăn chặn hoàn toàn lỗi mất hiển thị hoặc treo cây task.
+
+---
+
+7. **Cơ Chế Tải Dữ Liệu Lười Theo Nhu Cầu (On-Demand Expansion Loading & Tiết Kiệm Chi Phí Đọc Firestore)**:
    - **Tối ưu hóa lượt đọc Firestore (Zero-Read Collapsed Projects)**: Khi mở tab **Detail Tab** hoặc **Gantt Tab**, danh sách dự án được hiển thị ban đầu ở trạng thái thu gọn (collapsed) dựa hoàn toàn trên tệp tổng hợp `taka_projects`. Người dùng có thể xem ngay lập tức Mã dự án, Tên dự án, Chi nhánh, Vị trí, Tiến độ kế hoạch (`Plan Prg`), Tiến độ thực tế (`Act Prg`), Số lượng công việc con (`Sub-task Count`), Thời gian bắt đầu và kết thúc mà **không tốn bất kỳ lượt đọc Firestore nào cho các công việc con (`taka_tasks`)**.
    - **Tự động đối soát tìm kiếm & bộ lọc khi chưa mở rộng (Instant Search & Filter on Project Summary)**: Khi thực hiện tìm kiếm từ khóa hoặc lọc theo thời gian, hệ thống tự động so khớp từ khóa với các trường dự án và trường tóm tắt công việc (`taskSummaries`). Các dự án thỏa điều kiện sẽ xuất hiện ngay lập tức mà không cần phải mở rộng trước.
    - **Tải ngầm công việc con khi mở rộng (Expand to Download Tasks)**: Khi người dùng nhấp nút mở rộng (▶) trên bất kỳ dự án nào (hoặc bấm "Expand All"), hệ thống mới kích hoạt tải ngầm các công việc con của dự án đó theo thời gian thực (Realtime Listener). Khi thu gọn lại, cơ chế dọn dẹp bộ nhớ đệm (TTL 15 phút) sẽ tối ưu hóa tài nguyên trình duyệt.
