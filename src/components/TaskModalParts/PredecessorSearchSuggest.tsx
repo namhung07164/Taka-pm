@@ -79,16 +79,16 @@ interface LinkItem {
 /* ------------------------------------------------------------------ */
 
 const REL_INFO: Record<PredecessorType, { hint: string }> = {
-  FS: { hint: 'Finish → Start' },
-  SS: { hint: 'Start to Start' },
-  FF: { hint: 'Finish to Finish' },
-  SF: { hint: 'Start to Finish' },
+  FS: { hint: 'Xong → Bắt đầu' },
+  SS: { hint: 'Cùng bắt đầu' },
+  FF: { hint: 'Cùng kết thúc' },
+  SF: { hint: 'Bắt đầu → Kết thúc' },
 };
 
 const SLOT_STYLE = [
   {
     tag: '①',
-    title: 'Primary Predecessor',
+    title: 'Tiên quyết chính',
     border: 'border-l-blue-500',
     badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
     active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
@@ -96,7 +96,7 @@ const SLOT_STYLE = [
   },
   {
     tag: '②',
-    title: 'Secondary Predecessor · FF / SF only',
+    title: 'Tiên quyết phụ · chỉ FF / SF',
     border: 'border-l-rose-500',
     badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
     active: 'bg-rose-600 text-white border-rose-600 shadow-sm',
@@ -105,10 +105,10 @@ const SLOT_STYLE = [
 ];
 
 const FACTOR_LABEL: Record<string, string> = {
-  year: 'Different Year',
-  store: 'Different Store',
-  location: 'Different Location',
-  code: 'Different Project',
+  year: 'Khác năm',
+  store: 'Khác chi nhánh',
+  location: 'Khác vị trí/tầng',
+  code: 'Khác dự án',
 };
 
 function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string {
@@ -116,7 +116,7 @@ function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string
   if (factors && factors.length > 0) {
     return factors.map((f) => FACTOR_LABEL[f] || f).join(' · ');
   }
-  return fallbackCode ? `Project ${fallbackCode}` : 'Different Project';
+  return fallbackCode ? `Dự án ${fallbackCode}` : 'Khác dự án';
 }
 
 function shortDate(s?: string): string {
@@ -147,16 +147,16 @@ function describe(it: LinkItem): string {
   if (!it.task) return '';
   const name = `«${it.task.name}»`;
   const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
-  const lag = signed === 0 ? '' : signed > 0 ? `, plus ${signed} days` : `, lead ${Math.abs(signed)} days`;
+  const lag = signed === 0 ? '' : signed > 0 ? `, cộng ${signed} ngày` : `, sớm ${Math.abs(signed)} ngày`;
   switch (it.type) {
     case 'FS':
-      return `Start after ${name} finishes${lag}`;
+      return `Bắt đầu sau khi ${name} kết thúc${lag}`;
     case 'SS':
-      return `Start when ${name} starts${lag}`;
+      return `Bắt đầu cùng lúc ${name} bắt đầu${lag}`;
     case 'FF':
-      return `Finish when ${name} finishes${lag}`;
+      return `Kết thúc cùng lúc ${name} kết thúc${lag}`;
     case 'SF':
-      return `Finish when ${name} starts${lag}`;
+      return `Kết thúc khi ${name} bắt đầu${lag}`;
   }
   return '';
 }
@@ -244,12 +244,19 @@ async function persistDefault(
   });
 }
 
-/** Ô nhập tay số ngày lệch (hỗ trợ số thập phân, dấu + / −). Lưu khi bấm Enter hoặc rời ô. */
 function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boolean; onCommit: (n: number) => void }) {
   const fmt = (n: number) => (n > 0 ? `+${n}` : String(n));
   const [txt, setTxt] = useState(fmt(value));
-  useEffect(() => setTxt(fmt(value)), [value]);
+  const isTypingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isTypingRef.current) {
+      setTxt(fmt(value));
+    }
+  }, [value]);
+
   const commit = () => {
+    isTypingRef.current = false;
     const n = parseFloat(txt.replace(',', '.').replace('−', '-'));
     if (isNaN(n)) {
       setTxt(fmt(value));
@@ -265,8 +272,11 @@ function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boo
       inputMode="decimal"
       value={txt}
       disabled={disabled}
+      onFocus={(e: any) => {
+        isTypingRef.current = true;
+        e.target.select?.();
+      }}
       onChange={(e: any) => setTxt(e.target.value.replace(/[^0-9+\-−.,]/g, ''))}
-      onFocus={(e: any) => e.target.select?.()}
       onBlur={commit}
       onKeyDown={(e: any) => {
         if (e.key === 'Enter') {

@@ -26,14 +26,18 @@ export function BudgetEditableCell({
 }: BudgetEditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
+  const isTypingRef = React.useRef(false);
 
   useEffect(() => {
-    setVal(value !== undefined && value !== null ? value : '');
+    if (!isTypingRef.current) {
+      setVal(value !== undefined && value !== null ? value : '');
+    }
   }, [value]);
 
   const handleBlur = () => {
+    isTypingRef.current = false;
     setIsEditing(false);
-    const newVal = type === 'number' ? Number(val) : val;
+    const newVal = type === 'number' ? Number(String(val).replace(',', '.')) : val;
     if (newVal !== value) {
       onSave(newVal);
     }
@@ -61,8 +65,13 @@ export function BudgetEditableCell({
     return (
       <input
         autoFocus
-        type={type}
+        type={type === 'number' ? 'text' : type}
+        inputMode={type === 'number' ? 'decimal' : 'text'}
         value={val}
+        onFocus={(e) => {
+          isTypingRef.current = true;
+          e.target.select();
+        }}
         onChange={(e) => setVal(e.target.value)}
         onBlur={handleBlur}
         onKeyDown={(e) => {

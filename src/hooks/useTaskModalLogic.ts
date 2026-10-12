@@ -5,7 +5,8 @@ import { useAppStore } from "../store/useAppStore";
 import { useEnrichedData } from './useEnrichedData';
 import { useTaskModalFormState } from './taskModal/useTaskModalFormState';
 import { executeTaskSave } from './taskModal/taskModalSaveService';
-import { hydrateDelegationsForProjects, hydrateDelegationsForTasks } from '../lib/backgroundSyncWorker';
+import { hydrateDelegationsForProjects, hydrateDelegationsForTasks, hydrateTasksForProjects } from '../lib/backgroundSyncWorker';
+import { ensureProjectTasksLoaded } from '../lib/taskStateService';
 
 export interface UseTaskModalLogicProps {
   task: Task | null;
@@ -94,18 +95,24 @@ export function useTaskModalLogic({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, confirmModal.isOpen]);
 
-  // JIT Targeted Local-First Delegation Hydration (0ms, 0 Read)
+  // JIT Targeted Local-First Task & Delegation Hydration
   useEffect(() => {
-    if (isOpen && task) {
-      const keys = [task.projectId, task.projectCode].filter(Boolean) as string[];
+    if (isOpen) {
+      const pCode = task?.projectCode || prefillProjectCode;
+      const pId = task?.projectId;
+      const keys = [pId, pCode].filter(Boolean) as string[];
       if (keys.length > 0) {
+        hydrateTasksForProjects(keys).catch(() => {});
         hydrateDelegationsForProjects(keys).catch(() => {});
+        if (pCode) {
+          ensureProjectTasksLoaded(pCode).catch(() => {});
+        }
       }
-      if (task.id) {
+      if (task?.id) {
         hydrateDelegationsForTasks([task.id]).catch(() => {});
       }
     }
-  }, [isOpen, task?.id, task?.projectId, task?.projectCode]);
+  }, [isOpen, task?.id, task?.projectId, task?.projectCode, prefillProjectCode]);
 
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);

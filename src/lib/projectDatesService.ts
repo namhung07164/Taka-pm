@@ -88,8 +88,8 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   const matchedList = Array.from(matchedMap.values());
   if (matchedList.length > 0) return matchedList;
 
-  // Fallback to taskSummaries ONLY on cold start when allTasks is not loaded yet
-  if (safeAllTasks.length === 0 && project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+  // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
+  if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
     return project.taskSummaries.map((ts, idx) => ({
       id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,
@@ -211,6 +211,7 @@ export function calculateProjectComputedDates(
         finish: t.finish || '',
         orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
       };
+      if (t.id) summary.id = t.id;
       if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
       if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
       if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
@@ -221,13 +222,58 @@ export function calculateProjectComputedDates(
       return summary;
     });
 
-  const finalSummaries = projectTasks && projectTasks.length > 0
-    ? taskSummaries
-    : (project.taskSummaries || []);
+  const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
+  const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
 
-  const finalTaskCount = projectTasks && projectTasks.length > 0
-    ? projectTasks.length
-    : (project.taskSummaries ? project.taskSummaries.length : (project.taskCount || 0));
+  let finalSummaries: any[] = [];
+  let finalTaskCount = 0;
+
+  if (projectTasks && projectTasks.length > 0) {
+    if (existingSummaries.length > projectTasks.length) {
+      // Partial task set in memory (e.g. mobile or lazy loading where not all tasks of this project are loaded)
+      // Merge updated tasks into existingSummaries by id or taskCodePhu or name, DO NOT wipe existing summaries!
+      const updatedMap = new Map<string, any>();
+      taskSummaries.forEach(ts => {
+        if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
+        if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
+        if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
+      });
+
+      finalSummaries = existingSummaries.map((es) => {
+        const esId = es.id ? String(es.id).toLowerCase() : '';
+        const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
+        const esName = es.name ? String(es.name).trim().toLowerCase() : '';
+
+        const match = (esId && updatedMap.get(esId)) ||
+                      (esCode && updatedMap.get(esCode)) ||
+                      (esName && updatedMap.get(esName));
+        return match || es;
+      });
+
+      // Also append any new task in taskSummaries that wasn't in existingSummaries
+      taskSummaries.forEach(ts => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const alreadyIn = finalSummaries.some(es => 
+          (tsId && es.id && String(es.id).toLowerCase() === tsId) ||
+          (tsCode && es.taskCodePhu && String(es.taskCodePhu).trim().toLowerCase() === tsCode) ||
+          (tsName && es.name && String(es.name).trim().toLowerCase() === tsName)
+        );
+        if (!alreadyIn) {
+          finalSummaries.push(ts);
+        }
+      });
+
+      finalTaskCount = Math.max(existingCount, finalSummaries.length);
+    } else {
+      finalSummaries = taskSummaries;
+      finalTaskCount = projectTasks.length;
+    }
+  } else {
+    finalSummaries = existingSummaries;
+    finalTaskCount = existingCount;
+  }
 
   const planProgressPercent = projectTasks && projectTasks.length > 0 
     ? computePlanProgressPercent(projectTasks) 
@@ -328,19 +374,28 @@ export async function syncProjectDatesToFirestore(
     if (dates.computedActProgress !== undefined) {
       updatePayload.computedActProgress = dates.computedActProgress;
     }
+    const isTasksRequested = useAppStore.getState().isTasksRequested;
     if (dates.taskCount !== undefined) {
-      updatePayload.taskCount = dates.taskCount;
+      if (dates.taskCount === 0 && (existingProject?.taskCount || 0) > 0 && !isTasksRequested) {
+        updatePayload.taskCount = existingProject.taskCount;
+      } else {
+        updatePayload.taskCount = dates.taskCount;
+      }
     }
     if (dates.taskSummaries !== undefined) {
-      updatePayload.taskSummaries = dates.taskSummaries.map((ts: any) => {
-        const item: Record<string, any> = {};
-        for (const [k, v] of Object.entries(ts)) {
-          if (v !== undefined) {
-            item[k] = v;
+      if (dates.taskSummaries.length === 0 && (existingProject?.taskSummaries?.length || 0) > 0 && !isTasksRequested) {
+        updatePayload.taskSummaries = existingProject.taskSummaries;
+      } else {
+        updatePayload.taskSummaries = dates.taskSummaries.map((ts: any) => {
+          const item: Record<string, any> = {};
+          for (const [k, v] of Object.entries(ts)) {
+            if (v !== undefined) {
+              item[k] = v;
+            }
           }
-        }
-        return item;
-      });
+          return item;
+        });
+      }
     }
 
     await setDoc(projectRef, updatePayload, { merge: true });

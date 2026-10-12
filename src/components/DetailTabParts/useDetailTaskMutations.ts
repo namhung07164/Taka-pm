@@ -156,9 +156,21 @@ export function useDetailTaskMutations({
         }
       }
 
-      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      let targetTaskId = t.id;
+      if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        const realTask = tasks.find(tsk => 
+          !tsk.id.startsWith('ts_') &&
+          tsk.projectCode === t.projectCode &&
+          ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+           (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
+        );
+        if (realTask) {
+          targetTaskId = realTask.id;
+        }
+      }
+      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
       
-      let newT = { ...t, ...updates, updatedAt: new Date().toISOString() };
+      let newT = { ...t, id: targetTaskId, ...updates, updatedAt: new Date().toISOString() };
       if (updates.predecessor !== undefined) {
         let currentTasks = useAppStore.getState().tasks || tasks;
         let taskNoMap = buildTaskNoMap(projects, currentTasks);

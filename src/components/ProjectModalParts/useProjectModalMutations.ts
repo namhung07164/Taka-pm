@@ -95,9 +95,10 @@ export function useProjectModalMutations({
 
       const storeTasks = useAppStore.getState().tasks;
       const storeDelegationGroups = useAppStore.getState().delegationGroups;
+      const projectForDates = project ? { ...project, ...formData } : formData;
       const computedDates = calculateProjectComputedDates(
-        project || formData,
-        getTasksForProject(formData, storeTasks),
+        projectForDates,
+        getTasksForProject(projectForDates, storeTasks),
         storeDelegationGroups
       );
 
@@ -108,13 +109,13 @@ export function useProjectModalMutations({
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
         isDeleted: false,
-        taskCount: computedDates.taskCount ?? project?.taskCount ?? 0,
-        taskSummaries: computedDates.taskSummaries || project?.taskSummaries || [],
+        taskCount: (computedDates.taskCount !== undefined && computedDates.taskCount > 0) ? computedDates.taskCount : (project?.taskCount || 0),
+        taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length > 0) ? computedDates.taskSummaries : (project?.taskSummaries || []),
         computedPlanProgress: computedDates.computedPlanProgress ?? project?.computedPlanProgress ?? 0,
         computedActProgress: computedDates.computedActProgress ?? project?.computedActProgress ?? 0,
-        computedTakStart: computedDates.computedTakStart || enrichedProject?.computedTakStart || project?.computedTakStart || formData.start || "",
-        computedTakCompl: computedDates.computedTakCompl || enrichedProject?.computedTakCompl || project?.computedTakCompl || formData.handover || "",
-        computedOpening: computedDates.computedOpening || enrichedProject?.computedOpening || project?.computedOpening || formData.opening || "",
+        computedTakStart: computedDates.computedTakStart || project?.computedTakStart || enrichedProject?.computedTakStart || formData.start || "",
+        computedTakCompl: computedDates.computedTakCompl || project?.computedTakCompl || enrichedProject?.computedTakCompl || formData.handover || "",
+        computedOpening: computedDates.computedOpening || project?.computedOpening || enrichedProject?.computedOpening || formData.opening || "",
       };
 
       if (cloudStatus === 'offline') {

@@ -102,7 +102,20 @@ export async function executeTaskSave({
     return false;
   }
 
-  const id = task ? task.id : `t_${Date.now()}_${generateId().substring(0, 8)}`;
+  let id = task ? task.id : `t_${Date.now()}_${generateId().substring(0, 8)}`;
+  if (id && id.startsWith('ts_')) {
+    const realTask = tasks.find(t => 
+      !t.id.startsWith('ts_') &&
+      t.projectCode === currentProject.code &&
+      ((task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
+       (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase()))
+    );
+    if (realTask) {
+      id = realTask.id;
+    } else {
+      id = `t_${Date.now()}_${generateId().substring(0, 8)}`;
+    }
+  }
   let newOrderIndex = task?.orderIndex;
   
   if (!task) {

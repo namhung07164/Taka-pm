@@ -321,9 +321,14 @@ export function useFirebaseData() {
           );
           let skipped = 0;
           const validPending = pending.filter((u: any) => {
+            const draftAt = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
+            // Safety: Skip drafts older than 2 hours to avoid resurrecting stale offline edits
+            if (draftAt && Date.now() - draftAt > 2 * 60 * 60 * 1000) {
+              skipped++;
+              return false;
+            }
             if (u.action === "delete") return true;
             if (!String(u.collectionPath || "").includes("taka_tasks")) return true;
-            const draftAt = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
             const live = liveTasks.get(u.docId);
             const liveAt = live?.updatedAt ? new Date(live.updatedAt).getTime() : 0;
             if (draftAt && liveAt && liveAt > draftAt + 1000) {
@@ -638,26 +643,6 @@ export function useFirebaseData() {
         const setNotifs = useAppStore.getState().setAllTasksForNotifs;
         if (setNotifs) setNotifs(finalTasks);
         pendingTasksMap.current = null;
-
-        // Clean up duplicate documents from Firestore in background if any found
-        if (duplicateCount > 0 && removedTaskIds.length > 0) {
-          setTimeout(async () => {
-            try {
-              const BATCH_LIMIT = 400;
-              for (let i = 0; i < removedTaskIds.length; i += BATCH_LIMIT) {
-                const chunk = removedTaskIds.slice(i, i + BATCH_LIMIT);
-                const batch = writeBatch(db);
-                chunk.forEach(id => {
-                  const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-                  batch.delete(ref);
-                });
-                await batch.commit();
-              }
-            } catch (e) {
-              console.warn('Silent duplicate cleanup failed:', e);
-            }
-          }, 1000);
-        }
       }
       tasksBatchTimer.current = null;
     }, 40);

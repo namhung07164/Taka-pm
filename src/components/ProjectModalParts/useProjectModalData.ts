@@ -8,7 +8,8 @@ import { db, APP_ID } from '../../lib/firebase';
 import { bumpConfigVersion } from '../../lib/configCacheService';
 import { getLinkCodesValidationError } from './projectModalTypes';
 import { useProjectModalMutations } from './useProjectModalMutations';
-import { hydrateDelegationsForProjects, hydrateDelegationsFromLocal } from '../../lib/backgroundSyncWorker';
+import { hydrateDelegationsForProjects, hydrateDelegationsFromLocal, hydrateTasksForProjects } from '../../lib/backgroundSyncWorker';
+import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
 
 interface UseProjectModalDataParams {
   isOpen: boolean;
@@ -50,12 +51,16 @@ export function useProjectModalData({
     onConfirm: () => {}
   });
 
-  // JIT Targeted Local-First Delegation Hydration for Project (0ms, 0 Read)
+  // JIT Targeted Local-First Task & Delegation Hydration for Project (0ms, 0 Read)
   useEffect(() => {
     if (isOpen && project) {
       const keys = [project.id, project.code].filter(Boolean) as string[];
       if (keys.length > 0) {
+        hydrateTasksForProjects(keys).catch(() => {});
         hydrateDelegationsForProjects(keys).catch(() => {});
+        if (project.code) {
+          ensureProjectTasksLoaded(project.code).catch(() => {});
+        }
       }
     }
   }, [isOpen, project?.id, project?.code]);
