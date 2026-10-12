@@ -80,17 +80,19 @@ export function useDetailProjectMutations({
         const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
         const dataToSave = { ...p, [field]: value, updatedAt: new Date().toISOString() };
         
-        // Remove id and computed fields before saving
+        // Preserve computed fields and summaries on p
+        if (p.computedTakStart && !dataToSave.computedTakStart) dataToSave.computedTakStart = p.computedTakStart;
+        if (p.computedTakCompl && !dataToSave.computedTakCompl) dataToSave.computedTakCompl = p.computedTakCompl;
+        if (p.computedOpening && !dataToSave.computedOpening) dataToSave.computedOpening = p.computedOpening;
+        if (p.taskCount !== undefined && dataToSave.taskCount === undefined) dataToSave.taskCount = p.taskCount;
+        if (p.taskSummaries && !dataToSave.taskSummaries) dataToSave.taskSummaries = p.taskSummaries;
         delete (dataToSave as any).id;
-        delete (dataToSave as any).computedTakStart;
-        delete (dataToSave as any).computedTakCompl;
-        delete (dataToSave as any).computedOpening;
         
         // Sanitize dataToSave
         Object.keys(dataToSave).forEach(key => {
           if ((dataToSave as any)[key] === undefined) delete (dataToSave as any)[key];
         });
-        batch.set(pRef, dataToSave);
+        batch.set(pRef, dataToSave, { merge: true });
 
         const projectCodeUpdate = field === 'code' ? value : p.code;
         const projectYearUpdate = field === 'year' ? value : p.year;
@@ -218,11 +220,13 @@ export function useDetailProjectMutations({
         const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
         const dataToSave = { ...p, [field]: value, updatedAt: new Date().toISOString() };
         
-        // Remove id and computed fields before saving
+        // Preserve computed fields and summaries on p
+        if (p.computedTakStart && !dataToSave.computedTakStart) dataToSave.computedTakStart = p.computedTakStart;
+        if (p.computedTakCompl && !dataToSave.computedTakCompl) dataToSave.computedTakCompl = p.computedTakCompl;
+        if (p.computedOpening && !dataToSave.computedOpening) dataToSave.computedOpening = p.computedOpening;
+        if (p.taskCount !== undefined && dataToSave.taskCount === undefined) dataToSave.taskCount = p.taskCount;
+        if (p.taskSummaries && !dataToSave.taskSummaries) dataToSave.taskSummaries = p.taskSummaries;
         delete (dataToSave as any).id;
-        delete (dataToSave as any).computedTakStart;
-        delete (dataToSave as any).computedTakCompl;
-        delete (dataToSave as any).computedOpening;
         
         // Sanitize dataToSave to remove any undefined fields
         Object.keys(dataToSave).forEach(key => {
@@ -232,7 +236,7 @@ export function useDetailProjectMutations({
         });
         
         const batch = writeBatch(db);
-        batch.set(pRef, dataToSave);
+        batch.set(pRef, dataToSave, { merge: true });
 
         if (field === 'delegation' && value === true) {
            const existingGroup = delegationGroups.find(g => g.parentTaskId === p.code && (!g.projectStore || g.projectStore === p.store) && (!g.projectYear || String(g.projectYear) === String(p.year)));

@@ -158,7 +158,7 @@ export function useProjectModalMutations({
       );
 
       if (isIdentityChange) {
-        handleProjectIdentityChange({
+        await handleProjectIdentityChange({
           project,
           formData,
           dataToSave,

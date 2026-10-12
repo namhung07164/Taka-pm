@@ -158,12 +158,37 @@ export function useDetailTaskMutations({
 
       let targetTaskId = t.id;
       if (targetTaskId && targetTaskId.startsWith('ts_')) {
-        const realTask = tasks.find(tsk => 
+        let realTask = tasks.find(tsk => 
           !tsk.id.startsWith('ts_') &&
           tsk.projectCode === t.projectCode &&
           ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
            (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
         );
+        if (!realTask && t.projectCode) {
+          try {
+            const { collection, query, where, getDocs } = await import('firebase/firestore');
+            const q = query(
+              collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+              where('projectCode', '==', t.projectCode)
+            );
+            const snap = await getDocs(q);
+            const loaded: Task[] = [];
+            snap.forEach(d => {
+              const dt = { id: d.id, ...d.data() } as Task;
+              if (!dt.isDeleted) loaded.push(dt);
+            });
+            if (loaded.length > 0) {
+              const latestTasks = useAppStore.getState().tasks || tasks;
+              useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
+              realTask = loaded.find(tsk =>
+                (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+                (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
+              );
+            }
+          } catch (err) {
+            console.warn("Failed to fetch real task for ts_ in Firestore:", err);
+          }
+        }
         if (realTask) {
           targetTaskId = realTask.id;
         }

@@ -86,7 +86,48 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   }
 
   const matchedList = Array.from(matchedMap.values());
-  if (matchedList.length > 0) return matchedList;
+  if (matchedList.length > 0) {
+    // Safety guard: If memory only has a partial task set (e.g. mobile or lazy loading),
+    // merge in any remaining tasks from project.taskSummaries so task list never shrinks!
+    if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > matchedList.length) {
+      const existingSummaryMap = new Map<string, any>();
+      matchedList.forEach(t => {
+        if (t.id) existingSummaryMap.set(String(t.id).toLowerCase(), t);
+        if (t.taskCodePhu) existingSummaryMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        if (t.name) existingSummaryMap.set(String(t.name).trim().toLowerCase(), t);
+      });
+      const mergedList = [...matchedList];
+      project.taskSummaries.forEach((ts, idx) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const hasMatch = (tsId && existingSummaryMap.has(tsId)) ||
+                         (tsCode && existingSummaryMap.has(tsCode)) ||
+                         (tsName && existingSummaryMap.has(tsName));
+        if (!hasMatch) {
+          mergedList.push({
+            id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || project.computedTakStart || project.start || '',
+            finish: ts.finish || project.computedTakCompl || project.handover || '',
+            projectCode: project.code || '',
+            projectStore: project.store || 'HCM',
+            projectYear: project.year ? String(project.year) : '',
+            party: ts.party || project.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: project.id,
+            ...ts
+          } as Task);
+        }
+      });
+      return mergedList;
+    }
+    return matchedList;
+  }
 
   // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
@@ -157,7 +198,7 @@ export function calculateProjectComputedDates(
         computedOpening = validFinishes[0];
       }
     } else {
-      computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
+      computedOpening = project.opening || "";
     }
   } else if (project.taskSummaries && project.taskSummaries.length > 0) {
     const validStarts = project.taskSummaries
@@ -189,10 +230,10 @@ export function calculateProjectComputedDates(
         computedOpening = validFinishes[0];
       }
     } else {
-      computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
+      computedOpening = project.opening || "";
     }
   } else {
-    computedOpening = project.openingMode === 'manual' ? (project.opening || "") : "";
+    computedOpening = project.opening || "";
   }
 
   const sortedProjTasks = sortGroupTasks(projectTasks || []);
@@ -268,7 +309,7 @@ export function calculateProjectComputedDates(
       finalTaskCount = Math.max(existingCount, finalSummaries.length);
     } else {
       finalSummaries = taskSummaries;
-      finalTaskCount = projectTasks.length;
+      finalTaskCount = Math.max(existingCount, projectTasks.length, taskSummaries.length);
     }
   } else {
     finalSummaries = existingSummaries;
@@ -313,6 +354,38 @@ export async function syncProjectDatesToFirestore(
   try {
     const { projects, setProjects } = useAppStore.getState();
     const existingProject = projects.find((p) => p.id === projectId);
+    const existingCount = existingProject?.taskCount || existingProject?.taskSummaries?.length || 0;
+    const existingSummaries = existingProject?.taskSummaries || [];
+
+    // Safety guard: Never shrink taskCount if memory only had a partial task set
+    let safeTaskCount = dates.taskCount;
+    if (safeTaskCount !== undefined) {
+      if (safeTaskCount < existingCount && existingCount > 0) {
+        safeTaskCount = existingCount;
+      }
+    }
+
+    // Safety guard: Never shrink taskSummaries if memory only had a partial task set
+    let safeTaskSummaries = dates.taskSummaries;
+    if (safeTaskSummaries !== undefined) {
+      if (safeTaskSummaries.length < existingSummaries.length && existingSummaries.length > 0) {
+        const updatedMap = new Map<string, any>();
+        safeTaskSummaries.forEach((ts: any) => {
+          if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
+          if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
+          if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
+        });
+        safeTaskSummaries = existingSummaries.map((es: any) => {
+          const esId = es.id ? String(es.id).toLowerCase() : '';
+          const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
+          const esName = es.name ? String(es.name).trim().toLowerCase() : '';
+          return (esId && updatedMap.get(esId)) ||
+                 (esCode && updatedMap.get(esCode)) ||
+                 (esName && updatedMap.get(esName)) ||
+                 es;
+        });
+      }
+    }
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).
@@ -323,8 +396,8 @@ export async function syncProjectDatesToFirestore(
       (existingProject.computedOpening || "") !== (dates.computedOpening || "") ||
       Number(existingProject.computedPlanProgress ?? 0) !== Number(dates.computedPlanProgress ?? 0) ||
       Number(existingProject.computedActProgress ?? 0) !== Number(dates.computedActProgress ?? 0) ||
-      Number(existingProject.taskCount ?? 0) !== Number(dates.taskCount ?? 0) ||
-      JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(dates.taskSummaries || []);
+      Number(existingProject.taskCount ?? 0) !== Number(safeTaskCount ?? dates.taskCount ?? 0) ||
+      JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(safeTaskSummaries || dates.taskSummaries || []);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     if (existingProject) {
@@ -333,6 +406,8 @@ export async function syncProjectDatesToFirestore(
           return {
             ...p,
             ...dates,
+            taskCount: safeTaskCount !== undefined ? safeTaskCount : dates.taskCount,
+            taskSummaries: safeTaskSummaries !== undefined ? safeTaskSummaries : dates.taskSummaries,
           };
         }
         return p;
@@ -374,28 +449,19 @@ export async function syncProjectDatesToFirestore(
     if (dates.computedActProgress !== undefined) {
       updatePayload.computedActProgress = dates.computedActProgress;
     }
-    const isTasksRequested = useAppStore.getState().isTasksRequested;
-    if (dates.taskCount !== undefined) {
-      if (dates.taskCount === 0 && (existingProject?.taskCount || 0) > 0 && !isTasksRequested) {
-        updatePayload.taskCount = existingProject.taskCount;
-      } else {
-        updatePayload.taskCount = dates.taskCount;
-      }
+    if (safeTaskCount !== undefined) {
+      updatePayload.taskCount = safeTaskCount;
     }
-    if (dates.taskSummaries !== undefined) {
-      if (dates.taskSummaries.length === 0 && (existingProject?.taskSummaries?.length || 0) > 0 && !isTasksRequested) {
-        updatePayload.taskSummaries = existingProject.taskSummaries;
-      } else {
-        updatePayload.taskSummaries = dates.taskSummaries.map((ts: any) => {
-          const item: Record<string, any> = {};
-          for (const [k, v] of Object.entries(ts)) {
-            if (v !== undefined) {
-              item[k] = v;
-            }
+    if (safeTaskSummaries !== undefined) {
+      updatePayload.taskSummaries = safeTaskSummaries.map((ts: any) => {
+        const item: Record<string, any> = {};
+        for (const [k, v] of Object.entries(ts)) {
+          if (v !== undefined) {
+            item[k] = v;
           }
-          return item;
-        });
-      }
+        }
+        return item;
+      });
     }
 
     await setDoc(projectRef, updatePayload, { merge: true });

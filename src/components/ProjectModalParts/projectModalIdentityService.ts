@@ -1,4 +1,4 @@
-import { Project } from '../../types';
+import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { removeCodeFromLinkCodesString, extractAllProjectCodes } from '../../lib/utils';
 import { doc } from 'firebase/firestore';
@@ -18,7 +18,7 @@ interface HandleProjectIdentityChangeParams {
   setToast: (toast: any) => void;
 }
 
-export function handleProjectIdentityChange({
+export async function handleProjectIdentityChange({
   project,
   formData,
   dataToSave,
@@ -34,7 +34,42 @@ export function handleProjectIdentityChange({
     updatedAt: new Date().toISOString()
   }, { merge: true });
 
-  const rawTasks = useAppStore.getState().tasks || [];
+  let rawTasks = useAppStore.getState().tasks || [];
+  const oldPCode = String(project.code || '').trim().toLowerCase();
+  const oldPYear = String(project.year || '');
+  const oldPStore = String(project.store || '').trim().toLowerCase();
+
+  let relatedTasks = rawTasks.filter(t => {
+    const matchesCode = String(t.projectCode || '').trim().toLowerCase() === oldPCode;
+    const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
+    const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
+    return matchesCode && matchesYear && matchesStore;
+  });
+
+  // If memory does not have tasks for this project (e.g. mobile lazy load), fetch them from Firestore
+  if (relatedTasks.length === 0 && project.code) {
+    try {
+      const { collection, query, where, getDocs } = await import('firebase/firestore');
+      const q = query(
+        collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+        where('projectCode', '==', project.code)
+      );
+      const snap = await getDocs(q);
+      const loaded: Task[] = [];
+      snap.forEach(d => {
+        const dt = { id: d.id, ...d.data() } as Task;
+        if (!dt.isDeleted) loaded.push(dt);
+      });
+      if (loaded.length > 0) {
+        relatedTasks = loaded;
+        rawTasks = [...rawTasks, ...loaded];
+        useAppStore.getState().setTasks(rawTasks);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch tasks for project identity change from Firestore:", err);
+    }
+  }
+
   const { taskUpdates, predecessorUpdates } = getProjectCodeChangePredecessorUpdates(
     project,
     String(formData.code).trim(),
@@ -43,17 +78,6 @@ export function handleProjectIdentityChange({
     rawTasks,
     projects
   );
-
-  const oldPCode = String(project.code || '').trim().toLowerCase();
-  const oldPYear = String(project.year || '');
-  const oldPStore = String(project.store || '').trim().toLowerCase();
-
-  const relatedTasks = rawTasks.filter(t => {
-    const matchesCode = String(t.projectCode || '').trim().toLowerCase() === oldPCode;
-    const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
-    const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
-    return matchesCode && matchesYear && matchesStore;
-  });
 
   const relatedTaskIds = new Set(relatedTasks.map(t => t.id));
 

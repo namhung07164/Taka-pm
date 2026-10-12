@@ -53,6 +53,7 @@ import {
 } from "../lib/yearsFingerprintService";
 
 let isArchiveLoaded = false;
+const FIREBASE_HOOK_BOOT_TIME = Date.now();
 
 export function useFirebaseData() {
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -312,6 +313,13 @@ export function useFirebaseData() {
     // Test connection with a lightweight read instead of continuous setDoc
     const testConnection = async () => {
       try {
+        const timeSinceBoot = Date.now() - FIREBASE_HOOK_BOOT_TIME;
+        // BẢO VỆ DỮ LIỆU DESKTOP: Chờ 15s để kéo Delta Sync & Local Dexie về xong mới quét và đẩy hàng đợi offline
+        if (timeSinceBoot < 15000) {
+          setTimeout(testConnection, 15000 - timeSinceBoot);
+          return;
+        }
+
         const pending = await getPendingUpdates();
         if (pending.length > 0) {
           // So sánh với dữ liệu task hiện có trên máy (không tốn thêm lượt đọc Firestore).

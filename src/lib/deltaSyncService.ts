@@ -319,6 +319,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         return {
           ...p,
           ...computedDates,
+          taskCount: Math.max(p.taskCount || 0, computedDates.taskCount || 0),
+          taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (p.taskSummaries?.length || 0))
+            ? computedDates.taskSummaries
+            : (p.taskSummaries || computedDates.taskSummaries || []),
         };
       }
       return p;
