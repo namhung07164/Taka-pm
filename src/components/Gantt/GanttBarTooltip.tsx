@@ -96,7 +96,7 @@ export function GanttBarTooltip({
         e.stopPropagation();
         if (!isPinned) setActiveTooltip(id);
       }}
-      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-xs rounded-2xl shadow-2xl p-3.5 w-80 sm:w-96 md:w-[420px] max-w-lg border backdrop-blur-md transition-all duration-150 ${
+      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-[11px] rounded-xl shadow-2xl p-2.5 w-64 sm:w-72 md:w-[340px] max-w-sm border backdrop-blur-md transition-all duration-150 flex flex-col gap-1.5 ${
         isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
       }`}
       style={{

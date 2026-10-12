@@ -311,56 +311,27 @@ export function getProjectCodeChangePredecessorUpdates(
 
   sortedTasks.forEach((t, i) => {
     const order = (t.orderIndex !== undefined ? t.orderIndex : i) + 1;
-    const defaultOldCode = `${oldPCode}-${order}`;
-    const defaultNewCode = `${newPCode}-${order}`;
-
-    // Standard numbered code mapping (e.g., A-1 -> B-1)
+    // Ép tuyệt đối sử dụng dấu # thay vì dấu -
+    const defaultOldCode = `${oldPCode}#${order}`;
+    const defaultNewCode = `${newPCode}#${order}`;
+    
     oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
 
     let newTaskCodePhu: string | undefined = undefined;
 
+    // Luôn ép newTaskCodePhu theo chuẩn ProjectCode#Index
+    newTaskCodePhu = `${newPCode}#${order}`;
+    
     if (t.taskCodePhu && t.taskCodePhu.trim()) {
-      const trimmedPhu = t.taskCodePhu.trim();
-      const lowerPhu = trimmedPhu.toLowerCase();
-      const lowerOldPCode = oldPCode.toLowerCase();
-
-      if (lowerPhu.startsWith(lowerOldPCode + '-')) {
-        // e.g. "L3-101-1" -> "L3-202-1"
-        const suffix = trimmedPhu.substring(oldPCode.length);
-        newTaskCodePhu = `${newPCode}${suffix}`;
-        oldCodeToNewCode.set(lowerPhu, newTaskCodePhu);
-      } else if (lowerPhu === lowerOldPCode) {
-        newTaskCodePhu = newPCode;
-        oldCodeToNewCode.set(lowerPhu, newTaskCodePhu);
-      } else {
-        // Custom taskCodePhu without old project prefix
-        oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
-      }
-    } else {
-      // taskCodePhu is not set explicitly; it computes to defaultNewCode
-      oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
-    }
-
-    // Check computed task code
-    const computedOld = computeTaskCode(projects, allTasks, t);
-    if (computedOld && computedOld.trim()) {
-      const trimmedComputed = computedOld.trim();
-      const lowerComputed = trimmedComputed.toLowerCase();
-      if (!oldCodeToNewCode.has(lowerComputed)) {
-        if (lowerComputed.startsWith(oldPCode.toLowerCase() + '-')) {
-          const suffix = trimmedComputed.substring(oldPCode.length);
-          oldCodeToNewCode.set(lowerComputed, `${newPCode}${suffix}`);
-        } else {
-          oldCodeToNewCode.set(lowerComputed, defaultNewCode);
-        }
-      }
+      const lowerPhu = t.taskCodePhu.trim().toLowerCase();
+      oldCodeToNewCode.set(lowerPhu, newTaskCodePhu);
     }
 
     taskUpdates.set(t.id, {
       projectCode: newPCode,
       ...(yearNum !== undefined ? { projectYear: yearNum } : {}),
       ...(newStore ? { projectStore: newStore } : {}),
-      ...(newTaskCodePhu ? { taskCodePhu: newTaskCodePhu } : {})
+      taskCodePhu: newTaskCodePhu // Ghi đè tuyệt đối giá trị mới
     });
   });
 
@@ -729,21 +700,26 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   if (!task) return '';
 
   const taskPCode = String(task.projectCode || '').trim();
-  const p = (task.projectId ? (projects || []).find(proj => proj.id === task.projectId) : undefined) ||
+  const p = (task.projectId ? (projects || []).find(proj => proj.id === task.projectId) : undefined) || 
             (taskPCode ? (projects || []).find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
 
   const currentPCode = p ? String(p.code).trim() : taskPCode;
+  
+  // Nếu không có Project Code, trả về rỗng để hệ thống không sinh mã rác
+  if (!currentPCode) return '';
 
-  if (!currentPCode) {
-    if (task.taskCodePhu && task.taskCodePhu.trim()) return task.taskCodePhu.trim();
-    return '';
-  }
-
-  const pTasks = (tasks || []).filter(t => t && ((p?.id && t.projectId === p.id) || (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase())));
+  const pTasks = (tasks || []).filter(t => 
+    t && ((p?.id && t.projectId === p.id) || 
+    (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase()))
+  );
+  
   const sorted = sortGroupTasks(pTasks);
   const idx = sorted.findIndex(t => t.id === task.id);
-  const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? task.orderIndex + 1 : 1);
+  
+  // Tuyệt đối lấy số thứ tự theo Index mảng thực tế để KHÔNG NHẢY CÓC
+  const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? Number(task.orderIndex) + 1 : 1);
 
+  // Ép định dạng: [ProjectCode]#[Số thứ tự]
   return `${currentPCode}#${orderNum}`;
 }
 

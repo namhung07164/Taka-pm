@@ -79,16 +79,16 @@ interface LinkItem {
 /* ------------------------------------------------------------------ */
 
 const REL_INFO: Record<PredecessorType, { hint: string }> = {
-  FS: { hint: 'Xong → Bắt đầu' },
-  SS: { hint: 'Cùng bắt đầu' },
-  FF: { hint: 'Cùng kết thúc' },
-  SF: { hint: 'Bắt đầu → Kết thúc' },
+  FS: { hint: 'Finish → Start' },
+  SS: { hint: 'Start to Start' },
+  FF: { hint: 'Finish to Finish' },
+  SF: { hint: 'Start to Finish' },
 };
 
 const SLOT_STYLE = [
   {
     tag: '①',
-    title: 'Tiên quyết chính',
+    title: 'Primary Predecessor',
     border: 'border-l-blue-500',
     badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
     active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
@@ -96,7 +96,7 @@ const SLOT_STYLE = [
   },
   {
     tag: '②',
-    title: 'Tiên quyết phụ · chỉ FF / SF',
+    title: 'Secondary Predecessor · FF / SF only',
     border: 'border-l-rose-500',
     badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
     active: 'bg-rose-600 text-white border-rose-600 shadow-sm',
@@ -105,10 +105,10 @@ const SLOT_STYLE = [
 ];
 
 const FACTOR_LABEL: Record<string, string> = {
-  year: 'Khác năm',
-  store: 'Khác chi nhánh',
-  location: 'Khác vị trí/tầng',
-  code: 'Khác dự án',
+  year: 'Different Year',
+  store: 'Different Store',
+  location: 'Different Location',
+  code: 'Different Project',
 };
 
 function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string {
@@ -116,7 +116,7 @@ function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string
   if (factors && factors.length > 0) {
     return factors.map((f) => FACTOR_LABEL[f] || f).join(' · ');
   }
-  return fallbackCode ? `Dự án ${fallbackCode}` : 'Khác dự án';
+  return fallbackCode ? `Project ${fallbackCode}` : 'Different Project';
 }
 
 function shortDate(s?: string): string {
@@ -147,16 +147,16 @@ function describe(it: LinkItem): string {
   if (!it.task) return '';
   const name = `«${it.task.name}»`;
   const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
-  const lag = signed === 0 ? '' : signed > 0 ? `, cộng ${signed} ngày` : `, sớm ${Math.abs(signed)} ngày`;
+  const lag = signed === 0 ? '' : signed > 0 ? `, plus ${signed} days` : `, lead ${Math.abs(signed)} days`;
   switch (it.type) {
     case 'FS':
-      return `Bắt đầu sau khi ${name} kết thúc${lag}`;
+      return `Start after ${name} finishes${lag}`;
     case 'SS':
-      return `Bắt đầu cùng lúc ${name} bắt đầu${lag}`;
+      return `Start when ${name} starts${lag}`;
     case 'FF':
-      return `Kết thúc cùng lúc ${name} kết thúc${lag}`;
+      return `Finish when ${name} finishes${lag}`;
     case 'SF':
-      return `Kết thúc khi ${name} bắt đầu${lag}`;
+      return `Finish when ${name} starts${lag}`;
   }
   return '';
 }

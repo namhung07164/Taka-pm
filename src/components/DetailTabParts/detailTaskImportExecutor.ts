@@ -89,11 +89,15 @@ export async function executeImportTasks({
 
     sortedItems.forEach((item, index) => {
       const t = item.rowData;
-      const taskOrderIndex = index;
-      const taskCodePhu = t.taskCodePhu ? String(t.taskCodePhu).trim() : `${String(t.projectCode).trim()}#${taskOrderIndex + 1}`;
+      // Dùng index thực tế của dòng trong file CSV để đánh số lại, đảm bảo không nhảy cóc
+      const taskOrderIndex = index; 
+      const exactProjectCode = String(t.projectCode || '').trim();
+      
+      // Ép buộc tạo Subtask code: Lấy tuyệt đối Project Code + # + (Thứ tự dòng + 1)
+      const taskCodePhu = `${exactProjectCode}#${taskOrderIndex + 1}`;
 
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
-      const pCode = String(t.projectCode || '').trim().toLowerCase();
+      const pCode = exactProjectCode.toLowerCase();
       const rawName = String(t.name || '').trim().toLowerCase();
       const normName = normalizeTaskNameForComparison(t.name, t.projectCode);
       const nameKey = `${canonicalPrjKey}:::${rawName}`;
