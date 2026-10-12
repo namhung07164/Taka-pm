@@ -114,18 +114,27 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
 export async function hydrateTasksFromLocal(): Promise<number> {
   try {
     const store = useAppStore.getState();
-    if (store.tasks && store.tasks.length > 0) return store.tasks.length;
     const localTasks = await getLocalTasks();
     if (localTasks && localTasks.length > 0) {
       const currentStore = useAppStore.getState();
-      if (!currentStore.tasks || currentStore.tasks.length === 0) {
-        const deduped = deduplicateTasks(localTasks);
+      const existingMap = new Map((currentStore.tasks || []).map(t => [t.id, t]));
+      let hasNew = false;
+      const combined = [...(currentStore.tasks || [])];
+      localTasks.forEach(lt => {
+        if (!existingMap.has(lt.id)) {
+          combined.push(lt);
+          hasNew = true;
+        }
+      });
+      if (hasNew || !currentStore.tasks || currentStore.tasks.length === 0) {
+        const deduped = deduplicateTasks(combined);
         currentStore.setTasks(deduped);
         usePerformanceStore
           .getState()
           .trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');
         return deduped.length;
       }
+      return currentStore.tasks.length;
     }
     return 0;
   } catch (err) {

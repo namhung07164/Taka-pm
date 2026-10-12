@@ -26,16 +26,6 @@ export function useDetailInitialScroll({
   setSearchTerm,
   setStatusFilter,
 }: UseDetailInitialScrollParams) {
-  // Backfill dates once loaded (deferred to background microtask to prevent UI freeze during tab navigation)
-  useEffect(() => {
-    if (projects.length > 0 && tasks.length > 0) {
-      const delay = Math.max(1500, BOOT_SYNC_GUARD_MS - getAppBootAgeMs() + 500);
-      const timer = setTimeout(() => {
-        backfillMissingProjectDates(projects, tasks, delegationGroups);
-      }, delay);
-      return () => clearTimeout(timer);
-    }
-  }, [projects.length, tasks.length, delegationGroups.length]);
 
   // Initial Filter Code Scrolling & Tri-Gate Lazy Loading Target
   const lastProcessedFilterCodeRef = useRef<string | null>(null);

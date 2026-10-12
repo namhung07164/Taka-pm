@@ -626,28 +626,9 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
     return t;
   });
 
-  if (orphanTaskUpdates.length > 0) {
-    setTimeout(async () => {
-      try {
-        const { localDb } = await import('./localDb');
-        const { doc, writeBatch, deleteField } = await import('firebase/firestore');
-        const { db, APP_ID } = await import('./firebase');
-        const batch = writeBatch(db);
-
-        await Promise.all(orphanTaskUpdates.map(u => 
-          (localDb.tasks.update as any)(u.id, { parentTaskId: null, parentId: null, updatedAt: now })
-        ));
-
-        orphanTaskUpdates.forEach(u => {
-          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id);
-          batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
-        });
-        await batch.commit();
-      } catch (e) {
-        console.warn('[taskStateService] Failed to persist orphan task cleanup:', e);
-      }
-    }, 100);
-  }
+  // NOTE: Do NOT automatically delete parentTaskId in Firestore during partial memory loading!
+  // When tasks are loaded in chunks or filtered by project, parent tasks may not be in memory yet.
+  // Deleting parentTaskId in Firestore would destroy the task hierarchy across other devices.
 
   return { cleaned, fixedCount };
 }

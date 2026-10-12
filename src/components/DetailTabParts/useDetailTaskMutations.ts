@@ -191,6 +191,8 @@ export function useDetailTaskMutations({
         }
         if (realTask) {
           targetTaskId = realTask.id;
+        } else {
+          targetTaskId = `t_${Date.now()}_${generateId().substring(0, 8)}`;
         }
       }
       const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
@@ -317,7 +319,7 @@ export function useDetailTaskMutations({
       }
       const { updatedParents } = rollupParentTaskDates(allCurrentTasksWithScheduled);
 
-      batch.set(tRef, newT);
+      batch.set(tRef, newT, { merge: true });
 
       // Rule 9 Mandate: Parent task rollups are computed 100% in-memory on client.
       // We keep updatedParents in memory via saveTaskStateUnified below, but do NOT issue Firestore writeBatch for parent tasks.
@@ -359,7 +361,7 @@ export function useDetailTaskMutations({
       const depUpdates = updatesToDependents.filter(d => d.id !== newT.id);
       depUpdates.forEach(depTask => {
         const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
-        batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() });
+        batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() }, { merge: true });
       });
 
       predecessorUpdates.forEach(pu => {

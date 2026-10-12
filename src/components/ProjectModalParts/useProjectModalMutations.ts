@@ -109,8 +109,10 @@ export function useProjectModalMutations({
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
         isDeleted: false,
-        taskCount: (computedDates.taskCount !== undefined && computedDates.taskCount > 0) ? computedDates.taskCount : (project?.taskCount || 0),
-        taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length > 0) ? computedDates.taskSummaries : (project?.taskSummaries || []),
+        taskCount: Math.max(project?.taskCount || 0, computedDates.taskCount || 0),
+        taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (project?.taskSummaries?.length || 0))
+          ? computedDates.taskSummaries
+          : (project?.taskSummaries || computedDates.taskSummaries || []),
         computedPlanProgress: computedDates.computedPlanProgress ?? project?.computedPlanProgress ?? 0,
         computedActProgress: computedDates.computedActProgress ?? project?.computedActProgress ?? 0,
         computedTakStart: computedDates.computedTakStart || project?.computedTakStart || enrichedProject?.computedTakStart || formData.start || "",

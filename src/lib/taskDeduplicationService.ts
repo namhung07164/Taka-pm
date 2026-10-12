@@ -162,7 +162,7 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     const startStr = task.start ? String(task.start).trim() : '';
     const finishStr = task.finish ? String(task.finish).trim() : '';
 
-    const codeKey = pCode && rawTaskCode ? `${pCode}:::code:::${rawTaskCode}` : '';
+    const codeKey = prjKey && rawTaskCode ? `${prjKey}:::code:::${rawTaskCode}` : '';
     // Require exact match on project, parent, name, start, and finish to prevent falsely merging distinct tasks!
     const exactTaskKey = prjKey && tName ? `${prjKey}:::parent:${parentIdStr}:::name:${tName}:::start:${startStr}:::finish:${finishStr}` : '';
 

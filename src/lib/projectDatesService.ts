@@ -236,10 +236,13 @@ export function calculateProjectComputedDates(
     computedOpening = project.opening || "";
   }
 
+  const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
+  const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
+
   const sortedProjTasks = sortGroupTasks(projectTasks || []);
 
   const taskSummaries = sortedProjTasks
-    .filter(t => t.start && t.finish && t.name)
+    .filter(t => t.start || t.finish || t.name)
     .map((t, idx) => {
       const summary: {
         name: string;
@@ -263,63 +266,98 @@ export function calculateProjectComputedDates(
       return summary;
     });
 
-  const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
-  const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
+  // Always merge existingSummaries and taskSummaries so tasks are NEVER lost or dropped
+  const updatedMap = new Map<string, any>();
+  taskSummaries.forEach(ts => {
+    if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
+    if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
+    if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
+  });
 
-  let finalSummaries: any[] = [];
-  let finalTaskCount = 0;
+  const finalSummaries: any[] = existingSummaries.map((es) => {
+    const esId = es.id ? String(es.id).toLowerCase() : '';
+    const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
+    const esName = es.name ? String(es.name).trim().toLowerCase() : '';
 
-  if (projectTasks && projectTasks.length > 0) {
-    if (existingSummaries.length > projectTasks.length) {
-      // Partial task set in memory (e.g. mobile or lazy loading where not all tasks of this project are loaded)
-      // Merge updated tasks into existingSummaries by id or taskCodePhu or name, DO NOT wipe existing summaries!
-      const updatedMap = new Map<string, any>();
-      taskSummaries.forEach(ts => {
-        if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
-        if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
-        if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
-      });
-
-      finalSummaries = existingSummaries.map((es) => {
-        const esId = es.id ? String(es.id).toLowerCase() : '';
-        const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
-        const esName = es.name ? String(es.name).trim().toLowerCase() : '';
-
-        const match = (esId && updatedMap.get(esId)) ||
-                      (esCode && updatedMap.get(esCode)) ||
-                      (esName && updatedMap.get(esName));
-        return match || es;
-      });
-
-      // Also append any new task in taskSummaries that wasn't in existingSummaries
-      taskSummaries.forEach(ts => {
-        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-        const alreadyIn = finalSummaries.some(es => 
-          (tsId && es.id && String(es.id).toLowerCase() === tsId) ||
-          (tsCode && es.taskCodePhu && String(es.taskCodePhu).trim().toLowerCase() === tsCode) ||
-          (tsName && es.name && String(es.name).trim().toLowerCase() === tsName)
-        );
-        if (!alreadyIn) {
-          finalSummaries.push(ts);
-        }
-      });
-
-      finalTaskCount = Math.max(existingCount, finalSummaries.length);
-    } else {
-      finalSummaries = taskSummaries;
-      finalTaskCount = Math.max(existingCount, projectTasks.length, taskSummaries.length);
+    const match = (esId && updatedMap.get(esId)) ||
+                  (esCode && updatedMap.get(esCode)) ||
+                  (esName && updatedMap.get(esName));
+    if (match) {
+      return {
+        ...es,
+        name: match.name || es.name || '',
+        start: match.start || es.start || '',
+        finish: match.finish || es.finish || '',
+        duration: match.duration !== undefined ? match.duration : es.duration,
+        runningStatus: match.runningStatus || es.runningStatus,
+        taskCodePhu: match.taskCodePhu || es.taskCodePhu,
+        party: match.party || es.party,
+        delegation: match.delegation !== undefined ? match.delegation : es.delegation,
+        id: match.id || es.id,
+      };
     }
-  } else {
-    finalSummaries = existingSummaries;
-    finalTaskCount = existingCount;
+    return es;
+  });
+
+  // Append any task from taskSummaries that wasn't already in finalSummaries
+  taskSummaries.forEach(ts => {
+    const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+    const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+    const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+    const alreadyIn = finalSummaries.some(es => 
+      (tsId && es.id && String(es.id).toLowerCase() === tsId) ||
+      (tsCode && es.taskCodePhu && String(es.taskCodePhu).trim().toLowerCase() === tsCode) ||
+      (tsName && es.name && String(es.name).trim().toLowerCase() === tsName)
+    );
+    if (!alreadyIn && (ts.start || ts.finish || ts.name)) {
+      finalSummaries.push(ts);
+    }
+  });
+
+  const finalTaskCount = Math.max(existingCount, finalSummaries.length, projectTasks?.length || 0);
+
+  // Compute start / compl / opening across the unified summaries and tasks
+  const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
+  const validStarts = allKnownForDates
+    .map((t: any) => t.start)
+    .filter(Boolean)
+    .sort();
+  if (validStarts.length > 0) {
+    computedTakStart = validStarts[0];
+  } else if (!computedTakStart) {
+    computedTakStart = project.computedTakStart || project.start || "";
   }
 
-  const planProgressPercent = projectTasks && projectTasks.length > 0 
-    ? computePlanProgressPercent(projectTasks) 
-    : (finalSummaries.length > 0 
-        ? computePlanProgressFromSummaries(finalSummaries) 
+  const validFinishes = allKnownForDates
+    .map((t: any) => t.finish)
+    .filter(Boolean)
+    .sort((a: string, b: string) => (b || "").localeCompare(a || ""));
+  if (validFinishes.length > 0) {
+    computedTakCompl = validFinishes[0];
+  } else if (!computedTakCompl) {
+    computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
+  }
+
+  const openingTasks = allKnownForDates.filter((t: any) => {
+    const name = String(t.name || "").toLowerCase();
+    return name.includes("opening") || name.includes("open");
+  });
+  if (openingTasks.length > 0) {
+    const validOpeningFinishes = openingTasks
+      .map((t: any) => t.finish)
+      .filter(Boolean)
+      .sort((a: string, b: string) => (b || "").localeCompare(a || ""));
+    if (validOpeningFinishes.length > 0) {
+      computedOpening = validOpeningFinishes[0];
+    }
+  } else if (!computedOpening) {
+    computedOpening = project.computedOpening || project.opening || "";
+  }
+
+  const planProgressPercent = finalSummaries.length > 0 
+    ? computePlanProgressFromSummaries(finalSummaries) 
+    : (projectTasks && projectTasks.length > 0
+        ? computePlanProgressPercent(projectTasks)
         : (project.computedPlanProgress ?? 0));
   
   const actProgressPercent = projectTasks && projectTasks.length > 0
@@ -358,34 +396,44 @@ export async function syncProjectDatesToFirestore(
     const existingSummaries = existingProject?.taskSummaries || [];
 
     // Safety guard: Never shrink taskCount if memory only had a partial task set
-    let safeTaskCount = dates.taskCount;
-    if (safeTaskCount !== undefined) {
-      if (safeTaskCount < existingCount && existingCount > 0) {
-        safeTaskCount = existingCount;
-      }
-    }
+    let safeTaskCount = Math.max(existingCount, dates.taskCount || 0);
 
-    // Safety guard: Never shrink taskSummaries if memory only had a partial task set
-    let safeTaskSummaries = dates.taskSummaries;
-    if (safeTaskSummaries !== undefined) {
-      if (safeTaskSummaries.length < existingSummaries.length && existingSummaries.length > 0) {
-        const updatedMap = new Map<string, any>();
-        safeTaskSummaries.forEach((ts: any) => {
-          if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
-          if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
-          if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
-        });
-        safeTaskSummaries = existingSummaries.map((es: any) => {
-          const esId = es.id ? String(es.id).toLowerCase() : '';
-          const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
-          const esName = es.name ? String(es.name).trim().toLowerCase() : '';
-          return (esId && updatedMap.get(esId)) ||
-                 (esCode && updatedMap.get(esCode)) ||
-                 (esName && updatedMap.get(esName)) ||
-                 es;
-        });
+    // Safety guard: Never drop or shrink taskSummaries
+    const updatedMap = new Map<string, any>();
+    (dates.taskSummaries || []).forEach((ts: any) => {
+      if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
+      if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
+      if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
+    });
+
+    const mergedSummaries = existingSummaries.map((es: any) => {
+      const esId = es.id ? String(es.id).toLowerCase() : '';
+      const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
+      const esName = es.name ? String(es.name).trim().toLowerCase() : '';
+      const match = (esId && updatedMap.get(esId)) ||
+                    (esCode && updatedMap.get(esCode)) ||
+                    (esName && updatedMap.get(esName));
+      return match ? { ...es, ...match } : es;
+    });
+
+    (dates.taskSummaries || []).forEach((ts: any) => {
+      const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+      const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+      const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+      const alreadyIn = mergedSummaries.some((es: any) =>
+        (tsId && es.id && String(es.id).toLowerCase() === tsId) ||
+        (tsCode && es.taskCodePhu && String(es.taskCodePhu).trim().toLowerCase() === tsCode) ||
+        (tsName && es.name && String(es.name).trim().toLowerCase() === tsName)
+      );
+      if (!alreadyIn && (ts.start || ts.finish || ts.name)) {
+        mergedSummaries.push(ts);
       }
-    }
+    });
+
+    let safeTaskSummaries = mergedSummaries.length >= (dates.taskSummaries?.length || 0)
+      ? mergedSummaries
+      : (dates.taskSummaries || existingSummaries);
+    safeTaskCount = Math.max(safeTaskCount, safeTaskSummaries.length);
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).
@@ -541,19 +589,18 @@ export async function backfillMissingProjectDates(
     const pTasks = getTasksForProject(p, tasks);
     if (pTasks.length === 0) continue;
 
+    // Safety guard: If memory only has a partial task set (< project.taskCount), do NOT backfill
+    if (p.taskCount && pTasks.length < p.taskCount) continue;
+
     const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
 
-    // Chỉ cập nhật nếu Firestore chưa có hoặc khác biệt
+    // Chỉ cập nhật nếu Firestore chưa có hoặc ngày hoàn thành/bắt đầu thực sự thiếu
     const needsUpdate =
       !p.computedTakCompl ||
-      p.computedTakCompl !== computed.computedTakCompl ||
-      !p.computedTakStart ||
-      p.computedTakStart !== computed.computedTakStart ||
+      (!p.computedTakStart && Boolean(computed.computedTakStart)) ||
       (!p.computedOpening && Boolean(computed.computedOpening)) ||
       p.computedPlanProgress === undefined ||
-      p.computedActProgress === undefined ||
-      p.taskCount === undefined ||
-      p.taskCount !== computed.taskCount;
+      p.computedActProgress === undefined;
 
     if (needsUpdate) {
       count++;

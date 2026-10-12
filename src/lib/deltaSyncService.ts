@@ -157,8 +157,8 @@ export function getLastDeltaSyncTime(): number {
     const num = Number(raw);
     if (!isNaN(num) && num > 0) return num;
   }
-  // Mặc định lùi lại 30 phút nếu lần đầu mở app để không bị sót thay đổi vừa xảy ra
-  const initial = Date.now() - 30 * 60 * 1000;
+  // Mặc định lùi lại 48 giờ nếu lần đầu mở app để không bị sót thay đổi giữa các thiết bị
+  const initial = Date.now() - 48 * 60 * 60 * 1000;
   safeSetItemLocal(LAST_SYNC_KEY, String(initial));
   return initial;
 }

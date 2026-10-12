@@ -322,23 +322,29 @@ export function useFirebaseData() {
 
         const pending = await getPendingUpdates();
         if (pending.length > 0) {
-          // So sánh với dữ liệu task hiện có trên máy (không tốn thêm lượt đọc Firestore).
-          // Chỉ bỏ draft khi bản trên máy MỚI HƠN draft rõ ràng (> 1 giây, chừa sai lệch đồng hồ).
-          const liveTasks = new Map<string, any>(
-            (useAppStore.getState().tasks || []).map((t: any) => [t.id, t])
-          );
+          const currentStore = useAppStore.getState();
+          const liveTasks = new Map<string, any>((currentStore.tasks || []).map((t: any) => [t.id, t]));
+          const liveProjects = new Map<string, any>((currentStore.projects || []).map((p: any) => [p.id, p]));
+          const liveCosts = new Map<string, any>((currentStore.costs || []).map((c: any) => [c.id, c]));
+          const liveDelegations = new Map<string, any>((currentStore.delegationGroups || []).map((d: any) => [d.id, d]));
           let skipped = 0;
           const validPending = pending.filter((u: any) => {
             const draftAt = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
-            // Safety: Skip drafts older than 2 hours to avoid resurrecting stale offline edits
-            if (draftAt && Date.now() - draftAt > 2 * 60 * 60 * 1000) {
+            // Safety: Skip drafts older than 1 hour to avoid resurrecting stale offline edits
+            if (draftAt && Date.now() - draftAt > 60 * 60 * 1000) {
               skipped++;
               return false;
             }
             if (u.action === "delete") return true;
-            if (!String(u.collectionPath || "").includes("taka_tasks")) return true;
-            const live = liveTasks.get(u.docId);
-            const liveAt = live?.updatedAt ? new Date(live.updatedAt).getTime() : 0;
+
+            let liveItem: any = undefined;
+            const path = String(u.collectionPath || "");
+            if (path.includes("taka_tasks")) liveItem = liveTasks.get(u.docId);
+            else if (path.includes("taka_projects")) liveItem = liveProjects.get(u.docId);
+            else if (path.includes("taka_costs")) liveItem = liveCosts.get(u.docId);
+            else if (path.includes("taka_delegation")) liveItem = liveDelegations.get(u.docId);
+
+            const liveAt = liveItem?.updatedAt ? new Date(liveItem.updatedAt).getTime() : 0;
             if (draftAt && liveAt && liveAt > draftAt + 1000) {
               skipped++;
               return false;
