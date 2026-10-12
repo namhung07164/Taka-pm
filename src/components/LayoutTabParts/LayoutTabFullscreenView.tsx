@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate } from '
 import { X, ZoomIn, ZoomOut, Maximize, ArrowLeft, RefreshCw, Layers } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { LiveLayoutViewer } from '../LiveLayoutViewer';
+import { PdfOrImageViewer } from './PdfOrImageViewer';
 
 interface LayoutTabFullscreenViewProps {
   isFullscreenView: boolean;
@@ -172,24 +173,6 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
     }
   };
 
-  const [pdfPage, setPdfPage] = useState(1);
-
-  const isDirectPdf = useMemo(() => {
-    if (!url) return false;
-    const clean = url.toLowerCase().split('?')[0];
-    return clean.endsWith('.pdf');
-  }, [url]);
-
-  const effectiveUrl = useMemo(() => {
-    let base = getCleanUrl(url) || '';
-    if (isDirectPdf && base) {
-      // Remove any existing fragment
-      const baseUrl = base.split('#')[0];
-      return `${baseUrl}#page=${pdfPage}`;
-    }
-    return base;
-  }, [url, getCleanUrl, isDirectPdf, pdfPage]);
-
   return (
     <AnimatePresence>
       {isFullscreenView && (
@@ -217,27 +200,6 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
               <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-mono font-bold">
                 {activeStore} • {locFilterStr}
               </span>
-
-              {isDirectPdf && (
-                <div className="flex items-center gap-1.5 ml-2 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
-                  <button
-                    onClick={() => setPdfPage(p => Math.max(1, p - 1))}
-                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
-                    disabled={pdfPage <= 1}
-                    title="Trang trước"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
-                  <button
-                    onClick={() => setPdfPage(p => p + 1)}
-                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                    title="Trang sau"
-                  >
-                    <ArrowLeft className="w-4 h-4 rotate-180" />
-                  </button>
-                </div>
-              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -275,82 +237,20 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                   onClearFocus={onClearFocus}
                 />
               </div>
-            ) : (isDirectPdf || url?.includes('drive.google.com')) ? (
+            ) : url?.includes('drive.google.com') ? (
               <iframe 
-                key={`${effectiveUrl}_${pdfPage}`}
-                src={effectiveUrl} 
+                src={getCleanUrl(url)} 
                 width="100%" 
                 style={{ height: '100%', border: 'none' }}
                 allow="autoplay"
               />
             ) : (
-              <TransformWrapper
-                initialScale={1.15}
-                minScale={0.5}
-                maxScale={6}
-                centerOnInit={true}
-                smooth={false}
-                wheel={{ step: 0.05 }}
-                zoomAnimation={{ disabled: true }}
-                pinch={{ step: 5 }}
-                panning={{ disabled: false }}
-                doubleClick={{ mode: "toggle", step: 2.2 }}
-                onZoom={(ref) => {
-                  setFsScale(ref.state.scale);
-                  setIsPinching(true);
-                }}
-                onPinchStop={() => {
-                  setTimeout(() => setIsPinching(false), 200);
-                }}
-              >
-                {({ zoomIn, zoomOut, resetTransform, state }) => (
-                  <>
-                    <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md p-1 border border-slate-700 shadow-md rounded-xl">
-                      <button
-                        type="button"
-                        onClick={() => zoomIn(0.3)}
-                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => zoomOut(0.3)}
-                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-4 h-4" />
-                      </button>
-                      <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 border-l border-r border-slate-700">
-                        {Math.round((state.scale || 1) * 100)}%
-                      </span>
-                      <button 
-                        type="button"
-                        onClick={() => resetTransform()}
-                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                        title="Reset"
-                      >
-                        <Maximize className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <TransformComponent
-                      wrapperStyle={{ width: "100%", height: "100%" }}
-                      contentStyle={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}
-                    >
-                      <img 
-                        src={getCleanUrl(url)} 
-                        alt="Layout Fullscreen" 
-                        decoding="async"
-                        className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = fallbackSvg;
-                        }}
-                      />
-                    </TransformComponent>
-                  </>
-                )}
-              </TransformWrapper>
+              <PdfOrImageViewer
+                url={url}
+                getCleanUrl={getCleanUrl}
+                fallbackSvg={fallbackSvg}
+                isFullscreen={true}
+              />
             )}
           </motion.div>
         </motion.div>

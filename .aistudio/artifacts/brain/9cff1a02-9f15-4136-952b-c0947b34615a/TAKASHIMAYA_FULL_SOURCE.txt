@@ -66707,12 +66707,326 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
 === END FILE: src/components/TaskModularModal.tsx ===
 
+=== FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx ===
+import React, { useState, useEffect, useRef } from 'react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { ZoomIn, ZoomOut, Maximize, ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+interface PdfOrImageViewerProps {
+  url: string;
+  getCleanUrl: (u: string | undefined | null) => string | undefined;
+  fallbackSvg: string;
+  isFullscreen?: boolean;
+  onOpenFullscreen?: () => void;
+}
+
+export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
+  url,
+  getCleanUrl,
+  fallbackSvg,
+  isFullscreen = false,
+  onOpenFullscreen,
+}) => {
+  const cleanUrl = getCleanUrl(url) || '';
+  const isPdf = Boolean(
+    cleanUrl &&
+      (cleanUrl.toLowerCase().includes('.pdf') ||
+        cleanUrl.toLowerCase().startsWith('data:application/pdf') ||
+        url.toLowerCase().includes('.pdf'))
+  );
+
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageDataUrl, setPageDataUrl] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState<boolean>(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  const transformRef = useRef<any>(null);
+
+  // Load PDF Document when URL changes and is a PDF
+  useEffect(() => {
+    if (!isPdf || !cleanUrl) {
+      setPdfDoc(null);
+      setNumPages(0);
+      setCurrentPage(1);
+      setPageDataUrl(null);
+      setPdfError(null);
+      return;
+    }
+
+    let isMounted = true;
+    setLoadingPdf(true);
+    setPdfError(null);
+
+    const loadingTask = pdfjsLib.getDocument({
+      url: cleanUrl,
+      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+      cMapPacked: true,
+    });
+
+    loadingTask.promise
+      .then((doc: any) => {
+        if (!isMounted) return;
+        setPdfDoc(doc);
+        setNumPages(doc.numPages || 1);
+        setCurrentPage(1);
+        setLoadingPdf(false);
+      })
+      .catch((err: any) => {
+        if (!isMounted) return;
+        console.error('Failed to load PDF in layout viewer:', err);
+        setPdfError(err?.message || 'Failed to parse PDF file');
+        setLoadingPdf(false);
+      });
+
+    return () => {
+      isMounted = false;
+      try {
+        loadingTask.destroy();
+      } catch (_) {}
+    };
+  }, [cleanUrl, isPdf]);
+
+  // Render Page to Data URL whenever currentPage or pdfDoc changes
+  useEffect(() => {
+    if (!pdfDoc || currentPage < 1) return;
+
+    let isMounted = true;
+    setLoadingPdf(true);
+
+    pdfDoc
+      .getPage(currentPage)
+      .then(async (page: any) => {
+        if (!isMounted) return;
+        const viewport = page.getViewport({ scale: 2.2 }); // high resolution render
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+        };
+
+        await page.render(renderContext).promise;
+        if (!isMounted) return;
+
+        const dataUrl = canvas.toDataURL('image/png');
+        setPageDataUrl(dataUrl);
+        setLoadingPdf(false);
+
+        // Reset transform to center new page
+        if (transformRef.current?.resetTransform) {
+          transformRef.current.resetTransform();
+        }
+      })
+      .catch((err: any) => {
+        if (!isMounted) return;
+        console.error(`Failed to render PDF page ${currentPage}:`, err);
+        setLoadingPdf(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pdfDoc, currentPage]);
+
+  const handlePrevPage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentPage > 1) {
+      setCurrentPage((p) => p - 1);
+    }
+  };
+
+  const handleNextPage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentPage < numPages) {
+      setCurrentPage((p) => p + 1);
+    }
+  };
+
+  // Determine active display source (PDF rendered page image OR standard image URL)
+  const displaySrc = isPdf ? pageDataUrl || '' : cleanUrl;
+
+  return (
+    <div className="w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-950">
+      {/* Loading Overlay */}
+      {loadingPdf && (
+        <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-slate-950/70 backdrop-blur-xs text-white">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-2" />
+          <span className="text-xs font-semibold text-slate-300">
+            {isPdf ? `Rendering Page ${currentPage} of ${numPages || '...'}` : 'Loading Layout...'}
+          </span>
+        </div>
+      )}
+
+      {/* PDF Load Error Fallback */}
+      {pdfError && !loadingPdf && (
+        <div className="absolute inset-0 z-[50] flex flex-col items-center justify-center bg-slate-900 text-slate-300 p-4 text-center">
+          <FileText className="w-10 h-10 mb-2 text-rose-400 opacity-80" />
+          <p className="text-sm font-bold text-rose-300">Cannot preview PDF file</p>
+          <p className="text-xs text-slate-400 mt-1 max-w-md">{pdfError}</p>
+        </div>
+      )}
+
+      <TransformWrapper
+        ref={transformRef}
+        initialScale={1}
+        minScale={0.5}
+        maxScale={8}
+        centerOnInit={true}
+        smooth={true}
+        wheel={{ step: 0.18 }}
+        zoomAnimation={{ disabled: false, animationTime: 180 }}
+        pinch={{ step: 10 }}
+        panning={{ disabled: false }}
+        doubleClick={{ mode: "toggle", step: 2.5 }}
+      >
+        {({ zoomIn, zoomOut, resetTransform, state }) => (
+          <>
+            {/* Top Toolbar: Zoom Controls & Multi-Page Navigation */}
+            <div className="absolute top-3 right-3 z-[50] flex items-center gap-1.5 bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-700/80 shadow-xl rounded-xl text-white select-none">
+              {/* PDF Page Navigation Controls */}
+              {isPdf && numPages > 1 && (
+                <div className="flex items-center gap-1 pr-1.5 border-r border-slate-700">
+                  <button
+                    type="button"
+                    onClick={handlePrevPage}
+                    disabled={currentPage <= 1 || loadingPdf}
+                    className="p-1.5 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent rounded-lg text-slate-200 transition-colors active:scale-95 cursor-pointer touch-manipulation"
+                    title="Previous Page (Trang trước)"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1 text-xs font-mono font-bold px-1 text-blue-400">
+                    <span>Page</span>
+                    <select
+                      value={currentPage}
+                      onChange={(e) => setCurrentPage(Number(e.target.value))}
+                      disabled={loadingPdf}
+                      className="bg-slate-800 text-white font-mono font-bold text-xs rounded px-1 py-0.5 border border-slate-700 outline-none cursor-pointer"
+                    >
+                      {Array.from({ length: numPages }, (_, i) => i + 1).map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-slate-400">/ {numPages}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleNextPage}
+                    disabled={currentPage >= numPages || loadingPdf}
+                    className="p-1.5 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent rounded-lg text-slate-200 transition-colors active:scale-95 cursor-pointer touch-manipulation"
+                    title="Next Page (Trang sau)"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* Zoom In/Out & Reset Buttons */}
+              <button
+                type="button"
+                onClick={() => zoomIn(0.4)}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 cursor-pointer touch-manipulation"
+                title="Zoom In (Speed: Fast)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => zoomOut(0.4)}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 cursor-pointer touch-manipulation"
+                title="Zoom Out (Speed: Fast)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+
+              <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 border-l border-r border-slate-700 min-w-[42px] text-center">
+                {Math.round((state.scale || 1) * 100)}%
+              </span>
+
+              <button
+                type="button"
+                onClick={() => resetTransform()}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 cursor-pointer touch-manipulation"
+                title="Reset Zoom"
+              >
+                <Maximize className="w-4 h-4" />
+              </button>
+
+              {!isFullscreen && onOpenFullscreen && (
+                <button
+                  type="button"
+                  onClick={onOpenFullscreen}
+                  className="p-1.5 hover:bg-slate-800 rounded-lg text-blue-400 transition-colors active:scale-95 cursor-pointer touch-manipulation"
+                  title="Fullscreen"
+                >
+                  <Maximize className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Transform Container */}
+            <TransformComponent
+              wrapperStyle={{ width: '100%', height: '100%' }}
+              contentStyle={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '1rem',
+              }}
+            >
+              {displaySrc ? (
+                <img
+                  src={displaySrc}
+                  alt={isPdf ? `PDF Page ${currentPage}` : 'Layout Plan'}
+                  decoding="async"
+                  className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing shadow-2xl rounded-lg"
+                  onError={(e) => {
+                    if (!isPdf) {
+                      (e.target as HTMLImageElement).src = fallbackSvg;
+                    }
+                  }}
+                />
+              ) : (
+                <img
+                  src={fallbackSvg}
+                  alt="Fallback Floor Plan"
+                  className="max-w-full max-h-full object-contain opacity-50"
+                />
+              )}
+            </TransformComponent>
+          </>
+        )}
+      </TransformWrapper>
+    </div>
+  );
+};
+
+=== END FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx ===
+
 === FILE: src/components/LayoutTabParts/LayoutTabFullscreenView.tsx ===
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
 import { X, ZoomIn, ZoomOut, Maximize, ArrowLeft, RefreshCw, Layers } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { LiveLayoutViewer } from '../LiveLayoutViewer';
+import { PdfOrImageViewer } from './PdfOrImageViewer';
 
 interface LayoutTabFullscreenViewProps {
   isFullscreenView: boolean;
@@ -66882,24 +67196,6 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
     }
   };
 
-  const [pdfPage, setPdfPage] = useState(1);
-
-  const isDirectPdf = useMemo(() => {
-    if (!url) return false;
-    const clean = url.toLowerCase().split('?')[0];
-    return clean.endsWith('.pdf');
-  }, [url]);
-
-  const effectiveUrl = useMemo(() => {
-    let base = getCleanUrl(url) || '';
-    if (isDirectPdf && base) {
-      // Remove any existing fragment
-      const baseUrl = base.split('#')[0];
-      return `${baseUrl}#page=${pdfPage}`;
-    }
-    return base;
-  }, [url, getCleanUrl, isDirectPdf, pdfPage]);
-
   return (
     <AnimatePresence>
       {isFullscreenView && (
@@ -66927,27 +67223,6 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
               <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-mono font-bold">
                 {activeStore} • {locFilterStr}
               </span>
-
-              {isDirectPdf && (
-                <div className="flex items-center gap-1.5 ml-2 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
-                  <button
-                    onClick={() => setPdfPage(p => Math.max(1, p - 1))}
-                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
-                    disabled={pdfPage <= 1}
-                    title="Trang trước"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
-                  <button
-                    onClick={() => setPdfPage(p => p + 1)}
-                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                    title="Trang sau"
-                  >
-                    <ArrowLeft className="w-4 h-4 rotate-180" />
-                  </button>
-                </div>
-              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -66985,82 +67260,20 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                   onClearFocus={onClearFocus}
                 />
               </div>
-            ) : (isDirectPdf || url?.includes('drive.google.com')) ? (
+            ) : url?.includes('drive.google.com') ? (
               <iframe 
-                key={`${effectiveUrl}_${pdfPage}`}
-                src={effectiveUrl} 
+                src={getCleanUrl(url)} 
                 width="100%" 
                 style={{ height: '100%', border: 'none' }}
                 allow="autoplay"
               />
             ) : (
-              <TransformWrapper
-                initialScale={1.15}
-                minScale={0.5}
-                maxScale={6}
-                centerOnInit={true}
-                smooth={false}
-                wheel={{ step: 0.05 }}
-                zoomAnimation={{ disabled: true }}
-                pinch={{ step: 5 }}
-                panning={{ disabled: false }}
-                doubleClick={{ mode: "toggle", step: 2.2 }}
-                onZoom={(ref) => {
-                  setFsScale(ref.state.scale);
-                  setIsPinching(true);
-                }}
-                onPinchStop={() => {
-                  setTimeout(() => setIsPinching(false), 200);
-                }}
-              >
-                {({ zoomIn, zoomOut, resetTransform, state }) => (
-                  <>
-                    <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md p-1 border border-slate-700 shadow-md rounded-xl">
-                      <button
-                        type="button"
-                        onClick={() => zoomIn(0.3)}
-                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => zoomOut(0.3)}
-                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-4 h-4" />
-                      </button>
-                      <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 border-l border-r border-slate-700">
-                        {Math.round((state.scale || 1) * 100)}%
-                      </span>
-                      <button 
-                        type="button"
-                        onClick={() => resetTransform()}
-                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                        title="Reset"
-                      >
-                        <Maximize className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <TransformComponent
-                      wrapperStyle={{ width: "100%", height: "100%" }}
-                      contentStyle={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}
-                    >
-                      <img 
-                        src={getCleanUrl(url)} 
-                        alt="Layout Fullscreen" 
-                        decoding="async"
-                        className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = fallbackSvg;
-                        }}
-                      />
-                    </TransformComponent>
-                  </>
-                )}
-              </TransformWrapper>
+              <PdfOrImageViewer
+                url={url}
+                getCleanUrl={getCleanUrl}
+                fallbackSvg={fallbackSvg}
+                isFullscreen={true}
+              />
             )}
           </motion.div>
         </motion.div>
@@ -67073,8 +67286,8 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
 
 === FILE: src/components/LayoutTabParts/LayoutTabStaticViewer.tsx ===
 import React from 'react';
-import { Map, ZoomIn, ZoomOut, Maximize, Maximize2, ArrowLeft } from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { Map } from 'lucide-react';
+import { PdfOrImageViewer } from './PdfOrImageViewer';
 
 interface LayoutTabStaticViewerProps {
   url: string;
@@ -67093,23 +67306,6 @@ export function LayoutTabStaticViewer({
   isAdmin,
   onOpenFullscreen,
 }: LayoutTabStaticViewerProps) {
-  const [pdfPage, setPdfPage] = React.useState(1);
-
-  const isDirectPdf = React.useMemo(() => {
-    if (!url) return false;
-    const clean = url.toLowerCase().split('?')[0];
-    return clean.endsWith('.pdf');
-  }, [url]);
-
-  const effectiveUrl = React.useMemo(() => {
-    let base = getCleanUrl(url) || '';
-    if (isDirectPdf && base) {
-      const baseUrl = base.split('#')[0];
-      return `${baseUrl}#page=${pdfPage}`;
-    }
-    return base;
-  }, [url, getCleanUrl, isDirectPdf, pdfPage]);
-
   if (!url) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900">
@@ -67120,925 +67316,27 @@ export function LayoutTabStaticViewer({
     );
   }
 
-  if (isDirectPdf || url.includes('drive.google.com')) {
+  if (url.includes('drive.google.com')) {
     return (
-      <div className="w-full h-full relative flex flex-col">
-        {isDirectPdf && (
-          <div className="absolute top-4 left-4 z-[50] flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
-            <button
-              onClick={() => setPdfPage(p => Math.max(1, p - 1))}
-              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-30"
-              disabled={pdfPage <= 1}
-              title="Trang trước"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <span className="text-[10px] font-bold px-2 min-w-[3rem] text-center dark:text-slate-300">Page {pdfPage}</span>
-            <button
-              onClick={() => setPdfPage(p => p + 1)}
-              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
-              title="Trang sau"
-            >
-              <ArrowLeft className="w-4 h-4 rotate-180" />
-            </button>
-          </div>
-        )}
-        <div className="absolute top-4 right-4 z-[50]">
-          <button 
-            type="button"
-            onClick={onOpenFullscreen}
-            className="p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-md rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95 touch-manipulation"
-            title="Fullscreen"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-        </div>
-        <iframe 
-          key={`${effectiveUrl}_${pdfPage}_${cacheBuster}`}
-          src={effectiveUrl} 
-          width="100%" 
-          style={{ height: '100%', minHeight: '600px', border: 'none' }}
-          allow="autoplay"
-        />
-      </div>
+      <iframe 
+        key={cacheBuster}
+        src={getCleanUrl(url)} 
+        width="100%" 
+        style={{ height: '100%', minHeight: '600px', border: 'none' }}
+        allow="autoplay"
+      />
     );
   }
 
   return (
-    <div className="w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950">
-      <TransformWrapper
-        initialScale={1.15}
-        minScale={0.5}
-        maxScale={6}
-        centerOnInit={true}
-        smooth={false}
-        wheel={{ step: 0.05 }}
-        zoomAnimation={{ disabled: true }}
-        pinch={{ step: 5 }}
-        panning={{ disabled: false }}
-        doubleClick={{
-          mode: "toggle",
-          step: 2.2
-        }}
-      >
-        {({ zoomIn, zoomOut, resetTransform, state }) => (
-          <>
-            <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
-              <button
-                type="button"
-                onClick={() => zoomIn(0.3)}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                title="Zoom In"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => zoomOut(0.3)}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                title="Zoom Out"
-              >
-                <ZoomOut className="w-4 h-4" />
-              </button>
-              <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border-l border-r border-slate-200 dark:border-slate-700">
-                {Math.round((state.scale || 1) * 100)}%
-              </span>
-              <button 
-                type="button"
-                onClick={() => resetTransform()}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                title="Reset"
-              >
-                <Maximize className="w-4 h-4" />
-              </button>
-              <button 
-                type="button"
-                onClick={onOpenFullscreen}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
-                title="Fullscreen"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
-            </div>
-            <TransformComponent
-              wrapperStyle={{ width: "100%", height: "100%" }}
-              contentStyle={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center", padding: "1rem" }}
-            >
-              <img 
-                src={getCleanUrl(url)} 
-                alt="Layout Scroll Preview" 
-                loading="lazy"
-                decoding="async"
-                className="max-w-full max-h-full object-contain shadow-lg rounded-lg border border-slate-200 bg-white cursor-grab active:cursor-grabbing"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = fallbackSvg;
-                }}
-              />
-            </TransformComponent>
-          </>
-        )}
-      </TransformWrapper>
-    </div>
+    <PdfOrImageViewer
+      url={url}
+      getCleanUrl={getCleanUrl}
+      fallbackSvg={fallbackSvg}
+      isFullscreen={false}
+      onOpenFullscreen={onOpenFullscreen}
+    />
   );
 }
 
 === END FILE: src/components/LayoutTabParts/LayoutTabStaticViewer.tsx ===
-
-=== FILE: src/components/ZoomableImageViewer.tsx ===
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { 
-  X, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCcw, 
-  ExternalLink, 
-  Copy, 
-  Check, 
-  Loader2, 
-  AlertCircle,
-  Maximize2
-} from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { normalizeImageUrl } from './LayoutTabParts/LayoutUnitLightboxModal';
-
-export interface ZoomableImageViewerProps {
-  isOpen?: boolean;
-  onClose?: () => void;
-  imageUrl?: string;
-  url?: string;
-  src?: string;
-  title?: string;
-  alt?: string;
-  image?: { url: string; title?: string; initialScale?: number } | null;
-  initialScale?: number;
-}
-
-export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
-  isOpen: propIsOpen,
-  onClose: propOnClose,
-  imageUrl: propImageUrl,
-  url: propUrl,
-  src: propSrc,
-  title: propTitle,
-  alt: propAlt,
-  image: propImage,
-  initialScale: propInitialScale,
-}) => {
-  // Global event listener state for uncontrolled / window-event usage
-  const [eventState, setEventState] = useState<{
-    isOpen: boolean;
-    url: string;
-    title?: string;
-    initialScale?: number;
-  }>({
-    isOpen: false,
-    url: '',
-    title: '',
-  });
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const transformRef = useRef<any>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-
-  // Listen to window-level custom events: 'taka_open_image_viewer'
-  useEffect(() => {
-    const handleOpenEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ url?: string; imageUrl?: string; src?: string; title?: string; initialScale?: number }>;
-      const detail = customEvent.detail;
-      if (detail) {
-        const rawUrl = detail.url || detail.imageUrl || detail.src || '';
-        if (rawUrl) {
-          setEventState({
-            isOpen: true,
-            url: rawUrl,
-            title: detail.title || '',
-            initialScale: detail.initialScale,
-          });
-        }
-      }
-    };
-
-    window.addEventListener('taka_open_image_viewer', handleOpenEvent);
-    return () => {
-      window.removeEventListener('taka_open_image_viewer', handleOpenEvent);
-    };
-  }, []);
-
-  const isControlled = propIsOpen !== undefined;
-  const isVisible = isControlled ? propIsOpen : eventState.isOpen;
-  const rawTargetUrl = isControlled
-    ? (propImageUrl || propUrl || propSrc || propImage?.url || '')
-    : eventState.url;
-  const activeTitle = (isControlled ? (propTitle || propAlt || propImage?.title) : eventState.title) || 'Image Viewer';
-  const effectiveInitialScale = (isControlled ? (propInitialScale || propImage?.initialScale) : eventState.initialScale) || 1;
-
-  const resolvedUrl = normalizeImageUrl(rawTargetUrl);
-  const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
-  const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
-
-  const [pdfPage, setPdfPage] = useState(1);
-
-  const isDirectPdf = useMemo(() => {
-    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
-    return u.endsWith('.pdf');
-  }, [resolvedUrl]);
-
-  const effectiveUrl = useMemo(() => {
-    if (isDirectPdf && resolvedUrl) {
-      const baseUrl = resolvedUrl.split('#')[0];
-      return `${baseUrl}#page=${pdfPage}`;
-    }
-    return resolvedUrl;
-  }, [resolvedUrl, isDirectPdf, pdfPage]);
-
-  const handleClose = useCallback(() => {
-    if (isControlled) {
-      propOnClose?.();
-    } else {
-      setEventState(prev => ({ ...prev, isOpen: false }));
-    }
-  }, [isControlled, propOnClose]);
-
-  const handleImageError = useCallback(() => {
-    const driveMatch = rawTargetUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
-                       rawTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
-      setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}`);
-      return;
-    }
-    setIsLoading(false);
-    setHasError(true);
-  }, [rawTargetUrl, hasTriedCdnFallback]);
-
-  const handleImageLoad = useCallback(() => {
-    setIsLoading(false);
-    setHasError(false);
-    if (effectiveInitialScale > 1) {
-      try {
-        transformRef.current?.centerView(effectiveInitialScale);
-      } catch {}
-    }
-  }, [effectiveInitialScale]);
-
-  // Reset loading and error states when URL changes
-  useEffect(() => {
-    setCurrentSrc(resolvedUrl);
-    setHasTriedCdnFallback(false);
-    setHasError(false);
-
-    if (!resolvedUrl) {
-      setIsLoading(false);
-      return;
-    }
-
-    if (isDirectPdf || resolvedUrl.includes('drive.google.com')) {
-      setIsLoading(false);
-      return;
-    }
-
-    const testImg = new Image();
-    testImg.src = resolvedUrl;
-    if (testImg.complete && testImg.naturalWidth > 0) {
-      setIsLoading(false);
-    } else {
-      setIsLoading(true);
-      testImg.onload = () => setIsLoading(false);
-      testImg.onerror = () => handleImageError();
-    }
-  }, [resolvedUrl, handleImageError, isDirectPdf]);
-
-  // Handle ESC key to close
-  useEffect(() => {
-    if (!isVisible) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isVisible, handleClose]);
-
-  const handleCopy = () => {
-    if (!rawTargetUrl) return;
-    navigator.clipboard?.writeText(rawTargetUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (!isVisible || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div 
-      className="fixed inset-0 z-[999999] flex flex-col bg-slate-950/95 backdrop-blur-md animate-in fade-in duration-200 select-none"
-      onClick={(e) => {
-        // Close on backdrop click (if clicking directly on the overlay container)
-        if (e.target === e.currentTarget) {
-          handleClose();
-        }
-      }}
-    >
-      {/* Top Floating Header & Controls */}
-      <div 
-        className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800 text-white z-20 shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 max-w-[50%] min-w-0">
-          <Maximize2 className="w-4 h-4 text-blue-400 shrink-0" />
-          <span className="text-sm font-semibold truncate text-slate-100" title={activeTitle}>
-            {activeTitle}
-          </span>
-          {isDirectPdf && (
-            <div className="flex items-center gap-1.5 ml-4 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
-              <button
-                onClick={() => setPdfPage(p => Math.max(1, p - 1))}
-                className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
-                disabled={pdfPage <= 1}
-                title="Trang trước"
-              >
-                <RotateCcw className="w-4 h-4 -rotate-90" />
-              </button>
-              <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
-              <button
-                onClick={() => setPdfPage(p => p + 1)}
-                className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                title="Trang sau"
-              >
-                <RotateCcw className="w-4 h-4 rotate-90" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Toolbar Action Buttons */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Zoom In */}
-          <button
-            type="button"
-            onClick={() => transformRef.current?.zoomIn()}
-            title="Zoom In (+)"
-            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-
-          {/* Zoom Out */}
-          <button
-            type="button"
-            onClick={() => transformRef.current?.zoomOut()}
-            title="Zoom Out (-)"
-            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-
-          {/* Reset Zoom */}
-          <button
-            type="button"
-            onClick={() => transformRef.current?.resetTransform()}
-            title="Reset Zoom (1:1)"
-            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-
-          {/* Copy Link */}
-          {rawTargetUrl && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              title="Copy Image Link"
-              className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            </button>
-          )}
-
-          {/* Open In New Tab */}
-          {rawTargetUrl && (
-            <a
-              href={rawTargetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in New Tab"
-              className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          )}
-
-          <div className="w-[1px] h-5 bg-slate-700 mx-1" />
-
-          {/* Close Modal Button */}
-          <button
-            type="button"
-            onClick={handleClose}
-            title="Close (Esc)"
-            className="p-1.5 sm:p-2 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white transition-colors active:scale-95 touch-manipulation font-bold flex items-center gap-1 shadow-sm"
-          >
-            <X className="w-4 h-4 stroke-[2.5]" />
-            <span className="hidden sm:inline text-xs font-semibold">Close</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Pan/Zoom Stage Canvas */}
-      <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center">
-        {/* Loading Spinner */}
-        {isLoading && !hasError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <span className="text-xs font-medium">Loading high resolution content...</span>
-          </div>
-        )}
-
-        {/* Error Fallback */}
-        {hasError ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md mx-auto">
-            <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <div className="text-sm font-semibold text-slate-200">Unable to load content directly</div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              The content could not be rendered inline due to network or CORS restrictions. You can still open or copy the direct link.
-            </p>
-            {rawTargetUrl && (
-              <a
-                href={rawTargetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors mt-2"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Open Original Link
-              </a>
-            )}
-          </div>
-        ) : (isDirectPdf || resolvedUrl?.includes('drive.google.com')) ? (
-          <iframe 
-            key={`${effectiveUrl}_${pdfPage}`}
-            src={effectiveUrl} 
-            width="100%" 
-            style={{ height: '100%', border: 'none' }}
-            allow="autoplay"
-          />
-        ) : (
-          <TransformWrapper
-            ref={transformRef}
-            initialScale={effectiveInitialScale > 1 ? effectiveInitialScale : 1.15}
-            minScale={0.5}
-            maxScale={8}
-            centerOnInit
-            smooth={false}
-            wheel={{ step: 0.05 }}
-            zoomAnimation={{ disabled: true }}
-            pinch={{ step: 2 }}
-            doubleClick={{ mode: 'toggle' }}
-          >
-            <TransformComponent
-              wrapperClass="!w-full !h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
-              contentClass="!w-full !h-full flex items-center justify-center"
-            >
-              <img
-                ref={imgRef}
-                src={currentSrc}
-                alt={activeTitle}
-                decoding="async"
-                className="max-w-[95vw] max-h-[85vh] object-contain drop-shadow-2xl"
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-                draggable={false}
-              />
-            </TransformComponent>
-          </TransformWrapper>
-        )}
-      </div>
-
-      {/* Bottom Hint Footer */}
-      <div 
-        className="px-4 py-2 bg-slate-900/80 border-t border-slate-800/80 text-center text-[11px] text-slate-400 shrink-0 z-20 flex items-center justify-between"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span className="hidden sm:inline">
-          Tip: Scroll or pinch to zoom. Drag to pan. Double click to toggle zoom.
-        </span>
-        <span className="sm:hidden">
-          Pinch to zoom • Drag to pan
-        </span>
-        <button
-          type="button"
-          onClick={handleClose}
-          className="text-xs text-slate-300 hover:text-white px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700"
-        >
-          ESC to exit
-        </button>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
-export default ZoomableImageViewer;
-
-=== END FILE: src/components/ZoomableImageViewer.tsx ===
-
-=== FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx ===
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { 
-  X, 
-  Copy, 
-  ExternalLink, 
-  Image as ImageIcon, 
-  Link as LinkIcon, 
-  Check, 
-  Loader2, 
-  AlertCircle,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw
-} from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-
-export function normalizeImageUrl(rawUrl: string | undefined | null): string {
-  if (!rawUrl || typeof rawUrl !== 'string') return '';
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return '';
-
-  // Cloudflare R2 protocol url conversion
-  if (trimmed.startsWith('r2://')) {
-    return `https://hcm.taka-pm.org/${trimmed.replace('r2://', '')}`;
-  }
-
-  // Google Drive URL conversion: convert view/sharing link to high-res thumbnail
-  const driveMatch = trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
-  if (driveMatch && driveMatch[1]) {
-    return `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w1600`;
-  }
-  const driveIdParam = trimmed.match(/drive\.google\.com\/.*[?&]id=([a-zA-Z0-9_-]+)/);
-  if (driveIdParam && driveIdParam[1]) {
-    return `https://drive.google.com/thumbnail?id=${driveIdParam[1]}&sz=w1600`;
-  }
-
-  // Dropbox direct link: www.dropbox.com/... -> dl.dropboxusercontent.com/...
-  if (trimmed.includes('dropbox.com') && !trimmed.includes('raw=1')) {
-    return trimmed.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
-  }
-
-  return trimmed;
-}
-
-interface LayoutUnitLightboxModalProps {
-  enlargedImage: { url: string; title?: string; initialScale?: number } | null;
-  onClose: () => void;
-  onCopyLink: (url: string) => void;
-  copiedLink: string | null;
-}
-
-export function LayoutUnitLightboxModal({
-  enlargedImage,
-  onClose,
-  onCopyLink,
-  copiedLink,
-}: LayoutUnitLightboxModalProps) {
-  const [imageError, setImageError] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const transformRef = useRef<any>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-
-  const rawUrl = enlargedImage?.url || '';
-  const resolvedUrl = normalizeImageUrl(rawUrl);
-  const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
-  const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
-
-  const initialZoom = enlargedImage?.initialScale && enlargedImage.initialScale > 1
-    ? Math.min(6, enlargedImage.initialScale)
-    : 1;
-
-  const [pdfPage, setPdfPage] = useState(1);
-
-  const isDirectPdf = useMemo(() => {
-    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
-    return u.endsWith('.pdf');
-  }, [resolvedUrl]);
-
-  const effectiveUrl = useMemo(() => {
-    if (isDirectPdf && resolvedUrl) {
-      const baseUrl = resolvedUrl.split('#')[0];
-      return `${baseUrl}#page=${pdfPage}`;
-    }
-    return resolvedUrl;
-  }, [resolvedUrl, isDirectPdf, pdfPage]);
-
-  const handleImageError = useCallback(() => {
-    // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
-    const driveMatch = rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
-                       rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
-      setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}`);
-      return;
-    }
-    setIsLoading(false);
-    setImageError(true);
-  }, [rawUrl, hasTriedCdnFallback]);
-
-  const handleImageLoad = useCallback(() => {
-    setIsLoading(false);
-    setImageError(false);
-    if (initialZoom > 1) {
-      try {
-        transformRef.current?.centerView(initialZoom);
-      } catch {}
-    }
-  }, [initialZoom]);
-
-  // Synchronize currentSrc & instant cache evaluation when enlargedImage changes
-  useEffect(() => {
-    setCurrentSrc(resolvedUrl);
-    setHasTriedCdnFallback(false);
-    setImageError(false);
-
-    if (!resolvedUrl) {
-      setIsLoading(false);
-      return;
-    }
-
-    if (isDirectPdf || resolvedUrl.includes('drive.google.com')) {
-      setIsLoading(false);
-      return;
-    }
-
-    // Fast check: If already cached in browser memory, show instantly
-    const testImg = new Image();
-    testImg.src = resolvedUrl;
-    if (testImg.complete && testImg.naturalWidth > 0) {
-      setIsLoading(false);
-    } else {
-      setIsLoading(true);
-      testImg.onload = () => setIsLoading(false);
-      testImg.onerror = () => handleImageError();
-    }
-  }, [resolvedUrl, handleImageError, isDirectPdf]);
-
-  // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
-  useEffect(() => {
-    document.body.classList.add('lightbox-open');
-    return () => {
-      document.body.classList.remove('lightbox-open');
-    };
-  }, []);
-
-  // Safe close handler that absorbs any synthetic click/touch events before unmounting
-  const handleSafeClose = useCallback((e?: React.SyntheticEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    // Safety delay of 60ms to let browser absorb any pending synthetic touch/tap events on iOS/Android
-    setTimeout(() => {
-      onClose();
-    }, 60);
-  }, [onClose]);
-
-  // Keyboard shortcut: Escape key closes enlarged image (AGENTS.md Rule 6)
-  useEffect(() => {
-    if (!enlargedImage) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, true);
-    };
-  }, [enlargedImage, onClose]);
-
-  if (!enlargedImage || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-150 select-none touch-none overscroll-none"
-      onClick={(e) => {
-        // Prevent background clicks from closing the modal during zoom / pinch / pan
-        e.stopPropagation();
-      }}
-    >
-      {/* 1. Ultra-Prominent Floating Close 'X' Button on Top-Right of Viewport */}
-      <button
-        type="button"
-        onClick={handleSafeClose}
-        className="fixed top-3 right-3 sm:top-5 sm:right-5 z-[1000001] p-2.5 sm:p-3 bg-slate-900/90 hover:bg-red-600 text-white rounded-full border border-white/20 shadow-2xl transition-all duration-150 active:scale-90 cursor-pointer flex items-center justify-center group"
-        title="Đóng xem ảnh (Phím Escape)"
-        aria-label="Đóng xem ảnh"
-      >
-        <X className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-90 transition-transform duration-200" />
-      </button>
-
-      {/* 2. Lightbox Card Container */}
-      <div
-        className="relative max-w-5xl w-full max-h-[94vh] bg-slate-900/98 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col z-[1000000]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-slate-800 bg-slate-900 text-white shrink-0">
-          <div className="flex items-center gap-2 min-w-0 pr-2">
-            <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
-            <span className="font-bold text-xs sm:text-sm truncate">
-              {enlargedImage.title || 'Image Preview'}
-            </span>
-            {isDirectPdf && (
-              <div className="flex items-center gap-1.5 ml-4 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
-                <button
-                  onClick={() => setPdfPage(p => Math.max(1, p - 1))}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
-                  disabled={pdfPage <= 1}
-                  title="Trang trước"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 -rotate-90" />
-                </button>
-                <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
-                <button
-                  onClick={() => setPdfPage(p => p + 1)}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                  title="Trang sau"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 rotate-90" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Zoom Control Buttons */}
-            {(!imageError && !isDirectPdf && !rawUrl.includes('drive.google.com')) && (
-              <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
-                <button
-                  type="button"
-                  onClick={() => transformRef.current?.zoomIn()}
-                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                  title="Phóng to (+ / Cuộn chuột lên)"
-                >
-                  <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => transformRef.current?.zoomOut()}
-                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                  title="Thu nhỏ (- / Cuộn chuột xuống)"
-                >
-                  <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => transformRef.current?.resetTransform()}
-                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                  title="Đặt lại tỉ lệ (1:1)"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => onCopyLink(rawUrl)}
-              className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
-              title={copiedLink === rawUrl ? 'Đã sao chép link!' : 'Sao chép link'}
-            >
-              {copiedLink === rawUrl ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span className="hidden sm:inline text-emerald-400">Đã chép</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span className="hidden sm:inline">Sao chép link</span>
-                </>
-              )}
-            </button>
-
-            <a
-              href={rawUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
-              title="Mở trong tab mới"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span className="hidden sm:inline">Mở tab mới</span>
-            </a>
-
-            <button
-              type="button"
-              onClick={handleSafeClose}
-              className="px-2.5 py-1.5 bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold active:scale-95 shadow-sm"
-              title="Đóng (Escape)"
-            >
-              <X className="w-4 h-4" />
-              <span>Đóng</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Content Body: Zoomable Image or Fallback */}
-        <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/70 overflow-hidden min-h-[280px] sm:min-h-[420px] relative">
-          {isLoading && !imageError && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10 pointer-events-none">
-              <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
-              <span className="text-xs">Đang tải nội dung...</span>
-            </div>
-          )}
-
-          {imageError ? (
-            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900/90 rounded-2xl border border-slate-700/60 shadow-xl">
-              <AlertCircle className="w-10 h-10 text-amber-400" />
-              <div>
-                <h4 className="text-sm font-bold text-white mb-1">
-                  Không thể hiển thị nội dung trực tiếp
-                </h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Link này có thể là trang web, thư mục chia sẻ hoặc yêu cầu quyền truy cập từ tài khoản của bạn.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={rawUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Mở liên kết trong tab mới</span>
-                </a>
-              </div>
-            </div>
-          ) : (isDirectPdf || rawUrl.includes('drive.google.com')) ? (
-            <iframe 
-              key={`${effectiveUrl}_${pdfPage}`}
-              src={effectiveUrl} 
-              width="100%" 
-              style={{ height: '100%', border: 'none' }}
-              allow="autoplay"
-            />
-          ) : (
-            <TransformWrapper
-              ref={transformRef}
-              initialScale={initialZoom > 1 ? initialZoom : 1.15}
-              minScale={0.5}
-              maxScale={8}
-              centerOnInit
-              smooth={false}
-              wheel={{ step: 0.05 }}
-              zoomAnimation={{ disabled: true }}
-              pinch={{ step: 2 }}
-              doubleClick={{ mode: 'toggle' }}
-            >
-              <TransformComponent
-                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
-                contentClass="!w-full !h-full flex items-center justify-center select-none"
-              >
-                <img
-                  ref={imgRef}
-                  src={currentSrc}
-                  alt={enlargedImage.title || 'Enlarged Preview'}
-                  decoding="async"
-                  onLoad={handleImageLoad}
-                  onError={handleImageError}
-                  className="max-w-full max-h-[75vh] object-contain rounded-xl select-none"
-                  draggable={false}
-                />
-              </TransformComponent>
-            </TransformWrapper>
-          )}
-        </div>
-
-        {/* Footer: Full Link Address */}
-        <div className="p-2.5 sm:p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2 shrink-0">
-          <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <a
-            href={rawUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] font-mono text-blue-400 hover:underline truncate flex-1"
-            title={rawUrl}
-          >
-            {rawUrl}
-          </a>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-=== END FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx ===
