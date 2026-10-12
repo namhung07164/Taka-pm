@@ -157,17 +157,44 @@ export function useGanttProjectsFilter({
 
   const getGroupTasksForProject = useCallback(
     (p: Project): Task[] => {
+      const mergedMap = new Map<string, Task>();
+
+      // 1. By projectId
       if (p.id && tasksByProjectId.has(String(p.id))) {
-        const found = tasksByProjectId.get(String(p.id))!;
-        if (found.length > 0) return found;
+        tasksByProjectId.get(String(p.id))!.forEach(t => {
+          if (t && (t.id || t.name)) mergedMap.set(String(t.id || t.name), t);
+        });
       }
+
+      // 2. By project key (CODE_YEAR_STORE)
       const key = `${String(p.code || '').trim().toUpperCase()}_${String(p.year || '').trim()}_${String(p.store || '').trim().toUpperCase()}`;
       const foundByKey = tasksByProject.get(key);
-      if (foundByKey && foundByKey.length > 0) return foundByKey;
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(t => {
+          if (t && (t.id || t.name)) mergedMap.set(String(t.id || t.name), t);
+        });
+      }
 
-      const foundByCode = tasksMapByCode.get(String(p.code || '').trim().toUpperCase());
-      if (foundByCode && foundByCode.length > 0) return foundByCode;
+      // 3. By project code
+      const codeKey = String(p.code || '').trim().toUpperCase();
+      if (codeKey) {
+        const foundByCode = tasksMapByCode.get(codeKey);
+        if (foundByCode && foundByCode.length > 0) {
+          foundByCode.forEach(t => {
+            const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toUpperCase() === String(p.store).trim().toUpperCase();
+            const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+            if (matchesStore && matchesYear && t && (t.id || t.name)) {
+              mergedMap.set(String(t.id || t.name), t);
+            }
+          });
+        }
+      }
 
+      if (mergedMap.size > 0) {
+        return Array.from(mergedMap.values());
+      }
+
+      // 4. Fallback to taskSummaries
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
         return p.taskSummaries.map((ts, idx) => ({
           id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,

@@ -59,20 +59,35 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const map = new Map<string, ProjectInfo>();
 
     projects.forEach(p => {
-      let rawGroupTasks = p.id ? tasksByProjectId.get(String(p.id)) : undefined;
-      if (!rawGroupTasks || rawGroupTasks.length === 0) {
-        const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-        rawGroupTasks = tasksByProjectKey.get(key);
-      }
-      if (!rawGroupTasks || rawGroupTasks.length === 0) {
-        const pCode = String(p.code || "").trim().toLowerCase();
-        const candidateTasks = tasksByCodeMap.get(pCode) || [];
-        rawGroupTasks = candidateTasks.filter(t => {
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          return matchesStore && matchesYear;
+      const mergedTasksMap = new Map<string, Task>();
+
+      if (p.id && tasksByProjectId.has(String(p.id))) {
+        tasksByProjectId.get(String(p.id))!.forEach(t => {
+          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
         });
       }
+
+      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+      const foundByKey = tasksByProjectKey.get(key);
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(t => {
+          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
+        });
+      }
+
+      const pCode = String(p.code || "").trim().toLowerCase();
+      if (pCode) {
+        const candidateTasks = tasksByCodeMap.get(pCode) || [];
+        candidateTasks.forEach(t => {
+          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+          if (matchesStore && matchesYear && t && (t.id || t.name)) {
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
+        });
+      }
+
+      let rawGroupTasks: Task[] = Array.from(mergedTasksMap.values());
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
         if (!rawGroupTasks || rawGroupTasks.length === 0) {
           rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
