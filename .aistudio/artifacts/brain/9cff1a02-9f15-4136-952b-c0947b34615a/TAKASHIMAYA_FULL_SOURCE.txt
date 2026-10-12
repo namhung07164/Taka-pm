@@ -90170,25 +90170,10 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
-  if (coll === 'taka_projects') return ids;
-  const s = useAppStore.getState();
-  const requested =
-    coll === 'taka_tasks' ? s.isTasksRequested : coll === 'taka_costs' ? s.isCostsRequested : s.isDelegationsRequested;
-  if (requested) return ids;
-
-  const inStore = new Set<string>(
-    (coll === 'taka_tasks' ? s.tasks : coll === 'taka_costs' ? s.costs : s.delegationGroups || []).map((x: any) => x.id)
-  );
-  const rest = ids.filter((id) => !inStore.has(id));
-  let inDexie = new Set<string>();
-  try {
-    const table: any =
-      coll === 'taka_tasks' ? localDb.tasks : coll === 'taka_costs' ? localDb.costs : localDb.delegations;
-    const rows = await table.bulkGet(rest);
-    inDexie = new Set<string>(rows.filter(Boolean).map((r: any) => r.id));
-  } catch {}
-  return ids.filter((id) => inStore.has(id) || inDexie.has(id));
+async function filterRelevant(_coll: Logical, ids: string[]): Promise<string[]> {
+  // Always return all invalidated IDs so that local database (Dexie) and Zustand store
+  // receive 100% of created, updated, or deleted items across all devices without losing records.
+  return ids;
 }
 
 async function fetchChunk(coll: Logical, ids: string[]) {
