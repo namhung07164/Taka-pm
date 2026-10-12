@@ -240,6 +240,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           resolvedPredecessors={resolvedPredecessors}
           handlePredecessorChange={handlePredecessorChange}
           handleApplyPredecessorDates={handleApplyPredecessorDates}
+          setFormData={setFormData}
         />
 
         <div className="relative w-full">

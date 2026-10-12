@@ -1,8 +1,7 @@
-import React, { memo } from 'react';
-import { Info } from 'lucide-react';
-import { PredecessorSearchSuggest } from './PredecessorSearchSuggest';
+import React, { memo, useMemo } from 'react';
+import { Info, RefreshCw } from 'lucide-react';
+import { PredecessorSearchSuggest, PredecessorChange } from './PredecessorSearchSuggest';
 import { Task } from '../../types';
-import { formatDisplayDateTime } from '../../lib/utils';
 
 interface TaskPredecessorSectionProps {
   task: Task;
@@ -14,6 +13,8 @@ interface TaskPredecessorSectionProps {
   resolvedPredecessors: any[];
   handlePredecessorChange: (val: string) => void;
   handleApplyPredecessorDates: () => void;
+  /** Thêm mới: để lưu kèm predecessorTaskIds vào form (bấm Save mới ghi vào dữ liệu) */
+  setFormData?: (updater: any) => void;
 }
 
 export const TaskPredecessorSection = memo(function TaskPredecessorSection({
@@ -21,81 +22,85 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
   formData,
   canWrite,
   t,
-  tasks,
-  projects,
   resolvedPredecessors,
   handlePredecessorChange,
   handleApplyPredecessorDates,
+  setFormData,
 }: TaskPredecessorSectionProps) {
+  // Bản nháp phản ánh đúng những gì người dùng đang nhập trong form (kể cả task mới chưa lưu)
+  const draft = useMemo(
+    () =>
+      ({
+        ...(task || {}),
+        id: task?.id || '',
+        projectId: formData.projectId ?? task?.projectId,
+        projectCode: formData.projectCode ?? task?.projectCode,
+        projectYear: formData.projectYear ?? task?.projectYear,
+        projectStore: formData.projectStore ?? task?.projectStore,
+        location: formData.location ?? task?.location,
+        name: formData.name || task?.name || '',
+        start: formData.start,
+        finish: formData.finish,
+        duration: formData.duration,
+        predecessor: formData.predecessor || '',
+        predecessorTaskIds: formData.predecessorTaskIds ?? task?.predecessorTaskIds ?? [],
+      } as Task),
+    [
+      task,
+      formData.projectId,
+      formData.projectCode,
+      formData.projectYear,
+      formData.projectStore,
+      formData.location,
+      formData.name,
+      formData.start,
+      formData.finish,
+      formData.duration,
+      formData.predecessor,
+      formData.predecessorTaskIds,
+    ]
+  );
+
+  const handleLinkChange = (change: PredecessorChange) => {
+    // 1) cập nhật chuỗi predecessor + tự tính lại ngày (logic có sẵn của modal)
+    handlePredecessorChange(change.predecessor);
+    // 2) gắn thêm ID task để không bao giờ nhầm task trùng mã
+    setFormData?.((prev: any) => ({
+      ...prev,
+      predecessorTaskIds: change.predecessorTaskIds,
+      predecessors: change.predecessors,
+    }));
+  };
+
+  const hasResolved = resolvedPredecessors.some((rp) => rp?.task);
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="flex items-center gap-1.5 text-xs font-bold text-slate-400 dark:text-[#838383] uppercase">
-          {t("Predecessor")}
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <label className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-400 dark:text-[#838383]">
+          {t('Predecessor')}
           <span className="group relative inline-flex items-center">
-            <Info className="w-3.5 h-3.5 text-amber-500 cursor-help" />
-            <div className="absolute bottom-full left-0 mb-1.5 w-56 p-2 bg-slate-800 dark:bg-slate-700 text-white text-[10px] leading-relaxed rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none z-50 normal-case font-normal shadow-xl">
-              The second predecessor requires a valid 'SF' (Start-to-Finish) or 'FF' (Finish-to-Finish) relationship.
-              <svg className="absolute top-full left-1.5 w-2 h-2 text-slate-800 dark:text-slate-700" viewBox="0 0 8 4" fill="currentColor">
-                <path d="M0 0l4 4 4-4H0z"/>
-              </svg>
+            <Info className="h-3.5 w-3.5 cursor-help text-amber-500" />
+            <div className="pointer-events-none invisible absolute bottom-full left-0 z-50 mb-1.5 w-64 rounded bg-slate-800 p-2 text-[10px] font-normal normal-case leading-relaxed text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100 dark:bg-slate-700">
+              Tối đa 2 công việc tiên quyết. Công việc ① thường chốt ngày bắt đầu (FS/SS), công việc ② chốt ngày kết thúc và
+              chỉ được là FF hoặc SF.
             </div>
           </span>
         </label>
-        {resolvedPredecessors.length > 0 && (
-          <div className="flex flex-col items-end gap-0.5 truncate max-w-[200px]">
-            {resolvedPredecessors.map((rp, idx) => rp?.task && (
-              <span key={idx} className={`text-[10px] font-semibold truncate ${idx === 0 ? "text-blue-600 dark:text-blue-400" : "text-rose-600 dark:text-rose-400"}`}>
-                {idx + 1}. {rp.task.name}
-              </span>
-            ))}
-          </div>
+
+        {hasResolved && canWrite && (
+          <button
+            type="button"
+            onClick={handleApplyPredecessorDates}
+            className="inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-[11px] font-bold text-blue-600 shadow-sm hover:bg-blue-50 active:scale-95 touch-manipulation dark:border-blue-700 dark:bg-[#1e1e20] dark:text-blue-400"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Đồng bộ ngày
+          </button>
         )}
       </div>
 
-      {task ? (
-        <PredecessorSearchSuggest 
-          task={task}
-          canWrite={canWrite}
-        />
-      ) : (
-        <div className="text-[10px] text-slate-500 italic p-2 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
-          Please save the task first to enable predecessor linking.
-        </div>
-      )}
-
-      {resolvedPredecessors.length > 0 && (
-        <div className="mt-1.5 flex flex-col gap-1.5">
-          {resolvedPredecessors.map((rp, idx) => rp?.task && (
-            <div 
-              key={idx} 
-              className={`flex items-center justify-between p-2 rounded-lg border text-xs ${
-                idx === 0 
-                  ? "bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800" 
-                  : "bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800"
-              }`}
-            >
-              <div className="flex flex-col gap-0.5 truncate mr-2">
-                <span className={`font-semibold truncate ${idx === 0 ? "text-blue-800 dark:text-blue-300" : "text-rose-800 dark:text-rose-300"}`}>
-                  {idx + 1}. {rp.task.name}
-                </span>
-                <span className="text-[10px] text-slate-500 dark:text-[#a3a3a3]">
-                  {(rp.type === 'SS' || rp.type === 'SF') ? 'Start' : 'End'}: {formatDisplayDateTime((rp.type === 'SS' || rp.type === 'SF') ? rp.task.start : rp.task.finish)} ({rp.type || "FS"}{rp.lagValue ? ` ${rp.lagSign}${rp.lagValue}d` : ""})
-                </span>
-              </div>
-              {idx === 0 && (
-                <button
-                  type="button"
-                  onClick={handleApplyPredecessorDates}
-                  className="shrink-0 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-white dark:bg-[#1e1e20] border border-blue-200 dark:border-blue-700 px-2 py-1 rounded shadow-sm hover:bg-blue-50 cursor-pointer active:scale-95 touch-manipulation"
-                >
-                  Sync dates
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <PredecessorSearchSuggest task={draft} canWrite={canWrite} onChange={handleLinkChange} />
     </div>
   );
 });

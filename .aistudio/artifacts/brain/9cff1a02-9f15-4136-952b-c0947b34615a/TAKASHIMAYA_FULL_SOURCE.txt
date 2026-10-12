@@ -1,5 +1,5 @@
 TAKASHIMAYA PROJECT MANAGEMENT SYSTEM - SOURCE CODE EXPORT
-Generated on: Mon Oct 12 12:59:27 AM UTC 2026
+Generated on: Mon Oct 12 01:52:30 AM UTC 2026
 --------------------------------------------------------------------------------
 
 ================================================================================
@@ -22079,114 +22079,214 @@ export const FastToggle = ({
 ================================================================================
 FILE: src/components/DetailTabParts/PredecessorEditableCell.tsx
 ================================================================================
-import React, { useState, useEffect, useRef } from 'react';
-import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, X } from 'lucide-react';
+import { PredecessorSearchSuggest, PredecessorChange } from '../TaskModalParts/PredecessorSearchSuggest';
 import { Task, Project } from '../../types';
-import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
-import { useAppStore } from '../../store/useAppStore';
-import { splitPredecessors, computeTaskCode } from '../../lib/ganttUtils';
-import { parsePredecessorToken, findTaskByQueryOrCode } from '../../lib/predecessorMatchUtils';
+import { splitPredecessors } from '../../lib/ganttUtils';
+import { parsePredecessorToken } from '../../lib/predecessorMatchUtils';
+import { cn } from '../../lib/utils';
+
+type PanelLayout =
+  | { mode: 'sheet' }
+  | { mode: 'pop'; left: number; width: number; maxH: number; top?: number; bottom?: number };
+
+const CHIP_STYLE = [
+  'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800/60 dark:bg-blue-950/40 dark:text-[#8ab4f8]',
+  'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300',
+];
 
 export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
   value,
   onSave,
   canWrite,
   task,
-  tasks,
-  projects
 }: {
-  value: any,
-  onSave: (updates: Partial<Task>) => void,
-  canWrite: boolean,
-  task: Task,
-  tasks?: Task[],
-  projects?: Project[]
+  value: any;
+  onSave: (updates: Partial<Task>) => void | Promise<void>;
+  canWrite: boolean;
+  task: Task;
+  // giữ nguyên chữ ký cũ để không phải sửa nơi gọi
+  tasks?: Task[];
+  projects?: Project[];
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState<PanelLayout | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!isEditing) {
-      setVal(value !== undefined && value !== null ? value : '');
+  const text = value !== undefined && value !== null ? String(value) : '';
+  const tokens = useMemo(() => splitPredecessors(text), [text]);
+
+  /* ----- Vị trí khung chỉnh sửa (popover trên máy tính / bottom-sheet trên điện thoại) ----- */
+  const computeLayout = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (vw < 640) {
+      setLayout({ mode: 'sheet' });
+      return;
     }
-  }, [value, isEditing]);
+    const r = el.getBoundingClientRect();
+    const width = Math.min(400, vw - 16);
+    const left = Math.max(8, Math.min(r.left, vw - width - 8));
+    const spaceBelow = vh - r.bottom - 8;
+    const spaceAbove = r.top - 8;
+    if (spaceBelow >= 360 || spaceBelow >= spaceAbove) {
+      setLayout({ mode: 'pop', left, width, top: r.bottom + 4, maxH: Math.max(240, spaceBelow - 4) });
+    } else {
+      setLayout({ mode: 'pop', left, width, bottom: vh - r.top + 4, maxH: Math.max(240, spaceAbove - 4) });
+    }
+  }, []);
 
-  const commitSave = (rawVal: string) => {
-    setIsEditing(false);
-    const context = {
-      projectId: task?.projectId,
-      projectCode: task?.projectCode,
-      projectYear: task?.projectYear,
-      projectStore: task?.projectStore,
-      projectLocation: task?.location
+  useLayoutEffect(() => {
+    if (!isEditing) return;
+    computeLayout();
+    window.addEventListener('resize', computeLayout);
+    window.addEventListener('scroll', computeLayout, true);
+    return () => {
+      window.removeEventListener('resize', computeLayout);
+      window.removeEventListener('scroll', computeLayout, true);
     };
-    const effectiveTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().tasks || []);
-    const effectiveProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().projects || []);
-    const resolved = resolvePredecessorString(rawVal, effectiveTasks, effectiveProjects, task?.projectCode, context, task.predecessorTaskIds);
-    setVal(resolved);
-    if (resolved !== (value || '')) {
-      const finalTokens = splitPredecessors(resolved, effectiveTasks.map(t => computeTaskCode(effectiveProjects, effectiveTasks, t)));
-      const newIds = finalTokens.map(tok => {
-        const { query } = parsePredecessorToken(tok);
-        if (!query) return '';
-        const t = findTaskByQueryOrCode(query, effectiveTasks, effectiveProjects, context);
-        return t ? t.id : '';
-      });
-      onSave({ predecessor: resolved, predecessorTaskIds: newIds });
-    }
-  };
+  }, [isEditing, computeLayout]);
 
+  /* ----- Đóng khi bấm ra ngoài / nhấn Escape ----- */
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target && (target.closest('.fixed') || target.closest('[role="dialog"]') || target.closest('.modal-handle'))) {
-        return;
-      }
-      if (isEditing && containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsEditing(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    if (!isEditing) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      setIsEditing(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsEditing(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [isEditing]);
 
-  const displayVal = isEditing ? val : (value !== undefined && value !== null ? value : '');
+  const handleChange = async (c: PredecessorChange) => {
+    await onSave({
+      predecessor: c.predecessor,
+      predecessorTaskIds: c.predecessorTaskIds,
+      predecessors: c.predecessors,
+    } as Partial<Task>);
+  };
+
+  /* ----- Hiển thị dạng thẻ dễ đọc ----- */
+  const chips =
+    tokens.length > 0 ? (
+      <div className="flex flex-wrap items-center gap-1">
+        {tokens.slice(0, 2).map((tok, i) => {
+          const { query, suffix } = parsePredecessorToken(tok);
+          return (
+            <span
+              key={`${tok}-${i}`}
+              title={tok}
+              className={cn(
+                'inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]',
+                CHIP_STYLE[i] || CHIP_STYLE[1]
+              )}
+            >
+              <b className="truncate font-mono">{query || tok}</b>
+              {suffix && (
+                <span className="shrink-0 rounded bg-white/70 px-1 font-mono text-[10px] font-extrabold dark:bg-black/30">
+                  {suffix.replace(/^(FS|SS|FF|SF)?([+-])(\d.*)$/i, (_m, r, sg, n) => `${r || ''} ${sg === '-' ? '−' : '+'}${n}d`).trim()}
+                </span>
+              )}
+            </span>
+          );
+        })}
+      </div>
+    ) : null;
 
   if (!canWrite) {
-    return (
-      <span className={displayVal ? 'font-mono text-xs text-blue-600 dark:text-[#8ab4f8] font-medium' : 'text-slate-400'}>
-        {displayVal !== undefined && displayVal !== null && displayVal !== '' ? displayVal : '-'}
-      </span>
-    );
+    return chips ? <div className="w-full">{chips}</div> : <span className="text-slate-400">-</span>;
   }
 
-  if (isEditing) {
-    return (
-      <div ref={containerRef} className="w-full relative" onKeyDown={(e) => {
-        if (e.defaultPrevented) return;
-        if (e.key === 'Escape') {
-          setIsEditing(false);
-          setVal(displayVal !== undefined && displayVal !== null ? displayVal : '');
-        }
-      }}>
-        <PredecessorSearchSuggest 
-          task={task}
-          canWrite={canWrite}
-        />
+  const panelContent = (
+    <>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-400">Predecessor</div>
+          <div className="truncate text-[13px] font-bold text-slate-800 dark:text-[#f3f3f3]">{task?.name}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsEditing(false)}
+          className="inline-flex min-h-[40px] shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3.5 text-[12px] font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 touch-manipulation"
+        >
+          <X className="h-3.5 w-3.5" /> Xong
+        </button>
       </div>
-    );
-  }
+      <PredecessorSearchSuggest task={task} canWrite={canWrite} onChange={handleChange} />
+    </>
+  );
 
   return (
-    <div 
-      className="cursor-pointer min-h-[24px] w-full flex items-center hover:bg-slate-50 dark:hover:bg-[#202023] rounded transition-colors group"
-      onClick={() => setIsEditing(true)}
-    >
-      <span className={displayVal ? 'font-mono text-xs text-blue-600 dark:text-[#8ab4f8] font-medium' : 'text-slate-400 dark:text-slate-600'}>
-        {displayVal || '...'}
-      </span>
-    </div>
+    <>
+      <div
+        ref={anchorRef}
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsEditing(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsEditing(true);
+          }
+        }}
+        className={cn(
+          'group flex min-h-[32px] w-full cursor-pointer items-center rounded-md px-0.5 transition-colors hover:bg-slate-50 dark:hover:bg-[#202023]',
+          isEditing && 'bg-blue-50/60 ring-1 ring-blue-300 dark:bg-blue-950/20 dark:ring-blue-700'
+        )}
+      >
+        {chips || (
+          <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 group-hover:border-blue-400 group-hover:text-blue-500 dark:border-slate-600 dark:text-slate-500">
+            <Plus className="h-3 w-3" /> Thêm
+          </span>
+        )}
+      </div>
+
+      {isEditing &&
+        layout &&
+        createPortal(
+          layout.mode === 'sheet' ? (
+            <>
+              <div className="fixed inset-0 z-[190] bg-black/40" onClick={() => setIsEditing(false)} />
+              <div
+                ref={panelRef}
+                role="dialog"
+                className="fixed inset-x-2 bottom-2 z-[200] max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
+              >
+                {panelContent}
+              </div>
+            </>
+          ) : (
+            <div
+              ref={panelRef}
+              role="dialog"
+              className="fixed z-[200] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
+              style={{
+                left: layout.left,
+                width: layout.width,
+                maxHeight: layout.maxH,
+                ...(layout.top !== undefined ? { top: layout.top } : {}),
+                ...(layout.bottom !== undefined ? { bottom: layout.bottom } : {}),
+              }}
+            >
+              {panelContent}
+            </div>
+          ),
+          document.body
+        )}
+    </>
   );
 });
 
@@ -78661,180 +78761,876 @@ export function useTaskChatActions({
 ================================================================================
 FILE: src/components/TaskModalParts/PredecessorSearchSuggest.tsx
 ================================================================================
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Task, TaskPredecessor, PredecessorType } from '../../types';
-import { useTaskPredecessor } from '../../hooks/useTaskPredecessor';
+import React, { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Task, Project, PredecessorType } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { X, Search, AlertTriangle, Link as LinkIcon } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import {
+  buildTaskNoMap,
+  computeTaskCode,
+  parsePredecessors,
+  splitPredecessors,
+  calculateTaskDatesFromPredecessors,
+  scheduleDependentTasks,
+  addDays,
+} from '../../lib/ganttUtils';
+import {
+  rankCandidateTasks,
+  getTaskProjectDiffDetails,
+  parsePredecessorToken,
+  PredecessorContext,
+  ProjectDiffDetails,
+  RankedPredecessorMatch,
+} from '../../lib/predecessorMatchUtils';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import {
+  Search,
+  X,
+  Plus,
+  Minus,
+  AlertTriangle,
+  ExternalLink,
+  Sparkles,
+  Loader2,
+  ArrowRight,
+  Link2,
+} from 'lucide-react';
 
-interface PredecessorSearchSuggestProps {
-  task: Task;
-  canWrite: boolean;
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface PredecessorChange {
+  /** Chuỗi predecessor chuẩn của hệ thống, ví dụ: "A01#2SS+1, A01#3FF" */
+  predecessor: string;
+  /** ID task tương ứng theo đúng thứ tự trong chuỗi (hard-link, tránh nhầm task trùng mã) */
+  predecessorTaskIds: string[];
+  /** Mảng object (giữ tương thích với dữ liệu cũ) */
+  predecessors: { taskId: string; type: PredecessorType }[];
 }
 
-export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> = React.memo(({ task, canWrite }) => {
-  const { updatePredecessors } = useTaskPredecessor();
-  const allTasks = useAppStore(state => state.tasks);
-  
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [crossProjectWarning, setCrossProjectWarning] = useState<Task | null>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+interface PredecessorSearchSuggestProps {
+  /** Task đang sửa (hoặc bản nháp của task mới – id có thể rỗng) */
+  task: Task;
+  canWrite: boolean;
+  /**
+   * Nếu truyền vào: component KHÔNG tự lưu, mà trả kết quả cho nơi gọi xử lý
+   * (dùng cho Task Modal – lưu khi bấm Save, và cho bảng Detail – đi qua onUpdateTask).
+   * Nếu không truyền: tự tính lại ngày, kéo theo task phụ thuộc và lưu Firestore.
+   */
+  onChange?: (change: PredecessorChange) => void | Promise<void>;
+}
 
-  const currentPredecessors = task.predecessors || [];
+interface LinkItem {
+  key: string;
+  resolved: boolean;
+  taskId: string;
+  task?: Task;
+  code: string;
+  type: PredecessorType;
+  lagSign: '+' | '-';
+  lagValue: number;
+  raw: string;
+  isExternal: boolean;
+  externalLabel: string;
+}
 
-  // Click outside để đóng dropdown
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setIsDropdownOpen(false);
+/* ------------------------------------------------------------------ */
+/*  Constants & helpers                                                */
+/* ------------------------------------------------------------------ */
+
+const REL_INFO: Record<PredecessorType, { hint: string }> = {
+  FS: { hint: 'Xong → Bắt đầu' },
+  SS: { hint: 'Cùng bắt đầu' },
+  FF: { hint: 'Cùng kết thúc' },
+  SF: { hint: 'Bắt đầu → Kết thúc' },
+};
+
+const SLOT_STYLE = [
+  {
+    tag: '①',
+    title: 'Tiên quyết chính',
+    border: 'border-l-blue-500',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+    active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
+    caption: 'text-blue-700 dark:text-blue-300',
+  },
+  {
+    tag: '②',
+    title: 'Tiên quyết phụ · chỉ FF / SF',
+    border: 'border-l-rose-500',
+    badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
+    active: 'bg-rose-600 text-white border-rose-600 shadow-sm',
+    caption: 'text-rose-700 dark:text-rose-300',
+  },
+];
+
+const FACTOR_LABEL: Record<string, string> = {
+  year: 'Khác năm',
+  store: 'Khác chi nhánh',
+  location: 'Khác vị trí/tầng',
+  code: 'Khác dự án',
+};
+
+function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string {
+  const factors = (diff as any)?.diffFactors as string[] | undefined;
+  if (factors && factors.length > 0) {
+    return factors.map((f) => FACTOR_LABEL[f] || f).join(' · ');
+  }
+  return fallbackCode ? `Dự án ${fallbackCode}` : 'Khác dự án';
+}
+
+function shortDate(s?: string): string {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : String(s);
+}
+
+function lagToText(sign: string, v: number): string {
+  return v ? `${sign}${v}` : '';
+}
+
+function tokenOf(it: LinkItem): string {
+  if (!it.resolved) return it.raw;
+  const lag = lagToText(it.lagSign, it.lagValue);
+  const rel = it.type === 'FS' && !lag ? '' : it.type;
+  return `${it.code}${rel}${lag}`;
+}
+
+/** Công việc thứ 2 bắt buộc là FF hoặc SF (đúng luật của Gantt) */
+function normalize(list: LinkItem[]): LinkItem[] {
+  return list.slice(0, 2).map((it, i) =>
+    i === 1 && it.resolved && it.type !== 'FF' && it.type !== 'SF' ? { ...it, type: 'FF' as PredecessorType } : it
+  );
+}
+
+function describe(it: LinkItem): string {
+  if (!it.task) return '';
+  const name = `«${it.task.name}»`;
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  const lag = signed === 0 ? '' : signed > 0 ? `, cộng ${signed} ngày` : `, sớm ${Math.abs(signed)} ngày`;
+  switch (it.type) {
+    case 'FS':
+      return `Bắt đầu sau khi ${name} kết thúc${lag}`;
+    case 'SS':
+      return `Bắt đầu cùng lúc ${name} bắt đầu${lag}`;
+    case 'FF':
+      return `Kết thúc cùng lúc ${name} kết thúc${lag}`;
+    case 'SF':
+      return `Kết thúc khi ${name} bắt đầu${lag}`;
+  }
+  return '';
+}
+
+function milestoneDate(it: LinkItem): string {
+  if (!it.task) return '';
+  const ref = it.type === 'FS' || it.type === 'FF' ? it.task.finish : it.task.start;
+  if (!ref) return '';
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  try {
+    return shortDate(addDays(ref, signed));
+  } catch {
+    return shortDate(ref);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Lưu mặc định (khi không truyền onChange): giống pipeline của Gantt */
+/* ------------------------------------------------------------------ */
+
+async function persistDefault(
+  source: Task,
+  change: PredecessorChange,
+  projects: Project[]
+): Promise<void> {
+  if (!source?.id) {
+    throw new Error('Hãy lưu công việc trước khi liên kết predecessor.');
+  }
+  const store = useAppStore.getState() as any;
+  const currentTasks: Task[] = store.tasks || [];
+  const now = new Date().toISOString();
+
+  const updatedTask: Task = {
+    ...source,
+    predecessor: change.predecessor,
+    predecessorTaskIds: change.predecessorTaskIds,
+    predecessors: change.predecessors,
+    realtimeUpdate: Boolean(change.predecessor.trim()),
+    updatedAt: now,
+  } as Task;
+
+  const taskNoMap = buildTaskNoMap(projects, currentTasks);
+  const parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+  if (parsed.length >= 2) updatedTask.durationManual = false;
+
+  const calc = calculateTaskDatesFromPredecessors(updatedTask, parsed as any);
+  if (calc) {
+    updatedTask.start = calc.start;
+    updatedTask.finish = calc.finish;
+    updatedTask.duration = calc.duration;
+    updatedTask.durationManual = calc.durationManual;
+  }
+
+  const dependents = scheduleDependentTasks(updatedTask, currentTasks, projects);
+
+  const map = new Map<string, Task>(currentTasks.map((t) => [t.id, t]));
+  map.set(updatedTask.id, updatedTask);
+  dependents.forEach((u: any) => {
+    const t = map.get(u.id);
+    if (t) {
+      map.set(u.id, { ...t, start: u.start, finish: u.finish, duration: u.duration, updatedAt: u.updatedAt });
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  });
+  store.setTasks(Array.from(map.values()));
 
-  const suggestions = useMemo(() => {
-    if (!searchTerm.trim()) return [];
-    const term = searchTerm.toLowerCase();
-    
-    return allTasks
-      .filter(t => t.id !== task.id && !currentPredecessors.some(p => p.taskId === t.id))
-      .filter(t => 
-        t.name.toLowerCase().includes(term) || 
-        (t.taskCodePhu && t.taskCodePhu.toLowerCase().includes(term))
-      ).slice(0, 10);
-  }, [allTasks, searchTerm, task.id, currentPredecessors]);
+  const editing = store.editingTask;
+  if (editing && editing.id === updatedTask.id && typeof store.setEditingTask === 'function') {
+    store.setEditingTask({ ...editing, ...updatedTask });
+  }
 
-  const handleSelectSuggestion = (selectedTask: Task) => {
-    setIsDropdownOpen(false);
-    setSearchTerm('');
-    if (selectedTask.projectCode !== task.projectCode) {
-      setCrossProjectWarning(selectedTask);
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask as any, { merge: true });
+  dependents.forEach((u: any) => {
+    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
+  });
+  batch.commit().catch((err: any) => {
+    console.error('Failed to persist predecessor update:', err);
+    store.setToast?.({ title: 'Lưu thất bại', message: err?.message || 'Không thể lưu predecessor', type: 'error' });
+  });
+
+  store.setToast?.({
+    title: 'Đã cập nhật Predecessor',
+    message: change.predecessor ? `Liên kết: ${change.predecessor}` : 'Đã gỡ predecessor',
+    type: 'success',
+  });
+}
+
+/** Ô nhập tay số ngày lệch (hỗ trợ số thập phân, dấu + / −). Lưu khi bấm Enter hoặc rời ô. */
+function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boolean; onCommit: (n: number) => void }) {
+  const fmt = (n: number) => (n > 0 ? `+${n}` : String(n));
+  const [txt, setTxt] = useState(fmt(value));
+  useEffect(() => setTxt(fmt(value)), [value]);
+  const commit = () => {
+    const n = parseFloat(txt.replace(',', '.').replace('−', '-'));
+    if (isNaN(n)) {
+      setTxt(fmt(value));
       return;
     }
-    executeAddPredecessor(selectedTask.id, 'FS');
+    const r = Math.round(n * 100) / 100;
+    if (r !== value) onCommit(r);
+    else setTxt(fmt(value));
   };
-
-  const executeAddPredecessor = async (targetId: string, type: PredecessorType) => {
-    try {
-      const newPred: TaskPredecessor = { taskId: targetId, type };
-      await updatePredecessors(task.id, [...currentPredecessors, newPred]);
-      setCrossProjectWarning(null);
-    } catch (err: any) {
-      useAppStore.getState().setToast({ title: 'Lỗi liên kết', message: err.message, type: 'error' });
-    }
-  };
-
-  const handleRemove = async (removeId: string) => {
-    try {
-      const newIds = currentPredecessors.filter(p => p.taskId !== removeId);
-      await updatePredecessors(task.id, newIds);
-    } catch (err: any) {
-      console.error(err);
-    }
-  };
-
-  const handleChangeType = async (taskId: string, newType: PredecessorType) => {
-    try {
-      const newIds = currentPredecessors.map(p => p.taskId === taskId ? { ...p, type: newType } : p);
-      await updatePredecessors(task.id, newIds);
-    } catch (err: any) {
-      console.error(err);
-    }
-  };
-
   return (
-    <div className="flex flex-col gap-2 relative" ref={wrapperRef}>
-      {/* Cảnh báo Cross-Project */}
-      {crossProjectWarning && (
-        <div className="p-3 bg-amber-50 dark:bg-amber-950/80 border border-amber-200 dark:border-amber-800 rounded-lg flex flex-col gap-2 shadow-sm mb-1">
-          <div className="flex gap-2 items-start text-xs text-amber-800 dark:text-amber-200">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <p>Task <strong>{crossProjectWarning.name}</strong> thuộc dự án khác ({crossProjectWarning.projectCode}). Liên kết chéo có thể làm biểu đồ phức tạp. Vẫn tiếp tục?</p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setCrossProjectWarning(null)} className="px-2.5 py-1 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-amber-100 rounded">Hủy</button>
-            <button onClick={() => executeAddPredecessor(crossProjectWarning.id, 'FS')} className="px-2.5 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded">Xác nhận</button>
-          </div>
-        </div>
+    <input
+      type="text"
+      inputMode="decimal"
+      value={txt}
+      disabled={disabled}
+      onChange={(e: any) => setTxt(e.target.value.replace(/[^0-9+\-−.,]/g, ''))}
+      onFocus={(e: any) => e.target.select?.()}
+      onBlur={commit}
+      onKeyDown={(e: any) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          commit();
+          e.target.blur?.();
+        }
+      }}
+      title="Nhập số ngày lệch, ví dụ +2 hoặc -1"
+      className={cn(
+        'h-9 w-16 rounded-lg border border-slate-200 bg-white text-center font-mono text-[13px] font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#444446] dark:bg-[#18181a]',
+        value === 0 ? 'text-slate-500 dark:text-slate-400' : value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
       )}
+    />
+  );
+}
 
-      {/* Hiển thị Tags (Thẻ liên kết) */}
-      {currentPredecessors.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-1">
-          {currentPredecessors.map(p => {
-            const t = allTasks.find(x => x.id === p.taskId);
-            const isCross = t && t.projectCode !== task.projectCode;
-            return (
-              <div key={p.taskId} className={`flex items-stretch bg-white dark:bg-[#252528] rounded-md border ${isCross ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300 dark:border-[#444]'} shadow-sm`}>
-                {canWrite ? (
-                  <select
-                    value={p.type}
-                    onChange={(e) => handleChangeType(p.taskId, e.target.value as PredecessorType)}
-                    className="bg-indigo-50 dark:bg-[#1f1f22] text-indigo-700 dark:text-indigo-400 text-[10px] font-bold px-1 border-r border-slate-200 dark:border-[#444] outline-none cursor-pointer rounded-l-md appearance-none text-center"
-                  >
-                    <option value="FS">FS</option><option value="SS">SS</option>
-                    <option value="FF">FF</option><option value="SF">SF</option>
-                  </select>
-                ) : (
-                  <div className="bg-indigo-50 dark:bg-[#1f1f22] text-indigo-700 text-[10px] font-bold px-2 flex items-center border-r border-slate-200 dark:border-[#444]">{p.type}</div>
-                )}
-                
-                <div className="px-2 py-1 text-xs text-slate-700 dark:text-[#e3e3e3] flex items-center gap-1.5 max-w-[220px]">
-                  {isCross && <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />}
-                  <span className="truncate">{t ? `${t.taskCodePhu || ''} ${t.name}` : 'Unknown'}</span>
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> = memo(
+  ({ task, canWrite, onChange }) => {
+    const storeTasks = useAppStore((s: any) => s.tasks) as Task[];
+    const projects = (useAppStore((s: any) => s.projects) || []) as Project[];
+    const liveTask = useAppStore((s: any) =>
+      task?.id ? (s.tasks as Task[]).find((t) => t.id === task.id) : undefined
+    ) as Task | undefined;
+
+    // Khi tự lưu: luôn lấy bản mới nhất trong store. Khi có onChange: tin vào task do nơi gọi truyền xuống.
+    const source: Task = onChange ? task : liveTask || task;
+
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const [query, setQuery] = useState('');
+    const deferredQuery = useDeferredValue(query);
+    const [open, setOpen] = useState(false);
+    const [hi, setHi] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+
+    const ctx: PredecessorContext = useMemo(
+      () => ({
+        projectId: source?.projectId,
+        projectCode: source?.projectCode,
+        projectYear: source?.projectYear,
+        projectStore: source?.projectStore,
+        projectLocation: source?.location,
+      }),
+      [source?.projectId, source?.projectCode, source?.projectYear, source?.projectStore, source?.location]
+    );
+
+    const pool = useMemo(() => (storeTasks || []).filter((t) => t && !t.isDeleted), [storeTasks]);
+    const taskNoMap = useMemo(() => buildTaskNoMap(projects, storeTasks || []), [projects, storeTasks]);
+
+    /* ---------- Danh sách predecessor hiện tại (đọc từ chuỗi chuẩn) ---------- */
+    const items = useMemo<LinkItem[]>(() => {
+      const str = String(source?.predecessor || '').trim();
+      if (!str) return [];
+      const ids = source?.predecessorTaskIds || [];
+      const tokens = splitPredecessors(str, taskNoMap).slice(0, 2);
+
+      return tokens.map((tok, i) => {
+        let p: any;
+        try {
+          p = parsePredecessors(tok, taskNoMap, { ...source, predecessorTaskIds: [ids[i] || ''] } as Task)[0];
+        } catch {
+          p = undefined;
+        }
+        if (p && p.task) {
+          const diff = getTaskProjectDiffDetails(ctx, p.task, projects);
+          const code = computeTaskCode(projects, storeTasks || [], p.task) || p.task.taskCodePhu || p.no || tok;
+          return {
+            key: `${p.task.id}-${i}`,
+            resolved: true,
+            taskId: p.task.id,
+            task: p.task as Task,
+            code,
+            type: (p.type || 'FS') as PredecessorType,
+            lagSign: (p.lagSign === '-' ? '-' : '+') as '+' | '-',
+            lagValue: Number(p.lagValue) || 0,
+            raw: tok,
+            isExternal: !!diff.isDifferent,
+            externalLabel: externalLabel(diff, p.task.projectCode),
+          };
+        }
+        const { query: q } = parsePredecessorToken(tok);
+        return {
+          key: `raw-${i}-${tok}`,
+          resolved: false,
+          taskId: '',
+          code: q || tok,
+          type: 'FS' as PredecessorType,
+          lagSign: '+' as const,
+          lagValue: 0,
+          raw: tok,
+          isExternal: false,
+          externalLabel: '',
+        };
+      });
+    }, [
+      source?.predecessor,
+      source?.predecessorTaskIds,
+      source?.projectId,
+      source?.projectCode,
+      source?.projectYear,
+      source?.projectStore,
+      source?.location,
+      taskNoMap,
+      ctx,
+      projects,
+      storeTasks,
+    ]);
+
+    /* ---------- Đóng dropdown khi bấm ra ngoài (chuột + cảm ứng) ---------- */
+    useEffect(() => {
+      const handler = (e: MouseEvent | TouchEvent) => {
+        if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+          setOpen(false);
+        }
+      };
+      document.addEventListener('mousedown', handler);
+      document.addEventListener('touchstart', handler, { passive: true });
+      return () => {
+        document.removeEventListener('mousedown', handler);
+        document.removeEventListener('touchstart', handler);
+      };
+    }, []);
+
+    useEffect(() => setHi(0), [deferredQuery]);
+
+    /* ---------- Gợi ý ---------- */
+    const excluded = useMemo(() => {
+      const s = new Set<string>();
+      if (source?.id) s.add(source.id);
+      items.forEach((i) => i.taskId && s.add(i.taskId));
+      return s;
+    }, [source?.id, items]);
+
+    const candidates = useMemo<RankedPredecessorMatch[]>(() => {
+      if (!open) return [];
+      const q = deferredQuery.trim();
+
+      if (q) {
+        return rankCandidateTasks(q, pool, projects, pool, source?.projectCode, ctx)
+          .filter((m) => !excluded.has(m.task.id))
+          .slice(0, 20);
+      }
+
+      // Chưa gõ gì: gợi ý các công việc cùng dự án, theo thứ tự trong dự án
+      let base = pool.filter((t) => !excluded.has(t.id));
+      const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
+      if (sameCode.length > 0) base = sameCode;
+      base = base
+        .filter((t) => !getTaskProjectDiffDetails(ctx, t, projects).isDifferent)
+        .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+        .slice(0, 25);
+
+      return base.map((t) => {
+        const diff = getTaskProjectDiffDetails(ctx, t, projects);
+        return {
+          task: t,
+          score: 0,
+          exactTaskCode: computeTaskCode(projects, pool, t) || t.taskCodePhu || t.id,
+          isExternal: !!diff.isDifferent,
+          diffDetails: diff,
+        } as RankedPredecessorMatch;
+      });
+    }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx]);
+
+    /* ---------- Hành động ---------- */
+    const commit = async (list: LinkItem[]) => {
+      const finalList = normalize(list);
+      const change: PredecessorChange = {
+        predecessor: finalList.map(tokenOf).filter(Boolean).join(', '),
+        predecessorTaskIds: finalList.map((i) => i.taskId || ''),
+        predecessors: finalList.filter((i) => i.resolved).map((i) => ({ taskId: i.taskId, type: i.type })),
+      };
+      setSaving(true);
+      setError(null);
+      try {
+        if (onChange) await onChange(change);
+        else await persistDefault(source, change, projects);
+      } catch (e: any) {
+        setError(e?.message || 'Không thể lưu liên kết predecessor');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    /** Công việc `candidate` có (trực tiếp/gián tiếp) phụ thuộc vào task hiện tại không? */
+    const wouldCreateCycle = (candidate: Task): boolean => {
+      if (!source?.id) return false;
+      const visited = new Set<string>();
+      const stack: Task[] = [candidate];
+      while (stack.length > 0 && visited.size < 500) {
+        const cur = stack.pop() as Task;
+        if (cur.id === source.id) return true;
+        if (visited.has(cur.id)) continue;
+        visited.add(cur.id);
+        if (!cur.predecessor) continue;
+        try {
+          parsePredecessors(cur.predecessor, taskNoMap, cur).forEach((p: any) => {
+            if (p?.task) stack.push(p.task as Task);
+          });
+        } catch {
+          /* bỏ qua token lỗi */
+        }
+      }
+      return false;
+    };
+
+    const addTask = (m: RankedPredecessorMatch, confirmed = false) => {
+      const t = m.task;
+      if (items.length >= 2) return;
+      if (wouldCreateCycle(t)) {
+        setError(
+          `Không thể liên kết: «${t.name}» đang phụ thuộc (trực tiếp hoặc gián tiếp) vào công việc này, sẽ tạo vòng lặp.`
+        );
+        setPendingExternal(null);
+        return;
+      }
+      if (m.isExternal && !confirmed) {
+        setPendingExternal(m);
+        setOpen(false);
+        return;
+      }
+      const idx = items.length;
+      const next: LinkItem = {
+        key: `${t.id}-${idx}`,
+        resolved: true,
+        taskId: t.id,
+        task: t,
+        code: m.exactTaskCode || computeTaskCode(projects, pool, t) || t.taskCodePhu || t.id,
+        type: idx === 0 ? 'FS' : 'FF',
+        lagSign: '+',
+        lagValue: 0,
+        raw: '',
+        isExternal: !!m.isExternal,
+        externalLabel: externalLabel(m.diffDetails, t.projectCode),
+      };
+      setPendingExternal(null);
+      setQuery('');
+      setOpen(false);
+      inputRef.current?.blur();
+      commit([...items, next]);
+    };
+
+    const patchItem = (idx: number, patch: Partial<LinkItem>) => {
+      commit(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+    };
+
+    const removeItem = (idx: number) => {
+      commit(items.filter((_, i) => i !== idx));
+    };
+
+    const stepLag = (idx: number, delta: number) => {
+      const it = items[idx];
+      const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+      const n = Math.round((signed + delta) * 100) / 100;
+      patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) });
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!open) setOpen(true);
+        else setHi((h) => Math.min(h + 1, Math.max(candidates.length - 1, 0)));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHi((h) => Math.max(h - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const m = candidates[hi] || candidates[0];
+        if (m) addTask(m);
+      } else if (e.key === 'Escape') {
+        if (open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }
+    };
+
+    /* ---------- Giao diện ---------- */
+    const canAdd = canWrite && items.length < 2;
+    const hasQuery = deferredQuery.trim().length > 0;
+
+    return (
+      <div className="flex flex-col gap-2.5 w-full" ref={wrapperRef} onClick={(e) => e.stopPropagation()}>
+        {saving && (
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang cập nhật...
+          </div>
+        )}
+
+        {/* Lỗi */}
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[12px] font-medium text-red-700 dark:text-red-300">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError(null)} className="shrink-0 p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Trạng thái rỗng */}
+        {items.length === 0 && !canWrite && (
+          <p className="text-[12px] italic text-slate-400">Chưa có công việc tiên quyết.</p>
+        )}
+        {items.length === 0 && canWrite && (
+          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+            Chọn công việc phải <b>xong (hoặc bắt đầu) trước</b> công việc này. Ngày bắt đầu/kết thúc sẽ tự động được tính theo.
+          </p>
+        )}
+
+        {/* Danh sách đã liên kết */}
+        {items.map((it, idx) => {
+          const style = SLOT_STYLE[idx] || SLOT_STYLE[1];
+          const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
+          const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+          const milestone = milestoneDate(it);
+
+          return (
+            <div
+              key={it.key}
+              className={cn(
+                'rounded-xl border border-l-4 bg-white dark:bg-[#1e1e20] shadow-sm',
+                it.resolved ? 'border-slate-200 dark:border-[#444446]' : 'border-amber-300 dark:border-amber-700/60',
+                it.resolved ? style.border : 'border-l-amber-500'
+              )}
+            >
+              <div className="flex items-start gap-2 p-2.5 pb-2">
+                <div className="min-w-0 flex-1">
+                  <div className={cn('mb-1 flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wide', style.caption)}>
+                    <span className={cn('inline-flex items-center justify-center rounded px-1.5 py-0.5', style.badge)}>{style.tag}</span>
+                    {style.title}
+                  </div>
+
+                  {it.resolved && it.task ? (
+                    <>
+                      <div className="break-words text-[13px] font-bold leading-snug text-slate-800 dark:text-[#f3f3f3]">
+                        {it.task.name}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                        <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{it.code}</span>
+                        <span className="inline-flex items-center gap-1 font-mono text-slate-400 dark:text-slate-500">
+                          {shortDate(it.task.start)} <ArrowRight className="w-3 h-3" /> {shortDate(it.task.finish)}
+                        </span>
+                        {it.isExternal && (
+                          <span className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-700/60 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                            <ExternalLink className="w-2.5 h-2.5" /> {it.externalLabel}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[12px] font-semibold text-amber-700 dark:text-amber-300">
+                      Không tìm thấy công việc «{it.raw}». Hãy gỡ và chọn lại từ danh sách gợi ý.
+                    </div>
+                  )}
                 </div>
+
                 {canWrite && (
-                  <button onClick={() => handleRemove(p.taskId)} className="px-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 border-l border-slate-200 dark:border-[#444] rounded-r-md transition-colors">
-                    <X className="w-3.5 h-3.5" />
+                  <button
+                    type="button"
+                    onClick={() => removeItem(idx)}
+                    disabled={saving}
+                    title="Gỡ liên kết"
+                    className="shrink-0 -mt-0.5 -mr-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-colors touch-manipulation disabled:opacity-50"
+                  >
+                    <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* Input Search Autocomplete */}
-      {canWrite && (
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none"><Search className="w-4 h-4 text-slate-400" /></div>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setIsDropdownOpen(true); }}
-            onFocus={() => setIsDropdownOpen(true)}
-            placeholder="Tìm tên hoặc mã công việc để liên kết..."
-            className="w-full pl-8 pr-3 py-2 text-xs bg-white dark:bg-[#1e1e20] border border-slate-300 dark:border-[#555] rounded-lg text-slate-800 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
-          {/* Dropdown Box */}
-          {isDropdownOpen && searchTerm.trim() && (
-            <ul className="absolute z-50 top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-[#252528] border border-slate-200 dark:border-[#444] rounded-xl shadow-xl py-1">
-              {suggestions.length === 0 ? (
-                <li className="px-3 py-2 text-xs text-slate-500 italic text-center">Không tìm thấy công việc</li>
-              ) : (
-                suggestions.map(t => (
-                  <li 
-                    key={t.id} 
-                    onClick={() => handleSelectSuggestion(t)}
-                    className="px-3 py-2 hover:bg-blue-50 dark:hover:bg-[#2e2e32] cursor-pointer flex flex-col gap-0.5 border-b border-slate-100 dark:border-[#333] last:border-0"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-800 dark:text-[#f3f3f3] truncate">{t.name}</span>
-                      {t.projectCode !== task.projectCode && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Khác dự án</span>}
+              {it.resolved && (
+                <div className="flex flex-col gap-2 px-2.5 pb-2.5">
+                  {/* Chọn kiểu liên kết */}
+                  {canWrite ? (
+                    <div className={cn('grid gap-1.5', allowed.length === 4 ? 'grid-cols-4' : 'grid-cols-2')}>
+                      {allowed.map((rel) => {
+                        const active = it.type === rel;
+                        return (
+                          <button
+                            key={rel}
+                            type="button"
+                            disabled={saving}
+                            onClick={() => !active && patchItem(idx, { type: rel })}
+                            title={REL_INFO[rel].hint}
+                            className={cn(
+                              'flex min-h-[44px] flex-col items-center justify-center rounded-lg border px-1 py-1 transition-colors active:scale-95 touch-manipulation disabled:opacity-60',
+                              active
+                                ? style.active
+                                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-[#444446] dark:bg-[#252528] dark:text-slate-300 dark:hover:bg-[#2c2c30]'
+                            )}
+                          >
+                            <span className="text-[12px] font-extrabold leading-none">{rel}</span>
+                            <span className={cn('mt-0.5 text-[9px] leading-tight', active ? 'text-white/85' : 'text-slate-400 dark:text-slate-500')}>
+                              {REL_INFO[rel].hint}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
-                      <LinkIcon className="w-3 h-3" /> {t.projectCode} {t.taskCodePhu ? `> ${t.taskCodePhu}` : ''}
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className={cn('rounded px-1.5 py-0.5 font-extrabold', style.badge)}>{it.type}</span>
+                      <span className="text-slate-500 dark:text-slate-400">{REL_INFO[it.type].hint}</span>
                     </div>
-                  </li>
-                ))
+                  )}
+
+                  {/* Độ trễ / vượt trước (lag) */}
+                  {canWrite && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Độ lệch ngày (+ trễ / − sớm)</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => stepLag(idx, -1)}
+                          title="Sớm hơn 1 ngày"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-[#444446] dark:bg-[#252528] dark:text-slate-300 active:scale-95 touch-manipulation disabled:opacity-60"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                        <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                        <span className="text-[11px] text-slate-400">ngày</span>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => stepLag(idx, 1)}
+                          title="Trễ hơn 1 ngày"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-[#444446] dark:bg-[#252528] dark:text-slate-300 active:scale-95 touch-manipulation disabled:opacity-60"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Diễn giải bằng lời */}
+                  <div className="rounded-lg bg-slate-50 dark:bg-[#18181a] px-2.5 py-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                    {describe(it)}
+                    {milestone && (
+                      <>
+                        {' '}
+                        → <b className="font-mono text-slate-800 dark:text-slate-100">{milestone}</b>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
-  );
-});
+            </div>
+          );
+        })}
+
+        {/* Xác nhận liên kết khác dự án */}
+        {pendingExternal && (
+          <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/60">
+            <div className="flex items-start gap-2 text-[12px] font-medium text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p>
+                «<b>{pendingExternal.task.name}</b>» thuộc dự án khác (
+                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Liên kết chéo dự án sẽ làm
+                ngày của công việc này thay đổi theo công việc kia. Bạn có chắc chắn?
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingExternal(null)}
+                className="min-h-[40px] rounded-lg px-4 text-[12px] font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => addTask(pendingExternal, true)}
+                className="min-h-[40px] rounded-lg bg-amber-600 px-4 text-[12px] font-bold text-white shadow-sm hover:bg-amber-700 active:scale-95 touch-manipulation"
+              >
+                Đồng ý liên kết
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Ô tìm & thêm */}
+        {canAdd && !pendingExternal && (
+          <div className="relative">
+            <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+              <Link2 className="w-3.5 h-3.5" />
+              {items.length === 0 ? 'Thêm công việc tiên quyết' : 'Thêm công việc tiên quyết thứ 2 (FF / SF)'}
+            </label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                disabled={saving}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={handleKeyDown}
+                placeholder="Gõ tên hoặc mã công việc (vd: A01#2)"
+                autoComplete="off"
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-9 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-[#555] dark:bg-[#1e1e20] dark:text-white"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('');
+                    inputRef.current?.focus();
+                  }}
+                  className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
+                  tabIndex={-1}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {open && (
+              <ul
+                role="listbox"
+                className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528]"
+              >
+                {!hasQuery && candidates.length > 0 && (
+                  <li className="px-3 pb-1 pt-1.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+                    Gợi ý cùng dự án
+                  </li>
+                )}
+                {candidates.length === 0 ? (
+                  <li className="px-3 py-3 text-center text-[12px] italic text-slate-500">
+                    {hasQuery ? 'Không tìm thấy công việc phù hợp' : 'Chưa có công việc nào để gợi ý'}
+                  </li>
+                ) : (
+                  candidates.map((m, i) => {
+                    const t = m.task;
+                    const best = hasQuery && i === 0 && m.score >= 450;
+                    return (
+                      <li
+                        key={t.id}
+                        role="option"
+                        aria-selected={i === hi}
+                        onMouseEnter={() => setHi(i)}
+                        onClick={() => addTask(m)}
+                        className={cn(
+                          'flex min-h-[48px] cursor-pointer flex-col gap-0.5 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-[#333]',
+                          i === hi ? 'bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-slate-50 dark:hover:bg-[#2a2a2e]'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="break-words text-[13px] font-bold leading-snug text-slate-800 dark:text-[#f3f3f3]">{t.name}</span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {best && (
+                              <span className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300">
+                                <Sparkles className="w-2.5 h-2.5" /> Gợi ý nhất
+                              </span>
+                            )}
+                            {m.isExternal && (
+                              <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300">
+                                <ExternalLink className="w-2.5 h-2.5" /> {externalLabel(m.diffDetails, t.projectCode)}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-500">
+                            {shortDate(t.start)} → {shortDate(t.finish)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {canWrite && items.length >= 2 && (
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            Đã đủ 2 công việc tiên quyết (tối đa). Gỡ một công việc nếu muốn chọn công việc khác.
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+
+PredecessorSearchSuggest.displayName = 'PredecessorSearchSuggest';
 
 
 ================================================================================
@@ -79082,6 +79878,7 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           resolvedPredecessors={resolvedPredecessors}
           handlePredecessorChange={handlePredecessorChange}
           handleApplyPredecessorDates={handleApplyPredecessorDates}
+          setFormData={setFormData}
         />
 
         <div className="relative w-full">
@@ -79576,11 +80373,10 @@ export const TaskModalHeader = memo(function TaskModalHeader({
 ================================================================================
 FILE: src/components/TaskModalParts/TaskPredecessorSection.tsx
 ================================================================================
-import React, { memo } from 'react';
-import { Info } from 'lucide-react';
-import { PredecessorSearchSuggest } from './PredecessorSearchSuggest';
+import React, { memo, useMemo } from 'react';
+import { Info, RefreshCw } from 'lucide-react';
+import { PredecessorSearchSuggest, PredecessorChange } from './PredecessorSearchSuggest';
 import { Task } from '../../types';
-import { formatDisplayDateTime } from '../../lib/utils';
 
 interface TaskPredecessorSectionProps {
   task: Task;
@@ -79592,6 +80388,8 @@ interface TaskPredecessorSectionProps {
   resolvedPredecessors: any[];
   handlePredecessorChange: (val: string) => void;
   handleApplyPredecessorDates: () => void;
+  /** Thêm mới: để lưu kèm predecessorTaskIds vào form (bấm Save mới ghi vào dữ liệu) */
+  setFormData?: (updater: any) => void;
 }
 
 export const TaskPredecessorSection = memo(function TaskPredecessorSection({
@@ -79599,81 +80397,85 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
   formData,
   canWrite,
   t,
-  tasks,
-  projects,
   resolvedPredecessors,
   handlePredecessorChange,
   handleApplyPredecessorDates,
+  setFormData,
 }: TaskPredecessorSectionProps) {
+  // Bản nháp phản ánh đúng những gì người dùng đang nhập trong form (kể cả task mới chưa lưu)
+  const draft = useMemo(
+    () =>
+      ({
+        ...(task || {}),
+        id: task?.id || '',
+        projectId: formData.projectId ?? task?.projectId,
+        projectCode: formData.projectCode ?? task?.projectCode,
+        projectYear: formData.projectYear ?? task?.projectYear,
+        projectStore: formData.projectStore ?? task?.projectStore,
+        location: formData.location ?? task?.location,
+        name: formData.name || task?.name || '',
+        start: formData.start,
+        finish: formData.finish,
+        duration: formData.duration,
+        predecessor: formData.predecessor || '',
+        predecessorTaskIds: formData.predecessorTaskIds ?? task?.predecessorTaskIds ?? [],
+      } as Task),
+    [
+      task,
+      formData.projectId,
+      formData.projectCode,
+      formData.projectYear,
+      formData.projectStore,
+      formData.location,
+      formData.name,
+      formData.start,
+      formData.finish,
+      formData.duration,
+      formData.predecessor,
+      formData.predecessorTaskIds,
+    ]
+  );
+
+  const handleLinkChange = (change: PredecessorChange) => {
+    // 1) cập nhật chuỗi predecessor + tự tính lại ngày (logic có sẵn của modal)
+    handlePredecessorChange(change.predecessor);
+    // 2) gắn thêm ID task để không bao giờ nhầm task trùng mã
+    setFormData?.((prev: any) => ({
+      ...prev,
+      predecessorTaskIds: change.predecessorTaskIds,
+      predecessors: change.predecessors,
+    }));
+  };
+
+  const hasResolved = resolvedPredecessors.some((rp) => rp?.task);
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="flex items-center gap-1.5 text-xs font-bold text-slate-400 dark:text-[#838383] uppercase">
-          {t("Predecessor")}
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <label className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-400 dark:text-[#838383]">
+          {t('Predecessor')}
           <span className="group relative inline-flex items-center">
-            <Info className="w-3.5 h-3.5 text-amber-500 cursor-help" />
-            <div className="absolute bottom-full left-0 mb-1.5 w-56 p-2 bg-slate-800 dark:bg-slate-700 text-white text-[10px] leading-relaxed rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none z-50 normal-case font-normal shadow-xl">
-              The second predecessor requires a valid 'SF' (Start-to-Finish) or 'FF' (Finish-to-Finish) relationship.
-              <svg className="absolute top-full left-1.5 w-2 h-2 text-slate-800 dark:text-slate-700" viewBox="0 0 8 4" fill="currentColor">
-                <path d="M0 0l4 4 4-4H0z"/>
-              </svg>
+            <Info className="h-3.5 w-3.5 cursor-help text-amber-500" />
+            <div className="pointer-events-none invisible absolute bottom-full left-0 z-50 mb-1.5 w-64 rounded bg-slate-800 p-2 text-[10px] font-normal normal-case leading-relaxed text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100 dark:bg-slate-700">
+              Tối đa 2 công việc tiên quyết. Công việc ① thường chốt ngày bắt đầu (FS/SS), công việc ② chốt ngày kết thúc và
+              chỉ được là FF hoặc SF.
             </div>
           </span>
         </label>
-        {resolvedPredecessors.length > 0 && (
-          <div className="flex flex-col items-end gap-0.5 truncate max-w-[200px]">
-            {resolvedPredecessors.map((rp, idx) => rp?.task && (
-              <span key={idx} className={`text-[10px] font-semibold truncate ${idx === 0 ? "text-blue-600 dark:text-blue-400" : "text-rose-600 dark:text-rose-400"}`}>
-                {idx + 1}. {rp.task.name}
-              </span>
-            ))}
-          </div>
+
+        {hasResolved && canWrite && (
+          <button
+            type="button"
+            onClick={handleApplyPredecessorDates}
+            className="inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-[11px] font-bold text-blue-600 shadow-sm hover:bg-blue-50 active:scale-95 touch-manipulation dark:border-blue-700 dark:bg-[#1e1e20] dark:text-blue-400"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Đồng bộ ngày
+          </button>
         )}
       </div>
 
-      {task ? (
-        <PredecessorSearchSuggest 
-          task={task}
-          canWrite={canWrite}
-        />
-      ) : (
-        <div className="text-[10px] text-slate-500 italic p-2 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
-          Please save the task first to enable predecessor linking.
-        </div>
-      )}
-
-      {resolvedPredecessors.length > 0 && (
-        <div className="mt-1.5 flex flex-col gap-1.5">
-          {resolvedPredecessors.map((rp, idx) => rp?.task && (
-            <div 
-              key={idx} 
-              className={`flex items-center justify-between p-2 rounded-lg border text-xs ${
-                idx === 0 
-                  ? "bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800" 
-                  : "bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800"
-              }`}
-            >
-              <div className="flex flex-col gap-0.5 truncate mr-2">
-                <span className={`font-semibold truncate ${idx === 0 ? "text-blue-800 dark:text-blue-300" : "text-rose-800 dark:text-rose-300"}`}>
-                  {idx + 1}. {rp.task.name}
-                </span>
-                <span className="text-[10px] text-slate-500 dark:text-[#a3a3a3]">
-                  {(rp.type === 'SS' || rp.type === 'SF') ? 'Start' : 'End'}: {formatDisplayDateTime((rp.type === 'SS' || rp.type === 'SF') ? rp.task.start : rp.task.finish)} ({rp.type || "FS"}{rp.lagValue ? ` ${rp.lagSign}${rp.lagValue}d` : ""})
-                </span>
-              </div>
-              {idx === 0 && (
-                <button
-                  type="button"
-                  onClick={handleApplyPredecessorDates}
-                  className="shrink-0 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-white dark:bg-[#1e1e20] border border-blue-200 dark:border-blue-700 px-2 py-1 rounded shadow-sm hover:bg-blue-50 cursor-pointer active:scale-95 touch-manipulation"
-                >
-                  Sync dates
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <PredecessorSearchSuggest task={draft} canWrite={canWrite} onChange={handleLinkChange} />
     </div>
   );
 });
