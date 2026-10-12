@@ -11,7 +11,11 @@ import {
   PredecessorContext, 
   getTaskProjectDiffDetails 
 } from '../lib/predecessorMatchUtils';
-import { shortDate } from '../lib/utils';
+function shortDate(s?: string): string {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : String(s);
+}
 
 /* ------------------------------------------------------------------ */
 /* Types & Helpers                                                    */

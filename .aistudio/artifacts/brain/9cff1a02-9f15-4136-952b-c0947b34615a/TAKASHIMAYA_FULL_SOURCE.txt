@@ -109641,3 +109641,1487 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 };
 
 === END FILE: src/components/TaskModularModal.tsx ===
+
+=== FILE: src/components/LayoutTabParts/TooltipParts/TooltipProgressBars.tsx ===
+import React from 'react';
+
+interface TooltipProgressBarsProps {
+  planProgressPercent: number;
+  actProgressPercent: number;
+  hasProjectDelegation?: boolean;
+}
+
+export const TooltipProgressBars: React.FC<TooltipProgressBarsProps> = ({
+  planProgressPercent,
+  actProgressPercent,
+  hasProjectDelegation,
+}) => {
+  return (
+    <div className="flex flex-col gap-1.5 px-0.5 pt-0.5">
+      {/* Plan Progress */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-11 shrink-0">
+          Plan:
+        </span>
+        <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+          <div 
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300 shadow-2xs" 
+            style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
+          />
+        </div>
+        <span className="text-xs font-bold font-mono text-blue-600 dark:text-blue-400 w-9 text-right shrink-0">
+          {planProgressPercent}%
+        </span>
+      </div>
+
+      {/* Actual Progress - Only shown when project has active delegation (matching General Tab) */}
+      {hasProjectDelegation && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-11 shrink-0">
+            Act:
+          </span>
+          <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" 
+              style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
+            />
+          </div>
+          <span className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400 w-9 text-right shrink-0">
+            {actProgressPercent}%
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+=== END FILE: src/components/LayoutTabParts/TooltipParts/TooltipProgressBars.tsx ===
+
+=== FILE: src/components/LayoutTabParts/LayoutUnitTooltip.tsx ===
+import React, { useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { 
+  cn, 
+  extractAllProjectCodes, 
+  projectMatchesUnitCode, 
+  extractProjectMetadata,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries,
+  computePlanProgressPercent,
+  computeActProgressPercent
+} from '../../lib/utils';
+import { Project } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
+import { LayoutUnitLightboxModal } from './LayoutUnitLightboxModal';
+import { LayoutUnitTooltipProps, getMdStatusColorClass } from './TooltipParts/tooltipTypes';
+import { useTooltipPosition } from './TooltipParts/useTooltipPosition';
+import { useTooltipImages } from './TooltipParts/useTooltipImages';
+import { TooltipHeaderBar } from './TooltipParts/TooltipHeaderBar';
+import { TooltipTitleSection } from './TooltipParts/TooltipTitleSection';
+import { TooltipAlertBanner } from './TooltipParts/TooltipAlertBanner';
+import { TooltipProgressBars } from './TooltipParts/TooltipProgressBars';
+import { TooltipMetaRow } from './TooltipParts/TooltipMetaRow';
+import { TooltipDetailsSection } from './TooltipParts/TooltipDetailsSection';
+import { TooltipImageGalleryPanel } from './TooltipParts/TooltipImageGalleryPanel';
+import { getZIndexClass, useOverlayStack } from '../../lib/zIndexManager';
+
+export { getMdStatusColorClass };
+export type { LayoutUnitTooltipProps };
+
+export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
+  hoverInfo,
+  tooltipRef,
+  containerRef,
+  onClose,
+  onEditProject,
+  onOpenMiniGantt,
+  onFocusUnit,
+  canWrite = false,
+  storeFilter = 'HCM'
+}) => {
+  const { enrichedProjects: projects } = useEnrichedData();
+  const vis = useAppStore(state => state.layoutTooltipVisibility);
+  const data = hoverInfo?.data || {};
+  const initialP: Project | undefined = data.matchedProject;
+
+  const p: Project | undefined = useMemo(() => {
+    const expectedStore = (
+      data.store ||
+      (storeFilter && storeFilter.toUpperCase() !== 'ALL' ? storeFilter : '') ||
+      'HCM'
+    ).toUpperCase().trim();
+
+    const expectedYear = String(data.year || useAppStore.getState().globalYearFilter || '').trim();
+
+    if (initialP?.id) {
+      const found = projects.find(item => item.id === initialP.id);
+      if (found) {
+        const itemMeta = extractProjectMetadata(found);
+        const itemStore = itemMeta.store;
+        const itemYear = itemMeta.year;
+        if ((!expectedStore || !itemStore || itemStore === expectedStore) &&
+            (!expectedYear || expectedYear === 'all' || !itemYear || itemYear === 'ALL' || itemYear === expectedYear)) {
+          return found;
+        }
+      }
+    }
+    const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
+    if (targetCode) {
+      const found = projects.find(item => {
+        const itemMeta = extractProjectMetadata(item);
+        if (expectedStore && itemMeta.store && itemMeta.store !== expectedStore) {
+          return false;
+        }
+        if (expectedYear && expectedYear !== 'all' && itemMeta.year && itemMeta.year !== 'ALL' && itemMeta.year !== expectedYear) {
+          return false;
+        }
+        const itemUnitCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+        return itemUnitCodes.includes(targetCode) || projectMatchesUnitCode(itemUnitCodes, targetCode);
+      });
+      if (found) return found;
+    }
+    if (initialP) {
+      const itemMeta = extractProjectMetadata(initialP);
+      const initStore = itemMeta.store;
+      const initYear = itemMeta.year;
+      if ((!expectedStore || !initStore || initStore === expectedStore) &&
+          (!expectedYear || expectedYear === 'all' || !initYear || initYear === 'ALL' || initYear === expectedYear)) {
+        return initialP;
+      }
+    }
+    return undefined;
+  }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, data.store, data.year, hoverInfo.unitName, projects, storeFilter]);
+
+  const activeYearFilter = String(data.year || useAppStore.getState().globalYearFilter || '').trim();
+  const isDataMatchingActiveYear = !data.hasAppProject || !data.year || data.year === 'all' || activeYearFilter === 'all' || data.year === activeYearFilter;
+  const hasProject = Boolean(p || (data.hasAppProject && isDataMatchingActiveYear));
+
+  const unitCode = p?.code || hoverInfo.unitName;
+  const storeDisplay = (p?.store || data.store || storeFilter || 'HCM').toUpperCase().trim();
+  const projectName = p?.name || (hasProject ? (data.projectName || data.brandName || '') : '');
+  const floorValue = data.floor || (p as any)?.floor;
+
+  const targetProject: Project = p || ({
+    id: `unit_${unitCode}`,
+    code: unitCode,
+    name: projectName || unitCode,
+    store: storeDisplay,
+    location: floorValue ? String(floorValue) : undefined,
+  } as Project);
+
+  // Status computation
+  const status = hasProject ? (p?.computedStatus || data.appProjectStatus || data.status || 'On process') : '';
+  
+  let statusColorClass = 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-600 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]';
+  const lowerStatus = String(status).toLowerCase();
+  if (lowerStatus.includes('completed') || lowerStatus.includes('done')) {
+    statusColorClass = 'bg-green-50 text-green-600 dark:text-emerald-400 border-green-200 dark:border-emerald-800';
+  } else if (lowerStatus.includes('handover')) {
+    statusColorClass = 'bg-blue-50 dark:bg-[#28282a] text-blue-600 dark:text-[#8ab4f8] border-blue-200 dark:border-blue-900/60';
+  } else if (lowerStatus.includes('on process') || lowerStatus.includes('process')) {
+    statusColorClass = 'bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800/60';
+  } else if (lowerStatus.includes('delay') || lowerStatus.includes('canceled') || lowerStatus.includes('late')) {
+    statusColorClass = 'bg-red-50 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/60';
+  } else if (lowerStatus.includes('ready')) {
+    statusColorClass = 'bg-amber-50 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/60';
+  }
+
+  // MD Status from project or layout data
+  const rawMdStatus = p?.mdStatus || data.mdStatus || (p as any)?.md_status || (data as any)?.md_status || '';
+  const mdStatus = (rawMdStatus && rawMdStatus !== '-' && String(rawMdStatus).trim().toLowerCase() !== 'null') 
+    ? String(rawMdStatus).trim() 
+    : '';
+  const mdStatusColorClass = getMdStatusColorClass(mdStatus);
+
+  // Progress metrics & Delegation check (Strictly matching General Tab calculation)
+  const allStoreTasks = useAppStore.getState().tasks || [];
+  const storeDelegationGroups = useAppStore.getState().delegationGroups || [];
+  const projectTasks = allStoreTasks.filter((t) =>
+    (p?.id && String(t.projectId) === String(p.id)) ||
+    (p?.code && t.projectCode === p.code) ||
+    (data?.appProjectCode && t.projectCode === data.appProjectCode)
+  );
+
+  const planProgressPercent = hasProject
+    ? (projectTasks.length > 0
+        ? computePlanProgressPercent(projectTasks)
+        : ((p?.computedPlanProgress && p.computedPlanProgress > 0)
+            ? p.computedPlanProgress
+            : (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computePlanProgressFromSummaries(p.taskSummaries)
+                : (p?.computedPlanProgress ?? data.planProgressPercent ?? 0))))
+    : 0;
+
+  const actProgressPercent = hasProject
+    ? (projectTasks.length > 0
+        ? computeActProgressPercent(projectTasks, storeDelegationGroups)
+        : ((p?.computedActProgress && p.computedActProgress > 0)
+            ? p.computedActProgress
+            : (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computeActProgressFromSummaries(p.taskSummaries)
+                : (p?.computedActProgress ?? data.actProgressPercent ?? 0))))
+    : 0;
+
+  const hasProjectDelegation = hasProject && Boolean(
+    data.hasProjectDelegation ||
+    (p as any)?.delegation ||
+    (p as any)?.hasDelegation ||
+    (projectTasks.length > 0 && projectTasks.some((t) => Boolean(t.delegation))) ||
+    (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+    (storeDelegationGroups && storeDelegationGroups.some((g: any) =>
+      (p?.code && g.projectCode === p.code) ||
+      (data?.appProjectCode && g.projectCode === data.appProjectCode) ||
+      (p?.id && String((g as any).projectId) === String(p.id)) ||
+      (projectTasks.some((t) => t.id === g.parentTaskId))
+    ))
+  );
+
+  // Dates & Comments
+  const computedTakStart = hasProject ? (p?.computedTakStart || p?.start || data.startDate || '') : '';
+  const computedTakCompl = hasProject ? (p?.computedTakCompl || p?.handover || data.handoverDate || '') : '';
+  const commentsCount = p?.comments?.length || 0;
+
+  // Task lines & Details (Strictly matching General Tab logic - pure work tasks only)
+  const isUrlOrPhotoLine = (str: string | undefined | null) => {
+    if (!str || typeof str !== 'string') return false;
+    const lower = str.toLowerCase().trim();
+    return (
+      lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('link / photo:') ||
+      lower.startsWith('link:') ||
+      lower.startsWith('photo:') ||
+      lower.startsWith('image:') ||
+      lower.includes('.jpg') ||
+      lower.includes('.jpeg') ||
+      lower.includes('.png') ||
+      lower.includes('.webp') ||
+      lower.includes('.gif')
+    );
+  };
+
+  const rawTaskLines: string[] = (data.taskLines && Array.isArray(data.taskLines) && data.taskLines.length > 0)
+    ? data.taskLines
+    : (() => {
+        if (!p) return [];
+        const now = new Date();
+        let activeTaskNames: string[] = [];
+        if (p.taskSummaries && p.taskSummaries.length > 0) {
+          const activeTasks = p.taskSummaries.filter(t => {
+            if (!t.start || !t.finish) return false;
+            const start = new Date(t.start);
+            const finish = new Date(t.finish);
+            return now >= start && now <= finish;
+          });
+          activeTaskNames = activeTasks.map(t => t.name).filter(Boolean);
+        }
+        const lines: string[] = [];
+        activeTaskNames.forEach(name => {
+          lines.push(...name.split('\n').map((l: string) => l.trim()).filter((l: string) => l !== ''));
+        });
+        return Array.from(new Set(lines));
+      })();
+
+  const taskLines = Array.from(new Set(rawTaskLines.filter(line => !isUrlOrPhotoLine(line))));
+
+  const rawDetailText = p?.detail || data.detail || data.appProjectDetail || data.appDetail || '';
+  const detailText = isUrlOrPhotoLine(rawDetailText) ? '' : rawDetailText;
+  const rawDescText = (p as any)?.description || (p?.detail !== detailText ? p?.detail : '') || data.appProjectDescription || data.appDescription || data.description || '';
+  const descriptionText = isUrlOrPhotoLine(rawDescText) ? '' : rawDescText;
+
+  // Hook 1: Position & Dragging management
+  const {
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    positionTooltip,
+  } = useTooltipPosition({
+    hoverInfo,
+    tooltipRef,
+    containerRef,
+    showImagePanel: false,
+  });
+
+  // Hook 2: Images & Gallery management
+  const {
+    showImagePanel,
+    setShowImagePanel,
+    showAddLinkInput,
+    setShowAddLinkInput,
+    newLinkInput,
+    setNewLinkInput,
+    copiedLink,
+    enlargedImage,
+    setEnlargedImage,
+    allUnitImages,
+    handleAddCustomImage,
+    handleDeleteCustomImage,
+    handleCopyLink,
+  } = useTooltipImages({
+    p,
+    data,
+    unitCode,
+    tooltipRef,
+    positionTooltip,
+    storeFilter: storeDisplay,
+  });
+
+  // Safe fallback if vis is undefined
+  const v = vis || {
+    projectCode: true,
+    projectName: true,
+    mdStatus: true,
+    actStatus: true,
+    legendColor: true,
+    floor: true,
+    startDate: true,
+    endDate: true,
+    detail: true,
+    description: true,
+    progressBars: true,
+    area: true,
+  };
+
+  const zInfo = useOverlayStack({
+    layer: 'LAYOUT_TOOLTIP',
+    isOpen: !!hoverInfo?.visible,
+    onClose,
+    closeOnTabChange: true
+  });
+
+  const tooltipElement = createPortal(
+    <div 
+      ref={tooltipRef}
+      className={cn(
+        "fixed pointer-events-auto rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all duration-150 select-none",
+        zInfo.zClass,
+        "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-slate-100",
+        "overflow-y-auto custom-scrollbar overscroll-contain touch-pan-y"
+      )}
+      style={{ 
+        position: 'fixed',
+        transformOrigin: 'top left',
+        touchAction: 'pan-y'
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest('.cursor-grab, .modal-handle')) {
+          e.stopPropagation();
+        }
+      }}
+    >
+      {/* 1. Header Bar: Badges, Drag Handle & Action Buttons */}
+      <TooltipHeaderBar
+        v={v}
+        mdStatus={mdStatus}
+        mdStatusColorClass={mdStatusColorClass}
+        status={status}
+        statusColorClass={statusColorClass}
+        allUnitImages={allUnitImages}
+        showImagePanel={showImagePanel}
+        setShowImagePanel={setShowImagePanel}
+        targetProject={targetProject}
+        unitCode={unitCode}
+        unitName={hoverInfo.unitName}
+        onFocusUnit={onFocusUnit}
+        onClose={onClose}
+        handlePointerDown={handlePointerDown}
+        handlePointerMove={handlePointerMove}
+        handlePointerUp={handlePointerUp}
+      />
+
+      {/* 2. Full-Width Task / Unit Title Section */}
+      <TooltipTitleSection
+        v={v}
+        p={p}
+        canWrite={canWrite}
+        storeDisplay={storeDisplay}
+        unitCode={unitCode}
+        projectName={projectName}
+        onEditProject={onEditProject}
+      />
+
+      {/* 3. Smart Alert Notification Banner */}
+      <TooltipAlertBanner
+        alerts={data.alerts}
+        visNotifications={vis?.notifications}
+        p={p}
+        canWrite={canWrite}
+        onEditProject={onEditProject}
+      />
+
+      {/* 4. Progress Bars */}
+      {v.progressBars && (
+        <TooltipProgressBars
+          planProgressPercent={planProgressPercent}
+          actProgressPercent={actProgressPercent}
+          hasProjectDelegation={hasProjectDelegation}
+        />
+      )}
+
+      {/* 5. Unified Information Row: Floor, Area, Comment Symbol & Dates */}
+      <TooltipMetaRow
+        v={v}
+        p={p}
+        floorValue={floorValue}
+        dataSize={data.size}
+        commentsCount={commentsCount}
+        computedTakStart={computedTakStart}
+        computedTakCompl={computedTakCompl}
+        onEditProject={onEditProject}
+        onOpenMiniGantt={onOpenMiniGantt}
+      />
+
+      {/* 6. Details & Description Section */}
+      <TooltipDetailsSection
+        v={v}
+        taskLines={taskLines}
+        detailText={detailText}
+        descriptionText={descriptionText}
+      />
+
+      {/* 7. Image & Link Thumbnail Gallery Panel */}
+      <TooltipImageGalleryPanel
+        showImagePanel={showImagePanel}
+        setShowImagePanel={setShowImagePanel}
+        showAddLinkInput={showAddLinkInput}
+        setShowAddLinkInput={setShowAddLinkInput}
+        newLinkInput={newLinkInput}
+        setNewLinkInput={setNewLinkInput}
+        allUnitImages={allUnitImages}
+        copiedLink={copiedLink}
+        handleAddCustomImage={handleAddCustomImage}
+        handleDeleteCustomImage={handleDeleteCustomImage}
+        handleCopyLink={handleCopyLink}
+        setEnlargedImage={setEnlargedImage}
+        unitCode={unitCode || data.code || ''}
+        activeStore={storeDisplay}
+      />
+    </div>,
+    document.body
+  );
+
+  return (
+    <>
+      {tooltipElement}
+      {/* 8. Enlarged Image Lightbox Modal - Mounted as clean top-level sibling portal */}
+      {enlargedImage && (
+        <LayoutUnitLightboxModal
+          enlargedImage={enlargedImage}
+          onClose={() => setEnlargedImage(null)}
+          onCopyLink={handleCopyLink}
+          copiedLink={copiedLink}
+        />
+      )}
+    </>
+  );
+};
+
+export default LayoutUnitTooltip;
+
+=== END FILE: src/components/LayoutTabParts/LayoutUnitTooltip.tsx ===
+
+=== FILE: src/components/LayoutTabParts/layoutDataAggregator.ts ===
+import { Project } from '../../types';
+import { 
+  getStatus, 
+  computeProjectActStatus, 
+  extractAllProjectCodes, 
+  projectMatchesUnitCode, 
+  extractProjectMetadata, 
+  projectMatchesScope,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries,
+  computePlanProgressPercent,
+  computeActProgressPercent
+} from '../../lib/utils';
+
+export interface BuildAggregatedUnitDataParams {
+  units: any[];
+  summaryData: any[];
+  enrichedProjects: Project[];
+  tasks: any[];
+  projectLinkData: any[];
+  storeFilter: string;
+  locationFilter: string;
+  targetLoc: string;
+  effectiveLayoutYear: string;
+  delegationGroups: any[];
+  layoutTooltipVisibility: any;
+  restrictedProjectCodes: Set<string>;
+  hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
+}
+
+export function buildAggregatedUnitData({
+  units,
+  summaryData,
+  enrichedProjects,
+  tasks,
+  projectLinkData,
+  storeFilter,
+  locationFilter,
+  targetLoc,
+  effectiveLayoutYear,
+  delegationGroups,
+  layoutTooltipVisibility,
+  restrictedProjectCodes,
+  hasStoredUnitImages,
+}: BuildAggregatedUnitDataParams) {
+  const dataMap: Record<string, any> = {};
+  
+  units.forEach((u: any) => {
+    const uName = (u?.name || '').toLowerCase().trim();
+    if (!uName) return;
+    const isRestricted = restrictedProjectCodes.has(uName);
+    dataMap[uName] = {
+      name: u.name || '',
+      id: u.id,
+      unit: u.name || '',
+      isRestricted,
+      hasImage: Boolean(u.imageUrl || u.thumbnail || u.image),
+      year: effectiveLayoutYear,
+      size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
+      profit: 0, profitByCp: 0, profitByHcmcate: 0,
+      margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
+      mdStatus: "", task: "", projectStatus: "", actStatus: "",
+      endDate: "", status: "", vendorCode: "",
+      brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
+      appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", appProjectYear: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
+      appProjectMdStatus: "", appMdStatus: "", appProjectActStatus: "", appActStatus: "", appProjectDetail: "", appDetail: "", appProjectDescription: "", appDescription: "", appProjectParty: "", appParty: ""
+    };
+  });
+
+  summaryData.forEach((sumData) => {
+    const key = sumData.unit?.toLowerCase().trim();
+    if (key && dataMap[key]) {
+      if (dataMap[key].isRestricted || restrictedProjectCodes.has(key)) {
+        dataMap[key].isRestricted = true;
+        return;
+      }
+      Object.assign(dataMap[key], {
+          size: sumData.size || 0,
+          sales: sumData.salesAmount || 0,
+          profit: sumData.profitAmount || 0,
+          margin: sumData.margin || 0,
+          hcmSalesEffi: sumData.hcmSalesEffi || 0,
+          mdStatus: sumData.mdStatus || "",
+          projectStatus: sumData.projectStatus || "",
+          status: sumData.status || "",
+          brandName: sumData.brandName || "",
+          floor: dataMap[key].floor || (sumData as any).floor || "",
+      });
+    }
+  });
+
+  // Pre-index tasks by code map and projectId for O(1) lookup (Filtered by store and year)
+  const tasksByCodeMap = new Map<string, any[]>();
+  const tasksByProjIdMap = new Map<string, any[]>();
+  tasks.forEach(t => {
+    if (!t || !t.name) return;
+    const tStore = String(t.projectStore || t.store || '').toUpperCase().trim();
+    if (tStore && tStore !== 'ALL' && storeFilter && storeFilter !== 'all' && tStore !== storeFilter.toUpperCase().trim()) return;
+    const tYear = String(t.projectYear || t.year || '').trim();
+    if (tYear && tYear !== 'ALL' && effectiveLayoutYear && effectiveLayoutYear !== 'all' && tYear !== String(effectiveLayoutYear).trim()) return;
+
+    if (t.projectId) {
+      const pId = String(t.projectId).trim().toLowerCase();
+      let list = tasksByProjIdMap.get(pId);
+      if (!list) {
+        list = [];
+        tasksByProjIdMap.set(pId, list);
+      }
+      list.push(t);
+    }
+    if (t.projectCode) {
+      const rawCode = String(t.projectCode).trim().toLowerCase();
+      const codeParts = rawCode.split(/[+;,/]/).map(c => c.trim()).filter(Boolean);
+      codeParts.forEach(c => {
+        let list = tasksByCodeMap.get(c);
+        if (!list) {
+          list = [];
+          tasksByCodeMap.set(c, list);
+        }
+        list.push(t);
+      });
+    }
+  });
+
+  // Pre-index projectLink: maps unit name -> list of linked project codes
+  const unitToProjectCodesMap = new Map<string, string[]>();
+  projectLinkData.forEach((pl: any) => {
+    const u = String(pl?.unit || '').trim().toLowerCase();
+    const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+    if (u && pCode) {
+      if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+      unitToProjectCodesMap.get(u)!.push(pCode);
+    }
+  });
+
+  const now = new Date();
+  enrichedProjects.forEach((p) => {
+    if (!p.code && !p.linkCodes) return;
+
+    const pMeta = extractProjectMetadata(p);
+
+    if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) {
+      return;
+    }
+
+    const pCodes = extractAllProjectCodes(p);
+    const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+    
+    const seenTaskKeys = new Set<string>();
+    const allMatchedTasks: any[] = [];
+    const addTaskIfUnique = (t: any) => {
+      if (!t) return;
+      const key = t.id 
+        ? String(t.id).trim().toLowerCase()
+        : `${String(t.name || '').trim().toLowerCase()}_${String(t.start || t.startDate || '').trim()}_${String(t.finish || t.endDate || '').trim()}`;
+      if (!seenTaskKeys.has(key)) {
+        seenTaskKeys.add(key);
+        allMatchedTasks.push(t);
+      }
+    };
+
+    if (p.id) {
+      const pIdLower = String(p.id).trim().toLowerCase();
+      const list = tasksByProjIdMap.get(pIdLower);
+      if (list) list.forEach(addTaskIfUnique);
+    }
+    if (p.no) {
+      const pNoLower = String(p.no).trim().toLowerCase();
+      const list = tasksByProjIdMap.get(pNoLower);
+      if (list) list.forEach(addTaskIfUnique);
+    }
+    pCodes.forEach(c => {
+      const list = tasksByCodeMap.get(c);
+      if (list) list.forEach(addTaskIfUnique);
+    });
+    if (p.code) {
+      const pCodeLower = String(p.code).trim().toLowerCase();
+      const list = tasksByCodeMap.get(pCodeLower);
+      if (list) list.forEach(addTaskIfUnique);
+    }
+    // Only supplement from p.taskSummaries if not already captured from real tasks
+    if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+      p.taskSummaries.forEach(addTaskIfUnique);
+    }
+    const allTaskNames = Array.from(new Set(allMatchedTasks.map((t: any) => t.name).filter(Boolean)));
+
+    const activeTasks = allMatchedTasks.filter((t: any) => {
+      const startStr = t.start || t.startDate || t.takStart;
+      const finishStr = t.finish || t.end || t.endDate || t.takCompl || t.handover;
+      if (!startStr || !finishStr) return false;
+      const start = new Date(startStr);
+      const finish = new Date(finishStr);
+      return now >= start && now <= finish;
+    });
+    const activeTaskNames = Array.from(new Set(activeTasks.map(t => t.name).filter(Boolean)));
+
+    const isUrlOrImageLine = (str: string | undefined | null) => {
+      if (!str || typeof str !== 'string') return false;
+      const lower = str.toLowerCase().trim();
+      return (
+        lower.startsWith('http://') ||
+        lower.startsWith('https://') ||
+        lower.startsWith('link / photo:') ||
+        lower.startsWith('link:') ||
+        lower.startsWith('photo:') ||
+        lower.startsWith('image:') ||
+        lower.includes('.jpg') ||
+        lower.includes('.jpeg') ||
+        lower.includes('.png') ||
+        lower.includes('.webp') ||
+        lower.includes('.gif')
+      );
+    };
+
+    const cleanAllTaskNames = Array.from(new Set(allTaskNames.filter(t => !isUrlOrImageLine(t))));
+    const cleanActiveTaskNames = Array.from(new Set(activeTaskNames.filter(t => !isUrlOrImageLine(t))));
+
+    const taskSummaryStr = cleanAllTaskNames.length > 0 
+      ? cleanAllTaskNames.join('; ')
+      : (cleanActiveTaskNames.join('; ') || (p.taskSummaries?.map((t: any) => t.name).filter((n: string) => !isUrlOrImageLine(n)).join('; ') || ''));
+
+    let taskLines: string[] = [];
+    cleanActiveTaskNames.forEach(name => {
+      taskLines.push(...name.split('\n').map((l: string) => l.trim()).filter((l: string) => l !== '' && !isUrlOrImageLine(l)));
+    });
+    taskLines = Array.from(new Set(taskLines));
+
+    const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
+    const detailStr = p.detail || '';
+    const descStr = p.detail || (p as any).description || '';
+    const partyStr = p.party || (p as any).contractor || '';
+    const mdStatusStr = p.mdStatus || '';
+
+    const targetUnitKeys = new Set<string>();
+    Object.keys(dataMap).forEach(uKey => {
+      const uEntry = dataMap[uKey];
+      if (!uEntry) return;
+      const uStore = (uEntry.store || storeFilter || '').toUpperCase().trim();
+      const uLoc = (uEntry.location || targetLoc || '').toUpperCase().trim();
+      const uYr = String(uEntry.year || effectiveLayoutYear || '').trim();
+
+      // Strict Store, Location, and Year Isolation
+      if (pMeta.store && uStore && uStore !== 'ALL' && uStore !== 'all' && pMeta.store !== uStore) return;
+      const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+      if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
+      if (pMeta.year && uYr && uYr !== 'ALL' && uYr !== 'all' && pMeta.year !== uYr) return;
+
+      const linkedCodes = [
+        ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
+        ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
+        ...(uEntry.id ? (unitToProjectCodesMap.get(uEntry.id.toLowerCase()) || []) : []),
+      ];
+      const isLinkedViaProjectLink = linkedCodes.some(lc => 
+        pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+      );
+
+      const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
+      if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
+        targetUnitKeys.add(uKey);
+      }
+    });
+
+    targetUnitKeys.forEach(code => {
+       if (dataMap[code]) {
+          const uStore = (dataMap[code]?.store || pMeta.store || storeFilter || '').toUpperCase().trim();
+          dataMap[code].matchedProject = p;
+          dataMap[code].hasAppProject = true;
+          dataMap[code].appProjectStatus = status;
+          dataMap[code].appProjectBudget = p.budget || 0;
+          dataMap[code].appProjectActual = p.actual || 0;
+          dataMap[code].appProjectCode = String(p.code);
+          dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : '');
+          dataMap[code].year = pMeta.year || (p.year ? String(p.year) : '') || dataMap[code].year || '';
+          dataMap[code].floor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
+          dataMap[code].appProjectFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
+          dataMap[code].appFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
+          dataMap[code].projectName = p.name || "";
+          dataMap[code].startDate = p.start || p.computedTakStart || "";
+          dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";
+          dataMap[code].openingDate = p.opening || p.computedOpening || "";
+          dataMap[code].detail = detailStr;
+          dataMap[code].task = taskSummaryStr;
+          dataMap[code].taskLines = taskLines;
+          dataMap[code].taskSummaries = allMatchedTasks;
+          dataMap[code].activeTasks = activeTaskNames;
+          dataMap[code].mdStatus = mdStatusStr || dataMap[code].mdStatus || "";
+          dataMap[code].actStatus = actStatus || dataMap[code].actStatus || "";
+          dataMap[code].party = partyStr;
+          dataMap[code].projectStatus = status || dataMap[code].projectStatus || "";
+          dataMap[code].status = status || dataMap[code].status || "";
+
+          dataMap[code].appProjectMdStatus = mdStatusStr;
+          dataMap[code].appMdStatus = mdStatusStr;
+
+          dataMap[code].appProjectActStatus = actStatus;
+          dataMap[code].appActStatus = actStatus;
+
+          dataMap[code].appProjectDetail = detailStr;
+          dataMap[code].appDetail = detailStr;
+
+          dataMap[code].appProjectDescription = descStr;
+          dataMap[code].appDescription = descStr;
+
+          dataMap[code].appProjectParty = partyStr;
+          dataMap[code].appParty = partyStr;
+
+          dataMap[code].matchedTasks = allMatchedTasks;
+          dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
+
+          const projPlanProgress = (allMatchedTasks && allMatchedTasks.length > 0)
+            ? computePlanProgressPercent(allMatchedTasks)
+            : ((p.computedPlanProgress && p.computedPlanProgress > 0)
+                ? p.computedPlanProgress
+                : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? computePlanProgressFromSummaries(p.taskSummaries)
+                    : (p.computedPlanProgress ?? 0)));
+
+          const projActProgress = (allMatchedTasks && allMatchedTasks.length > 0)
+            ? computeActProgressPercent(allMatchedTasks, delegationGroups)
+            : ((p.computedActProgress && p.computedActProgress > 0)
+                ? p.computedActProgress
+                : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? computeActProgressFromSummaries(p.taskSummaries)
+                    : (p.computedActProgress ?? 0)));
+
+          const hasProjectDelegation = Boolean(
+            (p as any).delegation ||
+            (p as any).hasDelegation ||
+            (allMatchedTasks.length > 0 && allMatchedTasks.some((t: any) => Boolean(t.delegation))) ||
+            (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+            (delegationGroups && Array.isArray(delegationGroups) && delegationGroups.some((g: any) =>
+              (p.code && g.projectCode === p.code) ||
+              (p.id && String(g.projectId) === String(p.id)) ||
+              (allMatchedTasks.some((t: any) => t.id === g.parentTaskId))
+            ))
+          );
+
+          dataMap[code].planProgressPercent = projPlanProgress;
+          dataMap[code].actProgressPercent = projActProgress;
+          dataMap[code].hasProjectDelegation = hasProjectDelegation;
+
+          const hasProjectImages = Boolean(
+            (p.thumbnail && typeof p.thumbnail === 'string' && p.thumbnail.trim()) ||
+            (p.imageUrl && typeof p.imageUrl === 'string' && p.imageUrl.trim()) ||
+            ((p as any).image && typeof (p as any).image === 'string' && (p as any).image.trim()) ||
+            ((p as any).photo && typeof (p as any).photo === 'string' && (p as any).photo.trim()) ||
+            (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' && ts.name.match(/https?:\/\/[^\s]+/)))) ||
+            (p.comments && Array.isArray(p.comments) && p.comments.some((c: any) => c.attachments && c.attachments.length > 0)) ||
+            (p as any).imageUrl || (p as any).thumbnail || (p as any).image ||
+            dataMap[code].imageUrl || dataMap[code].thumbnail || dataMap[code].image ||
+            hasStoredUnitImages(code, uStore) ||
+            hasStoredUnitImages(p.code, uStore)
+          );
+          dataMap[code].hasImage = hasProjectImages || dataMap[code].hasImage;
+
+          const todayStr = now.toISOString().split('T')[0];
+          const alertReasons: string[] = [];
+          let alertLevel: 'critical' | 'warning' | null = null;
+
+          const isProjectCompleted = (p.computedActProgress ?? 0) >= 100 || 
+            String(status).toLowerCase() === 'completed' || 
+            String(actStatus).toLowerCase() === 'completed';
+
+          if (layoutTooltipVisibility?.notifications !== false && !isProjectCompleted) {
+            const subTasksList = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
+            let overdueCount = 0;
+            if (layoutTooltipVisibility?.alertOverdue !== false) {
+              subTasksList.forEach((st: any) => {
+                if (st.finish && st.finish < todayStr) {
+                  const prog = st.progress ?? st.computedActProgress ?? 0;
+                  if (prog < 100 && st.status !== 'Completed' && st.status !== 'Done' && st.status !== 'Canceled') {
+                    overdueCount++;
+                  }
+                }
+              });
+            }
+
+            let isDelayed = false;
+            if (layoutTooltipVisibility?.alertDelay !== false) {
+              const lowerStat = String(status).toLowerCase();
+              const lowerAct = String(actStatus).toLowerCase();
+              isDelayed = lowerStat.includes('delay') || lowerStat.includes('late') || lowerAct.includes('delay') || lowerAct.includes('late');
+            }
+
+            if (isDelayed && overdueCount > 0) {
+              alertReasons.push(`Project delayed (${overdueCount} overdue task${overdueCount > 1 ? 's' : ''})`);
+              alertLevel = 'critical';
+            } else if (isDelayed) {
+              alertReasons.push('Project delayed');
+              alertLevel = 'critical';
+            } else if (overdueCount > 0) {
+              alertReasons.push(`${overdueCount} overdue task${overdueCount > 1 ? 's' : ''}`);
+              alertLevel = 'critical';
+            }
+
+            if (layoutTooltipVisibility?.alertHandover !== false) {
+              const hDate = p.handover || p.computedTakCompl;
+              if (hDate && hDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
+                const diffDays = Math.ceil((new Date(hDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays >= 0 && diffDays <= 3) {
+                  alertReasons.push(`Handover ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'}`);
+                  if (!alertLevel) alertLevel = 'warning';
+                }
+              }
+            }
+
+            if (layoutTooltipVisibility?.alertOpening !== false) {
+              const oDate = p.opening || p.computedOpening;
+              if (oDate && oDate >= todayStr && (p.computedActProgress ?? 0) < 100) {
+                const diffDays = Math.ceil((new Date(oDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays >= 0 && diffDays <= 5) {
+                  const actProg = p.computedActProgress ?? 0;
+                  if (actProg < 80 && layoutTooltipVisibility?.alertOpeningRisk !== false) {
+                    alertReasons.push(`Opening at risk (<80% prg, ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'})`);
+                    alertLevel = 'critical';
+                  } else if (diffDays <= 3) {
+                    alertReasons.push(`Opening ${diffDays === 0 ? 'Today' : 'in ' + diffDays + 'd'}`);
+                    if (!alertLevel) alertLevel = 'warning';
+                  }
+                }
+              }
+            }
+          }
+
+          dataMap[code].alerts = {
+            hasAlert: alertReasons.length > 0,
+            level: alertLevel,
+            count: alertReasons.length,
+            reasons: alertReasons
+          };
+       }
+    });
+  });
+
+  return dataMap;
+}
+
+=== END FILE: src/components/LayoutTabParts/layoutDataAggregator.ts ===
+
+=== FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts ===
+import { useMemo } from 'react';
+import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
+import { useAppStore } from '../../../store/useAppStore';
+import { useDataStore } from '../DataContext';
+import { 
+  enrichProjects, 
+  getStatus, 
+  computeProjectActStatus, 
+  extractAllProjectCodes, 
+  projectMatchesUnitCode, 
+  extractProjectMetadata, 
+  projectMatchesScope,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries
+} from '../../../lib/utils';
+import { calculateSummaryData, SummaryDataItem } from './summaryData';
+
+export interface DynamicUnitSummaryItem {
+  unitId: string;
+  unitName: string;
+  store: string;
+  location: string;
+  year: string;
+  // Real-time App Project Data (Strictly from Zustand tasks & projects)
+  hasAppProject: boolean;
+  appProjectCode: string;
+  projectName: string;
+  appProjectStatus: string; // 'On process' | 'Upcoming' | 'Completed' | 'Delay' | ''
+  appProjectYear: string;
+  appProjectMdStatus: string;
+  appProjectActStatus: string;
+  appProjectDetail: string;
+  appProjectDescription: string;
+  appProjectParty: string;
+  appProjectBudget: number;
+  appProjectActual: number;
+  planProgress: number;
+  actProgress: number;
+  matchedTasksCount: number;
+  task: string;
+  activeTasks?: string[];
+  // Excel / Master Business Data
+  size: number;
+  sales: number;
+  salesByCp: number;
+  profit: number;
+  profitByCp: number;
+  margin: number;
+  marginByCp: number;
+  hcmSalesEffi: number;
+  hcmMargin: number;
+  mdStatus: string;
+  mdNotes: string;
+  excelProjectStatus: string;
+  vendorCode: string;
+  brandCode: string;
+  brandName: string;
+  classCode: string;
+  // Dynamic Evaluation Result
+  matchedGroupId: string | null;
+  matchedGroupName: string | null;
+  color: string; // Hex color
+  opacity: number;
+  matchedRuleReason: string;
+  isRestricted?: boolean;
+}
+
+/**
+ * Pure function to evaluate if a rule matches a unit's aggregated data
+ */
+export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): boolean {
+  let val: any = (data as any)[rule.field];
+
+  if (val === undefined || val === null || String(val).trim() === '') {
+    const f = String(rule.field || '').toLowerCase().trim();
+    if (f === 'floor' || f === 'location') {
+      val = data.location || '';
+    } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
+      val = data.hasAppProject ? (data.location || '') : '';
+    } else if (f === 'year') {
+      val = data.year || '';
+    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
+      val = data.hasAppProject ? (data.appProjectYear || '') : '';
+    } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
+      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : '';
+    } else if (f === 'unit' || f === 'code') {
+      val = data.unitName || '';
+    } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
+      val = data.hasAppProject ? (data.appProjectCode || '') : '';
+    } else if (f === 'mdstatus') {
+      val = data.hasAppProject ? (data.appProjectMdStatus || '') : (data.mdStatus || '');
+    } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
+      val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
+    } else if (f === 'actstatus' || f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+      val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
+    } else if (f === 'detail' || f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+      val = data.hasAppProject ? (data.appProjectDetail || '') : '';
+    } else if (f === 'description (project)' || f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+      val = data.hasAppProject ? (data.appProjectDescription || '') : '';
+    } else if (f === 'party' || f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+      val = data.hasAppProject ? (data.appProjectParty || '') : '';
+    } else if (f === 'budget' || f === 'appbudget' || f === 'appprojectbudget' || f === 'app: budget') {
+      val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
+    } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
+      val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+    } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+      val = (data.hasAppProject && data.task) ? data.task : '';
+    } else if (f === 'actprogress' || f === 'act progress') {
+      val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
+    } else if (f === 'planprogress' || f === 'plan progress') {
+      val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
+    }
+  }
+
+  if (rule.field === 'margin' || rule.field === 'marginByCp' || rule.field === 'hcmMargin') {
+    val = Number(val || 0) * 100;
+  }
+
+  const numVal = Number(rule.value);
+  const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== '';
+
+  let compareValStr = String(val ?? '').toLowerCase().trim();
+  let compareRuleStr = String(rule.value ?? '').toLowerCase().trim();
+
+  // Normalize synonym status strings
+  if (compareRuleStr === 'in progress') compareRuleStr = 'on process';
+  if (compareValStr === 'in progress') compareValStr = 'on process';
+
+  switch (rule.operator) {
+    case '>':
+      return isNum ? Number(val) > numVal : false;
+    case '<':
+      return isNum ? Number(val) < numVal : false;
+    case '>=':
+      return isNum ? Number(val) >= numVal : false;
+    case '<=':
+      return isNum ? Number(val) <= numVal : false;
+    case '=':
+      return compareValStr === compareRuleStr;
+    case 'contains': {
+      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+      return searchTerms.every((term) => compareValStr.includes(term));
+    }
+    case 'or':
+    case 'OR': {
+      const orTerms = compareRuleStr
+        .split(/[\r\n\t,;+/&|]+|\s{2,}/)
+        .map((t) => {
+          let tr = t.trim();
+          if (tr === 'in progress') tr = 'on process';
+          return tr;
+        })
+        .filter(Boolean);
+      if (orTerms.length === 0) {
+        const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+        return spaceTerms.some((term) => compareValStr === term || compareValStr.includes(term));
+      }
+      return orTerms.some((term) => {
+        if (compareValStr === term) return true;
+        if (compareValStr.includes(term)) return true;
+        if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
+        return false;
+      });
+    }
+    case 'exclude': {
+      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+      return !searchTerms.some((term) => compareValStr.includes(term));
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * Event-Driven Unit Summary Engine Hook
+ * Evaluates in RAM (<2ms) and updates ONLY when tasks, projects, versions or filters change.
+ */
+export function useDynamicUnitSummary({
+  units = [],
+  activeVersion,
+  store = 'HCM',
+  location = 'B1',
+  year,
+}: {
+  units?: UnitShape[];
+  activeVersion?: MapVersion | null;
+  store?: 'HCM' | 'HN';
+  location?: string;
+  year?: string;
+}) {
+  const projects = useAppStore((state) => state.projects);
+  const tasks = useAppStore((state) => state.tasks);
+  const delegationGroups = useAppStore((state) => state.delegationGroups);
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const currentUser = useAppStore((state) => state.currentUser);
+
+  const effectiveYear = String(year || globalYearFilter || new Date().getFullYear()).trim();
+
+  // 1. Fetch Excel Master Data
+  const unitInfo = useDataStore((state) => state.unitInfo);
+  const classInfo = useDataStore((state) => state.classInfo);
+  const actualClassInfo = useDataStore((state) => state.actualClassInfo);
+  const sales = useDataStore((state) => state.sales);
+  const profits = useDataStore((state) => state.profits);
+  const subFees = useDataStore((state) => state.subFees);
+  const mdStatus = useDataStore((state) => state.mdStatus);
+  const projectStatus = useDataStore((state) => state.projectStatus);
+  const projectLink = useDataStore((state) => state.projectLink);
+  const basePlan = useDataStore((state) => state.basePlan);
+
+  const summaryData = useMemo(() => {
+    return calculateSummaryData({
+      unitInfo,
+      classInfo,
+      actualClassInfo,
+      sales,
+      profits,
+      subFees,
+      mdStatus,
+      projectStatus,
+      projectLink,
+      basePlan,
+      units,
+    });
+  }, [unitInfo, classInfo, actualClassInfo, sales, profits, subFees, mdStatus, projectStatus, projectLink, basePlan, units]);
+
+  // 2. Pre-enrich projects with live tasks
+  const enrichedProjects = useMemo(() => {
+    return enrichProjects(projects, tasks, delegationGroups);
+  }, [projects, tasks, delegationGroups]);
+
+  // 3. Compute restricted project codes (RBAC)
+  const restrictedProjectCodes = useMemo(() => {
+    if (!currentUser || currentUser.role === 'admin') return new Set<string>();
+    const allowedCodeSet = new Set<string>();
+    enrichedProjects.forEach((p) => {
+      if (p.code) allowedCodeSet.add(String(p.code).trim().toLowerCase());
+      if (p.linkCodes) {
+        p.linkCodes.split(/[+;,/]/).forEach((c) => {
+          if (c.trim()) allowedCodeSet.add(c.trim().toLowerCase());
+        });
+      }
+    });
+
+    const restrictedSet = new Set<string>();
+    projects.forEach((p) => {
+      const rawCodes = p.linkCodes && p.linkCodes.trim() ? p.linkCodes : String(p.code || '');
+      const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+      pCodes.forEach((code) => {
+        if (!allowedCodeSet.has(code)) {
+          restrictedSet.add(code);
+        }
+      });
+    });
+    return restrictedSet;
+  }, [projects, enrichedProjects, currentUser]);
+
+  // 4. Main Event-Driven Rollup calculation
+  const { summaryMap, summaryList, groupStats } = useMemo(() => {
+    const sMap = new Map<string, DynamicUnitSummaryItem>();
+    const sList: DynamicUnitSummaryItem[] = [];
+
+    // Pre-index tasks by code and projectId for O(1) matching
+    const tasksByCodeMap = new Map<string, any[]>();
+    const tasksByProjIdMap = new Map<string, any[]>();
+    tasks.forEach((t) => {
+      if (!t || !t.name) return;
+      const tStore = String(t.projectStore || (t as any).store || '').toUpperCase().trim();
+      const currentStore = String(store || '').trim();
+      if (tStore && tStore !== 'ALL' && currentStore && currentStore !== 'all' && tStore !== currentStore.toUpperCase()) return;
+      const tYear = String(t.projectYear || (t as any).year || '').trim();
+      if (tYear && tYear !== 'ALL' && effectiveYear && effectiveYear !== 'all' && tYear !== String(effectiveYear).trim()) return;
+
+      if (t.projectId) {
+        const pId = String(t.projectId).trim().toLowerCase();
+        let list = tasksByProjIdMap.get(pId);
+        if (!list) {
+          list = [];
+          tasksByProjIdMap.set(pId, list);
+        }
+        list.push(t);
+      }
+      if (t.projectCode) {
+        const rawCode = String(t.projectCode).trim().toLowerCase();
+        const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
+        codeParts.forEach((c) => {
+          let list = tasksByCodeMap.get(c);
+          if (!list) {
+            list = [];
+            tasksByCodeMap.set(c, list);
+          }
+          list.push(t);
+        });
+      }
+    });
+
+    // Pre-index Excel summary data
+    const summaryLookup = new Map<string, SummaryDataItem>();
+    summaryData.forEach((s) => {
+      if (s.unit) summaryLookup.set(s.unit.toLowerCase().trim(), s);
+    });
+
+    // Pre-index projectLink: maps unit name -> list of linked project codes
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    (projectLink || []).forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
+      }
+    });
+
+    // Step A: Initialize summary item for each unit
+    units.forEach((u) => {
+      const uName = String(u.name || '').trim();
+      const uKey = uName.toLowerCase();
+      if (!uName) return;
+
+      const excelItem = summaryLookup.get(uKey);
+      const isRestricted = restrictedProjectCodes.has(uKey);
+
+      const item: DynamicUnitSummaryItem = {
+        unitId: u.id,
+        unitName: uName,
+        store: u.store || store,
+        location: u.location || location,
+        year: effectiveYear,
+        hasAppProject: false,
+        appProjectCode: '',
+        projectName: '',
+        appProjectStatus: '',
+        appProjectYear: '',
+        appProjectMdStatus: '',
+        appProjectActStatus: '',
+        appProjectDetail: '',
+        appProjectDescription: '',
+        appProjectParty: '',
+        appProjectBudget: 0,
+        appProjectActual: 0,
+        planProgress: 0,
+        actProgress: 0,
+        matchedTasksCount: 0,
+        task: '',
+        activeTasks: [],
+        size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
+        sales: excelItem?.salesAmount || 0,
+        salesByCp: excelItem?.salesByCp || 0,
+        profit: excelItem?.profitAmount || 0,
+        profitByCp: excelItem?.profitByCp || 0,
+        margin: excelItem?.margin || 0,
+        marginByCp: excelItem?.marginByCp || 0,
+        hcmSalesEffi: excelItem?.hcmSalesEffi || 0,
+        hcmMargin: excelItem?.hcmMargin || 0,
+        mdStatus: excelItem?.mdStatus || '',
+        mdNotes: excelItem?.mdNotes || '',
+        excelProjectStatus: excelItem?.projectStatus || '',
+        vendorCode: excelItem?.vendorCode || '',
+        brandCode: excelItem?.brandCode || '',
+        brandName: excelItem?.brandName || '',
+        classCode: excelItem?.classCode || '',
+        matchedGroupId: null,
+        matchedGroupName: null,
+        color: u.fill || '#3b82f6',
+        opacity: 0.65,
+        matchedRuleReason: 'Màu mặc định',
+        isRestricted,
+      };
+
+      sMap.set(u.id, item);
+      sMap.set(uKey, item);
+      sList.push(item);
+    });
+
+    // Step B: Match Real-time App Project & Tasks (Filtered STRICTLY by Store, Location & Year)
+    enrichedProjects.forEach((p) => {
+      if (!p.code && !p.linkCodes) return;
+
+      const pMeta = extractProjectMetadata(p);
+
+      // Strict Scope Matching across all 3 components: Store, Location (Floor), Year
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) {
+        return;
+      }
+
+      const pCodes = extractAllProjectCodes(p);
+
+      const status = getStatus(
+        p.computedTakStart || p.start,
+        p.computedTakCompl || p.handover,
+        p.computedOpening || p.opening,
+        p.code
+      );
+      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
+
+      // Match tasks for this project (by ID, No, Code, linkCodes, and embedded taskSummaries)
+      const matchedTaskSet = new Set<any>();
+      if (p.id) {
+        const pIdLower = String(p.id).trim().toLowerCase();
+        const list = tasksByProjIdMap.get(pIdLower);
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      }
+      if (p.no) {
+        const pNoLower = String(p.no).trim().toLowerCase();
+        const list = tasksByProjIdMap.get(pNoLower);
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      }
+      pCodes.forEach((c) => {
+        const list = tasksByCodeMap.get(c);
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      });
+      if (p.code) {
+        const list = tasksByCodeMap.get(String(p.code).trim().toLowerCase());
+        if (list) list.forEach((t) => matchedTaskSet.add(t));
+      }
+      if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+        p.taskSummaries.forEach((ts) => matchedTaskSet.add(ts));
+      }
+
+      const allMatchedTasks = Array.from(matchedTaskSet);
+      const allTaskNames = allMatchedTasks.map((t: any) => t.name).filter(Boolean);
+
+      const now = new Date();
+      const activeTasks = allMatchedTasks.filter((t: any) => {
+        const startStr = t.start || t.startDate || t.takStart;
+        const finishStr = t.finish || t.end || t.endDate || t.takCompl || t.handover;
+        if (!startStr || !finishStr) return false;
+        const start = new Date(startStr);
+        const finish = new Date(finishStr);
+        return now >= start && now <= finish;
+      });
+      const activeTaskNames = activeTasks.map((t: any) => t.name).filter(Boolean);
+
+      // Full task string contains all sub-tasks so dynamic rules can match any planned, active, or upcoming task
+      const taskSummaryStr = allTaskNames.length > 0 
+        ? allTaskNames.join('; ')
+        : (activeTaskNames.join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
+
+      const targetUnitKeys = new Set<string>();
+      sList.forEach(item => {
+        // Unit must match store, location, and year
+        const itemStore = (item.store || store || '').toUpperCase().trim();
+        const itemLoc = (item.location || location || '').toUpperCase().trim();
+        const itemYear = String(item.year || effectiveYear || '').trim();
+
+        // Strict Store, Location, and Year Isolation
+        if (pMeta.store && itemStore && itemStore !== 'ALL' && itemStore !== 'all' && pMeta.store !== itemStore) return;
+        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
+        if (pMeta.location && itemLoc && !isStorewide && pMeta.location !== itemLoc) return;
+        if (pMeta.year && itemYear && itemYear !== 'ALL' && itemYear !== 'all' && pMeta.year !== itemYear) return;
+
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(item.unitName.toLowerCase()) || []),
+          ...(unitToProjectCodesMap.get(item.unitId.toLowerCase()) || []),
+        ];
+        const isLinkedViaProjectLink = linkedCodes.some(lc => 
+          pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+
+        const isExactCode = pCodes.some(c => c.toLowerCase() === item.unitName.toLowerCase() || c.toLowerCase() === item.unitId.toLowerCase());
+        const isMatch = isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, item.unitName || item.unitId);
+
+        if (isMatch) {
+          targetUnitKeys.add(item.unitId);
+          if (item.unitName) targetUnitKeys.add(item.unitName.toLowerCase());
+        }
+      });
+
+      targetUnitKeys.forEach((code) => {
+        const item = sMap.get(code);
+        if (item) {
+          item.hasAppProject = true;
+          item.appProjectCode = String(p.code || code);
+          item.projectName = p.name || '';
+          item.appProjectStatus = status || '';
+          item.appProjectYear = pMeta.year || effectiveYear;
+          item.year = pMeta.year || effectiveYear;
+          item.appProjectMdStatus = p.mdStatus || '';
+          item.appProjectActStatus = actStatus || '';
+          item.appProjectDetail = p.detail || '';
+          item.appProjectDescription = p.detail || (p as any).description || '';
+          item.appProjectParty = p.party || (p as any).contractor || '';
+          item.appProjectBudget = p.budget || 0;
+          item.appProjectActual = p.actual || 0;
+          const projPlanProgress = (p.computedPlanProgress && p.computedPlanProgress > 0)
+            ? p.computedPlanProgress
+            : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computePlanProgressFromSummaries(p.taskSummaries)
+                : (p.computedPlanProgress ?? 0));
+
+          const projActProgress = (p.computedActProgress && p.computedActProgress > 0)
+            ? p.computedActProgress
+            : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computeActProgressFromSummaries(p.taskSummaries)
+                : (p.computedActProgress ?? 0));
+
+          item.planProgress = projPlanProgress;
+          item.actProgress = projActProgress;
+          item.matchedTasksCount = matchedTaskSet.size;
+          item.task = taskSummaryStr || item.task || '';
+          item.activeTasks = activeTaskNames;
+        }
+      });
+    });
+
+    // Step C: Apply Dynamic Rules strictly from activeVersion (Rules-only evaluation)
+    const stats: Record<string, { group: any; count: number; unitNames: string[] }> = {};
+
+    if (activeVersion && Array.isArray(activeVersion.groups)) {
+      activeVersion.groups.forEach((group) => {
+        stats[group.id] = { group, count: 0, unitNames: [] };
+      });
+
+      // Strictly evaluate Dynamic Rules only - NO static manual groupMappings
+      activeVersion.groups.forEach((group) => {
+        if (!group.rules || group.rules.length === 0) return;
+
+        sList.forEach((item) => {
+          if (item.isRestricted) return;
+
+          const isMatch = group.rules.every((rule) => matchSingleRule(rule, item));
+          if (isMatch) {
+            item.matchedGroupId = group.id;
+            item.matchedGroupName = group.name;
+            item.color = group.color;
+            item.opacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
+            item.matchedRuleReason = group.rules
+              .map((r) => `${r.field} ${r.operator} ${r.value}`)
+              .join(' AND ');
+          }
+        });
+      });
+
+      // Calculate statistics
+      sList.forEach((item) => {
+        if (item.matchedGroupId && stats[item.matchedGroupId]) {
+          stats[item.matchedGroupId].count++;
+          stats[item.matchedGroupId].unitNames.push(item.unitName);
+        }
+      });
+    }
+
+    return {
+      summaryMap: sMap,
+      summaryList: sList,
+      groupStats: Object.values(stats),
+    };
+  }, [units, activeVersion, store, location, effectiveYear, summaryData, enrichedProjects, tasks, projects, restrictedProjectCodes, delegationGroups]);
+
+  return {
+    summaryMap,
+    summaryList,
+    groupStats,
+    effectiveYear,
+  };
+}
+
+=== END FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts ===
