@@ -66708,12 +66708,9 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 === END FILE: src/components/TaskModularModal.tsx ===
 
 === FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx ===
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { ZoomIn, ZoomOut, Maximize, ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 interface PdfOrImageViewerProps {
   url: string;
@@ -66730,13 +66727,18 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
   isFullscreen = false,
   onOpenFullscreen,
 }) => {
-  const cleanUrl = getCleanUrl(url) || '';
-  const isPdf = Boolean(
-    cleanUrl &&
-      (cleanUrl.toLowerCase().includes('.pdf') ||
-        cleanUrl.toLowerCase().startsWith('data:application/pdf') ||
-        url.toLowerCase().includes('.pdf'))
-  );
+  const cleanUrl = useMemo(() => getCleanUrl(url) || '', [getCleanUrl, url]);
+
+  const isPdf = useMemo(() => {
+    if (!cleanUrl) return false;
+    const lower = cleanUrl.toLowerCase();
+    const rawLower = (url || '').toLowerCase();
+    return (
+      lower.includes('.pdf') ||
+      lower.startsWith('data:application/pdf') ||
+      rawLower.includes('.pdf')
+    );
+  }, [cleanUrl, url]);
 
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [numPages, setNumPages] = useState<number>(0);
@@ -66747,7 +66749,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 
   const transformRef = useRef<any>(null);
 
-  // Load PDF Document when URL changes and is a PDF
+  // Dynamically load PDF Document when URL changes and is a PDF
   useEffect(() => {
     if (!isPdf || !cleanUrl) {
       setPdfDoc(null);
@@ -66762,31 +66764,40 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
     setLoadingPdf(true);
     setPdfError(null);
 
-    const loadingTask = pdfjsLib.getDocument({
-      url: cleanUrl,
-      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
-      cMapPacked: true,
-    });
+    let loadingTask: any = null;
 
-    loadingTask.promise
-      .then((doc: any) => {
+    (async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist/build/pdf.mjs');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
         if (!isMounted) return;
+
+        loadingTask = pdfjsLib.getDocument({
+          url: cleanUrl,
+          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+          cMapPacked: true,
+        });
+
+        const doc = await loadingTask.promise;
+        if (!isMounted) return;
+
         setPdfDoc(doc);
         setNumPages(doc.numPages || 1);
         setCurrentPage(1);
         setLoadingPdf(false);
-      })
-      .catch((err: any) => {
+      } catch (err: any) {
         if (!isMounted) return;
         console.error('Failed to load PDF in layout viewer:', err);
         setPdfError(err?.message || 'Failed to parse PDF file');
         setLoadingPdf(false);
-      });
+      }
+    })();
 
     return () => {
       isMounted = false;
       try {
-        loadingTask.destroy();
+        if (loadingTask) loadingTask.destroy();
       } catch (_) {}
     };
   }, [cleanUrl, isPdf]);
@@ -66838,19 +66849,15 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
     };
   }, [pdfDoc, currentPage]);
 
-  const handlePrevPage = (e: React.MouseEvent) => {
+  const handlePrevPage = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentPage > 1) {
-      setCurrentPage((p) => p - 1);
-    }
-  };
+    setCurrentPage((p) => Math.max(1, p - 1));
+  }, []);
 
-  const handleNextPage = (e: React.MouseEvent) => {
+  const handleNextPage = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentPage < numPages) {
-      setCurrentPage((p) => p + 1);
-    }
-  };
+    setCurrentPage((p) => Math.min(numPages, p + 1));
+  }, [numPages]);
 
   // Determine active display source (PDF rendered page image OR standard image URL)
   const displaySrc = isPdf ? pageDataUrl || '' : cleanUrl;
@@ -66887,7 +66894,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
         zoomAnimation={{ disabled: false, animationTime: 180 }}
         pinch={{ step: 10 }}
         panning={{ disabled: false }}
-        doubleClick={{ mode: "toggle", step: 2.5 }}
+        doubleClick={{ mode: 'toggle', step: 2.5 }}
       >
         {({ zoomIn, zoomOut, resetTransform, state }) => (
           <>
