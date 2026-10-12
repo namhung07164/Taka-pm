@@ -204,15 +204,16 @@ export function useEnrichedData() {
       });
     }
 
-    // Consolidate virtual tasks from p.taskSummaries if a project has summaries but no detailed tasks in filteredTasks
-    const existingTaskIds = new Set(filteredTasks.map(t => t.id));
+    // Consolidate virtual tasks from p.taskSummaries if a project has summaries.
+    // We ensure that every item in taskSummaries is represented either by a real task or a virtual task.
     enrichedProjects.forEach(p => {
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
         const pCode = String(p.code || '').trim().toLowerCase();
         const pYear = String(p.year || '').trim().toLowerCase();
         const pStore = String(p.store || '').trim().toLowerCase();
 
-        const hasRealTask = filteredTasks.some(ft => {
+        // Map existing tasks for this project to avoid duplicates
+        const projectTasks = filteredTasks.filter(ft => {
           if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
           if (!ft.projectCode || !pCode) return false;
           const ftCode = String(ft.projectCode).trim().toLowerCase();
@@ -224,32 +225,41 @@ export function useEnrichedData() {
           return matchesCode && matchesStore && matchesYear;
         });
 
-        if (!hasRealTask) {
-          p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
-            if (!existingTaskIds.has(tsId)) {
-              const vTask = {
-                id: tsId,
-                name: ts.name || `Task ${idx + 1}`,
-                start: ts.start || p.computedTakStart || p.start || '',
-                finish: ts.finish || p.computedTakCompl || p.handover || '',
-                projectCode: p.code || '',
-                projectStore: p.store || 'HCM',
-                projectYear: p.year ? String(p.year) : '',
-                party: ts.party || p.party || '',
-                runningStatus: ts.runningStatus || 'On process',
-                duration: ts.duration || '',
-                parentTaskId: ts.parentTaskId,
-                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-                orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-                projectId: p.id,
-                ...ts
-              } as Task;
-              filteredTasks.push(vTask);
-              existingTaskIds.add(tsId);
-            }
-          });
-        }
+        const existingIds = new Set(projectTasks.map(t => t.id));
+        const existingNames = new Set(projectTasks.map(t => String(t.name || '').trim().toLowerCase()));
+        const existingCodes = new Set(projectTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()));
+
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+          const tsName = String(ts.name || '').trim().toLowerCase();
+          const tsCode = String(ts.taskCodePhu || '').trim().toLowerCase();
+
+          const alreadyRepresented = 
+            existingIds.has(tsId) || 
+            (tsName && existingNames.has(tsName)) || 
+            (tsCode && existingCodes.has(tsCode));
+
+          if (!alreadyRepresented) {
+            const vTask = {
+              id: tsId,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task;
+            filteredTasks.push(vTask);
+          }
+        });
       }
     });
 

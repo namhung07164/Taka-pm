@@ -93,6 +93,13 @@ export function useExecutiveDashboardData({
         const completedTasks = pTasks.filter((t) => t.approval === 'Approved' || t.runningStatus === 'Completed').length;
         const inProgressTasks = pTasks.filter((t) => t.runningStatus === 'On process' || (!t.approval && t.start)).length;
         percentComplete = Math.min(100, Math.round(((completedTasks * 1.0 + inProgressTasks * 0.4) / pTasks.length) * 100));
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        // Fallback to real-time task summaries from project doc
+        const completed = p.taskSummaries.filter(ts => String(ts.runningStatus || ts.status || '').toLowerCase().includes('complete') || ts.approval === 'Approved').length;
+        const inProgress = p.taskSummaries.filter(ts => String(ts.runningStatus || ts.status || '').toLowerCase().includes('process') || ts.start).length;
+        percentComplete = Math.min(100, Math.round(((completed * 1.0 + inProgress * 0.4) / p.taskSummaries.length) * 100));
+      } else if (p.computedActProgress !== undefined && p.computedActProgress !== null) {
+        percentComplete = p.computedActProgress;
       } else {
         const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
         if (status === 'Completed' || status === 'Handover') percentComplete = 100;

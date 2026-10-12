@@ -114,15 +114,19 @@ export function useDetailFlatRows({
             })
           : validGroupTasks;
 
-      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : validGroupTasks.length;
+      const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount || 0);
+      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : Math.max(validGroupTasks.length, summaryCount);
+
       let planProgressPercent = 0;
       let actProgressPercent = 0;
-      if (validGroupTasks.length > 0) {
-        planProgressPercent = computePlanProgressPercent(validGroupTasks);
-        actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
-      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+
+      // Prefer real-time summary data for progress if available and potentially more up-to-date than loaded tasks
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > validGroupTasks.length) {
         planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
         actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
+      } else if (validGroupTasks.length > 0) {
+        planProgressPercent = computePlanProgressPercent(validGroupTasks);
+        actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
       } else {
         planProgressPercent = p.computedPlanProgress ?? 0;
         actProgressPercent = p.computedActProgress ?? 0;

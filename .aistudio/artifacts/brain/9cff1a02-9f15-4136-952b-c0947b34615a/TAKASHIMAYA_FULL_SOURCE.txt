@@ -23633,15 +23633,19 @@ export function useDetailFlatRows({
             })
           : validGroupTasks;
 
-      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : validGroupTasks.length;
+      const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount || 0);
+      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : Math.max(validGroupTasks.length, summaryCount);
+
       let planProgressPercent = 0;
       let actProgressPercent = 0;
-      if (validGroupTasks.length > 0) {
-        planProgressPercent = computePlanProgressPercent(validGroupTasks);
-        actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
-      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+
+      // Prefer real-time summary data for progress if available and potentially more up-to-date than loaded tasks
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > validGroupTasks.length) {
         planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
         actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
+      } else if (validGroupTasks.length > 0) {
+        planProgressPercent = computePlanProgressPercent(validGroupTasks);
+        actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
       } else {
         planProgressPercent = p.computedPlanProgress ?? 0;
         actProgressPercent = p.computedActProgress ?? 0;
@@ -24415,38 +24419,74 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const map = new Map<string, ProjectInfo>();
 
     projects.forEach(p => {
-      let rawGroupTasks = p.id ? tasksByProjectId.get(String(p.id)) : undefined;
-      if (!rawGroupTasks || rawGroupTasks.length === 0) {
-        const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-        rawGroupTasks = tasksByProjectKey.get(key);
-      }
-      if (!rawGroupTasks || rawGroupTasks.length === 0) {
-        const pCode = String(p.code || "").trim().toLowerCase();
-        const candidateTasks = tasksByCodeMap.get(pCode) || [];
-        rawGroupTasks = candidateTasks.filter(t => {
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          return matchesStore && matchesYear;
+      const mergedTasksMap = new Map<string, Task>();
+
+      if (p.id && tasksByProjectId.has(String(p.id))) {
+        tasksByProjectId.get(String(p.id))!.forEach(t => {
+          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
         });
       }
-      if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
+
+      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+      const foundByKey = tasksByProjectKey.get(key);
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(t => {
+          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
+        });
+      }
+
+      const pCode = String(p.code || "").trim().toLowerCase();
+      if (pCode) {
+        const candidateTasks = tasksByCodeMap.get(pCode) || [];
+        candidateTasks.forEach(t => {
+          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+          if (matchesStore && matchesYear && t && (t.id || t.name)) {
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
+        });
+      }
+
+      let rawGroupTasks: Task[] = Array.from(mergedTasksMap.values());
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        // Merge: In-memory tasks take precedence, but keep all summary tasks to ensure the count is correct
+        const existingMap = new Map<string, any>();
+        rawGroupTasks.forEach(t => {
+          if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+          if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+          const nameKey = String(t.name || '').trim().toLowerCase();
+          if (nameKey) existingMap.set(nameKey, t);
+        });
+
+        const merged = [...rawGroupTasks];
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const match = (tsId && existingMap.has(tsId)) ||
+                        (tsCode && existingMap.has(tsCode)) ||
+                        (tsName && existingMap.has(tsName));
+          if (!match) {
+            merged.push({
+              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
+        rawGroupTasks = merged;
       }
       const sortedTasks = sortGroupTasks(rawGroupTasks || []);
       let computedTakStart = p.computedTakStart || p.start;
@@ -24530,24 +24570,45 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         return matchesStore && matchesYear;
       });
     }
-    if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-      rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-        id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-        name: ts.name || `Task ${idx + 1}`,
-        start: ts.start || p.computedTakStart || p.start || '',
-        finish: ts.finish || p.computedTakCompl || p.handover || '',
-        projectCode: p.code || '',
-        projectStore: p.store || 'HCM',
-        projectYear: p.year ? String(p.year) : '',
-        party: ts.party || p.party || '',
-        runningStatus: ts.runningStatus || 'On process',
-        duration: ts.duration || '',
-        parentTaskId: ts.parentTaskId,
-        taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-        projectId: p.id,
-        ...ts
-      } as Task));
+    if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+      // Merge: In-memory tasks take precedence, but keep all summary tasks to ensure the count is correct
+      const existingMap = new Map<string, any>();
+      rawGroupTasks?.forEach(t => {
+        if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+        if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        const nameKey = String(t.name || '').trim().toLowerCase();
+        if (nameKey) existingMap.set(nameKey, t);
+      });
+
+      const merged = [...(rawGroupTasks || [])];
+      p.taskSummaries.forEach((ts, idx) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const match = (tsId && existingMap.has(tsId)) ||
+                      (tsCode && existingMap.has(tsCode)) ||
+                      (tsName && existingMap.has(tsName));
+        if (!match) {
+          merged.push({
+            id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || p.computedTakStart || p.start || '',
+            finish: ts.finish || p.computedTakCompl || p.handover || '',
+            projectCode: p.code || '',
+            projectStore: p.store || 'HCM',
+            projectYear: p.year ? String(p.year) : '',
+            party: ts.party || p.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: p.id,
+            ...ts
+          } as Task);
+        }
+      });
+      rawGroupTasks = merged;
     }
     const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;
@@ -26392,6 +26453,13 @@ export function useExecutiveDashboardData({
         const completedTasks = pTasks.filter((t) => t.approval === 'Approved' || t.runningStatus === 'Completed').length;
         const inProgressTasks = pTasks.filter((t) => t.runningStatus === 'On process' || (!t.approval && t.start)).length;
         percentComplete = Math.min(100, Math.round(((completedTasks * 1.0 + inProgressTasks * 0.4) / pTasks.length) * 100));
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        // Fallback to real-time task summaries from project doc
+        const completed = p.taskSummaries.filter(ts => String(ts.runningStatus || ts.status || '').toLowerCase().includes('complete') || ts.approval === 'Approved').length;
+        const inProgress = p.taskSummaries.filter(ts => String(ts.runningStatus || ts.status || '').toLowerCase().includes('process') || ts.start).length;
+        percentComplete = Math.min(100, Math.round(((completed * 1.0 + inProgress * 0.4) / p.taskSummaries.length) * 100));
+      } else if (p.computedActProgress !== undefined && p.computedActProgress !== null) {
+        percentComplete = p.computedActProgress;
       } else {
         const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
         if (status === 'Completed' || status === 'Handover') percentComplete = 100;
@@ -83654,15 +83722,16 @@ export function useEnrichedData() {
       });
     }
 
-    // Consolidate virtual tasks from p.taskSummaries if a project has summaries but no detailed tasks in filteredTasks
-    const existingTaskIds = new Set(filteredTasks.map(t => t.id));
+    // Consolidate virtual tasks from p.taskSummaries if a project has summaries.
+    // We ensure that every item in taskSummaries is represented either by a real task or a virtual task.
     enrichedProjects.forEach(p => {
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
         const pCode = String(p.code || '').trim().toLowerCase();
         const pYear = String(p.year || '').trim().toLowerCase();
         const pStore = String(p.store || '').trim().toLowerCase();
 
-        const hasRealTask = filteredTasks.some(ft => {
+        // Map existing tasks for this project to avoid duplicates
+        const projectTasks = filteredTasks.filter(ft => {
           if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
           if (!ft.projectCode || !pCode) return false;
           const ftCode = String(ft.projectCode).trim().toLowerCase();
@@ -83674,32 +83743,41 @@ export function useEnrichedData() {
           return matchesCode && matchesStore && matchesYear;
         });
 
-        if (!hasRealTask) {
-          p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
-            if (!existingTaskIds.has(tsId)) {
-              const vTask = {
-                id: tsId,
-                name: ts.name || `Task ${idx + 1}`,
-                start: ts.start || p.computedTakStart || p.start || '',
-                finish: ts.finish || p.computedTakCompl || p.handover || '',
-                projectCode: p.code || '',
-                projectStore: p.store || 'HCM',
-                projectYear: p.year ? String(p.year) : '',
-                party: ts.party || p.party || '',
-                runningStatus: ts.runningStatus || 'On process',
-                duration: ts.duration || '',
-                parentTaskId: ts.parentTaskId,
-                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-                orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-                projectId: p.id,
-                ...ts
-              } as Task;
-              filteredTasks.push(vTask);
-              existingTaskIds.add(tsId);
-            }
-          });
-        }
+        const existingIds = new Set(projectTasks.map(t => t.id));
+        const existingNames = new Set(projectTasks.map(t => String(t.name || '').trim().toLowerCase()));
+        const existingCodes = new Set(projectTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()));
+
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+          const tsName = String(ts.name || '').trim().toLowerCase();
+          const tsCode = String(ts.taskCodePhu || '').trim().toLowerCase();
+
+          const alreadyRepresented = 
+            existingIds.has(tsId) || 
+            (tsName && existingNames.has(tsName)) || 
+            (tsCode && existingCodes.has(tsCode));
+
+          if (!alreadyRepresented) {
+            const vTask = {
+              id: tsId,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task;
+            filteredTasks.push(vTask);
+          }
+        });
       }
     });
 

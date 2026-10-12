@@ -89,62 +89,44 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
       let rawGroupTasks: Task[] = Array.from(mergedTasksMap.values());
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        if (!rawGroupTasks || rawGroupTasks.length === 0) {
-          rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-            id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-            name: ts.name || `Task ${idx + 1}`,
-            start: ts.start || p.computedTakStart || p.start || '',
-            finish: ts.finish || p.computedTakCompl || p.handover || '',
-            projectCode: p.code || '',
-            projectStore: p.store || 'HCM',
-            projectYear: p.year ? String(p.year) : '',
-            party: ts.party || p.party || '',
-            runningStatus: ts.runningStatus || 'On process',
-            duration: ts.duration || '',
-            parentTaskId: ts.parentTaskId,
-            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-            projectId: p.id,
-            ...ts
-          } as Task));
-        } else if (p.taskSummaries.length > rawGroupTasks.length) {
-          // Merge: In-memory tasks take precedence, but keep remaining summary tasks so list never shrinks
-          const existingMap = new Map<string, any>();
-          rawGroupTasks.forEach(t => {
-            if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
-            if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-            if (t.name) existingMap.set(String(t.name).trim().toLowerCase(), t);
-          });
-          const merged = [...rawGroupTasks];
-          p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-            const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-            const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-            const match = (tsId && existingMap.has(tsId)) ||
-                          (tsCode && existingMap.has(tsCode)) ||
-                          (tsName && existingMap.has(tsName));
-            if (!match) {
-              merged.push({
-                id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-                name: ts.name || `Task ${idx + 1}`,
-                start: ts.start || p.computedTakStart || p.start || '',
-                finish: ts.finish || p.computedTakCompl || p.handover || '',
-                projectCode: p.code || '',
-                projectStore: p.store || 'HCM',
-                projectYear: p.year ? String(p.year) : '',
-                party: ts.party || p.party || '',
-                runningStatus: ts.runningStatus || 'On process',
-                duration: ts.duration || '',
-                parentTaskId: ts.parentTaskId,
-                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-                orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-                projectId: p.id,
-                ...ts
-              } as Task);
-            }
-          });
-          rawGroupTasks = merged;
-        }
+        // Merge: In-memory tasks take precedence, but keep all summary tasks to ensure the count is correct
+        const existingMap = new Map<string, any>();
+        rawGroupTasks.forEach(t => {
+          if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+          if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+          const nameKey = String(t.name || '').trim().toLowerCase();
+          if (nameKey) existingMap.set(nameKey, t);
+        });
+
+        const merged = [...rawGroupTasks];
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const match = (tsId && existingMap.has(tsId)) ||
+                        (tsCode && existingMap.has(tsCode)) ||
+                        (tsName && existingMap.has(tsName));
+          if (!match) {
+            merged.push({
+              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
+        rawGroupTasks = merged;
       }
       const sortedTasks = sortGroupTasks(rawGroupTasks || []);
       let computedTakStart = p.computedTakStart || p.start;
@@ -229,62 +211,44 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       });
     }
     if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-      if (!rawGroupTasks || rawGroupTasks.length === 0) {
-        rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
-      } else if (p.taskSummaries.length > rawGroupTasks.length) {
-        // Merge: Keep all tasks from summaries that aren't already represented in rawGroupTasks
-        const existingMap = new Map<string, any>();
-        rawGroupTasks.forEach(t => {
-          if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
-          if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-          if (t.name) existingMap.set(String(t.name).trim().toLowerCase(), t);
-        });
-        const merged = [...rawGroupTasks];
-        p.taskSummaries.forEach((ts, idx) => {
-          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-          const match = (tsId && existingMap.has(tsId)) ||
-                        (tsCode && existingMap.has(tsCode)) ||
-                        (tsName && existingMap.has(tsName));
-          if (!match) {
-            merged.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-              name: ts.name || `Task ${idx + 1}`,
-              start: ts.start || p.computedTakStart || p.start || '',
-              finish: ts.finish || p.computedTakCompl || p.handover || '',
-              projectCode: p.code || '',
-              projectStore: p.store || 'HCM',
-              projectYear: p.year ? String(p.year) : '',
-              party: ts.party || p.party || '',
-              runningStatus: ts.runningStatus || 'On process',
-              duration: ts.duration || '',
-              parentTaskId: ts.parentTaskId,
-              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-              projectId: p.id,
-              ...ts
-            } as Task);
-          }
-        });
-        rawGroupTasks = merged;
-      }
+      // Merge: In-memory tasks take precedence, but keep all summary tasks to ensure the count is correct
+      const existingMap = new Map<string, any>();
+      rawGroupTasks?.forEach(t => {
+        if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+        if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        const nameKey = String(t.name || '').trim().toLowerCase();
+        if (nameKey) existingMap.set(nameKey, t);
+      });
+
+      const merged = [...(rawGroupTasks || [])];
+      p.taskSummaries.forEach((ts, idx) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const match = (tsId && existingMap.has(tsId)) ||
+                      (tsCode && existingMap.has(tsCode)) ||
+                      (tsName && existingMap.has(tsName));
+        if (!match) {
+          merged.push({
+            id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || p.computedTakStart || p.start || '',
+            finish: ts.finish || p.computedTakCompl || p.handover || '',
+            projectCode: p.code || '',
+            projectStore: p.store || 'HCM',
+            projectYear: p.year ? String(p.year) : '',
+            party: ts.party || p.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: p.id,
+            ...ts
+          } as Task);
+        }
+      });
+      rawGroupTasks = merged;
     }
     const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;
