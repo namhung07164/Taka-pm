@@ -79,16 +79,16 @@ interface LinkItem {
 /* ------------------------------------------------------------------ */
 
 const REL_INFO: Record<PredecessorType, { hint: string }> = {
-  FS: { hint: 'Xong → Bắt đầu' },
-  SS: { hint: 'Cùng bắt đầu' },
-  FF: { hint: 'Cùng kết thúc' },
-  SF: { hint: 'Bắt đầu → Kết thúc' },
+  FS: { hint: 'Finish → Start' },
+  SS: { hint: 'Start → Start' },
+  FF: { hint: 'Finish → Finish' },
+  SF: { hint: 'Start → Finish' },
 };
 
 const SLOT_STYLE = [
   {
     tag: '①',
-    title: 'Tiên quyết chính',
+    title: 'Primary Predecessor',
     border: 'border-l-blue-500',
     badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
     active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
@@ -96,7 +96,7 @@ const SLOT_STYLE = [
   },
   {
     tag: '②',
-    title: 'Tiên quyết phụ · chỉ FF / SF',
+    title: 'Secondary Predecessor · FF / SF only',
     border: 'border-l-rose-500',
     badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
     active: 'bg-rose-600 text-white border-rose-600 shadow-sm',
@@ -105,10 +105,10 @@ const SLOT_STYLE = [
 ];
 
 const FACTOR_LABEL: Record<string, string> = {
-  year: 'Khác năm',
-  store: 'Khác chi nhánh',
-  location: 'Khác vị trí/tầng',
-  code: 'Khác dự án',
+  year: 'Different year',
+  store: 'Different store',
+  location: 'Different floor/location',
+  code: 'Different project',
 };
 
 function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string {
@@ -116,7 +116,7 @@ function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string
   if (factors && factors.length > 0) {
     return factors.map((f) => FACTOR_LABEL[f] || f).join(' · ');
   }
-  return fallbackCode ? `Dự án ${fallbackCode}` : 'Khác dự án';
+  return fallbackCode ? `Project ${fallbackCode}` : 'Cross-Project';
 }
 
 function shortDate(s?: string): string {
@@ -136,7 +136,7 @@ function tokenOf(it: LinkItem): string {
   return `${it.code}${rel}${lag}`;
 }
 
-/** Công việc thứ 2 bắt buộc là FF hoặc SF (đúng luật của Gantt) */
+/** Secondary predecessor must be FF or SF */
 function normalize(list: LinkItem[]): LinkItem[] {
   return list.slice(0, 2).map((it, i) =>
     i === 1 && it.resolved && it.type !== 'FF' && it.type !== 'SF' ? { ...it, type: 'FF' as PredecessorType } : it
@@ -147,16 +147,16 @@ function describe(it: LinkItem): string {
   if (!it.task) return '';
   const name = `«${it.task.name}»`;
   const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
-  const lag = signed === 0 ? '' : signed > 0 ? `, cộng ${signed} ngày` : `, sớm ${Math.abs(signed)} ngày`;
+  const lag = signed === 0 ? '' : signed > 0 ? `, +${signed} days` : `, -${Math.abs(signed)} days`;
   switch (it.type) {
     case 'FS':
-      return `Bắt đầu sau khi ${name} kết thúc${lag}`;
+      return `Start after ${name} finishes${lag}`;
     case 'SS':
-      return `Bắt đầu cùng lúc ${name} bắt đầu${lag}`;
+      return `Start when ${name} starts${lag}`;
     case 'FF':
-      return `Kết thúc cùng lúc ${name} kết thúc${lag}`;
+      return `Finish when ${name} finishes${lag}`;
     case 'SF':
-      return `Kết thúc khi ${name} bắt đầu${lag}`;
+      return `Finish when ${name} starts${lag}`;
   }
   return '';
 }
@@ -174,7 +174,7 @@ function milestoneDate(it: LinkItem): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Lưu mặc định (khi không truyền onChange): giống pipeline của Gantt */
+/* Persist default predecessor changes                                 */
 /* ------------------------------------------------------------------ */
 
 async function persistDefault(
@@ -183,7 +183,7 @@ async function persistDefault(
   projects: Project[]
 ): Promise<void> {
   if (!source?.id) {
-    throw new Error('Hãy lưu công việc trước khi liên kết predecessor.');
+    throw new Error('Please save the task before linking a predecessor.');
   }
   const store = useAppStore.getState() as any;
   const currentTasks: Task[] = store.tasks || [];
@@ -234,12 +234,12 @@ async function persistDefault(
   });
   batch.commit().catch((err: any) => {
     console.error('Failed to persist predecessor update:', err);
-    store.setToast?.({ title: 'Lưu thất bại', message: err?.message || 'Không thể lưu predecessor', type: 'error' });
+    store.setToast?.({ title: 'Save failed', message: err?.message || 'Could not save predecessor', type: 'error' });
   });
 
   store.setToast?.({
-    title: 'Đã cập nhật Predecessor',
-    message: change.predecessor ? `Liên kết: ${change.predecessor}` : 'Đã gỡ predecessor',
+    title: 'Predecessor Updated',
+    message: change.predecessor ? `Link: ${change.predecessor}` : 'Predecessor removed',
     type: 'success',
   });
 }
@@ -286,7 +286,7 @@ function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boo
           e.target.blur?.();
         }
       }}
-      title="Nhập số ngày lệch, ví dụ +2 hoặc -1"
+      title="Enter lag days, e.g. +2 or -1"
       className={cn(
         'h-6 w-12 rounded-md border border-slate-200/80 bg-white dark:border-[#38383a] dark:bg-[#18181a] text-center font-mono text-xs font-bold outline-none focus:border-blue-500 transition-colors shadow-2xs',
         value === 0 ? 'text-slate-500 dark:text-slate-400' : value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
@@ -307,7 +307,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       task?.id ? (s.tasks as Task[]).find((t) => t.id === task.id) : undefined
     ) as Task | undefined;
 
-    // Khi tự lưu: luôn lấy bản mới nhất trong store. Khi có onChange: tin vào task do nơi gọi truyền xuống.
     const source: Task = onChange ? task : liveTask || task;
 
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -322,7 +321,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
     const [error, setError] = useState<string | null>(null);
     const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
 
-    // Auto-scroll the focused candidate into view
     useEffect(() => {
       if (open && listRef.current && listRef.current.children[hi]) {
         const activeEl = listRef.current.children[hi] as HTMLElement;
@@ -346,7 +344,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
     const pool = useMemo(() => (storeTasks || []).filter((t) => t && !t.isDeleted), [storeTasks]);
     const taskNoMap = useMemo(() => buildTaskNoMap(projects, storeTasks || []), [projects, storeTasks]);
 
-    /* ---------- Danh sách predecessor hiện tại (đọc từ chuỗi chuẩn) ---------- */
     const items = useMemo<LinkItem[]>(() => {
       const str = String(source?.predecessor || '').trim();
       if (!str) return [];
@@ -405,7 +402,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       storeTasks,
     ]);
 
-    /* ---------- Đóng dropdown khi bấm ra ngoài (chuột + cảm ứng) ---------- */
     useEffect(() => {
       const handler = (e: MouseEvent | TouchEvent) => {
         if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
@@ -422,7 +418,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
 
     useEffect(() => setHi(0), [deferredQuery]);
 
-    /* ---------- Gợi ý ---------- */
     const excluded = useMemo(() => {
       const s = new Set<string>();
       if (source?.id) s.add(source.id);
@@ -440,7 +435,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           .slice(0, 20);
       }
 
-      // Chưa gõ gì: gợi ý các công việc cùng dự án, theo thứ tự trong dự án
       let base = pool.filter((t) => !excluded.has(t.id));
       const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
       if (sameCode.length > 0) base = sameCode;
@@ -461,7 +455,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       });
     }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx]);
 
-    /* ---------- Hành động ---------- */
     const commit = async (list: LinkItem[]) => {
       const finalList = normalize(list);
       const change: PredecessorChange = {
@@ -475,13 +468,12 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
         if (onChange) await onChange(change);
         else await persistDefault(source, change, projects);
       } catch (e: any) {
-        setError(e?.message || 'Không thể lưu liên kết predecessor');
+        setError(e?.message || 'Could not save predecessor link');
       } finally {
         setSaving(false);
       }
     };
 
-    /** Công việc `candidate` có (trực tiếp/gián tiếp) phụ thuộc vào task hiện tại không? */
     const wouldCreateCycle = (candidate: Task): boolean => {
       if (!source?.id) return false;
       const visited = new Set<string>();
@@ -496,9 +488,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           parsePredecessors(cur.predecessor, taskNoMap, cur).forEach((p: any) => {
             if (p?.task) stack.push(p.task as Task);
           });
-        } catch {
-          /* bỏ qua token lỗi */
-        }
+        } catch {}
       }
       return false;
     };
@@ -508,7 +498,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       if (items.length >= 2) return;
       if (wouldCreateCycle(t)) {
         setError(
-          `Không thể liên kết: «${t.name}» đang phụ thuộc (trực tiếp hoặc gián tiếp) vào công việc này, sẽ tạo vòng lặp.`
+          `Cannot link: «${t.name}» depends on this task (directly or indirectly), causing a circular dependency.`
         );
         setPendingExternal(null);
         return;
@@ -575,7 +565,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       }
     };
 
-    /* ---------- Giao diện ---------- */
     const canAdd = canWrite && items.length < 2;
     const hasQuery = deferredQuery.trim().length > 0;
 
@@ -583,11 +572,10 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       <div className="flex flex-col gap-2.5 w-full" ref={wrapperRef} onClick={(e) => e.stopPropagation()}>
         {saving && (
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang cập nhật...
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating...
           </div>
         )}
 
-        {/* Lỗi */}
         {error && (
           <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[12px] font-medium text-red-700 dark:text-red-300">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -598,9 +586,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           </div>
         )}
 
-
-
-        {/* Danh sách đã liên kết */}
         {items.map((it, idx) => {
           const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
           const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
@@ -613,7 +598,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                 it.resolved ? 'border-slate-200 dark:border-[#38383a]' : 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20'
               )}
             >
-              {/* Row 1: Slot Badge + Task Code + Task Name + Cross-Project badge + Delete */}
               <div className="flex items-start justify-between gap-2 min-w-0">
                 <div className="flex items-start gap-1.5 min-w-0 flex-1">
                   <span
@@ -646,7 +630,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                     </div>
                   ) : (
                     <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                      Không tìm thấy «{it.raw}»
+                      Not found «{it.raw}»
                     </span>
                   )}
                 </div>
@@ -656,20 +640,20 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                     type="button"
                     onClick={() => removeItem(idx)}
                     disabled={saving}
-                    title="Gỡ liên kết"
-                    className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-all touch-manipulation disabled:opacity-50"
+                    title="Remove link"
+                    className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-all touch-manipulation disabled:opacity-50 cursor-pointer"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              {/* Row 2: Type Segmented Pills + Lag Controls */}
+              {/* Row 2: Type Segmented Pills + Lag Controls placed on the SAME ROW */}
               {it.resolved && canWrite && (
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#2a2a2d]">
+                <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-100 dark:border-[#2a2a2d] text-xs flex-nowrap overflow-x-auto">
                   {/* Type Segmented Control */}
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Kiểu:</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
                     <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
                       {allowed.map((rel) => {
                         const active = it.type === rel;
@@ -680,7 +664,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                             disabled={saving}
                             onClick={() => !active && patchItem(idx, { type: rel })}
                             className={cn(
-                              'px-2.5 py-1 text-xs font-black rounded-md transition-all active:scale-95 touch-manipulation disabled:opacity-60',
+                              'px-2 py-0.5 text-[11px] font-black rounded-md transition-all active:scale-95 touch-manipulation disabled:opacity-60 cursor-pointer',
                               active
                                 ? 'bg-blue-600 text-white shadow-2xs dark:bg-blue-600'
                                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
@@ -694,26 +678,26 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                   </div>
 
                   {/* Lag Control Inline */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Độ lệch:</span>
-                    <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-[#252528] px-1.5 py-1 border border-slate-200/60 dark:border-[#38383a]">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
+                    <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
                       <button
                         type="button"
                         disabled={saving}
                         onClick={() => stepLag(idx, -1)}
-                        className="flex h-6 w-6 items-center justify-center rounded-md bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation"
+                        className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
                       >
-                        <Minus className="h-3.5 w-3.5" />
+                        <Minus className="h-3 w-3" />
                       </button>
                       <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
-                      <span className="text-xs font-bold text-slate-400 px-0.5">ngày</span>
+                      <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
                       <button
                         type="button"
                         disabled={saving}
                         onClick={() => stepLag(idx, 1)}
-                        className="flex h-6 w-6 items-center justify-center rounded-md bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation"
+                        className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
@@ -723,36 +707,36 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           );
         })}
 
-        {/* Xác nhận liên kết khác dự án */}
+        {/* Confirm cross project link */}
         {pendingExternal && (
           <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs dark:border-amber-700 dark:bg-amber-950/60">
             <div className="flex items-start gap-1.5 font-medium text-amber-800 dark:text-amber-200">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <p>
-                «<b>{pendingExternal.task.name}</b>» thuộc dự án khác (
-                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Xác nhận liên kết chéo dự án?
+                «<b>{pendingExternal.task.name}</b>» belongs to another project (
+                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Confirm cross-project link?
               </p>
             </div>
             <div className="flex justify-end gap-1.5">
               <button
                 type="button"
                 onClick={() => setPendingExternal(null)}
-                className="rounded-lg px-3 py-1 text-xs font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation"
+                className="rounded-lg px-3 py-1 text-xs font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation cursor-pointer"
               >
-                Hủy
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={() => addTask(pendingExternal, true)}
-                className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 active:scale-95 touch-manipulation"
+                className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 active:scale-95 touch-manipulation cursor-pointer"
               >
-                Liên kết
+                Link
               </button>
             </div>
           </div>
         )}
 
-        {/* Ô tìm & thêm */}
+        {/* Search input */}
         {canAdd && !pendingExternal && (
           <div className="relative w-full">
             <div className="relative">
@@ -768,7 +752,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                 }}
                 onFocus={() => setOpen(true)}
                 onKeyDown={handleKeyDown}
-                placeholder="Gõ tên hoặc mã công việc..."
+                placeholder="Type task name or code..."
                 autoComplete="off"
                 className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-7 text-xs font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:border-[#38383a] dark:bg-[#1a1a1c] dark:text-white dark:focus:bg-[#202023] transition-all shadow-2xs"
               />
@@ -779,7 +763,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                     setQuery('');
                     inputRef.current?.focus();
                   }}
-                  className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
+                  className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation cursor-pointer"
                   tabIndex={-1}
                 >
                   <X className="h-3.5 w-3.5" />
@@ -795,12 +779,12 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
               >
                 {!hasQuery && candidates.length > 0 && (
                   <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
-                    Gợi ý cùng dự án
+                    Suggestions (Same Project)
                   </li>
                 )}
                 {candidates.length === 0 ? (
                   <li className="px-3 py-2.5 text-center text-xs italic text-slate-400">
-                    {hasQuery ? 'Không tìm thấy công việc' : 'Chưa có công việc phù hợp'}
+                    {hasQuery ? 'No tasks found' : 'No matching tasks'}
                   </li>
                 ) : (
                   candidates.map((m, i) => {
@@ -823,7 +807,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                           <span className="flex shrink-0 items-center gap-1">
                             {best && (
                               <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.2 text-[9px] font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
-                                <Sparkles className="h-2.5 w-2.5" /> Gợi ý
+                                <Sparkles className="h-2.5 w-2.5" /> Best Match
                               </span>
                             )}
                             {m.isExternal && (

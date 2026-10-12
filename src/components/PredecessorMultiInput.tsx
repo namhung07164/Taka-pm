@@ -11,7 +11,11 @@ import {
   PredecessorContext, 
   getTaskProjectDiffDetails 
 } from '../lib/predecessorMatchUtils';
-import { shortDate } from '../lib/utils';
+function shortDate(s?: string): string {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : String(s);
+}
 
 /* ------------------------------------------------------------------ */
 /* Types & Helpers                                                    */
@@ -45,10 +49,10 @@ interface PredecessorMultiInputProps {
 }
 
 const REL_INFO: Record<PredecessorType, { hint: string }> = {
-  FS: { hint: 'Xong → Bắt đầu' },
-  SS: { hint: 'Cùng bắt đầu' },
-  FF: { hint: 'Cùng kết thúc' },
-  SF: { hint: 'Bắt đầu → Kết thúc' },
+  FS: { hint: 'Finish → Start' },
+  SS: { hint: 'Start → Start' },
+  FF: { hint: 'Finish → Finish' },
+  SF: { hint: 'Start → Finish' },
 };
 
 const SLOT_STYLE = [
@@ -113,12 +117,12 @@ function milestoneDate(it: LinkItem): string {
 function describe(it: LinkItem): string {
   if (!it.resolved || !it.task) return '';
   const n = it.task.name;
-  const s = it.lagValue > 0 ? ` (độ trễ ${it.lagSign}${it.lagValue} ngày)` : '';
+  const s = it.lagValue > 0 ? ` (lag ${it.lagSign}${it.lagValue} days)` : '';
   switch (it.type) {
-    case 'FS': return `Bắt đầu sau khi «${n}» hoàn thành${s}`;
-    case 'SS': return `Bắt đầu cùng lúc với «${n}»${s}`;
-    case 'FF': return `Kết thúc cùng lúc với «${n}»${s}`;
-    case 'SF': return `Kết thúc sau khi «${n}» bắt đầu${s}`;
+    case 'FS': return `Start after «${n}» finishes${s}`;
+    case 'SS': return `Start when «${n}» starts${s}`;
+    case 'FF': return `Finish when «${n}» finishes${s}`;
+    case 'SF': return `Finish when «${n}» starts${s}`;
   }
 }
 
@@ -137,7 +141,7 @@ interface LinkItem {
 }
 
 async function persistDefault(source: Task, change: PredecessorChange, projects: Project[]): Promise<void> {
-  if (!source?.id) throw new Error('Hãy lưu công việc trước khi liên kết predecessor.');
+  if (!source?.id) throw new Error('Please save the task before linking a predecessor.');
   const now = new Date().toISOString();
   
   const updatedTask = {
@@ -152,7 +156,6 @@ async function persistDefault(source: Task, change: PredecessorChange, projects:
   const { db, APP_ID } = await import('../lib/firebase');
   const { doc, serverTimestamp } = await import('firebase/firestore');
 
-  // Xóa rác undefined
   const cleanData = Object.fromEntries(Object.entries(updatedTask).filter(([_, v]) => v !== undefined));
   if (!cleanData.parentTaskId) cleanData.parentTaskId = null;
 
@@ -165,7 +168,7 @@ async function persistDefault(source: Task, change: PredecessorChange, projects:
   await batch.commit();
 }
 
-/** Ô nhập tay số ngày lệch - Chống giật Echo Guard */
+/** Lag input */
 function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boolean; onCommit: (n: number) => void }) {
   const fmt = (n: number) => (n > 0 ? `+${n}` : String(n));
   const [txt, setTxt] = useState(fmt(value));
@@ -201,9 +204,9 @@ function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boo
           e.preventDefault(); e.stopPropagation(); commit(); e.target.blur?.();
         }
       }}
-      title="Nhập số ngày lệch, ví dụ +2 hoặc -1"
+      title="Enter lag days, e.g. +2 or -1"
       className={cn(
-        'h-7 w-12 rounded bg-slate-100 dark:bg-[#18181a] border border-slate-200 dark:border-[#333] text-center font-mono text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-colors',
+        'h-6 w-12 rounded bg-slate-100 dark:bg-[#18181a] border border-slate-200 dark:border-[#333] text-center font-mono text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-colors',
         value === 0 ? 'text-slate-500 dark:text-slate-400' : value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
       )}
     />
@@ -440,7 +443,7 @@ export function PredecessorMultiInput({
                       <span className="text-slate-800 dark:text-[#f3f3f3] font-semibold truncate" title={it.task.name}>{it.task.name}</span>
                     </div>
                   ) : (
-                    <span className="text-[11px] text-amber-600 italic">Không tìm thấy: {it.raw}</span>
+                    <span className="text-[11px] text-amber-600 italic">Not found: {it.raw}</span>
                   )}
                 </div>
                 {canWrite && (
@@ -448,34 +451,41 @@ export function PredecessorMultiInput({
                 )}
               </div>
 
-              {/* Các tùy chọn liên kết (Type & Lag) */}
+              {/* Link Options (TYPE & LAG placed on the SAME ROW) */}
               {it.resolved && canWrite && (
-                <div className="flex flex-wrap items-center gap-2 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-[#2e2e32] pl-1">
-                  <div className="flex items-center bg-slate-100 dark:bg-[#252528] rounded p-0.5">
-                    {allowed.map((rel) => {
-                      const active = it.type === rel;
-                      return (
-                        <button
-                          key={rel}
-                          type="button"
-                          disabled={saving}
-                          onClick={() => !active && patchItem(idx, { type: rel })}
-                          title={REL_INFO[rel].hint}
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-extrabold transition-colors cursor-pointer",
-                            active ? style.active : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-[#e3e3e3]"
-                          )}
-                        >
-                          {rel}
-                        </button>
-                      );
-                    })}
+                <div className="flex items-center justify-between gap-1.5 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-[#2e2e32] pl-1 text-xs flex-nowrap overflow-x-auto">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
+                    <div className="inline-flex rounded bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      {allowed.map((rel) => {
+                        const active = it.type === rel;
+                        return (
+                          <button
+                            key={rel}
+                            type="button"
+                            disabled={saving}
+                            onClick={() => !active && patchItem(idx, { type: rel })}
+                            title={REL_INFO[rel].hint}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-extrabold transition-colors cursor-pointer active:scale-95",
+                              active ? style.active : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-[#e3e3e3]"
+                            )}
+                          >
+                            {rel}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <button type="button" disabled={saving} onClick={() => stepLag(idx, -1)} className="p-1 rounded bg-slate-100 dark:bg-[#252528] text-slate-500 hover:text-slate-800 dark:text-slate-400"><Minus className="w-3 h-3" /></button>
-                    <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
-                    <button type="button" disabled={saving} onClick={() => stepLag(idx, 1)} className="p-1 rounded bg-slate-100 dark:bg-[#252528] text-slate-500 hover:text-slate-800 dark:text-slate-400"><Plus className="w-3 h-3" /></button>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
+                    <div className="inline-flex items-center gap-0.5 rounded bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      <button type="button" disabled={saving} onClick={() => stepLag(idx, -1)} className="p-0.5 rounded bg-white dark:bg-[#1a1a1c] text-slate-500 hover:text-slate-800 dark:text-slate-400 active:scale-95 transition-all"><Minus className="w-3 h-3" /></button>
+                      <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                      <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
+                      <button type="button" disabled={saving} onClick={() => stepLag(idx, 1)} className="p-0.5 rounded bg-white dark:bg-[#1a1a1c] text-slate-500 hover:text-slate-800 dark:text-slate-400 active:scale-95 transition-all"><Plus className="w-3 h-3" /></button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -490,17 +500,17 @@ export function PredecessorMultiInput({
           <div className="flex items-start gap-1.5 text-amber-800 dark:text-amber-300">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span className="font-medium leading-tight">
-              «{pendingExternal.task.name}» thuộc dự án khác. Sẽ làm thay đổi mốc ngày hiện tại. Đồng ý liên kết?
+              «{pendingExternal.task.name}» belongs to another project. This may adjust current task dates. Confirm link?
             </span>
           </div>
           <div className="flex justify-end gap-1.5 mt-1">
-            <button type="button" onClick={() => setPendingExternal(null)} className="px-3 py-1 rounded text-slate-600 hover:bg-amber-100 dark:text-slate-300 font-bold">Hủy</button>
-            <button type="button" onClick={() => addTask(pendingExternal, true)} className="px-3 py-1 rounded bg-amber-600 text-white font-bold hover:bg-amber-700 shadow-sm">Đồng ý</button>
+            <button type="button" onClick={() => setPendingExternal(null)} className="px-3 py-1 rounded text-slate-600 hover:bg-amber-100 dark:text-slate-300 font-bold">Cancel</button>
+            <button type="button" onClick={() => addTask(pendingExternal, true)} className="px-3 py-1 rounded bg-amber-600 text-white font-bold hover:bg-amber-700 shadow-sm">Link</button>
           </div>
         </div>
       )}
 
-      {/* Ô tìm kiếm & Dropdown */}
+      {/* Search Input & Suggestions */}
       {canAdd && !pendingExternal && (
         <div className="relative mt-0.5">
           <div className="relative">
@@ -513,7 +523,7 @@ export function PredecessorMultiInput({
               onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
               onFocus={() => setOpen(true)}
               onKeyDown={handleKeyDown}
-              placeholder="Gõ tên hoặc mã công việc..."
+              placeholder="Type task name or code..."
               autoComplete="off"
               className="h-8 w-full rounded-lg border border-blue-200 bg-blue-50/50 pl-8 pr-7 text-xs font-semibold text-slate-800 outline-none placeholder:text-slate-400 placeholder:font-normal focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-blue-900/40 dark:bg-[#1a1c23] dark:text-white dark:focus:bg-[#1e1e20]"
             />
@@ -527,9 +537,9 @@ export function PredecessorMultiInput({
 
           {open && (
             <ul className="absolute left-0 right-0 top-full z-[9999] mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528] overscroll-contain">
-              {!hasQuery && candidates.length > 0 && <li className="px-2.5 pb-1 pt-1.5 text-[9px] font-extrabold uppercase text-slate-400">Gợi ý gần nhất</li>}
+              {!hasQuery && candidates.length > 0 && <li className="px-2.5 pb-1 pt-1.5 text-[9px] font-extrabold uppercase text-slate-400">Suggestions (Same Project)</li>}
               {candidates.length === 0 ? (
-                <li className="px-3 py-3 text-center text-[11px] italic text-slate-500">Không tìm thấy công việc</li>
+                <li className="px-3 py-3 text-center text-[11px] italic text-slate-500">No tasks found</li>
               ) : (
                 candidates.map((m, i) => {
                   const t = m.task;
