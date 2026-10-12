@@ -177,13 +177,15 @@ export function updatePredecessorsStrings(
     if (!t || !t.predecessor) return;
     const preds = splitPredecessors(t.predecessor, knownCodes);
     let changed = false;
-    const newPreds = preds.map(pMatches => {
+    const newPreds = preds.map((pMatches, tokIdx) => {
       const trimmed = pMatches.trim();
       if (!trimmed) return pMatches;
 
       // 1. If oldTaskNoMap is provided, resolve target task before reorder via parsePredecessors (Absolute ID binding)
       if (oldTaskNoMap) {
-        const parsed = parsePredecessors(trimmed, oldTaskNoMap, t);
+        // Hard-link ID tính theo vị trí: đưa đúng ID của token này (không phải luôn là token đầu)
+        const tokenCtx = { ...t, predecessorTaskIds: [(t.predecessorTaskIds || [])[tokIdx] || ''] } as Task;
+        const parsed = parsePredecessors(trimmed, oldTaskNoMap, tokenCtx);
         if (parsed.length > 0 && parsed[0]?.task) {
           const targetTaskObj = parsed[0].task;
           const updatedTargetTask = taskIdToNewTask.get(targetTaskObj.id);
@@ -191,13 +193,17 @@ export function updatePredecessorsStrings(
             const newPrimaryCode = updatedTargetTask.taskCodePhu || 
               (updatedTargetTask.projectCode ? `${updatedTargetTask.projectCode}#${(updatedTargetTask.orderIndex ?? 0) + 1}` : updatedTargetTask.id);
 
-            // Extract relation/lag remainder from pMatches
-            let remainder = "";
+            // Lấy phần quan hệ/độ lệch (vd "SS", "FF+2") trực tiếp từ chính token.
+            // Lưu ý: với predecessor gắn cứng, parsed[0].no là CẢ token (gồm cả "SS"/"+2")
+            // nên không được dùng để đo độ dài của mã.
+            let remainder = parsePredecessorToken(trimmed).suffix;
             const lowerMatches = trimmed.toLowerCase();
-            if (parsed[0].no && lowerMatches.startsWith(parsed[0].no.toLowerCase())) {
-              remainder = trimmed.substring(parsed[0].no.length);
-            } else {
-              remainder = trimmed.replace(/^[-#\s]*\d+/, '').replace(/^[a-zA-Z0-9_-]+[-#]\d+/, '').trim();
+            if (!remainder) {
+              if (parsed[0].no && lowerMatches.startsWith(parsed[0].no.toLowerCase()) && parsed[0].no.length < trimmed.length) {
+                remainder = trimmed.substring(parsed[0].no.length);
+              } else if (!(parsed[0].no && lowerMatches === parsed[0].no.toLowerCase())) {
+                remainder = trimmed.replace(/^[-#\s]*\d+/, '').replace(/^[a-zA-Z0-9_-]+[-#]\d+/, '').trim();
+              }
             }
 
             // Check if user originally wrote a short index (e.g. "2", "#2", "-2", "2FS+1") within same project
