@@ -77,15 +77,8 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <label className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-400 dark:text-[#838383]">
+        <label className="text-xs font-bold uppercase text-slate-400 dark:text-[#838383]">
           {t('Predecessor')}
-          <span className="group relative inline-flex items-center">
-            <Info className="h-3.5 w-3.5 cursor-help text-amber-500" />
-            <div className="pointer-events-none invisible absolute bottom-full left-0 z-50 mb-1.5 w-64 rounded bg-slate-800 p-2 text-[10px] font-normal normal-case leading-relaxed text-white opacity-0 shadow-xl transition-all group-hover:visible group-hover:opacity-100 dark:bg-slate-700">
-              Tối đa 2 công việc tiên quyết. Công việc ① thường chốt ngày bắt đầu (FS/SS), công việc ② chốt ngày kết thúc và
-              chỉ được là FF hoặc SF.
-            </div>
-          </span>
         </label>
 
         {hasResolved && canWrite && (

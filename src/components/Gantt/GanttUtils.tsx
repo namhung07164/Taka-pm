@@ -93,12 +93,12 @@ export const positionTooltip = (
   let x = clientX + 15;
   let y = clientY + 15;
 
-  if (x + tw > window.innerWidth) {
+  if (x + tw > window.innerWidth - 10) {
     x = window.innerWidth - tw - 15;
     if (x < 10) x = 10;
   }
 
-  if (y + th > window.innerHeight) {
+  if (y + th > window.innerHeight - 10) {
     y = window.innerHeight - th - 15;
     if (y < 10) y = 10;
   }
@@ -106,6 +106,40 @@ export const positionTooltip = (
   tooltip.style.zIndex = '999999';
   tooltip.style.left = `${Math.max(10, x)}px`;
   tooltip.style.top = `${Math.max(10, y)}px`;
+};
+
+/**
+ * Tự động căn chỉnh lại vị trí của Tooltip trên màn hình để không bao giờ bị tràn ra ngoài màn hình
+ * (đặc biệt khi mở panel Edit Predecessor hoặc danh sách gợi ý).
+ */
+export const ensureTooltipInViewport = (tooltip: HTMLElement | null) => {
+  if (!tooltip) return;
+  const rect = tooltip.getBoundingClientRect();
+  const tw = rect.width || tooltip.offsetWidth || 340;
+  const th = rect.height || tooltip.offsetHeight || 200;
+
+  let x = rect.left;
+  let y = rect.top;
+
+  let changed = false;
+
+  if (x + tw > window.innerWidth - 10) {
+    x = Math.max(10, window.innerWidth - tw - 15);
+    changed = true;
+  }
+
+  if (y + th > window.innerHeight - 10) {
+    y = Math.max(10, window.innerHeight - th - 15);
+    changed = true;
+  }
+
+  if (x < 10) { x = 10; changed = true; }
+  if (y < 10) { y = 10; changed = true; }
+
+  if (changed) {
+    tooltip.style.left = `${x}px`;
+    tooltip.style.top = `${y}px`;
+  }
 };
 
 export const getBarColor = (status: string, duration?: string | number): string => {

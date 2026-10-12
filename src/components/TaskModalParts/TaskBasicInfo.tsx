@@ -229,7 +229,8 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
         setFormData={setFormData}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      {/* Predecessor Section (Full width for clear task name visibility & zero overlap) */}
+      <div className="mb-4 w-full">
         <TaskPredecessorSection 
           task={task}
           formData={formData}
@@ -242,18 +243,19 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
           handleApplyPredecessorDates={handleApplyPredecessorDates}
           setFormData={setFormData}
         />
+      </div>
 
-        <div className="relative w-full">
-          <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">{t("Party")}</label>
-          <MultiSelect
-            value={formData.party || ''}
-            onChange={(val) => setFormData({ ...formData, party: val })}
-            options={parties}
-            placeholder="Contractor A, Contractor B"
-            disabled={!canWrite}
-            className="w-full text-sm"
-          />
-        </div>
+      {/* Party Selection */}
+      <div className="mb-6 w-full">
+        <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">{t("Party")}</label>
+        <MultiSelect
+          value={formData.party || ''}
+          onChange={(val) => setFormData({ ...formData, party: val })}
+          options={parties}
+          placeholder="Contractor A, Contractor B"
+          disabled={!canWrite}
+          className="w-full text-sm"
+        />
       </div>
 
       <div className="flex items-center justify-between gap-3 pt-2">

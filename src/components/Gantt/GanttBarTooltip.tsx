@@ -1,8 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, GripHorizontal, Pin, ExternalLink, ChevronDown, Target } from 'lucide-react';
 import { Task, Project } from '../../types';
-import { formatGanttDate } from './GanttUtils';
+import { formatGanttDate, ensureTooltipInViewport } from './GanttUtils';
 import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -83,6 +83,23 @@ export function GanttBarTooltip({
 
   const rawTaskId = extraVars?.task?.id || (id.startsWith('task-') ? id.replace('task-', '') : id);
 
+  // Tự động căn chỉnh vị trí Tooltip trên màn hình bất cứ khi nào kích thước tooltip thay đổi (vd: khi bật/tắt Edit Predecessor)
+  useLayoutEffect(() => {
+    if (!tooltipRef.current) return;
+    const el = tooltipRef.current;
+    ensureTooltipInViewport(el);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          ensureTooltipInViewport(el);
+        });
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+  }, [tooltipRef, isEditingPredecessor]);
+
   return createPortal(
     <div
       ref={tooltipRef}
@@ -96,7 +113,7 @@ export function GanttBarTooltip({
         e.stopPropagation();
         if (!isPinned) setActiveTooltip(id);
       }}
-      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-[11px] rounded-xl shadow-2xl p-2.5 w-64 sm:w-72 md:w-[340px] max-w-sm border backdrop-blur-md transition-all duration-150 flex flex-col gap-1.5 ${
+      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-[11px] rounded-xl shadow-2xl p-2.5 w-64 sm:w-72 md:w-[340px] max-w-sm border backdrop-blur-md transition-all duration-150 flex flex-col gap-1.5 max-h-[calc(100vh-20px)] overflow-y-auto overscroll-contain ${
         isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
       }`}
       style={{

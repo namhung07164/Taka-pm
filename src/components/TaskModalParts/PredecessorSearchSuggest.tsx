@@ -288,7 +288,7 @@ function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boo
       }}
       title="Nhập số ngày lệch, ví dụ +2 hoặc -1"
       className={cn(
-        'h-9 w-16 rounded-lg border border-slate-200 bg-white text-center font-mono text-[13px] font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#444446] dark:bg-[#18181a]',
+        'h-6 w-12 rounded-md border border-slate-200/80 bg-white dark:border-[#38383a] dark:bg-[#18181a] text-center font-mono text-xs font-bold outline-none focus:border-blue-500 transition-colors shadow-2xs',
         value === 0 ? 'text-slate-500 dark:text-slate-400' : value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
       )}
     />
@@ -312,6 +312,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
 
     const wrapperRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLUListElement>(null);
 
     const [query, setQuery] = useState('');
     const deferredQuery = useDeferredValue(query);
@@ -320,6 +321,16 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+
+    // Auto-scroll the focused candidate into view
+    useEffect(() => {
+      if (open && listRef.current && listRef.current.children[hi]) {
+        const activeEl = listRef.current.children[hi] as HTMLElement;
+        if (activeEl) {
+          activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    }, [hi, open]);
 
     const ctx: PredecessorContext = useMemo(
       () => ({
@@ -587,60 +598,56 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           </div>
         )}
 
-        {/* Trạng thái rỗng */}
-        {items.length === 0 && !canWrite && (
-          <p className="text-[12px] italic text-slate-400">Chưa có công việc tiên quyết.</p>
-        )}
-        {items.length === 0 && canWrite && (
-          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
-            Chọn công việc phải <b>xong (hoặc bắt đầu) trước</b> công việc này. Ngày bắt đầu/kết thúc sẽ tự động được tính theo.
-          </p>
-        )}
+
 
         {/* Danh sách đã liên kết */}
         {items.map((it, idx) => {
-          const style = SLOT_STYLE[idx] || SLOT_STYLE[1];
           const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
           const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
-          const milestone = milestoneDate(it);
 
           return (
             <div
               key={it.key}
               className={cn(
-                'rounded-xl border border-l-4 bg-white dark:bg-[#1e1e20] shadow-sm',
-                it.resolved ? 'border-slate-200 dark:border-[#444446]' : 'border-amber-300 dark:border-amber-700/60',
-                it.resolved ? style.border : 'border-l-amber-500'
+                'group flex flex-col gap-1.5 rounded-xl border bg-white dark:bg-[#1c1c1f] p-2 shadow-2xs transition-all hover:border-blue-300 dark:hover:border-blue-700',
+                it.resolved ? 'border-slate-200 dark:border-[#38383a]' : 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20'
               )}
             >
-              <div className="flex items-start gap-2 p-2.5 pb-2">
-                <div className="min-w-0 flex-1">
-                  <div className={cn('mb-1 flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wide', style.caption)}>
-                    <span className={cn('inline-flex items-center justify-center rounded px-1.5 py-0.5', style.badge)}>{style.tag}</span>
-                    {style.title}
-                  </div>
+              {/* Row 1: Slot Badge + Task Code + Task Name + Cross-Project badge + Delete */}
+              <div className="flex items-start justify-between gap-2 min-w-0">
+                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'inline-flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded px-1 text-[11px] font-black mt-0.5',
+                      idx === 0
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300'
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                    )}
+                  >
+                    {idx === 0 ? '①' : '②'}
+                  </span>
 
                   {it.resolved && it.task ? (
-                    <>
-                      <div className="break-words text-[13px] font-bold leading-snug text-slate-800 dark:text-[#f3f3f3]">
-                        {it.task.name}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-                        <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{it.code}</span>
-                        <span className="inline-flex items-center gap-1 font-mono text-slate-400 dark:text-slate-500">
-                          {shortDate(it.task.start)} <ArrowRight className="w-3 h-3" /> {shortDate(it.task.finish)}
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-xs font-black text-blue-600 dark:text-[#8ab4f8] shrink-0">
+                          {it.code}
                         </span>
-                        {it.isExternal && (
-                          <span className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-700/60 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
-                            <ExternalLink className="w-2.5 h-2.5" /> {it.externalLabel}
-                          </span>
-                        )}
+                        <span className="text-xs font-bold text-slate-800 dark:text-[#f3f3f3] leading-snug break-words">
+                          {it.task.name}
+                        </span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-[12px] font-semibold text-amber-700 dark:text-amber-300">
-                      Không tìm thấy công việc «{it.raw}». Hãy gỡ và chọn lại từ danh sách gợi ý.
+                      {it.isExternal && (
+                        <span className="mt-1 inline-flex shrink-0 items-center gap-1 w-fit rounded border border-amber-300 bg-amber-100/70 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                          <ExternalLink className="h-3 w-3" />
+                          {it.externalLabel}
+                        </span>
+                      )}
                     </div>
+                  ) : (
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                      Không tìm thấy «{it.raw}»
+                    </span>
                   )}
                 </div>
 
@@ -650,18 +657,20 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                     onClick={() => removeItem(idx)}
                     disabled={saving}
                     title="Gỡ liên kết"
-                    className="shrink-0 -mt-0.5 -mr-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-colors touch-manipulation disabled:opacity-50"
+                    className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-all touch-manipulation disabled:opacity-50"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              {it.resolved && (
-                <div className="flex flex-col gap-2 px-2.5 pb-2.5">
-                  {/* Chọn kiểu liên kết */}
-                  {canWrite ? (
-                    <div className={cn('grid gap-1.5', allowed.length === 4 ? 'grid-cols-4' : 'grid-cols-2')}>
+              {/* Row 2: Type Segmented Pills + Lag Controls */}
+              {it.resolved && canWrite && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#2a2a2d]">
+                  {/* Type Segmented Control */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Kiểu:</span>
+                    <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
                       {allowed.map((rel) => {
                         const active = it.type === rel;
                         return (
@@ -670,67 +679,43 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                             type="button"
                             disabled={saving}
                             onClick={() => !active && patchItem(idx, { type: rel })}
-                            title={REL_INFO[rel].hint}
                             className={cn(
-                              'flex min-h-[44px] flex-col items-center justify-center rounded-lg border px-1 py-1 transition-colors active:scale-95 touch-manipulation disabled:opacity-60',
+                              'px-2.5 py-1 text-xs font-black rounded-md transition-all active:scale-95 touch-manipulation disabled:opacity-60',
                               active
-                                ? style.active
-                                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-[#444446] dark:bg-[#252528] dark:text-slate-300 dark:hover:bg-[#2c2c30]'
+                                ? 'bg-blue-600 text-white shadow-2xs dark:bg-blue-600'
+                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                             )}
                           >
-                            <span className="text-[12px] font-extrabold leading-none">{rel}</span>
-                            <span className={cn('mt-0.5 text-[9px] leading-tight', active ? 'text-white/85' : 'text-slate-400 dark:text-slate-500')}>
-                              {REL_INFO[rel].hint}
-                            </span>
+                            {rel}
                           </button>
                         );
                       })}
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className={cn('rounded px-1.5 py-0.5 font-extrabold', style.badge)}>{it.type}</span>
-                      <span className="text-slate-500 dark:text-slate-400">{REL_INFO[it.type].hint}</span>
-                    </div>
-                  )}
+                  </div>
 
-                  {/* Độ trễ / vượt trước (lag) */}
-                  {canWrite && (
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Độ lệch ngày (+ trễ / − sớm)</span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => stepLag(idx, -1)}
-                          title="Sớm hơn 1 ngày"
-                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-[#444446] dark:bg-[#252528] dark:text-slate-300 active:scale-95 touch-manipulation disabled:opacity-60"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
-                        <span className="text-[11px] text-slate-400">ngày</span>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => stepLag(idx, 1)}
-                          title="Trễ hơn 1 ngày"
-                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-[#444446] dark:bg-[#252528] dark:text-slate-300 active:scale-95 touch-manipulation disabled:opacity-60"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
+                  {/* Lag Control Inline */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Độ lệch:</span>
+                    <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-[#252528] px-1.5 py-1 border border-slate-200/60 dark:border-[#38383a]">
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => stepLag(idx, -1)}
+                        className="flex h-6 w-6 items-center justify-center rounded-md bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                      <span className="text-xs font-bold text-slate-400 px-0.5">ngày</span>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => stepLag(idx, 1)}
+                        className="flex h-6 w-6 items-center justify-center rounded-md bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                  )}
-
-                  {/* Diễn giải bằng lời */}
-                  <div className="rounded-lg bg-slate-50 dark:bg-[#18181a] px-2.5 py-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-                    {describe(it)}
-                    {milestone && (
-                      <>
-                        {' '}
-                        → <b className="font-mono text-slate-800 dark:text-slate-100">{milestone}</b>
-                      </>
-                    )}
                   </div>
                 </div>
               )}
@@ -740,29 +725,28 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
 
         {/* Xác nhận liên kết khác dự án */}
         {pendingExternal && (
-          <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/60">
-            <div className="flex items-start gap-2 text-[12px] font-medium text-amber-800 dark:text-amber-200">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs dark:border-amber-700 dark:bg-amber-950/60">
+            <div className="flex items-start gap-1.5 font-medium text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <p>
                 «<b>{pendingExternal.task.name}</b>» thuộc dự án khác (
-                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Liên kết chéo dự án sẽ làm
-                ngày của công việc này thay đổi theo công việc kia. Bạn có chắc chắn?
+                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Xác nhận liên kết chéo dự án?
               </p>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-1.5">
               <button
                 type="button"
                 onClick={() => setPendingExternal(null)}
-                className="min-h-[40px] rounded-lg px-4 text-[12px] font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation"
+                className="rounded-lg px-3 py-1 text-xs font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation"
               >
                 Hủy
               </button>
               <button
                 type="button"
                 onClick={() => addTask(pendingExternal, true)}
-                className="min-h-[40px] rounded-lg bg-amber-600 px-4 text-[12px] font-bold text-white shadow-sm hover:bg-amber-700 active:scale-95 touch-manipulation"
+                className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 active:scale-95 touch-manipulation"
               >
-                Đồng ý liên kết
+                Liên kết
               </button>
             </div>
           </div>
@@ -770,13 +754,9 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
 
         {/* Ô tìm & thêm */}
         {canAdd && !pendingExternal && (
-          <div className="relative">
-            <label className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-              <Link2 className="w-3.5 h-3.5" />
-              {items.length === 0 ? 'Thêm công việc tiên quyết' : 'Thêm công việc tiên quyết thứ 2 (FF / SF)'}
-            </label>
+          <div className="relative w-full">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
                 ref={inputRef}
                 type="text"
@@ -788,9 +768,9 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                 }}
                 onFocus={() => setOpen(true)}
                 onKeyDown={handleKeyDown}
-                placeholder="Gõ tên hoặc mã công việc (vd: A01#2)"
+                placeholder="Gõ tên hoặc mã công việc..."
                 autoComplete="off"
-                className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-9 text-[13px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-[#555] dark:bg-[#1e1e20] dark:text-white"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-7 text-xs font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:border-[#38383a] dark:bg-[#1a1a1c] dark:text-white dark:focus:bg-[#202023] transition-all shadow-2xs"
               />
               {query && (
                 <button
@@ -799,27 +779,28 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                     setQuery('');
                     inputRef.current?.focus();
                   }}
-                  className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
+                  className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
                   tabIndex={-1}
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
 
             {open && (
               <ul
+                ref={listRef}
                 role="listbox"
-                className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528]"
+                className="absolute left-0 right-0 top-full z-[200] mt-1 max-h-60 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white dark:border-[#444446] dark:bg-[#252528] p-1 shadow-2xl backdrop-blur-md transition-all"
               >
                 {!hasQuery && candidates.length > 0 && (
-                  <li className="px-3 pb-1 pt-1.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+                  <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
                     Gợi ý cùng dự án
                   </li>
                 )}
                 {candidates.length === 0 ? (
-                  <li className="px-3 py-3 text-center text-[12px] italic text-slate-500">
-                    {hasQuery ? 'Không tìm thấy công việc phù hợp' : 'Chưa có công việc nào để gợi ý'}
+                  <li className="px-3 py-2.5 text-center text-xs italic text-slate-400">
+                    {hasQuery ? 'Không tìm thấy công việc' : 'Chưa có công việc phù hợp'}
                   </li>
                 ) : (
                   candidates.map((m, i) => {
@@ -833,27 +814,27 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                         onMouseEnter={() => setHi(i)}
                         onClick={() => addTask(m)}
                         className={cn(
-                          'flex min-h-[48px] cursor-pointer flex-col gap-0.5 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-[#333]',
-                          i === hi ? 'bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-slate-50 dark:hover:bg-[#2a2a2e]'
+                          'flex min-h-[38px] cursor-pointer flex-col gap-0.5 rounded-lg border-b border-slate-100/60 dark:border-slate-800/60 px-2.5 py-1.5 last:border-0 transition-colors',
+                          i === hi ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-[#2e2e32]'
                         )}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="break-words text-[13px] font-bold leading-snug text-slate-800 dark:text-[#f3f3f3]">{t.name}</span>
+                        <div className="flex items-center justify-between gap-1.5 min-w-0">
+                          <span className="truncate text-xs font-bold text-slate-800 dark:text-[#f3f3f3]">{t.name}</span>
                           <span className="flex shrink-0 items-center gap-1">
                             {best && (
-                              <span className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300">
-                                <Sparkles className="w-2.5 h-2.5" /> Gợi ý nhất
+                              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.2 text-[9px] font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                                <Sparkles className="h-2.5 w-2.5" /> Gợi ý
                               </span>
                             )}
                             {m.isExternal && (
-                              <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300">
-                                <ExternalLink className="w-2.5 h-2.5" /> {externalLabel(m.diffDetails, t.projectCode)}
+                              <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.2 text-[9px] font-extrabold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                <ExternalLink className="h-2.5 w-2.5" /> {externalLabel(m.diffDetails, t.projectCode)}
                               </span>
                             )}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="font-mono font-black text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
                           <span className="font-mono text-slate-400 dark:text-slate-500">
                             {shortDate(t.start)} → {shortDate(t.finish)}
                           </span>
@@ -865,12 +846,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
               </ul>
             )}
           </div>
-        )}
-
-        {canWrite && items.length >= 2 && (
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">
-            Đã đủ 2 công việc tiên quyết (tối đa). Gỡ một công việc nếu muốn chọn công việc khác.
-          </p>
         )}
       </div>
     );
