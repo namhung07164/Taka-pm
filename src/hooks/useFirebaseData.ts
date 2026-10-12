@@ -314,8 +314,38 @@ export function useFirebaseData() {
       try {
         const pending = await getPendingUpdates();
         if (pending.length > 0) {
+          // So sánh với dữ liệu task hiện có trên máy (không tốn thêm lượt đọc Firestore).
+          // Chỉ bỏ draft khi bản trên máy MỚI HƠN draft rõ ràng (> 1 giây, chừa sai lệch đồng hồ).
+          const liveTasks = new Map<string, any>(
+            (useAppStore.getState().tasks || []).map((t: any) => [t.id, t])
+          );
+          let skipped = 0;
+          const validPending = pending.filter((u: any) => {
+            if (u.action === "delete") return true;
+            if (!String(u.collectionPath || "").includes("taka_tasks")) return true;
+            const draftAt = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
+            const live = liveTasks.get(u.docId);
+            const liveAt = live?.updatedAt ? new Date(live.updatedAt).getTime() : 0;
+            if (draftAt && liveAt && liveAt > draftAt + 1000) {
+              skipped++;
+              return false;
+            }
+            return true;
+          });
+
+          if (validPending.length === 0) {
+            clearPendingUpdates();
+            if (skipped > 0) {
+              setToast({
+                title: "Sync",
+                message: `Đã bỏ qua ${skipped} thay đổi offline cũ vì đã có dữ liệu mới hơn.`,
+              });
+            }
+            return;
+          }
+
           const batch = writeBatch(db);
-          pending.forEach((update) => {
+          validPending.forEach((update: any) => {
             const ref = doc(db, update.collectionPath, update.docId);
             if (update.action === "set") {
               batch.set(ref, update.data, { merge: true });
@@ -332,11 +362,14 @@ export function useFirebaseData() {
               console.log("[Sync] Processed offline drafts.");
               setToast({
                 title: "Sync Complete",
-                message: "Offline data has been synced to the server.",
+                message:
+                  skipped > 0
+                    ? `Đã đồng bộ dữ liệu offline (bỏ qua ${skipped} thay đổi cũ hơn dữ liệu hiện có).`
+                    : "Offline data has been synced to the server.",
               });
 
-              // Record batch deltas for synced items so other trâm machines know
-              const deltaItems = pending.map((u) => {
+              // Record batch deltas for synced items so other machines know
+              const deltaItems = validPending.map((u: any) => {
                 let collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations' = 'taka_projects';
                 if (u.collectionPath.includes('taka_tasks')) collectionName = 'taka_tasks';
                 else if (u.collectionPath.includes('taka_costs')) collectionName = 'taka_costs';
@@ -354,7 +387,7 @@ export function useFirebaseData() {
                 recordBatchDeltas(deltaItems).catch(() => {});
               }
             })
-            .catch((e) => {
+            .catch((e: any) => {
                console.error(e);
                setCloudStatus("offline");
             });

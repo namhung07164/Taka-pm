@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Project, Task, DelegationGroup } from '../../types';
 import { scrollToElement } from '../../lib/utils';
-import { backfillMissingProjectDates } from '../../lib/projectDatesService';
+import {
+  backfillMissingProjectDates,
+  getAppBootAgeMs,
+  BOOT_SYNC_GUARD_MS,
+} from '../../lib/projectDatesService';
 
 interface UseDetailInitialScrollParams {
   projects: Project[];
@@ -25,9 +29,10 @@ export function useDetailInitialScroll({
   // Backfill dates once loaded (deferred to background microtask to prevent UI freeze during tab navigation)
   useEffect(() => {
     if (projects.length > 0 && tasks.length > 0) {
+      const delay = Math.max(1500, BOOT_SYNC_GUARD_MS - getAppBootAgeMs() + 500);
       const timer = setTimeout(() => {
         backfillMissingProjectDates(projects, tasks, delegationGroups);
-      }, 1500);
+      }, delay);
       return () => clearTimeout(timer);
     }
   }, [projects.length, tasks.length, delegationGroups.length]);

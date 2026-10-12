@@ -388,6 +388,13 @@ export async function syncProjectDatesByCode(
   await syncProjectDatesToFirestore(project.id, dates);
 }
 
+const APP_BOOT_TIME = Date.now();
+export const BOOT_SYNC_GUARD_MS = 15000;
+/** Số ms kể từ khi app khởi động (dùng để hoãn các tác vụ ghi ngầm lúc mới mở app). */
+export function getAppBootAgeMs(): number {
+  return Date.now() - APP_BOOT_TIME;
+}
+
 let hasBackfilledInSession = false;
 
 /**
@@ -400,6 +407,9 @@ export async function backfillMissingProjectDates(
   tasks: Task[],
   delegationGroups: DelegationGroup[] = []
 ): Promise<number> {
+  // Trong 15s đầu sau khi mở app, dữ liệu task có thể chưa tải đủ -> không backfill
+  // (không bật cờ hasBackfilledInSession để lần gọi sau vẫn chạy được)
+  if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return 0;
   if (hasBackfilledInSession || !projects.length || !tasks.length) return 0;
   hasBackfilledInSession = true;
 

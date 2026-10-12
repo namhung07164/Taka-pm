@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { formatDisplayDateTime, getDefaultDatetimeLocal, cn } from '../../lib/utils';
 
 export const EditableCell = React.memo(function EditableCell({ 
@@ -22,20 +22,38 @@ export const EditableCell = React.memo(function EditableCell({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
+  // Đang gõ thì KHÔNG cho dữ liệu từ store/server ghi đè ô (chống "giật ngược" khi đang nhập)
+  const editingRef = useRef(false);
 
   useEffect(() => {
+    if (editingRef.current) return;
     setVal(value !== undefined && value !== null ? value : '');
   }, [value]);
 
-  const handleBlur = () => {
+  const finishEditing = () => {
+    editingRef.current = false;
     setIsEditing(false);
-    const newVal = type === 'number' ? Number(val) : val;
-    if (newVal !== value) {
-      onSave(newVal);
+  };
+
+  const handleBlur = () => {
+    finishEditing();
+    if (type === 'number') {
+      const parsed = Number(String(val).replace(',', '.').trim());
+      if (Number.isNaN(parsed)) {
+        // Nhập sai định dạng số: trả về giá trị cũ, không lưu
+        setVal(value !== undefined && value !== null ? value : '');
+        return;
+      }
+      if (parsed !== value) onSave(parsed);
+      return;
+    }
+    if (val !== value) {
+      onSave(val);
     }
   };
 
   const handleEditClick = () => {
+    editingRef.current = true;
     setIsEditing(true);
     if (isDate && (!val || val === '')) {
       setVal(getDefaultDatetimeLocal());
@@ -54,12 +72,12 @@ export const EditableCell = React.memo(function EditableCell({
           value={val}
           onChange={(e) => {
             setVal(e.target.value);
-            setIsEditing(false);
+            finishEditing();
             if (e.target.value !== value) {
               onSave(e.target.value);
             }
           }}
-          onBlur={handleBlur}
+          onBlur={finishEditing}
           className="w-full bg-white dark:bg-[#1e1e20] border border-blue-400 rounded px-1 py-0.5 outline-none text-inherit font-inherit text-slate-900 dark:text-[#e3e3e3]"
         >
           <option value="">-</option>
@@ -82,6 +100,10 @@ export const EditableCell = React.memo(function EditableCell({
         onBlur={handleBlur}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') {
+            setVal(value !== undefined && value !== null ? value : '');
+            finishEditing();
+          }
         }}
         list={listId}
         className="w-full bg-white dark:bg-[#1e1e20] border border-blue-400 rounded px-1 py-0.5 outline-none text-inherit font-inherit text-slate-900 dark:text-[#e3e3e3]"
