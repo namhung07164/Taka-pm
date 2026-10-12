@@ -271,10 +271,17 @@ export async function deleteTaskStateUnified(
       const updatedP = {
         ...p,
         taskSummaries: newSummaries,
-        taskCount: newSummaries.length > 0 ? newSummaries.length : (cleanedTasks.filter(t => 
-          (t.projectId && String(t.projectId) === String(p.id)) ||
-          (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-        ).length),
+        taskCount: newSummaries.length > 0 
+          ? newSummaries.length 
+          : Math.max(
+              cleanedTasks.filter(t => 
+                (t.projectId && String(t.projectId) === String(p.id)) ||
+                (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+              ).length,
+              summaryModified 
+                ? Math.max(0, (p.taskCount || 0) - idSet.size)
+                : (p.taskCount || 0)
+            ),
         updatedAt: now,
       };
       const remainingProjTasks = cleanedTasks.filter(t =>
@@ -282,7 +289,14 @@ export async function deleteTaskStateUnified(
         (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
       );
       const computed = calculateProjectComputedDates(updatedP, remainingProjTasks);
-      return { ...updatedP, ...computed };
+      return { 
+        ...updatedP, 
+        ...computed,
+        taskCount: Math.max(updatedP.taskCount || 0, computed.taskCount || 0),
+        taskSummaries: (computed.taskSummaries && computed.taskSummaries.length >= newSummaries.length)
+          ? computed.taskSummaries
+          : newSummaries
+      };
     }
     return p;
   });
