@@ -271,24 +271,28 @@ function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, da
   } as any);
 }
 
+import { removeUndefinedDeep } from "./firestoreSanitizer";
+
 export function setDoc(docRef: any, data: any, options?: any) {
-  validateFirestoreData(docRef.path, data, options?.merge === true);
-  writeAuditLogAsync("CREATE", docRef, data);
+  const cleanData = removeUndefinedDeep(data);
+  validateFirestoreData(docRef.path, cleanData, options?.merge === true);
+  writeAuditLogAsync("CREATE", docRef, cleanData);
   queueAutoDelta(docRef.path, docRef.id, 'write');
-  return firestoreSetDoc(docRef, data, options).catch(error => {
+  return firestoreSetDoc(docRef, cleanData, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('set', docRef, data);
+    handleOfflineQueue('set', docRef, cleanData);
     throw error;
   });
 }
 
 export function updateDoc(docRef: any, data: any) {
-  validateFirestoreData(docRef.path, data, true);
-  writeAuditLogAsync("UPDATE", docRef, data);
+  const cleanData = removeUndefinedDeep(data);
+  validateFirestoreData(docRef.path, cleanData, true);
+  writeAuditLogAsync("UPDATE", docRef, cleanData);
   queueAutoDelta(docRef.path, docRef.id, 'write');
-  return firestoreUpdateDoc(docRef, data).catch(error => {
+  return firestoreUpdateDoc(docRef, cleanData).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('update', docRef, data);
+    handleOfflineQueue('update', docRef, cleanData);
     throw error;
   });
 }
@@ -313,17 +317,19 @@ export function writeBatch(dbInstance: any): WriteBatch {
   const operations: any[] = [];
 
   (batch as any).set = (docRef: any, data: any, options?: any) => {
-    validateFirestoreData(docRef.path, data, options?.merge === true);
-    operations.push({ action: 'set', docRef, data, options });
-    writeAuditLogAsync("CREATE", docRef, data);
-    return originalSet(docRef, data, options);
+    const cleanData = removeUndefinedDeep(data);
+    validateFirestoreData(docRef.path, cleanData, options?.merge === true);
+    operations.push({ action: 'set', docRef, data: cleanData, options });
+    writeAuditLogAsync("CREATE", docRef, cleanData);
+    return originalSet(docRef, cleanData, options);
   };
   
   (batch as any).update = (docRef: any, data: any, ...moreFieldsAndValues: any[]) => {
-    validateFirestoreData(docRef.path, data, true);
-    operations.push({ action: 'update', docRef, data });
-    writeAuditLogAsync("UPDATE", docRef, data);
-    return (originalUpdate as any)(docRef, data, ...moreFieldsAndValues);
+    const cleanData = removeUndefinedDeep(data);
+    validateFirestoreData(docRef.path, cleanData, true);
+    operations.push({ action: 'update', docRef, data: cleanData });
+    writeAuditLogAsync("UPDATE", docRef, cleanData);
+    return (originalUpdate as any)(docRef, cleanData, ...moreFieldsAndValues);
   };
 
   (batch as any).delete = (docRef: any) => {

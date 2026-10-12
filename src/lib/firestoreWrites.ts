@@ -6,6 +6,7 @@ import {
   type WriteBatch,
 } from 'firebase/firestore';
 import { queueAutoDelta } from './autoDeltaQueue';
+import { removeUndefinedDeep } from './firestoreSanitizer';
 
 /**
  * Thin drop-in replacements for Firestore write functions that ALSO emit an auto delta
@@ -16,14 +17,16 @@ import { queueAutoDelta } from './autoDeltaQueue';
  * setDoc/updateDoc/deleteDoc/writeBatch from here (or from lib/firebase.ts), never from 'firebase/firestore'.
  */
 
-export const setDoc = ((ref: any, ...rest: any[]) => {
+export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
   queueAutoDelta(ref?.path, ref?.id, 'write');
-  return (rawSetDoc as any)(ref, ...rest);
+  const cleanData = removeUndefinedDeep(data);
+  return (rawSetDoc as any)(ref, cleanData, ...rest);
 }) as typeof rawSetDoc;
 
-export const updateDoc = ((ref: any, ...rest: any[]) => {
+export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
   queueAutoDelta(ref?.path, ref?.id, 'write');
-  return (rawUpdateDoc as any)(ref, ...rest);
+  const cleanData = removeUndefinedDeep(data);
+  return (rawUpdateDoc as any)(ref, cleanData, ...rest);
 }) as typeof rawUpdateDoc;
 
 export const deleteDoc = ((ref: any) => {
@@ -39,8 +42,16 @@ export function writeBatch(dbInstance: any): WriteBatch {
   const origDelete = batch.delete.bind(batch);
   const origCommit = batch.commit.bind(batch);
 
-  batch.set = (ref: any, ...rest: any[]) => { ops.push({ ref, kind: 'write' }); return origSet(ref, ...rest); };
-  batch.update = (ref: any, ...rest: any[]) => { ops.push({ ref, kind: 'write' }); return origUpdate(ref, ...rest); };
+  batch.set = (ref: any, data: any, ...rest: any[]) => {
+    ops.push({ ref, kind: 'write' });
+    const cleanData = removeUndefinedDeep(data);
+    return origSet(ref, cleanData, ...rest);
+  };
+  batch.update = (ref: any, data: any, ...rest: any[]) => {
+    ops.push({ ref, kind: 'write' });
+    const cleanData = removeUndefinedDeep(data);
+    return origUpdate(ref, cleanData, ...rest);
+  };
   batch.delete = (ref: any) => { ops.push({ ref, kind: 'delete' }); return origDelete(ref); };
   batch.commit = () => {
     // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes

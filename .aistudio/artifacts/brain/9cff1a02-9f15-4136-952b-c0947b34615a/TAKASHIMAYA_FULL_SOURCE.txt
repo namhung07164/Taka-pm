@@ -1,5 +1,5 @@
 TAKASHIMAYA PROJECT MANAGEMENT SYSTEM - SOURCE CODE EXPORT
-Generated on: Mon, 12 Oct 2026 07:12:04 GMT
+Generated on: Mon, 12 Oct 2026 07:37:30 GMT
 --------------------------------------------------------------------------------
 
 ================================================================================
@@ -94439,24 +94439,28 @@ function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, da
   } as any);
 }
 
+import { removeUndefinedDeep } from "./firestoreSanitizer";
+
 export function setDoc(docRef: any, data: any, options?: any) {
-  validateFirestoreData(docRef.path, data, options?.merge === true);
-  writeAuditLogAsync("CREATE", docRef, data);
+  const cleanData = removeUndefinedDeep(data);
+  validateFirestoreData(docRef.path, cleanData, options?.merge === true);
+  writeAuditLogAsync("CREATE", docRef, cleanData);
   queueAutoDelta(docRef.path, docRef.id, 'write');
-  return firestoreSetDoc(docRef, data, options).catch(error => {
+  return firestoreSetDoc(docRef, cleanData, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('set', docRef, data);
+    handleOfflineQueue('set', docRef, cleanData);
     throw error;
   });
 }
 
 export function updateDoc(docRef: any, data: any) {
-  validateFirestoreData(docRef.path, data, true);
-  writeAuditLogAsync("UPDATE", docRef, data);
+  const cleanData = removeUndefinedDeep(data);
+  validateFirestoreData(docRef.path, cleanData, true);
+  writeAuditLogAsync("UPDATE", docRef, cleanData);
   queueAutoDelta(docRef.path, docRef.id, 'write');
-  return firestoreUpdateDoc(docRef, data).catch(error => {
+  return firestoreUpdateDoc(docRef, cleanData).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('update', docRef, data);
+    handleOfflineQueue('update', docRef, cleanData);
     throw error;
   });
 }
@@ -94481,17 +94485,19 @@ export function writeBatch(dbInstance: any): WriteBatch {
   const operations: any[] = [];
 
   (batch as any).set = (docRef: any, data: any, options?: any) => {
-    validateFirestoreData(docRef.path, data, options?.merge === true);
-    operations.push({ action: 'set', docRef, data, options });
-    writeAuditLogAsync("CREATE", docRef, data);
-    return originalSet(docRef, data, options);
+    const cleanData = removeUndefinedDeep(data);
+    validateFirestoreData(docRef.path, cleanData, options?.merge === true);
+    operations.push({ action: 'set', docRef, data: cleanData, options });
+    writeAuditLogAsync("CREATE", docRef, cleanData);
+    return originalSet(docRef, cleanData, options);
   };
   
   (batch as any).update = (docRef: any, data: any, ...moreFieldsAndValues: any[]) => {
-    validateFirestoreData(docRef.path, data, true);
-    operations.push({ action: 'update', docRef, data });
-    writeAuditLogAsync("UPDATE", docRef, data);
-    return (originalUpdate as any)(docRef, data, ...moreFieldsAndValues);
+    const cleanData = removeUndefinedDeep(data);
+    validateFirestoreData(docRef.path, cleanData, true);
+    operations.push({ action: 'update', docRef, data: cleanData });
+    writeAuditLogAsync("UPDATE", docRef, cleanData);
+    return (originalUpdate as any)(docRef, cleanData, ...moreFieldsAndValues);
   };
 
   (batch as any).delete = (docRef: any) => {
@@ -94517,6 +94523,54 @@ export function writeBatch(dbInstance: any): WriteBatch {
 
 
 ================================================================================
+FILE: src/lib/firestoreSanitizer.ts
+================================================================================
+/**
+ * Deeply strips `undefined` properties from objects/arrays so Firestore operations
+ * (setDoc, updateDoc, writeBatch.set, writeBatch.update) never fail with:
+ * "FirebaseError: Function WriteBatch.set() called with invalid data. Unsupported field value: undefined"
+ *
+ * Preserves custom objects/classes such as FieldValue (deleteField, serverTimestamp, increment)
+ * and Date, RegExp, etc.
+ */
+export function removeUndefinedDeep<T = any>(val: T): T {
+  if (val === undefined) {
+    return undefined as unknown as T;
+  }
+  if (val === null || typeof val !== 'object') {
+    return val;
+  }
+
+  // Handle Date
+  if (val instanceof Date) {
+    return val;
+  }
+
+  // Handle Arrays
+  if (Array.isArray(val)) {
+    return val
+      .filter((item) => item !== undefined)
+      .map((item) => removeUndefinedDeep(item)) as unknown as T;
+  }
+
+  // If object is not a plain object (e.g., Firestore FieldValue like deleteField() or serverTimestamp())
+  const proto = Object.getPrototypeOf(val);
+  if (proto !== null && proto !== Object.prototype) {
+    return val;
+  }
+
+  // Plain object: remove keys where value is undefined, recurse on nested values
+  const result: Record<string, any> = {};
+  for (const [key, v] of Object.entries(val as Record<string, any>)) {
+    if (v !== undefined) {
+      result[key] = removeUndefinedDeep(v);
+    }
+  }
+  return result as T;
+}
+
+
+================================================================================
 FILE: src/lib/firestoreWrites.ts
 ================================================================================
 import {
@@ -94527,6 +94581,7 @@ import {
   type WriteBatch,
 } from 'firebase/firestore';
 import { queueAutoDelta } from './autoDeltaQueue';
+import { removeUndefinedDeep } from './firestoreSanitizer';
 
 /**
  * Thin drop-in replacements for Firestore write functions that ALSO emit an auto delta
@@ -94537,14 +94592,16 @@ import { queueAutoDelta } from './autoDeltaQueue';
  * setDoc/updateDoc/deleteDoc/writeBatch from here (or from lib/firebase.ts), never from 'firebase/firestore'.
  */
 
-export const setDoc = ((ref: any, ...rest: any[]) => {
+export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
   queueAutoDelta(ref?.path, ref?.id, 'write');
-  return (rawSetDoc as any)(ref, ...rest);
+  const cleanData = removeUndefinedDeep(data);
+  return (rawSetDoc as any)(ref, cleanData, ...rest);
 }) as typeof rawSetDoc;
 
-export const updateDoc = ((ref: any, ...rest: any[]) => {
+export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
   queueAutoDelta(ref?.path, ref?.id, 'write');
-  return (rawUpdateDoc as any)(ref, ...rest);
+  const cleanData = removeUndefinedDeep(data);
+  return (rawUpdateDoc as any)(ref, cleanData, ...rest);
 }) as typeof rawUpdateDoc;
 
 export const deleteDoc = ((ref: any) => {
@@ -94560,8 +94617,16 @@ export function writeBatch(dbInstance: any): WriteBatch {
   const origDelete = batch.delete.bind(batch);
   const origCommit = batch.commit.bind(batch);
 
-  batch.set = (ref: any, ...rest: any[]) => { ops.push({ ref, kind: 'write' }); return origSet(ref, ...rest); };
-  batch.update = (ref: any, ...rest: any[]) => { ops.push({ ref, kind: 'write' }); return origUpdate(ref, ...rest); };
+  batch.set = (ref: any, data: any, ...rest: any[]) => {
+    ops.push({ ref, kind: 'write' });
+    const cleanData = removeUndefinedDeep(data);
+    return origSet(ref, cleanData, ...rest);
+  };
+  batch.update = (ref: any, data: any, ...rest: any[]) => {
+    ops.push({ ref, kind: 'write' });
+    const cleanData = removeUndefinedDeep(data);
+    return origUpdate(ref, cleanData, ...rest);
+  };
   batch.delete = (ref: any) => { ops.push({ ref, kind: 'delete' }); return origDelete(ref); };
   batch.commit = () => {
     // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
@@ -94813,7 +94878,7 @@ export function updatePredecessorsStrings(
       for (const oldCode of normalizedMap.keys()) {
         if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
           const remainder = lowerMatches.substring(oldCode.length);
-          if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
+          if (remainder.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s*\d|$)/i.test(remainder)) {
             longestMatch = oldCode;
           }
         }
@@ -95398,7 +95463,7 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
     for (const code of taskNoMap.keys()) {
       if (lowerMatches.startsWith(code) && code.length > longestMatch.length) {
         const remainderCheck = lowerMatches.substring(code.length);
-        if (remainderCheck.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
+        if (remainderCheck.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
           longestMatch = code;
         }
       }
@@ -95410,7 +95475,7 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
       for (const code of taskNoMap.keys()) {
         if (fixedLower.startsWith(code) && code.length > longestMatch.length) {
           const remainderCheck = fixedLower.substring(code.length);
-          if (remainderCheck.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
+          if (remainderCheck.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
             longestMatch = code;
           }
         }
@@ -95990,7 +96055,7 @@ export function normalizeAndHealTaskPredecessors(
     for (const [code, matchingTasks] of sortedTaskNoMapEntries) {
       if (lowerToken.startsWith(code)) {
         const remainder = lowerToken.substring(code.length);
-        if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainder)) {
+        if (remainder.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainder)) {
           let targetTask: Task | undefined;
           if (matchingTasks && matchingTasks.length > 0) {
             if (matchingTasks.length === 1) {
@@ -96031,7 +96096,7 @@ export function normalizeAndHealTaskPredecessors(
             const currentTargetCode = targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask);
             if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
               changed = true;
-              return `${currentTargetCode.trim()}${remainder}`;
+              return `${currentTargetCode.trim()}${rawToken.substring(code.length)}`;
             }
           }
           // Already valid and exact match

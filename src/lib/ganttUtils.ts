@@ -236,7 +236,7 @@ export function updatePredecessorsStrings(
       for (const oldCode of normalizedMap.keys()) {
         if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
           const remainder = lowerMatches.substring(oldCode.length);
-          if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s*\d|$)/i.test(remainder)) {
+          if (remainder.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s*\d|$)/i.test(remainder)) {
             longestMatch = oldCode;
           }
         }
@@ -821,7 +821,7 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
     for (const code of taskNoMap.keys()) {
       if (lowerMatches.startsWith(code) && code.length > longestMatch.length) {
         const remainderCheck = lowerMatches.substring(code.length);
-        if (remainderCheck.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
+        if (remainderCheck.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
           longestMatch = code;
         }
       }
@@ -833,7 +833,7 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
       for (const code of taskNoMap.keys()) {
         if (fixedLower.startsWith(code) && code.length > longestMatch.length) {
           const remainderCheck = fixedLower.substring(code.length);
-          if (remainderCheck.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
+          if (remainderCheck.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
             longestMatch = code;
           }
         }
@@ -1413,7 +1413,7 @@ export function normalizeAndHealTaskPredecessors(
     for (const [code, matchingTasks] of sortedTaskNoMapEntries) {
       if (lowerToken.startsWith(code)) {
         const remainder = lowerToken.substring(code.length);
-        if (remainder.length === 0 || /^(fs|ss|ff|sf|\s*[+-]|\s+\d|$)/i.test(remainder)) {
+        if (remainder.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainder)) {
           let targetTask: Task | undefined;
           if (matchingTasks && matchingTasks.length > 0) {
             if (matchingTasks.length === 1) {
@@ -1454,7 +1454,7 @@ export function normalizeAndHealTaskPredecessors(
             const currentTargetCode = targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask);
             if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
               changed = true;
-              return `${currentTargetCode.trim()}${remainder}`;
+              return `${currentTargetCode.trim()}${rawToken.substring(code.length)}`;
             }
           }
           // Already valid and exact match
