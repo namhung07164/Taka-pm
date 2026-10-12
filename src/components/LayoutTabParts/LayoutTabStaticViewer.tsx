@@ -1,5 +1,5 @@
 import React from 'react';
-import { Map, ZoomIn, ZoomOut, Maximize, Maximize2 } from 'lucide-react';
+import { Map, ZoomIn, ZoomOut, Maximize, Maximize2, ArrowLeft } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 interface LayoutTabStaticViewerProps {
@@ -19,6 +19,23 @@ export function LayoutTabStaticViewer({
   isAdmin,
   onOpenFullscreen,
 }: LayoutTabStaticViewerProps) {
+  const [pdfPage, setPdfPage] = React.useState(1);
+
+  const isDirectPdf = React.useMemo(() => {
+    if (!url) return false;
+    const clean = url.toLowerCase().split('?')[0];
+    return clean.endsWith('.pdf');
+  }, [url]);
+
+  const effectiveUrl = React.useMemo(() => {
+    let base = getCleanUrl(url) || '';
+    if (isDirectPdf && base) {
+      const baseUrl = base.split('#')[0];
+      return `${baseUrl}#page=${pdfPage}`;
+    }
+    return base;
+  }, [url, getCleanUrl, isDirectPdf, pdfPage]);
+
   if (!url) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900">
@@ -29,22 +46,54 @@ export function LayoutTabStaticViewer({
     );
   }
 
-  if (url.includes('drive.google.com')) {
+  if (isDirectPdf || url.includes('drive.google.com')) {
     return (
-      <iframe 
-        key={cacheBuster}
-        src={getCleanUrl(url)} 
-        width="100%" 
-        style={{ height: '100%', minHeight: '600px', border: 'none' }}
-        allow="autoplay"
-      />
+      <div className="w-full h-full relative flex flex-col">
+        {isDirectPdf && (
+          <div className="absolute top-4 left-4 z-[50] flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+            <button
+              onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-30"
+              disabled={pdfPage <= 1}
+              title="Trang trước"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <span className="text-[10px] font-bold px-2 min-w-[3rem] text-center dark:text-slate-300">Page {pdfPage}</span>
+            <button
+              onClick={() => setPdfPage(p => p + 1)}
+              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors"
+              title="Trang sau"
+            >
+              <ArrowLeft className="w-4 h-4 rotate-180" />
+            </button>
+          </div>
+        )}
+        <div className="absolute top-4 right-4 z-[50]">
+          <button 
+            type="button"
+            onClick={onOpenFullscreen}
+            className="p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-md rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95 touch-manipulation"
+            title="Fullscreen"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
+        <iframe 
+          key={`${effectiveUrl}_${pdfPage}_${cacheBuster}`}
+          src={effectiveUrl} 
+          width="100%" 
+          style={{ height: '100%', minHeight: '600px', border: 'none' }}
+          allow="autoplay"
+        />
+      </div>
     );
   }
 
   return (
     <div className="w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950">
       <TransformWrapper
-        initialScale={1}
+        initialScale={1.15}
         minScale={0.5}
         maxScale={6}
         centerOnInit={true}

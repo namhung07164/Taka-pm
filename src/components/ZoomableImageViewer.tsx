@@ -92,6 +92,21 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
 
+  const [pdfPage, setPdfPage] = useState(1);
+
+  const isDirectPdf = useMemo(() => {
+    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
+    return u.endsWith('.pdf');
+  }, [resolvedUrl]);
+
+  const effectiveUrl = useMemo(() => {
+    if (isDirectPdf && resolvedUrl) {
+      const baseUrl = resolvedUrl.split('#')[0];
+      return `${baseUrl}#page=${pdfPage}`;
+    }
+    return resolvedUrl;
+  }, [resolvedUrl, isDirectPdf, pdfPage]);
+
   const handleClose = useCallback(() => {
     if (isControlled) {
       propOnClose?.();
@@ -133,6 +148,11 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
       return;
     }
 
+    if (isDirectPdf || resolvedUrl.includes('drive.google.com')) {
+      setIsLoading(false);
+      return;
+    }
+
     const testImg = new Image();
     testImg.src = resolvedUrl;
     if (testImg.complete && testImg.naturalWidth > 0) {
@@ -142,7 +162,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
       testImg.onload = () => setIsLoading(false);
       testImg.onerror = () => handleImageError();
     }
-  }, [resolvedUrl, handleImageError]);
+  }, [resolvedUrl, handleImageError, isDirectPdf]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -185,6 +205,26 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
           <span className="text-sm font-semibold truncate text-slate-100" title={activeTitle}>
             {activeTitle}
           </span>
+          {isDirectPdf && (
+            <div className="flex items-center gap-1.5 ml-4 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
+              <button
+                onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+                className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
+                disabled={pdfPage <= 1}
+                title="Trang trước"
+              >
+                <RotateCcw className="w-4 h-4 -rotate-90" />
+              </button>
+              <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
+              <button
+                onClick={() => setPdfPage(p => p + 1)}
+                className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+                title="Trang sau"
+              >
+                <RotateCcw className="w-4 h-4 rotate-90" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Toolbar Action Buttons */}
@@ -265,7 +305,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
         {isLoading && !hasError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <span className="text-xs font-medium">Loading high resolution image...</span>
+            <span className="text-xs font-medium">Loading high resolution content...</span>
           </div>
         )}
 
@@ -275,9 +315,9 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
             <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
               <AlertCircle className="w-6 h-6" />
             </div>
-            <div className="text-sm font-semibold text-slate-200">Unable to load image directly</div>
+            <div className="text-sm font-semibold text-slate-200">Unable to load content directly</div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              The image could not be rendered inline due to network or CORS restrictions. You can still open or copy the direct link.
+              The content could not be rendered inline due to network or CORS restrictions. You can still open or copy the direct link.
             </p>
             {rawTargetUrl && (
               <a
@@ -291,10 +331,18 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
               </a>
             )}
           </div>
+        ) : (isDirectPdf || resolvedUrl?.includes('drive.google.com')) ? (
+          <iframe 
+            key={`${effectiveUrl}_${pdfPage}`}
+            src={effectiveUrl} 
+            width="100%" 
+            style={{ height: '100%', border: 'none' }}
+            allow="autoplay"
+          />
         ) : (
           <TransformWrapper
             ref={transformRef}
-            initialScale={effectiveInitialScale}
+            initialScale={effectiveInitialScale > 1 ? effectiveInitialScale : 1.15}
             minScale={0.5}
             maxScale={8}
             centerOnInit

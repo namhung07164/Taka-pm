@@ -172,6 +172,24 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
     }
   };
 
+  const [pdfPage, setPdfPage] = useState(1);
+
+  const isDirectPdf = useMemo(() => {
+    if (!url) return false;
+    const clean = url.toLowerCase().split('?')[0];
+    return clean.endsWith('.pdf');
+  }, [url]);
+
+  const effectiveUrl = useMemo(() => {
+    let base = getCleanUrl(url) || '';
+    if (isDirectPdf && base) {
+      // Remove any existing fragment
+      const baseUrl = base.split('#')[0];
+      return `${baseUrl}#page=${pdfPage}`;
+    }
+    return base;
+  }, [url, getCleanUrl, isDirectPdf, pdfPage]);
+
   return (
     <AnimatePresence>
       {isFullscreenView && (
@@ -199,6 +217,27 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
               <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-mono font-bold">
                 {activeStore} • {locFilterStr}
               </span>
+
+              {isDirectPdf && (
+                <div className="flex items-center gap-1.5 ml-2 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
+                  <button
+                    onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
+                    disabled={pdfPage <= 1}
+                    title="Trang trước"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
+                  <button
+                    onClick={() => setPdfPage(p => p + 1)}
+                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+                    title="Trang sau"
+                  >
+                    <ArrowLeft className="w-4 h-4 rotate-180" />
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -236,16 +275,17 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                   onClearFocus={onClearFocus}
                 />
               </div>
-            ) : url?.includes('drive.google.com') ? (
+            ) : (isDirectPdf || url?.includes('drive.google.com')) ? (
               <iframe 
-                src={getCleanUrl(url)} 
+                key={`${effectiveUrl}_${pdfPage}`}
+                src={effectiveUrl} 
                 width="100%" 
                 style={{ height: '100%', border: 'none' }}
                 allow="autoplay"
               />
             ) : (
               <TransformWrapper
-                initialScale={1}
+                initialScale={1.15}
                 minScale={0.5}
                 maxScale={6}
                 centerOnInit={true}
