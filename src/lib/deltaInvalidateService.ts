@@ -73,10 +73,15 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
     if (ids.length > budget) ids = ids.slice(0, budget);
     budget -= ids.length;
 
+    const chunks: string[][] = [];
     for (let i = 0; i < ids.length; i += CHUNK) {
-      const chunk = ids.slice(i, i + CHUNK);
-      const snap = await fetchChunk(coll, chunk);
-      if (!snap) continue;
+      chunks.push(ids.slice(i, i + CHUNK));
+    }
+
+    const snaps = await Promise.all(chunks.map((chunk) => fetchChunk(coll, chunk)));
+    snaps.forEach((snap, idx) => {
+      if (!snap) return;
+      const chunk = chunks[idx];
       const found = new Set<string>();
       snap.forEach((d) => {
         found.add(d.id);
@@ -92,7 +97,7 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
       chunk.forEach((id) => {
         if (!found.has(id)) out.push({ docId: id, collectionName: coll, action: 'delete', data: {} });
       });
-    }
+    });
   }
 
   if (out.length === 0) return [];

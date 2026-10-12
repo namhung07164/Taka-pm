@@ -419,7 +419,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
         colRef,
         where('serverTime', '>', Timestamp.fromMillis(currentSince)),
         orderBy('serverTime', 'asc'),
-        limit(200)
+        limit(500)
       );
 
       const snapshot = await getDocs(q);
@@ -447,7 +447,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
       });
 
       currentSince = pageMaxTime;
-      if (snapshot.size < 200) {
+      if (snapshot.size < 500) {
         break;
       }
     }
