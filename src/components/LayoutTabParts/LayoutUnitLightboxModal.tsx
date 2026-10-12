@@ -70,21 +70,6 @@ export function LayoutUnitLightboxModal({
     ? Math.min(6, enlargedImage.initialScale)
     : 1;
 
-  const [pdfPage, setPdfPage] = useState(1);
-
-  const isDirectPdf = useMemo(() => {
-    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
-    return u.endsWith('.pdf');
-  }, [resolvedUrl]);
-
-  const effectiveUrl = useMemo(() => {
-    if (isDirectPdf && resolvedUrl) {
-      const baseUrl = resolvedUrl.split('#')[0];
-      return `${baseUrl}#page=${pdfPage}`;
-    }
-    return resolvedUrl;
-  }, [resolvedUrl, isDirectPdf, pdfPage]);
-
   const handleImageError = useCallback(() => {
     // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
     const driveMatch = rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
@@ -119,11 +104,6 @@ export function LayoutUnitLightboxModal({
       return;
     }
 
-    if (isDirectPdf || resolvedUrl.includes('drive.google.com')) {
-      setIsLoading(false);
-      return;
-    }
-
     // Fast check: If already cached in browser memory, show instantly
     const testImg = new Image();
     testImg.src = resolvedUrl;
@@ -134,7 +114,7 @@ export function LayoutUnitLightboxModal({
       testImg.onload = () => setIsLoading(false);
       testImg.onerror = () => handleImageError();
     }
-  }, [resolvedUrl, handleImageError, isDirectPdf]);
+  }, [resolvedUrl, handleImageError]);
 
   // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
   useEffect(() => {
@@ -206,31 +186,11 @@ export function LayoutUnitLightboxModal({
             <span className="font-bold text-xs sm:text-sm truncate">
               {enlargedImage.title || 'Image Preview'}
             </span>
-            {isDirectPdf && (
-              <div className="flex items-center gap-1.5 ml-4 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
-                <button
-                  onClick={() => setPdfPage(p => Math.max(1, p - 1))}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
-                  disabled={pdfPage <= 1}
-                  title="Trang trước"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 -rotate-90" />
-                </button>
-                <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
-                <button
-                  onClick={() => setPdfPage(p => p + 1)}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                  title="Trang sau"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 rotate-90" />
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Zoom Control Buttons */}
-            {(!imageError && !isDirectPdf && !rawUrl.includes('drive.google.com')) && (
+            {!imageError && (
               <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
                 <button
                   type="button"
@@ -306,45 +266,14 @@ export function LayoutUnitLightboxModal({
           {isLoading && !imageError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10 pointer-events-none">
               <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
-              <span className="text-xs">Đang tải nội dung...</span>
+              <span className="text-xs">Đang tải hình ảnh...</span>
             </div>
           )}
 
-          {imageError ? (
-            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900/90 rounded-2xl border border-slate-700/60 shadow-xl">
-              <AlertCircle className="w-10 h-10 text-amber-400" />
-              <div>
-                <h4 className="text-sm font-bold text-white mb-1">
-                  Không thể hiển thị nội dung trực tiếp
-                </h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Link này có thể là trang web, thư mục chia sẻ hoặc yêu cầu quyền truy cập từ tài khoản của bạn.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={rawUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Mở liên kết trong tab mới</span>
-                </a>
-              </div>
-            </div>
-          ) : (isDirectPdf || rawUrl.includes('drive.google.com')) ? (
-            <iframe 
-              key={`${effectiveUrl}_${pdfPage}`}
-              src={effectiveUrl} 
-              width="100%" 
-              style={{ height: '100%', border: 'none' }}
-              allow="autoplay"
-            />
-          ) : (
+          {!imageError ? (
             <TransformWrapper
               ref={transformRef}
-              initialScale={initialZoom > 1 ? initialZoom : 1.15}
+              initialScale={initialZoom}
               minScale={0.5}
               maxScale={8}
               centerOnInit
@@ -370,6 +299,29 @@ export function LayoutUnitLightboxModal({
                 />
               </TransformComponent>
             </TransformWrapper>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900/90 rounded-2xl border border-slate-700/60 shadow-xl">
+              <AlertCircle className="w-10 h-10 text-amber-400" />
+              <div>
+                <h4 className="text-sm font-bold text-white mb-1">
+                  Không thể hiển thị ảnh trực tiếp
+                </h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Link này có thể là trang web, thư mục chia sẻ hoặc yêu cầu quyền truy cập từ tài khoản của bạn.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <a
+                  href={rawUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Mở liên kết trong tab mới</span>
+                </a>
+              </div>
+            </div>
           )}
         </div>
 
