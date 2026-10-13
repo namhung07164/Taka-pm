@@ -87,9 +87,22 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
 
   expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
-    const next = state.expandedProjectIds.includes(projectId)
-      ? state.expandedProjectIds.filter(id => id !== projectId)
-      : [...state.expandedProjectIds, projectId];
+    const strId = String(projectId).trim();
+    const proj = state.projects?.find(p => 
+      String(p.id || '') === strId ||
+      String(p.code || '').trim().toLowerCase() === strId.toLowerCase() ||
+      (p.no !== undefined && String(p.no) === strId)
+    );
+    const idAliases = new Set<string>([strId]);
+    if (proj) {
+      if (proj.id) idAliases.add(String(proj.id));
+      if (proj.code) idAliases.add(String(proj.code));
+      if (proj.no !== undefined) idAliases.add(String(proj.no));
+    }
+    const isCurrentlyExpanded = state.expandedProjectIds.some(id => idAliases.has(id));
+    const next = isCurrentlyExpanded
+      ? state.expandedProjectIds.filter(id => !idAliases.has(id))
+      : [...state.expandedProjectIds, proj?.id ? String(proj.id) : strId];
     return { expandedProjectIds: next };
   }),
   setExpandedProjectIds: (ids) => {

@@ -109,7 +109,7 @@ export function useProjectModalMutations({
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
         isDeleted: false,
-        taskCount: Math.max(project?.taskCount || 0, computedDates.taskCount || 0),
+        taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : (project?.taskCount || 0),
         taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (project?.taskSummaries?.length || 0))
           ? computedDates.taskSummaries
           : (project?.taskSummaries || computedDates.taskSummaries || []),

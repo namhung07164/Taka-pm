@@ -289,10 +289,13 @@ export async function deleteTaskStateUnified(
         (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
       );
       const computed = calculateProjectComputedDates(updatedP, remainingProjTasks);
+      const accurateTaskCount = remainingProjTasks.length > 0
+        ? remainingProjTasks.length
+        : (newSummaries.length > 0 ? newSummaries.length : Math.max(0, (p.taskCount || 0) - idSet.size));
       return { 
         ...updatedP, 
         ...computed,
-        taskCount: Math.max(updatedP.taskCount || 0, computed.taskCount || 0),
+        taskCount: accurateTaskCount,
         taskSummaries: (computed.taskSummaries && computed.taskSummaries.length >= newSummaries.length)
           ? computed.taskSummaries
           : newSummaries
@@ -305,7 +308,8 @@ export async function deleteTaskStateUnified(
 
     setTimeout(async () => {
       try {
-        const { doc, writeBatch } = await import('firebase/firestore');
+        const { doc } = await import('firebase/firestore');
+        const { writeBatch } = await import('./firestoreWrites');
         const { db, APP_ID } = await import('./firebase');
         const { localDb } = await import('./localDb');
         const batch = writeBatch(db);

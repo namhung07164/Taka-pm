@@ -5,7 +5,11 @@ import {
   extractAllProjectCodes, 
   projectMatchesUnitCode, 
   extractProjectMetadata, 
-  projectMatchesScope 
+  projectMatchesScope,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries,
+  computePlanProgressPercent,
+  computeActProgressPercent
 } from '../../lib/utils';
 
 export interface BuildAggregatedUnitDataParams {
@@ -302,8 +306,38 @@ export function buildAggregatedUnitData({
 
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
-          dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
-          dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
+
+          const projPlanProgress = (allMatchedTasks && allMatchedTasks.length > 0)
+            ? computePlanProgressPercent(allMatchedTasks)
+            : ((p.computedPlanProgress && p.computedPlanProgress > 0)
+                ? p.computedPlanProgress
+                : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? computePlanProgressFromSummaries(p.taskSummaries)
+                    : (p.computedPlanProgress ?? 0)));
+
+          const projActProgress = (allMatchedTasks && allMatchedTasks.length > 0)
+            ? computeActProgressPercent(allMatchedTasks, delegationGroups)
+            : ((p.computedActProgress && p.computedActProgress > 0)
+                ? p.computedActProgress
+                : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? computeActProgressFromSummaries(p.taskSummaries)
+                    : (p.computedActProgress ?? 0)));
+
+          const hasProjectDelegation = Boolean(
+            (p as any).delegation ||
+            (p as any).hasDelegation ||
+            (allMatchedTasks.length > 0 && allMatchedTasks.some((t: any) => Boolean(t.delegation))) ||
+            (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+            (delegationGroups && Array.isArray(delegationGroups) && delegationGroups.some((g: any) =>
+              (p.code && g.projectCode === p.code) ||
+              (p.id && String(g.projectId) === String(p.id)) ||
+              (allMatchedTasks.some((t: any) => t.id === g.parentTaskId))
+            ))
+          );
+
+          dataMap[code].planProgressPercent = projPlanProgress;
+          dataMap[code].actProgressPercent = projActProgress;
+          dataMap[code].hasProjectDelegation = hasProjectDelegation;
 
           const hasProjectImages = Boolean(
             (p.thumbnail && typeof p.thumbnail === 'string' && p.thumbnail.trim()) ||

@@ -1240,8 +1240,8 @@ export function enrichProjects(
           : (taskSummaries.length > 0 ? computeActProgressFromSummaries(taskSummaries) : (p.computedActProgress ?? 0)));
 
     const taskCount = projectTasks.length > 0
-      ? projectTasks.length
-      : (p.taskCount ?? (p.taskSummaries?.length || 0));
+      ? Math.max(projectTasks.length, p.taskCount ?? 0, taskSummaries.length)
+      : (p.taskCount ?? (taskSummaries.length || 0));
 
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const actStatus = computeProjectActStatus(

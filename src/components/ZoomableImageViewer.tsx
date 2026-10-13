@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -88,7 +88,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   const activeTitle = (isControlled ? (propTitle || propAlt || propImage?.title) : eventState.title) || 'Image Viewer';
   const effectiveInitialScale = (isControlled ? (propInitialScale || propImage?.initialScale) : eventState.initialScale) || 1;
 
-  const resolvedUrl = normalizeImageUrl(rawTargetUrl);
+  const resolvedUrl = useMemo(() => normalizeImageUrl(rawTargetUrl), [rawTargetUrl]);
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
 

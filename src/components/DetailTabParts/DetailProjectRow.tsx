@@ -114,13 +114,15 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleGroup(p.id!);
+                onToggleGroup(String(p.id || p.code || p.no || ''));
               }}
               className={cn(
                 "px-1.5 py-0.5 rounded text-white transition-all shadow-2xs flex items-center gap-1 cursor-pointer font-semibold active:scale-95 touch-manipulation text-xs",
                 isExpanded
                   ? "bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600"
-                  : "bg-blue-600 hover:bg-blue-700"
+                  : effectiveTaskCount > 0
+                  ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                  : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
               )}
               title={isExpanded ? "Collapse tasks" : `Expand tasks (${effectiveTaskCount})`}
             >

@@ -314,7 +314,11 @@ export function calculateProjectComputedDates(
     }
   });
 
-  const finalTaskCount = Math.max(existingCount, finalSummaries.length, projectTasks?.length || 0);
+  const finalTaskCount = (projectTasks && projectTasks.length > 0)
+    ? projectTasks.length
+    : finalSummaries.length > 0
+      ? finalSummaries.length
+      : existingCount;
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -395,8 +399,8 @@ export async function syncProjectDatesToFirestore(
     const existingCount = existingProject?.taskCount || existingProject?.taskSummaries?.length || 0;
     const existingSummaries = existingProject?.taskSummaries || [];
 
-    // Safety guard: Never shrink taskCount if memory only had a partial task set
-    let safeTaskCount = Math.max(existingCount, dates.taskCount || 0);
+    // Accurate task count: Use calculated task count or fallback to existingCount
+    let safeTaskCount = dates.taskCount !== undefined ? dates.taskCount : existingCount;
 
     // Safety guard: Never drop or shrink taskSummaries
     const updatedMap = new Map<string, any>();
@@ -430,10 +434,14 @@ export async function syncProjectDatesToFirestore(
       }
     });
 
-    let safeTaskSummaries = mergedSummaries.length >= (dates.taskSummaries?.length || 0)
-      ? mergedSummaries
-      : (dates.taskSummaries || existingSummaries);
-    safeTaskCount = Math.max(safeTaskCount, safeTaskSummaries.length);
+    let safeTaskSummaries = (dates.taskSummaries && dates.taskSummaries.length > 0)
+      ? dates.taskSummaries
+      : mergedSummaries;
+    if (dates.taskCount !== undefined) {
+      safeTaskCount = dates.taskCount;
+    } else {
+      safeTaskCount = safeTaskSummaries.length;
+    }
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).

@@ -114,8 +114,13 @@ export function useDetailFlatRows({
             })
           : validGroupTasks;
 
-      const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount || 0);
-      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch) ? tasksToRender.length : Math.max(validGroupTasks.length, summaryCount);
+      const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
+      const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
+      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
+        ? tasksToRender.length
+        : isExpanded
+          ? (validGroupTasks.length > 0 ? validGroupTasks.length : projectDocCount)
+          : (projectDocCount !== undefined ? projectDocCount : validGroupTasks.length);
 
       let planProgressPercent = 0;
       let actProgressPercent = 0;

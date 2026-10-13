@@ -4,6 +4,7 @@ import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Project, Task } from '../types';
 import { getEffectiveStoreFilter, scrollToElement } from '../lib/utils';
 import { backfillMissingProjectDates } from '../lib/projectDatesService';
+import { hydrateTasksFromLocal } from '../lib/backgroundSyncWorker';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { safeSetItemSession } from '../lib/storage';
 
@@ -24,6 +25,7 @@ import { useDetailProjectCsv } from './DetailTabParts/useDetailProjectCsv';
 import { useDetailTaskCsv } from './DetailTabParts/useDetailTaskCsv';
 import { useDetailBulkActions } from './DetailTabParts/useDetailBulkActions';
 import { useDetailInitialScroll } from './DetailTabParts/useDetailInitialScroll';
+import { useDetailSubTaskSort } from './DetailTabParts/useDetailSubTaskSort';
 import { useDetailPredecessorSync } from '../hooks/useDetailPredecessorSync';
 import { useDetailTaskReorder } from '../hooks/useDetailTaskReorder';
 
@@ -75,6 +77,10 @@ export function DetailTab({
   const setIsTasksRequested = useAppStore(state => state.setIsTasksRequested);
   useEffect(() => {
     if (!isTasksRequested) setIsTasksRequested(true);
+    const currentTasks = useAppStore.getState().tasks;
+    if (!currentTasks || currentTasks.length === 0) {
+      hydrateTasksFromLocal().catch(() => {});
+    }
   }, [isTasksRequested, setIsTasksRequested]);
 
   // Options & Permissions Hook
@@ -109,17 +115,7 @@ export function DetailTab({
   }, []);
 
   // Modals state
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => Promise<void>;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: async () => {},
-  });
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: async () => {} });
   const [noteModalTask, setNoteModalTask] = useState<Task | null>(null);
 
   // Column management
@@ -234,34 +230,12 @@ export function DetailTab({
     setSelectedTaskIds,
   });
 
-  const [isSortingSubTasks, setIsSortingSubTasks] = useState(false);
-
-  const handleSortActiveOrAll = useCallback(async () => {
-    setIsSortingSubTasks(true);
-    try {
-      if (activeProjectInView) {
-        const projTasks = tasks.filter(t => 
-          (activeProjectInView.id && t.projectId ? t.projectId === activeProjectInView.id : false) ||
-          (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(activeProjectInView.code).trim().toLowerCase())
-        );
-        await handleSortSubTasks(activeProjectInView, projTasks);
-      } else if (filteredProjects && filteredProjects.length > 0) {
-        for (const p of filteredProjects) {
-          const projTasks = tasks.filter(t => 
-            (p.id && t.projectId ? t.projectId === p.id : false) ||
-            (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code).trim().toLowerCase())
-          );
-          if (projTasks.length > 0) {
-            await handleSortSubTasks(p, projTasks);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Error sorting subtasks:", err);
-    } finally {
-      setIsSortingSubTasks(false);
-    }
-  }, [activeProjectInView, filteredProjects, tasks, handleSortSubTasks]);
+  const { isSortingSubTasks, handleSortActiveOrAll } = useDetailSubTaskSort({
+    tasks,
+    filteredProjects,
+    activeProjectInView,
+    handleSortSubTasks,
+  });
 
   // Project & Task Mutations
   const {

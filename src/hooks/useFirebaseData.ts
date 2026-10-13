@@ -878,17 +878,37 @@ export function useFirebaseData() {
     // Instant 0ms Dexie Local-First Hydration for active projects
     let isCancelled = false;
     const runTasksSync = async () => {
+      const currentProjects = useAppStore.getState().projects || [];
+      const keysToHydrate = new Set<string>();
+      activeProjectIds.forEach(id => {
+        keysToHydrate.add(String(id));
+        const matched = currentProjects.find(p => 
+          String(p.id || '') === String(id) || 
+          String(p.no) === String(id) || 
+          String(p.code || '') === String(id) ||
+          `${p.code}-${p.year}-${p.store}-${p.no}` === String(id)
+        );
+        if (matched) {
+          if (matched.id) keysToHydrate.add(String(matched.id));
+          if (matched.code) keysToHydrate.add(String(matched.code));
+          if (matched.linkCodes) {
+            matched.linkCodes.split(/[,;/]+/).forEach(c => {
+              if (c.trim()) keysToHydrate.add(c.trim());
+            });
+          }
+        }
+      });
+
       await Promise.all([
-        hydrateTasksForProjects(activeProjectIds),
+        hydrateTasksForProjects(Array.from(keysToHydrate)),
         hydrateDelegationsForProjects(activeProjectIds)
       ]);
       if (isCancelled) return;
 
       setIsTasksLoading(true);
 
-      const currentProjects = useAppStore.getState().projects || [];
-    // Group active projects by year to optimize: if > 10 projects in a year, use 1 consolidated query for that year
-    const projectsByYear = new Map<string, Array<{ id: string; code: string }>>();
+      // Group active projects by year to optimize: if > 10 projects in a year, use 1 consolidated query for that year
+      const projectsByYear = new Map<string, Array<{ id: string; code: string }>>();
     
     activeProjectIds.forEach(projectId => {
       const proj = currentProjects.find(p => 
