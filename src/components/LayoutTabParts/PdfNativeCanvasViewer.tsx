@@ -378,11 +378,11 @@ export function PdfNativeCanvasViewer({
         <TransformWrapper
           initialScale={1}
           minScale={0.5}
-          maxScale={5}
+          maxScale={10}
           centerOnInit={true}
           smooth={false}
-          wheel={{ step: 0.08 }}
-          pinch={{ step: 5 }}
+          wheel={{ step: 0.25 }}
+          pinch={{ step: 12 }}
           doubleClick={{ mode: 'reset' }}
         >
           {() => (

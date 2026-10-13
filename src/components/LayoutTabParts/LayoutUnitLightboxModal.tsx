@@ -14,6 +14,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -262,7 +263,7 @@ export function LayoutUnitLightboxModal({
               <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
                 <button
                   type="button"
-                  onClick={() => transformRef.current?.zoomIn()}
+                  onClick={() => transformRef.current?.zoomIn(0.5)}
                   className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
                   title="Phóng to (+ / Cuộn chuột lên)"
                 >
@@ -270,7 +271,7 @@ export function LayoutUnitLightboxModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => transformRef.current?.zoomOut()}
+                  onClick={() => transformRef.current?.zoomOut(0.5)}
                   className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
                   title="Thu nhỏ (- / Cuộn chuột xuống)"
                 >
@@ -362,24 +363,23 @@ export function LayoutUnitLightboxModal({
               </div>
             </div>
           ) : (isDirectPdf || isDriveDoc || rawUrl.includes('drive.google.com')) ? (
-            <iframe 
-              key={`${effectiveUrl}_${pdfPage}`}
-              src={effectiveUrl} 
-              width="100%" 
-              style={{ height: '100%', minHeight: '500px', border: 'none' }}
-              allow="autoplay; fullscreen"
-            />
+            <div className="w-full h-full min-h-[500px] flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
+              <PdfNativeCanvasViewer
+                url={rawUrl}
+                isFullscreen={true}
+              />
+            </div>
           ) : (
             <TransformWrapper
               ref={transformRef}
               initialScale={initialZoom > 1 ? initialZoom : 1.15}
               minScale={0.5}
-              maxScale={8}
+              maxScale={12}
               centerOnInit
               smooth={false}
-              wheel={{ step: 0.05 }}
+              wheel={{ step: 0.25 }}
               zoomAnimation={{ disabled: true }}
-              pinch={{ step: 2 }}
+              pinch={{ step: 12 }}
               doubleClick={{ mode: 'toggle' }}
             >
               <TransformComponent

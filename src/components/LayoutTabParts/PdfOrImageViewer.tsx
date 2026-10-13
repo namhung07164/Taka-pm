@@ -186,12 +186,12 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
       <TransformWrapper
         initialScale={1}
         minScale={0.5}
-        maxScale={6}
+        maxScale={12}
         centerOnInit={true}
         smooth={false}
-        wheel={{ step: 0.05 }}
+        wheel={{ step: 0.25 }}
         zoomAnimation={{ disabled: true }}
-        pinch={{ step: 5 }}
+        pinch={{ step: 12 }}
         panning={{ disabled: false }}
         doubleClick={{
           mode: 'toggle',
@@ -203,7 +203,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
             <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
               <button
                 type="button"
-                onClick={() => zoomIn(0.3)}
+                onClick={() => zoomIn(0.5)}
                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
                 title="Zoom In"
               >
@@ -211,7 +211,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => zoomOut(0.3)}
+                onClick={() => zoomOut(0.5)}
                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
                 title="Zoom Out"
               >
