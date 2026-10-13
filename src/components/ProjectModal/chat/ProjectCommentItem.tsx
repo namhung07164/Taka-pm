@@ -4,7 +4,7 @@ import { TaskComment, AppUser, Task } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { LazyImage } from '../../LazyImage';
 import { useAppStore } from '../../../store/useAppStore';
-import { Edit2, Trash2 } from 'lucide-react';
+import { Edit2, Trash2, FileText, Maximize2 } from 'lucide-react';
 
 interface ProjectCommentItemProps {
   comment: TaskComment;
@@ -58,6 +58,10 @@ export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = ({
         const isImage =
           chunk.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)(\?.*)?$/i) ||
           chunk.match(/^https?:\/\/.*(images|img|photo|picture).*/i);
+        const isPdf =
+          chunk.match(/\.pdf($|\?|#)/i) ||
+          chunk.match(/drive\.google\.com\/.*(?:file|document|pdf)/i) ||
+          chunk.match(/docs\.google\.com/i);
         const googleDriveMatch = chunk.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
 
         const link = (
@@ -81,7 +85,7 @@ export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = ({
             ? `https://drive.google.com/thumbnail?id=${googleDriveMatch[1]}&sz=w800`
             : chunk;
           return (
-            <span key={i} className="inline-flex flex-col gap-2 mt-1 mb-1 w-full">
+            <span key={i} className="inline-flex flex-col gap-1.5 mt-1 mb-1 w-full">
               {link}
               <button
                 type="button"
@@ -89,13 +93,34 @@ export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = ({
                   e.stopPropagation();
                   setZoomableImageSrc(chunk);
                 }}
-                className="block max-w-[200px] text-left hover:opacity-90 transition active:scale-95 cursor-pointer"
+                className="block max-w-[220px] text-left hover:opacity-90 transition active:scale-95 cursor-pointer rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm"
               >
                 <LazyImage src={imgSrc} alt="Attachment" />
               </button>
             </span>
           );
         }
+
+        if (isPdf) {
+          return (
+            <span key={i} className="inline-flex flex-col gap-1.5 mt-1 mb-1 w-full">
+              {link}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomableImageSrc(chunk);
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 transition active:scale-95 cursor-pointer w-fit"
+              >
+                <FileText className="w-4 h-4 text-red-500" />
+                <span>View PDF (Full Display)</span>
+                <Maximize2 className="w-3.5 h-3.5 ml-1 opacity-70" />
+              </button>
+            </span>
+          );
+        }
+
         return link;
       }
       if (chunk.startsWith('@')) {

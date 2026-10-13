@@ -288,12 +288,13 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                 <div className="flex flex-col gap-2">
                   {st.attachments.map((att, iIdx) => {
                     const isImg = att.url?.match(/\.(jpeg|jpg|gif|png|webp|bmp)($|\?)/i);
+                    const isPdf = att.url?.match(/\.pdf($|\?|#)/i) || att.type === 'application/pdf';
                     return (
                       <a
                         key={iIdx}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (isImg) {
+                          if (isImg || isPdf) {
                             e.preventDefault();
                             setZoomableImageSrc(att.url);
                           }
@@ -306,6 +307,8 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                         <div className="w-8 h-8 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
                           {isImg ? (
                             <img src={att.url} alt="Attached preview" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                          ) : isPdf ? (
+                            <FileText className="w-4 h-4 text-rose-500" />
                           ) : (
                             <Paperclip className="w-4 h-4 text-blue-500" />
                           )}
@@ -327,11 +330,12 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                 (() => {
                   const fileUrl = st.fileUrl || st.childFileUrl;
                   const isImg = fileUrl?.match(/\.(jpeg|jpg|gif|png|webp|bmp)($|\?)/i);
+                  const isPdf = fileUrl?.match(/\.pdf($|\?|#)/i);
                   return (
                     <a
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (isImg) {
+                        if (isImg || isPdf) {
                           e.preventDefault();
                           setZoomableImageSrc(fileUrl);
                         }
@@ -344,6 +348,8 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
                       <div className="w-10 h-10 shrink-0 bg-white dark:bg-[#1e1e20] border border-blue-200 rounded flex items-center justify-center overflow-hidden relative">
                         {isImg ? (
                           <img src={fileUrl} alt="Attached preview" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                        ) : isPdf ? (
+                          <FileText className="w-5 h-5 text-rose-500" />
                         ) : (
                           <Paperclip className="w-5 h-5 text-blue-500" />
                         )}
