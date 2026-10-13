@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Target, Plus, Palette, Check } from 'lucide-react';
+import { Target, Plus } from 'lucide-react';
 import { Project, AppUser } from '../../types';
 import { FastInput } from '../FastInput';
 import { FastTextarea } from './FastTextarea';
@@ -295,70 +295,6 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
             disabled={!canWrite}
             className="w-full text-sm"
           />
-        </div>
-
-                {/* Project Background Color Selector */}
-        <div className="mb-5 p-3.5 rounded-xl border border-slate-200/80 dark:border-[#3a3a3e] bg-slate-50/70 dark:bg-[#1a1a1d]">
-          <label className="block text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase mb-2 flex items-center gap-1.5">
-            <Palette className="w-4 h-4 text-blue-500" />
-            <span>Card / Row Background Color</span>
-          </label>
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { label: 'Default', hex: '', bgLight: 'bg-white', bgDark: 'dark:bg-[#1e1e20]' },
-              { label: 'Blue', hex: '#eff6ff', darkHex: '#172554', bgLight: 'bg-blue-100', bgDark: 'dark:bg-blue-950' },
-              { label: 'Indigo', hex: '#e0e7ff', darkHex: '#1e1b4b', bgLight: 'bg-indigo-100', bgDark: 'dark:bg-indigo-950' },
-              { label: 'Emerald', hex: '#ecfdf5', darkHex: '#064e3b', bgLight: 'bg-emerald-100', bgDark: 'dark:bg-emerald-950' },
-              { label: 'Amber', hex: '#fffbeb', darkHex: '#451a03', bgLight: 'bg-amber-100', bgDark: 'dark:bg-amber-950' },
-              { label: 'Rose', hex: '#fff1f2', darkHex: '#4c0519', bgLight: 'bg-rose-100', bgDark: 'dark:bg-rose-950' },
-              { label: 'Purple', hex: '#faf5ff', darkHex: '#3b0764', bgLight: 'bg-purple-100', bgDark: 'dark:bg-purple-950' },
-              { label: 'Slate', hex: '#f1f5f9', darkHex: '#27272a', bgLight: 'bg-slate-200', bgDark: 'dark:bg-slate-800' },
-            ].map((preset) => {
-              const isSelected = (formData.bgColor || '') === preset.hex;
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  disabled={!canWrite}
-                  onClick={() => setFormData({ ...formData, bgColor: preset.hex })}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95',
-                    preset.bgLight,
-                    preset.bgDark,
-                    isSelected
-                      ? 'border-blue-600 ring-2 ring-blue-500/50 text-blue-700 dark:text-blue-300'
-                      : 'border-slate-300 dark:border-[#444446] text-slate-700 dark:text-slate-200 hover:border-slate-400'
-                  )}
-                >
-                  <span
-                    className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-600 shrink-0"
-                    style={{ backgroundColor: preset.hex || 'transparent' }}
-                  />
-                  <span>{preset.label}</span>
-                  {isSelected && <Check className="w-3 h-3 ml-0.5 text-blue-600 dark:text-blue-400" />}
-                </button>
-              );
-            })}
-            <div className="flex items-center gap-1.5 ml-auto border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 bg-white dark:bg-[#1e1e20]">
-              <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">Custom Hex:</span>
-              <input
-                type="color"
-                value={formData.bgColor || '#ffffff'}
-                disabled={!canWrite}
-                onChange={(e) => setFormData({ ...formData, bgColor: e.target.value })}
-                className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
-                title="Choose custom hex color"
-              />
-              <input
-                type="text"
-                value={formData.bgColor || ''}
-                disabled={!canWrite}
-                onChange={(e) => setFormData({ ...formData, bgColor: e.target.value })}
-                placeholder="#eff6ff"
-                className="w-20 font-mono text-xs p-0.5 outline-none bg-transparent text-slate-800 dark:text-slate-200 uppercase"
-              />
-            </div>
-          </div>
         </div>
 
         {/* MD Status & Description */}
