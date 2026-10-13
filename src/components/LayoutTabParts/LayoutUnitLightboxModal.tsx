@@ -11,9 +11,12 @@ import {
   AlertCircle,
   ZoomIn,
   ZoomOut,
-  RotateCcw
+  RotateCcw,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -58,8 +61,11 @@ export function LayoutUnitLightboxModal({
 }: LayoutUnitLightboxModalProps) {
   const [imageError, setImageError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFullDisplay, setIsFullDisplay] = useState(true); // Default to full display for maximum view area
+
   const transformRef = useRef<any>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawUrl = enlargedImage?.url || '';
   const resolvedUrl = normalizeImageUrl(rawUrl);
@@ -73,30 +79,42 @@ export function LayoutUnitLightboxModal({
   const [pdfPage, setPdfPage] = useState(1);
 
   const isDirectPdf = useMemo(() => {
-    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
-    return u.endsWith('.pdf');
-  }, [resolvedUrl]);
+    const u = (rawUrl || resolvedUrl || '').toLowerCase();
+    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
+  }, [rawUrl, resolvedUrl]);
+
+  const isDriveDoc = useMemo(() => {
+    const u = (rawUrl || '').toLowerCase();
+    return u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [rawUrl]);
+
+  const driveFileId = useMemo(() => {
+    const driveMatch =
+      rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
+      rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+    return driveMatch && driveMatch[1] ? driveMatch[1] : null;
+  }, [rawUrl]);
 
   const effectiveUrl = useMemo(() => {
+    if (isDriveDoc && driveFileId) {
+      return `https://drive.google.com/file/d/${driveFileId}/preview`;
+    }
     if (isDirectPdf && resolvedUrl) {
       const baseUrl = resolvedUrl.split('#')[0];
       return `${baseUrl}#page=${pdfPage}`;
     }
     return resolvedUrl;
-  }, [resolvedUrl, isDirectPdf, pdfPage]);
+  }, [rawUrl, resolvedUrl, isDirectPdf, isDriveDoc, driveFileId, pdfPage]);
 
   const handleImageError = useCallback(() => {
-    // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
-    const driveMatch = rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
-                       rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
+    if (driveFileId && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}`);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}`);
       return;
     }
     setIsLoading(false);
     setImageError(true);
-  }, [rawUrl, hasTriedCdnFallback]);
+  }, [driveFileId, hasTriedCdnFallback]);
 
   const handleImageLoad = useCallback(() => {
     setIsLoading(false);
@@ -108,7 +126,6 @@ export function LayoutUnitLightboxModal({
     }
   }, [initialZoom]);
 
-  // Synchronize currentSrc & instant cache evaluation when enlargedImage changes
   useEffect(() => {
     setCurrentSrc(resolvedUrl);
     setHasTriedCdnFallback(false);
@@ -119,51 +136,36 @@ export function LayoutUnitLightboxModal({
       return;
     }
 
-    if (isDirectPdf || resolvedUrl.includes('drive.google.com')) {
+    if (isDirectPdf || isDriveDoc) {
       setIsLoading(false);
       return;
     }
 
-    // Fast check: If already cached in browser memory, show instantly
     const testImg = new Image();
     testImg.src = resolvedUrl;
     if (testImg.complete && testImg.naturalWidth > 0) {
       setIsLoading(false);
+      setImageError(false);
     } else {
       setIsLoading(true);
-      testImg.onload = () => setIsLoading(false);
-      testImg.onerror = () => handleImageError();
     }
-  }, [resolvedUrl, handleImageError, isDirectPdf]);
+  }, [resolvedUrl, isDirectPdf, isDriveDoc]);
 
-  // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
-  useEffect(() => {
-    document.body.classList.add('lightbox-open');
-    return () => {
-      document.body.classList.remove('lightbox-open');
-    };
-  }, []);
-
-  // Safe close handler that absorbs any synthetic click/touch events before unmounting
-  const handleSafeClose = useCallback((e?: React.SyntheticEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
+  const handleSafeClose = useCallback(() => {
+    if (iframeRef.current) {
+      try { iframeRef.current.src = 'about:blank'; } catch {}
     }
-    // Safety delay of 60ms to let browser absorb any pending synthetic touch/tap events on iOS/Android
-    setTimeout(() => {
-      onClose();
-    }, 60);
+    onClose();
   }, [onClose]);
 
-  // Keyboard shortcut: Escape key closes enlarged image (AGENTS.md Rule 6)
   useEffect(() => {
     if (!enlargedImage) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         e.stopPropagation();
-        onClose();
+        handleSafeClose();
       }
     };
 
@@ -171,32 +173,35 @@ export function LayoutUnitLightboxModal({
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [enlargedImage, onClose]);
+  }, [enlargedImage, handleSafeClose]);
 
   if (!enlargedImage || typeof document === 'undefined') return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-150 select-none touch-none overscroll-none"
+      className="fixed inset-0 z-[999999] bg-black/95 backdrop-blur-md flex items-center justify-center p-0 sm:p-2 md:p-4 animate-in fade-in duration-150 select-none touch-none overscroll-none"
       onClick={(e) => {
-        // Prevent background clicks from closing the modal during zoom / pinch / pan
         e.stopPropagation();
       }}
     >
-      {/* 1. Ultra-Prominent Floating Close 'X' Button on Top-Right of Viewport */}
+      {/* 1. Floating Close 'X' Button on Top-Right */}
       <button
         type="button"
         onClick={handleSafeClose}
         className="fixed top-3 right-3 sm:top-5 sm:right-5 z-[1000001] p-2.5 sm:p-3 bg-slate-900/90 hover:bg-red-600 text-white rounded-full border border-white/20 shadow-2xl transition-all duration-150 active:scale-90 cursor-pointer flex items-center justify-center group"
-        title="Đóng xem ảnh (Phím Escape)"
-        aria-label="Đóng xem ảnh"
+        title="Close (Escape)"
+        aria-label="Close Preview"
       >
         <X className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-90 transition-transform duration-200" />
       </button>
 
-      {/* 2. Lightbox Card Container */}
+      {/* 2. Lightbox Card Container (Supports 100% Full Viewport Display) */}
       <div
-        className="relative max-w-5xl w-full max-h-[94vh] bg-slate-900/98 rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col z-[1000000]"
+        className={`relative bg-slate-900/98 rounded-none sm:rounded-2xl overflow-hidden shadow-2xl border border-slate-700/80 flex flex-col z-[1000000] transition-all duration-200 ${
+          isFullDisplay
+            ? 'w-full h-full max-w-none max-h-none rounded-none border-none'
+            : 'max-w-6xl w-full max-h-[94vh]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -204,23 +209,23 @@ export function LayoutUnitLightboxModal({
           <div className="flex items-center gap-2 min-w-0 pr-2">
             <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
             <span className="font-bold text-xs sm:text-sm truncate">
-              {enlargedImage.title || 'Image Preview'}
+              {enlargedImage.title || 'Document Preview'}
             </span>
             {isDirectPdf && (
               <div className="flex items-center gap-1.5 ml-4 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
                 <button
-                  onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+                  onClick={() => setPdfPage((p) => Math.max(1, p - 1))}
                   className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
                   disabled={pdfPage <= 1}
-                  title="Trang trước"
+                  title="Previous Page"
                 >
                   <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 -rotate-90" />
                 </button>
                 <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
                 <button
-                  onClick={() => setPdfPage(p => p + 1)}
+                  onClick={() => setPdfPage((p) => p + 1)}
                   className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                  title="Trang sau"
+                  title="Next Page"
                 >
                   <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 rotate-90" />
                 </button>
@@ -229,51 +234,31 @@ export function LayoutUnitLightboxModal({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Zoom Control Buttons */}
-            {(!imageError && !isDirectPdf && !rawUrl.includes('drive.google.com')) && (
-              <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
-                <button
-                  type="button"
-                  onClick={() => transformRef.current?.zoomIn()}
-                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                  title="Phóng to (+ / Cuộn chuột lên)"
-                >
-                  <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => transformRef.current?.zoomOut()}
-                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                  title="Thu nhỏ (- / Cuộn chuột xuống)"
-                >
-                  <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => transformRef.current?.resetTransform()}
-                  className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                  title="Đặt lại tỉ lệ (1:1)"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setIsFullDisplay(!isFullDisplay)}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
+              title={isFullDisplay ? "Normal View" : "Full Display"}
+            >
+              {isFullDisplay ? <Minimize2 className="w-4 h-4 text-blue-400" /> : <Maximize2 className="w-4 h-4 text-blue-400" />}
+              <span className="hidden sm:inline font-bold">{isFullDisplay ? 'Normal View' : 'Full Display'}</span>
+            </button>
 
             <button
               type="button"
               onClick={() => onCopyLink(rawUrl)}
               className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
-              title={copiedLink === rawUrl ? 'Đã sao chép link!' : 'Sao chép link'}
+              title={copiedLink === rawUrl ? 'Link Copied!' : 'Copy Link'}
             >
               {copiedLink === rawUrl ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-400" />
-                  <span className="hidden sm:inline text-emerald-400">Đã chép</span>
+                  <span className="hidden sm:inline text-emerald-400 font-bold">Copied</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-4 h-4" />
-                  <span className="hidden sm:inline">Sao chép link</span>
+                  <span className="hidden sm:inline">Copy Link</span>
                 </>
               )}
             </button>
@@ -282,31 +267,52 @@ export function LayoutUnitLightboxModal({
               href={rawUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
-              title="Mở trong tab mới"
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-blue-400 hover:text-white bg-blue-950/60 hover:bg-blue-600 border border-blue-800 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shadow-sm"
+              title="Open in new tab"
             >
               <ExternalLink className="w-4 h-4" />
-              <span className="hidden sm:inline">Mở tab mới</span>
+              <span className="hidden sm:inline">Open in New Tab</span>
             </a>
 
             <button
               type="button"
               onClick={handleSafeClose}
               className="px-2.5 py-1.5 bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold active:scale-95 shadow-sm"
-              title="Đóng (Escape)"
+              title="Close (Escape)"
             >
               <X className="w-4 h-4" />
-              <span>Đóng</span>
+              <span>Close</span>
             </button>
           </div>
         </div>
 
-        {/* Content Body: Zoomable Image or Fallback */}
-        <div className="flex-1 p-2 sm:p-4 flex items-center justify-center bg-black/70 overflow-hidden min-h-[280px] sm:min-h-[420px] relative">
+        {/* Google Drive Permission Helper Header Bar */}
+        {isDriveDoc && (
+          <div className="bg-blue-950/90 border-b border-blue-800/80 px-3 py-1.5 text-xs text-blue-200 flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertCircle className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span className="truncate text-[11px] sm:text-xs font-medium">
+                Google Drive Document: If 403 or permission error appears below, open directly in Google Drive.
+              </span>
+            </div>
+            <a
+              href={rawUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-[11px] flex items-center gap-1 shrink-0 transition-colors shadow-sm"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>Open in Google Drive</span>
+            </a>
+          </div>
+        )}
+
+        {/* Content Body: Zoomable Image or Full Display PDF / Google Drive */}
+        <div className="flex-1 p-1 sm:p-2 flex items-center justify-center bg-black/80 overflow-hidden min-h-[300px] relative">
           {isLoading && !imageError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10 pointer-events-none">
               <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
-              <span className="text-xs">Đang tải nội dung...</span>
+              <span className="text-xs">Loading content...</span>
             </div>
           )}
 
@@ -315,10 +321,10 @@ export function LayoutUnitLightboxModal({
               <AlertCircle className="w-10 h-10 text-amber-400" />
               <div>
                 <h4 className="text-sm font-bold text-white mb-1">
-                  Không thể hiển thị nội dung trực tiếp
+                  Cannot display content directly
                 </h4>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Link này có thể là trang web, thư mục chia sẻ hoặc yêu cầu quyền truy cập từ tài khoản của bạn.
+                  This document may require Google account access permissions or restricts iframe embedding.
                 </p>
               </div>
               <div className="flex items-center gap-2 mt-1">
@@ -329,33 +335,42 @@ export function LayoutUnitLightboxModal({
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>Mở liên kết trong tab mới</span>
+                  <span>Open Link in New Tab</span>
                 </a>
               </div>
             </div>
-          ) : (isDirectPdf || rawUrl.includes('drive.google.com')) ? (
-            <iframe 
-              key={`${effectiveUrl}_${pdfPage}`}
-              src={effectiveUrl} 
-              width="100%" 
-              style={{ height: '100%', border: 'none' }}
-              allow="autoplay"
-            />
+          ) : isDriveDoc ? (
+            <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
+              <iframe
+                ref={iframeRef}
+                src={effectiveUrl}
+                className="w-full h-full border-0 bg-white"
+                title={enlargedImage.title || 'Google Drive Document'}
+                allow="autoplay"
+              />
+            </div>
+          ) : isDirectPdf ? (
+            <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
+              <PdfNativeCanvasViewer
+                url={rawUrl}
+                isFullscreen={true}
+              />
+            </div>
           ) : (
             <TransformWrapper
               ref={transformRef}
               initialScale={initialZoom > 1 ? initialZoom : 1.15}
               minScale={0.5}
-              maxScale={8}
+              maxScale={12}
               centerOnInit
               smooth={false}
-              wheel={{ step: 0.05 }}
+              wheel={{ step: 0.25 }}
               zoomAnimation={{ disabled: true }}
-              pinch={{ step: 2 }}
+              pinch={{ step: 12 }}
               doubleClick={{ mode: 'toggle' }}
             >
               <TransformComponent
-                wrapperClass="!w-full !h-full max-h-[75vh] flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+                wrapperClass="!w-full !h-full max-h-[85vh] flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
                 contentClass="!w-full !h-full flex items-center justify-center select-none"
               >
                 <img
@@ -365,7 +380,7 @@ export function LayoutUnitLightboxModal({
                   decoding="async"
                   onLoad={handleImageLoad}
                   onError={handleImageError}
-                  className="max-w-full max-h-[75vh] object-contain rounded-xl select-none"
+                  className="max-w-full max-h-[85vh] object-contain rounded-xl select-none"
                   draggable={false}
                 />
               </TransformComponent>
@@ -374,16 +389,26 @@ export function LayoutUnitLightboxModal({
         </div>
 
         {/* Footer: Full Link Address */}
-        <div className="p-2.5 sm:p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2 shrink-0">
-          <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <div className="p-2.5 sm:p-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2 shrink-0 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <a
+              href={rawUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 font-mono text-[11px] sm:text-xs truncate"
+            >
+              {rawUrl}
+            </a>
+          </div>
           <a
             href={rawUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] font-mono text-blue-400 hover:underline truncate flex-1"
-            title={rawUrl}
+            className="flex items-center gap-1 text-slate-400 hover:text-white shrink-0 text-[11px] font-medium"
           >
-            {rawUrl}
+            <span>Open Link</span>
+            <ExternalLink className="w-3 h-3" />
           </a>
         </div>
       </div>
