@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from 'react-dom';
 import { X, GripHorizontal, Pin, ExternalLink, ChevronDown, Target } from 'lucide-react';
 import { Task, Project } from '../../types';

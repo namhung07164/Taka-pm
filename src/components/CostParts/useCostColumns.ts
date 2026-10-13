@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
 import { AVAILABLE_COLUMNS, CostColWidths } from './costTypes';
 

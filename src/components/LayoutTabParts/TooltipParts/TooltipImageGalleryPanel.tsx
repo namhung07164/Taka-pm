@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { Dispatch, FC, SetStateAction, useRef, useState } from 'react';
 import { 
   Image as ImageIcon, 
   Plus, 

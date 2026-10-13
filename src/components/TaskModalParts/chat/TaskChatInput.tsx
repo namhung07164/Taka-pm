@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { forwardRef, lazy, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
 import { AppUser, Task } from '../../../types';
 import { APP_ID, storage, googleSignIn, getAccessToken } from '../../../lib/firebase';
@@ -303,7 +303,7 @@ export const TaskChatInput = React.memo(
               type="file"
               ref={fileInputRef}
               onChange={handleImageUpload}
-              accept="image/*"
+              accept="image/*,.pdf,application/pdf"
               className="hidden"
             />
             <button
@@ -323,7 +323,7 @@ export const TaskChatInput = React.memo(
                 fileInputRef.current?.click();
               }}
               className="absolute left-3 p-1.5 text-slate-400 hover:text-blue-500 disabled:opacity-50 transition-colors bg-slate-100 dark:bg-[#28282a] rounded-lg z-10"
-              title="Upload Image"
+              title="Upload Image/PDF"
             >
               {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
             </button>

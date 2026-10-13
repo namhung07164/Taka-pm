@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useDeferredValue } from 'react';
+import React, { Suspense, memo, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { AlertTriangle, ShieldAlert, Layers } from 'lucide-react';
 import { LayoutUnitTooltip } from './LayoutUnitTooltip';

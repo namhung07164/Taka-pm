@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { FC, useEffect, useRef, useState } from 'react';
 import Draggable from 'react-draggable';
 import { X, Loader2, Camera, AlertTriangle, RefreshCw, Upload, ExternalLink, SwitchCamera, Image as ImageIcon, GripHorizontal } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode';

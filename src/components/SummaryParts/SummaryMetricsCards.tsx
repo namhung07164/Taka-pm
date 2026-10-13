@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { TrendingUp, Wallet } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 

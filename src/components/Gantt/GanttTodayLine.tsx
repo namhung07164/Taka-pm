@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { format } from 'date-fns';
 
 export interface GanttTodayLineProps {

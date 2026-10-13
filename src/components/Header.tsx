@@ -3,7 +3,7 @@ import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSes
 import { useAppStore } from "../store/useAppStore";
 import { doc } from 'firebase/firestore';
 import {  db, APP_ID , setDoc } from "../lib/firebase";
-import { useState, useEffect, useRef, Suspense } from "react";
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import {
   Menu,
   Bell,

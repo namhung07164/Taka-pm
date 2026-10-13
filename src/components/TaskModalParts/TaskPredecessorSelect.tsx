@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { FC, memo, useMemo, useState } from 'react';
 import { Task, TaskPredecessor, PredecessorType } from '../../types';
 import { Link, X, Plus } from 'lucide-react';
 import { useTaskPredecessor } from '../../hooks/useTaskPredecessor';

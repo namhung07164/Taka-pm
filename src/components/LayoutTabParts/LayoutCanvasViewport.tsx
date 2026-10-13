@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { Stage } from 'react-konva';
 import { LayoutKonvaLayers } from './LayoutKonvaLayers';
 import { ContrastStyle } from './layoutViewerTypes';

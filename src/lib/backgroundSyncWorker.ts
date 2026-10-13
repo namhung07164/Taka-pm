@@ -50,7 +50,7 @@ export async function bootstrapLocalStore(): Promise<{
       store.setProjects(projects);
     }
     if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-      store.setTasks(deduplicateTasks(tasks));
+      store.setTasks(deduplicateTasks(tasks, projects));
     }
     if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
       store.setCosts(costs);
@@ -127,7 +127,7 @@ export async function hydrateTasksFromLocal(): Promise<number> {
         }
       });
       if (hasNew || !currentStore.tasks || currentStore.tasks.length === 0) {
-        const deduped = deduplicateTasks(combined);
+        const deduped = deduplicateTasks(combined, currentStore.projects);
         currentStore.setTasks(deduped);
         usePerformanceStore
           .getState()
@@ -164,7 +164,7 @@ export async function hydrateTasksForProjects(projectIdsOrCodes: string[]): Prom
     }
 
     if (newTasksToAdd.length > 0) {
-      const merged = deduplicateTasks([...existingTasks, ...newTasksToAdd]);
+      const merged = deduplicateTasks([...existingTasks, ...newTasksToAdd], store.projects);
       store.setTasks(merged);
       usePerformanceStore
         .getState()

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, SetStateAction } from 'react';
 import { Project } from '../../types';
 import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { SortConfig } from './generalTypes';
@@ -70,24 +70,12 @@ export function drawGeneralCanvas({
     const y = headerHeight + i * rowHeight;
     const status = getStatus(item.computedTakStart, item.computedTakCompl, item.computedOpening || item.opening, item.code);
     
-    if (item.bgColor) {
-      ctx.fillStyle = item.bgColor;
-    } else if (isDark) {
-      ctx.fillStyle = (i % 2 === 0) ? '#222226' : '#29292e';
+    if (isDark) {
+      ctx.fillStyle = (i % 2 === 0) ? '#18181b' : '#202025';
     } else {
       ctx.fillStyle = (i % 2 === 0) ? '#ffffff' : '#f8fafc';
     }
     ctx.fillRect(0, y, totalWidth, rowHeight);
-
-    // Left status accent strip on row
-    let accentColor = '#6366f1'; // default
-    if (status === 'Completed') accentColor = '#10b981';
-    else if (status === 'Handover') accentColor = '#3b82f6';
-    else if (status === 'On process') accentColor = '#f59e0b';
-    else if (status === 'Canceled') accentColor = '#f43f5e';
-    
-    ctx.fillStyle = accentColor;
-    ctx.fillRect(0, y, 5, rowHeight);
     
     ctx.strokeStyle = isDark ? '#2a2a2e' : '#e2e8f0';
     ctx.lineWidth = 1;

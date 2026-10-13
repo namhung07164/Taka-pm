@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { Calculator } from 'lucide-react';
 
 export interface GanttSumBadgeProps {

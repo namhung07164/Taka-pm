@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { Eye } from 'lucide-react';
 import { AuditLog } from '../../types';
 import { formatDisplayDateTime } from '../../lib/utils';

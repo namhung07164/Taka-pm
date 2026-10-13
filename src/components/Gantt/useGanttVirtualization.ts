@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
 import { GanttTableRow } from './ganttTypes';
 import { sortGroupTasks } from '../../lib/ganttUtils';

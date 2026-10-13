@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { Task, Project } from '../../types';
 import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
 import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
 import { getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
 import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap } from '../../lib/ganttUtils';

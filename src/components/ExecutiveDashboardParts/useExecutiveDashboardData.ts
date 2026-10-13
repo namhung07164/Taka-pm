@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { Project, Task, Cost } from '../../types';
 import { getStatus, parseDateTime } from '../../lib/utils';

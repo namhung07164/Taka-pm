@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { cn, parseDateTime } from '../../lib/utils';
 import { positionTooltip, formatGanttDate } from './GanttUtils';
 import { Task, Project } from '../../types';

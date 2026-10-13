@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { Suspense, useRef } from 'react';
 import Draggable from 'react-draggable';
 import { Portal } from './Portal';
 import { ProjectModalProps } from './ProjectModalParts/projectModalTypes';

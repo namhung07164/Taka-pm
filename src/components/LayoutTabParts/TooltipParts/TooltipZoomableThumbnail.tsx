@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { FC, lazy, useCallback, useRef, useState } from 'react';
 import { Maximize2, ZoomIn } from 'lucide-react';
 import { TooltipImageItem } from './tooltipTypes';
 import { normalizeImageUrl } from '../LayoutUnitLightboxModal';

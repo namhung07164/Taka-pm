@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
 import { Edit2, Trash2 } from 'lucide-react';
 import { Task, AppUser, DelegationGroup, Project } from '../../../types';

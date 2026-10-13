@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import React, { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 export interface UseTableVirtualizerOptions {

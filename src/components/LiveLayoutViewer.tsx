@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import Konva from 'konva';
 import { useAppStore } from '../store/useAppStore';
 import { RefreshCw, Layers } from 'lucide-react';

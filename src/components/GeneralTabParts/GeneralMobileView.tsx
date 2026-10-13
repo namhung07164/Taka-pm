@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, SetStateAction } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget } from './generalTypes';
 import { GeneralMobileCard } from './GeneralMobileCard';

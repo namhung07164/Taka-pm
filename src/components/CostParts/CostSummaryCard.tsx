@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { CostPaidDateFilterModal } from './CostPaidDateFilterModal';

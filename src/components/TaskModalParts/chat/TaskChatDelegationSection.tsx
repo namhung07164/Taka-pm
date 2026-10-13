@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
 import { FileText, ExternalLink, Pin } from 'lucide-react';
 import { Project, Task, AppUser, DelegationGroup } from '../../../types';

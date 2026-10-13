@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, FC, SetStateAction } from 'react';
 import { RotateCcw, Archive, AlertCircle, Clock, Zap, UserCheck } from 'lucide-react';
 import {
   NotificationStatusFilter,

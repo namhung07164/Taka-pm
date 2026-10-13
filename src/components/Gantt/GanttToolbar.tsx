@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, SetStateAction, useMemo } from 'react';
 import { Search, Loader2, Edit2, X, Target } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';

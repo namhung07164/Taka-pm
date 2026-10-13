@@ -1,6 +1,6 @@
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import React, { useState, useEffect } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import Draggable from 'react-draggable';
 import { X, GripHorizontal } from 'lucide-react';

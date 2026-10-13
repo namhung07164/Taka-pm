@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Konva from 'konva';
 import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group, Path } from 'react-konva';
 import useImage from 'use-image';

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Project, Task } from '../../types';
 import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays, getActStatusPercent } from '../../lib/utils';
 import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown } from 'lucide-react';

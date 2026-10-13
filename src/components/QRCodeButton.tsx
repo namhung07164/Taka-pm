@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { FC, useEffect, useState } from 'react';
 import { QrCode, X, Copy, Check } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 

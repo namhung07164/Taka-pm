@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { ChevronRight, ChevronDown, Search, Trash2 } from 'lucide-react';
 import { DelegationGroup, DelegationSubTask, AppUser, Project, Task } from '../../types';
 import { formatDisplayDateMain, getStatus, getTaskStatus, resolveActualStatus, computeDelegationGroupProgressPercent } from '../../lib/utils';

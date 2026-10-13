@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { Loader2, Search, ArrowLeft, ArrowRight } from 'lucide-react';
 import { AuditLog } from '../../types';
 import { AuditLogRowItem } from './AuditLogRowItem';

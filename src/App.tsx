@@ -3,7 +3,7 @@ import { useFirebaseData } from "./hooks/useFirebaseData";
 import { useDeepLinkLogic } from "./hooks/useDeepLinkLogic";
 import { useNotificationActions } from "./hooks/useNotificationActions";
 import { usePushNotifications } from "./hooks/usePushNotifications";
-import { useState, useEffect, useMemo, useRef, useCallback, Profiler, lazy, Suspense, startTransition } from "react";
+import { Profiler, Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { auth, APP_ID } from "./lib/firebase";
 import { requestNotificationPermission } from "./lib/notifications";

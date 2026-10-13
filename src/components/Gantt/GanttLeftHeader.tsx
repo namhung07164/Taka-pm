@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 import { GanttColumnWidths } from './useGanttColumnResize';

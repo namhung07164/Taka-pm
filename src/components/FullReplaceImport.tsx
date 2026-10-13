@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import Draggable from 'react-draggable';
 import { Upload, X, ShieldAlert, Loader2 } from 'lucide-react';
 import {  db, APP_ID , writeBatch } from "../lib/firebase";
 import { collection, getDocs, doc } from 'firebase/firestore';
 import { parseCSV } from '../lib/csvUtils';
+import { markRestoreVersionCompleted } from '../lib/deltaSyncService';
 
 interface FullReplaceImportProps {
   collectionName: string;
@@ -153,6 +154,9 @@ export function FullReplaceImport({
         writeBatches.push(currentWriteBatch.commit());
       }
       await Promise.all(writeBatches);
+
+      // Lock out pre-restore historical deltas so future updates won't re-read or re-apply faulty changes
+      markRestoreVersionCompleted(Date.now());
 
       onImportSuccess(totalImported);
       setIsOpen(false);

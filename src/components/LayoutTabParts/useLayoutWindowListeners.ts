@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { Dispatch, SetStateAction, useEffect, useRef } from 'react';
 
 interface UseLayoutWindowListenersParams {
   isPrintPreview: boolean;

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { enrichProjects, getUserAllowedStores } from '../lib/utils';
 import { Task, DelegationGroup } from '../types';

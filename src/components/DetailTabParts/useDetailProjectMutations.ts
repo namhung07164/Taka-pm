@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, SetStateAction } from 'react';
 import { Project, Task, DelegationGroup, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { doc } from 'firebase/firestore';

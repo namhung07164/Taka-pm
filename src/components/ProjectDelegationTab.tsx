@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { Project, Task, AppUser, DelegationGroup } from '../types';
 import { computeTaskCode } from '../lib/ganttUtils';

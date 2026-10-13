@@ -1,4 +1,4 @@
-import React, { useState, Suspense } from "react";
+import React, { Suspense, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "../lib/utils";

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
 import { Task, AppUser, DelegationGroup, Project } from '../../../types';
 import { cn } from '../../../lib/utils';

@@ -135,7 +135,6 @@ export interface Task {
   orderIndex?: number;
   comments?: TaskComment[];
   textColor?: string;
-  bgColor?: string;
   taskCodePhu?: string;
   parentTaskId?: string;
   isDeleted?: boolean;
@@ -352,5 +351,7 @@ export interface TakaDelta {
   numericTime: number;
   /** Server arrival time (Firestore serverTimestamp). Sync cursor: immune to device clocks and offline delays. */
   serverTime?: any;
+  /** Firestore TTL policy timestamp: documents expire automatically without client-side reads */
+  expireAt?: any;
 }
 

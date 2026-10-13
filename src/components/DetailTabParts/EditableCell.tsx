@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { formatDisplayDateTime, getDefaultDatetimeLocal, cn } from '../../lib/utils';
 
 export const EditableCell = React.memo(function EditableCell({ 

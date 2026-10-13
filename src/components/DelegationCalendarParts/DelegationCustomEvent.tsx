@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { useLanguage } from '../../lib/LanguageContext';
 import { DelegationCalendarEvent } from './delegationCalendarTypes';
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { Project, Task, AppUser, DelegationGroup, DelegationSubTask } from '../../types';
 import { getTaskStatus, resolveActualStatus, parseDateTime, getSuggestedCompletionTime, cn } from '../../lib/utils';
 import { scheduleDependentTasks } from '../../lib/ganttUtils';

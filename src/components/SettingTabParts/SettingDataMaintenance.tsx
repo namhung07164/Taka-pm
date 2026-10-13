@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { FC, useState } from 'react';
 import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers, CheckCheck } from "lucide-react";
 import { clearAllIDB } from "../../lib/idb";
 import { clearDexieDatabase } from "../../lib/localDb";

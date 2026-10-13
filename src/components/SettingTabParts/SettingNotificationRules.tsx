@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { FC, useState } from 'react';
 import { useLanguage } from "../../lib/LanguageContext";
 import { Trash2 } from "lucide-react";
 import { NotificationRule } from "../../types";

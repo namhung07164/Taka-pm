@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Search } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';

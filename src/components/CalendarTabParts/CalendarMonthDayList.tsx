@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { format, startOfDay } from 'date-fns';
 import { useLanguage } from '../../lib/LanguageContext';
 import { CalendarEvent } from './calendarTypes';

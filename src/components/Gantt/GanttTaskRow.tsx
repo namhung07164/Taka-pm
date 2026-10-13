@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { Project, Task, AppUser } from '../../types';
 import { getTaskStatus, computeActProgressPercent, resolveActualStatus, getUserDelegationRoleForTask, parseDateTime } from '../../lib/utils';

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { GripHorizontal, X } from 'lucide-react';
 import { Project } from '../../types';
 import { QuickNavButton } from '../QuickNavButton';
