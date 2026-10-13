@@ -13,6 +13,7 @@ import { GanttSumBadge } from './GanttSumBadge';
 import { GanttExportOverlay } from './GanttExportOverlay';
 import { GanttEmptyState } from './GanttEmptyState';
 import { GanttLeftHeader } from './GanttLeftHeader';
+import { computeAllTaskCodes } from '../../lib/ganttUtils';
 import { useGanttZoomAndPan } from './useGanttZoomAndPan';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
@@ -61,8 +62,7 @@ interface GanttTableViewProps {
   selectedTaskIds: string[];
   setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
   selectedProjectSet: Set<string>;
-  selectedProjectIds?: string[];
-  setSelectedProjectIds?: (ids: string[]) => void;
+  selectedProjectIds?: string[]; setSelectedProjectIds?: (ids: string[]) => void;
   handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean, orderedTaskIds?: string[]) => void;
   handleToggleSelectAll: () => void;
   isAllSelected: boolean;
@@ -243,11 +243,25 @@ export function GanttTableView({
   const showDuration = visibleColumns.includes('duration');
   const showPredecessor = visibleColumns.includes('predecessor');
 
-  const startColWidth = colWidths?.start ?? 85;
-  const finishColWidth = colWidths?.finish ?? 85;
-  const partyColWidth = colWidths?.party ?? 80;
-  const durationColWidth = colWidths?.duration ?? 60;
-  const predecessorColWidth = colWidths?.predecessor ?? 90;
+  const startColWidth = colWidths?.start ?? 85; const finishColWidth = colWidths?.finish ?? 85; const partyColWidth = colWidths?.party ?? 80; const durationColWidth = colWidths?.duration ?? 60; const predecessorColWidth = colWidths?.predecessor ?? 90;
+
+  const taskCodeMap = useMemo(() => {
+    return computeAllTaskCodes(projects, tasks);
+  }, [projects, tasks]);
+
+  const delegationGroupByTaskId = useMemo(() => {
+    const map = new Map<string, any>();
+    (delegationGroups || []).forEach(g => {
+      if (g.taskId) map.set(g.taskId, g);
+      if (g.parentTaskId) map.set(g.parentTaskId, g);
+      if (g.subTasks) {
+        g.subTasks.forEach((st: any) => {
+          if (st.taskId) map.set(st.taskId, g);
+        });
+      }
+    });
+    return map;
+  }, [delegationGroups]);
 
   const totalTimelineWidth = totalDays * dayWidth;
 
@@ -350,16 +364,9 @@ export function GanttTableView({
             startDate={startDate}
             dayWidth={dayWidth}
             sideWidth={sideWidth}
-            showStart={showStart}
-            startColWidth={startColWidth}
-            showFinish={showFinish}
-            finishColWidth={finishColWidth}
-            showParty={showParty}
-            partyColWidth={partyColWidth}
-            showDuration={showDuration}
-            durationColWidth={durationColWidth}
-            showPredecessor={showPredecessor}
-            predecessorColWidth={predecessorColWidth}
+            showStart={showStart} startColWidth={startColWidth} showFinish={showFinish} finishColWidth={finishColWidth}
+            showParty={showParty} partyColWidth={partyColWidth} showDuration={showDuration} durationColWidth={durationColWidth}
+            showPredecessor={showPredecessor} predecessorColWidth={predecessorColWidth}
             getDateFromOffsetPx={getDateFromOffsetPx}
           />
 
@@ -378,23 +385,15 @@ export function GanttTableView({
                   <GanttProjectRow
                     key={row.key}
                     p={row.project}
-                    pIdx={row.projectIndex}
-                    projectTasks={getGroupTasksForProject ? getGroupTasksForProject(row.project) : []}
+                    pIdx={row.projectIndex} projectTasks={getGroupTasksForProject ? getGroupTasksForProject(row.project) : []}
                     isExpanded={row.isExpanded}
                     expandedModularTasks={expandedModularTasks}
                     setExpandedModularTasks={setExpandedModularTasks}
                     toggleProjectExpansion={toggleProjectExpansion}
                     sideWidth={sideWidth}
-                    showStart={showStart}
-                    startColWidth={startColWidth}
-                    showFinish={showFinish}
-                    finishColWidth={finishColWidth}
-                    showParty={showParty}
-                    partyColWidth={partyColWidth}
-                    showDuration={showDuration}
-                    durationColWidth={durationColWidth}
-                    showPredecessor={showPredecessor}
-                    predecessorColWidth={predecessorColWidth}
+                    showStart={showStart} startColWidth={startColWidth} showFinish={showFinish} finishColWidth={finishColWidth}
+                    showParty={showParty} partyColWidth={partyColWidth} showDuration={showDuration} durationColWidth={durationColWidth}
+                    showPredecessor={showPredecessor} predecessorColWidth={predecessorColWidth}
                     startDate={startDate}
                     dayWidth={dayWidth}
                     activeTooltip={activeTooltip}
@@ -443,16 +442,11 @@ export function GanttTableView({
                   toggleModularParent={toggleModularParent}
                   getRowVisibilityClass={getRowVisibilityClass}
                   sideWidth={sideWidth}
-                  showStart={showStart}
-                  startColWidth={startColWidth}
-                  showFinish={showFinish}
-                  finishColWidth={finishColWidth}
-                  showParty={showParty}
-                  partyColWidth={partyColWidth}
-                  showDuration={showDuration}
-                  durationColWidth={durationColWidth}
-                  showPredecessor={showPredecessor}
-                  predecessorColWidth={predecessorColWidth}
+                  showStart={showStart} startColWidth={startColWidth} showFinish={showFinish} finishColWidth={finishColWidth}
+                  showParty={showParty} partyColWidth={partyColWidth} showDuration={showDuration} durationColWidth={durationColWidth}
+                  showPredecessor={showPredecessor} predecessorColWidth={predecessorColWidth}
+                  taskCodeMap={taskCodeMap}
+                  delegationGroupByTaskId={delegationGroupByTaskId}
                   timeUnits={timeUnits}
                   startDate={startDate}
                   dayWidth={dayWidth}

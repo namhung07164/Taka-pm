@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DependencyLine } from './ganttTypes';
 
 export interface GanttDependencyLinksProps {
@@ -10,6 +10,15 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
 }) => {
   const [hoveredLineId, setHoveredLineId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const mouseRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (mouseRafRef.current !== null) {
+        cancelAnimationFrame(mouseRafRef.current);
+      }
+    };
+  }, []);
 
   if (dependencyLines.length === 0) return null;
 
@@ -62,9 +71,20 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
                   setMousePos({ x: e.clientX, y: e.clientY });
                 }}
                 onMouseMove={(e) => {
-                  setMousePos({ x: e.clientX, y: e.clientY });
+                  const clientX = e.clientX;
+                  const clientY = e.clientY;
+                  if (mouseRafRef.current === null) {
+                    mouseRafRef.current = requestAnimationFrame(() => {
+                      setMousePos({ x: clientX, y: clientY });
+                      mouseRafRef.current = null;
+                    });
+                  }
                 }}
                 onMouseLeave={() => {
+                  if (mouseRafRef.current !== null) {
+                    cancelAnimationFrame(mouseRafRef.current);
+                    mouseRafRef.current = null;
+                  }
                   setHoveredLineId(null);
                   setMousePos(null);
                 }}

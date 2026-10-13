@@ -106,6 +106,7 @@ export const GanttBar = React.memo(function GanttBar({
   const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
+  const moveRafRef = useRef<number | null>(null);
   const isDraggingTooltipRef = useRef(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
   const tooltipStartPos = useRef({ x: 0, y: 0 });
@@ -154,6 +155,9 @@ export const GanttBar = React.memo(function GanttBar({
     return () => {
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
+      }
+      if (moveRafRef.current !== null) {
+        cancelAnimationFrame(moveRafRef.current);
       }
     };
   }, []);
@@ -227,9 +231,16 @@ export const GanttBar = React.memo(function GanttBar({
         onMouseEnter={handleBarMouseEnter}
         onMouseMove={(e) => {
           if (!isPinned && !isDraggingTooltipRef.current) {
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
-            if (tooltipRef.current) {
-              positionTooltip(tooltipRef.current, e.clientX, e.clientY);
+            const clientX = e.clientX;
+            const clientY = e.clientY;
+            lastMousePos.current = { x: clientX, y: clientY };
+            if (moveRafRef.current === null) {
+              moveRafRef.current = requestAnimationFrame(() => {
+                if (tooltipRef.current) {
+                  positionTooltip(tooltipRef.current, lastMousePos.current.x, lastMousePos.current.y);
+                }
+                moveRafRef.current = null;
+              });
             }
           }
         }}

@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { Project, Task, AppUser } from '../../types';
 import { getTaskStatus, computeActProgressPercent, resolveActualStatus, getUserDelegationRoleForTask, parseDateTime } from '../../lib/utils';
-import { computeTaskCode } from '../../lib/ganttUtils';
+import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { GanttTaskLeftColumns } from './GanttTaskLeftColumns';
@@ -44,6 +44,8 @@ export interface GanttTaskRowProps {
   durationColWidth: number;
   showPredecessor?: boolean;
   predecessorColWidth?: number;
+  taskCodeMap?: Map<string, string>;
+  delegationGroupByTaskId?: Map<string, any>;
   timeUnits: any[];
   startDate: Date;
   dayWidth: number;
@@ -101,7 +103,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   durationColWidth,
   showPredecessor = false,
   predecessorColWidth = 90,
-  timeUnits,
+  taskCodeMap,  delegationGroupByTaskId,  timeUnits,
   startDate,
   dayWidth,
   activeTooltip,
@@ -131,10 +133,10 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   const highlightRole = isHighlightDelegationOn ? userRole : null;
 
   const planStatus = getTaskStatus(t.start, t.finish);
-  const linkedGroup = (delegationGroups || []).find((g: any) => g.taskId === t.id || g.parentTaskId === t.id);
+  const linkedGroup = delegationGroupByTaskId?.get(t.id) || (delegationGroups || []).find((g: any) => g.taskId === t.id || g.parentTaskId === t.id);
   const actStatusObj = resolveActualStatus(planStatus, linkedGroup?.subTasks || []);
   const actPrg = computeActProgressPercent([t], delegationGroups || []);
-  const taskCode = computeTaskCode(projects, tasks, t);
+  const taskCode = taskCodeMap?.get(t.id) || t.taskCodePhu || computeTaskCode(projects, tasks, t);
 
   // Compute accurate lifecycle status taking into account runningStatus, delegation, approvals, progress, and dates
   let effectiveStatus = planStatus;
@@ -168,7 +170,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     return childTasks
       .filter((ct) => {
         const plSt = getTaskStatus(ct.start, ct.finish);
-        const lg = (delegationGroups || []).find((g: any) => g.taskId === ct.id || g.parentTaskId === ct.id);
+        const lg = delegationGroupByTaskId?.get(ct.id) || (delegationGroups || []).find((g: any) => g.taskId === ct.id || g.parentTaskId === ct.id);
         const actStObj = resolveActualStatus(plSt, lg?.subTasks || []);
         const prg = computeActProgressPercent([ct], delegationGroups || []);
         const running = (ct.runningStatus || '').toLowerCase();
@@ -196,7 +198,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
       })
       .map((ct) => {
         const ctPrg = computeActProgressPercent([ct], delegationGroups || []);
-        const ctCode = ct.taskCodePhu || computeTaskCode(projects, tasks, ct);
+        const ctCode = ct.taskCodePhu || taskCodeMap?.get(ct.id) || computeTaskCode(projects, tasks, ct);
         return {
           id: String(ct.id),
           name: ct.name,
