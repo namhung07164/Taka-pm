@@ -28,7 +28,33 @@ import { resolveInvalidations } from './deltaInvalidateService';
 import { startDeltaRealtimeListener } from './deltaRealtimeListener';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
+const RESTORE_CUTOFF_KEY = 'taka_restore_cutoff_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
+
+/**
+ * Returns the timestamp cutoff after which version restore was executed.
+ * Deltas generated before this timestamp are faulty historical changes and MUST NOT be re-applied.
+ */
+export function getRestoreCutoffTimestamp(): number {
+  const raw = safeGetItemLocal(RESTORE_CUTOFF_KEY);
+  if (raw) {
+    const num = Number(raw);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  return 0;
+}
+
+/**
+ * Prevents auto-reading / re-applying faulty historical changes generated before a version restore.
+ * Call this function immediately when a version restore or full replace operation is executed.
+ */
+export function markRestoreVersionCompleted(cutoffMs?: number): void {
+  const now = cutoffMs || Date.now();
+  safeSetItemLocal(RESTORE_CUTOFF_KEY, String(now));
+  safeSetItemLocal(LAST_SYNC_KEY, String(now));
+  appliedDeltaIds.clear();
+  console.log(`[deltaSync] Restore cutoff set to ${now} (${new Date(now).toISOString()}). Past deltas strictly blocked.`);
+}
 
 // The sync cursor is serverTime (server arrival time), NOT numericTime: a delta created offline carries an old
 // client time but arrives later. Only the device clock used for lastSyncTime is skewed; the overlap covers that.
@@ -154,15 +180,18 @@ export async function recordBatchDeltas(
  * Đọc mốc thời gian đã đồng bộ delta lần cuối từ LocalStorage
  */
 export function getLastDeltaSyncTime(): number {
+  const restoreCutoff = getRestoreCutoffTimestamp();
   const raw = safeGetItemLocal(LAST_SYNC_KEY);
+  let lastSync = 0;
   if (raw) {
     const num = Number(raw);
-    if (!isNaN(num) && num > 0) return num;
+    if (!isNaN(num) && num > 0) lastSync = num;
   }
-  // Mặc định lùi lại 48 giờ nếu lần đầu mở app để không bị sót thay đổi giữa các thiết bị
-  const initial = Date.now() - 48 * 60 * 60 * 1000;
-  safeSetItemLocal(LAST_SYNC_KEY, String(initial));
-  return initial;
+  if (lastSync === 0) {
+    lastSync = Date.now() - 48 * 60 * 60 * 1000;
+  }
+  // Sync cursor is strictly bounded by restoreCutoff so past faulty deltas are never re-queried
+  return Math.max(lastSync, restoreCutoff);
 }
 
 /**
@@ -379,9 +408,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
  * Drops deltas that were already applied on this device (shared across poll + listener).
  */
 export function filterUnappliedDeltas(items: TakaDelta[]): TakaDelta[] {
+  const restoreCutoff = getRestoreCutoffTimestamp();
   const fresh: TakaDelta[] = [];
+
   for (const item of items) {
     const id = item.id;
+    const itemMs = deltaTime(item);
+
+    // CRITICAL: Discard any historical delta created before/at the version restore cutoff.
+    // This strictly prevents faulty pre-restore changes from being auto-applied after restoring a version.
+    if (restoreCutoff > 0 && itemMs <= restoreCutoff) {
+      if (id) appliedDeltaIds.add(id);
+      continue;
+    }
+
     if (!id) { fresh.push(item); continue; }
     if (appliedDeltaIds.has(id)) continue;
     appliedDeltaIds.add(id);
@@ -413,6 +453,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
 
   inFlightPullPromise = (async () => {
     const lastSyncTime = getLastDeltaSyncTime();
+    const restoreCutoff = getRestoreCutoffTimestamp();
 
     // Device offline longer than delta retention -> deltas are gone, do a full resync.
     if (await resyncIfStale(lastSyncTime, LAST_SYNC_KEY)) return 0;
@@ -421,7 +462,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
 
     try {
       const deltas: TakaDelta[] = [];
-      let currentSince = lastSyncTime - CLOCK_SKEW_OVERLAP_MS;
+      let currentSince = Math.max(lastSyncTime - CLOCK_SKEW_OVERLAP_MS, restoreCutoff);
       let iteration = 0;
       const MAX_PAGES = 5;
 

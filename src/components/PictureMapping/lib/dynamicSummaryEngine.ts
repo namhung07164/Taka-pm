@@ -1,5 +1,4 @@
 import React, { useMemo } from "react";
-import { useMemo } from 'react';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';

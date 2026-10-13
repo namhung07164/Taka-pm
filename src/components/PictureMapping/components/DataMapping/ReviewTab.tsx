@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useShallow } from 'zustand/react/shallow';
-import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Text, Group } from 'react-konva';
 import useImage from 'use-image';

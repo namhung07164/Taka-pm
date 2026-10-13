@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { useState } from 'react';
 import { Project, DelegationGroup, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { getStatus, formatDisplayDateMain } from '../../lib/utils';
