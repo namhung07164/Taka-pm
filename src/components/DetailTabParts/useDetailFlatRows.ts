@@ -116,11 +116,10 @@ export function useDetailFlatRows({
 
       const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
       const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
+      const loadedTaskCount = validGroupTasks.length;
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
-        : isExpanded
-          ? (validGroupTasks.length > 0 ? validGroupTasks.length : projectDocCount)
-          : (projectDocCount !== undefined ? projectDocCount : validGroupTasks.length);
+        : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
 
       let planProgressPercent = 0;
       let actProgressPercent = 0;

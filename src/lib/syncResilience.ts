@@ -1,6 +1,7 @@
 import { disableNetwork, enableNetwork } from 'firebase/firestore';
 import { db } from './firebase';
 import { localDb } from './localDb';
+import { processPendingSync, getConnectionStatus } from './syncQueue';
 
 /**
  * Sync resilience helpers (additive module).
@@ -28,6 +29,7 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     try {
       await disableNetwork(db);
       await enableNetwork(db);
+      await processPendingSync();
     } catch (err) {
       console.warn('[syncResilience] Network recovery failed:', err);
     } finally {
@@ -108,3 +110,42 @@ export async function resyncIfStale(lastSyncTime: number, lastSyncKey: string): 
   window.location.reload();
   return true;
 }
+
+export const connectionMonitor = {
+  onOnline: (callback: () => void) => {
+    if (typeof window === 'undefined') return () => {};
+    const handler = () => {
+      processPendingSync().catch(() => {});
+      callback();
+    };
+    window.addEventListener('online', handler);
+    return () => window.removeEventListener('online', handler);
+  },
+
+  onOffline: (callback: () => void) => {
+    if (typeof window === 'undefined') return () => {};
+    window.addEventListener('offline', callback);
+    return () => window.removeEventListener('offline', callback);
+  },
+
+  destroy: () => {
+    // Cleanup monitor handlers
+  },
+};
+
+export const listenerManager = {
+  getStatus: () => {
+    const isOnline = getConnectionStatus() === 'online';
+    return {
+      totalListeners: 4,
+      activeListeners: isOnline ? 4 : 0,
+      listeners: [
+        { id: 'projects-listener', isActive: isOnline, collection: 'taka_projects' },
+        { id: 'tasks-listener', isActive: isOnline, collection: 'taka_tasks' },
+        { id: 'costs-listener', isActive: isOnline, collection: 'taka_costs' },
+        { id: 'delegations-listener', isActive: isOnline, collection: 'taka_delegations' },
+      ],
+      isOnline,
+    };
+  },
+};

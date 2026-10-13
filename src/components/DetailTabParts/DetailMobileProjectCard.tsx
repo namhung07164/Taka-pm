@@ -177,11 +177,10 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
 
   const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
   const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
+  const loadedTaskCount = groupTasks.length;
   const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
     ? tasksToRender.length
-    : isExpanded
-      ? (groupTasks.length > 0 ? groupTasks.length : projectDocCount)
-      : (projectDocCount !== undefined ? projectDocCount : groupTasks.length);
+    : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
 
   const isProjectDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 

@@ -84,6 +84,13 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       message: `Scale (${currentScale}% / ${currentWidth}px) saved for ${getDeviceScreenType()} screen`
     });
   },
+  isGanttSettingsOpen: false,
+  setIsGanttSettingsOpen: (val) => set({ isGanttSettingsOpen: val }),
+  ganttShowDependencies: safeGetItemLocal("taka_gantt_show_dependencies") !== "false",
+  setGanttShowDependencies: (val) => {
+    safeSetItemLocal("taka_gantt_show_dependencies", String(val));
+    set({ ganttShowDependencies: val });
+  },
 
   expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
@@ -206,11 +213,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setIsCalendarSyncModalOpen: (isCalendarSyncModalOpen) => set({ isCalendarSyncModalOpen }),
   isCommandPaletteOpen: false,
   setIsCommandPaletteOpen: (isCommandPaletteOpen) => set({ isCommandPaletteOpen }),
-
-  isGanttSettingsOpen: false,
-  setIsGanttSettingsOpen: (isGanttSettingsOpen) => set({ isGanttSettingsOpen }),
-  ganttShowDependencies: true,
-  setGanttShowDependencies: (ganttShowDependencies) => set({ ganttShowDependencies }),
 
   quickNavTarget: null,
   setQuickNavTarget: (quickNavTarget) => set({ quickNavTarget }),
