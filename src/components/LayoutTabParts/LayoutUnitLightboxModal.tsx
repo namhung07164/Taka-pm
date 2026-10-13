@@ -58,8 +58,12 @@ export function LayoutUnitLightboxModal({
 }: LayoutUnitLightboxModalProps) {
   const [imageError, setImageError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [pdfScale, setPdfScale] = useState(1);
+  const [isFastImageMode, setIsFastImageMode] = useState(false);
+
   const transformRef = useRef<any>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawUrl = enlargedImage?.url || '';
   const resolvedUrl = normalizeImageUrl(rawUrl);
@@ -150,24 +154,34 @@ export function LayoutUnitLightboxModal({
     }
   }, [resolvedUrl, handleImageError, isDirectPdf]);
 
-  // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
+  // Set class on document.body and handle memory cleanup on unmount
   useEffect(() => {
     document.body.classList.add('lightbox-open');
     return () => {
       document.body.classList.remove('lightbox-open');
+      if (iframeRef.current) {
+        try {
+          iframeRef.current.src = 'about:blank';
+        } catch {}
+      }
     };
   }, []);
 
-  // Safe close handler that absorbs any synthetic click/touch events before unmounting
+  // Safe close handler that absorbs any synthetic click/touch events before unmounting and purges iframe memory
   const handleSafeClose = useCallback((e?: React.SyntheticEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    // Safety delay of 60ms to let browser absorb any pending synthetic touch/tap events on iOS/Android
+    if (iframeRef.current) {
+      try {
+        iframeRef.current.src = 'about:blank';
+      } catch {}
+    }
+    setPdfScale(1);
     setTimeout(() => {
       onClose();
-    }, 60);
+    }, 50);
   }, [onClose]);
 
   // Keyboard shortcut: Escape key closes enlarged image (AGENTS.md Rule 6)

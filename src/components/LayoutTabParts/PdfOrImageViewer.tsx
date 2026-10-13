@@ -1,6 +1,7 @@
-import React, { FC, lazy, useState } from 'react';
+import React, { useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize, Maximize2, ExternalLink, FileText, AlertCircle, RefreshCw } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 
 export interface PdfOrImageViewerProps {
   url: string;
@@ -53,6 +54,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 }) => {
   const [hasPdfError, setHasPdfError] = useState(false);
   const [useGdocsFallback, setUseGdocsFallback] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
 
   const cleanUrl = getCleanUrl(url) || url;
   const isPdf = isPdfOrDocUrl(cleanUrl);
@@ -68,12 +70,34 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 
   // PDF or Google Drive / Docs document mode
   if (isPdf) {
+    if (!useIframeFallback) {
+      return (
+        <PdfNativeCanvasViewer
+          url={cleanUrl}
+          isFullscreen={isFullscreen}
+          onOpenFullscreen={onOpenFullscreen}
+          className={className}
+          onFallbackToIframe={() => setUseIframeFallback(true)}
+        />
+      );
+    }
+
     const iframeSrc = resolvePdfIframeUrl(cleanUrl, useGdocsFallback);
 
     return (
       <div className={`w-full h-full relative flex flex-col bg-slate-900 ${className}`}>
         {/* Floating action controls */}
         <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md p-1 border border-slate-700 shadow-md rounded-xl">
+          <button
+            type="button"
+            onClick={() => setUseIframeFallback(false)}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation flex items-center gap-1 text-xs"
+            title="Switch to Native Canvas Viewer"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline font-medium text-[11px]">Native Mode</span>
+          </button>
+
           <a
             href={cleanUrl}
             target="_blank"

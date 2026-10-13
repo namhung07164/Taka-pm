@@ -1,4 +1,4 @@
-import React, { FC, useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { normalizeImageUrl } from './LayoutTabParts/LayoutUnitLightboxModal';
+import { PdfNativeCanvasViewer } from './LayoutTabParts/PdfNativeCanvasViewer';
 import { useAppStore } from '../store/useAppStore';
 
 export interface ZoomableImageViewerProps {
@@ -330,21 +331,10 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
       <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center p-2 sm:p-4">
         {isPdf ? (
           <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900/50 rounded-xl overflow-hidden border border-slate-800">
-            {isLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-300 bg-slate-950/80 z-10">
-                <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
-                <span className="text-xs font-medium">Loading document / PDF preview...</span>
-              </div>
-            )}
-            <iframe
-              src={getPdfIframeUrl(rawTargetUrl, useGdocsFallback)}
-              title={activeTitle}
-              className="w-full h-full border-0 rounded-xl bg-white shadow-2xl"
-              onLoad={() => setIsLoading(false)}
-              onError={() => {
-                setIsLoading(false);
-                setHasError(true);
-              }}
+            <PdfNativeCanvasViewer
+              url={rawTargetUrl}
+              isFullscreen={true}
+              onFallbackToIframe={() => setUseGdocsFallback(true)}
             />
           </div>
         ) : (
