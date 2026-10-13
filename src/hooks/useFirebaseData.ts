@@ -211,12 +211,8 @@ export function useFirebaseData() {
         "taskDelegation",
         "taskDelegationCalendar"
       ];
-      const storeDelegations = useAppStore.getState().delegationGroups || [];
-      const needsDelegations = tabsRequiringDelegations.includes(activeTab) || 
-        isTaskModalOpen || 
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab) ||
-        // If local Dexie/Zustand cache has zero delegations and user lands on Gantt/Detail/Notification, hydrate once
-        (storeDelegations.length === 0 && (activeTab === "gantt" || activeTab === "detail" || activeTab === "notification"));
+      // B6: Only open Tri-Gate for the entire year collection when on dedicated delegation tabs
+      const needsDelegations = tabsRequiringDelegations.includes(activeTab);
 
       // App is evaluating active tab needs. 
       // We NEVER unmount (set to false) because destroying the listener drops the IDB resumeToken,
@@ -233,6 +229,18 @@ export function useFirebaseData() {
       if (needsDelegations) {
         setIsDelegationsRequested(true);
         hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      } else {
+        // B6: Hydrate delegations only for currently open / active projects from local Dexie
+        // without opening Tri-Gate for the entire year collection
+        const store = useAppStore.getState();
+        const openProjectKeys: string[] = [];
+        if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
+        if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
+        if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
+        if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
+        if (openProjectKeys.length > 0) {
+          hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
+        }
       }
     };
 
@@ -933,6 +941,7 @@ export function useFirebaseData() {
     });
 
     const neededKeys = new Set<string>();
+    let needTasksDeltaSync = false;
 
     projectsByYear.forEach((projs, year) => {
       if (projs.length > 10) {
@@ -967,7 +976,7 @@ export function useFirebaseData() {
             // và đồng bộ các thay đổi mới qua Delta Pipeline (0-2 reads)
             tasksPool.current.set(yearKey, () => {});
             setIsTasksLoading(false);
-            pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
+            needTasksDeltaSync = true;
             usePerformanceStore.getState().trackGetDoc(`taka_tasks_${yearKey}`, true, currentTasks.length, 'Dexie Local-First Tasks (0 Read full collection)');
           } else {
             const qTasks = buildStoreAndYearQuery(
@@ -1031,7 +1040,7 @@ export function useFirebaseData() {
               // Local-First: Đã có tasks của dự án năm cũ trong Dexie/Zustand -> Giữ pool hoạt động (0 Read)
               tasksPool.current.set(projKey, () => {});
               setIsTasksLoading(false);
-              pullAndApplyDeltas(year).then(() => setCloudStatus("online")).catch(() => {});
+              needTasksDeltaSync = true;
               usePerformanceStore.getState().trackGetDoc(`taka_tasks_${projKey}`, true, 1, 'Dexie Local-First Project Tasks (0 Read)');
             } else {
               const qTasks = query(
@@ -1061,6 +1070,10 @@ export function useFirebaseData() {
         });
       }
     });
+
+    if (needTasksDeltaSync) {
+      pullAndApplyDeltas().then(() => setCloudStatus("online")).catch(() => {});
+    }
 
     // Clean up or start TTL on listeners no longer needed
       Array.from(tasksPool.current.keys()).forEach(key => {

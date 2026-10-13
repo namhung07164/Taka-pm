@@ -253,6 +253,90 @@ function writeAuditLogAsync(action: 'CREATE' | 'UPDATE' | 'DELETE', docRef: any,
   }
 }
 
+function writeBatchAuditLogAsync(
+  dbInstance: any,
+  ops: Array<{ action: 'CREATE' | 'UPDATE' | 'DELETE'; docRef: any; data?: any }>
+) {
+  try {
+    if (!ops || ops.length === 0) return;
+    if (ops.length === 1) {
+      writeAuditLogAsync(ops[0].action, ops[0].docRef, ops[0].data);
+      return;
+    }
+
+    const filteredOps = ops.filter((op) => {
+      const p = op.docRef?.path || '';
+      return !p.includes('audit_logs') && !p.includes('device_telemetry') && !p.includes('taka_config');
+    });
+    if (filteredOps.length === 0) return;
+
+    const user = auth.currentUser;
+    let userId = user?.uid;
+    let userEmail = user?.email;
+
+    if (!userId || !userEmail) {
+      try {
+        const storedAuth = typeof window !== 'undefined' ? localStorage.getItem('taka_auth_v1') : null;
+        if (storedAuth) {
+          const parsed = JSON.parse(storedAuth);
+          if (parsed && typeof parsed === 'object') {
+            userId = userId || parsed.id || parsed.username;
+            userEmail = userEmail || parsed.email || parsed.username;
+          }
+        }
+      } catch {}
+    }
+
+    userId = userId || 'system';
+    userEmail = userEmail || 'anonymous';
+
+    const logRef = doc(collection(dbInstance, 'audit_logs'));
+
+    const entityTypes = new Set<string>();
+    filteredOps.forEach((op) => {
+      const p = op.docRef?.path || '';
+      if (p.includes('taka_projects')) entityTypes.add('project');
+      else if (p.includes('taka_tasks')) entityTypes.add('task');
+      else if (p.includes('taka_costs')) entityTypes.add('cost');
+      else if (p.includes('taka_delegation_groups')) entityTypes.add('delegation');
+      else if (p.includes('taka_users')) entityTypes.add('user');
+      else if (p.includes('taka_rules')) entityTypes.add('rule');
+    });
+    const entityType = entityTypes.size === 1 ? Array.from(entityTypes)[0] : 'batch';
+
+    const actions = new Set(filteredOps.map((o) => o.action));
+    const primaryAction = actions.size === 1 ? Array.from(actions)[0] : 'UPDATE';
+
+    const summaryItems = filteredOps.slice(0, 50).map((op) => ({
+      action: op.action,
+      docId: op.docRef?.id,
+      docPath: op.docRef?.path,
+      data: cleanDataForAudit(op.data),
+    }));
+
+    const logData = {
+      timestamp: Date.now(),
+      userId,
+      userEmail,
+      action: primaryAction,
+      entityType,
+      docPath: `batch (${filteredOps.length} items: ${Array.from(entityTypes).join(', ')})`,
+      docId: `batch_${filteredOps[0].docRef?.id || Date.now()}`,
+      data: {
+        batchSize: filteredOps.length,
+        entityTypes: Array.from(entityTypes),
+        items: summaryItems,
+      },
+    };
+
+    firestoreSetDoc(logRef, logData).catch((err) => {
+      console.warn('Batch audit log failed:', err);
+    });
+  } catch (e) {
+    console.warn('Error preparing batch audit log:', e);
+  }
+}
+
 function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, data?: any) {
   let collectionPath = docRef.path;
   // Firestore path is usually something like "artifacts/APP_ID/public/data/taka_projects/project1"
@@ -315,12 +399,13 @@ export function writeBatch(dbInstance: any): WriteBatch {
   const originalCommit = batch.commit.bind(batch);
 
   const operations: any[] = [];
+  const auditOps: Array<{ action: 'CREATE' | 'UPDATE' | 'DELETE'; docRef: any; data?: any }> = [];
 
   (batch as any).set = (docRef: any, data: any, options?: any) => {
     const cleanData = removeUndefinedDeep(data);
     validateFirestoreData(docRef.path, cleanData, options?.merge === true);
     operations.push({ action: 'set', docRef, data: cleanData, options });
-    writeAuditLogAsync("CREATE", docRef, cleanData);
+    auditOps.push({ action: 'CREATE', docRef, data: cleanData });
     return originalSet(docRef, cleanData, options);
   };
   
@@ -328,19 +413,21 @@ export function writeBatch(dbInstance: any): WriteBatch {
     const cleanData = removeUndefinedDeep(data);
     validateFirestoreData(docRef.path, cleanData, true);
     operations.push({ action: 'update', docRef, data: cleanData });
-    writeAuditLogAsync("UPDATE", docRef, cleanData);
+    auditOps.push({ action: 'UPDATE', docRef, data: cleanData });
     return (originalUpdate as any)(docRef, cleanData, ...moreFieldsAndValues);
   };
 
   (batch as any).delete = (docRef: any) => {
     operations.push({ action: 'delete', docRef });
-    writeAuditLogAsync("DELETE", docRef);
+    auditOps.push({ action: 'DELETE', docRef });
     return originalDelete(docRef);
   };
 
   (batch as any).commit = () => {
     // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
     operations.forEach(op => queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write'));
+    // B3: Batch audit log consolidation into 1 single document write
+    writeBatchAuditLogAsync(dbInstance, auditOps);
     return originalCommit().catch(error => {
       console.warn("Network error during batch commit. Saving to local IndexedDB queue.", error);
       operations.forEach(op => {
