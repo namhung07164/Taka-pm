@@ -10,6 +10,7 @@ const ProjectModal = lazyWithRetry(() => import('./ProjectModal').then(m => ({ d
 const TaskModal = lazyWithRetry(() => import('./TaskModal').then(m => ({ default: m.TaskModal })), 'TaskModal');
 const UserModal = lazyWithRetry(() => import('./UserModal').then(m => ({ default: m.UserModal })), 'UserModal');
 const CalendarSyncModal = lazyWithRetry(() => import('./CalendarSyncModal').then(m => ({ default: m.CalendarSyncModal })), 'CalendarSyncModal');
+const GanttSettingsModal = lazyWithRetry(() => import('./Gantt/GanttSettingsModal').then(m => ({ default: m.GanttSettingsModal })), 'GanttSettingsModal');
 const ZoomableImageViewer = lazyWithRetry(() => import('./ZoomableImageViewer').then(m => ({ default: m.ZoomableImageViewer })), 'ZoomableImageViewer');
 
 interface AppModalsProps {
@@ -31,6 +32,8 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
   const setIsUserModalOpen = useAppStore(state => state.setIsUserModalOpen);
   
   const isCalendarSyncModalOpen = useAppStore(state => state.isCalendarSyncModalOpen);
+  const isGanttSettingsOpen = useAppStore(state => state.isGanttSettingsOpen);
+  const setIsGanttSettingsOpen = useAppStore(state => state.setIsGanttSettingsOpen);
   
   const editingProject = useAppStore(state => state.editingProject);
   const editingTask = useAppStore(state => state.editingTask);
@@ -114,6 +117,12 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
       )}
 
       {isCalendarSyncModalOpen && <CalendarSyncModal />}
+      {isGanttSettingsOpen && (
+        <GanttSettingsModal
+          isOpen={isGanttSettingsOpen}
+          onClose={() => setIsGanttSettingsOpen(false)}
+        />
+      )}
       <ZoomableImageViewer />
     </Suspense>
   );

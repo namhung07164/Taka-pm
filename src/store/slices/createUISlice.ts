@@ -84,6 +84,16 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       message: `Scale (${currentScale}% / ${currentWidth}px) saved for ${getDeviceScreenType()} screen`
     });
   },
+  isGanttSettingsOpen: false,
+  setIsGanttSettingsOpen: (val) => set({ isGanttSettingsOpen: val }),
+  ganttShowDependencies: (() => {
+    const saved = safeGetDeviceItemLocal("taka_gantt_show_dependencies");
+    return saved !== null ? saved === "true" : true;
+  })(),
+  setGanttShowDependencies: (val) => {
+    safeSetDeviceItemLocal("taka_gantt_show_dependencies", String(val));
+    set({ ganttShowDependencies: val });
+  },
 
   expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
