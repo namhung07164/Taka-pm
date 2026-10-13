@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Component, FC, memo } from 'react';
 import { Building2 } from 'lucide-react';
 import {
   ResponsiveContainer,

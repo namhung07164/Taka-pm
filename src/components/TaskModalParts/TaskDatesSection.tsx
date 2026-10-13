@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { Dispatch, SetStateAction, memo } from 'react';
 import { Pin, Target } from 'lucide-react';
 import { FastInput } from '../FastInput';
 import { cn } from '../../lib/utils';

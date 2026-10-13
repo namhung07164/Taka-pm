@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { getEffectiveStoreFilter } from '../lib/utils';
 import { useEnrichedData } from './useEnrichedData';

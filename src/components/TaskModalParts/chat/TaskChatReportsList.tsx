@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { Paperclip, Maximize2, ExternalLink, FileText } from 'lucide-react';
 import { DelegationGroup } from '../../../types';
 import { ensureUrlProtocol } from '../../../lib/utils';

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { CornerDownLeft } from 'lucide-react';
 import { PaletteItem } from './commandPaletteTypes';
 import { cn } from '../../lib/utils';

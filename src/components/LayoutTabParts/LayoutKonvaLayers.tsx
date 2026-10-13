@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, Fragment, memo } from 'react';
 import { FastLayer, Layer, Image as KonvaImage, Rect, Circle, Path, Line, Text, Group } from 'react-konva';
 
 export interface LayoutKonvaLayersProps {

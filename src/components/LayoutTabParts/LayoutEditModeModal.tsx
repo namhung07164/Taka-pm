@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, FC, SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 

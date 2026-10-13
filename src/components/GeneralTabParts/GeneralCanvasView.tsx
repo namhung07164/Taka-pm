@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { Dispatch, SetStateAction, useEffect } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget, SortConfig } from './generalTypes';
 import { drawGeneralCanvas, resolveCanvasClick } from './generalCanvasUtils';

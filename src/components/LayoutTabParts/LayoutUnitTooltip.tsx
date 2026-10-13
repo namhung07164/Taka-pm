@@ -1,15 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { FC, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  cn, 
-  extractAllProjectCodes, 
-  projectMatchesUnitCode, 
-  extractProjectMetadata,
-  computePlanProgressFromSummaries,
-  computeActProgressFromSummaries,
-  computePlanProgressPercent,
-  computeActProgressPercent
-} from '../../lib/utils';
+import { cn, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
@@ -134,48 +125,9 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     : '';
   const mdStatusColorClass = getMdStatusColorClass(mdStatus);
 
-  // Progress metrics & Delegation check (Strictly matching General Tab calculation)
-  const allStoreTasks = useAppStore.getState().tasks || [];
-  const storeDelegationGroups = useAppStore.getState().delegationGroups || [];
-  const projectTasks = allStoreTasks.filter((t) =>
-    (p?.id && String(t.projectId) === String(p.id)) ||
-    (p?.code && t.projectCode === p.code) ||
-    (data?.appProjectCode && t.projectCode === data.appProjectCode)
-  );
-
-  const planProgressPercent = hasProject
-    ? (projectTasks.length > 0
-        ? computePlanProgressPercent(projectTasks)
-        : ((p?.computedPlanProgress && p.computedPlanProgress > 0)
-            ? p.computedPlanProgress
-            : (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                ? computePlanProgressFromSummaries(p.taskSummaries)
-                : (p?.computedPlanProgress ?? data.planProgressPercent ?? 0))))
-    : 0;
-
-  const actProgressPercent = hasProject
-    ? (projectTasks.length > 0
-        ? computeActProgressPercent(projectTasks, storeDelegationGroups)
-        : ((p?.computedActProgress && p.computedActProgress > 0)
-            ? p.computedActProgress
-            : (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                ? computeActProgressFromSummaries(p.taskSummaries)
-                : (p?.computedActProgress ?? data.actProgressPercent ?? 0))))
-    : 0;
-
-  const hasProjectDelegation = hasProject && Boolean(
-    data.hasProjectDelegation ||
-    (p as any)?.delegation ||
-    (p as any)?.hasDelegation ||
-    (projectTasks.length > 0 && projectTasks.some((t) => Boolean(t.delegation))) ||
-    (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
-    (storeDelegationGroups && storeDelegationGroups.some((g: any) =>
-      (p?.code && g.projectCode === p.code) ||
-      (data?.appProjectCode && g.projectCode === data.appProjectCode) ||
-      (p?.id && String((g as any).projectId) === String(p.id)) ||
-      (projectTasks.some((t) => t.id === g.parentTaskId))
-    ))
-  );
+  // Progress metrics
+  const planProgressPercent = hasProject ? (p?.computedPlanProgress ?? data.planProgressPercent ?? 0) : 0;
+  const actProgressPercent = hasProject ? (p?.computedActProgress ?? data.actProgressPercent ?? 0) : 0;
 
   // Dates & Comments
   const computedTakStart = hasProject ? (p?.computedTakStart || p?.start || data.startDate || '') : '';
@@ -360,7 +312,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         <TooltipProgressBars
           planProgressPercent={planProgressPercent}
           actProgressPercent={actProgressPercent}
-          hasProjectDelegation={hasProjectDelegation}
         />
       )}
 

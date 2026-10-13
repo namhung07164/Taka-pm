@@ -1,6 +1,6 @@
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
-import { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from 'react';
 import {
   TabId,
   AppUser,

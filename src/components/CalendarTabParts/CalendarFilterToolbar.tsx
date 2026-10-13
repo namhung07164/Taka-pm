@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, FC, SetStateAction } from 'react';
 import { Search, Download, Smartphone } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 import { useAppStore } from '../../store/useAppStore';

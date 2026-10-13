@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Task, Project } from '../../types';
 import { DependencyLine, GanttTableRow } from './ganttTypes';
 import { computeAllTaskCodes } from '../../lib/ganttUtils';

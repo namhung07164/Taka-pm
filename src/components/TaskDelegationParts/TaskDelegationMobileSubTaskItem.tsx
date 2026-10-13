@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Search, Trash2, Paperclip, Maximize2, ExternalLink, FileText } from 'lucide-react';
 import { DelegationGroup, DelegationSubTask, AppUser, Project, Task } from '../../types';
 import { cn, formatDisplayDateMain, formatDisplayDateTime, resolveActualStatus, parseDateTime, formatToDatetimeLocal, ensureUrlProtocol, getActStatusPercent } from '../../lib/utils';

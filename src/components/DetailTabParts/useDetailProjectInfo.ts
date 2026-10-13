@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { getStatus } from '../../lib/utils';

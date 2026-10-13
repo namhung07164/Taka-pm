@@ -1,4 +1,4 @@
-import React, { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, FC, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Task, Project, PredecessorType } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';

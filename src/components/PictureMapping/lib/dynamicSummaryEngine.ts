@@ -1,18 +1,9 @@
+import React, { useMemo } from "react";
 import { useMemo } from 'react';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { 
-  enrichProjects, 
-  getStatus, 
-  computeProjectActStatus, 
-  extractAllProjectCodes, 
-  projectMatchesUnitCode, 
-  extractProjectMetadata, 
-  projectMatchesScope,
-  computePlanProgressFromSummaries,
-  computeActProgressFromSummaries
-} from '../../../lib/utils';
+import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 
 export interface DynamicUnitSummaryItem {
@@ -482,20 +473,8 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          const projPlanProgress = (p.computedPlanProgress && p.computedPlanProgress > 0)
-            ? p.computedPlanProgress
-            : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                ? computePlanProgressFromSummaries(p.taskSummaries)
-                : (p.computedPlanProgress ?? 0));
-
-          const projActProgress = (p.computedActProgress && p.computedActProgress > 0)
-            ? p.computedActProgress
-            : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                ? computeActProgressFromSummaries(p.taskSummaries)
-                : (p.computedActProgress ?? 0));
-
-          item.planProgress = projPlanProgress;
-          item.actProgress = projActProgress;
+          item.planProgress = p.computedPlanProgress ?? 0;
+          item.actProgress = p.computedActProgress ?? 0;
           item.matchedTasksCount = matchedTaskSet.size;
           item.task = taskSummaryStr || item.task || '';
           item.activeTasks = activeTaskNames;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Search, Command, X, Sparkles, Building2, Tag, List, LayoutDashboard } from 'lucide-react';
 import { DebouncedSearchInput } from './DebouncedSearchInput';

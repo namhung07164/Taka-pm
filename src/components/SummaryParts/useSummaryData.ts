@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { getStatus, parseDateTime, getUserAllowedStores, getEffectiveStoreFilter } from '../../lib/utils';

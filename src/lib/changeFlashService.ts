@@ -1,3 +1,4 @@
+import React, { useEffect, useState } from 'react';
 /**
  * Smart Change Flash & Live Edit Awareness Service (Notion, Jira & Google Sheets Standard)
  * 
@@ -7,7 +8,6 @@
  * 3. Tracks active collaborative editing presence between teammates.
  */
 
-import { useState, useEffect } from 'react';
 
 export interface FlashEntry {
   docId: string;

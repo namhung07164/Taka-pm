@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Project, Cost } from '../../types';
 import { CostColWidths, PaidDateMatches } from './costTypes';
 import { CostTableRow } from './CostTableRow';

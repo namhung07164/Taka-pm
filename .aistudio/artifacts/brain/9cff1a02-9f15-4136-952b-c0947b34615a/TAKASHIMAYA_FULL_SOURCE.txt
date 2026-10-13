@@ -3059,6 +3059,7 @@ const ProjectModal = lazyWithRetry(() => import('./ProjectModal').then(m => ({ d
 const TaskModal = lazyWithRetry(() => import('./TaskModal').then(m => ({ default: m.TaskModal })), 'TaskModal');
 const UserModal = lazyWithRetry(() => import('./UserModal').then(m => ({ default: m.UserModal })), 'UserModal');
 const CalendarSyncModal = lazyWithRetry(() => import('./CalendarSyncModal').then(m => ({ default: m.CalendarSyncModal })), 'CalendarSyncModal');
+const GanttSettingsModal = lazyWithRetry(() => import('./Gantt/GanttSettingsModal').then(m => ({ default: m.GanttSettingsModal })), 'GanttSettingsModal');
 const ZoomableImageViewer = lazyWithRetry(() => import('./ZoomableImageViewer').then(m => ({ default: m.ZoomableImageViewer })), 'ZoomableImageViewer');
 
 interface AppModalsProps {
@@ -3080,6 +3081,8 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
   const setIsUserModalOpen = useAppStore(state => state.setIsUserModalOpen);
   
   const isCalendarSyncModalOpen = useAppStore(state => state.isCalendarSyncModalOpen);
+  const isGanttSettingsOpen = useAppStore(state => state.isGanttSettingsOpen);
+  const setIsGanttSettingsOpen = useAppStore(state => state.setIsGanttSettingsOpen);
   
   const editingProject = useAppStore(state => state.editingProject);
   const editingTask = useAppStore(state => state.editingTask);
@@ -3163,6 +3166,12 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
       )}
 
       {isCalendarSyncModalOpen && <CalendarSyncModal />}
+      {isGanttSettingsOpen && (
+        <GanttSettingsModal
+          isOpen={isGanttSettingsOpen}
+          onClose={() => setIsGanttSettingsOpen(false)}
+        />
+      )}
       <ZoomableImageViewer />
     </Suspense>
   );
@@ -33930,32 +33939,50 @@ export function useGanttProjectsFilter({
         }
       }
 
-      if (mergedMap.size > 0) {
-        return Array.from(mergedMap.values());
-      }
+      const rawTasks = Array.from(mergedMap.values());
 
-      // 4. Fallback to taskSummaries
+      // 4. Merge in any remaining taskSummaries so tasks are never lost/dropped when memory has a partial task set
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        return p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
+        const existingMap = new Map<string, any>();
+        rawTasks.forEach(t => {
+          if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+          if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+          const nameKey = String(t.name || '').trim().toLowerCase();
+          if (nameKey) existingMap.set(nameKey, t);
+        });
+
+        const mergedList = [...rawTasks];
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const match = (tsId && existingMap.has(tsId)) ||
+                        (tsCode && existingMap.has(tsCode)) ||
+                        (tsName && existingMap.has(tsName));
+          if (!match) {
+            mergedList.push({
+              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
+        return mergedList;
       }
 
-      return [];
+      return rawTasks;
     },
     [tasksByProjectId, tasksByProject, tasksMapByCode]
   );
@@ -34856,6 +34883,10 @@ const ConfirmModal = lazyWithRetry(
   () => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })),
   'ConfirmModal'
 );
+const GanttSettingsModal = lazyWithRetry(
+  () => import('./Gantt/GanttSettingsModal').then(m => ({ default: m.GanttSettingsModal })),
+  'GanttSettingsModal'
+);
 
 export function GanttTab({
   onNavigateToTaskDetail,
@@ -34876,6 +34907,8 @@ export function GanttTab({
   const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
+  const isGanttSettingsOpen = useAppStore(state => state.isGanttSettingsOpen);
+  const setIsGanttSettingsOpen = useAppStore(state => state.setIsGanttSettingsOpen);
 
   useEffect(() => {
     if (!isTasksRequested) {
@@ -35310,6 +35343,18 @@ export function GanttTab({
             message={confirmModal.message}
             onConfirm={confirmModal.onConfirm}
             onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        </Suspense>
+      )}
+
+      {/* Gantt Settings Modal */}
+      {isGanttSettingsOpen && (
+        <Suspense fallback={null}>
+          <GanttSettingsModal
+            isOpen={isGanttSettingsOpen}
+            onClose={() => setIsGanttSettingsOpen(false)}
+            visibleColumns={visibleColumns}
+            onToggleColumn={handleToggleColumn}
           />
         </Suspense>
       )}
@@ -35949,23 +35994,23 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
   if (status === 'Completed') {
     statusBadgeClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white shadow-2xs font-extrabold border-emerald-500';
     borderAccentClass = 'border-l-[5px] border-l-emerald-500';
-    bgCardTint = 'bg-emerald-50/25 dark:bg-emerald-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-emerald-500';
   } else if (status === 'Handover') {
     statusBadgeClass = 'bg-blue-600 text-white dark:bg-blue-600 dark:text-white shadow-2xs font-extrabold border-blue-500';
     borderAccentClass = 'border-l-[5px] border-l-blue-500';
-    bgCardTint = 'bg-blue-50/25 dark:bg-blue-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-blue-500';
   } else if (status === 'On process') {
     statusBadgeClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white shadow-2xs font-extrabold border-amber-400';
     borderAccentClass = 'border-l-[5px] border-l-amber-500';
-    bgCardTint = 'bg-amber-50/30 dark:bg-amber-950/20';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-amber-500';
   } else if (status === 'Canceled') {
     statusBadgeClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white shadow-2xs font-extrabold border-rose-500';
     borderAccentClass = 'border-l-[5px] border-l-rose-500';
-    bgCardTint = 'bg-rose-50/25 dark:bg-rose-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-rose-500';
   } else {
     statusBadgeClass = 'bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white shadow-2xs font-extrabold border-indigo-500';
     borderAccentClass = 'border-l-[5px] border-l-indigo-500';
-    bgCardTint = 'bg-indigo-50/25 dark:bg-indigo-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-indigo-500';
   }
 
   const storeUpper = (p.store || '').toUpperCase();
@@ -36040,6 +36085,7 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
         onDragOver={(e) => handleRowDragOver(e, p, idx)}
         onDrop={(e) => isTarget && handleRowDrop(e, p.id!, dragOverTarget.position)}
         onClick={() => onProjectClick(p)}
+        style={p.bgColor ? { backgroundColor: p.bgColor } : undefined}
         className={`relative ${bgCardTint} border ${
           isJustDropped
             ? 'border-emerald-500 ring-2 ring-emerald-500/50 scale-[1.01] transition-all duration-700'
@@ -36421,12 +36467,24 @@ export function drawGeneralCanvas({
     const y = headerHeight + i * rowHeight;
     const status = getStatus(item.computedTakStart, item.computedTakCompl, item.computedOpening || item.opening, item.code);
     
-    if (isDark) {
-      ctx.fillStyle = (i % 2 === 0) ? '#18181b' : '#202025';
+    if (item.bgColor) {
+      ctx.fillStyle = item.bgColor;
+    } else if (isDark) {
+      ctx.fillStyle = (i % 2 === 0) ? '#222226' : '#29292e';
     } else {
       ctx.fillStyle = (i % 2 === 0) ? '#ffffff' : '#f8fafc';
     }
     ctx.fillRect(0, y, totalWidth, rowHeight);
+
+    // Left status accent strip on row
+    let accentColor = '#6366f1'; // default
+    if (status === 'Completed') accentColor = '#10b981';
+    else if (status === 'Handover') accentColor = '#3b82f6';
+    else if (status === 'On process') accentColor = '#f59e0b';
+    else if (status === 'Canceled') accentColor = '#f43f5e';
+    
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(0, y, 5, rowHeight);
     
     ctx.strokeStyle = isDark ? '#2a2a2e' : '#e2e8f0';
     ctx.lineWidth = 1;
@@ -38578,6 +38636,25 @@ export function HeaderMenuDrawer({
           >
             <Calendar className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
             <span>Đồng bộ Apple Calendar (iOS)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              useAppStore.getState().setIsGanttSettingsOpen(true);
+              if (activeTab !== 'gantt') {
+                onTabChange('gantt');
+              }
+              setIsMenuOpen(false);
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center justify-between transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span className="font-bold">Gantt Settings</span>
+            </div>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+              Gantt
+            </span>
           </button>
 
           {/* Quick Utilities in Hamburger Menu */}
@@ -41881,7 +41958,7 @@ describe('normalizeImageUrl', () => {
 
 
 === FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx ===
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -41953,6 +42030,35 @@ export function LayoutUnitLightboxModal({
     ? Math.min(6, enlargedImage.initialScale)
     : 1;
 
+  const [pdfPage, setPdfPage] = useState(1);
+
+  const isDirectPdf = useMemo(() => {
+    const u = (rawUrl || resolvedUrl || '').toLowerCase();
+    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
+  }, [rawUrl, resolvedUrl]);
+
+  const isDriveDoc = useMemo(() => {
+    const u = (rawUrl || '').toLowerCase();
+    return u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [rawUrl]);
+
+  const effectiveUrl = useMemo(() => {
+    if (isDriveDoc) {
+      const driveMatch =
+        rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
+        rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+      }
+      return rawUrl;
+    }
+    if (isDirectPdf && resolvedUrl) {
+      const baseUrl = resolvedUrl.split('#')[0];
+      return `${baseUrl}#page=${pdfPage}`;
+    }
+    return resolvedUrl;
+  }, [rawUrl, resolvedUrl, isDirectPdf, isDriveDoc, pdfPage]);
+
   const handleImageError = useCallback(() => {
     // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
     const driveMatch = rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
@@ -41987,6 +42093,11 @@ export function LayoutUnitLightboxModal({
       return;
     }
 
+    if (isDirectPdf || resolvedUrl.includes('drive.google.com')) {
+      setIsLoading(false);
+      return;
+    }
+
     // Fast check: If already cached in browser memory, show instantly
     const testImg = new Image();
     testImg.src = resolvedUrl;
@@ -41997,7 +42108,7 @@ export function LayoutUnitLightboxModal({
       testImg.onload = () => setIsLoading(false);
       testImg.onerror = () => handleImageError();
     }
-  }, [resolvedUrl, handleImageError]);
+  }, [resolvedUrl, handleImageError, isDirectPdf]);
 
   // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
   useEffect(() => {
@@ -42069,11 +42180,31 @@ export function LayoutUnitLightboxModal({
             <span className="font-bold text-xs sm:text-sm truncate">
               {enlargedImage.title || 'Image Preview'}
             </span>
+            {isDirectPdf && (
+              <div className="flex items-center gap-1.5 ml-4 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 shadow-inner">
+                <button
+                  onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors disabled:opacity-30"
+                  disabled={pdfPage <= 1}
+                  title="Trang trước"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 -rotate-90" />
+                </button>
+                <span className="text-xs font-bold px-1 min-w-[3rem] text-center">Page {pdfPage}</span>
+                <button
+                  onClick={() => setPdfPage(p => p + 1)}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+                  title="Trang sau"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4 rotate-90" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Zoom Control Buttons */}
-            {!imageError && (
+            {(!imageError && !isDirectPdf && !rawUrl.includes('drive.google.com')) && (
               <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
                 <button
                   type="button"
@@ -42149,14 +42280,45 @@ export function LayoutUnitLightboxModal({
           {isLoading && !imageError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/40 z-10 pointer-events-none">
               <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
-              <span className="text-xs">Đang tải hình ảnh...</span>
+              <span className="text-xs">Đang tải nội dung...</span>
             </div>
           )}
 
-          {!imageError ? (
+          {imageError ? (
+            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900/90 rounded-2xl border border-slate-700/60 shadow-xl">
+              <AlertCircle className="w-10 h-10 text-amber-400" />
+              <div>
+                <h4 className="text-sm font-bold text-white mb-1">
+                  Không thể hiển thị nội dung trực tiếp
+                </h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Link này có thể là trang web, thư mục chia sẻ hoặc yêu cầu quyền truy cập từ tài khoản của bạn.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <a
+                  href={rawUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Mở liên kết trong tab mới</span>
+                </a>
+              </div>
+            </div>
+          ) : (isDirectPdf || isDriveDoc || rawUrl.includes('drive.google.com')) ? (
+            <iframe 
+              key={`${effectiveUrl}_${pdfPage}`}
+              src={effectiveUrl} 
+              width="100%" 
+              style={{ height: '100%', minHeight: '500px', border: 'none' }}
+              allow="autoplay; fullscreen"
+            />
+          ) : (
             <TransformWrapper
               ref={transformRef}
-              initialScale={initialZoom}
+              initialScale={initialZoom > 1 ? initialZoom : 1.15}
               minScale={0.5}
               maxScale={8}
               centerOnInit
@@ -42182,29 +42344,6 @@ export function LayoutUnitLightboxModal({
                 />
               </TransformComponent>
             </TransformWrapper>
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900/90 rounded-2xl border border-slate-700/60 shadow-xl">
-              <AlertCircle className="w-10 h-10 text-amber-400" />
-              <div>
-                <h4 className="text-sm font-bold text-white mb-1">
-                  Không thể hiển thị ảnh trực tiếp
-                </h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Link này có thể là trang web, thư mục chia sẻ hoặc yêu cầu quyền truy cập từ tài khoản của bạn.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={rawUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Mở liên kết trong tab mới</span>
-                </a>
-              </div>
-            </div>
           )}
         </div>
 
@@ -42231,7 +42370,16 @@ export function LayoutUnitLightboxModal({
 === FILE: src/components/LayoutTabParts/LayoutUnitTooltip.tsx ===
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { cn, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../lib/utils';
+import { 
+  cn, 
+  extractAllProjectCodes, 
+  projectMatchesUnitCode, 
+  extractProjectMetadata,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries,
+  computePlanProgressPercent,
+  computeActProgressPercent
+} from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
@@ -42356,9 +42504,48 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     : '';
   const mdStatusColorClass = getMdStatusColorClass(mdStatus);
 
-  // Progress metrics
-  const planProgressPercent = hasProject ? (p?.computedPlanProgress ?? data.planProgressPercent ?? 0) : 0;
-  const actProgressPercent = hasProject ? (p?.computedActProgress ?? data.actProgressPercent ?? 0) : 0;
+  // Progress metrics & Delegation check (Strictly matching General Tab calculation)
+  const allStoreTasks = useAppStore.getState().tasks || [];
+  const storeDelegationGroups = useAppStore.getState().delegationGroups || [];
+  const projectTasks = allStoreTasks.filter((t) =>
+    (p?.id && String(t.projectId) === String(p.id)) ||
+    (p?.code && t.projectCode === p.code) ||
+    (data?.appProjectCode && t.projectCode === data.appProjectCode)
+  );
+
+  const planProgressPercent = hasProject
+    ? (projectTasks.length > 0
+        ? computePlanProgressPercent(projectTasks)
+        : ((p?.computedPlanProgress && p.computedPlanProgress > 0)
+            ? p.computedPlanProgress
+            : (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computePlanProgressFromSummaries(p.taskSummaries)
+                : (p?.computedPlanProgress ?? data.planProgressPercent ?? 0))))
+    : 0;
+
+  const actProgressPercent = hasProject
+    ? (projectTasks.length > 0
+        ? computeActProgressPercent(projectTasks, storeDelegationGroups)
+        : ((p?.computedActProgress && p.computedActProgress > 0)
+            ? p.computedActProgress
+            : (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computeActProgressFromSummaries(p.taskSummaries)
+                : (p?.computedActProgress ?? data.actProgressPercent ?? 0))))
+    : 0;
+
+  const hasProjectDelegation = hasProject && Boolean(
+    data.hasProjectDelegation ||
+    (p as any)?.delegation ||
+    (p as any)?.hasDelegation ||
+    (projectTasks.length > 0 && projectTasks.some((t) => Boolean(t.delegation))) ||
+    (p?.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+    (storeDelegationGroups && storeDelegationGroups.some((g: any) =>
+      (p?.code && g.projectCode === p.code) ||
+      (data?.appProjectCode && g.projectCode === data.appProjectCode) ||
+      (p?.id && String((g as any).projectId) === String(p.id)) ||
+      (projectTasks.some((t) => t.id === g.parentTaskId))
+    ))
+  );
 
   // Dates & Comments
   const computedTakStart = hasProject ? (p?.computedTakStart || p?.start || data.startDate || '') : '';
@@ -42543,6 +42730,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         <TooltipProgressBars
           planProgressPercent={planProgressPercent}
           actProgressPercent={actProgressPercent}
+          hasProjectDelegation={hasProjectDelegation}
         />
       )}
 
@@ -44516,45 +44704,49 @@ import React from 'react';
 interface TooltipProgressBarsProps {
   planProgressPercent: number;
   actProgressPercent: number;
+  hasProjectDelegation?: boolean;
 }
 
 export const TooltipProgressBars: React.FC<TooltipProgressBarsProps> = ({
   planProgressPercent,
   actProgressPercent,
+  hasProjectDelegation,
 }) => {
   return (
-    <div className="flex flex-col gap-1 px-0.5 pt-0.5">
+    <div className="flex flex-col gap-1.5 px-0.5 pt-0.5">
       {/* Plan Progress */}
       <div className="flex items-center gap-2">
-        <span className="text-[10.5px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[70px] shrink-0">
-          Plan Prg:
+        <span className="text-[10px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-11 shrink-0">
+          Plan:
         </span>
-        <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+        <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
           <div 
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300 shadow-2xs" 
             style={{ width: `${Math.min(100, Math.max(0, planProgressPercent))}%` }} 
           />
         </div>
-        <span className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300 w-9 text-right shrink-0">
+        <span className="text-xs font-bold font-mono text-blue-600 dark:text-blue-400 w-9 text-right shrink-0">
           {planProgressPercent}%
         </span>
       </div>
 
-      {/* Actual Progress */}
-      <div className="flex items-center gap-2">
-        <span className="text-[10.5px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-[70px] shrink-0">
-          Act Prg:
-        </span>
-        <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-          <div 
-            className="bg-emerald-500 h-2 rounded-full transition-all duration-300" 
-            style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
-          />
+      {/* Actual Progress - Only shown when project has active delegation (matching General Tab) */}
+      {hasProjectDelegation && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-slate-500 dark:text-[#a3a3a3] uppercase w-11 shrink-0">
+            Act:
+          </span>
+          <div className="flex-1 bg-slate-200/80 dark:bg-slate-700/80 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300 shadow-2xs" 
+              style={{ width: `${Math.min(100, Math.max(0, actProgressPercent))}%` }} 
+            />
+          </div>
+          <span className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400 w-9 text-right shrink-0">
+            {actProgressPercent}%
+          </span>
         </div>
-        <span className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300 w-9 text-right shrink-0">
-          {actProgressPercent}%
-        </span>
-      </div>
+      )}
     </div>
   );
 };
@@ -45732,7 +45924,11 @@ import {
   extractAllProjectCodes, 
   projectMatchesUnitCode, 
   extractProjectMetadata, 
-  projectMatchesScope 
+  projectMatchesScope,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries,
+  computePlanProgressPercent,
+  computeActProgressPercent
 } from '../../lib/utils';
 
 export interface BuildAggregatedUnitDataParams {
@@ -46029,8 +46225,38 @@ export function buildAggregatedUnitData({
 
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
-          dataMap[code].planProgressPercent = p.computedPlanProgress ?? 0;
-          dataMap[code].actProgressPercent = p.computedActProgress ?? 0;
+
+          const projPlanProgress = (allMatchedTasks && allMatchedTasks.length > 0)
+            ? computePlanProgressPercent(allMatchedTasks)
+            : ((p.computedPlanProgress && p.computedPlanProgress > 0)
+                ? p.computedPlanProgress
+                : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? computePlanProgressFromSummaries(p.taskSummaries)
+                    : (p.computedPlanProgress ?? 0)));
+
+          const projActProgress = (allMatchedTasks && allMatchedTasks.length > 0)
+            ? computeActProgressPercent(allMatchedTasks, delegationGroups)
+            : ((p.computedActProgress && p.computedActProgress > 0)
+                ? p.computedActProgress
+                : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? computeActProgressFromSummaries(p.taskSummaries)
+                    : (p.computedActProgress ?? 0)));
+
+          const hasProjectDelegation = Boolean(
+            (p as any).delegation ||
+            (p as any).hasDelegation ||
+            (allMatchedTasks.length > 0 && allMatchedTasks.some((t: any) => Boolean(t.delegation))) ||
+            (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.some((ts: any) => Boolean(ts.delegation))) ||
+            (delegationGroups && Array.isArray(delegationGroups) && delegationGroups.some((g: any) =>
+              (p.code && g.projectCode === p.code) ||
+              (p.id && String(g.projectId) === String(p.id)) ||
+              (allMatchedTasks.some((t: any) => t.id === g.parentTaskId))
+            ))
+          );
+
+          dataMap[code].planProgressPercent = projPlanProgress;
+          dataMap[code].actProgressPercent = projActProgress;
+          dataMap[code].hasProjectDelegation = hasProjectDelegation;
 
           const hasProjectImages = Boolean(
             (p.thumbnail && typeof p.thumbnail === 'string' && p.thumbnail.trim()) ||
@@ -49354,45 +49580,60 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
       return true;
     });
 
-    if (matchedZustandTasks.length > 0) {
-      return matchedZustandTasks;
-    }
-
-    if (project.taskSummaries && project.taskSummaries.length > 0) {
-      return project.taskSummaries.map((ts: any, idx: number) => {
-        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
-        const derivedOrderIndex =
-          subtaskNum !== null
-            ? subtaskNum - 1
-            : ts.orderIndex !== undefined && ts.orderIndex !== null
-            ? ts.orderIndex
-            : idx;
-        const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
-
-        let durStr = '1';
-        if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
-          durStr = String(ts.duration).trim();
-        }
-
-        return {
-          id: ts.id || ts.taskId || `ts_${idx}`,
-          name: ts.name || 'Task',
-          start: ts.start || '',
-          finish: ts.finish || '',
-          duration: durStr,
-          taskCodePhu: fallbackCode,
-          runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
-          approval: ts.approval,
-          party: ts.party,
-          parentTaskId: ts.parentTaskId,
-          projectCode: project.code,
-          projectId: project.id,
-          orderIndex: derivedOrderIndex,
-        } as Task;
+    const rawTasks = matchedZustandTasks;
+    if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+      const existingMap = new Map<string, any>();
+      rawTasks.forEach(t => {
+        if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+        if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        const nameKey = String(t.name || '').trim().toLowerCase();
+        if (nameKey) existingMap.set(nameKey, t);
       });
+
+      const mergedList = [...rawTasks];
+      project.taskSummaries.forEach((ts: any, idx: number) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const match = (tsId && existingMap.has(tsId)) ||
+                      (tsCode && existingMap.has(tsCode)) ||
+                      (tsName && existingMap.has(tsName));
+        if (!match) {
+          const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
+          const derivedOrderIndex =
+            subtaskNum !== null
+              ? subtaskNum - 1
+              : ts.orderIndex !== undefined && ts.orderIndex !== null
+              ? ts.orderIndex
+              : idx;
+          const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
+
+          let durStr = '1';
+          if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
+            durStr = String(ts.duration).trim();
+          }
+
+          mergedList.push({
+            id: ts.id || ts.taskId || `ts_${idx}`,
+            name: ts.name || 'Task',
+            start: ts.start || '',
+            finish: ts.finish || '',
+            duration: durStr,
+            taskCodePhu: fallbackCode,
+            runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
+            approval: ts.approval,
+            party: ts.party,
+            parentTaskId: ts.parentTaskId,
+            projectCode: project.code,
+            projectId: project.id,
+            orderIndex: derivedOrderIndex,
+          } as Task);
+        }
+      });
+      return mergedList;
     }
 
-    return [];
+    return rawTasks;
   }, [project, tasks]);
 
   // Exact Main Gantt (useGanttVirtualization.ts) task ordering & hierarchy
@@ -63868,7 +64109,17 @@ import { useMemo } from 'react';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
+import { 
+  enrichProjects, 
+  getStatus, 
+  computeProjectActStatus, 
+  extractAllProjectCodes, 
+  projectMatchesUnitCode, 
+  extractProjectMetadata, 
+  projectMatchesScope,
+  computePlanProgressFromSummaries,
+  computeActProgressFromSummaries
+} from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 
 export interface DynamicUnitSummaryItem {
@@ -64338,8 +64589,20 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          item.planProgress = p.computedPlanProgress ?? 0;
-          item.actProgress = p.computedActProgress ?? 0;
+          const projPlanProgress = (p.computedPlanProgress && p.computedPlanProgress > 0)
+            ? p.computedPlanProgress
+            : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computePlanProgressFromSummaries(p.taskSummaries)
+                : (p.computedPlanProgress ?? 0));
+
+          const projActProgress = (p.computedActProgress && p.computedActProgress > 0)
+            ? p.computedActProgress
+            : (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? computeActProgressFromSummaries(p.taskSummaries)
+                : (p.computedActProgress ?? 0));
+
+          item.planProgress = projPlanProgress;
+          item.actProgress = projActProgress;
           item.matchedTasksCount = matchedTaskSet.size;
           item.task = taskSummaryStr || item.task || '';
           item.activeTasks = activeTaskNames;
@@ -69099,7 +69362,7 @@ ProjectDelegationSubTaskItem.displayName = 'ProjectDelegationSubTaskItem';
 
 === FILE: src/components/ProjectModalParts/ProjectDetailsForm.tsx ===
 import React, { memo } from 'react';
-import { Target, Plus } from 'lucide-react';
+import { Target, Plus, Palette, Check } from 'lucide-react';
 import { Project, AppUser } from '../../types';
 import { FastInput } from '../FastInput';
 import { FastTextarea } from './FastTextarea';
@@ -69395,6 +69658,70 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
             disabled={!canWrite}
             className="w-full text-sm"
           />
+        </div>
+
+                {/* Project Background Color Selector */}
+        <div className="mb-5 p-3.5 rounded-xl border border-slate-200/80 dark:border-[#3a3a3e] bg-slate-50/70 dark:bg-[#1a1a1d]">
+          <label className="block text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase mb-2 flex items-center gap-1.5">
+            <Palette className="w-4 h-4 text-blue-500" />
+            <span>Card / Row Background Color</span>
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { label: 'Default', hex: '', bgLight: 'bg-white', bgDark: 'dark:bg-[#1e1e20]' },
+              { label: 'Blue', hex: '#eff6ff', darkHex: '#172554', bgLight: 'bg-blue-100', bgDark: 'dark:bg-blue-950' },
+              { label: 'Indigo', hex: '#e0e7ff', darkHex: '#1e1b4b', bgLight: 'bg-indigo-100', bgDark: 'dark:bg-indigo-950' },
+              { label: 'Emerald', hex: '#ecfdf5', darkHex: '#064e3b', bgLight: 'bg-emerald-100', bgDark: 'dark:bg-emerald-950' },
+              { label: 'Amber', hex: '#fffbeb', darkHex: '#451a03', bgLight: 'bg-amber-100', bgDark: 'dark:bg-amber-950' },
+              { label: 'Rose', hex: '#fff1f2', darkHex: '#4c0519', bgLight: 'bg-rose-100', bgDark: 'dark:bg-rose-950' },
+              { label: 'Purple', hex: '#faf5ff', darkHex: '#3b0764', bgLight: 'bg-purple-100', bgDark: 'dark:bg-purple-950' },
+              { label: 'Slate', hex: '#f1f5f9', darkHex: '#27272a', bgLight: 'bg-slate-200', bgDark: 'dark:bg-slate-800' },
+            ].map((preset) => {
+              const isSelected = (formData.bgColor || '') === preset.hex;
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  disabled={!canWrite}
+                  onClick={() => setFormData({ ...formData, bgColor: preset.hex })}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95',
+                    preset.bgLight,
+                    preset.bgDark,
+                    isSelected
+                      ? 'border-blue-600 ring-2 ring-blue-500/50 text-blue-700 dark:text-blue-300'
+                      : 'border-slate-300 dark:border-[#444446] text-slate-700 dark:text-slate-200 hover:border-slate-400'
+                  )}
+                >
+                  <span
+                    className="w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-600 shrink-0"
+                    style={{ backgroundColor: preset.hex || 'transparent' }}
+                  />
+                  <span>{preset.label}</span>
+                  {isSelected && <Check className="w-3 h-3 ml-0.5 text-blue-600 dark:text-blue-400" />}
+                </button>
+              );
+            })}
+            <div className="flex items-center gap-1.5 ml-auto border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 bg-white dark:bg-[#1e1e20]">
+              <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">Custom Hex:</span>
+              <input
+                type="color"
+                value={formData.bgColor || '#ffffff'}
+                disabled={!canWrite}
+                onChange={(e) => setFormData({ ...formData, bgColor: e.target.value })}
+                className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+                title="Choose custom hex color"
+              />
+              <input
+                type="text"
+                value={formData.bgColor || ''}
+                disabled={!canWrite}
+                onChange={(e) => setFormData({ ...formData, bgColor: e.target.value })}
+                placeholder="#eff6ff"
+                className="w-20 font-mono text-xs p-0.5 outline-none bg-transparent text-slate-800 dark:text-slate-200 uppercase"
+              />
+            </div>
+          </div>
         </div>
 
         {/* MD Status & Description */}
@@ -101580,6 +101907,7 @@ export const TaskSchema = z.object({
   orderIndex: z.number().nullable().optional(),
   comments: z.array(z.any()).nullable().optional(),
   textColor: z.string().nullable().optional(),
+  bgColor: z.string().nullable().optional(),
   taskCodePhu: z.string().nullable().optional(),
   parentTaskId: z.string().nullable().optional(),
   isDeleted: z.boolean().nullable().optional()
@@ -101621,6 +101949,7 @@ export const ProjectSchema = z.object({
   delegation: z.boolean().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   textColor: z.string().nullable().optional(),
+  bgColor: z.string().nullable().optional(),
   comments: z.array(z.any()).nullable().optional(),
   mdStatus: z.string().nullable().optional(),
   isPinned: z.boolean().nullable().optional(),
@@ -107398,6 +107727,11 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   isCommandPaletteOpen: false,
   setIsCommandPaletteOpen: (isCommandPaletteOpen) => set({ isCommandPaletteOpen }),
 
+  isGanttSettingsOpen: false,
+  setIsGanttSettingsOpen: (isGanttSettingsOpen) => set({ isGanttSettingsOpen }),
+  ganttShowDependencies: true,
+  setGanttShowDependencies: (ganttShowDependencies) => set({ ganttShowDependencies }),
+
   quickNavTarget: null,
   setQuickNavTarget: (quickNavTarget) => set({ quickNavTarget }),
 
@@ -107708,6 +108042,10 @@ export interface UISlice {
   isGanttWidthChanged: boolean;
   setIsGanttWidthChanged: (val: boolean) => void;
   saveGanttDayWidth: () => void;
+  isGanttSettingsOpen: boolean;
+  setIsGanttSettingsOpen: (val: boolean) => void;
+  ganttShowDependencies: boolean;
+  setGanttShowDependencies: (val: boolean) => void;
 
   // UI State
   activeTab: TabId;
@@ -108230,6 +108568,7 @@ export interface Project {
   delegation?: boolean;
   updatedAt?: string;
   textColor?: string;
+  bgColor?: string;
   comments?: TaskComment[];
   mdStatus?: MdStatusType | string;
   isPinned?: boolean;

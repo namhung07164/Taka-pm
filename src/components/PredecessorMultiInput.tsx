@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { Component, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Task, Project } from '../types';
 import { Search, X, Check, ExternalLink, Sparkles, ArrowRight, Link2, AlertTriangle, Loader2, Plus, Minus } from 'lucide-react';
 import { cn } from '../lib/utils';

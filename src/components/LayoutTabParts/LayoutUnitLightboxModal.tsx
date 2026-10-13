@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -73,17 +73,31 @@ export function LayoutUnitLightboxModal({
   const [pdfPage, setPdfPage] = useState(1);
 
   const isDirectPdf = useMemo(() => {
-    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
-    return u.endsWith('.pdf');
-  }, [resolvedUrl]);
+    const u = (rawUrl || resolvedUrl || '').toLowerCase();
+    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
+  }, [rawUrl, resolvedUrl]);
+
+  const isDriveDoc = useMemo(() => {
+    const u = (rawUrl || '').toLowerCase();
+    return u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [rawUrl]);
 
   const effectiveUrl = useMemo(() => {
+    if (isDriveDoc) {
+      const driveMatch =
+        rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
+        rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+      }
+      return rawUrl;
+    }
     if (isDirectPdf && resolvedUrl) {
       const baseUrl = resolvedUrl.split('#')[0];
       return `${baseUrl}#page=${pdfPage}`;
     }
     return resolvedUrl;
-  }, [resolvedUrl, isDirectPdf, pdfPage]);
+  }, [rawUrl, resolvedUrl, isDirectPdf, isDriveDoc, pdfPage]);
 
   const handleImageError = useCallback(() => {
     // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
@@ -333,13 +347,13 @@ export function LayoutUnitLightboxModal({
                 </a>
               </div>
             </div>
-          ) : (isDirectPdf || rawUrl.includes('drive.google.com')) ? (
+          ) : (isDirectPdf || isDriveDoc || rawUrl.includes('drive.google.com')) ? (
             <iframe 
               key={`${effectiveUrl}_${pdfPage}`}
               src={effectiveUrl} 
               width="100%" 
-              style={{ height: '100%', border: 'none' }}
-              allow="autoplay"
+              style={{ height: '100%', minHeight: '500px', border: 'none' }}
+              allow="autoplay; fullscreen"
             />
           ) : (
             <TransformWrapper

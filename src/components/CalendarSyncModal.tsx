@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
 import Draggable from 'react-draggable';
 import { 
   X, 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
 import { X, ArrowLeft } from 'lucide-react';
 import { LiveLayoutViewer } from '../LiveLayoutViewer';

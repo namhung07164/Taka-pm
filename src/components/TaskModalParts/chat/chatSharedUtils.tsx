@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { safeGetItemLocal, safeSetItemLocal } from '../../../lib/storage';
 import { LazyImage } from '../../LazyImage';
 import { useAppStore } from '../../../store/useAppStore';

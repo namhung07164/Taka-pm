@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task, AppUser, DelegationGroup } from '../../types';
 import { useAppStore } from "../../store/useAppStore";
 import { TaskChatDelegationSection } from './chat/TaskChatDelegationSection';

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { Sparkles, Search } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 

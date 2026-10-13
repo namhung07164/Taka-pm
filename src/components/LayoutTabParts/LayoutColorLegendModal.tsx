@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { FC, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Draggable from 'react-draggable';
 import { Palette, X, GripHorizontal, Check } from 'lucide-react';

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, memo } from 'react';
 import { DollarSign, Clock, Layers, CalendarRange, TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { EVMMetrics, CashflowData } from './executiveDashboardTypes';

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { FC, lazy, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize, Maximize2, ExternalLink, FileText, AlertCircle, RefreshCw } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 

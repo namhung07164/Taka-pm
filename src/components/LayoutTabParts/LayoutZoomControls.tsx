@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Dispatch, FC, SetStateAction, memo } from 'react';
 import { Bell, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 

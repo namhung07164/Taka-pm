@@ -66,6 +66,7 @@ export interface Project {
   delegation?: boolean;
   updatedAt?: string;
   textColor?: string;
+  bgColor?: string;
   comments?: TaskComment[];
   mdStatus?: MdStatusType | string;
   isPinned?: boolean;

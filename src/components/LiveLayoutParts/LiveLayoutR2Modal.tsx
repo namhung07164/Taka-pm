@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC } from 'react';
 import { X, Cloud, Key, Save } from 'lucide-react';
 
 export interface LiveLayoutR2ModalProps {

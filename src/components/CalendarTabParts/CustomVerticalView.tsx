@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { FC, useMemo } from 'react';
 import { format, addDays, subDays, startOfDay, endOfDay } from 'date-fns';
 import { CalendarEvent } from './calendarTypes';
 

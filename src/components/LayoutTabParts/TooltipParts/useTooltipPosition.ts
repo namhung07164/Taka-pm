@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { TooltipHoverInfo } from './tooltipTypes';
 
 interface UseTooltipPositionParams {

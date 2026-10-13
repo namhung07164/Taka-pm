@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
 import { useLanguage } from '../lib/LanguageContext';
 import { cn } from '../lib/utils';

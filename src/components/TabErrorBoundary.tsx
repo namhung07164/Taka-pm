@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Component, ReactNode } from 'react';
 import { RotateCw, AlertTriangle } from 'lucide-react';
 
 interface TabErrorBoundaryProps {
