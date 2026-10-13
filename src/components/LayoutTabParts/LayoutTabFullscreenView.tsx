@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
-import { X, ZoomIn, ZoomOut, Maximize, ArrowLeft, RefreshCw, Layers } from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { X, ArrowLeft } from 'lucide-react';
 import { LiveLayoutViewer } from '../LiveLayoutViewer';
 import { PdfOrImageViewer } from './PdfOrImageViewer';
 
@@ -237,19 +236,13 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                   onClearFocus={onClearFocus}
                 />
               </div>
-            ) : url?.includes('drive.google.com') ? (
-              <iframe 
-                src={getCleanUrl(url)} 
-                width="100%" 
-                style={{ height: '100%', border: 'none' }}
-                allow="autoplay"
-              />
             ) : (
               <PdfOrImageViewer
                 url={url}
                 getCleanUrl={getCleanUrl}
                 fallbackSvg={fallbackSvg}
                 isFullscreen={true}
+                alt="Layout Fullscreen"
               />
             )}
           </motion.div>
