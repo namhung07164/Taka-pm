@@ -63,7 +63,7 @@ export function startDeltaRealtimeListener(): () => void {
         snap.docChanges().forEach((c) => {
           if (c.type === 'added') buffer.push(c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta);
         });
-        if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 60);
+        if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
       },
       (err) => {
         console.warn('[deltaRealtime] listener error, retrying:', err);
