@@ -1,7 +1,7 @@
 import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, APP_ID } from './firebase';
-import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime } from './deltaSyncService';
+import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime, pullAndApplyDeltas } from './deltaSyncService';
 import type { TakaDelta } from '../types';
 
 /**
@@ -84,8 +84,25 @@ export function startDeltaRealtimeListener(): () => void {
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
+      // Force socket reconnect on iOS / Safari tab restore to recover from suspended WebChannel connections
+      detach();
       attach();
+      pullAndApplyDeltas().catch(() => {});
     }
+  };
+
+  const handlePageShow = (e: PageTransitionEvent) => {
+    if (e.persisted) {
+      detach();
+      attach();
+      pullAndApplyDeltas().catch(() => {});
+    }
+  };
+
+  const handleOnline = () => {
+    detach();
+    attach();
+    pullAndApplyDeltas().catch(() => {});
   };
 
   const unsubAuth = onAuthStateChanged(auth, (user) => {
@@ -93,12 +110,17 @@ export function startDeltaRealtimeListener(): () => void {
     if (user) attach();
     else detach();
   });
+
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pageshow', handlePageShow as any);
+  window.addEventListener('online', handleOnline);
 
   return () => {
     stopped = true;
     unsubAuth();
     document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('pageshow', handlePageShow as any);
+    window.removeEventListener('online', handleOnline);
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);

@@ -56,7 +56,8 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
       const updated = prevAll.map(t => childIds.includes(t.id) ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t);
       useAppStore.getState().setTasks(updated);
       await Promise.all(childIds.map(id => (localDb.tasks.update as any)(id, { parentTaskId: null, parentId: null, updatedAt: now })));
-      const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+      const { doc, deleteField } = await import('firebase/firestore');
+      const { writeBatch } = await import('../../lib/firestoreWrites');
       const { db, APP_ID } = await import('../../lib/firebase');
       const batch = writeBatch(db);
       childIds.forEach(id => {

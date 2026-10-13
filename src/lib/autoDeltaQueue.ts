@@ -26,7 +26,7 @@ export const LOGICAL_TO_FS: Record<Logical, string> = {
   taka_delegations: 'taka_delegation_groups',
 };
 
-const FLUSH_DELAY_MS = 1500;
+const FLUSH_DELAY_MS = 200;
 const MAX_ITEMS_PER_DELTA = 300;
 const EXPLICIT_BEFORE_MS = 5000;
 const EXPLICIT_AFTER_MS = 8000;
@@ -39,10 +39,11 @@ const keyOf = (c: string, id: string) => `${c}:${id}`;
 
 export function resolveLogicalCollection(docPath: string): Logical | null {
   if (!docPath) return null;
-  const parts = docPath.split('/');
-  // artifacts/{app}/public/data/{collection}/{docId}
-  if (parts.length < 6 || parts[0] !== 'artifacts') return null;
-  return FS_TO_LOGICAL[parts[parts.length - 2]] || null;
+  if (docPath.includes('taka_projects')) return 'taka_projects';
+  if (docPath.includes('taka_tasks')) return 'taka_tasks';
+  if (docPath.includes('taka_costs')) return 'taka_costs';
+  if (docPath.includes('taka_delegation')) return 'taka_delegations';
+  return null;
 }
 
 export function markExplicitDelta(items: Array<{ docId?: string; collectionName?: string }>): void {

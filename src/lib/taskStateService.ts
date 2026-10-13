@@ -391,7 +391,8 @@ export async function deleteTaskStateUnified(
   // 5. Đồng bộ đánh dấu isDeleted = true & Delta Sync lên Firestore cho các task bị xóa
   setTimeout(async () => {
     try {
-      const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+      const { doc, deleteField } = await import('firebase/firestore');
+      const { writeBatch } = await import('./firestoreWrites');
       const { db, APP_ID } = await import('./firebase');
       const { recordBatchDeltas } = await import('./deltaSyncService');
       const batch = writeBatch(db);
@@ -542,7 +543,8 @@ export async function deleteProjectStateUnified(
 
   // 4. Batch commit đánh dấu isDeleted = true trên Firestore
   try {
-    const { doc, writeBatch } = await import('firebase/firestore');
+    const { doc } = await import('firebase/firestore');
+    const { writeBatch } = await import('./firestoreWrites');
     const { db, APP_ID } = await import('./firebase');
     const { recordBatchDeltas } = await import('./deltaSyncService');
 

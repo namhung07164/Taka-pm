@@ -177,7 +177,8 @@ export function useTaskModalLogic({
 
     // 3. Firestore update
     try {
-      const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+      const { doc, deleteField } = await import('firebase/firestore');
+      const { writeBatch } = await import('../lib/firestoreWrites');
       const { db, APP_ID } = await import('../lib/firebase');
       const { recordDelta } = await import('../lib/deltaSyncService');
       const batch = writeBatch(db);
@@ -239,7 +240,8 @@ export function useTaskModalLogic({
 
         // 2. Commit batch to Firestore
         try {
-          const { doc, writeBatch, deleteField } = await import('firebase/firestore');
+          const { doc, deleteField } = await import('firebase/firestore');
+          const { writeBatch } = await import('../lib/firestoreWrites');
           const { db, APP_ID } = await import('../lib/firebase');
           const { recordBatchDeltas } = await import('../lib/deltaSyncService');
           const batch = writeBatch(db);

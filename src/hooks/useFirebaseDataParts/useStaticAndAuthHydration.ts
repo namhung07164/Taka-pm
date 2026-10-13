@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { doc, writeBatch } from "firebase/firestore";
+import { doc } from "firebase/firestore";
+import { writeBatch } from "../../lib/firestoreWrites";
 import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
 import { auth, db } from "../../lib/firebase";
