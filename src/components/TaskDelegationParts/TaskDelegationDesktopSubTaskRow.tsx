@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Trash2, Paperclip, ExternalLink } from 'lucide-react';
+import { Search, Trash2, Paperclip, ExternalLink, FileText } from 'lucide-react';
 import { DelegationGroup, DelegationSubTask, AppUser, Project } from '../../types';
 import { cn, formatDisplayDateMain, formatDisplayDateTime, ensureUrlProtocol, resolveActualStatus, getActStatusPercent } from '../../lib/utils';
 import { MultiSelectInput } from '../DelegationParts/MultiSelectInput';
