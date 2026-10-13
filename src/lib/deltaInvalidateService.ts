@@ -79,20 +79,17 @@ function isCoveredByLiveListener(coll: Logical, docId: string): boolean {
 async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
   if (!ids || ids.length === 0) return [];
 
-  // B2: Skip docs covered by live onSnapshot listener
-  const uncoveredIds = ids.filter((id) => !isCoveredByLiveListener(coll, id));
-  if (uncoveredIds.length === 0) return [];
-
-  if (coll === 'taka_projects') return uncoveredIds;
+  // Always re-read invalidated project docs to guarantee cross-device sync
+  if (coll === 'taka_projects') return ids;
 
   const store = useAppStore.getState();
 
   if (coll === 'taka_tasks') {
-    if (store.isTasksRequested) return uncoveredIds;
+    if (store.isTasksRequested) return ids;
     const storeTaskIds = new Set((store.tasks || []).map((t) => t.id));
     const relevant: string[] = [];
     const missing: string[] = [];
-    for (const id of uncoveredIds) {
+    for (const id of ids) {
       if (storeTaskIds.has(id)) relevant.push(id);
       else missing.push(id);
     }
@@ -106,11 +103,11 @@ async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
   }
 
   if (coll === 'taka_costs') {
-    if (store.isCostsRequested) return uncoveredIds;
+    if (store.isCostsRequested) return ids;
     const storeCostIds = new Set((store.costs || []).map((c) => c.id));
     const relevant: string[] = [];
     const missing: string[] = [];
-    for (const id of uncoveredIds) {
+    for (const id of ids) {
       if (storeCostIds.has(id)) relevant.push(id);
       else missing.push(id);
     }
@@ -124,11 +121,11 @@ async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
   }
 
   if (coll === 'taka_delegations') {
-    if (store.isDelegationsRequested) return uncoveredIds;
+    if (store.isDelegationsRequested) return ids;
     const storeGroupIds = new Set((store.delegationGroups || []).map((g) => g.id));
     const relevant: string[] = [];
     const missing: string[] = [];
-    for (const id of uncoveredIds) {
+    for (const id of ids) {
       if (storeGroupIds.has(id)) relevant.push(id);
       else missing.push(id);
     }
@@ -141,7 +138,7 @@ async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
     return relevant;
   }
 
-  return uncoveredIds;
+  return ids;
 }
 
 async function fetchChunk(coll: Logical, ids: string[]) {

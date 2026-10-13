@@ -17,6 +17,7 @@ import { usePerformanceStore } from '../store/usePerformanceStore';
 import { safeGetItemLocal, safeSetItemLocal } from './storage';
 import { TakaDelta, TakaDeltaItem, Project, Task, Cost, DelegationGroup } from '../types';
 import { touchYearMeta, getMemoryYearsMeta } from './yearsFingerprintService';
+import { localDb } from './localDb';
 import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
 import { triggerBatchChangeFlash } from './changeFlashService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
@@ -48,12 +49,22 @@ export function getRestoreCutoffTimestamp(): number {
  * Prevents auto-reading / re-applying faulty historical changes generated before a version restore.
  * Call this function immediately when a version restore or full replace operation is executed.
  */
-export function markRestoreVersionCompleted(cutoffMs?: number): void {
+export function markRestoreVersionCompleted(cutoffMs?: number, isRemoteSignal?: boolean): void {
   const now = cutoffMs || Date.now();
   safeSetItemLocal(RESTORE_CUTOFF_KEY, String(now));
   safeSetItemLocal(LAST_SYNC_KEY, String(now));
   appliedDeltaIds.clear();
   console.log(`[deltaSync] Restore cutoff set to ${now} (${new Date(now).toISOString()}). Past deltas strictly blocked.`);
+
+  if (!isRemoteSignal) {
+    recordDelta({
+      docId: 'sys_restore_signal',
+      collectionName: 'taka_projects',
+      action: 'update',
+      data: { restoreCutoff: now, type: 'VERSION_RESTORE' },
+      updatedBy: 'system_restore',
+    }).catch(() => {});
+  }
 }
 
 // The sync cursor is serverTime (server arrival time), NOT numericTime: a delta created offline carries an old
@@ -317,6 +328,18 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   deltas.forEach((delta) => {
     if (deltaTime(delta) > maxTime) {
       maxTime = deltaTime(delta);
+    }
+
+    if (delta.docId === 'sys_restore_signal' || delta.data?.type === 'VERSION_RESTORE') {
+      const cutoff = delta.data?.restoreCutoff || deltaTime(delta);
+      if (cutoff > getRestoreCutoffTimestamp()) {
+        markRestoreVersionCompleted(cutoff, true);
+        localDb.projects.clear().catch(() => {});
+        localDb.tasks.clear().catch(() => {});
+        localDb.costs.clear().catch(() => {});
+        localDb.delegations.clear().catch(() => {});
+      }
+      return;
     }
 
     // 1. Skip self-mutations on this same tab/session to prevent typing jitter (Rule 2)
