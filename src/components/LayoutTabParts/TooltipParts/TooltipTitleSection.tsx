@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React from 'react';
 import { Project } from '../../../types';
 import { cn } from '../../../lib/utils';
 

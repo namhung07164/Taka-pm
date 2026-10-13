@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { Project, DelegationGroup } from '../../types';
 import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { DetailTableRow, SortConfig } from './detailTypes';

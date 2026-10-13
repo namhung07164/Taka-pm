@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Project, Task, AppUser } from '../../types';
 import { TimeUnit, GanttTableRow as GanttRowType, DependencyLine } from './ganttTypes';

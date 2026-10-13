@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { X, Bell } from 'lucide-react';
 

@@ -1,4 +1,4 @@
-import { ComponentType, LazyExoticComponent, lazy } from 'react';
+import { ComponentType, lazy, LazyExoticComponent } from 'react';
 
 /**
  * Robust lazy loader with exponential backoff retry and chunk error handling.

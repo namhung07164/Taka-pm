@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   TAB_CONFIG,
   safeJSONParse,

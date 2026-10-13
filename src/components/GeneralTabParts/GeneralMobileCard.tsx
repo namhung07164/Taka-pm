@@ -1,4 +1,4 @@
-import React, { Fragment, memo } from 'react';
+import React, { memo } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget } from './generalTypes';
 import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
@@ -48,23 +48,23 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
   if (status === 'Completed') {
     statusBadgeClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white shadow-2xs font-extrabold border-emerald-500';
     borderAccentClass = 'border-l-[5px] border-l-emerald-500';
-    bgCardTint = 'bg-emerald-50/25 dark:bg-emerald-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-emerald-500';
   } else if (status === 'Handover') {
     statusBadgeClass = 'bg-blue-600 text-white dark:bg-blue-600 dark:text-white shadow-2xs font-extrabold border-blue-500';
     borderAccentClass = 'border-l-[5px] border-l-blue-500';
-    bgCardTint = 'bg-blue-50/25 dark:bg-blue-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-blue-500';
   } else if (status === 'On process') {
     statusBadgeClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white shadow-2xs font-extrabold border-amber-400';
     borderAccentClass = 'border-l-[5px] border-l-amber-500';
-    bgCardTint = 'bg-amber-50/30 dark:bg-amber-950/20';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-amber-500';
   } else if (status === 'Canceled') {
     statusBadgeClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white shadow-2xs font-extrabold border-rose-500';
     borderAccentClass = 'border-l-[5px] border-l-rose-500';
-    bgCardTint = 'bg-rose-50/25 dark:bg-rose-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-rose-500';
   } else {
     statusBadgeClass = 'bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white shadow-2xs font-extrabold border-indigo-500';
     borderAccentClass = 'border-l-[5px] border-l-indigo-500';
-    bgCardTint = 'bg-indigo-50/25 dark:bg-indigo-950/15';
+    bgCardTint = 'bg-white dark:bg-[#1f2023] shadow-md border-l-4 border-l-indigo-500';
   }
 
   const storeUpper = (p.store || '').toUpperCase();
@@ -139,6 +139,7 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
         onDragOver={(e) => handleRowDragOver(e, p, idx)}
         onDrop={(e) => isTarget && handleRowDrop(e, p.id!, dragOverTarget.position)}
         onClick={() => onProjectClick(p)}
+        style={p.bgColor ? { backgroundColor: p.bgColor } : undefined}
         className={`relative ${bgCardTint} border ${
           isJustDropped
             ? 'border-emerald-500 ring-2 ring-emerald-500/50 scale-[1.01] transition-all duration-700'

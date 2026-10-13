@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Project } from '../../../types';
 import { useAppStore } from '../../../store/useAppStore';
 import { doc, deleteField } from 'firebase/firestore';

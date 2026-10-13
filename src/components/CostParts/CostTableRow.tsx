@@ -1,4 +1,4 @@
-import React, { Fragment, memo } from 'react';
+import React from 'react';
 import { ChevronRight, ChevronDown, Plus } from 'lucide-react';
 import { Project, Cost } from '../../types';
 import { cn } from '../../lib/utils';

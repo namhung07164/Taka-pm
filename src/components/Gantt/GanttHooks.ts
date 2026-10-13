@@ -1,4 +1,4 @@
-import React, { RefObject, useRef } from 'react';
+import { useRef, RefObject } from 'react';
 
 export function useSyncScroll() {
   const topScrollRef = useRef<HTMLDivElement>(null);

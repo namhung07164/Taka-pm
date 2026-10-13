@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React from 'react';
 
 interface CsvExportFileSectionProps {
   file: File | null;

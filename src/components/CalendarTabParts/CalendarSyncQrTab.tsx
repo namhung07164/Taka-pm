@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ShieldCheck } from 'lucide-react';
 

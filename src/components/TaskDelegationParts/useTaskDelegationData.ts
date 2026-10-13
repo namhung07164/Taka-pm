@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Project, Task, AppUser, AppRole } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { safeGetItemLocal, safeSetItemLocal, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';

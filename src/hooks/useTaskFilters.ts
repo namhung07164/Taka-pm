@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
+import { useState, useEffect } from 'react';
 import { AppUser } from '../types';
 import { getDefaultStoreFilter } from '../lib/utils';
 

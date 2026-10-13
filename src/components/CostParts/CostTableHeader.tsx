@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { Project } from '../../types';
 import { ResizableHeader } from '../ResizableHeader';

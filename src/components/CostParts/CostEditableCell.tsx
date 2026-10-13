@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cn, formatCurrencyValue } from '../../lib/utils';
 
 interface CostEditableCellProps {

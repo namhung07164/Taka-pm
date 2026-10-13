@@ -1,4 +1,4 @@
-import React, { Dispatch, FC, SetStateAction } from 'react';
+import React from 'react';
 import { TAB_CONFIG } from './csvExportTypes';
 
 interface CsvExportMappingTableProps {

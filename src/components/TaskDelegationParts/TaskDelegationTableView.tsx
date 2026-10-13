@@ -1,4 +1,4 @@
-import React, { Fragment, memo } from 'react';
+import React from 'react';
 import { ChevronRight, ChevronDown, Search } from 'lucide-react';
 import { Project, Task, AppUser, DelegationGroup, DelegationSubTask } from '../../types';
 import { ResizableHeader } from '../ResizableHeader';

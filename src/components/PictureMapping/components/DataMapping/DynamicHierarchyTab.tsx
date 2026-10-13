@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { UnitShape, Group, GroupRule, MapVersion } from "./types";
 import { v4 as uuidv4 } from "uuid";
 import {

@@ -207,11 +207,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   isCommandPaletteOpen: false,
   setIsCommandPaletteOpen: (isCommandPaletteOpen) => set({ isCommandPaletteOpen }),
 
-  isGanttSettingsOpen: false,
-  setIsGanttSettingsOpen: (isGanttSettingsOpen) => set({ isGanttSettingsOpen }),
-  ganttShowDependencies: true,
-  setGanttShowDependencies: (ganttShowDependencies) => set({ ganttShowDependencies }),
-
   quickNavTarget: null,
   setQuickNavTarget: (quickNavTarget) => set({ quickNavTarget }),
 

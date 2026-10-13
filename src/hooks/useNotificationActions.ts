@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import { doc } from 'firebase/firestore';
 import { setDoc } from '../lib/firestoreWrites';
 import { db, APP_ID } from '../lib/firebase';

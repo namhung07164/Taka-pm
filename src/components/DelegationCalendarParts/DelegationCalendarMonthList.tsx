@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React from 'react';
 import { format, startOfDay } from 'date-fns';
 import { DelegationCalendarEvent } from './delegationCalendarTypes';
 import { CustomEventComponent } from './DelegationCustomEvent';

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import { Task, TaskPredecessor } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { doc } from 'firebase/firestore';

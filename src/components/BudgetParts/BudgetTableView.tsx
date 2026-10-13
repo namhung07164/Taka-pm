@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React from 'react';
 import { Project } from '../../types';
 import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
 import { BudgetTableRow } from './BudgetTableRow';

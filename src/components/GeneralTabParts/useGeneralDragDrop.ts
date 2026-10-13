@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget } from './generalTypes';
 

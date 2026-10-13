@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { Portal } from './Portal';
 import { X, ChevronRight, Check } from 'lucide-react';

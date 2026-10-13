@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { Project, Task, AppUser, DelegationGroup } from '../../types';
 import { getTaskStatus, resolveActualStatus, cn, computeDelegationGroupProgressPercent } from '../../lib/utils';
 import { FileText, ExternalLink, Trash2 } from 'lucide-react';

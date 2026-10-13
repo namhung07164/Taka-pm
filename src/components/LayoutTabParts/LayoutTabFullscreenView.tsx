@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
-import { X, ArrowLeft, Maximize2 } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Maximize, ArrowLeft, RefreshCw, Layers } from 'lucide-react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { LiveLayoutViewer } from '../LiveLayoutViewer';
 import { PdfOrImageViewer } from './PdfOrImageViewer';
 
@@ -172,26 +173,6 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
     }
   };
 
-  // Add native browser Fullscreen API toggle
-  const toggleNativeFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
-  };
-
-  // Lock body scroll when fullscreen mode is open
-  useEffect(() => {
-    if (isFullscreenView) {
-      const origOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = origOverflow;
-      };
-    }
-  }, [isFullscreenView]);
-
   return (
     <AnimatePresence>
       {isFullscreenView && (
@@ -201,7 +182,7 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           style={{ opacity: bgOpacity }}
-          className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col overflow-hidden select-none w-screen h-[100dvh]"
+          className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col overflow-hidden select-none"
         >
           {/* Top Bar with Exit and Controls */}
           <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-white z-[60] shrink-0">
@@ -222,20 +203,9 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={toggleNativeFullscreen}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors flex items-center gap-1 text-xs"
-                title="Toggle Native Browser Fullscreen"
-              >
-                <Maximize2 className="w-4 h-4" />
-                <span className="hidden sm:inline font-medium text-[11px]">Browser Fullscreen</span>
-              </button>
-
               <span className="hidden md:inline text-xs text-slate-400">
                 Nhấn <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-300 font-mono text-[10px]">Esc</kbd> hoặc vuốt lên để thoát
               </span>
-
               <button
                 type="button"
                 onClick={() => setIsFullscreenView(false)}
@@ -254,7 +224,7 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
             onTouchMove={handleFsTouchMove}
             onTouchEnd={handleFsTouchEnd}
             onTouchCancel={handleFsTouchCancel}
-            className="flex-grow w-full h-[calc(100dvh-50px)] relative overflow-hidden bg-slate-950 flex items-center justify-center"
+            className="flex-grow w-full h-[calc(100vh-50px)] relative overflow-hidden bg-slate-950 touch-none flex items-center justify-center"
           >
             {isLiveMapMode ? (
               <div className="w-full h-full relative">
@@ -267,13 +237,19 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                   onClearFocus={onClearFocus}
                 />
               </div>
+            ) : url?.includes('drive.google.com') ? (
+              <iframe 
+                src={getCleanUrl(url)} 
+                width="100%" 
+                style={{ height: '100%', border: 'none' }}
+                allow="autoplay"
+              />
             ) : (
               <PdfOrImageViewer
                 url={url}
                 getCleanUrl={getCleanUrl}
                 fallbackSvg={fallbackSvg}
                 isFullscreen={true}
-                alt="Layout Fullscreen"
               />
             )}
           </motion.div>

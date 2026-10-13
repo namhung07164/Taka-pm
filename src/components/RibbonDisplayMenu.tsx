@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { Check, Maximize2, LayoutGrid, SlidersHorizontal, PanelTop, ChevronDown } from 'lucide-react';
 

@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { ExecutiveDashboardProps } from './ExecutiveDashboardParts/executiveDashboardTypes';
 import { useExecutiveDashboardData } from './ExecutiveDashboardParts/useExecutiveDashboardData';
 import { ExecutiveDashboardMetricsCards } from './ExecutiveDashboardParts/ExecutiveDashboardMetricsCards';

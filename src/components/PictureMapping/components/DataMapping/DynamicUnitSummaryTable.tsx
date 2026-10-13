@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo } from 'react';
 import { DynamicUnitSummaryItem } from '../../lib/dynamicSummaryEngine';
 import { Search, Filter, CheckCircle2, Clock, AlertTriangle, Building, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../../../lib/utils';

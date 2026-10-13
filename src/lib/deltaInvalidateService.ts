@@ -4,7 +4,6 @@ import { useAppStore } from '../store/useAppStore';
 import { localDb } from './localDb';
 import { LOGICAL_TO_FS } from './autoDeltaQueue';
 import type { TakaDelta, TakaDeltaItem } from '../types';
-import { usePerformanceStore } from '../store/usePerformanceStore';
 
 /**
  * Resolves "invalidate" delta items: re-reads only the changed docs from the server (1 read per doc,
@@ -22,126 +21,10 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-
-/**
- * B2: Checks if a document is already covered by a live active onSnapshot listener.
- * If so, the real-time listener will receive the update natively, so invalidate re-read is skipped.
- */
-function isCoveredByLiveListener(coll: Logical, docId: string): boolean {
-  try {
-    const stats = usePerformanceStore.getState().collectionStats;
-    const store = useAppStore.getState();
-    const currentYear = store.globalYearFilter || '2026';
-
-    if (coll === 'taka_projects') {
-      const proj = store.projects?.find((p) => p.id === docId);
-      const year = proj?.year ? String(proj.year) : (currentYear !== 'all' ? currentYear : null);
-      if (year && (stats[`taka_projects_${year}`]?.activeListeners || 0) > 0) return true;
-      if (currentYear !== 'all' && (stats[`taka_projects_${currentYear}`]?.activeListeners || 0) > 0) {
-        if (!proj || String(proj.year) === String(currentYear)) return true;
-      }
-      return false;
-    }
-
-    if (coll === 'taka_tasks') {
-      const task = store.tasks?.find((t) => t.id === docId);
-      const year = task?.projectYear ? String(task.projectYear) : (currentYear !== 'all' ? currentYear : null);
-      if (year && (stats[`taka_tasks_year_${year}`]?.activeListeners || 0) > 0) return true;
-      if (task?.projectId && (stats[`taka_tasks_proj_${task.projectId}`]?.activeListeners || 0) > 0) return true;
-      return false;
-    }
-
-    if (coll === 'taka_costs') {
-      const cost = store.costs?.find((c) => c.id === docId);
-      const year = cost?.projectYear ? String(cost.projectYear) : (currentYear !== 'all' ? currentYear : null);
-      if (year && (stats[`taka_costs_${year}`]?.activeListeners || 0) > 0) return true;
-      return false;
-    }
-
-    if (coll === 'taka_delegations') {
-      const group = store.delegationGroups?.find((g) => g.id === docId);
-      const year = group?.projectYear ? String(group.projectYear) : (currentYear !== 'all' ? currentYear : null);
-      if (year && (stats[`taka_delegation_groups_${year}`]?.activeListeners || 0) > 0) return true;
-      return false;
-    }
-  } catch (err) {
-    console.warn('[deltaInvalidate] isCoveredByLiveListener error:', err);
-  }
-  return false;
-}
-
-/**
- * B1 & B2: Relevance filter:
- * 1. Filter out documents already covered by active onSnapshot listeners (B2: 0 redundant read).
- * 2. For tasks/costs/delegations, only re-read if Tri-Gate is currently requested on this device
- *    or the document is already held locally in Zustand/Dexie (B1: stop wasted reads on unrequested slices).
- */
-async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
-  if (!ids || ids.length === 0) return [];
-
-  // B2: Skip docs covered by live onSnapshot listener
-  const uncoveredIds = ids.filter((id) => !isCoveredByLiveListener(coll, id));
-  if (uncoveredIds.length === 0) return [];
-
-  if (coll === 'taka_projects') return uncoveredIds;
-
-  const store = useAppStore.getState();
-
-  if (coll === 'taka_tasks') {
-    if (store.isTasksRequested) return uncoveredIds;
-    const storeTaskIds = new Set((store.tasks || []).map((t) => t.id));
-    const relevant: string[] = [];
-    const missing: string[] = [];
-    for (const id of uncoveredIds) {
-      if (storeTaskIds.has(id)) relevant.push(id);
-      else missing.push(id);
-    }
-    if (missing.length > 0) {
-      try {
-        const dexieDocs = await localDb.tasks.where('id').anyOf(missing).toArray();
-        dexieDocs.forEach((d) => relevant.push(d.id));
-      } catch {}
-    }
-    return relevant;
-  }
-
-  if (coll === 'taka_costs') {
-    if (store.isCostsRequested) return uncoveredIds;
-    const storeCostIds = new Set((store.costs || []).map((c) => c.id));
-    const relevant: string[] = [];
-    const missing: string[] = [];
-    for (const id of uncoveredIds) {
-      if (storeCostIds.has(id)) relevant.push(id);
-      else missing.push(id);
-    }
-    if (missing.length > 0) {
-      try {
-        const dexieDocs = await localDb.costs.where('id').anyOf(missing).toArray();
-        dexieDocs.forEach((d) => relevant.push(d.id));
-      } catch {}
-    }
-    return relevant;
-  }
-
-  if (coll === 'taka_delegations') {
-    if (store.isDelegationsRequested) return uncoveredIds;
-    const storeGroupIds = new Set((store.delegationGroups || []).map((g) => g.id));
-    const relevant: string[] = [];
-    const missing: string[] = [];
-    for (const id of uncoveredIds) {
-      if (storeGroupIds.has(id)) relevant.push(id);
-      else missing.push(id);
-    }
-    if (missing.length > 0) {
-      try {
-        const dexieDocs = await localDb.delegations.where('id').anyOf(missing).toArray();
-        dexieDocs.forEach((d) => relevant.push(d.id));
-      } catch {}
-    }
-    return relevant;
-  }
-
-  return uncoveredIds;
+async function filterRelevant(_coll: Logical, ids: string[]): Promise<string[]> {
+  // Always return all invalidated IDs so that local database (Dexie) and Zustand store
+  // receive 100% of created, updated, or deleted items across all devices without losing records.
+  return ids;
 }
 
 async function fetchChunk(coll: Logical, ids: string[]) {

@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { Project } from '../../types';
 import { ProjectFinancials } from './budgetTypes';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';

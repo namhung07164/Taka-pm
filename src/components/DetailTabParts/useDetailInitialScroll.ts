@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Project, Task, DelegationGroup } from '../../types';
 import { scrollToElement } from '../../lib/utils';
 import {

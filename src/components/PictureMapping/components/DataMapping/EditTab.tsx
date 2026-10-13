@@ -1,4 +1,4 @@
-import React, { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Rect, Circle, Line, Image as KonvaImage, Transformer, Text, Group } from 'react-konva';
 import useImage from 'use-image';

@@ -29,17 +29,25 @@ export function LayoutTabStaticViewer({
     );
   }
 
+  if (url.includes('drive.google.com')) {
+    return (
+      <iframe 
+        key={cacheBuster}
+        src={getCleanUrl(url)} 
+        width="100%" 
+        style={{ height: '100%', minHeight: '600px', border: 'none' }}
+        allow="autoplay"
+      />
+    );
+  }
+
   return (
     <PdfOrImageViewer
       url={url}
       getCleanUrl={getCleanUrl}
       fallbackSvg={fallbackSvg}
-      cacheBuster={cacheBuster}
-      isAdmin={isAdmin}
+      isFullscreen={false}
       onOpenFullscreen={onOpenFullscreen}
     />
   );
 }
-
-export default LayoutTabStaticViewer;
-

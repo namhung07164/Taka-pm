@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useCallback, useRef } from "react";
+import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { SummaryDataItem, calculateSummaryData } from '../lib/summaryData';
 import { useAppStore } from '../../../store/useAppStore';

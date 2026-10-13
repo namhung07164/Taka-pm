@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -14,7 +14,6 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -59,12 +58,8 @@ export function LayoutUnitLightboxModal({
 }: LayoutUnitLightboxModalProps) {
   const [imageError, setImageError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [pdfScale, setPdfScale] = useState(1);
-  const [isFastImageMode, setIsFastImageMode] = useState(false);
-
   const transformRef = useRef<any>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawUrl = enlargedImage?.url || '';
   const resolvedUrl = normalizeImageUrl(rawUrl);
@@ -78,31 +73,17 @@ export function LayoutUnitLightboxModal({
   const [pdfPage, setPdfPage] = useState(1);
 
   const isDirectPdf = useMemo(() => {
-    const u = (rawUrl || resolvedUrl || '').toLowerCase();
-    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
-  }, [rawUrl, resolvedUrl]);
-
-  const isDriveDoc = useMemo(() => {
-    const u = (rawUrl || '').toLowerCase();
-    return u.includes('drive.google.com') || u.includes('docs.google.com');
-  }, [rawUrl]);
+    const u = (resolvedUrl || '').toLowerCase().split('?')[0];
+    return u.endsWith('.pdf');
+  }, [resolvedUrl]);
 
   const effectiveUrl = useMemo(() => {
-    if (isDriveDoc) {
-      const driveMatch =
-        rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
-        rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-      if (driveMatch && driveMatch[1]) {
-        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
-      }
-      return rawUrl;
-    }
     if (isDirectPdf && resolvedUrl) {
       const baseUrl = resolvedUrl.split('#')[0];
       return `${baseUrl}#page=${pdfPage}`;
     }
     return resolvedUrl;
-  }, [rawUrl, resolvedUrl, isDirectPdf, isDriveDoc, pdfPage]);
+  }, [resolvedUrl, isDirectPdf, pdfPage]);
 
   const handleImageError = useCallback(() => {
     // If it's a Google Drive URL and thumbnail failed, fallback to direct lh3 CDN
@@ -155,34 +136,24 @@ export function LayoutUnitLightboxModal({
     }
   }, [resolvedUrl, handleImageError, isDirectPdf]);
 
-  // Set class on document.body and handle memory cleanup on unmount
+  // Set class on document.body to block any underlying layout canvas interactions during lightbox modal view
   useEffect(() => {
     document.body.classList.add('lightbox-open');
     return () => {
       document.body.classList.remove('lightbox-open');
-      if (iframeRef.current) {
-        try {
-          iframeRef.current.src = 'about:blank';
-        } catch {}
-      }
     };
   }, []);
 
-  // Safe close handler that absorbs any synthetic click/touch events before unmounting and purges iframe memory
+  // Safe close handler that absorbs any synthetic click/touch events before unmounting
   const handleSafeClose = useCallback((e?: React.SyntheticEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (iframeRef.current) {
-      try {
-        iframeRef.current.src = 'about:blank';
-      } catch {}
-    }
-    setPdfScale(1);
+    // Safety delay of 60ms to let browser absorb any pending synthetic touch/tap events on iOS/Android
     setTimeout(() => {
       onClose();
-    }, 50);
+    }, 60);
   }, [onClose]);
 
   // Keyboard shortcut: Escape key closes enlarged image (AGENTS.md Rule 6)
@@ -263,7 +234,7 @@ export function LayoutUnitLightboxModal({
               <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 mr-1">
                 <button
                   type="button"
-                  onClick={() => transformRef.current?.zoomIn(0.5)}
+                  onClick={() => transformRef.current?.zoomIn()}
                   className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
                   title="Phóng to (+ / Cuộn chuột lên)"
                 >
@@ -271,7 +242,7 @@ export function LayoutUnitLightboxModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => transformRef.current?.zoomOut(0.5)}
+                  onClick={() => transformRef.current?.zoomOut()}
                   className="p-1 sm:p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors cursor-pointer"
                   title="Thu nhỏ (- / Cuộn chuột xuống)"
                 >
@@ -362,24 +333,25 @@ export function LayoutUnitLightboxModal({
                 </a>
               </div>
             </div>
-          ) : (isDirectPdf || isDriveDoc || rawUrl.includes('drive.google.com')) ? (
-            <div className="w-full h-full min-h-[500px] flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
-              <PdfNativeCanvasViewer
-                url={rawUrl}
-                isFullscreen={true}
-              />
-            </div>
+          ) : (isDirectPdf || rawUrl.includes('drive.google.com')) ? (
+            <iframe 
+              key={`${effectiveUrl}_${pdfPage}`}
+              src={effectiveUrl} 
+              width="100%" 
+              style={{ height: '100%', border: 'none' }}
+              allow="autoplay"
+            />
           ) : (
             <TransformWrapper
               ref={transformRef}
               initialScale={initialZoom > 1 ? initialZoom : 1.15}
               minScale={0.5}
-              maxScale={12}
+              maxScale={8}
               centerOnInit
               smooth={false}
-              wheel={{ step: 0.25 }}
+              wheel={{ step: 0.05 }}
               zoomAnimation={{ disabled: true }}
-              pinch={{ step: 12 }}
+              pinch={{ step: 2 }}
               doubleClick={{ mode: 'toggle' }}
             >
               <TransformComponent

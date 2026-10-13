@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { parseDateTime } from '../../lib/utils';
 import { CalendarEvent } from './calendarTypes';

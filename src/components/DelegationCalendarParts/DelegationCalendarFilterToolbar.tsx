@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React from 'react';
 import { Search, Download } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import Konva from 'konva';
 
 interface UseLayoutGesturesProps {

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React from 'react';
 import { Trash2 } from 'lucide-react';
 import { Project, Cost } from '../../types';
 import { cn, formatDisplayDateMain } from '../../lib/utils';

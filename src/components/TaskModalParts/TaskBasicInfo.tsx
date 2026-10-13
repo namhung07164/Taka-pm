@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo } from 'react';
 import { ExternalLink, Unlink, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { TaskModalLogicType } from '../../hooks/useTaskModalLogic';

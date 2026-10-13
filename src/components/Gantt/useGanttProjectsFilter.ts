@@ -1,4 +1,4 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { 
@@ -190,32 +190,50 @@ export function useGanttProjectsFilter({
         }
       }
 
-      if (mergedMap.size > 0) {
-        return Array.from(mergedMap.values());
-      }
+      const rawTasks = Array.from(mergedMap.values());
 
-      // 4. Fallback to taskSummaries
+      // 4. Merge in any remaining taskSummaries so tasks are never lost/dropped when memory has a partial task set
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        return p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
+        const existingMap = new Map<string, any>();
+        rawTasks.forEach(t => {
+          if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+          if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+          const nameKey = String(t.name || '').trim().toLowerCase();
+          if (nameKey) existingMap.set(nameKey, t);
+        });
+
+        const mergedList = [...rawTasks];
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const match = (tsId && existingMap.has(tsId)) ||
+                        (tsCode && existingMap.has(tsCode)) ||
+                        (tsName && existingMap.has(tsName));
+          if (!match) {
+            mergedList.push({
+              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
+        return mergedList;
       }
 
-      return [];
+      return rawTasks;
     },
     [tasksByProjectId, tasksByProject, tasksMapByCode]
   );

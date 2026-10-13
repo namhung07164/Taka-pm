@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { X } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -57,7 +57,7 @@ export function MultiSelect({ value, onChange, options, placeholder = 'Select...
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (disabled) return;
     if (e.key === 'Backspace' && inputValue === '' && selectedItems.length > 0) {
       handleRemoveItem(selectedItems[selectedItems.length - 1]);

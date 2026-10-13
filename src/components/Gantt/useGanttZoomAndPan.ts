@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 
 interface UseGanttZoomAndPanParams {

@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { DetailTableRow } from './detailTypes';
 import { useAppStore } from '../../store/useAppStore';
 

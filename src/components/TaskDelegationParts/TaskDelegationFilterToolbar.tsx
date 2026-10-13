@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React from 'react';
 import { Search, Plus, ExternalLink, ArrowLeft, X } from 'lucide-react';
 import { ColumnAdder } from '../ColumnAdder';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';

@@ -1,4 +1,4 @@
-import React, { lazy, useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { cn } from '../lib/utils';
 

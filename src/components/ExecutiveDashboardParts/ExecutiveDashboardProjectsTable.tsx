@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { TrendingUp, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { EVMMetrics } from './executiveDashboardTypes';

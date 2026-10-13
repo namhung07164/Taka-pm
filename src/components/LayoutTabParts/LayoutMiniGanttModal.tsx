@@ -1,4 +1,4 @@
-import React, { FC, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Draggable from 'react-draggable';
 import { BarChartHorizontal, Calendar, Layers } from 'lucide-react';

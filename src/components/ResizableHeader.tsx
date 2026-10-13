@@ -1,4 +1,4 @@
-import React, { ReactNode, useState } from 'react';
+import React, { useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import { cn } from '../lib/utils';
 import { X } from 'lucide-react';

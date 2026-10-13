@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React from 'react';
 import { TAB_CONFIG } from './csvExportTypes';
 
 interface CsvExportPreviewSectionProps {

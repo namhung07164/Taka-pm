@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 
 export const CalendarSyncGuideTab: React.FC = React.memo(() => {
   return (

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { scrollToElement } from '../../lib/utils';

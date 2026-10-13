@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { Bell, Check, RotateCcw, AlertCircle, Clock, Zap, UserCheck, ArrowUpRight } from 'lucide-react';
 import { ActiveNotification, Project, Task, DelegationGroup } from '../../types';
 import { formatDisplayDateTime } from '../../lib/utils';

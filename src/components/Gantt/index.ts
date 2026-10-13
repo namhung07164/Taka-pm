@@ -28,4 +28,3 @@ export * from './useGanttColumnResize';
 export * from './GanttTableView';
 export * from './GanttFocusControls';
 export * from './useGanttFocus';
-export * from './GanttSettingsModal';

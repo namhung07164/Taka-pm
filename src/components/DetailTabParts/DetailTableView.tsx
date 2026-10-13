@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction, memo } from 'react';
+import React, { memo } from 'react';
 import { Project, Task } from '../../types';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { DetailTableHeader } from './DetailTableHeader';

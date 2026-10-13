@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatCurrencyValue, cn } from '../../lib/utils';
 
 export interface BudgetEditableCellProps {

@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React from 'react';
 import { Target, ExternalLink, X, MapPin } from 'lucide-react';
 import { Task, Project } from '../../types';
 

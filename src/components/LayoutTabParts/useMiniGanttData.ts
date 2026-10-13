@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { parseDateTime, getTaskStatus } from '../../lib/utils';
@@ -91,45 +91,60 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
       return true;
     });
 
-    if (matchedZustandTasks.length > 0) {
-      return matchedZustandTasks;
-    }
-
-    if (project.taskSummaries && project.taskSummaries.length > 0) {
-      return project.taskSummaries.map((ts: any, idx: number) => {
-        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
-        const derivedOrderIndex =
-          subtaskNum !== null
-            ? subtaskNum - 1
-            : ts.orderIndex !== undefined && ts.orderIndex !== null
-            ? ts.orderIndex
-            : idx;
-        const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
-
-        let durStr = '1';
-        if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
-          durStr = String(ts.duration).trim();
-        }
-
-        return {
-          id: ts.id || ts.taskId || `ts_${idx}`,
-          name: ts.name || 'Task',
-          start: ts.start || '',
-          finish: ts.finish || '',
-          duration: durStr,
-          taskCodePhu: fallbackCode,
-          runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
-          approval: ts.approval,
-          party: ts.party,
-          parentTaskId: ts.parentTaskId,
-          projectCode: project.code,
-          projectId: project.id,
-          orderIndex: derivedOrderIndex,
-        } as Task;
+    const rawTasks = matchedZustandTasks;
+    if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+      const existingMap = new Map<string, any>();
+      rawTasks.forEach(t => {
+        if (t.id) existingMap.set(String(t.id).toLowerCase(), t);
+        if (t.taskCodePhu) existingMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+        const nameKey = String(t.name || '').trim().toLowerCase();
+        if (nameKey) existingMap.set(nameKey, t);
       });
+
+      const mergedList = [...rawTasks];
+      project.taskSummaries.forEach((ts: any, idx: number) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const match = (tsId && existingMap.has(tsId)) ||
+                      (tsCode && existingMap.has(tsCode)) ||
+                      (tsName && existingMap.has(tsName));
+        if (!match) {
+          const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
+          const derivedOrderIndex =
+            subtaskNum !== null
+              ? subtaskNum - 1
+              : ts.orderIndex !== undefined && ts.orderIndex !== null
+              ? ts.orderIndex
+              : idx;
+          const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
+
+          let durStr = '1';
+          if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
+            durStr = String(ts.duration).trim();
+          }
+
+          mergedList.push({
+            id: ts.id || ts.taskId || `ts_${idx}`,
+            name: ts.name || 'Task',
+            start: ts.start || '',
+            finish: ts.finish || '',
+            duration: durStr,
+            taskCodePhu: fallbackCode,
+            runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
+            approval: ts.approval,
+            party: ts.party,
+            parentTaskId: ts.parentTaskId,
+            projectCode: project.code,
+            projectId: project.id,
+            orderIndex: derivedOrderIndex,
+          } as Task);
+        }
+      });
+      return mergedList;
     }
 
-    return [];
+    return rawTasks;
   }, [project, tasks]);
 
   // Exact Main Gantt (useGanttVirtualization.ts) task ordering & hierarchy

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { preloadFloorImages } from '../../lib/imageDBCache';

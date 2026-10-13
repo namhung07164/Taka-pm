@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from "../store/useAppStore";
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import Draggable from 'react-draggable';
 import { X, GripHorizontal } from 'lucide-react';

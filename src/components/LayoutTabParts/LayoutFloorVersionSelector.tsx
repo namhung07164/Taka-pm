@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { Layers } from 'lucide-react';
 
 export interface LayoutFloorVersionSelectorProps {

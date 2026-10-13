@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { parseDateTime } from '../../lib/utils';
 import { ViewMode, TimeUnit } from './ganttTypes';

@@ -28,33 +28,7 @@ import { resolveInvalidations } from './deltaInvalidateService';
 import { startDeltaRealtimeListener } from './deltaRealtimeListener';
 
 const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
-const RESTORE_CUTOFF_KEY = 'taka_restore_cutoff_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
-
-/**
- * Returns the timestamp cutoff after which version restore was executed.
- * Deltas generated before this timestamp are faulty historical changes and MUST NOT be re-applied.
- */
-export function getRestoreCutoffTimestamp(): number {
-  const raw = safeGetItemLocal(RESTORE_CUTOFF_KEY);
-  if (raw) {
-    const num = Number(raw);
-    if (!isNaN(num) && num > 0) return num;
-  }
-  return 0;
-}
-
-/**
- * Prevents auto-reading / re-applying faulty historical changes generated before a version restore.
- * Call this function immediately when a version restore or full replace operation is executed.
- */
-export function markRestoreVersionCompleted(cutoffMs?: number): void {
-  const now = cutoffMs || Date.now();
-  safeSetItemLocal(RESTORE_CUTOFF_KEY, String(now));
-  safeSetItemLocal(LAST_SYNC_KEY, String(now));
-  appliedDeltaIds.clear();
-  console.log(`[deltaSync] Restore cutoff set to ${now} (${new Date(now).toISOString()}). Past deltas strictly blocked.`);
-}
 
 // The sync cursor is serverTime (server arrival time), NOT numericTime: a delta created offline carries an old
 // client time but arrives later. Only the device clock used for lastSyncTime is skewed; the overlap covers that.
@@ -105,7 +79,6 @@ export async function recordDelta(delta: {
     timestamp: nowIso,
     numericTime: now,
     serverTime: serverTimestamp() as any,
-    expireAt: Timestamp.fromMillis(now + 7 * 24 * 60 * 60 * 1000),
   };
 
   try {
@@ -158,7 +131,6 @@ export async function recordBatchDeltas(
     timestamp: nowIso,
     numericTime: now,
     serverTime: serverTimestamp() as any,
-    expireAt: Timestamp.fromMillis(now + 7 * 24 * 60 * 60 * 1000),
   };
 
   try {
@@ -180,18 +152,15 @@ export async function recordBatchDeltas(
  * Đọc mốc thời gian đã đồng bộ delta lần cuối từ LocalStorage
  */
 export function getLastDeltaSyncTime(): number {
-  const restoreCutoff = getRestoreCutoffTimestamp();
   const raw = safeGetItemLocal(LAST_SYNC_KEY);
-  let lastSync = 0;
   if (raw) {
     const num = Number(raw);
-    if (!isNaN(num) && num > 0) lastSync = num;
+    if (!isNaN(num) && num > 0) return num;
   }
-  if (lastSync === 0) {
-    lastSync = Date.now() - 48 * 60 * 60 * 1000;
-  }
-  // Sync cursor is strictly bounded by restoreCutoff so past faulty deltas are never re-queried
-  return Math.max(lastSync, restoreCutoff);
+  // Mặc định lùi lại 48 giờ nếu lần đầu mở app để không bị sót thay đổi giữa các thiết bị
+  const initial = Date.now() - 48 * 60 * 60 * 1000;
+  safeSetItemLocal(LAST_SYNC_KEY, String(initial));
+  return initial;
 }
 
 /**
@@ -408,20 +377,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
  * Drops deltas that were already applied on this device (shared across poll + listener).
  */
 export function filterUnappliedDeltas(items: TakaDelta[]): TakaDelta[] {
-  const restoreCutoff = getRestoreCutoffTimestamp();
   const fresh: TakaDelta[] = [];
-
   for (const item of items) {
     const id = item.id;
-    const itemMs = deltaTime(item);
-
-    // CRITICAL: Discard any historical delta created before/at the version restore cutoff.
-    // This strictly prevents faulty pre-restore changes from being auto-applied after restoring a version.
-    if (restoreCutoff > 0 && itemMs <= restoreCutoff) {
-      if (id) appliedDeltaIds.add(id);
-      continue;
-    }
-
     if (!id) { fresh.push(item); continue; }
     if (appliedDeltaIds.has(id)) continue;
     appliedDeltaIds.add(id);
@@ -434,95 +392,78 @@ export function filterUnappliedDeltas(items: TakaDelta[]): TakaDelta[] {
   return fresh;
 }
 
-let inFlightPullPromise: Promise<number> | null = null;
-let lastPullCompletedAt = 0;
-
 /**
  * Kéo các delta thay đổi từ server về client kể từ lastSyncTime và áp dụng vào Zustand
  * Tiết kiệm hơn 80% Read so với việc onSnapshot cả collection
- * B4: In-flight deduplication prevents concurrent identical queries across tabs/effects
  */
 export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
-  if (inFlightPullPromise) {
-    return inFlightPullPromise;
-  }
-  const now = Date.now();
-  if (now - lastPullCompletedAt < 3000) {
+  const lastSyncTime = getLastDeltaSyncTime();
+
+  // Device offline longer than delta retention -> deltas are gone, do a full resync.
+  if (await resyncIfStale(lastSyncTime, LAST_SYNC_KEY)) return 0;
+
+  // NOTE: The old "Heartbeat Fingerprint" bypass was removed. years_meta was only loaded once at boot, so the
+  // bypass fired on almost every poll and delayed sync by 1-3 minutes. An empty delta query costs 1 read.
+
+  const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
+
+  try {
+    const deltas: TakaDelta[] = [];
+    let currentSince = lastSyncTime - CLOCK_SKEW_OVERLAP_MS;
+    let iteration = 0;
+    const MAX_PAGES = 5;
+
+    while (iteration < MAX_PAGES) {
+      iteration++;
+      const q = query(
+        colRef,
+        where('serverTime', '>', Timestamp.fromMillis(currentSince)),
+        orderBy('serverTime', 'asc'),
+        limit(500)
+      );
+
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        break;
+      }
+
+      let pageMaxTime = currentSince;
+      snapshot.forEach((d) => {
+        const item = d.data() as TakaDelta;
+        const itemId = item.id || d.id;
+        if (appliedDeltaIds.has(itemId)) {
+          if (deltaTime(item) > pageMaxTime) pageMaxTime = deltaTime(item);
+          return;
+        }
+        appliedDeltaIds.add(itemId);
+        if (appliedDeltaIds.size > MAX_APPLIED_IDS) {
+          const oldest = appliedDeltaIds.values().next().value;
+          if (oldest !== undefined) appliedDeltaIds.delete(oldest);
+        }
+        deltas.push(item);
+        if (deltaTime(item) > pageMaxTime) {
+          pageMaxTime = deltaTime(item);
+        }
+      });
+
+      currentSince = pageMaxTime;
+      if (snapshot.size < 500) {
+        break;
+      }
+    }
+
+    if (deltas.length === 0) {
+      // Advance lastSyncTime with 60s clock skew buffer so Heartbeat Fingerprint bypass stays active (0-Read)
+      const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
+      safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
+      return 0;
+    }
+
+    return applyIncomingDeltas(deltas);
+  } catch (err) {
+    console.warn('[deltaSync] Error pulling deltas:', err);
     return 0;
   }
-
-  inFlightPullPromise = (async () => {
-    const lastSyncTime = getLastDeltaSyncTime();
-    const restoreCutoff = getRestoreCutoffTimestamp();
-
-    // Device offline longer than delta retention -> deltas are gone, do a full resync.
-    if (await resyncIfStale(lastSyncTime, LAST_SYNC_KEY)) return 0;
-
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
-
-    try {
-      const deltas: TakaDelta[] = [];
-      let currentSince = Math.max(lastSyncTime - CLOCK_SKEW_OVERLAP_MS, restoreCutoff);
-      let iteration = 0;
-      const MAX_PAGES = 5;
-
-      while (iteration < MAX_PAGES) {
-        iteration++;
-        const q = query(
-          colRef,
-          where('serverTime', '>', Timestamp.fromMillis(currentSince)),
-          orderBy('serverTime', 'asc'),
-          limit(500)
-        );
-
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
-          break;
-        }
-
-        let pageMaxTime = currentSince;
-        snapshot.forEach((d) => {
-          const item = d.data() as TakaDelta;
-          const itemId = item.id || d.id;
-          if (appliedDeltaIds.has(itemId)) {
-            if (deltaTime(item) > pageMaxTime) pageMaxTime = deltaTime(item);
-            return;
-          }
-          appliedDeltaIds.add(itemId);
-          if (appliedDeltaIds.size > MAX_APPLIED_IDS) {
-            const oldest = appliedDeltaIds.values().next().value;
-            if (oldest !== undefined) appliedDeltaIds.delete(oldest);
-          }
-          deltas.push(item);
-          if (deltaTime(item) > pageMaxTime) {
-            pageMaxTime = deltaTime(item);
-          }
-        });
-
-        currentSince = pageMaxTime;
-        if (snapshot.size < 500) {
-          break;
-        }
-      }
-
-      if (deltas.length === 0) {
-        // Advance lastSyncTime with 60s clock skew buffer so Heartbeat Fingerprint bypass stays active (0-Read)
-        const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
-        safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
-        return 0;
-      }
-
-      return applyIncomingDeltas(deltas);
-    } catch (err) {
-      console.warn('[deltaSync] Error pulling deltas:', err);
-      return 0;
-    } finally {
-      lastPullCompletedAt = Date.now();
-      inFlightPullPromise = null;
-    }
-  })();
-
-  return inFlightPullPromise;
 }
 
 import { purgeOldDeltas } from './deltaPurgeService';
@@ -544,14 +485,15 @@ const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity threshold
  * - Khi ẩn tab hoặc người dùng không hoạt động > 5 phút: Tạm dừng định thời hoàn toàn (0 Idle Read).
  * - Khi quay lại tab hoặc tương tác: Lập tức sync tức thì (0ms) và kích hoạt lại interval.
  */
-export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () => void {
+export function startDeltaSyncService(intervalMs: number = 5 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  // Real-time channel (onSnapshot). The interval below is only a slow safety-net poll (B5).
+  // Real-time channel (onSnapshot). The interval below is only a slow safety-net poll.
   const stopRealtime = startDeltaRealtimeListener();
 
   let lastTriggerAt = 0;
   const triggerSync = () => {
+    // focus + pageshow + visibilitychange often fire together: collapse them into 1 query
     const now = Date.now();
     if (now - lastTriggerAt < 15000) return;
     lastTriggerAt = now;
@@ -602,6 +544,11 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   startPolling();
   const stopNetworkRecovery = initNetworkRecovery(() => triggerSync());
 
+  // 2. Schedule non-blocking background TTL pruning after boot (15s delay)
+  setTimeout(() => {
+    pruneExpiredDeltas(7).catch(() => {});
+  }, 15000);
+
   // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
@@ -616,15 +563,42 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     wakeAndSync();
   };
 
+  // 4. User activity listeners to wake up from inactivity sleep
+  const handleUserActivity = () => {
+    if (isHibernating) {
+      wakeAndSync();
+    } else {
+      lastActivityTime = Date.now();
+    }
+  };
+
+  const handlePageShow = () => {
+    wakeAndSync();
+  };
+
+  const handleFocus = () => {
+    wakeAndSync();
+  };
+
   window.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('pageshow', handlePageShow);
+  window.addEventListener('focus', handleFocus);
   window.addEventListener('online', handleOnline);
+  window.addEventListener('pointerdown', handleUserActivity, { passive: true });
+  window.addEventListener('keydown', handleUserActivity, { passive: true });
+  window.addEventListener('touchstart', handleUserActivity, { passive: true });
 
   return () => {
     stopPolling();
     stopNetworkRecovery();
     stopRealtime();
     window.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('pageshow', handlePageShow);
+    window.removeEventListener('focus', handleFocus);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('pointerdown', handleUserActivity);
+    window.removeEventListener('keydown', handleUserActivity);
+    window.removeEventListener('touchstart', handleUserActivity);
   };
 }
 

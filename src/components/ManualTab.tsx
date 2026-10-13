@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { Book, Download, Info } from "lucide-react";
 import { cn } from "../lib/utils";

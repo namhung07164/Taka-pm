@@ -1,4 +1,4 @@
-import React, { FC, memo } from 'react';
+import React from 'react';
 import { Task } from '../../types';
 import { parseDateTime, getTaskStatus, cn } from '../../lib/utils';
 import { formatMonthDay, getBarColor } from './useMiniGanttData';
