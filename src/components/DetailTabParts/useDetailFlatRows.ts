@@ -151,9 +151,14 @@ export function useDetailFlatRows({
       });
 
       if (isExpanded) {
+        const groupTaskIndexMap = new Map<string, number>();
+        groupTasks.forEach((gt, idx) => {
+          if (gt.id) groupTaskIndexMap.set(gt.id, idx);
+        });
+
         tasksToRender.forEach((t) => {
-          const originalIndex = groupTasks.findIndex(gt => gt.id === t.id);
-          const i = originalIndex !== -1 ? originalIndex : 0;
+          const originalIndex = groupTaskIndexMap.get(t.id);
+          const i = originalIndex !== undefined ? originalIndex : 0;
           rows.push({
             type: 'task',
             key: `task-${t.id}`,
