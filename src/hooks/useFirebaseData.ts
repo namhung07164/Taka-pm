@@ -92,8 +92,6 @@ export function useFirebaseData() {
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const expandedProjectIds = useAppStore((state) => state.expandedProjectIds);
   const visibleActiveProjectIds = useAppStore((state) => state.visibleActiveProjectIds);
-  const visibleActiveProjectIdsRef = useRef(visibleActiveProjectIds);
-  visibleActiveProjectIdsRef.current = visibleActiveProjectIds;
   const searchActiveProjectIds = useAppStore((state) => state.searchActiveProjectIds);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
   const setIsTasksLoading = useAppStore((state) => state.setIsTasksLoading);
@@ -661,7 +659,7 @@ export function useFirebaseData() {
         pendingTasksMap.current = null;
       }
       tasksBatchTimer.current = null;
-    }, 120);
+    }, 40);
   }, []);
 
   useEffect(() => {
@@ -998,7 +996,7 @@ export function useFirebaseData() {
       } else {
         // Individual listeners for <= 10 projects
         // Sort with viewport priority (visible projects attached first)
-        const visibleSet = new Set((visibleActiveProjectIdsRef.current || []).map(id => String(id)));
+        const visibleSet = new Set(visibleActiveProjectIds.map(id => String(id)));
         const sortedProjs = [...projs].sort((a, b) => {
           const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
           const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
@@ -1086,7 +1084,7 @@ export function useFirebaseData() {
     return () => {
       isCancelled = true;
     };
-  }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds, globalYearFilter, buildStoreAndYearQuery]);
+  }, [querySignature, isTasksRequested, expandedProjectIds, searchActiveProjectIds, visibleActiveProjectIds, globalYearFilter, buildStoreAndYearQuery]);
 
   // 2.4 Delta Sync for Costs (Native Firebase Cache for active target years with Keep-Alive Pool)
   const prevSigCosts = useRef<string>("");

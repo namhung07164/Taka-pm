@@ -729,23 +729,10 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   return `${currentPCode}#${orderNum}`;
 }
 
-let _lastProjectsForCodeMapRef: Project[] | null = null;
-let _lastTasksForCodeMapRef: Task[] | null = null;
-let _cachedTaskCodesMap: Map<string, string> = new Map();
-
 /**
  * Pre-indexes all task codes in O(N log K) single pass instead of O(N^2 log N).
- * Includes reference-level memoization to eliminate recalculations across sibling components.
  */
 export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<string, string> {
-  if (
-    _lastProjectsForCodeMapRef === projects &&
-    _lastTasksForCodeMapRef === tasks &&
-    _cachedTaskCodesMap.size > 0
-  ) {
-    return _cachedTaskCodesMap;
-  }
-
   const map = new Map<string, string>();
   if (!tasks || !Array.isArray(tasks)) return map;
 
@@ -797,9 +784,6 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
     });
   });
 
-  _lastProjectsForCodeMapRef = projects;
-  _lastTasksForCodeMapRef = tasks;
-  _cachedTaskCodesMap = map;
   return map;
 }
 

@@ -56,19 +56,16 @@ export function buildCanonicalProjectKey(
   projectCode?: string | null,
   year?: string | number | null,
   store?: string | null,
-  projects: Project[] = [],
-  projectLookupMap?: Map<string, Project>
+  projects: Project[] = []
 ): string {
   const pCode = String(projectCode || '').trim().toLowerCase();
   if (!pCode) return '';
 
-  const matchedProj = projectLookupMap 
-    ? projectLookupMap.get(pCode)
-    : projects.find(p => 
-        String(p.code || '').trim().toLowerCase() === pCode ||
-        String(p.no || '').trim().toLowerCase() === pCode ||
-        String(p.id || '').trim().toLowerCase() === pCode
-      );
+  const matchedProj = projects.find(p => 
+    String(p.code || '').trim().toLowerCase() === pCode ||
+    String(p.no || '').trim().toLowerCase() === pCode ||
+    String(p.id || '').trim().toLowerCase() === pCode
+  );
 
   const canonicalCode = matchedProj ? String(matchedProj.code || pCode).trim().toLowerCase() : pCode;
   const canonicalYear = normalizeYearString(matchedProj?.year ?? year);
@@ -96,14 +93,6 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
   if (tasks.length === 1) {
     return { dedupedTasks: tasks, duplicateCount: 0, removedTaskIds: [] };
   }
-
-  // Pre-index projects into Map for O(1) canonical key resolution (eliminates O(N*P) loop bottleneck)
-  const projectLookupMap = new Map<string, Project>();
-  (projects || []).forEach(p => {
-    if (p.code) projectLookupMap.set(String(p.code).trim().toLowerCase(), p);
-    if (p.no) projectLookupMap.set(String(p.no).trim().toLowerCase(), p);
-    if (p.id) projectLookupMap.set(String(p.id).trim().toLowerCase(), p);
-  });
 
   const seenMap = new Map<string, Task>();
   const seenNormMap = new Map<string, string>(); // normKey -> taskId
@@ -166,7 +155,7 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     }
 
     const tName = String(task.name || '').trim().toLowerCase();
-    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap);
+    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects);
     const pCode = String(task.projectCode || '').trim().toLowerCase();
     const rawTaskCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
     const parentIdStr = task.parentTaskId ? String(task.parentTaskId).trim().toLowerCase() : '';
