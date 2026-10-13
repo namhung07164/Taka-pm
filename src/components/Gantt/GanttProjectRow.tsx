@@ -130,6 +130,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   return (
     <div
       id={`gantt-project-row-${p.no}`}
+      style={p.bgColor ? { backgroundColor: p.bgColor } : undefined}
       className={cn(
         "flex h-12 min-h-[48px] border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
         "bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a]",
@@ -141,7 +142,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
           "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] flex items-center shrink-0 overflow-hidden",
           "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:group-hover:bg-[#28282a]"
         )}
-        style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
+        style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth, ...(p.bgColor ? { backgroundColor: p.bgColor } : {}) }}
       >
         {/* Project Name Column */}
         <div className="flex-1 min-w-0 p-1.5 flex items-center overflow-hidden">

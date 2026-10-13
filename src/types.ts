@@ -66,6 +66,7 @@ export interface Project {
   delegation?: boolean;
   updatedAt?: string;
   textColor?: string;
+  bgColor?: string;
   comments?: TaskComment[];
   mdStatus?: MdStatusType | string;
   isPinned?: boolean;
@@ -134,6 +135,7 @@ export interface Task {
   orderIndex?: number;
   comments?: TaskComment[];
   textColor?: string;
+  bgColor?: string;
   taskCodePhu?: string;
   parentTaskId?: string;
   isDeleted?: boolean;

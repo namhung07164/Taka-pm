@@ -27,6 +27,7 @@ export const TaskSchema = z.object({
   orderIndex: z.number().nullable().optional(),
   comments: z.array(z.any()).nullable().optional(),
   textColor: z.string().nullable().optional(),
+  bgColor: z.string().nullable().optional(),
   taskCodePhu: z.string().nullable().optional(),
   parentTaskId: z.string().nullable().optional(),
   isDeleted: z.boolean().nullable().optional()
@@ -68,6 +69,7 @@ export const ProjectSchema = z.object({
   delegation: z.boolean().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   textColor: z.string().nullable().optional(),
+  bgColor: z.string().nullable().optional(),
   comments: z.array(z.any()).nullable().optional(),
   mdStatus: z.string().nullable().optional(),
   isPinned: z.boolean().nullable().optional(),
