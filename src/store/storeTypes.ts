@@ -58,10 +58,6 @@ export interface UISlice {
   isGanttWidthChanged: boolean;
   setIsGanttWidthChanged: (val: boolean) => void;
   saveGanttDayWidth: () => void;
-  isGanttSettingsOpen: boolean;
-  setIsGanttSettingsOpen: (val: boolean) => void;
-  ganttShowDependencies: boolean;
-  setGanttShowDependencies: (val: boolean) => void;
 
   // UI State
   activeTab: TabId;

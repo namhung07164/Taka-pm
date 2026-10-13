@@ -1,10 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Task, Project } from '../../types';
 import { DependencyLine, GanttTableRow } from './ganttTypes';
-import { computeTaskCode, buildTaskNoMap, parsePredecessors } from '../../lib/ganttUtils';
-import { parsePredecessorToken } from '../../lib/predecessorMatchUtils';
+import { computeTaskCode } from '../../lib/ganttUtils';
 import { parseDateTime } from '../../lib/utils';
-import { useAppStore } from '../../store/useAppStore';
 
 interface UseGanttDependenciesParams {
   tasks: Task[];
@@ -89,11 +87,6 @@ export function useGanttDependencies({
   predecessorColWidth = 90,
 }: UseGanttDependenciesParams) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
-  const ganttShowDependencies = useAppStore((state) => state.ganttShowDependencies);
-
-  const fullTaskNoMap = useMemo(() => {
-    return buildTaskNoMap(tasks, projects);
-  }, [tasks, projects]);
 
   const taskNoMap = useMemo(() => {
     const map = new Map<string, Task>();
@@ -137,7 +130,7 @@ export function useGanttDependencies({
   }, [delegationGroups]);
 
   const dependencyLines = useMemo(() => {
-    if (!ganttShowDependencies || !startDate || visibleGanttRows.length === 0) return [];
+    if (!startDate || visibleGanttRows.length === 0) return [];
 
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
     let currentY = paddingTop;
@@ -150,8 +143,8 @@ export function useGanttDependencies({
 
       if (row.type === 'task' && row.task) {
         const t = row.task;
-        const dStart = t.start ? parseDateTime(t.start) : (t.computedTakStart ? parseDateTime(t.computedTakStart) : null);
-        const dEnd = t.finish ? parseDateTime(t.finish) : (t.computedTakCompl ? parseDateTime(t.computedTakCompl) : null);
+        const dStart = t.start ? parseDateTime(t.start) : null;
+        const dEnd = t.finish ? parseDateTime(t.finish) : null;
         if (dStart && dEnd) {
           const startDays = (dStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
           const endDays = (dEnd.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24) + 1;
@@ -161,16 +154,11 @@ export function useGanttDependencies({
           const posObj = { xStart, xEnd, yCenter, t };
           taskPosMap.set(t.id, posObj);
           if (t.taskCodePhu) {
-            taskPosMap.set(String(t.taskCodePhu).trim().toUpperCase(), posObj);
+            taskPosMap.set(t.taskCodePhu.trim().toUpperCase(), posObj);
           }
           const computedCode = computeTaskCode(projects, tasks, t);
           if (computedCode) {
             taskPosMap.set(computedCode.trim().toUpperCase(), posObj);
-          }
-          if (row.no !== undefined && row.no !== null) {
-            const rowNoStr = String(row.no).trim().toUpperCase();
-            taskPosMap.set(rowNoStr, posObj);
-            taskPosMap.set(`#${rowNoStr}`, posObj);
           }
         }
       }
@@ -186,34 +174,24 @@ export function useGanttDependencies({
       const succPos = taskPosMap.get(succTask.id);
       if (!succPos) return;
 
-      const parsedPreds = parsePredecessors(succTask.predecessor, fullTaskNoMap, succTask);
+      const predCodes = String(succTask.predecessor)
+        .split(/[,;]/)
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
 
-      parsedPreds.forEach((predObj) => {
-        let predPos = predObj.task ? taskPosMap.get(predObj.task.id) : null;
-        if (!predPos && predObj.no) {
-          const { query } = parsePredecessorToken(predObj.no);
-          const cleanQuery = query.trim().toUpperCase();
-          predPos = taskPosMap.get(cleanQuery);
-        }
+      predCodes.forEach((code) => {
+        const predPos = taskPosMap.get(code);
         if (!predPos) return;
 
-        const type = (predObj.type || 'FS').toUpperCase();
-        let x1 = predPos.xEnd;
-        if (type === 'SS' || type === 'SF') {
-          x1 = predPos.xStart;
-        }
-        let x2 = succPos.xStart;
-        if (type === 'FF' || type === 'SF') {
-          x2 = succPos.xEnd;
-        }
-
+        const x1 = predPos.xEnd;
         const y1 = predPos.yCenter;
+        const x2 = succPos.xStart;
         const y2 = succPos.yCenter;
 
         const d = generateOrthogonalPath(x1, y1, x2, y2);
 
         lines.push({
-          id: `${predPos.t.id}->${succTask.id}-${type}`,
+          id: `${predPos.t.id}->${succTask.id}`,
           d,
           fromTaskId: predPos.t.id,
           toTaskId: succTask.id,
@@ -228,7 +206,6 @@ export function useGanttDependencies({
 
     return lines;
   }, [
-    ganttShowDependencies,
     visibleGanttRows,
     startDate,
     dayWidth,
@@ -246,7 +223,6 @@ export function useGanttDependencies({
     predecessorColWidth,
     projects,
     tasks,
-    fullTaskNoMap,
   ]);
 
   return {

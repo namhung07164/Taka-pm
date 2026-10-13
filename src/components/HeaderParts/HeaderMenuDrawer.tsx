@@ -124,25 +124,6 @@ export function HeaderMenuDrawer({
             <span>Đồng bộ Apple Calendar (iOS)</span>
           </button>
 
-          <button
-            onClick={() => {
-              useAppStore.getState().setIsGanttSettingsOpen(true);
-              if (activeTab !== 'gantt') {
-                onTabChange('gantt');
-              }
-              setIsMenuOpen(false);
-            }}
-            className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center justify-between transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="font-bold">Gantt Settings</span>
-            </div>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-              Gantt
-            </span>
-          </button>
-
           {/* Quick Utilities in Hamburger Menu */}
           <div className="py-2 border-b border-slate-100 dark:border-[#444446]">
             <div className="grid grid-cols-2 gap-1 px-3 py-1">

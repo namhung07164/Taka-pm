@@ -27,10 +27,6 @@ const ConfirmModal = lazyWithRetry(
   () => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })),
   'ConfirmModal'
 );
-const GanttSettingsModal = lazyWithRetry(
-  () => import('./Gantt/GanttSettingsModal').then(m => ({ default: m.GanttSettingsModal })),
-  'GanttSettingsModal'
-);
 
 export function GanttTab({
   onNavigateToTaskDetail,
@@ -51,8 +47,6 @@ export function GanttTab({
   const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
-  const isGanttSettingsOpen = useAppStore(state => state.isGanttSettingsOpen);
-  const setIsGanttSettingsOpen = useAppStore(state => state.setIsGanttSettingsOpen);
 
   useEffect(() => {
     if (!isTasksRequested) {
@@ -487,18 +481,6 @@ export function GanttTab({
             message={confirmModal.message}
             onConfirm={confirmModal.onConfirm}
             onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-          />
-        </Suspense>
-      )}
-
-      {/* Gantt Settings Modal */}
-      {isGanttSettingsOpen && (
-        <Suspense fallback={null}>
-          <GanttSettingsModal
-            isOpen={isGanttSettingsOpen}
-            onClose={() => setIsGanttSettingsOpen(false)}
-            visibleColumns={visibleColumns}
-            onToggleColumn={handleToggleColumn}
           />
         </Suspense>
       )}
