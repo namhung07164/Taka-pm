@@ -341,51 +341,56 @@ export async function executeTaskSave({
     
     saveTaskStateUnified(optimisticList);
 
-    try {
-      batch.commit().catch(e => console.error("Batch commit failed", e));
-      const deltaItems = optimisticList.map(item => {
-        const prev = tasks.find(t => t.id === item.id);
-        return createPatchDeltaItem({
-          docId: item.id,
-          collectionName: 'taka_tasks',
-          previous: prev,
-          updated: item,
-          action: prev ? 'update' : 'create',
-          year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
-        });
-      });
-      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
-    } catch (error: any) {
-      console.error("Batch commit failed", error);
-      useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-      setIsSubmitting(false);
-      return false;
-    }
-
     const isNewTask = !task;
     const oldAny = (task || {}) as any;
     const newAny = dataToSave as any;
     const datesOrStatusChanged =
       isNewTask ||
-      task.start !== dataToSave.start ||
-      task.finish !== dataToSave.finish ||
-      task.runningStatus !== dataToSave.runningStatus ||
-      task.approval !== dataToSave.approval ||
+      task?.start !== dataToSave.start ||
+      task?.finish !== dataToSave.finish ||
+      task?.runningStatus !== dataToSave.runningStatus ||
+      task?.approval !== dataToSave.approval ||
       Boolean(oldAny.isCompleted) !== Boolean(newAny.isCompleted) ||
       (oldAny.status || '') !== (newAny.status || '') ||
-      task.projectCode !== dataToSave.projectCode ||
-      task.projectStore !== dataToSave.projectStore ||
-      task.projectYear !== dataToSave.projectYear ||
+      task?.projectCode !== dataToSave.projectCode ||
+      task?.projectStore !== dataToSave.projectStore ||
+      task?.projectYear !== dataToSave.projectYear ||
       depUpdates.length > 0;
 
-    if (datesOrStatusChanged) {
-      const allTasksCurrent = useAppStore.getState().tasks;
-      syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent);
-      if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
-        syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent);
+    // Close modal INSTANTLY (0ms UI lag)
+    onClose();
+    setIsSubmitting(false);
+
+    // Offload network commit, delta emission, and project date rollups to non-blocking background microtask
+    setTimeout(async () => {
+      try {
+        await batch.commit();
+        const deltaItems = optimisticList.map(item => {
+          const prev = tasks.find(t => t.id === item.id);
+          return createPatchDeltaItem({
+            docId: item.id,
+            collectionName: 'taka_tasks',
+            previous: prev,
+            updated: item,
+            action: prev ? 'update' : 'create',
+            year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
+          });
+        });
+        recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
+        if (datesOrStatusChanged) {
+          const allTasksCurrent = useAppStore.getState().tasks;
+          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent);
+          if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
+            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent);
+          }
+        }
+      } catch (error: any) {
+        console.error("Background task save failed:", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
       }
-    }
-    
+    }, 0);
+
     undoManager.push({
       description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,
       revert: async () => {
@@ -412,9 +417,7 @@ export async function executeTaskSave({
         revertBatch.commit().catch(console.error);
       }
     });
-    
-    onClose();
-    setIsSubmitting(false);
+
     return true;
   } catch (e: any) { 
     console.error(e); 

@@ -58,10 +58,10 @@ export const TaskPredecessorSelect: React.FC<TaskPredecessorSelectProps> = React
   return (
     <div className="flex flex-col gap-2.5 p-3 bg-slate-50 dark:bg-[#1a1a1d] rounded-xl border border-slate-200 dark:border-[#333336]">
       <label className="text-xs font-bold flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-        <Link className="w-3.5 h-3.5 text-blue-500" /> Công việc phụ thuộc (Predecessors)
+        <Link className="w-3.5 h-3.5 text-blue-500" /> Predecessors
       </label>
       
-      {/* Hiển thị danh sách đã liên kết */}
+      {/* Display linked tasks */}
       {currentPredecessors.length > 0 && (
         <div className="flex flex-col gap-1.5 mb-1">
           {currentPredecessors.map(pred => {
@@ -89,7 +89,7 @@ export const TaskPredecessorSelect: React.FC<TaskPredecessorSelectProps> = React
         </div>
       )}
 
-      {/* Form thêm mới */}
+      {/* Add new predecessor form */}
       {canWrite && (
         <div className="flex items-center gap-1.5">
           <select
@@ -97,7 +97,7 @@ export const TaskPredecessorSelect: React.FC<TaskPredecessorSelectProps> = React
             onChange={(e) => setSelectedTaskId(e.target.value)}
             className="flex-1 text-xs p-2 border border-slate-300 dark:border-[#555] rounded-lg bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-white outline-none focus:ring-1 focus:ring-blue-500 truncate min-w-0"
           >
-            <option value="" disabled>+ Chọn công việc...</option>
+            <option value="" disabled>+ Select Task...</option>
             {candidateTasks.map(t => (
               <option key={t.id} value={t.id}>
                 {t.taskCodePhu || 'N/A'} - {t.name}

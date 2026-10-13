@@ -88,7 +88,7 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
             className="inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 text-[11px] font-bold text-blue-600 shadow-sm hover:bg-blue-50 active:scale-95 touch-manipulation dark:border-blue-700 dark:bg-[#1e1e20] dark:text-blue-400"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Đồng bộ ngày
+            Sync Dates
           </button>
         )}
       </div>
