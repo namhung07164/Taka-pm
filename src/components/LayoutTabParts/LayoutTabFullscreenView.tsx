@@ -3,7 +3,6 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate } from '
 import { X, ZoomIn, ZoomOut, Maximize, ArrowLeft, RefreshCw, Layers } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { LiveLayoutViewer } from '../LiveLayoutViewer';
-import { PdfOrImageViewer } from './PdfOrImageViewer';
 
 interface LayoutTabFullscreenViewProps {
   isFullscreenView: boolean;
@@ -245,12 +244,73 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
                 allow="autoplay"
               />
             ) : (
-              <PdfOrImageViewer
-                url={url}
-                getCleanUrl={getCleanUrl}
-                fallbackSvg={fallbackSvg}
-                isFullscreen={true}
-              />
+              <TransformWrapper
+                initialScale={1}
+                minScale={0.5}
+                maxScale={6}
+                centerOnInit={true}
+                smooth={false}
+                wheel={{ step: 0.05 }}
+                zoomAnimation={{ disabled: true }}
+                pinch={{ step: 5 }}
+                panning={{ disabled: false }}
+                doubleClick={{ mode: "toggle", step: 2.2 }}
+                onZoom={(ref) => {
+                  setFsScale(ref.state.scale);
+                  setIsPinching(true);
+                }}
+                onPinchStop={() => {
+                  setTimeout(() => setIsPinching(false), 200);
+                }}
+              >
+                {({ zoomIn, zoomOut, resetTransform, state }) => (
+                  <>
+                    <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md p-1 border border-slate-700 shadow-md rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => zoomIn(0.3)}
+                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => zoomOut(0.3)}
+                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </button>
+                      <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 border-l border-r border-slate-700">
+                        {Math.round((state.scale || 1) * 100)}%
+                      </span>
+                      <button 
+                        type="button"
+                        onClick={() => resetTransform()}
+                        className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+                        title="Reset"
+                      >
+                        <Maximize className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <TransformComponent
+                      wrapperStyle={{ width: "100%", height: "100%" }}
+                      contentStyle={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}
+                    >
+                      <img 
+                        src={getCleanUrl(url)} 
+                        alt="Layout Fullscreen" 
+                        decoding="async"
+                        className="max-w-full max-h-full object-contain cursor-grab active:cursor-grabbing"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = fallbackSvg;
+                        }}
+                      />
+                    </TransformComponent>
+                  </>
+                )}
+              </TransformWrapper>
             )}
           </motion.div>
         </motion.div>
