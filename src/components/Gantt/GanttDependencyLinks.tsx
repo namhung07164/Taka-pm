@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useEffect } from 'react';
 import { DependencyLine } from './ganttTypes';
 
 export interface GanttDependencyLinksProps {

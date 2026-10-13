@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useShallow } from 'zustand/react/shallow';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin, Layers, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
