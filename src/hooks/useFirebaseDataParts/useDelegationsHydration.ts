@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
@@ -10,7 +10,7 @@ import {
   hydrateDelegationsFromLocal,
   offloadPersistSnapshot,
 } from "../../lib/backgroundSyncWorker";
-import { getLocalDelegations } from "../../lib/localDb";
+import { getLocalDelegations, deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 
 interface UseDelegationsHydrationProps {
@@ -20,6 +20,24 @@ interface UseDelegationsHydrationProps {
 }
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
 
 export function useDelegationsHydration({
   querySignature,
@@ -37,6 +55,57 @@ export function useDelegationsHydration({
 
   const prevQuerySigDelegations = useRef<string>("");
   const prevSigDelegations = useRef<string>("");
+
+  // Atomic batching buffers for Delegations updates
+  const pendingDelegationsMap = useRef<Map<string, DelegationGroup> | null>(null);
+  const pendingDelegationsChanged = useRef<Map<string, DelegationGroup>>(new Map());
+  const pendingDelegationsRemoved = useRef<Set<string>>(new Set());
+  const delegationsBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchDelegationsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+    if (!pendingDelegationsMap.current) {
+      const currentDelegations = useAppStore.getState().delegationGroups || [];
+      const map = new Map<string, DelegationGroup>();
+      currentDelegations.forEach((g) => map.set(g.id, g));
+      pendingDelegationsMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const id = change.doc.id;
+      const data = { id, ...change.doc.data() } as DelegationGroup;
+      if (change.type === "removed" || data.isDeleted) {
+        pendingDelegationsMap.current!.delete(id);
+        pendingDelegationsChanged.current.delete(id);
+        pendingDelegationsRemoved.current.add(id);
+      } else {
+        if (fromCache && isStaleCacheDoc(pendingDelegationsMap.current!.get(id), data)) return;
+        pendingDelegationsMap.current!.set(id, data);
+        pendingDelegationsChanged.current.set(id, data);
+        pendingDelegationsRemoved.current.delete(id);
+      }
+    });
+
+    if (delegationsBatchTimer.current) {
+      clearTimeout(delegationsBatchTimer.current);
+    }
+
+    delegationsBatchTimer.current = setTimeout(() => {
+      if (pendingDelegationsMap.current) {
+        const updatedList = Array.from(pendingDelegationsMap.current.values());
+        useAppStore.getState().setDelegationGroups(updatedList);
+        
+        const changed = Array.from(pendingDelegationsChanged.current.values());
+        const removed = Array.from(pendingDelegationsRemoved.current);
+        pendingDelegationsChanged.current.clear();
+        pendingDelegationsRemoved.current.clear();
+        
+        if (changed.length > 0) offloadPersistSnapshot('taka_delegations', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_delegations', id).catch(() => {}); });
+        
+        pendingDelegationsMap.current = null;
+      }
+    }, 100);
+  }, []);
 
   // Sleep/Wake Recovery Listener
   useEffect(() => {
@@ -66,6 +135,7 @@ export function useDelegationsHydration({
       delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
       delegationsTTLTimeouts.current.clear();
       yearDelegationsCache.current.clear();
+      if (delegationsBatchTimer.current) clearTimeout(delegationsBatchTimer.current);
     };
   }, []);
 
@@ -194,38 +264,7 @@ export function useDelegationsHydration({
               .getState()
               .trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
-
-            if (!yearDelegationsCache.current.has(year)) {
-              yearDelegationsCache.current.set(year, new Map());
-            }
-            const currentYearMap = yearDelegationsCache.current.get(year)!;
-
-            snapshot.docChanges().forEach((change) => {
-              const data = { id: change.doc.id, ...change.doc.data() } as DelegationGroup;
-              if (change.type === "removed") {
-                currentYearMap.delete(change.doc.id);
-              } else {
-                currentYearMap.set(change.doc.id, data);
-              }
-            });
-
-            const loaded: DelegationGroup[] = [];
-            const seenGroupIds = new Set<string>();
-
-            activeYearsSet.forEach((targetYear) => {
-              const map = yearDelegationsCache.current.get(targetYear);
-              if (map) {
-                for (const data of map.values()) {
-                  if (data.id && !seenGroupIds.has(data.id)) {
-                    seenGroupIds.add(data.id);
-                    loaded.push(data);
-                  }
-                }
-              }
-            });
-
-            useAppStore.getState().setDelegationGroups(loaded);
-            offloadPersistSnapshot("taka_delegations", loaded);
+            batchDelegationsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
           },
           (e) => {
             delegationsPool.current.delete(year);

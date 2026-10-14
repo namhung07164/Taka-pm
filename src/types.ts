@@ -307,6 +307,7 @@ export interface DelegationGroup {
   createdBy?: string;
   actStatus?: string;
   plStatus?: string;
+  isDeleted?: boolean;
 }
 
 export type TabId = 'general' | 'detail' | 'budget' | 'cost' | 'accControl' | 'notification' | 'notificationRule' | 'calendar' | 'gantt' | 'summary' | 'taskDelegation' | 'taskDelegationCalendar' | 'setting' | 'layout' | 'manual' | 'csv_export' | 'picture_mapping' | 'audit';

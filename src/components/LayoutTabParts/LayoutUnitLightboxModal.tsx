@@ -179,7 +179,7 @@ export function LayoutUnitLightboxModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[999999] bg-black/95 backdrop-blur-md flex items-center justify-center p-0 sm:p-2 md:p-4 animate-in fade-in duration-150 select-none touch-none overscroll-none"
+      className="fixed inset-0 z-[999999] bg-black/95 backdrop-blur-md flex items-center justify-center p-0 sm:p-2 md:p-4 animate-in fade-in duration-150 select-none overscroll-none"
       onClick={(e) => {
         e.stopPropagation();
       }}

@@ -115,11 +115,11 @@ export function useStaticAndAuthHydration() {
 
       if (needsTasks) {
         setIsTasksRequested(true);
-        hydrateTasksFromLocal().catch(() => {});
+        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
       if (needsCosts) {
         setIsCostsRequested(true);
-        hydrateCostsFromLocal().catch(() => {});
+        hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
       if (needsDelegations) {
         setIsDelegationsRequested(true);

@@ -111,10 +111,9 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
 /**
  * Nạp tức thời Tasks từ Dexie khi người dùng chuyển sang tab yêu cầu Tasks (0ms UI, triệt tiêu Spinner)
  */
-export async function hydrateTasksFromLocal(): Promise<number> {
+export async function hydrateTasksFromLocal(year?: string): Promise<number> {
   try {
-    const store = useAppStore.getState();
-    const localTasks = await getLocalTasks();
+    const localTasks = await getLocalTasks(year);
     if (localTasks && localTasks.length > 0) {
       const currentStore = useAppStore.getState();
       const existingMap = new Map((currentStore.tasks || []).map(t => [t.id, t]));
@@ -181,11 +180,15 @@ export async function hydrateTasksForProjects(projectIdsOrCodes: string[]): Prom
 /**
  * Nạp tức thời Costs từ Dexie khi người dùng chuyển sang tab yêu cầu Chi phí (0ms UI)
  */
-export async function hydrateCostsFromLocal(): Promise<number> {
+export async function hydrateCostsFromLocal(year?: string): Promise<number> {
   try {
     const store = useAppStore.getState();
-    if (store.costs && store.costs.length > 0) return store.costs.length;
-    const localCosts = await getLocalCosts();
+    if (store.costs && store.costs.length > 0) {
+      if (!year || year === 'all' || year === 'ALL') return store.costs.length;
+      const hasForYear = store.costs.some(c => String(c.projectYear || '') === String(year));
+      if (hasForYear) return store.costs.length;
+    }
+    const localCosts = await getLocalCosts(year);
     if (localCosts && localCosts.length > 0) {
       const currentStore = useAppStore.getState();
       if (!currentStore.costs || currentStore.costs.length === 0) {

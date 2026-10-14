@@ -1,6 +1,7 @@
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
 import { useAppStore } from '../store/useAppStore';
-import { upsertLocalRecord, deleteLocalRecord } from './localDb';
+import { upsertLocalRecord, patchLocalRecord, deleteLocalRecord } from './localDb';
+import { applyFieldPatch } from './deltaPatchService';
 
 const CHANNEL_NAME = 'taka_multi_tab_sync_v1';
 const TAB_ID = typeof window !== 'undefined'
@@ -17,9 +18,6 @@ export interface MultiTabSyncMessage {
 let broadcastChannel: BroadcastChannel | null = null;
 let isListenerInitialized = false;
 
-/**
- * Khởi tạo kết nối BroadcastChannel giữa các tab trình duyệt
- */
 export function getBroadcastChannel(): BroadcastChannel | null {
   if (typeof globalThis === 'undefined' || !('BroadcastChannel' in globalThis)) {
     return null;
@@ -40,9 +38,6 @@ export function resetBroadcastChannelForTesting(): void {
   isListenerInitialized = false;
 }
 
-/**
- * Phát tín hiệu delta đã nạp sang các tab khác trong cùng trình duyệt (0 Firestore READ)
- */
 export function broadcastAppliedDeltas(deltas: TakaDelta[]): void {
   if (!deltas || deltas.length === 0) return;
   const channel = getBroadcastChannel();
@@ -61,139 +56,124 @@ export function broadcastAppliedDeltas(deltas: TakaDelta[]): void {
   }
 }
 
-/**
- * Lắng nghe và áp dụng các thay đổi từ tab khác vào Zustand + Dexie
- */
+type Coll = 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+
 export function initBroadcastSyncListener(): () => void {
   if (isListenerInitialized || typeof window === 'undefined') {
     return () => {};
   }
-
   const channel = getBroadcastChannel();
   if (!channel) {
     return () => {};
   }
-
   isListenerInitialized = true;
 
   const handleMessage = (event: MessageEvent<MultiTabSyncMessage>) => {
     const msg = event.data;
-    if (!msg || msg.senderTabId === TAB_ID) {
-      return; // Bỏ qua thông điệp từ chính tab này
-    }
+    if (!msg || msg.senderTabId === TAB_ID) return;
+    if (msg.type !== 'DELTA_APPLIED' || !Array.isArray(msg.deltas) || msg.deltas.length === 0) return;
 
-    if (msg.type === 'DELTA_APPLIED' && Array.isArray(msg.deltas) && msg.deltas.length > 0) {
-      const store = useAppStore.getState();
-      const deltas = msg.deltas;
+    const store = useAppStore.getState();
+    const projectMap = new Map<string, Project>((store.projects || []).map((p) => [p.id as string, p]));
+    const taskMap = new Map<string, Task>((store.tasks || []).map((t) => [t.id as string, t]));
+    const costMap = new Map<string, Cost>((store.costs || []).map((c) => [c.id as string, c]));
+    const delegMap = new Map<string, DelegationGroup>((store.delegationGroups || []).map((d) => [d.id as string, d]));
 
-      const projectsToUpdate: (Partial<Project> & { id: string })[] = [];
-      const projectsToDelete: string[] = [];
-      const tasksToUpdate: (Partial<Task> & { id: string })[] = [];
-      const tasksToDelete: string[] = [];
-      const costsToUpdate: (Partial<Cost> & { id: string })[] = [];
-      const costsToDelete: string[] = [];
-      const delegationsToUpdate: DelegationGroup[] = [];
-      const delegationsToDelete: string[] = [];
+    const projectsUpdated = new Map<string, Project>();
+    const tasksUpdated = new Map<string, Task>();
+    const costsUpdated = new Map<string, Cost>();
+    const delegUpdated = new Map<string, DelegationGroup>();
 
-      const processItem = (
-        docId: string,
-        collectionName: string,
-        action: 'create' | 'update' | 'delete',
-        data: any
-      ) => {
-        if (!docId) return;
+    const projectsDeleted = new Set<string>();
+    const tasksDeleted = new Set<string>();
+    const costsDeleted = new Set<string>();
+    const delegDeleted = new Set<string>();
 
-        switch (collectionName) {
-          case 'taka_projects':
-            if (action === 'delete') {
-              projectsToDelete.push(docId);
-              deleteLocalRecord('taka_projects', docId).catch(() => {});
-            } else if (data) {
-              const proj = { id: docId, ...data } as (Project & { id: string });
-              projectsToUpdate.push(proj);
-              upsertLocalRecord('taka_projects', proj).catch(() => {});
-            }
-            break;
+    const processItem = (
+      docId: string,
+      collectionName: Coll,
+      action: 'create' | 'update' | 'delete',
+      data: any,
+      invalidate?: boolean
+    ) => {
+      if (!docId) return;
+      // Tín hiệu "invalidate" không mang dữ liệu: để pipeline delta của chính tab này tự đọc
+      if (invalidate) return;
 
-          case 'taka_tasks':
-            if (action === 'delete') {
-              tasksToDelete.push(docId);
-              deleteLocalRecord('taka_tasks', docId).catch(() => {});
-            } else if (data) {
-              const task = { id: docId, ...data } as (Task & { id: string });
-              tasksToUpdate.push(task);
-              upsertLocalRecord('taka_tasks', task).catch(() => {});
-            }
-            break;
+      const deleted: Set<string> = 
+        collectionName === 'taka_projects' ? projectsDeleted :
+        collectionName === 'taka_tasks' ? tasksDeleted :
+        collectionName === 'taka_costs' ? costsDeleted :
+        delegDeleted;
 
-          case 'taka_costs':
-            if (action === 'delete') {
-              costsToDelete.push(docId);
-              deleteLocalRecord('taka_costs', docId).catch(() => {});
-            } else if (data) {
-              const cost = { id: docId, ...data } as (Cost & { id: string });
-              costsToUpdate.push(cost);
-              upsertLocalRecord('taka_costs', cost).catch(() => {});
-            }
-            break;
+      const updated: Map<string, any> = 
+        collectionName === 'taka_projects' ? projectsUpdated :
+        collectionName === 'taka_tasks' ? tasksUpdated :
+        collectionName === 'taka_costs' ? costsUpdated :
+        delegUpdated;
 
-          case 'taka_delegations':
-            if (action === 'delete') {
-              delegationsToDelete.push(docId);
-              deleteLocalRecord('taka_delegations', docId).catch(() => {});
-            } else if (data) {
-              const group = { id: docId, ...data } as DelegationGroup;
-              delegationsToUpdate.push(group);
-              upsertLocalRecord('taka_delegations', group).catch(() => {});
-            }
-            break;
-        }
-      };
+      const existingMap: Map<string, any> = 
+        collectionName === 'taka_projects' ? projectMap :
+        collectionName === 'taka_tasks' ? taskMap :
+        collectionName === 'taka_costs' ? costMap :
+        delegMap;
 
-      deltas.forEach((delta) => {
-        if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
-          delta.batchItems.forEach((item) => {
-            processItem(item.docId, item.collectionName, item.action, item.data);
-          });
-        } else if (delta.docId && delta.collectionName) {
-          processItem(delta.docId, delta.collectionName, delta.action as any, delta.data);
-        }
-      });
-
-      // Áp dụng nguyên tử vào Zustand store của tab này (0ms delay)
-      if (projectsToUpdate.length > 0) store.optimisticUpdateProjects(projectsToUpdate);
-      if (projectsToDelete.length > 0) store.optimisticDeleteProjects(projectsToDelete);
-
-      if (tasksToUpdate.length > 0) store.optimisticUpdateTasks(tasksToUpdate);
-      if (tasksToDelete.length > 0) store.optimisticDeleteTasks(tasksToDelete);
-
-      if (costsToUpdate.length > 0) store.optimisticUpdateCosts(costsToUpdate);
-      if (costsToDelete.length > 0) store.optimisticDeleteCosts(costsToDelete);
-
-      if (delegationsToUpdate.length > 0 || delegationsToDelete.length > 0) {
-        const currentDelegations = store.delegationGroups || [];
-        const toDeleteSet = new Set(delegationsToDelete);
-        const toUpdateMap = new Map(delegationsToUpdate.map((d) => [d.id, d]));
-
-        const updated = currentDelegations
-          .filter((d) => !toDeleteSet.has(d.id))
-          .map((d) => (toUpdateMap.has(d.id) ? { ...d, ...toUpdateMap.get(d.id)! } : d));
-
-        delegationsToUpdate.forEach((d) => {
-          if (!updated.some((u) => u.id === d.id)) {
-            updated.push(d);
-          }
-        });
-        store.setDelegationGroups(updated);
+      if (action === 'delete') {
+        deleted.add(docId);
+        updated.delete(docId);
+        deleteLocalRecord(collectionName, docId).catch(() => {});
+        return;
       }
+
+      const existing = updated.get(docId) || existingMap.get(docId);
+      if (action === 'create' && data && Object.keys(data).length > 0) {
+        // Bản đầy đủ: hợp nhất lên bản đang có (nếu có) và upsert Dexie
+        const merged = existing ? applyFieldPatch(existing, data) : { id: docId, ...data };
+        updated.set(docId, merged);
+        upsertLocalRecord(collectionName, merged).catch(() => {});
+        return;
+      }
+
+      // action 'update' (bản vá): chỉ vá bản ghi ĐÃ CÓ. Không tạo bản ghi thiếu field.
+      patchLocalRecord(collectionName, docId, data || {}).catch(() => {});
+      if (existing && data && Object.keys(data).length > 0) {
+        updated.set(docId, applyFieldPatch(existing, data));
+      }
+    };
+
+    msg.deltas.forEach((delta) => {
+      if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+        delta.batchItems.forEach((item) => {
+          processItem(item.docId, item.collectionName as Coll, item.action, item.data, item.invalidate);
+        });
+      } else if (delta.docId && delta.collectionName) {
+        processItem(delta.docId, delta.collectionName as Coll, delta.action as any, delta.data);
+      }
+    });
+
+    if (projectsUpdated.size > 0) store.optimisticUpdateProjects(Array.from(projectsUpdated.values()) as (Project & { id: string })[]);
+    if (projectsDeleted.size > 0) store.optimisticDeleteProjects(Array.from(projectsDeleted));
+    if (tasksUpdated.size > 0) store.optimisticUpdateTasks(Array.from(tasksUpdated.values()) as (Task & { id: string })[]);
+    if (tasksDeleted.size > 0) store.optimisticDeleteTasks(Array.from(tasksDeleted));
+    if (costsUpdated.size > 0) store.optimisticUpdateCosts(Array.from(costsUpdated.values()));
+    if (costsDeleted.size > 0) store.optimisticDeleteCosts(Array.from(costsDeleted));
+
+    if (delegUpdated.size > 0 || delegDeleted.size > 0) {
+      const current = store.delegationGroups || [];
+      const next = current
+        .filter((d) => !delegDeleted.has(d.id as string))
+        .map((d) => (delegUpdated.has(d.id as string) ? delegUpdated.get(d.id as string)! : d));
+      
+      delegUpdated.forEach((d, id) => {
+        if (!next.some((n) => n.id === id)) next.push(d);
+      });
+      store.setDelegationGroups(next);
     }
   };
 
   channel.addEventListener('message', handleMessage);
 
   return () => {
-    try {
-      channel.removeEventListener('message', handleMessage);
-    } catch {}
+    channel.removeEventListener('message', handleMessage);
   };
 }
