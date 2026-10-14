@@ -306,7 +306,7 @@ export function useCommandPaletteItems({
       const desc = p.detail || (p as any).description || p.note || '';
       return {
         id: `proj-${p.id || p.code}`,
-        category: 'projects',
+        category: 'projects' as const,
         title: p.name || 'Untitled Project',
         subtitle: `${p.year || ''} • ${p.store || 'HCM'} • Floor ${p.location || 'N/A'}${
           desc ? ` • ${desc.length > 80 ? desc.slice(0, 80) + '...' : desc}` : ''
