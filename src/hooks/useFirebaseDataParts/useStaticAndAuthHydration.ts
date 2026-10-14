@@ -233,7 +233,10 @@ export function useStaticAndAuthHydration() {
           );
           let skipped = 0;
           const validPending = pending.filter((u: any) => {
-            const draftAt = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
+            const draftAtRaw = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
+            // Không có updatedAt hợp lệ thì dùng thời điểm đưa vào hàng đợi (PendingUpdate.timestamp)
+            const draftAt =
+              Number.isFinite(draftAtRaw) && draftAtRaw > 0 ? draftAtRaw : Number(u.timestamp) || 0;
             if (draftAt && Date.now() - draftAt > 60 * 60 * 1000) {
               skipped++;
               return false;
@@ -297,7 +300,7 @@ export function useStaticAndAuthHydration() {
                   | "taka_delegations" = "taka_projects";
                 if (u.collectionPath.includes("taka_tasks")) collectionName = "taka_tasks";
                 else if (u.collectionPath.includes("taka_costs")) collectionName = "taka_costs";
-                else if (u.collectionPath.includes("taka_delegations"))
+                else if (u.collectionPath.includes("taka_delegation"))
                   collectionName = "taka_delegations";
 
                 return {
@@ -315,9 +318,37 @@ export function useStaticAndAuthHydration() {
                 recordBatchDeltas(deltaItems).catch(() => {});
               }
             })
-            .catch((e: any) => {
+            .catch(async (e: any) => {
               console.error(e);
-              setCloudStatus("offline");
+              const code = String(e?.code || "");
+              const isPermanent = code.includes("not-found") || code.includes("invalid-argument");
+              if (!isPermanent) {
+                // Lỗi mạng tạm thời: giữ hàng đợi, thử lại khi online
+                setCloudStatus("offline");
+                return;
+              }
+
+              // Một mục hỏng làm hỏng cả batch: ghi lại từng mục, bỏ mục không thể ghi
+              let okCount = 0;
+              let droppedCount = 0;
+              for (const update of validPending) {
+                try {
+                  const single = writeBatch(db);
+                  const singleRef = doc(db, update.collectionPath, update.docId);
+                  if (update.action === "set") single.set(singleRef, update.data, { merge: true });
+                  else if (update.action === "update") single.update(singleRef, update.data);
+                  else if (update.action === "delete") single.delete(singleRef);
+                  await single.commit();
+                  okCount++;
+                } catch {
+                  droppedCount++;
+                }
+              }
+              clearPendingUpdates();
+              setToast({
+                title: "Sync",
+                message: `Đã đồng bộ ${okCount} thay đổi offline, bỏ ${droppedCount} thay đổi không còn hợp lệ.`,
+              });
             });
         }
       } catch (error) {

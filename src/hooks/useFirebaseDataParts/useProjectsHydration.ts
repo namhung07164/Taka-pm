@@ -135,9 +135,14 @@ export function useProjectsHydration({
   // Sleep/Wake Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      projectsPool.current.forEach((u) => u());
-      projectsPool.current.clear();
-      hydrateProjectsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      // KHÔNG hủy listener khi thức giấc.
+      // Hủy xong mà không effect nào tạo lại => mất realtime Projects, và bộ đếm activeListeners
+      // không giảm => deltaInvalidateService tưởng doc đã có listener phủ rồi bỏ qua việc đọc lại.
+      // Socket chết do iOS treo đã có initNetworkRecovery (syncResilience) xử lý.
+      hydrateProjectsFromLocal(
+        useAppStore.getState().globalYearFilter,
+        useAppStore.getState().globalStoreFilter
+      ).catch(() => {});
     };
 
     window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
@@ -197,7 +202,7 @@ export function useProjectsHydration({
           return;
         }
 
-        if (isClosedOrPastYear && isYearCacheValid(year, remoteYearsMetaRef.current)) {
+        if (false && isClosedOrPastYear && isYearCacheValid(year, remoteYearsMetaRef.current)) {
           const cached = loadYearDataFromLocal(year);
           if (cached && cached.projects && cached.projects.length > 0) {
             batchProjectsUpdate(

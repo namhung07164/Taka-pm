@@ -116,12 +116,7 @@ export function useDelegationsHydration({
   // Sleep/Wake Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      delegationsPool.current.forEach((u) => u());
-      delegationsPool.current.clear();
-      delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
-      delegationsTTLTimeouts.current.clear();
-      yearDelegationsCache.current.clear();
-
+      // KHÔNG hủy listener và KHÔNG xóa cache năm khi thức giấc (xem giải thích ở B1).
       if (useAppStore.getState().isDelegationsRequested) {
         hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }

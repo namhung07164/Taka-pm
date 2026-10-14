@@ -634,14 +634,14 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     wakeAndSync();
   };
 
-  window.addEventListener('visibilitychange', handleVisibilityChange);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('online', handleOnline);
 
   return () => {
     stopPolling();
     stopNetworkRecovery();
     stopRealtime();
-    window.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
   };
 }
