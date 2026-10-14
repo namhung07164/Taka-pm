@@ -47,6 +47,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   const invalidations: TakaDeltaItem[] = [];
 
+  // Các dự án có task thay đổi trong lô delta này (để chỉ tính lại đúng các dự án đó)
+  const touchedProjectIds = new Set<string>();
+  const touchedProjectCodes = new Set<string>();
+  const noteTouchedProject = (t: any) => {
+    if (!t) return;
+    if (t.projectId) touchedProjectIds.add(String(t.projectId));
+    if (t.projectCode) touchedProjectCodes.add(String(t.projectCode).trim().toLowerCase());
+  };
+
   const applyItem = (
     docId: string,
     collectionNameRaw: string,
@@ -108,6 +117,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
+        noteTouchedProject(idx !== -1 ? updatedTasks[idx] : null);
+        noteTouchedProject(data);
         if (isDelete || data?.isDeleted) {
           markTasksDeleted([docId, data?.taskCodePhu, data?.name]);
           if (idx !== -1) {
@@ -222,7 +233,19 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (tasksChanged && !projectsChanged) {
     const delegationGroups = store.delegationGroups || [];
     const isTasksRequested = store.isTasksRequested;
+    const hasTouchedInfo = touchedProjectIds.size + touchedProjectCodes.size > 0;
     updatedProjects = updatedProjects.map(p => {
+      if (hasTouchedInfo) {
+        // Dự án khớp theo id, hoặc theo mã chính / mã liên kết (linkCodes)
+        const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
+          .toLowerCase()
+          .split(/[,;/]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const isTouched =
+          touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
+        if (!isTouched) return p;
+      }
       const pTasks = getTasksForProject(p, updatedTasks);
       if (isTasksRequested || pTasks.length > 0) {
         const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);

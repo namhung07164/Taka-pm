@@ -80,13 +80,20 @@ export function startDeltaRealtimeListener(): () => void {
 
   if (signedIn) attach();
 
+  let hiddenAt = 0;
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
       if (detachTimer) clearTimeout(detachTimer);
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      // Force socket reconnect on iOS / Safari tab restore to recover from suspended WebChannel connections
+      const hiddenFor = hiddenAt ? Date.now() - hiddenAt : Infinity;
+      hiddenAt = 0;
+      // Ẩn ngắn (dưới 15 giây, ví dụ chuyển tab): kết nối vẫn sống và listener vẫn nhận delta realtime,
+      // không cần tạo lại listener hay kéo delta (tránh đọc lại cửa sổ 3 phút).
+      if (unsub && hiddenFor < 15000) return;
+      // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari treo
       detach();
       attach();
       pullAndApplyDeltas().catch(() => {});
@@ -108,7 +115,8 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const handleFocus = () => {
-    // When switching windows on desktop/laptop, trigger delta catch-up immediately
+    // Listener còn sống thì đã nhận delta realtime (Firestore SDK tự nối lại và bù delta bị lỡ)
+    if (unsub) return;
     pullAndApplyDeltas().catch(() => {});
   };
 

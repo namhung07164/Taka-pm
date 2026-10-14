@@ -15,7 +15,13 @@ export function markTasksDeleted(keys: (string | undefined | null)[]): void {
   });
 }
 
-export function isTaskDeletedInTracker(taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null): boolean {
+// Các nơi gọi truyền thêm (code, name) nhưng hiện chỉ kiểm tra theo id/khóa chính.
+// Không kiểm tra theo tên vì tên task có thể trùng giữa các dự án.
+export function isTaskDeletedInTracker(
+  taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null,
+  _code?: string,
+  _name?: string
+): boolean {
   if (!taskOrKey) return false;
   if (typeof taskOrKey === 'string') {
     return deletedTaskKeys.has(taskOrKey.trim().toLowerCase());
