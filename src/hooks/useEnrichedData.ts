@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 import { enrichProjects, getUserAllowedStores } from '../lib/utils';
 import { Task, DelegationGroup } from '../types';
 import { deduplicateTasks } from '../lib/taskDeduplicationService';
+import { rollupParentTaskDatesAndStatus } from '../lib/taskRollupService';
 
 let _lastProjectsRef: any = null;
 let _lastRawTasksRef: any = null;
@@ -31,7 +32,8 @@ export function useEnrichedData() {
       return _lastEnrichedResult;
     }
 
-    const tasks = deduplicateTasks(rawTasks);
+    const deduped = deduplicateTasks(rawTasks);
+    const tasks = rollupParentTaskDatesAndStatus(deduped, delegationGroups);
     const enriched = enrichProjects(projects, tasks, delegationGroups);
     
     if (!currentUser || currentUser.role === "admin") {

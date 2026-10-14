@@ -153,6 +153,8 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   return [];
 }
 
+import { rollupParentTaskDatesAndStatus, rollupTaskSummaries } from "./taskRollupService";
+
 /**
  * Thuật toán tính toán mốc thời gian tĩnh (Pre-computed Dates) cho Dự án từ danh sách Tasks con:
  * - computedTakStart: Ngày bắt đầu sớm nhất trong các Task con (hoặc giữ project.start)
@@ -171,9 +173,10 @@ export function calculateProjectComputedDates(
   const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
   const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
 
-  const sortedProjTasks = sortGroupTasks(projectTasks || []);
+  const rolledUpProjTasks = rollupParentTaskDatesAndStatus(projectTasks || [], delegationGroups);
+  const sortedProjTasks = sortGroupTasks(rolledUpProjTasks);
 
-  const taskSummaries = sortedProjTasks
+  const taskSummariesRaw = sortedProjTasks
     .filter(t => t.start || t.finish || t.name)
     .map((t, idx) => {
       const summary: {
@@ -198,10 +201,13 @@ export function calculateProjectComputedDates(
       return summary;
     });
 
+  const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
   const isTasksProvided = Array.isArray(projectTasks);
-  const finalSummaries: any[] = isTasksProvided
-    ? taskSummaries
-    : (existingSummaries.length > 0 ? existingSummaries : taskSummaries);
+  const finalSummaries: any[] = rollupTaskSummaries(
+    isTasksProvided
+      ? taskSummaries
+      : (existingSummaries.length > 0 ? existingSummaries : taskSummaries)
+  );
 
   const finalTaskCount = isTasksProvided
     ? projectTasks.length

@@ -14,6 +14,7 @@ import {
 import { loadNotificationTasks } from "../../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
 import { cleanOrphanTasks } from "../../lib/taskStateService";
+import { rollupParentTaskDatesAndStatus } from "../../lib/taskRollupService";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
@@ -95,13 +96,15 @@ export function useTasksHydration({
         const rawList = Array.from(pendingTasksMap.current.values());
         const projects = useAppStore.getState().projects || [];
         const { dedupedTasks } = deduplicateTasksInMemory(rawList, projects);
-        const { cleaned: finalTasks } = cleanOrphanTasks(dedupedTasks);
-        finalTasks.sort((a, b) => {
+        const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
+        const rolledUpTasks = rollupParentTaskDatesAndStatus(unrolledTasks, useAppStore.getState().delegationGroups);
+        rolledUpTasks.sort((a, b) => {
           if (a.projectCode !== b.projectCode) {
             return (a.projectCode || "").localeCompare(b.projectCode || "");
           }
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
+        const finalTasks = rolledUpTasks;
         useAppStore.getState().setTasks(finalTasks);
         
         // Self-healing: if loaded tasks for a project have discrepancies with p.taskCount or taskSummaries, immediately heal in Zustand & Firestore

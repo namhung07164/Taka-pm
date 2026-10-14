@@ -4,6 +4,7 @@ import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPe
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
 import { useAppStore } from '../../store/useAppStore';
+import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 
 interface UseDetailFlatRowsParams {
   filteredProjects: Project[];
@@ -89,7 +90,8 @@ export function useDetailFlatRows({
         (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
-      const validGroupTasks = groupTasks.map(t => ({
+      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
+      const validGroupTasks = rolledUpGroupTasks.map(t => ({
         ...t,
         name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
       }));

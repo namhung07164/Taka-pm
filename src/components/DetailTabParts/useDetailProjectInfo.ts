@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
+import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { getStatus } from '../../lib/utils';
 
 export interface ProjectInfo {
@@ -120,7 +121,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         }
       });
       rawGroupTasks = Array.from(uniqueTaskMap.values());
-      const sortedTasks = sortGroupTasks(rawGroupTasks || []);
+      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(rawGroupTasks || []);
+      const sortedTasks = sortGroupTasks(rolledUpGroupTasks);
       let computedTakStart = p.computedTakStart || p.start;
       let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
       let computedOpening = p.computedOpening || p.opening;
@@ -242,7 +244,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       });
       rawGroupTasks = Array.from(uniqueTaskMap.values());
     }
-    const sortedTasks = sortGroupTasks(rawGroupTasks || []);
+    const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(rawGroupTasks || []);
+    const sortedTasks = sortGroupTasks(rolledUpGroupTasks);
     let computedTakStart = p.computedTakStart || p.start;
     let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
     let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
