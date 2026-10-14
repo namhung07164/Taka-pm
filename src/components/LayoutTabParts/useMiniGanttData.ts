@@ -81,7 +81,13 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
 
     const matchedZustandTasks = tasks.filter((t) => {
       if (t.isDeleted) return false;
-      if (pId && t.projectId && String(t.projectId) === pId) return true;
+      if (pId && t.projectId && String(t.projectId) === pId) {
+        const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+        const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+        if (pStore && tStore && pStore !== tStore) return false;
+        if (pYear && tYear && pYear !== tYear) return false;
+        return true;
+      }
       const tCode = String(t.projectCode || '').trim().toUpperCase();
       if (!tCode || tCode !== pCode) return false;
       const tYear = t.projectYear ? String(t.projectYear).trim() : '';

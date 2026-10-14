@@ -1094,7 +1094,12 @@ export function enrichProjects(
       const idTasks = tasksByProjectId.get(String(p.id));
       if (idTasks) {
         for (let i = 0; i < idTasks.length; i++) {
-          matchedTaskMap.set(idTasks[i].id, idTasks[i]);
+          const t = idTasks[i];
+          const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+          if (pStore && tStore && pStore !== tStore) continue;
+          if (pYear && tYear && pYear !== tYear) continue;
+          matchedTaskMap.set(t.id, t);
         }
       }
     }
