@@ -14,7 +14,6 @@ import {
 import { loadNotificationTasks } from "../../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
 import { cleanOrphanTasks } from "../../lib/taskStateService";
-import { rollupParentTaskDatesAndStatus } from "../../lib/taskRollupService";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
@@ -32,7 +31,23 @@ interface UseTasksHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear } from "./tasksHydrationHelpers";
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
 
 export function useTasksHydration({
   querySignature,
@@ -96,59 +111,14 @@ export function useTasksHydration({
         const rawList = Array.from(pendingTasksMap.current.values());
         const projects = useAppStore.getState().projects || [];
         const { dedupedTasks } = deduplicateTasksInMemory(rawList, projects);
-        const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
-        const rolledUpTasks = rollupParentTaskDatesAndStatus(unrolledTasks, useAppStore.getState().delegationGroups);
-        rolledUpTasks.sort((a, b) => {
+        const { cleaned: finalTasks } = cleanOrphanTasks(dedupedTasks);
+        finalTasks.sort((a, b) => {
           if (a.projectCode !== b.projectCode) {
             return (a.projectCode || "").localeCompare(b.projectCode || "");
           }
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
-        const finalTasks = rolledUpTasks;
         useAppStore.getState().setTasks(finalTasks);
-        
-        // Self-healing: if loaded tasks for a project have discrepancies with p.taskCount or taskSummaries, immediately heal in Zustand & Firestore
-        const currentProjects = useAppStore.getState().projects || [];
-        let projectsNeedUpdate = false;
-        const healedProjects = currentProjects.map((p) => {
-          const pTasks = finalTasks.filter((t) =>
-            (t.projectId && String(t.projectId) === String(p.id)) ||
-            (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-          );
-          const hasDiscrepancy =
-            pTasks.length !== (p.taskCount ?? 0) ||
-            !p.taskSummaries ||
-            p.taskSummaries.length !== pTasks.length;
-          if (hasDiscrepancy) {
-            projectsNeedUpdate = true;
-            import('../../lib/projectDatesService').then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
-              const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
-              syncProjectDatesToFirestore(p.id, computed).catch(() => {});
-            }).catch(() => {});
-            const summaryItems = pTasks.map(t => ({
-              id: t.id,
-              name: t.name || '',
-              start: t.start || '',
-              finish: t.finish || '',
-              taskCodePhu: t.taskCodePhu,
-              duration: t.duration,
-              runningStatus: t.runningStatus,
-            }));
-            const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
-            const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
-            return {
-              ...p,
-              taskCount: pTasks.length,
-              taskSummaries: summaryItems,
-              computedTakStart: validStarts[0] || p.computedTakStart,
-              computedTakCompl: validFinishes[0] || p.computedTakCompl,
-            };
-          }
-          return p;
-        });
-        if (projectsNeedUpdate) {
-          useAppStore.getState().setProjects(healedProjects);
-        }
         
         const finalIds = new Set(finalTasks.map(t => t.id));
         const changed = Array.from(pendingTasksChanged.current.values()).filter(t => finalIds.has(t.id));
@@ -265,7 +235,26 @@ export function useTasksHydration({
     let isCancelled = false;
     const runTasksSync = async () => {
       const currentProjects = useAppStore.getState().projects || [];
-      const keysToHydrate = extractKeysToHydrate(activeProjectIds, currentProjects);
+      const keysToHydrate = new Set<string>();
+      activeProjectIds.forEach((id) => {
+        keysToHydrate.add(String(id));
+        const matched = currentProjects.find(
+          (p) =>
+            String(p.id || "") === String(id) ||
+            String(p.no) === String(id) ||
+            String(p.code || "") === String(id) ||
+            `${p.code}-${p.year}-${p.store}-${p.no}` === String(id)
+        );
+        if (matched) {
+          if (matched.id) keysToHydrate.add(String(matched.id));
+          if (matched.code) keysToHydrate.add(String(matched.code));
+          if (matched.linkCodes) {
+            matched.linkCodes.split(/[,;/]+/).forEach((c) => {
+              if (c.trim()) keysToHydrate.add(c.trim());
+            });
+          }
+        }
+      });
 
       await Promise.all([
         hydrateTasksForProjects(Array.from(keysToHydrate)),
@@ -276,7 +265,32 @@ export function useTasksHydration({
 
       setIsTasksLoading(true);
 
-      const projectsByYear = groupActiveProjectsByYear(activeProjectIds, currentProjects, globalYearFilter);
+      const projectsByYear = new Map<string, Array<{ id: string; code: string }>>();
+
+      activeProjectIds.forEach((projectId) => {
+        const proj = currentProjects.find(
+          (p) =>
+            String(p.id || "") === String(projectId) ||
+            String(p.no) === String(projectId) ||
+            String(p.code || "") === String(projectId) ||
+            `${p.code}-${p.year}-${p.store}-${p.no}` === String(projectId)
+        );
+        const codeToQuery = proj?.code || String(projectId);
+        const yearToGroup = proj?.year
+          ? String(proj.year).trim()
+          : proj?.start
+          ? String(proj.start).substring(0, 4)
+          : globalYearFilter !== "all"
+          ? globalYearFilter
+          : "2026";
+
+        let list = projectsByYear.get(yearToGroup);
+        if (!list) {
+          list = [];
+          projectsByYear.set(yearToGroup, list);
+        }
+        list.push({ id: String(projectId), code: codeToQuery });
+      });
 
       const neededKeys = new Set<string>();
       let needTasksDeltaSync = false;

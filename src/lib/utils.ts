@@ -2376,7 +2376,7 @@ export function formatCurrencyValue(val: number | undefined, currency: 'VND' | '
   }
   return Math.round(num).toLocaleString("en-US");
 }
-export const ACTIVE_YEARS = ['2024', '2025', '2026', '2027', '2028', '2029', '2030'];
-export const PRIMARY_ACTIVE_YEARS = ['2024', '2025', '2026', '2027'];
+export const ACTIVE_YEARS = ['2026', '2027', '2028', '2029', '2030'];
+export const PRIMARY_ACTIVE_YEARS = ['2026', '2027'];
 export const SECONDARY_ACTIVE_YEARS = ['2028', '2029', '2030'];
-export const ARCHIVED_YEARS = ['2022', '2023'];
+export const ARCHIVED_YEARS = ['2024', '2025'];

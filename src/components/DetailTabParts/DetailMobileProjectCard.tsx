@@ -178,10 +178,9 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
   const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
   const loadedTaskCount = groupTasks.length;
-  const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : projectDocCount;
   const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
     ? tasksToRender.length
-    : authoritativeCount;
+    : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
 
   const isProjectDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
@@ -403,7 +402,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
           ) : (
             tasksToRender.map((t, index) => (
               <DetailMobileTaskItem
-                key={`mobile-task-${p.id || p.code || p.no}-${t.id || index}`}
+                key={t.id || `task-${index}`}
                 task={t}
                 project={p}
                 groupTasks={groupTasks}
