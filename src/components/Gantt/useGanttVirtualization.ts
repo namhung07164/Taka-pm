@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Project, Task } from '../../types';
 import { GanttTableRow } from './ganttTypes';
 import { sortGroupTasks } from '../../lib/ganttUtils';
+import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 
 interface UseGanttVirtualizationParams {
   paginatedProjects: Project[];
@@ -77,7 +78,8 @@ export function useGanttVirtualization({
       });
       if (!rawTasks || rawTasks.length === 0) return;
 
-      const pTasks = sortGroupTasks(rawTasks);
+      const rolledUpTasks = rollupParentTaskDatesAndStatus(rawTasks, [], expandedModularSet);
+      const pTasks = sortGroupTasks(rolledUpTasks);
 
       // Create index map for sequential numbering
       const pTaskIndexMap = new Map<string, number>();

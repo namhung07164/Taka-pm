@@ -221,6 +221,16 @@ service cloud.firestore {
 </html>
 
 
+=== FILE: metadata.json ===
+{
+  "name": "Takashimaya PM - cloud (offical) ver10042026",
+  "description": "A comprehensive project management tool with cloud sync, budget tracking, and real-time notifications.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
+
 === FILE: package.json ===
 {
   "name": "react-example",
@@ -20341,9 +20351,10 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
   const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
   const loadedTaskCount = groupTasks.length;
+  const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : projectDocCount;
   const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
     ? tasksToRender.length
-    : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
+    : authoritativeCount;
 
   const isProjectDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
@@ -20565,7 +20576,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
           ) : (
             tasksToRender.map((t, index) => (
               <DetailMobileTaskItem
-                key={t.id || `task-${index}`}
+                key={`mobile-task-${p.id || p.code || p.no}-${t.id || index}`}
                 task={t}
                 project={p}
                 groupTasks={groupTasks}
@@ -24143,9 +24154,11 @@ export function useDetailFlatRows({
       const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
       const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
       const loadedTaskCount = validGroupTasks.length;
+      // When tasks are loaded in memory for this project, loadedTaskCount is the authoritative count
+      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : projectDocCount;
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
-        : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
+        : authoritativeCount;
 
       let planProgressPercent = 0;
       let actProgressPercent = 0;
@@ -24181,12 +24194,15 @@ export function useDetailFlatRows({
           if (gt.id) groupTaskIndexMap.set(gt.id, idx);
         });
 
-        tasksToRender.forEach((t) => {
+        const seenRenderTaskIds = new Set<string>();
+        tasksToRender.forEach((t, tIdx) => {
+          if (t.id && seenRenderTaskIds.has(t.id)) return;
+          if (t.id) seenRenderTaskIds.add(t.id);
           const originalIndex = groupTaskIndexMap.get(t.id);
-          const i = originalIndex !== undefined ? originalIndex : 0;
+          const i = originalIndex !== undefined ? originalIndex : tIdx;
           rows.push({
             type: 'task',
-            key: `task-${t.id}`,
+            key: `task-${p.id || p.code || p.no}-${t.id || tIdx}`,
             task: t,
             taskIndex: i,
             project: p,
@@ -24987,32 +25003,15 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           projectId: p.id,
           ...ts
         } as Task));
-      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
-        const existingNamesOrIds = new Set(rawGroupTasks.map(t => String(t.id || t.name).toLowerCase()));
-        p.taskSummaries.forEach((ts, idx) => {
-          const matchKey = String(ts.id || ts.name || '').toLowerCase();
-          if (matchKey && !existingNamesOrIds.has(matchKey)) {
-            rawGroupTasks.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-              name: ts.name || `Task ${idx + 1}`,
-              start: ts.start || p.computedTakStart || p.start || '',
-              finish: ts.finish || p.computedTakCompl || p.handover || '',
-              projectCode: p.code || '',
-              projectStore: p.store || 'HCM',
-              projectYear: p.year ? String(p.year) : '',
-              party: ts.party || p.party || '',
-              runningStatus: ts.runningStatus || 'On process',
-              duration: ts.duration || '',
-              parentTaskId: ts.parentTaskId,
-              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-              projectId: p.id,
-              ...ts
-            } as Task);
-            existingNamesOrIds.add(matchKey);
-          }
-        });
       }
+      // Ensure unique tasks by id to eliminate any duplicate key collision
+      const uniqueTaskMap = new Map<string, Task>();
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
+        }
+      });
+      rawGroupTasks = Array.from(uniqueTaskMap.values());
       const sortedTasks = sortGroupTasks(rawGroupTasks || []);
       let computedTakStart = p.computedTakStart || p.start;
       let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
@@ -25124,31 +25123,16 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         projectId: p.id,
         ...ts
       } as Task));
-    } else if (rawGroupTasks && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
-      const existingNamesOrIds = new Set(rawGroupTasks.map(t => String(t.id || t.name).toLowerCase()));
-      p.taskSummaries.forEach((ts, idx) => {
-        const matchKey = String(ts.id || ts.name || '').toLowerCase();
-        if (matchKey && !existingNamesOrIds.has(matchKey)) {
-          rawGroupTasks!.push({
-            id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-            name: ts.name || `Task ${idx + 1}`,
-            start: ts.start || p.computedTakStart || p.start || '',
-            finish: ts.finish || p.computedTakCompl || p.handover || '',
-            projectCode: p.code || '',
-            projectStore: p.store || 'HCM',
-            projectYear: p.year ? String(p.year) : '',
-            party: ts.party || p.party || '',
-            runningStatus: ts.runningStatus || 'On process',
-            duration: ts.duration || '',
-            parentTaskId: ts.parentTaskId,
-            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-            projectId: p.id,
-            ...ts
-          } as Task);
-          existingNamesOrIds.add(matchKey);
+    }
+    // Ensure unique tasks by id to eliminate any duplicate key collision
+    if (rawGroupTasks && rawGroupTasks.length > 0) {
+      const uniqueTaskMap = new Map<string, Task>();
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
         }
       });
+      rawGroupTasks = Array.from(uniqueTaskMap.values());
     }
     const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;
@@ -85680,6 +85664,84 @@ export function buildStoreAndYearQuery(
 }
 
 
+=== FILE: src/hooks/useFirebaseDataParts/tasksHydrationHelpers.ts ===
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+export const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+export const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
+
+export function extractKeysToHydrate(activeProjectIds: string[], currentProjects: any[]): Set<string> {
+  const keysToHydrate = new Set<string>();
+  activeProjectIds.forEach((id) => {
+    keysToHydrate.add(String(id));
+    const matched = currentProjects.find(
+      (p) =>
+        String(p.id || "") === String(id) ||
+        String(p.no) === String(id) ||
+        String(p.code || "") === String(id) ||
+        `${p.code}-${p.year}-${p.store}-${p.no}` === String(id)
+    );
+    if (matched) {
+      if (matched.id) keysToHydrate.add(String(matched.id));
+      if (matched.code) keysToHydrate.add(String(matched.code));
+      if (matched.linkCodes) {
+        matched.linkCodes.split(/[,;/]+/).forEach((c: string) => {
+          if (c.trim()) keysToHydrate.add(c.trim());
+        });
+      }
+    }
+  });
+  return keysToHydrate;
+}
+
+export function groupActiveProjectsByYear(
+  activeProjectIds: string[],
+  currentProjects: any[],
+  globalYearFilter: string
+): Map<string, Array<{ id: string; code: string }>> {
+  const projectsByYear = new Map<string, Array<{ id: string; code: string }>>();
+  activeProjectIds.forEach((projectId) => {
+    const proj = currentProjects.find(
+      (p) =>
+        String(p.id || "") === String(projectId) ||
+        String(p.no) === String(projectId) ||
+        String(p.code || "") === String(projectId) ||
+        `${p.code}-${p.year}-${p.store}-${p.no}` === String(projectId)
+    );
+    const codeToQuery = proj?.code || String(projectId);
+    const yearToGroup = proj?.year
+      ? String(proj.year).trim()
+      : proj?.start
+      ? String(proj.start).substring(0, 4)
+      : globalYearFilter !== "all"
+      ? globalYearFilter
+      : "2026";
+
+    let list = projectsByYear.get(yearToGroup);
+    if (!list) {
+      list = [];
+      projectsByYear.set(yearToGroup, list);
+    }
+    list.push({ id: String(projectId), code: codeToQuery });
+  });
+  return projectsByYear;
+}
+
+
 === FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ===
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
@@ -86363,8 +86425,14 @@ export function useProjectsHydration({
         pendingProjectsRemoved.current.add(id);
       } else {
         if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
-        pendingProjectsMap.current!.set(id, data);
-        pendingProjectsChanged.current.set(id, data);
+        const existing = pendingProjectsMap.current!.get(id);
+        const resolvedData = existing ? {
+          ...data,
+          taskCount: data.taskCount !== undefined ? data.taskCount : (existing.taskCount ?? 0),
+          taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
+        } : data;
+        pendingProjectsMap.current!.set(id, resolvedData);
+        pendingProjectsChanged.current.set(id, resolvedData);
         pendingProjectsRemoved.current.delete(id);
       }
     });
@@ -86911,7 +86979,7 @@ export function useStaticAndAuthHydration() {
         const currentProjects = useAppStore.getState().projects || [];
         const newProjects = [...currentProjects];
         const pMap = new Map(newProjects.map((p) => [p.id, p]));
-        (data.taka_projects || []).filter((p: any) => !p.isDeleted).forEach((p: any) => {
+        (data.taka_projects || []).filter((p: any) => !p.isDeleted && p.year && Number(p.year) < 2025).forEach((p: any) => {
           if (!pMap.has(p.id)) pMap.set(p.id, p);
         });
         useAppStore.getState().setProjects(Array.from(pMap.values()));
@@ -86919,7 +86987,7 @@ export function useStaticAndAuthHydration() {
         const currentTasks = useAppStore.getState().tasks || [];
         const newTasks = [...currentTasks];
         const tMap = new Map(newTasks.map((t) => [t.id, t]));
-        (data.taka_tasks || []).filter((t: any) => !t.isDeleted).forEach((t: any) => {
+        (data.taka_tasks || []).filter((t: any) => !t.isDeleted && t.projectYear && Number(t.projectYear) < 2025).forEach((t: any) => {
           if (!tMap.has(t.id)) tMap.set(t.id, t);
         });
         const rawLoadedTasks = Array.from(tMap.values());
@@ -86932,7 +87000,7 @@ export function useStaticAndAuthHydration() {
         const currentCosts = useAppStore.getState().costs || [];
         const newCosts = [...currentCosts];
         const cMap = new Map(newCosts.map((c) => [c.id, c]));
-        (data.taka_costs || []).filter((c: any) => !c.isDeleted).forEach((c: any) => {
+        (data.taka_costs || []).filter((c: any) => !c.isDeleted && c.projectYear && Number(c.projectYear) < 2025).forEach((c: any) => {
           if (!cMap.has(c.id)) cMap.set(c.id, c);
         });
         useAppStore.getState().setCosts(Array.from(cMap.values()));
@@ -86940,7 +87008,7 @@ export function useStaticAndAuthHydration() {
         const currentDelegations = useAppStore.getState().delegationGroups || [];
         const newDelegations = [...currentDelegations];
         const dMap = new Map(newDelegations.map((d) => [d.id!, d]));
-        (data.taka_delegation_groups || []).filter((d: any) => !d.isDeleted).forEach((d: any) => {
+        (data.taka_delegation_groups || []).filter((d: any) => !d.isDeleted && d.projectYear && Number(d.projectYear) < 2025).forEach((d: any) => {
           if (!dMap.has(d.id)) dMap.set(d.id, d);
         });
         useAppStore.getState().setDelegationGroups(Array.from(dMap.values()));
@@ -86995,23 +87063,7 @@ interface UseTasksHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
-const tsOf = (v: any): number => {
-  if (!v) return 0;
-  const n =
-    typeof v === "string" ? Date.parse(v)
-    : typeof v?.toMillis === "function" ? v.toMillis()
-    : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
-// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
-const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
-  if (!existing) return false;
-  const e = tsOf(existing.updatedAt);
-  const i = tsOf(incoming?.updatedAt);
-  return e > 0 && i > 0 && i < e;
-};
+import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear } from "./tasksHydrationHelpers";
 
 export function useTasksHydration({
   querySignature,
@@ -87083,6 +87135,51 @@ export function useTasksHydration({
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
         useAppStore.getState().setTasks(finalTasks);
+        
+        // Self-healing: if loaded tasks for a project have discrepancies with p.taskCount or taskSummaries, immediately heal in Zustand & Firestore
+        const currentProjects = useAppStore.getState().projects || [];
+        let projectsNeedUpdate = false;
+        const healedProjects = currentProjects.map((p) => {
+          const pTasks = finalTasks.filter((t) =>
+            (t.projectId && String(t.projectId) === String(p.id)) ||
+            (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+          );
+          if (pTasks.length > 0) {
+            const hasDiscrepancy =
+              pTasks.length !== (p.taskCount || 0) ||
+              !p.taskSummaries ||
+              p.taskSummaries.length !== pTasks.length;
+            if (hasDiscrepancy) {
+              projectsNeedUpdate = true;
+              import('../../lib/projectDatesService').then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
+                const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
+                syncProjectDatesToFirestore(p.id, computed).catch(() => {});
+              }).catch(() => {});
+              const summaryItems = pTasks.map(t => ({
+                id: t.id,
+                name: t.name || '',
+                start: t.start || '',
+                finish: t.finish || '',
+                taskCodePhu: t.taskCodePhu,
+                duration: t.duration,
+                runningStatus: t.runningStatus,
+              }));
+              const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
+              const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
+              return {
+                ...p,
+                taskCount: pTasks.length,
+                taskSummaries: summaryItems,
+                computedTakStart: validStarts[0] || p.computedTakStart,
+                computedTakCompl: validFinishes[0] || p.computedTakCompl,
+              };
+            }
+          }
+          return p;
+        });
+        if (projectsNeedUpdate) {
+          useAppStore.getState().setProjects(healedProjects);
+        }
         
         const finalIds = new Set(finalTasks.map(t => t.id));
         const changed = Array.from(pendingTasksChanged.current.values()).filter(t => finalIds.has(t.id));
@@ -87199,26 +87296,7 @@ export function useTasksHydration({
     let isCancelled = false;
     const runTasksSync = async () => {
       const currentProjects = useAppStore.getState().projects || [];
-      const keysToHydrate = new Set<string>();
-      activeProjectIds.forEach((id) => {
-        keysToHydrate.add(String(id));
-        const matched = currentProjects.find(
-          (p) =>
-            String(p.id || "") === String(id) ||
-            String(p.no) === String(id) ||
-            String(p.code || "") === String(id) ||
-            `${p.code}-${p.year}-${p.store}-${p.no}` === String(id)
-        );
-        if (matched) {
-          if (matched.id) keysToHydrate.add(String(matched.id));
-          if (matched.code) keysToHydrate.add(String(matched.code));
-          if (matched.linkCodes) {
-            matched.linkCodes.split(/[,;/]+/).forEach((c) => {
-              if (c.trim()) keysToHydrate.add(c.trim());
-            });
-          }
-        }
-      });
+      const keysToHydrate = extractKeysToHydrate(activeProjectIds, currentProjects);
 
       await Promise.all([
         hydrateTasksForProjects(Array.from(keysToHydrate)),
@@ -87229,32 +87307,7 @@ export function useTasksHydration({
 
       setIsTasksLoading(true);
 
-      const projectsByYear = new Map<string, Array<{ id: string; code: string }>>();
-
-      activeProjectIds.forEach((projectId) => {
-        const proj = currentProjects.find(
-          (p) =>
-            String(p.id || "") === String(projectId) ||
-            String(p.no) === String(projectId) ||
-            String(p.code || "") === String(projectId) ||
-            `${p.code}-${p.year}-${p.store}-${p.no}` === String(projectId)
-        );
-        const codeToQuery = proj?.code || String(projectId);
-        const yearToGroup = proj?.year
-          ? String(proj.year).trim()
-          : proj?.start
-          ? String(proj.start).substring(0, 4)
-          : globalYearFilter !== "all"
-          ? globalYearFilter
-          : "2026";
-
-        let list = projectsByYear.get(yearToGroup);
-        if (!list) {
-          list = [];
-          projectsByYear.set(yearToGroup, list);
-        }
-        list.push({ id: String(projectId), code: codeToQuery });
-      });
+      const projectsByYear = groupActiveProjectsByYear(activeProjectIds, currentProjects, globalYearFilter);
 
       const neededKeys = new Set<string>();
       let needTasksDeltaSync = false;
@@ -90661,7 +90714,11 @@ export async function bootstrapLocalStore(): Promise<{
     ]);
 
     if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
-      store.setProjects(projects);
+      const normalizedProjects = projects.map(p => ({
+        ...p,
+        taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+      }));
+      store.setProjects(normalizedProjects);
     }
     if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
       store.setTasks(deduplicateTasks(tasks, projects));
@@ -90713,7 +90770,12 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
     if (localProjects && localProjects.length > 0) {
       const currentStore = useAppStore.getState();
       if (!currentStore.projects || currentStore.projects.length === 0) {
-        const sorted = [...localProjects].sort((a, b) => (a.no || 0) - (b.no || 0));
+        const sorted = [...localProjects]
+          .map(p => ({
+            ...p,
+            taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+          }))
+          .sort((a, b) => (a.no || 0) - (b.no || 0));
         currentStore.setProjects(sorted);
         usePerformanceStore
           .getState()
@@ -90747,6 +90809,39 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
       if (!currentStore.tasks || currentStore.tasks.length === 0) {
         const deduped = deduplicateTasks(localTasks, currentStore.projects);
         currentStore.setTasks(deduped);
+
+        // Instant local reconciliation: sync taskCount & taskSummaries for projects from cached tasks
+        if (currentStore.projects && currentStore.projects.length > 0) {
+          const updatedProjects = currentStore.projects.map(p => {
+            const pTasks = deduped.filter(t => 
+              (t.projectId && String(t.projectId) === String(p.id)) ||
+              (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+            );
+            if (pTasks.length > 0 && pTasks.length !== (p.taskCount || 0)) {
+              const summaryItems = pTasks.map(t => ({
+                id: t.id,
+                name: t.name || '',
+                start: t.start || '',
+                finish: t.finish || '',
+                taskCodePhu: t.taskCodePhu,
+                duration: t.duration,
+                runningStatus: t.runningStatus,
+              }));
+              const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
+              const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
+              return {
+                ...p,
+                taskCount: pTasks.length,
+                taskSummaries: summaryItems,
+                computedTakStart: validStarts[0] || p.computedTakStart,
+                computedTakCompl: validFinishes[0] || p.computedTakCompl,
+              };
+            }
+            return p;
+          });
+          currentStore.setProjects(updatedProjects);
+        }
+
         usePerformanceStore
           .getState()
           .trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');
@@ -93708,7 +93803,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         return {
           ...p,
           ...computedDates,
-          taskCount: pTasks.length > 0 ? pTasks.length : (computedDates.taskCount !== undefined ? computedDates.taskCount : (p.taskCount || 0)),
+          taskCount: Math.max(
+            pTasks.length,
+            computedDates.taskCount !== undefined ? computedDates.taskCount : 0,
+            p.taskCount || 0,
+            p.taskSummaries?.length || 0
+          ),
           taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (p.taskSummaries?.length || 0))
             ? computedDates.taskSummaries
             : (p.taskSummaries || computedDates.taskSummaries || []),
@@ -102192,6 +102292,175 @@ export const drawPdfFilterHeader = (
 };
 
 
+=== FILE: src/lib/projectDatesBackfill.ts ===
+import { doc, collection, getDocs } from "firebase/firestore";
+import { writeBatch } from "./firestoreWrites";
+import { db, APP_ID } from "./firebase";
+import { Project, Task, DelegationGroup } from "../types";
+import {
+  getTasksForProject,
+  calculateProjectComputedDates,
+  syncProjectDatesToFirestore,
+} from "./projectDatesService";
+
+const APP_BOOT_TIME = Date.now();
+export const BOOT_SYNC_GUARD_MS = 15000;
+
+export function getAppBootAgeMs(): number {
+  return Date.now() - APP_BOOT_TIME;
+}
+
+let hasBackfilledInSession = false;
+
+/**
+ * Tự động backfill trường computed dates cho các Project trong Firestore
+ * nếu Project đó chưa có computedTakCompl / computedOpening.
+ * Chỉ chạy 1 lần duy nhất trong toàn bộ phiên làm việc của user để tiết kiệm write.
+ */
+export async function backfillMissingProjectDates(
+  projects: Project[],
+  tasks: Task[],
+  delegationGroups: DelegationGroup[] = []
+): Promise<number> {
+  if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return 0;
+  if (hasBackfilledInSession || !projects.length || !tasks.length) return 0;
+  hasBackfilledInSession = true;
+
+  let count = 0;
+  for (const p of projects) {
+    if (!p.id || !p.code) continue;
+
+    const pTasks = getTasksForProject(p, tasks);
+    if (pTasks.length === 0) continue;
+
+    if (p.taskCount && pTasks.length < p.taskCount) continue;
+
+    const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
+
+    const needsUpdate =
+      !p.computedTakCompl ||
+      (!p.computedTakStart && Boolean(computed.computedTakStart)) ||
+      (!p.computedOpening && Boolean(computed.computedOpening)) ||
+      p.computedPlanProgress === undefined ||
+      p.computedActProgress === undefined;
+
+    if (needsUpdate) {
+      count++;
+      await syncProjectDatesToFirestore(p.id, computed);
+    }
+  }
+
+  if (count > 0) {
+    console.info(`[projectDatesBackfill] Backfilled computed dates for ${count} projects`);
+  }
+  return count;
+}
+
+/**
+ * Đồng bộ toàn bộ taskCount và thông số tiến độ cho toàn bộ Dự án trên Firestore (Chạy 1 lần cho toàn hệ thống).
+ */
+export async function syncAllProjectsTaskCountsToFirestore(
+  onProgress?: (processed: number, total: number) => void
+): Promise<{ updatedCount: number; totalProjects: number }> {
+  try {
+    const projectsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
+    const tasksCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks");
+    const delegationsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups");
+
+    const [projectsSnap, tasksSnap, delegationsSnap] = await Promise.all([
+      getDocs(projectsCol),
+      getDocs(tasksCol),
+      getDocs(delegationsCol),
+    ]);
+
+    const allProjects: Project[] = [];
+    projectsSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (!data.isDeleted) {
+        allProjects.push({ id: d.id, ...data });
+      }
+    });
+
+    const allTasks: Task[] = [];
+    tasksSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (!data.isDeleted) {
+        allTasks.push({ id: d.id, ...data });
+      }
+    });
+
+    const allDelegations: DelegationGroup[] = [];
+    delegationsSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (!data.isDeleted) {
+        allDelegations.push({ id: d.id, ...data });
+      }
+    });
+
+    let updatedCount = 0;
+    const batchSize = 400;
+    let currentBatch = writeBatch(db);
+    let batchOpCount = 0;
+
+    const total = allProjects.length;
+
+    for (let i = 0; i < total; i++) {
+      const p = allProjects[i];
+      if (!p.id || !p.code) continue;
+
+      const pTasks = getTasksForProject(p, allTasks);
+      const computed = calculateProjectComputedDates(p, pTasks, allDelegations);
+
+      const needsUpdate =
+        p.taskCount === undefined ||
+        p.taskCount !== computed.taskCount ||
+        !p.computedTakCompl ||
+        p.computedTakCompl !== computed.computedTakCompl ||
+        !p.computedTakStart ||
+        p.computedTakStart !== computed.computedTakStart ||
+        p.computedPlanProgress === undefined ||
+        p.computedActProgress === undefined;
+
+      if (needsUpdate) {
+        const pRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", p.id);
+        currentBatch.update(pRef, {
+          updatedAt: new Date().toISOString(),
+          taskCount: computed.taskCount ?? 0,
+          taskSummaries: computed.taskSummaries || [],
+          computedTakStart: computed.computedTakStart || "",
+          computedTakCompl: computed.computedTakCompl || "",
+          computedOpening: computed.computedOpening || "",
+          computedPlanProgress: computed.computedPlanProgress ?? 0,
+          computedActProgress: computed.computedActProgress ?? 0,
+        });
+        batchOpCount++;
+        updatedCount++;
+
+        if (batchOpCount >= batchSize) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          batchOpCount = 0;
+        }
+      }
+
+      if (onProgress && (i % 10 === 0 || i === total - 1)) {
+        onProgress(i + 1, total);
+      }
+    }
+
+    if (batchOpCount > 0) {
+      await currentBatch.commit();
+    }
+
+    console.info(`[projectDatesBackfill] Successfully synchronized taskCount for ${updatedCount}/${total} projects.`);
+    return { updatedCount, totalProjects: total };
+  } catch (error) {
+    console.error("[projectDatesBackfill] Error syncing all project taskCounts:", error);
+    throw error;
+  }
+}
+
+
 === FILE: src/lib/projectDatesService.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { calculateProjectComputedDates, matchProjectCode, getTasksForProject } from './projectDatesService';
@@ -102349,7 +102618,7 @@ describe('Kiểm thử tính toán Pre-computed Dates của Project (calculatePr
 
 
 === FILE: src/lib/projectDatesService.ts ===
-import { setDoc, updateDoc, writeBatch } from "../lib/firebase";
+import { setDoc, updateDoc, writeBatch } from "./firestoreWrites";
 import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
@@ -102515,77 +102784,9 @@ export function calculateProjectComputedDates(
   projectTasks: Task[],
   delegationGroups: DelegationGroup[] = []
 ): ComputedProjectDates {
-  let computedTakStart = project.start || "";
-  let computedTakCompl = project.handover || (project as any).takCompl || "";
-  let computedOpening = project.opening || "";
-
-  if (projectTasks && projectTasks.length > 0) {
-    const validStarts = projectTasks
-      .map((t) => t.start)
-      .filter(Boolean)
-      .sort();
-    if (validStarts.length > 0) {
-      computedTakStart = validStarts[0];
-    }
-
-    const validFinishes = projectTasks
-      .map((t) => t.finish)
-      .filter(Boolean)
-      .sort((a, b) => (b || "").localeCompare(a || ""));
-    if (validFinishes.length > 0) {
-      computedTakCompl = validFinishes[0];
-    }
-
-    const openingTasks = projectTasks.filter((t) => {
-      const name = String(t.name || "").toLowerCase();
-      return name.includes("opening") || name.includes("open");
-    });
-    if (openingTasks.length > 0) {
-      const validFinishes = openingTasks
-        .map((t) => t.finish)
-        .filter(Boolean)
-        .sort((a, b) => (b || "").localeCompare(a || ""));
-      if (validFinishes.length > 0) {
-        computedOpening = validFinishes[0];
-      }
-    } else {
-      computedOpening = project.opening || "";
-    }
-  } else if (project.taskSummaries && project.taskSummaries.length > 0) {
-    const validStarts = project.taskSummaries
-      .map((t) => t.start)
-      .filter(Boolean)
-      .sort();
-    if (validStarts.length > 0) {
-      computedTakStart = validStarts[0];
-    }
-
-    const validFinishes = project.taskSummaries
-      .map((t) => t.finish)
-      .filter(Boolean)
-      .sort((a, b) => (b || "").localeCompare(a || ""));
-    if (validFinishes.length > 0) {
-      computedTakCompl = validFinishes[0];
-    }
-
-    const openingTasks = project.taskSummaries.filter((t) => {
-      const name = String(t.name || "").toLowerCase();
-      return name.includes("opening") || name.includes("open");
-    });
-    if (openingTasks.length > 0) {
-      const validFinishes = openingTasks
-        .map((t) => t.finish)
-        .filter(Boolean)
-        .sort((a, b) => (b || "").localeCompare(a || ""));
-      if (validFinishes.length > 0) {
-        computedOpening = validFinishes[0];
-      }
-    } else {
-      computedOpening = project.opening || "";
-    }
-  } else {
-    computedOpening = project.opening || "";
-  }
+  let computedTakStart = project.computedTakStart || project.start || "";
+  let computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
+  let computedOpening = project.computedOpening || project.opening || "";
 
   const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
   const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
@@ -102617,59 +102818,31 @@ export function calculateProjectComputedDates(
       return summary;
     });
 
-  // Always merge existingSummaries and taskSummaries so tasks are NEVER lost or dropped
-  const updatedMap = new Map<string, any>();
-  taskSummaries.forEach(ts => {
-    if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
-    if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
-    if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
+  // Merge existingSummaries and taskSummaries using a clean ID/Code/Name map
+  // This guarantees partial task updates never wipe out other tasks from the project summary
+  const summaryMap = new Map<string, any>();
+  (existingSummaries || []).forEach(es => {
+    const key = es.id || es.taskCodePhu || es.name;
+    if (key) summaryMap.set(String(key).trim().toLowerCase(), es);
   });
-
-  const finalSummaries: any[] = existingSummaries.map((es) => {
-    const esId = es.id ? String(es.id).toLowerCase() : '';
-    const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
-    const esName = es.name ? String(es.name).trim().toLowerCase() : '';
-
-    const match = (esId && updatedMap.get(esId)) ||
-                  (esCode && updatedMap.get(esCode)) ||
-                  (esName && updatedMap.get(esName));
-    if (match) {
-      return {
-        ...es,
-        name: match.name || es.name || '',
-        start: match.start || es.start || '',
-        finish: match.finish || es.finish || '',
-        duration: match.duration !== undefined ? match.duration : es.duration,
-        runningStatus: match.runningStatus || es.runningStatus,
-        taskCodePhu: match.taskCodePhu || es.taskCodePhu,
-        party: match.party || es.party,
-        delegation: match.delegation !== undefined ? match.delegation : es.delegation,
-        id: match.id || es.id,
-      };
-    }
-    return es;
-  });
-
-  // Append any task from taskSummaries that wasn't already in finalSummaries
-  taskSummaries.forEach(ts => {
-    const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-    const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-    const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-    const alreadyIn = finalSummaries.some(es => 
-      (tsId && es.id && String(es.id).toLowerCase() === tsId) ||
-      (tsCode && es.taskCodePhu && String(es.taskCodePhu).trim().toLowerCase() === tsCode) ||
-      (tsName && es.name && String(es.name).trim().toLowerCase() === tsName)
-    );
-    if (!alreadyIn && (ts.start || ts.finish || ts.name)) {
-      finalSummaries.push(ts);
+  (taskSummaries || []).forEach(ts => {
+    const key = ts.id || ts.taskCodePhu || ts.name;
+    if (key) {
+      const existing = summaryMap.get(String(key).trim().toLowerCase());
+      summaryMap.set(String(key).trim().toLowerCase(), { ...(existing || {}), ...ts });
     }
   });
 
-  const finalTaskCount = (projectTasks && projectTasks.length > 0)
-    ? projectTasks.length
-    : finalSummaries.length > 0
-      ? finalSummaries.length
-      : existingCount;
+  const finalSummaries: any[] = summaryMap.size > 0
+    ? Array.from(summaryMap.values())
+    : (taskSummaries.length > 0 ? taskSummaries : existingSummaries);
+
+  const finalTaskCount = Math.max(
+    projectTasks?.length || 0,
+    finalSummaries.length,
+    existingCount,
+    project.taskCount ?? 0
+  );
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -102785,14 +102958,13 @@ export async function syncProjectDatesToFirestore(
       }
     });
 
-    let safeTaskSummaries = (dates.taskSummaries && dates.taskSummaries.length > 0)
+    // When computed from real tasks, dates.taskSummaries and dates.taskCount are authoritative
+    const safeTaskSummaries = (dates.taskSummaries && dates.taskSummaries.length > 0)
       ? dates.taskSummaries
-      : mergedSummaries;
-    if (dates.taskCount !== undefined) {
-      safeTaskCount = dates.taskCount;
-    } else {
-      safeTaskCount = safeTaskSummaries.length;
-    }
+      : existingSummaries;
+    safeTaskCount = dates.taskCount !== undefined
+      ? dates.taskCount
+      : (safeTaskSummaries.length || existingCount);
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).
@@ -102916,177 +103088,12 @@ export async function syncProjectDatesByCode(
   await syncProjectDatesToFirestore(project.id, dates);
 }
 
-const APP_BOOT_TIME = Date.now();
-export const BOOT_SYNC_GUARD_MS = 15000;
-/** Số ms kể từ khi app khởi động (dùng để hoãn các tác vụ ghi ngầm lúc mới mở app). */
-export function getAppBootAgeMs(): number {
-  return Date.now() - APP_BOOT_TIME;
-}
-
-let hasBackfilledInSession = false;
-
-/**
- * Tự động backfill trường computed dates cho các Project trong Firestore
- * nếu Project đó chưa có computedTakCompl / computedOpening.
- * Chỉ chạy 1 lần duy nhất trong toàn bộ phiên làm việc của user để tiết kiệm write.
- */
-export async function backfillMissingProjectDates(
-  projects: Project[],
-  tasks: Task[],
-  delegationGroups: DelegationGroup[] = []
-): Promise<number> {
-  // Trong 15s đầu sau khi mở app, dữ liệu task có thể chưa tải đủ -> không backfill
-  // (không bật cờ hasBackfilledInSession để lần gọi sau vẫn chạy được)
-  if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return 0;
-  if (hasBackfilledInSession || !projects.length || !tasks.length) return 0;
-  hasBackfilledInSession = true;
-
-  let count = 0;
-  for (const p of projects) {
-    if (!p.id || !p.code) continue;
-
-    const pTasks = getTasksForProject(p, tasks);
-    if (pTasks.length === 0) continue;
-
-    // Safety guard: If memory only has a partial task set (< project.taskCount), do NOT backfill
-    if (p.taskCount && pTasks.length < p.taskCount) continue;
-
-    const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
-
-    // Chỉ cập nhật nếu Firestore chưa có hoặc ngày hoàn thành/bắt đầu thực sự thiếu
-    const needsUpdate =
-      !p.computedTakCompl ||
-      (!p.computedTakStart && Boolean(computed.computedTakStart)) ||
-      (!p.computedOpening && Boolean(computed.computedOpening)) ||
-      p.computedPlanProgress === undefined ||
-      p.computedActProgress === undefined;
-
-    if (needsUpdate) {
-      count++;
-      await syncProjectDatesToFirestore(p.id, computed);
-    }
-  }
-
-  if (count > 0) {
-    console.info(`[projectDatesService] Backfilled computed dates for ${count} projects`);
-  }
-  return count;
-}
-
-/**
- * Đồng bộ toàn bộ taskCount và thông số tiến độ cho toàn bộ Dự án trên Firestore (Chạy 1 lần cho toàn hệ thống).
- * Đọc tất cả taka_tasks và taka_projects trên Firestore, gom nhóm và ghi batch cập nhật taskCount, taskSummaries,
- * computedTakStart, computedTakCompl, computedPlanProgress, computedActProgress.
- */
-export async function syncAllProjectsTaskCountsToFirestore(
-  onProgress?: (processed: number, total: number) => void
-): Promise<{ updatedCount: number; totalProjects: number }> {
-  try {
-    const projectsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
-    const tasksCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks");
-    const delegationsCol = collection(db, "artifacts", APP_ID, "public", "data", "taka_delegation_groups");
-
-    const [projectsSnap, tasksSnap, delegationsSnap] = await Promise.all([
-      getDocs(projectsCol),
-      getDocs(tasksCol),
-      getDocs(delegationsCol),
-    ]);
-
-    const allProjects: Project[] = [];
-    projectsSnap.forEach((d) => {
-      const data = d.data() as any;
-      if (!data.isDeleted) {
-        allProjects.push({ id: d.id, ...data });
-      }
-    });
-
-    const allTasks: Task[] = [];
-    tasksSnap.forEach((d) => {
-      const data = d.data() as any;
-      if (!data.isDeleted) {
-        allTasks.push({ id: d.id, ...data });
-      }
-    });
-
-    const allDelegations: DelegationGroup[] = [];
-    delegationsSnap.forEach((d) => {
-      const data = d.data() as any;
-      if (!data.isDeleted) {
-        allDelegations.push({ id: d.id, ...data });
-      }
-    });
-
-    // Gom tasks theo project code, year, store
-    const tasksByProject = new Map<string, Task[]>();
-    allTasks.forEach((t) => {
-      const key = `${t.projectCode || ""}-${t.projectYear || ""}-${t.projectStore || ""}`.toLowerCase();
-      if (!tasksByProject.has(key)) tasksByProject.set(key, []);
-      tasksByProject.get(key)!.push(t);
-    });
-
-    let updatedCount = 0;
-    const batchSize = 400;
-    let currentBatch = writeBatch(db);
-    let batchOpCount = 0;
-
-    const total = allProjects.length;
-
-    for (let i = 0; i < total; i++) {
-      const p = allProjects[i];
-      if (!p.id || !p.code) continue;
-
-      const pTasks = getTasksForProject(p, allTasks);
-
-      const computed = calculateProjectComputedDates(p, pTasks, allDelegations);
-
-      const needsUpdate =
-        p.taskCount === undefined ||
-        p.taskCount !== computed.taskCount ||
-        !p.computedTakCompl ||
-        p.computedTakCompl !== computed.computedTakCompl ||
-        !p.computedTakStart ||
-        p.computedTakStart !== computed.computedTakStart ||
-        p.computedPlanProgress === undefined ||
-        p.computedActProgress === undefined;
-
-      if (needsUpdate) {
-        const pRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", p.id);
-        currentBatch.update(pRef, {
-          updatedAt: new Date().toISOString(),
-          taskCount: computed.taskCount ?? 0,
-          taskSummaries: computed.taskSummaries || [],
-          computedTakStart: computed.computedTakStart || "",
-          computedTakCompl: computed.computedTakCompl || "",
-          computedOpening: computed.computedOpening || "",
-          computedPlanProgress: computed.computedPlanProgress ?? 0,
-          computedActProgress: computed.computedActProgress ?? 0,
-        });
-        batchOpCount++;
-        updatedCount++;
-
-        if (batchOpCount >= batchSize) {
-          await currentBatch.commit();
-          currentBatch = writeBatch(db);
-          batchOpCount = 0;
-        }
-      }
-
-      if (onProgress && (i % 10 === 0 || i === total - 1)) {
-        onProgress(i + 1, total);
-      }
-    }
-
-    if (batchOpCount > 0) {
-      await currentBatch.commit();
-    }
-
-    console.info(`[projectDatesService] Successfully synchronized taskCount for ${updatedCount}/${total} projects.`);
-    return { updatedCount, totalProjects: total };
-  } catch (error) {
-    console.error("[projectDatesService] Error syncing all project taskCounts:", error);
-    throw error;
-  }
-}
+export {
+  getAppBootAgeMs,
+  BOOT_SYNC_GUARD_MS,
+  backfillMissingProjectDates,
+  syncAllProjectsTaskCountsToFirestore,
+} from "./projectDatesBackfill";
 
 
 

@@ -12,6 +12,7 @@ import { doc } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { recordBatchDeltas } from './deltaSyncService';
+import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 
 /**
  * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
@@ -103,119 +104,37 @@ export function calculateDatesFromPredecessorsAndDuration(
 }
 
 /**
- * Rolls up start date, end date, and duration for Parent Tasks ("Task mẹ") from their Child Tasks.
- * In accordance with business rules:
- * - Parent start = earliest start of children
- * - Parent finish = latest finish of children
- * - Parent duration = duration in days between parent start and finish
- * - Updates upward through hierarchy with circular dependency protection.
+ * Recalculates start/finish/duration/runningStatus for parent tasks.
  */
 export function rollupParentTaskDates(
   allTasks: Task[],
-  targetParentIds?: string[]
+  _targetParentIds?: string[]
 ): { updatedParents: Task[]; allTasksMap: Map<string, Task> } {
+  const rolledUpList = rollupParentTaskDatesAndStatus(allTasks);
   const taskMap = new Map<string, Task>();
-  allTasks.forEach(t => taskMap.set(t.id, { ...t }));
+  const updatedParents: Task[] = [];
 
-  // Index child tasks for every parent ID or taskCodePhu
-  const parentToChildrenMap = new Map<string, Task[]>();
-  taskMap.forEach(t => {
-    if (t.parentTaskId) {
-      const pKey = String(t.parentTaskId).trim();
-      if (!parentToChildrenMap.has(pKey)) {
-        parentToChildrenMap.set(pKey, []);
-      }
-      parentToChildrenMap.get(pKey)!.push(t);
+  rolledUpList.forEach((t) => {
+    taskMap.set(t.id, t);
+    const original = allTasks.find((orig) => orig.id === t.id);
+    if (
+      original &&
+      (original.start !== t.start ||
+        original.finish !== t.finish ||
+        original.duration !== t.duration ||
+        original.runningStatus !== t.runningStatus)
+    ) {
+      updatedParents.push(t);
     }
   });
 
-  // Determine which parent tasks need recalculation
-  const parentIdsToProcess = new Set<string>();
-  if (targetParentIds && targetParentIds.length > 0) {
-    targetParentIds.forEach(id => parentIdsToProcess.add(String(id).trim()));
-  } else {
-    // Process all parent keys found
-    parentToChildrenMap.forEach((_, pKey) => parentIdsToProcess.add(pKey));
-  }
-
-  const updatedParentsMap = new Map<string, Task>();
-  const visited = new Set<string>();
-
-  // Process parent tasks (leaf-most parents first, then upwards)
-  for (const pKey of parentIdsToProcess) {
-    if (visited.has(pKey)) continue;
-    visited.add(pKey);
-
-    // Find parent task either by id or taskCodePhu
-    let parentTask = taskMap.get(pKey);
-    if (!parentTask) {
-      for (const t of taskMap.values()) {
-        if (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pKey.toLowerCase()) {
-          parentTask = t;
-          break;
-        }
-      }
-    }
-
-    if (!parentTask) continue;
-
-    // Direct children of this parent
-    const children = Array.from(taskMap.values()).filter(t => 
-      t.id !== parentTask!.id && 
-      (t.parentTaskId === parentTask!.id || (parentTask!.taskCodePhu && t.parentTaskId === parentTask!.taskCodePhu))
-    );
-
-    if (children.length === 0) continue;
-
-    const validStarts = children
-      .map(c => c.start)
-      .filter(Boolean)
-      .sort();
-
-    const validFinishes = children
-      .map(c => c.finish)
-      .filter(Boolean)
-      .sort((a, b) => (b || '').localeCompare(a || ''));
-
-    if (validStarts.length > 0 && validFinishes.length > 0) {
-      const earliestStart = validStarts[0];
-      const latestFinish = validFinishes[0];
-
-      const sDate = parseDateTime(earliestStart);
-      const fDate = parseDateTime(latestFinish);
-      let durationDays = '0';
-      if (sDate && fDate && !isNaN(sDate.getTime()) && !isNaN(fDate.getTime())) {
-        const diffMs = fDate.getTime() - sDate.getTime();
-        durationDays = diffMs >= 0 ? String(Number((diffMs / (1000 * 60 * 60 * 24)).toFixed(2))) : '0';
-      }
-
-      if (
-        parentTask.start !== earliestStart ||
-        parentTask.finish !== latestFinish ||
-        parentTask.duration !== durationDays
-      ) {
-        parentTask.start = earliestStart;
-        parentTask.finish = latestFinish;
-        parentTask.duration = durationDays;
-        parentTask.durationManual = false;
-        parentTask.updatedAt = new Date().toISOString();
-
-        taskMap.set(parentTask.id, parentTask);
-        updatedParentsMap.set(parentTask.id, parentTask);
-
-        // If parent task itself has a parentTaskId, enqueue ancestor for rollup
-        if (parentTask.parentTaskId && !visited.has(String(parentTask.parentTaskId))) {
-          parentIdsToProcess.add(String(parentTask.parentTaskId));
-        }
-      }
-    }
-  }
-
   return {
-    updatedParents: Array.from(updatedParentsMap.values()),
+    updatedParents,
     allTasksMap: taskMap,
   };
 }
+
+
 
 /**
  * Saves tasks to Firestore in safe chunks (max 400 operations per batch).

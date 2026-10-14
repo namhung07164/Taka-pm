@@ -3,6 +3,8 @@ import { Project, DelegationGroup } from '../../types';
 import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
+import { useAppStore } from '../../store/useAppStore';
+import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 
 interface UseDetailFlatRowsParams {
   filteredProjects: Project[];
@@ -88,7 +90,8 @@ export function useDetailFlatRows({
         (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
-      const validGroupTasks = groupTasks.map(t => ({
+      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
+      const validGroupTasks = rolledUpGroupTasks.map(t => ({
         ...t,
         name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
       }));
@@ -117,20 +120,22 @@ export function useDetailFlatRows({
       const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
       const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
       const loadedTaskCount = validGroupTasks.length;
+      const isTasksRequested = useAppStore.getState().isTasksRequested;
+      // When tasks are loaded in memory for this project, loadedTaskCount is the authoritative count
+      const authoritativeCount = isTasksRequested ? loadedTaskCount : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
-        : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
+        : authoritativeCount;
 
       let planProgressPercent = 0;
       let actProgressPercent = 0;
 
-      // Prefer real-time summary data for progress if available and potentially more up-to-date than loaded tasks
-      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > validGroupTasks.length) {
-        planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
-        actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
-      } else if (validGroupTasks.length > 0) {
+      if (validGroupTasks.length > 0) {
         planProgressPercent = computePlanProgressPercent(validGroupTasks);
         actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
+        actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
       } else {
         planProgressPercent = p.computedPlanProgress ?? 0;
         actProgressPercent = p.computedActProgress ?? 0;
@@ -155,12 +160,15 @@ export function useDetailFlatRows({
           if (gt.id) groupTaskIndexMap.set(gt.id, idx);
         });
 
-        tasksToRender.forEach((t) => {
+        const seenRenderTaskIds = new Set<string>();
+        tasksToRender.forEach((t, tIdx) => {
+          if (t.id && seenRenderTaskIds.has(t.id)) return;
+          if (t.id) seenRenderTaskIds.add(t.id);
           const originalIndex = groupTaskIndexMap.get(t.id);
-          const i = originalIndex !== undefined ? originalIndex : 0;
+          const i = originalIndex !== undefined ? originalIndex : tIdx;
           rows.push({
             type: 'task',
-            key: `task-${t.id}`,
+            key: `task-${p.id || p.code || p.no}-${t.id || tIdx}`,
             task: t,
             taskIndex: i,
             project: p,

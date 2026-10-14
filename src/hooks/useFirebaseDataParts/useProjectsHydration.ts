@@ -88,8 +88,14 @@ export function useProjectsHydration({
         pendingProjectsRemoved.current.add(id);
       } else {
         if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
-        pendingProjectsMap.current!.set(id, data);
-        pendingProjectsChanged.current.set(id, data);
+        const existing = pendingProjectsMap.current!.get(id);
+        const resolvedData = existing ? {
+          ...data,
+          taskCount: data.taskCount !== undefined ? data.taskCount : (existing.taskCount ?? 0),
+          taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
+        } : data;
+        pendingProjectsMap.current!.set(id, resolvedData);
+        pendingProjectsChanged.current.set(id, resolvedData);
         pendingProjectsRemoved.current.delete(id);
       }
     });

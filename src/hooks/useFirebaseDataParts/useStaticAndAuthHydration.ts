@@ -329,7 +329,7 @@ export function useStaticAndAuthHydration() {
         const currentProjects = useAppStore.getState().projects || [];
         const newProjects = [...currentProjects];
         const pMap = new Map(newProjects.map((p) => [p.id, p]));
-        (data.taka_projects || []).filter((p: any) => !p.isDeleted).forEach((p: any) => {
+        (data.taka_projects || []).filter((p: any) => !p.isDeleted && p.year && Number(p.year) < 2024).forEach((p: any) => {
           if (!pMap.has(p.id)) pMap.set(p.id, p);
         });
         useAppStore.getState().setProjects(Array.from(pMap.values()));
@@ -337,7 +337,7 @@ export function useStaticAndAuthHydration() {
         const currentTasks = useAppStore.getState().tasks || [];
         const newTasks = [...currentTasks];
         const tMap = new Map(newTasks.map((t) => [t.id, t]));
-        (data.taka_tasks || []).filter((t: any) => !t.isDeleted).forEach((t: any) => {
+        (data.taka_tasks || []).filter((t: any) => !t.isDeleted && t.projectYear && Number(t.projectYear) < 2024).forEach((t: any) => {
           if (!tMap.has(t.id)) tMap.set(t.id, t);
         });
         const rawLoadedTasks = Array.from(tMap.values());
@@ -350,7 +350,7 @@ export function useStaticAndAuthHydration() {
         const currentCosts = useAppStore.getState().costs || [];
         const newCosts = [...currentCosts];
         const cMap = new Map(newCosts.map((c) => [c.id, c]));
-        (data.taka_costs || []).filter((c: any) => !c.isDeleted).forEach((c: any) => {
+        (data.taka_costs || []).filter((c: any) => !c.isDeleted && c.projectYear && Number(c.projectYear) < 2024).forEach((c: any) => {
           if (!cMap.has(c.id)) cMap.set(c.id, c);
         });
         useAppStore.getState().setCosts(Array.from(cMap.values()));
@@ -358,7 +358,7 @@ export function useStaticAndAuthHydration() {
         const currentDelegations = useAppStore.getState().delegationGroups || [];
         const newDelegations = [...currentDelegations];
         const dMap = new Map(newDelegations.map((d) => [d.id!, d]));
-        (data.taka_delegation_groups || []).filter((d: any) => !d.isDeleted).forEach((d: any) => {
+        (data.taka_delegation_groups || []).filter((d: any) => !d.isDeleted && d.projectYear && Number(d.projectYear) < 2024).forEach((d: any) => {
           if (!dMap.has(d.id)) dMap.set(d.id, d);
         });
         useAppStore.getState().setDelegationGroups(Array.from(dMap.values()));
