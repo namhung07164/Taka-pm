@@ -81,11 +81,16 @@ export function useProjectsHydration({
 
     docChanges.forEach((change) => {
       const id = change.doc.id;
-      const data = { id, ...change.doc.data() } as Project;
-      if (change.type === "removed" || data.isDeleted) {
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as Project;
+      const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
+
+      if (isTrueDelete) {
         pendingProjectsMap.current!.delete(id);
         pendingProjectsChanged.current.delete(id);
         pendingProjectsRemoved.current.add(id);
+      } else if (change.type === "removed") {
+        // Doc left sub-query scope — do NOT delete from Dexie
       } else {
         if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
         const existing = pendingProjectsMap.current!.get(id);

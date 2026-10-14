@@ -19,6 +19,7 @@ import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
 import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS } from "../../lib/projectDatesService";
+import { markTasksDeleted } from "../../lib/taskDeletedTracker";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
@@ -75,11 +76,17 @@ export function useTasksHydration({
 
     docChanges.forEach((change) => {
       const id = change.doc.id;
-      const data = { id, ...change.doc.data() } as Task;
-      if (change.type === "removed" || data.isDeleted) {
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as Task;
+      const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
+
+      if (isTrueDelete) {
+        markTasksDeleted([id, data.taskCodePhu, data.name]);
         pendingTasksMap.current!.delete(id);
         pendingTasksChanged.current.delete(id);
         pendingTasksRemoved.current.add(id);
+      } else if (change.type === "removed") {
+        // Doc left sub-query scope (e.g. year/project filter change) — do NOT add to pendingTasksRemoved (do NOT delete from Dexie)
       } else {
         if (fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
         pendingTasksMap.current!.set(id, data);

@@ -5,6 +5,7 @@ import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
+import { isTaskDeletedInTracker } from "./taskDeletedTracker";
 
 export interface ComputedProjectDates {
   computedTakStart?: string;
@@ -109,6 +110,11 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
         const tsId = ts.id ? String(ts.id).toLowerCase() : '';
         const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+        if (isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name)) {
+          return;
+        }
+
         const hasMatch = (tsId && existingSummaryMap.has(tsId)) ||
                          (tsCode && existingSummaryMap.has(tsCode)) ||
                          (tsName && existingSummaryMap.has(tsName));
@@ -139,7 +145,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
-    return project.taskSummaries.map((ts, idx) => ({
+    return project.taskSummaries
+      .filter(ts => !isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name))
+      .map((ts, idx) => ({
       id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,
       start: ts.start || project.computedTakStart || project.start || '',

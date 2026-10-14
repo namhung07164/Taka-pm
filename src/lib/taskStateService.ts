@@ -8,6 +8,7 @@ import {
   syncProjectDatesToFirestore,
   matchProjectCode 
 } from "./projectDatesService";
+import { markTasksDeleted } from "./taskDeletedTracker";
 
 // Cache in-flight requests to avoid duplicate fetches
 const pendingProjectFetches = new Map<string, Promise<Task[]>>();
@@ -227,8 +228,12 @@ export async function deleteTaskStateUnified(
   tasksToDelete.forEach(t => {
     if (t.id) deletedCodesAndIds.add(String(t.id).trim().toLowerCase());
     if (t.taskCodePhu) deletedCodesAndIds.add(String(t.taskCodePhu).trim().toLowerCase());
+    if (t.name) deletedCodesAndIds.add(String(t.name).trim().toLowerCase());
   });
   rawIds.forEach(id => deletedCodesAndIds.add(String(id).trim().toLowerCase()));
+
+  // Central deleted task registration to prevent ghost task re-synthesis
+  markTasksDeleted(Array.from(deletedCodesAndIds));
 
   const now = new Date().toISOString();
   const tasksAfterDeletion = currentTasks.filter(t => !idSet.has(String(t.id)));
@@ -268,15 +273,19 @@ export async function deleteTaskStateUnified(
 
     if (p.taskSummaries && p.taskSummaries.length > 0) {
       newSummaries = p.taskSummaries.filter((ts, idx) => {
-        const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+        const tsId = ts.id ? String(ts.id).trim().toLowerCase() : `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
         const tsCodePhu = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id)))) {
+        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id))) || deletedCodesAndIds.has(tsId)) {
           summaryModified = true;
           return false;
         }
         if (tsCodePhu && deletedCodesAndIds.has(tsCodePhu)) {
+          summaryModified = true;
+          return false;
+        }
+        if (tsName && deletedCodesAndIds.has(tsName)) {
           summaryModified = true;
           return false;
         }

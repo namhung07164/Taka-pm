@@ -72,11 +72,16 @@ export function useCostsHydration({
 
     docChanges.forEach((change) => {
       const id = change.doc.id;
-      const data = { id, ...change.doc.data() } as Cost;
-      if (change.type === "removed" || data.isDeleted) {
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as Cost;
+      const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
+
+      if (isTrueDelete) {
         pendingCostsMap.current!.delete(id);
         pendingCostsChanged.current.delete(id);
         pendingCostsRemoved.current.add(id);
+      } else if (change.type === "removed") {
+        // Doc left sub-query scope — do NOT delete from Dexie
       } else {
         if (fromCache && isStaleCacheDoc(pendingCostsMap.current!.get(id), data)) return;
         pendingCostsMap.current!.set(id, data);

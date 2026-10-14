@@ -4,6 +4,7 @@ import { enrichProjects, getUserAllowedStores } from '../lib/utils';
 import { Task, DelegationGroup } from '../types';
 import { deduplicateTasks } from '../lib/taskDeduplicationService';
 import { rollupParentTaskDatesAndStatus } from '../lib/taskRollupService';
+import { isTaskDeletedInTracker } from '../lib/taskDeletedTracker';
 
 let _lastProjectsRef: any = null;
 let _lastRawTasksRef: any = null;
@@ -241,6 +242,11 @@ export function useEnrichedData() {
             const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
             const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
             const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+            if (isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name)) {
+              return;
+            }
+
             const hasMatch = (ts.id && existingSet.has(String(ts.id).toLowerCase())) ||
                              (tsCode && existingSet.has(tsCode)) ||
                              (tsName && existingSet.has(tsName));
