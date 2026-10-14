@@ -314,11 +314,12 @@ export function calculateProjectComputedDates(
     }
   });
 
-  const finalTaskCount = (projectTasks && projectTasks.length > 0)
-    ? projectTasks.length
-    : finalSummaries.length > 0
-      ? finalSummaries.length
-      : existingCount;
+  const finalTaskCount = Math.max(
+    projectTasks?.length || 0,
+    finalSummaries.length,
+    existingCount,
+    project.taskCount ?? 0
+  );
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -434,14 +435,18 @@ export async function syncProjectDatesToFirestore(
       }
     });
 
-    let safeTaskSummaries = (dates.taskSummaries && dates.taskSummaries.length > 0)
-      ? dates.taskSummaries
-      : mergedSummaries;
-    if (dates.taskCount !== undefined) {
-      safeTaskCount = dates.taskCount;
-    } else {
-      safeTaskCount = safeTaskSummaries.length;
+    // Safety guard: Never drop or shrink taskSummaries or taskCount due to partial task hydration
+    let safeTaskSummaries = mergedSummaries;
+    if (dates.taskSummaries && dates.taskSummaries.length >= mergedSummaries.length) {
+      safeTaskSummaries = dates.taskSummaries;
     }
+    safeTaskCount = Math.max(
+      safeTaskCount,
+      dates.taskCount ?? 0,
+      safeTaskSummaries.length,
+      existingCount,
+      existingProject?.taskCount ?? 0
+    );
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).

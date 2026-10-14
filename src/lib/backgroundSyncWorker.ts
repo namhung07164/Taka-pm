@@ -47,7 +47,11 @@ export async function bootstrapLocalStore(): Promise<{
     ]);
 
     if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
-      store.setProjects(projects);
+      const normalizedProjects = projects.map(p => ({
+        ...p,
+        taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+      }));
+      store.setProjects(normalizedProjects);
     }
     if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
       store.setTasks(deduplicateTasks(tasks, projects));
@@ -99,7 +103,12 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
     if (localProjects && localProjects.length > 0) {
       const currentStore = useAppStore.getState();
       if (!currentStore.projects || currentStore.projects.length === 0) {
-        const sorted = [...localProjects].sort((a, b) => (a.no || 0) - (b.no || 0));
+        const sorted = [...localProjects]
+          .map(p => ({
+            ...p,
+            taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+          }))
+          .sort((a, b) => (a.no || 0) - (b.no || 0));
         currentStore.setProjects(sorted);
         usePerformanceStore
           .getState()

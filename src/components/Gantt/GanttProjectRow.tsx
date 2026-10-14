@@ -90,9 +90,11 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     ? 'Completed' 
     : (p.computedActStatus && p.computedActStatus !== 'Planned' ? p.computedActStatus : baseStatus);
   const pStatus = effectiveProjectStatus;
-  const effectiveTaskCount = (projectTasks && projectTasks.length > 0)
-    ? projectTasks.length
-    : (p.taskCount !== undefined ? p.taskCount : (p.taskSummaries?.length || 0));
+  const effectiveTaskCount = Math.max(
+    projectTasks?.length || 0,
+    p.taskCount ?? 0,
+    p.taskSummaries?.length ?? 0
+  );
   const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
 
   const rowId = `project-${p.no}`;

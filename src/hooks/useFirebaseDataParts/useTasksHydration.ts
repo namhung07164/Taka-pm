@@ -120,6 +120,30 @@ export function useTasksHydration({
         });
         useAppStore.getState().setTasks(finalTasks);
         
+        // Self-healing: if loaded tasks for a project exceed p.taskCount, immediately heal project in Zustand & Firestore
+        const currentProjects = useAppStore.getState().projects || [];
+        let projectsNeedUpdate = false;
+        const healedProjects = currentProjects.map((p) => {
+          const pTasks = finalTasks.filter((t) =>
+            (t.projectId && String(t.projectId) === String(p.id)) ||
+            (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+          );
+          if (pTasks.length > (p.taskCount || 0)) {
+            projectsNeedUpdate = true;
+            import('../../lib/projectDatesService').then(({ syncProjectDatesByCode }) => {
+              syncProjectDatesByCode(p.code, p.store, p.year ? String(p.year) : undefined, finalTasks).catch(() => {});
+            }).catch(() => {});
+            return {
+              ...p,
+              taskCount: Math.max(pTasks.length, p.taskCount || 0),
+            };
+          }
+          return p;
+        });
+        if (projectsNeedUpdate) {
+          useAppStore.getState().setProjects(healedProjects);
+        }
+        
         const finalIds = new Set(finalTasks.map(t => t.id));
         const changed = Array.from(pendingTasksChanged.current.values()).filter(t => finalIds.has(t.id));
         const removed = Array.from(pendingTasksRemoved.current);
