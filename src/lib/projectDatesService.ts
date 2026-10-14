@@ -266,60 +266,14 @@ export function calculateProjectComputedDates(
       return summary;
     });
 
-  // Always merge existingSummaries and taskSummaries so tasks are NEVER lost or dropped
-  const updatedMap = new Map<string, any>();
-  taskSummaries.forEach(ts => {
-    if (ts.id) updatedMap.set(String(ts.id).toLowerCase(), ts);
-    if (ts.taskCodePhu) updatedMap.set(String(ts.taskCodePhu).trim().toLowerCase(), ts);
-    if (ts.name) updatedMap.set(String(ts.name).trim().toLowerCase(), ts);
-  });
+  // When real tasks are in memory, projectTasks is the authoritative source of truth
+  const finalSummaries: any[] = (projectTasks && projectTasks.length > 0)
+    ? taskSummaries
+    : existingSummaries;
 
-  const finalSummaries: any[] = existingSummaries.map((es) => {
-    const esId = es.id ? String(es.id).toLowerCase() : '';
-    const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
-    const esName = es.name ? String(es.name).trim().toLowerCase() : '';
-
-    const match = (esId && updatedMap.get(esId)) ||
-                  (esCode && updatedMap.get(esCode)) ||
-                  (esName && updatedMap.get(esName));
-    if (match) {
-      return {
-        ...es,
-        name: match.name || es.name || '',
-        start: match.start || es.start || '',
-        finish: match.finish || es.finish || '',
-        duration: match.duration !== undefined ? match.duration : es.duration,
-        runningStatus: match.runningStatus || es.runningStatus,
-        taskCodePhu: match.taskCodePhu || es.taskCodePhu,
-        party: match.party || es.party,
-        delegation: match.delegation !== undefined ? match.delegation : es.delegation,
-        id: match.id || es.id,
-      };
-    }
-    return es;
-  });
-
-  // Append any task from taskSummaries that wasn't already in finalSummaries
-  taskSummaries.forEach(ts => {
-    const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-    const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-    const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-    const alreadyIn = finalSummaries.some(es => 
-      (tsId && es.id && String(es.id).toLowerCase() === tsId) ||
-      (tsCode && es.taskCodePhu && String(es.taskCodePhu).trim().toLowerCase() === tsCode) ||
-      (tsName && es.name && String(es.name).trim().toLowerCase() === tsName)
-    );
-    if (!alreadyIn && (ts.start || ts.finish || ts.name)) {
-      finalSummaries.push(ts);
-    }
-  });
-
-  const finalTaskCount = Math.max(
-    projectTasks?.length || 0,
-    finalSummaries.length,
-    existingCount,
-    project.taskCount ?? 0
-  );
+  const finalTaskCount = (projectTasks && projectTasks.length > 0)
+    ? projectTasks.length
+    : (existingSummaries.length > 0 ? existingSummaries.length : existingCount);
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -435,18 +389,13 @@ export async function syncProjectDatesToFirestore(
       }
     });
 
-    // Safety guard: Never drop or shrink taskSummaries or taskCount due to partial task hydration
-    let safeTaskSummaries = mergedSummaries;
-    if (dates.taskSummaries && dates.taskSummaries.length >= mergedSummaries.length) {
-      safeTaskSummaries = dates.taskSummaries;
-    }
-    safeTaskCount = Math.max(
-      safeTaskCount,
-      dates.taskCount ?? 0,
-      safeTaskSummaries.length,
-      existingCount,
-      existingProject?.taskCount ?? 0
-    );
+    // When computed from real tasks, dates.taskSummaries and dates.taskCount are authoritative
+    const safeTaskSummaries = (dates.taskSummaries && dates.taskSummaries.length > 0)
+      ? dates.taskSummaries
+      : existingSummaries;
+    safeTaskCount = dates.taskCount !== undefined
+      ? dates.taskCount
+      : (safeTaskSummaries.length || existingCount);
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
     // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).

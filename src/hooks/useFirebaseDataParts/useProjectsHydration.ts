@@ -91,15 +91,8 @@ export function useProjectsHydration({
         const existing = pendingProjectsMap.current!.get(id);
         const resolvedData = existing ? {
           ...data,
-          taskCount: Math.max(
-            data.taskCount ?? 0,
-            existing.taskCount ?? 0,
-            data.taskSummaries?.length ?? 0,
-            existing.taskSummaries?.length ?? 0
-          ),
-          taskSummaries: (data.taskSummaries && data.taskSummaries.length >= (existing.taskSummaries?.length || 0))
-            ? data.taskSummaries
-            : (existing.taskSummaries || data.taskSummaries || []),
+          taskCount: data.taskCount !== undefined ? data.taskCount : (existing.taskCount ?? 0),
+          taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
         } : data;
         pendingProjectsMap.current!.set(id, resolvedData);
         pendingProjectsChanged.current.set(id, resolvedData);

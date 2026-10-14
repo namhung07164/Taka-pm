@@ -128,14 +128,14 @@ export function useTasksHydration({
             (t.projectId && String(t.projectId) === String(p.id)) ||
             (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
           );
-          if (pTasks.length > (p.taskCount || 0)) {
+          if (pTasks.length > 0 && pTasks.length !== (p.taskCount || 0)) {
             projectsNeedUpdate = true;
             import('../../lib/projectDatesService').then(({ syncProjectDatesByCode }) => {
               syncProjectDatesByCode(p.code, p.store, p.year ? String(p.year) : undefined, finalTasks).catch(() => {});
             }).catch(() => {});
             return {
               ...p,
-              taskCount: Math.max(pTasks.length, p.taskCount || 0),
+              taskCount: pTasks.length,
             };
           }
           return p;

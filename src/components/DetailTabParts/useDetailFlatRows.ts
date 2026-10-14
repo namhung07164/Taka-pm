@@ -117,15 +117,11 @@ export function useDetailFlatRows({
       const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
       const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
       const loadedTaskCount = validGroupTasks.length;
-      const maxAccurateCount = Math.max(
-        loadedTaskCount,
-        projectDocCount,
-        p.taskCount ?? 0,
-        p.taskSummaries?.length ?? 0
-      );
+      // When tasks are loaded in memory for this project, loadedTaskCount is the authoritative count
+      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : projectDocCount;
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
-        : maxAccurateCount;
+        : authoritativeCount;
 
       let planProgressPercent = 0;
       let actProgressPercent = 0;
@@ -161,12 +157,15 @@ export function useDetailFlatRows({
           if (gt.id) groupTaskIndexMap.set(gt.id, idx);
         });
 
-        tasksToRender.forEach((t) => {
+        const seenRenderTaskIds = new Set<string>();
+        tasksToRender.forEach((t, tIdx) => {
+          if (t.id && seenRenderTaskIds.has(t.id)) return;
+          if (t.id) seenRenderTaskIds.add(t.id);
           const originalIndex = groupTaskIndexMap.get(t.id);
-          const i = originalIndex !== undefined ? originalIndex : 0;
+          const i = originalIndex !== undefined ? originalIndex : tIdx;
           rows.push({
             type: 'task',
-            key: `task-${t.id}`,
+            key: `task-${p.id || p.code || p.no}-${t.id || tIdx}`,
             task: t,
             taskIndex: i,
             project: p,

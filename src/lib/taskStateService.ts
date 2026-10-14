@@ -288,7 +288,7 @@ export async function deleteTaskStateUnified(
         (t.projectId && String(t.projectId) === String(p.id)) ||
         (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
       );
-      const computed = calculateProjectComputedDates(updatedP, remainingProjTasks);
+      const computed = calculateProjectComputedDates(updatedP, remainingProjTasks, [], true);
       const accurateTaskCount = remainingProjTasks.length > 0
         ? remainingProjTasks.length
         : (newSummaries.length > 0 ? newSummaries.length : Math.max(0, (p.taskCount || 0) - idSet.size));

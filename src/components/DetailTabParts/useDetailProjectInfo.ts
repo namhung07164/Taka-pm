@@ -111,32 +111,15 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           projectId: p.id,
           ...ts
         } as Task));
-      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
-        const existingNamesOrIds = new Set(rawGroupTasks.map(t => String(t.id || t.name).toLowerCase()));
-        p.taskSummaries.forEach((ts, idx) => {
-          const matchKey = String(ts.id || ts.name || '').toLowerCase();
-          if (matchKey && !existingNamesOrIds.has(matchKey)) {
-            rawGroupTasks.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-              name: ts.name || `Task ${idx + 1}`,
-              start: ts.start || p.computedTakStart || p.start || '',
-              finish: ts.finish || p.computedTakCompl || p.handover || '',
-              projectCode: p.code || '',
-              projectStore: p.store || 'HCM',
-              projectYear: p.year ? String(p.year) : '',
-              party: ts.party || p.party || '',
-              runningStatus: ts.runningStatus || 'On process',
-              duration: ts.duration || '',
-              parentTaskId: ts.parentTaskId,
-              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-              projectId: p.id,
-              ...ts
-            } as Task);
-            existingNamesOrIds.add(matchKey);
-          }
-        });
       }
+      // Ensure unique tasks by id to eliminate any duplicate key collision
+      const uniqueTaskMap = new Map<string, Task>();
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
+        }
+      });
+      rawGroupTasks = Array.from(uniqueTaskMap.values());
       const sortedTasks = sortGroupTasks(rawGroupTasks || []);
       let computedTakStart = p.computedTakStart || p.start;
       let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
@@ -248,31 +231,16 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         projectId: p.id,
         ...ts
       } as Task));
-    } else if (rawGroupTasks && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
-      const existingNamesOrIds = new Set(rawGroupTasks.map(t => String(t.id || t.name).toLowerCase()));
-      p.taskSummaries.forEach((ts, idx) => {
-        const matchKey = String(ts.id || ts.name || '').toLowerCase();
-        if (matchKey && !existingNamesOrIds.has(matchKey)) {
-          rawGroupTasks!.push({
-            id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-            name: ts.name || `Task ${idx + 1}`,
-            start: ts.start || p.computedTakStart || p.start || '',
-            finish: ts.finish || p.computedTakCompl || p.handover || '',
-            projectCode: p.code || '',
-            projectStore: p.store || 'HCM',
-            projectYear: p.year ? String(p.year) : '',
-            party: ts.party || p.party || '',
-            runningStatus: ts.runningStatus || 'On process',
-            duration: ts.duration || '',
-            parentTaskId: ts.parentTaskId,
-            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-            projectId: p.id,
-            ...ts
-          } as Task);
-          existingNamesOrIds.add(matchKey);
+    }
+    // Ensure unique tasks by id to eliminate any duplicate key collision
+    if (rawGroupTasks && rawGroupTasks.length > 0) {
+      const uniqueTaskMap = new Map<string, Task>();
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
         }
       });
+      rawGroupTasks = Array.from(uniqueTaskMap.values());
     }
     const sortedTasks = sortGroupTasks(rawGroupTasks || []);
     let computedTakStart = p.computedTakStart || p.start;
