@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
@@ -6,7 +6,8 @@ import { db, APP_ID } from "../../lib/firebase";
 import { Cost } from "../../types";
 import { PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../../lib/utils";
 import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
-import { hydrateCostsFromLocal } from "../../lib/backgroundSyncWorker";
+import { hydrateCostsFromLocal, offloadPersistSnapshot } from "../../lib/backgroundSyncWorker";
+import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 
 interface UseCostsHydrationProps {
@@ -16,6 +17,24 @@ interface UseCostsHydrationProps {
 }
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
 
 export function useCostsHydration({
   querySignature,
@@ -31,14 +50,62 @@ export function useCostsHydration({
   const costsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const prevSigCosts = useRef<string>("");
 
+  // Atomic batching buffers for Costs updates
+  const pendingCostsMap = useRef<Map<string, Cost> | null>(null);
+  const pendingCostsChanged = useRef<Map<string, Cost>>(new Map());
+  const pendingCostsRemoved = useRef<Set<string>>(new Set());
+  const costsBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchCostsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+    if (!pendingCostsMap.current) {
+      const currentCosts = useAppStore.getState().costs || [];
+      const map = new Map<string, Cost>();
+      currentCosts.forEach((c) => map.set(c.id, c));
+      pendingCostsMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const id = change.doc.id;
+      const data = { id, ...change.doc.data() } as Cost;
+      if (change.type === "removed" || data.isDeleted) {
+        pendingCostsMap.current!.delete(id);
+        pendingCostsChanged.current.delete(id);
+        pendingCostsRemoved.current.add(id);
+      } else {
+        if (fromCache && isStaleCacheDoc(pendingCostsMap.current!.get(id), data)) return;
+        pendingCostsMap.current!.set(id, data);
+        pendingCostsChanged.current.set(id, data);
+        pendingCostsRemoved.current.delete(id);
+      }
+    });
+
+    if (costsBatchTimer.current) {
+      clearTimeout(costsBatchTimer.current);
+    }
+
+    costsBatchTimer.current = setTimeout(() => {
+      if (pendingCostsMap.current) {
+        const updatedList = Array.from(pendingCostsMap.current.values());
+        useAppStore.getState().setCosts(updatedList);
+        
+        const changed = Array.from(pendingCostsChanged.current.values());
+        const removed = Array.from(pendingCostsRemoved.current);
+        pendingCostsChanged.current.clear();
+        pendingCostsRemoved.current.clear();
+        
+        if (changed.length > 0) offloadPersistSnapshot('taka_costs', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_costs', id).catch(() => {}); });
+        
+        pendingCostsMap.current = null;
+      }
+    }, 80);
+  }, []);
+
   // Sleep/Wake Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      costsPool.current.forEach((u) => u());
-      costsPool.current.clear();
-      costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
-      costsTTLTimeouts.current.clear();
-
+      // 1. KHÔNG hủy listener khi thức giấc.
+      
       if (useAppStore.getState().isCostsRequested) {
         hydrateCostsFromLocal().catch(() => {});
       }
@@ -57,6 +124,7 @@ export function useCostsHydration({
       costsPool.current.clear();
       costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
       costsTTLTimeouts.current.clear();
+      if (costsBatchTimer.current) clearTimeout(costsBatchTimer.current);
     };
   }, []);
 
@@ -134,22 +202,7 @@ export function useCostsHydration({
             (snapshot) => {
               usePerformanceStore.getState().trackSnapshot(`taka_costs_${year}`, snapshot);
               setIsCostsLoading(false);
-
-              const liveCosts = useAppStore.getState().costs || [];
-              const costMap = new Map<string, Cost>();
-              liveCosts.forEach((c) => costMap.set(c.id, c));
-
-              snapshot.docChanges().forEach((change) => {
-                const data = { id: change.doc.id, ...change.doc.data() } as Cost;
-                if (change.type === "removed" || data.isDeleted) {
-                  costMap.delete(change.doc.id);
-                } else {
-                  costMap.set(change.doc.id, data);
-                }
-              });
-
-              const updatedList = Array.from(costMap.values());
-              useAppStore.getState().setCosts(updatedList);
+              batchCostsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
             },
             (e) => {
               setIsCostsLoading(false);

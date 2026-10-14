@@ -14,6 +14,8 @@ export interface ConfigVersions {
   permissionsVersion?: number;
   subAppUsersVersion?: number;
   appUsersVersion?: number;
+  globalRestoreCutoff?: number;
+  dataFingerprint?: string;
   updatedAt?: string;
 }
 
@@ -416,6 +418,8 @@ export function setupStaticConfigSync(): Unsubscribe {
         permissionsVersion: remotePermsVer,
         subAppUsersVersion: remoteSubUsersVer,
         appUsersVersion: remoteAppUsersVer,
+        globalRestoreCutoff: remoteData.globalRestoreCutoff,
+        dataFingerprint: remoteData.dataFingerprint,
         updatedAt: remoteData.updatedAt || new Date().toISOString(),
       });
     },

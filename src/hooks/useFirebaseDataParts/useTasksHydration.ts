@@ -14,6 +14,7 @@ import {
 import { loadNotificationTasks } from "../../lib/notificationTaskService";
 import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
 import { cleanOrphanTasks } from "../../lib/taskStateService";
+import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 
 interface UseTasksHydrationProps {
@@ -23,6 +24,24 @@ interface UseTasksHydrationProps {
 }
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
 
 export function useTasksHydration({
   querySignature,
@@ -48,11 +67,13 @@ export function useTasksHydration({
   const prevQuerySigTasks = useRef<string>("");
   const prevSigTasks = useRef<string>("");
 
-  // Atomic batching buffer for Tasks updates
+  // Atomic batching buffers for Tasks updates
   const pendingTasksMap = useRef<Map<string, Task> | null>(null);
+  const pendingTasksChanged = useRef<Map<string, Task>>(new Map());
+  const pendingTasksRemoved = useRef<Set<string>>(new Set());
   const tasksBatchTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const batchTasksUpdate = useCallback((docChanges: any[]) => {
+  const batchTasksUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
     if (!pendingTasksMap.current) {
       const currentTasks = useAppStore.getState().tasks || [];
       const map = new Map<string, Task>();
@@ -61,11 +82,17 @@ export function useTasksHydration({
     }
 
     docChanges.forEach((change) => {
-      const data = { id: change.doc.id, ...change.doc.data() } as Task;
+      const id = change.doc.id;
+      const data = { id, ...change.doc.data() } as Task;
       if (change.type === "removed" || data.isDeleted) {
-        pendingTasksMap.current!.delete(change.doc.id);
+        pendingTasksMap.current!.delete(id);
+        pendingTasksChanged.current.delete(id);
+        pendingTasksRemoved.current.add(id);
       } else {
-        pendingTasksMap.current!.set(change.doc.id, data);
+        if (fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
+        pendingTasksMap.current!.set(id, data);
+        pendingTasksChanged.current.set(id, data);
+        pendingTasksRemoved.current.delete(id);
       }
     });
 
@@ -86,23 +113,29 @@ export function useTasksHydration({
           return (a.orderIndex || 0) - (b.orderIndex || 0);
         });
         useAppStore.getState().setTasks(finalTasks);
-        offloadPersistSnapshot("taka_tasks", finalTasks);
+        
+        const finalIds = new Set(finalTasks.map(t => t.id));
+        const changed = Array.from(pendingTasksChanged.current.values()).filter(t => finalIds.has(t.id));
+        const removed = Array.from(pendingTasksRemoved.current);
+        pendingTasksChanged.current.clear();
+        pendingTasksRemoved.current.clear();
+        if (changed.length > 0) offloadPersistSnapshot('taka_tasks', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_tasks', id).catch(() => {}); });
+
         const setNotifs = useAppStore.getState().setAllTasksForNotifs;
         if (setNotifs) setNotifs(finalTasks);
         pendingTasksMap.current = null;
       }
-      tasksBatchTimer.current = null;
     }, 120);
   }, []);
 
   // Sleep/Wake Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      tasksPool.current.forEach((u) => u());
-      tasksPool.current.clear();
-      tasksTTLTimeouts.current.forEach((t) => clearTimeout(t));
-      tasksTTLTimeouts.current.clear();
-
+      // 1. KHÔNG hủy listener khi thức giấc.
+      // Hủy xong mà không effect nào tạo lại => mất realtime tasks/costs/delegations
+      // Socket chết do iOS treo đã có initNetworkRecovery (syncResilience) xử lý bằng deltaResync
+      
       if (useAppStore.getState().isTasksRequested) {
         hydrateTasksFromLocal().catch(() => {});
       }
@@ -311,7 +344,7 @@ export function useTasksHydration({
                 (snapshot) => {
                   usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
                   setIsTasksLoading(false);
-                  batchTasksUpdate(snapshot.docChanges());
+                  batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
                   setCloudStatus("online");
                 },
                 (e) => {
@@ -381,7 +414,7 @@ export function useTasksHydration({
                     knownHydratedProjectCodes.current.add(p.code);
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
-                    batchTasksUpdate(snapshot.docChanges());
+                    batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
                     setCloudStatus("online");
                   },
                   (e) => {

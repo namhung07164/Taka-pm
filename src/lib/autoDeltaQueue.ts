@@ -26,10 +26,10 @@ export const LOGICAL_TO_FS: Record<Logical, string> = {
   taka_delegations: 'taka_delegation_groups',
 };
 
-const FLUSH_DELAY_MS = 50;
+const FLUSH_DELAY_MS = 3000;
 const MAX_ITEMS_PER_DELTA = 300;
 const EXPLICIT_BEFORE_MS = 5000;
-const EXPLICIT_AFTER_MS = 8000;
+const EXPLICIT_AFTER_MS = 15000;
 
 const explicitMarks = new Map<string, number>();
 const pending = new Map<string, { docId: string; collectionName: Logical; action: 'invalidate' | 'delete'; queuedAt: number }>();
@@ -54,6 +54,12 @@ export function markExplicitDelta(items: Array<{ docId?: string; collectionName?
   if (explicitMarks.size > 5000) {
     const cutoff = now - 60000;
     for (const [k, t] of explicitMarks) if (t < cutoff) explicitMarks.delete(k);
+  }
+}
+
+export function unmarkExplicitDelta(items: Array<{ docId?: string; collectionName?: string }>): void {
+  for (const it of items) {
+    if (it.docId && it.collectionName) explicitMarks.delete(keyOf(it.collectionName, it.docId));
   }
 }
 
