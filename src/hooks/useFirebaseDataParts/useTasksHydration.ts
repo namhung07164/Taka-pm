@@ -202,7 +202,7 @@ export function useTasksHydration({
         if (setNotifs) setNotifs(finalTasks);
         pendingTasksMap.current = null;
       }
-    }, 120);
+    }, 200);
   }, []);
 
   // Sleep/Wake Recovery Listener
