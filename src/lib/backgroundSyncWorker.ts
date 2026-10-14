@@ -344,6 +344,7 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
           isPatch?: boolean
         ) => {
           if (!docId || !collectionName) return;
+          if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
           if (action === 'delete') {
             await deleteLocalRecord(collectionName, docId);
           } else if (action === 'update' || isPatch) {

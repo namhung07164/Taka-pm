@@ -237,11 +237,14 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   const applyItem = (
     docId: string,
-    collectionName: string,
+    collectionNameRaw: string,
     action: 'create' | 'update' | 'delete',
     data: any,
     year?: string
   ) => {
+    // Một số nơi ghi delta với tên đường dẫn thật `taka_delegation_groups`
+    const collectionName =
+      collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
     if (
       collectionName === 'taka_delegations' &&
       !store.isDelegationsRequested &&
@@ -257,10 +260,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       return Number.isFinite(n) ? n : 0;
     };
 
+    // Chỉ bỏ qua khi delta CÓ updatedAt hợp lệ và CŨ HƠN bản đang giữ.
+    // Delta xóa, delta không có data, và delta vá không mang updatedAt luôn được áp dụng
+    // (thứ tự đã do serverTime quyết định). Tuyệt đối không đọc data.updatedAt khi data có thể null.
+    const isStaleVsLocal = (existing: any): boolean => {
+      if (action === 'delete' || !data) return false;
+      const incoming = tsOf(data.updatedAt);
+      if (!incoming) return false;
+      return tsOf(existing?.updatedAt) > incoming;
+    };
+
     switch (collectionName) {
       case 'taka_projects': {
         const idx = updatedProjects.findIndex((p) => p.id === docId);
-        if (idx !== -1 && tsOf(updatedProjects[idx].updatedAt) > tsOf(data.updatedAt)) return;
+        if (idx !== -1 && isStaleVsLocal(updatedProjects[idx])) return;
         
         projectsChanged = true;
         if (action === 'delete') {
@@ -275,7 +288,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
-        if (idx !== -1 && tsOf(updatedTasks[idx].updatedAt) > tsOf(data.updatedAt)) return;
+        if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
 
         tasksChanged = true;
         if (action === 'delete') {
@@ -290,7 +303,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_costs': {
         const idx = updatedCosts.findIndex((c) => c.id === docId);
-        if (idx !== -1 && tsOf(updatedCosts[idx].updatedAt) > tsOf(data.updatedAt)) return;
+        if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
 
         costsChanged = true;
         if (action === 'delete') {
@@ -305,7 +318,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_delegations': {
         const idx = updatedDelegations.findIndex((g) => g.id === docId);
-        if (idx !== -1 && tsOf(updatedDelegations[idx].updatedAt) > tsOf(data.updatedAt)) return;
+        if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
 
         delegationsChanged = true;
         if (action === 'delete') {
@@ -351,10 +364,18 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           invalidations.push(item);
           return;
         }
-        applyItem(item.docId, item.collectionName, item.action, item.data, item.year);
+        try {
+          applyItem(item.docId, item.collectionName, item.action, item.data, item.year);
+        } catch (err) {
+          console.warn('[deltaSync] applyItem failed (batch item skipped):', item.docId, err);
+        }
       });
     } else if (delta.docId && delta.collectionName) {
-      applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, delta.year);
+      try {
+        applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, delta.year);
+      } catch (err) {
+        console.warn('[deltaSync] applyItem failed (delta skipped):', delta.docId, err);
+      }
     }
   });
 
