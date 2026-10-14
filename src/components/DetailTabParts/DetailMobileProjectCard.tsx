@@ -176,9 +176,9 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   });
 
   const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-  const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
+  const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
   const loadedTaskCount = groupTasks.length;
-  const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : projectDocCount;
+  const authoritativeCount = Math.max(loadedTaskCount, projectDocCount);
   const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
     ? tasksToRender.length
     : authoritativeCount;

@@ -228,11 +228,24 @@ export function useEnrichedData() {
           return Boolean(ftCode && pCode && ftCode === pCode);
         });
 
-        // ONLY generate virtual tasks if no real tasks exist in memory yet
-        if (projectTasks.length === 0) {
+        // Consolidate virtual tasks from p.taskSummaries when in-memory tasks are missing or partial
+        if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > projectTasks.length) {
+          const existingSet = new Set<string>();
+          projectTasks.forEach(ft => {
+            if (ft.id) existingSet.add(String(ft.id).toLowerCase());
+            if (ft.taskCodePhu) existingSet.add(String(ft.taskCodePhu).trim().toLowerCase());
+            if (ft.name) existingSet.add(String(ft.name).trim().toLowerCase());
+          });
+
           p.taskSummaries.forEach((ts, idx) => {
             const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
-            if (!allExistingIds.has(tsId)) {
+            const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+            const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+            const hasMatch = (ts.id && existingSet.has(String(ts.id).toLowerCase())) ||
+                             (tsCode && existingSet.has(tsCode)) ||
+                             (tsName && existingSet.has(tsName));
+
+            if (!hasMatch && !allExistingIds.has(tsId)) {
               allExistingIds.add(tsId);
               const vTask = {
                 id: tsId,

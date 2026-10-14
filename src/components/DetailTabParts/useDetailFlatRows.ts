@@ -118,11 +118,9 @@ export function useDetailFlatRows({
           : validGroupTasks;
 
       const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-      const projectDocCount = p.taskCount !== undefined ? p.taskCount : summaryCount;
+      const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
       const loadedTaskCount = validGroupTasks.length;
-      const isTasksRequested = useAppStore.getState().isTasksRequested;
-      // When tasks are loaded in memory for this project, loadedTaskCount is the authoritative count
-      const authoritativeCount = isTasksRequested ? loadedTaskCount : (loadedTaskCount > 0 ? loadedTaskCount : projectDocCount);
+      const authoritativeCount = Math.max(loadedTaskCount, projectDocCount);
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
         : authoritativeCount;

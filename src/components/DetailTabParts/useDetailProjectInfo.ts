@@ -107,26 +107,45 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       });
 
       let rawGroupTasks: Task[] = Array.from(mergedTasksMap.values());
-      if (rawGroupTasks.length === 0 && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        // Fallback placeholder tasks from summary ONLY when no in-memory tasks exist yet
-        rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
+
+      // Safety guard: Merge missing tasks from p.taskSummaries when taskSummaries has more items
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
+        const existingSummarySet = new Set<string>();
+        rawGroupTasks.forEach(t => {
+          if (t.id) existingSummarySet.add(String(t.id).toLowerCase());
+          if (t.taskCodePhu) existingSummarySet.add(String(t.taskCodePhu).trim().toLowerCase());
+          if (t.name) existingSummarySet.add(String(t.name).trim().toLowerCase());
+        });
+
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const hasMatch = (tsId && existingSummarySet.has(tsId)) ||
+                           (tsCode && existingSummarySet.has(tsCode)) ||
+                           (tsName && existingSummarySet.has(tsName));
+          if (!hasMatch) {
+            rawGroupTasks.push({
+              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
       }
+
       // Ensure unique tasks by id to eliminate any duplicate key collision
       const uniqueTaskMap = new Map<string, Task>();
       rawGroupTasks.forEach(t => {

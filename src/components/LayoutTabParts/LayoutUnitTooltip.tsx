@@ -46,17 +46,10 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     const expectedYear = String(data.year || useAppStore.getState().globalYearFilter || '').trim();
 
     if (initialP?.id) {
-      const found = projects.find(item => item.id === initialP.id);
-      if (found) {
-        const itemMeta = extractProjectMetadata(found);
-        const itemStore = itemMeta.store;
-        const itemYear = itemMeta.year;
-        if ((!expectedStore || !itemStore || itemStore === expectedStore) &&
-            (!expectedYear || expectedYear === 'all' || !itemYear || itemYear === 'ALL' || itemYear === expectedYear)) {
-          return found;
-        }
-      }
+      const found = projects.find(item => String(item.id) === String(initialP.id));
+      if (found) return found;
     }
+
     const targetCode = String(data.appProjectCode || data.code || hoverInfo.unitName || '').trim().toLowerCase();
     if (targetCode) {
       const found = projects.find(item => {
@@ -72,15 +65,8 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
       });
       if (found) return found;
     }
-    if (initialP) {
-      const itemMeta = extractProjectMetadata(initialP);
-      const initStore = itemMeta.store;
-      const initYear = itemMeta.year;
-      if ((!expectedStore || !initStore || initStore === expectedStore) &&
-          (!expectedYear || expectedYear === 'all' || !initYear || initYear === 'ALL' || initYear === expectedYear)) {
-        return initialP;
-      }
-    }
+
+    if (initialP) return initialP;
     return undefined;
   }, [initialP, data.hasAppProject, data.matchedProject, data.appProjectCode, data.code, data.store, data.year, hoverInfo.unitName, projects, storeFilter]);
 

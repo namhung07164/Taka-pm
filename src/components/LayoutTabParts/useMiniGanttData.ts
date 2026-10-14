@@ -59,6 +59,7 @@ export interface MiniGanttRow {
 
 export function useMiniGanttData(project: Project | null, onClose: () => void) {
   const tasks = useAppStore((state) => state.tasks);
+  const projects = useAppStore((state) => state.projects);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
@@ -70,14 +71,40 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     }
   }, [project, isTasksRequested, setIsTasksRequested]);
 
-  // Raw tasks for this project (matching Main Gantt getGroupTasksForProject logic)
-  const rawProjectTasks = useMemo(() => {
-    if (!project) return [];
-
+  // Always resolve the LIVE project object from Zustand (or fallback to passed project)
+  const liveProject = useMemo(() => {
+    if (!project) return null;
     const pId = project.id ? String(project.id) : '';
-    const pCode = (project.code || '').trim().toUpperCase();
+    const pCode = String(project.code || '').trim().toUpperCase();
     const pYear = project.year ? String(project.year).trim() : '';
     const pStore = project.store ? String(project.store).trim().toUpperCase() : '';
+
+    if (pId) {
+      const foundById = projects.find((p) => p.id && String(p.id) === pId);
+      if (foundById) return foundById;
+    }
+
+    const foundByCode = projects.find((p) => {
+      const s = String(p.store || '').trim().toUpperCase();
+      const y = p.year ? String(p.year).trim() : '';
+      const c = String(p.code || '').trim().toUpperCase();
+      if (pStore && s && pStore !== s) return false;
+      if (pYear && y && pYear !== y) return false;
+      return c === pCode;
+    });
+
+    return foundByCode || project;
+  }, [project, projects]);
+
+  // Raw tasks for this project (matching Main Gantt getGroupTasksForProject logic)
+  const rawProjectTasks = useMemo(() => {
+    const currentProj = liveProject || project;
+    if (!currentProj) return [];
+
+    const pId = currentProj.id ? String(currentProj.id) : '';
+    const pCode = (currentProj.code || '').trim().toUpperCase();
+    const pYear = currentProj.year ? String(currentProj.year).trim() : '';
+    const pStore = currentProj.store ? String(currentProj.store).trim().toUpperCase() : '';
 
     const matchedZustandTasks = tasks.filter((t) => {
       if (t.isDeleted) return false;
@@ -99,46 +126,82 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
       return true;
     });
 
-    if (matchedZustandTasks.length > 0) {
-      return matchedZustandTasks;
+    const summaryItems =
+      (currentProj.taskSummaries && Array.isArray(currentProj.taskSummaries) && currentProj.taskSummaries.length > 0)
+        ? currentProj.taskSummaries
+        : (project?.taskSummaries || []);
+
+    const mapSummaryToTask = (ts: any, idx: number): Task => {
+      const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
+      const derivedOrderIndex =
+        subtaskNum !== null
+          ? subtaskNum - 1
+          : ts.orderIndex !== undefined && ts.orderIndex !== null
+          ? ts.orderIndex
+          : idx;
+      const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
+
+      let durStr = '1';
+      if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
+        durStr = String(ts.duration).trim();
+      }
+
+      return {
+        id: ts.id || ts.taskId || `ts_${currentProj.code || currentProj.id}_${idx}`,
+        name: ts.name || 'Task',
+        start: ts.start || currentProj.computedTakStart || currentProj.start || '',
+        finish: ts.finish || currentProj.computedTakCompl || currentProj.handover || '',
+        duration: durStr,
+        taskCodePhu: fallbackCode,
+        runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
+        approval: ts.approval,
+        party: ts.party || currentProj.party || '',
+        parentTaskId: ts.parentTaskId,
+        projectCode: currentProj.code,
+        projectId: currentProj.id,
+        projectStore: currentProj.store,
+        projectYear: currentProj.year,
+        orderIndex: derivedOrderIndex,
+        ...ts,
+      } as Task;
+    };
+
+    if (matchedZustandTasks.length === 0) {
+      if (summaryItems.length > 0) {
+        return summaryItems.map((ts: any, idx: number) => mapSummaryToTask(ts, idx));
+      }
+      return [];
     }
 
-    if (project.taskSummaries && project.taskSummaries.length > 0) {
-      return project.taskSummaries.map((ts: any, idx: number) => {
-        const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
-        const derivedOrderIndex =
-          subtaskNum !== null
-            ? subtaskNum - 1
-            : ts.orderIndex !== undefined && ts.orderIndex !== null
-            ? ts.orderIndex
-            : idx;
-        const fallbackCode = subtaskNum !== null ? `#${subtaskNum}` : ts.taskCodePhu || '';
-
-        let durStr = '1';
-        if (ts.duration !== undefined && ts.duration !== null && String(ts.duration).trim() !== '') {
-          durStr = String(ts.duration).trim();
-        }
-
-        return {
-          id: ts.id || ts.taskId || `ts_${idx}`,
-          name: ts.name || 'Task',
-          start: ts.start || '',
-          finish: ts.finish || '',
-          duration: durStr,
-          taskCodePhu: fallbackCode,
-          runningStatus: ts.runningStatus || (ts.approval === 'Approved' ? 'Completed' : 'Upcoming'),
-          approval: ts.approval,
-          party: ts.party,
-          parentTaskId: ts.parentTaskId,
-          projectCode: project.code,
-          projectId: project.id,
-          orderIndex: derivedOrderIndex,
-        } as Task;
+    // If matchedZustandTasks count is less than taskSummaries, merge missing items from taskSummaries
+    if (summaryItems.length > matchedZustandTasks.length) {
+      const existingSummaryMap = new Set<string>();
+      matchedZustandTasks.forEach((t) => {
+        if (t.id) existingSummaryMap.add(String(t.id).toLowerCase());
+        if (t.taskCodePhu) existingSummaryMap.add(String(t.taskCodePhu).trim().toLowerCase());
+        if (t.name) existingSummaryMap.add(String(t.name).trim().toLowerCase());
       });
+
+      const mergedTasks = [...matchedZustandTasks];
+      summaryItems.forEach((ts: any, idx: number) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+        const hasMatch =
+          (tsId && existingSummaryMap.has(tsId)) ||
+          (tsCode && existingSummaryMap.has(tsCode)) ||
+          (tsName && existingSummaryMap.has(tsName));
+
+        if (!hasMatch) {
+          mergedTasks.push(mapSummaryToTask(ts, idx));
+        }
+      });
+      return mergedTasks;
     }
 
-    return [];
-  }, [project, tasks]);
+    return matchedZustandTasks;
+  }, [liveProject, project, tasks]);
 
   // Exact Main Gantt (useGanttVirtualization.ts) task ordering & hierarchy
   const orderedGanttRows: MiniGanttRow[] = useMemo(() => {

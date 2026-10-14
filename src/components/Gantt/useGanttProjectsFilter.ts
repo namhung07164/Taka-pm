@@ -199,32 +199,47 @@ export function useGanttProjectsFilter({
         }
       }
 
-      if (mergedMap.size > 0) {
-        return Array.from(mergedMap.values());
+      let resultTasks = Array.from(mergedMap.values());
+
+      // Fallback & Merge from taskSummaries if taskSummaries has more items
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > resultTasks.length) {
+        const existingSet = new Set<string>();
+        resultTasks.forEach(t => {
+          if (t.id) existingSet.add(String(t.id).toLowerCase());
+          if (t.taskCodePhu) existingSet.add(String(t.taskCodePhu).trim().toLowerCase());
+          if (t.name) existingSet.add(String(t.name).trim().toLowerCase());
+        });
+
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const hasMatch = (tsId && existingSet.has(tsId)) ||
+                           (tsCode && existingSet.has(tsCode)) ||
+                           (tsName && existingSet.has(tsName));
+          if (!hasMatch) {
+            resultTasks.push({
+              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
       }
 
-      // 4. Fallback to taskSummaries
-      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        return p.taskSummaries.map((ts, idx) => ({
-          id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-          name: ts.name || `Task ${idx + 1}`,
-          start: ts.start || p.computedTakStart || p.start || '',
-          finish: ts.finish || p.computedTakCompl || p.handover || '',
-          projectCode: p.code || '',
-          projectStore: p.store || 'HCM',
-          projectYear: p.year ? String(p.year) : '',
-          party: ts.party || p.party || '',
-          runningStatus: ts.runningStatus || 'On process',
-          duration: ts.duration || '',
-          parentTaskId: ts.parentTaskId,
-          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
-          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-          projectId: p.id,
-          ...ts
-        } as Task));
-      }
-
-      return [];
+      return resultTasks;
     },
     [tasksByProjectId, tasksByProject, tasksMapByCode]
   );
