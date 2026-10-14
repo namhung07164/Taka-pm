@@ -232,7 +232,7 @@ export async function deleteTaskStateUnified(
   });
   rawIds.forEach(id => deletedCodesAndIds.add(String(id).trim().toLowerCase()));
 
-  // Central deleted task registration to prevent ghost task re-synthesis
+  // Immediately track deleted keys globally to prevent stale restoration / virtual task synthesis
   markTasksDeleted(Array.from(deletedCodesAndIds));
 
   const now = new Date().toISOString();
@@ -273,19 +273,15 @@ export async function deleteTaskStateUnified(
 
     if (p.taskSummaries && p.taskSummaries.length > 0) {
       newSummaries = p.taskSummaries.filter((ts, idx) => {
-        const tsId = ts.id ? String(ts.id).trim().toLowerCase() : `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+        const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
         const tsCodePhu = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id))) || deletedCodesAndIds.has(tsId)) {
+        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id)))) {
           summaryModified = true;
           return false;
         }
         if (tsCodePhu && deletedCodesAndIds.has(tsCodePhu)) {
-          summaryModified = true;
-          return false;
-        }
-        if (tsName && deletedCodesAndIds.has(tsName)) {
           summaryModified = true;
           return false;
         }

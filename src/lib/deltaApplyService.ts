@@ -8,7 +8,6 @@ import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { applyFieldPatch } from './deltaPatchService';
 import { getTasksForProject, calculateProjectComputedDates } from './projectDatesService';
 import { resolveInvalidations } from './deltaInvalidateService';
-import { markTasksDeleted } from './taskDeletedTracker';
 import { 
   deltaTime, 
   getLastDeltaSyncTime, 
@@ -17,6 +16,7 @@ import {
 } from './deltaSyncService';
 import { CLIENT_SESSION_ID, DELTA_COLLECTION, LAST_SYNC_KEY } from './deltaConstants';
 import { safeSetItemLocal } from './storage';
+import { markTasksDeleted } from './taskDeletedTracker';
 
 /**
  * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
@@ -109,28 +109,11 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
         if (isDelete) {
-          markTasksDeleted([docId, data?.taskCodePhu, data?.name, updatedTasks[idx]?.taskCodePhu, updatedTasks[idx]?.name]);
+          markTasksDeleted([docId, data?.taskCodePhu, data?.name]);
           if (idx !== -1) {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
           }
-          // Strip deleted task from all p.taskSummaries in updatedProjects
-          const targetCode = data?.taskCodePhu || updatedTasks[idx]?.taskCodePhu;
-          const targetName = data?.name || updatedTasks[idx]?.name;
-          updatedProjects = updatedProjects.map(p => {
-            if (!p.taskSummaries || p.taskSummaries.length === 0) return p;
-            const filteredSummaries = p.taskSummaries.filter(ts => {
-              if (ts.id && String(ts.id).toLowerCase() === String(docId).toLowerCase()) return false;
-              if (targetCode && ts.taskCodePhu && String(ts.taskCodePhu).trim().toLowerCase() === String(targetCode).trim().toLowerCase()) return false;
-              if (targetName && ts.name && String(ts.name).trim().toLowerCase() === String(targetName).trim().toLowerCase()) return false;
-              return true;
-            });
-            if (filteredSummaries.length !== p.taskSummaries.length) {
-              projectsChanged = true;
-              return { ...p, taskSummaries: filteredSummaries, taskCount: Math.max(0, (p.taskCount || 1) - 1) };
-            }
-            return p;
-          });
           break;
         }
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
