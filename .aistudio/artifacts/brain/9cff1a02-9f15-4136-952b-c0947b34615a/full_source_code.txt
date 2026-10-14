@@ -86500,6 +86500,7 @@ import { useAppStore } from '../store/useAppStore';
 import { db, APP_ID, writeBatch } from '../lib/firebase';
 import { doc } from 'firebase/firestore';
 import { healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS } from '../lib/projectDatesService';
 import { recordBatchDeltas } from '../lib/deltaSyncService';
 
 interface UseDetailPredecessorSyncParams {
@@ -86687,6 +86688,8 @@ export function useDetailPredecessorSync({
     if (hasAutoHealedRef.current) return;
     if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
     if (!hasWritePermission) return;
+    // 15 giây đầu sau khi mở app, tasks mới chỉ là bản cũ từ Dexie: không tự ghi lên Firestore
+    if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return;
 
     hasAutoHealedRef.current = true;
     handleConvertAllSubtasksToHash(false).catch(() => {});
@@ -88363,7 +88366,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
 import { auth, db } from "../../lib/firebase";
 import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
-import { getPendingUpdates, clearPendingUpdates } from "../../lib/syncQueue";
+import { getPendingUpdates, clearPendingUpdates, processPendingSync } from "../../lib/syncQueue";
 import { recordBatchDeltas } from "../../lib/deltaSyncService";
 import { setupStaticConfigSync } from "../../lib/configCacheService";
 import { enforceStorageBudget } from "../../lib/storageBudgetService";
@@ -88573,141 +88576,15 @@ export function useStaticAndAuthHydration() {
           return;
         }
 
-        const pending = await getPendingUpdates();
-        if (pending.length > 0) {
-          const currentStore = useAppStore.getState();
-          const liveTasks = new Map<string, any>(
-            (currentStore.tasks || []).map((t: any) => [t.id, t])
-          );
-          const liveProjects = new Map<string, any>(
-            (currentStore.projects || []).map((p: any) => [p.id, p])
-          );
-          const liveCosts = new Map<string, any>(
-            (currentStore.costs || []).map((c: any) => [c.id, c])
-          );
-          const liveDelegations = new Map<string, any>(
-            (currentStore.delegationGroups || []).map((d: any) => [d.id, d])
-          );
-          let skipped = 0;
-          const validPending = pending.filter((u: any) => {
-            const draftAtRaw = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
-            // Không có updatedAt hợp lệ thì dùng thời điểm đưa vào hàng đợi (PendingUpdate.timestamp)
-            const draftAt =
-              Number.isFinite(draftAtRaw) && draftAtRaw > 0 ? draftAtRaw : Number(u.timestamp) || 0;
-            if (draftAt && Date.now() - draftAt > 60 * 60 * 1000) {
-              skipped++;
-              return false;
-            }
-            if (u.action === "delete") return true;
-
-            let liveItem: any = undefined;
-            const path = String(u.collectionPath || "");
-            if (path.includes("taka_tasks")) liveItem = liveTasks.get(u.docId);
-            else if (path.includes("taka_projects")) liveItem = liveProjects.get(u.docId);
-            else if (path.includes("taka_costs")) liveItem = liveCosts.get(u.docId);
-            else if (path.includes("taka_delegation")) liveItem = liveDelegations.get(u.docId);
-
-            const liveAt = liveItem?.updatedAt ? new Date(liveItem.updatedAt).getTime() : 0;
-            if (draftAt && liveAt && liveAt > draftAt + 1000) {
-              skipped++;
-              return false;
-            }
-            return true;
+        // Chỉ dùng MỘT bộ phát lại duy nhất (đối chiếu với bản trên server, bỏ lệnh cũ/không hợp lệ).
+        const { synced, failed } = await processPendingSync();
+        if (synced > 0) {
+          setToast({
+            title: "Sync Complete",
+            message: `Đã đồng bộ ${synced} thay đổi offline lên server.`,
           });
-
-          if (validPending.length === 0) {
-            clearPendingUpdates();
-            if (skipped > 0) {
-              setToast({
-                title: "Sync",
-                message: `Đã bỏ qua ${skipped} thay đổi offline cũ vì đã có dữ liệu mới hơn.`,
-              });
-            }
-            return;
-          }
-
-          const batch = writeBatch(db);
-          validPending.forEach((update: any) => {
-            const ref = doc(db, update.collectionPath, update.docId);
-            if (update.action === "set") {
-              batch.set(ref, update.data, { merge: true });
-            } else if (update.action === "update") {
-              batch.update(ref, update.data);
-            } else if (update.action === "delete") {
-              batch.delete(ref);
-            }
-          });
-          batch
-            .commit()
-            .then(() => {
-              clearPendingUpdates();
-              setToast({
-                title: "Sync Complete",
-                message:
-                  skipped > 0
-                    ? `Đã đồng bộ dữ liệu offline (bỏ qua ${skipped} thay đổi cũ hơn dữ liệu hiện có).`
-                    : "Offline data has been synced to the server.",
-              });
-
-              const deltaItems = validPending.map((u: any) => {
-                let collectionName:
-                  | "taka_projects"
-                  | "taka_tasks"
-                  | "taka_costs"
-                  | "taka_delegations" = "taka_projects";
-                if (u.collectionPath.includes("taka_tasks")) collectionName = "taka_tasks";
-                else if (u.collectionPath.includes("taka_costs")) collectionName = "taka_costs";
-                else if (u.collectionPath.includes("taka_delegation"))
-                  collectionName = "taka_delegations";
-
-                return {
-                  docId: u.docId,
-                  collectionName,
-                  action: (u.action === "set" ? "create" : u.action) as
-                    | "create"
-                    | "update"
-                    | "delete",
-                  data: u.data || {},
-                  year: u.data?.year || u.data?.projectYear ? String(u.data?.year || u.data?.projectYear) : undefined,
-                };
-              });
-              if (deltaItems.length > 0) {
-                recordBatchDeltas(deltaItems).catch(() => {});
-              }
-            })
-            .catch(async (e: any) => {
-              console.error(e);
-              const code = String(e?.code || "");
-              const isPermanent = code.includes("not-found") || code.includes("invalid-argument");
-              if (!isPermanent) {
-                // Lỗi mạng tạm thời: giữ hàng đợi, thử lại khi online
-                setCloudStatus("offline");
-                return;
-              }
-
-              // Một mục hỏng làm hỏng cả batch: ghi lại từng mục, bỏ mục không thể ghi
-              let okCount = 0;
-              let droppedCount = 0;
-              for (const update of validPending) {
-                try {
-                  const single = writeBatch(db);
-                  const singleRef = doc(db, update.collectionPath, update.docId);
-                  if (update.action === "set") single.set(singleRef, update.data, { merge: true });
-                  else if (update.action === "update") single.update(singleRef, update.data);
-                  else if (update.action === "delete") single.delete(singleRef);
-                  await single.commit();
-                  okCount++;
-                } catch {
-                  droppedCount++;
-                }
-              }
-              clearPendingUpdates();
-              setToast({
-                title: "Sync",
-                message: `Đã đồng bộ ${okCount} thay đổi offline, bỏ ${droppedCount} thay đổi không còn hợp lệ.`,
-              });
-            });
         }
+        if (failed > 0) setCloudStatus("offline");
       } catch (error) {
         setCloudStatus("offline");
         if (error instanceof Error && error.message.includes("permission")) {
@@ -97520,7 +97397,7 @@ import {
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported, getToken } from "firebase/messaging";
-import { addPendingUpdate } from "./syncQueue";
+import { addPendingUpdate, isPermanentWriteError } from "./syncQueue";
 import { validateFirestoreData } from "./validation";
 import { queueAutoDelta } from "./autoDeltaQueue";
 
@@ -97841,7 +97718,9 @@ function writeBatchAuditLogAsync(
   }
 }
 
-function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, data?: any) {
+function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, data?: any, error?: any) {
+  // Server từ chối vĩnh viễn thì không xếp hàng: phát lại về sau chỉ gây ghi đè/xóa ngoài ý muốn.
+  if (error && isPermanentWriteError(error)) return;
   let collectionPath = docRef.path;
   // Firestore path is usually something like "artifacts/APP_ID/public/data/taka_projects/project1"
   // We want to extract the collection path, which is everything before the last slash.
@@ -97868,7 +97747,7 @@ export function setDoc(docRef: any, data: any, options?: any) {
   queueAutoDelta(docRef.path, docRef.id, 'write');
   return firestoreSetDoc(docRef, cleanData, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('set', docRef, cleanData);
+    handleOfflineQueue('set', docRef, cleanData, error);
     throw error;
   });
 }
@@ -97880,7 +97759,7 @@ export function updateDoc(docRef: any, data: any) {
   queueAutoDelta(docRef.path, docRef.id, 'write');
   return firestoreUpdateDoc(docRef, cleanData).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('update', docRef, cleanData);
+    handleOfflineQueue('update', docRef, cleanData, error);
     throw error;
   });
 }
@@ -97890,7 +97769,7 @@ export function deleteDoc(docRef: any) {
   queueAutoDelta(docRef.path, docRef.id, 'delete');
   return firestoreDeleteDoc(docRef).catch(error => {
     console.warn("Network error during deleteDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('delete', docRef);
+    handleOfflineQueue('delete', docRef, undefined, error);
     throw error;
   });
 }
@@ -97935,7 +97814,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
     return originalCommit().catch(error => {
       console.warn("Network error during batch commit. Saving to local IndexedDB queue.", error);
       operations.forEach(op => {
-         handleOfflineQueue(op.action, op.docRef, op.data);
+         handleOfflineQueue(op.action, op.docRef, op.data, error);
       });
       throw error;
     });
@@ -101669,6 +101548,7 @@ import { addPendingUpdate } from './syncQueue';
 import { touchYearMeta } from './yearsFingerprintService';
 import { recordDelta } from './deltaSyncService';
 import { markExplicitDelta, unmarkExplicitDelta } from './autoDeltaQueue';
+import { isPermanentWriteError } from './syncQueue';
 
 export interface CoalescedMutation {
   collectionPath: string; // Tên collection, vd: taka_tasks
@@ -101801,6 +101681,8 @@ async function flushQueueItem(queueKey: string): Promise<void> {
       unmarkExplicitDelta([{ docId: item.docId, collectionName: item.collectionPath }]);
     }
     console.error(`[mutationCoalescer] Error flushing ${queueKey}, buffering to syncQueue:`, err);
+    // Server từ chối vĩnh viễn thì không xếp hàng (phát lại sau này chỉ gây ghi đè ngoài ý muốn)
+    if (isPermanentWriteError(err)) return;
     // Lưu vào Offline Sync Queue chống mất dữ liệu (Rule 2 AGENTS.md)
     addPendingUpdate({
       collectionPath: `artifacts/${APP_ID}/public/data/${item.collectionPath}`,
@@ -105559,10 +105441,38 @@ export const deleteStorageFiles = async (urls: string[]) => {
 };
 
 === FILE: src/lib/syncQueue.ts ===
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { setDoc, updateDoc, deleteDoc } from './firestoreWrites';
 import { pullAndApplyDeltas, getLastDeltaSyncTime } from './deltaSyncService';
+
+// Lệnh nằm trong hàng đợi quá lâu thì dữ liệu trên server gần như chắc chắn đã đổi: bỏ, không phát lại.
+const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000;
+
+const toMs = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Lỗi mà server từ chối vĩnh viễn: thử lại bao nhiêu lần cũng vậy, và KHÔNG được đưa vào hàng đợi.
+ * Mất mạng thật thì Firestore SDK (persistent cache) tự giữ lệnh ghi và gửi lại, không cần hàng đợi này.
+ */
+export function isPermanentWriteError(err: any): boolean {
+  const code = String(err?.code || '');
+  return [
+    'permission-denied',
+    'not-found',
+    'invalid-argument',
+    'failed-precondition',
+    'already-exists',
+    'out-of-range',
+    'unauthenticated',
+    'unimplemented',
+  ].some((c) => code.includes(c));
+}
 
 export interface PendingUpdate {
   id: string;
@@ -105672,6 +105582,7 @@ export async function processPendingSync(): Promise<{ synced: number; failed: nu
   isSyncProcessing = true;
   let synced = 0;
   let failed = 0;
+  let dropped = 0;
 
   try {
     const pendingList = await getPendingUpdates();
@@ -105680,53 +105591,83 @@ export async function processPendingSync(): Promise<{ synced: number; failed: nu
       return { synced: 0, failed: 0 };
     }
 
+    // Phát lại theo đúng thứ tự thời gian
+    pendingList.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+
     for (const item of pendingList) {
       try {
+        const queuedAt = Number(item.timestamp) || 0;
+
+        // 1. Quá hạn: bỏ
+        if (queuedAt && Date.now() - queuedAt > MAX_PENDING_AGE_MS) {
+          console.warn(`[SyncQueue] Drop expired pending ${item.action} ${item.docId}`);
+          await removePendingUpdate(item.id);
+          dropped++;
+          continue;
+        }
+
         const fullPath = item.collectionPath.includes('/')
           ? item.collectionPath
           : `artifacts/${APP_ID}/public/data/${item.collectionPath}`;
-        
         const docRef = doc(db, `${fullPath}/${item.docId}`);
+        const draftAt = toMs(item.data?.updatedAt) || queuedAt;
 
-        // Server Timestamp Conflict Check:
-        // Skip update if server version has a newer updatedAt timestamp
-        if (item.action === 'update' && item.data?.updatedAt) {
-          try {
-            const serverSnap = await getDoc(docRef);
-            if (serverSnap.exists()) {
-              const serverData = serverSnap.data();
-              if (
-                serverData.updatedAt &&
-                new Date(serverData.updatedAt).getTime() > new Date(item.data.updatedAt).getTime()
-              ) {
-                console.warn(
-                  `[SyncQueue] Conflict detected for ${item.docId}. Server version is newer. Skipping update.`
-                );
-                await removePendingUpdate(item.id);
-                continue;
-              }
-            }
-          } catch {
-            // Ignore read errors during offline/flaky connection
+        // 2. Luôn đối chiếu với bản TRÊN SERVER (không dùng cache cục bộ). Không đọc được thì giữ lại thử sau.
+        let serverSnap: any;
+        try {
+          serverSnap = await getDocFromServer(docRef);
+        } catch {
+          failed++;
+          continue;
+        }
+        const exists = serverSnap.exists();
+        const serverAt = exists ? toMs(serverSnap.data()?.updatedAt) : 0;
+
+        if (item.action === 'delete') {
+          // Doc đã mất rồi, hoặc đã được sửa SAU khi lệnh xóa được xếp hàng: không xóa
+          if (!exists || (serverAt && queuedAt && serverAt > queuedAt)) {
+            console.warn(`[SyncQueue] Skip stale delete ${item.docId}`);
+            await removePendingUpdate(item.id);
+            dropped++;
+            continue;
           }
-        }
-
-        if (item.action === 'set') {
-          await setDoc(docRef, item.data, { merge: true });
-        } else if (item.action === 'update') {
-          await updateDoc(docRef, item.data);
-        } else if (item.action === 'delete') {
           await deleteDoc(docRef);
+        } else if (item.action === 'update') {
+          // Doc đã bị xóa: update sẽ lỗi not-found mãi mãi. Server mới hơn: không ghi đè.
+          if (!exists || (serverAt && draftAt && serverAt > draftAt)) {
+            console.warn(`[SyncQueue] Skip stale update ${item.docId}`);
+            await removePendingUpdate(item.id);
+            dropped++;
+            continue;
+          }
+          await updateDoc(docRef, item.data);
+        } else if (item.action === 'set') {
+          // set với dữ liệu cũ hơn server: không ghi đè. Doc chưa tồn tại: cho phép tạo (bản nháp offline).
+          if (exists && serverAt && draftAt && serverAt > draftAt) {
+            console.warn(`[SyncQueue] Skip stale set ${item.docId}`);
+            await removePendingUpdate(item.id);
+            dropped++;
+            continue;
+          }
+          await setDoc(docRef, item.data, { merge: true });
         }
 
+        console.info(`[SyncQueue] Replayed ${item.action} ${item.docId}`);
         await removePendingUpdate(item.id);
         synced++;
       } catch (err) {
-        console.warn(`[SyncQueue] Failed to process update for ${item.docId}:`, err);
-        failed++;
+        if (isPermanentWriteError(err)) {
+          console.warn(`[SyncQueue] Permanent error, dropping ${item.docId}:`, err);
+          await removePendingUpdate(item.id);
+          dropped++;
+        } else {
+          console.warn(`[SyncQueue] Failed to process update for ${item.docId}:`, err);
+          failed++;
+        }
       }
     }
 
+    if (dropped > 0) console.info(`[SyncQueue] Dropped ${dropped} stale/invalid pending updates`);
     lastSyncTimestamp = Date.now();
     await pullAndApplyDeltas().catch(() => {});
   } catch (err) {

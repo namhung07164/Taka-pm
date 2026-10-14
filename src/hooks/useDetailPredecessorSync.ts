@@ -4,6 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 import { db, APP_ID, writeBatch } from '../lib/firebase';
 import { doc } from 'firebase/firestore';
 import { healAllTasksPredecessors, convertAllSubtaskCodesAndPredecessorsToHash } from '../lib/ganttUtils';
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS } from '../lib/projectDatesService';
 import { recordBatchDeltas } from '../lib/deltaSyncService';
 
 interface UseDetailPredecessorSyncParams {
@@ -191,6 +192,8 @@ export function useDetailPredecessorSync({
     if (hasAutoHealedRef.current) return;
     if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
     if (!hasWritePermission) return;
+    // 15 giây đầu sau khi mở app, tasks mới chỉ là bản cũ từ Dexie: không tự ghi lên Firestore
+    if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return;
 
     hasAutoHealedRef.current = true;
     handleConvertAllSubtasksToHash(false).catch(() => {});

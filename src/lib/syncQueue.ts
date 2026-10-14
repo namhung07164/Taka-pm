@@ -1,7 +1,35 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { setDoc, updateDoc, deleteDoc } from './firestoreWrites';
 import { pullAndApplyDeltas, getLastDeltaSyncTime } from './deltaSyncService';
+
+// Lệnh nằm trong hàng đợi quá lâu thì dữ liệu trên server gần như chắc chắn đã đổi: bỏ, không phát lại.
+const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000;
+
+const toMs = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Lỗi mà server từ chối vĩnh viễn: thử lại bao nhiêu lần cũng vậy, và KHÔNG được đưa vào hàng đợi.
+ * Mất mạng thật thì Firestore SDK (persistent cache) tự giữ lệnh ghi và gửi lại, không cần hàng đợi này.
+ */
+export function isPermanentWriteError(err: any): boolean {
+  const code = String(err?.code || '');
+  return [
+    'permission-denied',
+    'not-found',
+    'invalid-argument',
+    'failed-precondition',
+    'already-exists',
+    'out-of-range',
+    'unauthenticated',
+    'unimplemented',
+  ].some((c) => code.includes(c));
+}
 
 export interface PendingUpdate {
   id: string;
@@ -111,6 +139,7 @@ export async function processPendingSync(): Promise<{ synced: number; failed: nu
   isSyncProcessing = true;
   let synced = 0;
   let failed = 0;
+  let dropped = 0;
 
   try {
     const pendingList = await getPendingUpdates();
@@ -119,53 +148,83 @@ export async function processPendingSync(): Promise<{ synced: number; failed: nu
       return { synced: 0, failed: 0 };
     }
 
+    // Phát lại theo đúng thứ tự thời gian
+    pendingList.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+
     for (const item of pendingList) {
       try {
+        const queuedAt = Number(item.timestamp) || 0;
+
+        // 1. Quá hạn: bỏ
+        if (queuedAt && Date.now() - queuedAt > MAX_PENDING_AGE_MS) {
+          console.warn(`[SyncQueue] Drop expired pending ${item.action} ${item.docId}`);
+          await removePendingUpdate(item.id);
+          dropped++;
+          continue;
+        }
+
         const fullPath = item.collectionPath.includes('/')
           ? item.collectionPath
           : `artifacts/${APP_ID}/public/data/${item.collectionPath}`;
-        
         const docRef = doc(db, `${fullPath}/${item.docId}`);
+        const draftAt = toMs(item.data?.updatedAt) || queuedAt;
 
-        // Server Timestamp Conflict Check:
-        // Skip update if server version has a newer updatedAt timestamp
-        if (item.action === 'update' && item.data?.updatedAt) {
-          try {
-            const serverSnap = await getDoc(docRef);
-            if (serverSnap.exists()) {
-              const serverData = serverSnap.data();
-              if (
-                serverData.updatedAt &&
-                new Date(serverData.updatedAt).getTime() > new Date(item.data.updatedAt).getTime()
-              ) {
-                console.warn(
-                  `[SyncQueue] Conflict detected for ${item.docId}. Server version is newer. Skipping update.`
-                );
-                await removePendingUpdate(item.id);
-                continue;
-              }
-            }
-          } catch {
-            // Ignore read errors during offline/flaky connection
+        // 2. Luôn đối chiếu với bản TRÊN SERVER (không dùng cache cục bộ). Không đọc được thì giữ lại thử sau.
+        let serverSnap: any;
+        try {
+          serverSnap = await getDocFromServer(docRef);
+        } catch {
+          failed++;
+          continue;
+        }
+        const exists = serverSnap.exists();
+        const serverAt = exists ? toMs(serverSnap.data()?.updatedAt) : 0;
+
+        if (item.action === 'delete') {
+          // Doc đã mất rồi, hoặc đã được sửa SAU khi lệnh xóa được xếp hàng: không xóa
+          if (!exists || (serverAt && queuedAt && serverAt > queuedAt)) {
+            console.warn(`[SyncQueue] Skip stale delete ${item.docId}`);
+            await removePendingUpdate(item.id);
+            dropped++;
+            continue;
           }
-        }
-
-        if (item.action === 'set') {
-          await setDoc(docRef, item.data, { merge: true });
-        } else if (item.action === 'update') {
-          await updateDoc(docRef, item.data);
-        } else if (item.action === 'delete') {
           await deleteDoc(docRef);
+        } else if (item.action === 'update') {
+          // Doc đã bị xóa: update sẽ lỗi not-found mãi mãi. Server mới hơn: không ghi đè.
+          if (!exists || (serverAt && draftAt && serverAt > draftAt)) {
+            console.warn(`[SyncQueue] Skip stale update ${item.docId}`);
+            await removePendingUpdate(item.id);
+            dropped++;
+            continue;
+          }
+          await updateDoc(docRef, item.data);
+        } else if (item.action === 'set') {
+          // set với dữ liệu cũ hơn server: không ghi đè. Doc chưa tồn tại: cho phép tạo (bản nháp offline).
+          if (exists && serverAt && draftAt && serverAt > draftAt) {
+            console.warn(`[SyncQueue] Skip stale set ${item.docId}`);
+            await removePendingUpdate(item.id);
+            dropped++;
+            continue;
+          }
+          await setDoc(docRef, item.data, { merge: true });
         }
 
+        console.info(`[SyncQueue] Replayed ${item.action} ${item.docId}`);
         await removePendingUpdate(item.id);
         synced++;
       } catch (err) {
-        console.warn(`[SyncQueue] Failed to process update for ${item.docId}:`, err);
-        failed++;
+        if (isPermanentWriteError(err)) {
+          console.warn(`[SyncQueue] Permanent error, dropping ${item.docId}:`, err);
+          await removePendingUpdate(item.id);
+          dropped++;
+        } else {
+          console.warn(`[SyncQueue] Failed to process update for ${item.docId}:`, err);
+          failed++;
+        }
       }
     }
 
+    if (dropped > 0) console.info(`[SyncQueue] Dropped ${dropped} stale/invalid pending updates`);
     lastSyncTimestamp = Date.now();
     await pullAndApplyDeltas().catch(() => {});
   } catch (err) {

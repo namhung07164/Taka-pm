@@ -5,6 +5,7 @@ import { addPendingUpdate } from './syncQueue';
 import { touchYearMeta } from './yearsFingerprintService';
 import { recordDelta } from './deltaSyncService';
 import { markExplicitDelta, unmarkExplicitDelta } from './autoDeltaQueue';
+import { isPermanentWriteError } from './syncQueue';
 
 export interface CoalescedMutation {
   collectionPath: string; // Tên collection, vd: taka_tasks
@@ -137,6 +138,8 @@ async function flushQueueItem(queueKey: string): Promise<void> {
       unmarkExplicitDelta([{ docId: item.docId, collectionName: item.collectionPath }]);
     }
     console.error(`[mutationCoalescer] Error flushing ${queueKey}, buffering to syncQueue:`, err);
+    // Server từ chối vĩnh viễn thì không xếp hàng (phát lại sau này chỉ gây ghi đè ngoài ý muốn)
+    if (isPermanentWriteError(err)) return;
     // Lưu vào Offline Sync Queue chống mất dữ liệu (Rule 2 AGENTS.md)
     addPendingUpdate({
       collectionPath: `artifacts/${APP_ID}/public/data/${item.collectionPath}`,

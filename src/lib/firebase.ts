@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported, getToken } from "firebase/messaging";
-import { addPendingUpdate } from "./syncQueue";
+import { addPendingUpdate, isPermanentWriteError } from "./syncQueue";
 import { validateFirestoreData } from "./validation";
 import { queueAutoDelta } from "./autoDeltaQueue";
 
@@ -337,7 +337,9 @@ function writeBatchAuditLogAsync(
   }
 }
 
-function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, data?: any) {
+function handleOfflineQueue(action: 'set' | 'update' | 'delete', docRef: any, data?: any, error?: any) {
+  // Server từ chối vĩnh viễn thì không xếp hàng: phát lại về sau chỉ gây ghi đè/xóa ngoài ý muốn.
+  if (error && isPermanentWriteError(error)) return;
   let collectionPath = docRef.path;
   // Firestore path is usually something like "artifacts/APP_ID/public/data/taka_projects/project1"
   // We want to extract the collection path, which is everything before the last slash.
@@ -364,7 +366,7 @@ export function setDoc(docRef: any, data: any, options?: any) {
   queueAutoDelta(docRef.path, docRef.id, 'write');
   return firestoreSetDoc(docRef, cleanData, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('set', docRef, cleanData);
+    handleOfflineQueue('set', docRef, cleanData, error);
     throw error;
   });
 }
@@ -376,7 +378,7 @@ export function updateDoc(docRef: any, data: any) {
   queueAutoDelta(docRef.path, docRef.id, 'write');
   return firestoreUpdateDoc(docRef, cleanData).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('update', docRef, cleanData);
+    handleOfflineQueue('update', docRef, cleanData, error);
     throw error;
   });
 }
@@ -386,7 +388,7 @@ export function deleteDoc(docRef: any) {
   queueAutoDelta(docRef.path, docRef.id, 'delete');
   return firestoreDeleteDoc(docRef).catch(error => {
     console.warn("Network error during deleteDoc. Saving to local IndexedDB queue.", error);
-    handleOfflineQueue('delete', docRef);
+    handleOfflineQueue('delete', docRef, undefined, error);
     throw error;
   });
 }
@@ -431,7 +433,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
     return originalCommit().catch(error => {
       console.warn("Network error during batch commit. Saving to local IndexedDB queue.", error);
       operations.forEach(op => {
-         handleOfflineQueue(op.action, op.docRef, op.data);
+         handleOfflineQueue(op.action, op.docRef, op.data, error);
       });
       throw error;
     });
