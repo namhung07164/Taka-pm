@@ -75,8 +75,8 @@ export function useGeneralDragDrop({
     triggerSuccessFeedback(
       projectId,
       direction === 'up'
-        ? `Đã di chuyển ${proj?.code || 'dự án'} lên vị trí ${newIdx + 1}`
-        : `Đã di chuyển ${proj?.code || 'dự án'} xuống vị trí ${newIdx + 1}`
+        ? `Moved ${proj?.code || 'project'} up to position ${newIdx + 1}`
+        : `Moved ${proj?.code || 'project'} down to position ${newIdx + 1}`
     );
   };
 
@@ -123,13 +123,13 @@ export function useGeneralDragDrop({
 
     const movedProj = projects.find(p => p.id === draggedPinnedId);
     const targetProj = projects.find(p => p.id === targetId);
-    const code = movedProj?.code || 'Dự án';
+    const code = movedProj?.code || 'Project';
 
     triggerSuccessFeedback(
       draggedPinnedId,
       position === 'above'
-        ? `Đã chuyển ${code} lên trước ${targetProj?.code || ''}!`
-        : `Đã chuyển ${code} xuống sau ${targetProj?.code || ''}!`
+        ? `Moved ${code} before ${targetProj?.code || ''}!`
+        : `Moved ${code} after ${targetProj?.code || ''}!`
     );
 
     setDraggedPinnedId(null);

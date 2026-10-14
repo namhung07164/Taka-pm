@@ -3,11 +3,13 @@ import {
   updateDoc as rawUpdateDoc,
   deleteDoc as rawDeleteDoc,
   writeBatch as rawWriteBatch,
+  serverTimestamp,
   type WriteBatch,
 } from 'firebase/firestore';
 import { queueAutoDelta, resolveLogicalCollection } from './autoDeltaQueue';
 import { removeUndefinedDeep } from './firestoreSanitizer';
 import { deleteLocalRecord } from './localDb';
+import { recordAuditLog } from './auditLogService';
 
 /**
  * Thin drop-in replacements for Firestore write functions that ALSO emit an auto delta
@@ -21,6 +23,21 @@ import { deleteLocalRecord } from './localDb';
 export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
   queueAutoDelta(ref?.path, ref?.id, 'write');
   const cleanData = removeUndefinedDeep(data);
+  // Inject serverTimestamp for consistency (Rule 15)
+  if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+    (cleanData as any).updatedAt = serverTimestamp();
+  }
+  
+  // Audit log for financial/core changes (Rule 4)
+  if (ref?.path && (ref.path.includes('taka_projects') || ref.path.includes('taka_costs'))) {
+    recordAuditLog({
+      action: 'UPDATE',
+      docPath: ref.path,
+      docId: ref.id,
+      data: cleanData
+    }).catch(() => {});
+  }
+
   if (cleanData?.isDeleted) {
     const logical = resolveLogicalCollection(ref?.path);
     if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
@@ -31,6 +48,21 @@ export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
 export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
   queueAutoDelta(ref?.path, ref?.id, 'write');
   const cleanData = removeUndefinedDeep(data);
+  // Inject serverTimestamp for consistency (Rule 15)
+  if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+    (cleanData as any).updatedAt = serverTimestamp();
+  }
+
+  // Audit log for financial/core changes (Rule 4)
+  if (ref?.path && (ref.path.includes('taka_projects') || ref.path.includes('taka_costs'))) {
+    recordAuditLog({
+      action: 'UPDATE',
+      docPath: ref.path,
+      docId: ref.id,
+      data: cleanData
+    }).catch(() => {});
+  }
+
   if (cleanData?.isDeleted) {
     const logical = resolveLogicalCollection(ref?.path);
     if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
@@ -41,6 +73,17 @@ export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
 export const deleteDoc = ((ref: any) => {
   queueAutoDelta(ref?.path, ref?.id, 'delete');
   const logical = resolveLogicalCollection(ref?.path);
+
+  // Audit log for financial/core changes (Rule 4)
+  if (ref?.path && (ref.path.includes('taka_projects') || ref.path.includes('taka_costs'))) {
+    recordAuditLog({
+      action: 'DELETE',
+      docPath: ref.path,
+      docId: ref.id,
+      data: { isDeleted: true }
+    }).catch(() => {});
+  }
+
   if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
   return rawDeleteDoc(ref);
 }) as typeof rawDeleteDoc;
@@ -55,11 +98,17 @@ export function writeBatch(dbInstance: any): WriteBatch {
 
   batch.set = (ref: any, data: any, ...rest: any[]) => {
     const cleanData = removeUndefinedDeep(data);
+    if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+      (cleanData as any).updatedAt = serverTimestamp();
+    }
     ops.push({ ref, kind: 'write', isDeleted: !!cleanData?.isDeleted });
     return origSet(ref, cleanData, ...rest);
   };
   batch.update = (ref: any, data: any, ...rest: any[]) => {
     const cleanData = removeUndefinedDeep(data);
+    if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+      (cleanData as any).updatedAt = serverTimestamp();
+    }
     ops.push({ ref, kind: 'write', isDeleted: !!cleanData?.isDeleted });
     return origUpdate(ref, cleanData, ...rest);
   };

@@ -97,7 +97,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             window.history.replaceState({}, document.title, window.location.pathname);
             useAppStore.getState().setToast({
               title: "Access Denied",
-              message: "Bạn không có quyền truy cập Chi nhánh của Dự án này.",
+              message: "You do not have permission to access this project's store.",
             });
             return;
           }
@@ -156,7 +156,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
               window.history.replaceState({}, document.title, window.location.pathname);
               useAppStore.getState().setToast({
                 title: "Access Denied",
-                message: "Bạn không có quyền truy cập Chi nhánh của Dự án này.",
+                message: "You do not have permission to access this project's store.",
               });
               return;
             }
@@ -182,7 +182,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             window.history.replaceState({}, document.title, window.location.pathname);
             useAppStore.getState().setToast({
               title: "Not Found",
-              message: "Không tìm thấy dự án này hoặc dữ liệu đã bị xóa.",
+              message: "This project was not found or data has been deleted.",
             });
           }
         } catch (err) {
@@ -190,7 +190,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
           window.history.replaceState({}, document.title, window.location.pathname);
           useAppStore.getState().setToast({
             title: "Error",
-            message: "Không thể tải dự án.",
+            message: "Could not load project.",
           });
         }
         return;
@@ -214,7 +214,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             window.history.replaceState({}, document.title, window.location.pathname);
             useAppStore.getState().setToast({
               title: "Access Denied",
-              message: "Bạn không có quyền truy cập Chi nhánh của Task này.",
+              message: "You do not have permission to access this task's store.",
             });
             return;
           }
@@ -251,7 +251,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
               window.history.replaceState({}, document.title, window.location.pathname);
               useAppStore.getState().setToast({
                 title: "Access Denied",
-                message: "Bạn không có quyền truy cập Chi nhánh của Task này.",
+                message: "You do not have permission to access this task's store.",
               });
               return;
             }
@@ -279,7 +279,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             window.history.replaceState({}, document.title, window.location.pathname);
             useAppStore.getState().setToast({
               title: "Not Found",
-              message: "Không tìm thấy công việc này hoặc dữ liệu đã bị xóa.",
+              message: "This task was not found or data has been deleted.",
             });
           }
         } catch (err) {
@@ -287,7 +287,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
           window.history.replaceState({}, document.title, window.location.pathname);
           useAppStore.getState().setToast({
             title: "Error",
-            message: "Không thể tải công việc.",
+            message: "Could not load task.",
           });
         }
         return;

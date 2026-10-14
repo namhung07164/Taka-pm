@@ -60,7 +60,7 @@ export function generateIcsString(options: IcalOptions): string {
     tasks,
     projects = [],
     calendarName = 'Takashimaya Project Management',
-    calendarDesc = 'Lịch tiến độ công việc và dự án Takashimaya',
+    calendarDesc = 'Takashimaya department store project schedule',
     storeFilter = '',
     yearFilter = '',
     onlyAssignedTo = '',
@@ -110,16 +110,16 @@ export function generateIcsString(options: IcalOptions): string {
       const uidStart = `proj_${proj.id || proj.code}_${proj.store || 'store'}_start@takashimaya.vn`;
       const uidEnd = `proj_${proj.id || proj.code}_${proj.store || 'store'}_end@takashimaya.vn`;
       
-      const summaryStart = `📌 [Bắt đầu] [${proj.store || ''}] ${proj.name} (${proj.code})`;
-      const summaryEnd = `🏁 [Kết thúc] [${proj.store || ''}] ${proj.name} (${proj.code})`;
+      const summaryStart = `📌 [Start] [${proj.store || ''}] ${proj.name} (${proj.code})`;
+      const summaryEnd = `🏁 [Finish] [${proj.store || ''}] ${proj.name} (${proj.code})`;
 
       const descLines = [
-        `Mã dự án: ${proj.code}`,
-        `Tên dự án: ${proj.name}`,
-        `Chi nhánh: ${proj.store || 'HCM/HN'}`,
-        `Vị trí: ${proj.location || 'N/A'}`,
-        proj.detail ? `Chi tiết: ${proj.detail}` : '',
-        appUrl ? `Xem trên Web: ${appUrl}` : ''
+        `Project Code: ${proj.code}`,
+        `Project Name: ${proj.name}`,
+        `Store: ${proj.store || 'HCM/HN'}`,
+        `Location: ${proj.location || 'N/A'}`,
+        proj.detail ? `Detail: ${proj.detail}` : '',
+        appUrl ? `View on Web: ${appUrl}` : ''
       ].filter(Boolean).join('\n');
 
       const location = `Takashimaya ${proj.store || ''} - ${proj.location || ''}`;
@@ -202,20 +202,20 @@ export function generateIcsString(options: IcalOptions): string {
     const taskCode = task.taskCodePhu || task.name;
 
     const summaryPrefix = store ? `[${store}]` : '';
-    const summaryStart = `[Bắt đầu] ${summaryPrefix} ${task.name} (${task.projectCode})`;
-    const summaryEnd = `[Kết thúc] ${summaryPrefix} ${task.name} (${task.projectCode})`;
+    const summaryStart = `[Start] ${summaryPrefix} ${task.name} (${task.projectCode})`;
+    const summaryEnd = `[Finish] ${summaryPrefix} ${task.name} (${task.projectCode})`;
 
     const notesContent = (task.notes || []).map(n => n.content).join('; ');
     const descParts = [
-      `Công việc: ${task.name}`,
-      `Dự án: ${projectName} (${task.projectCode})`,
-      store ? `Cửa hàng: Takashimaya ${store}` : '',
-      task.party ? `Người / Bộ phận phụ trách: ${task.party}` : '',
-      task.runningStatus ? `Tình trạng: ${task.runningStatus}` : '',
-      task.predecessor ? `Tiền nhiệm: ${task.predecessor}` : '',
-      task.duration ? `Thời lượng: ${task.duration}` : '',
-      notesContent ? `Ghi chú: ${notesContent}` : '',
-      appUrl ? `Mở ứng dụng: ${appUrl}` : ''
+      `Task: ${task.name}`,
+      `Project: ${projectName} (${task.projectCode})`,
+      store ? `Store: Takashimaya ${store}` : '',
+      task.party ? `Assigned To: ${task.party}` : '',
+      task.runningStatus ? `Status: ${task.runningStatus}` : '',
+      task.predecessor ? `Predecessor: ${task.predecessor}` : '',
+      task.duration ? `Duration: ${task.duration}` : '',
+      notesContent ? `Notes: ${notesContent}` : '',
+      appUrl ? `Open App: ${appUrl}` : ''
     ].filter(Boolean);
 
     const descText = descParts.join('\n');
