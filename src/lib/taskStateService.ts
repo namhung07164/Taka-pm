@@ -17,6 +17,8 @@ const pendingProjectFetches = new Map<string, Promise<Task[]>>();
  */
 export function isTaskBelongsToProject(t: Partial<Task>, p: Project): boolean {
   if (!t || !p) return false;
+  if (t.isDeleted) return false;
+
   const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
   const pCode = String(p.code || '').trim().toLowerCase();
@@ -29,6 +31,8 @@ export function isTaskBelongsToProject(t: Partial<Task>, p: Project): boolean {
   if (pYear && tYear && pYear !== tYear) return false;
 
   if (t.projectId && p.id && String(t.projectId) === String(p.id)) return true;
+  if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return false;
+
   if (tCode && pCode && (tCode === pCode || matchProjectCode(tCode, pCode))) return true;
 
   return false;
@@ -101,9 +105,11 @@ export function findAffectedProjects(
   const affectedMap = new Map<string, Project>();
 
   for (const t of tasksToCheck) {
-    if (!t.projectCode) continue;
+    if (!t) continue;
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : "";
     const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
+    const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : "";
+    const tProjId = t.projectId ? String(t.projectId) : "";
 
     for (const p of projects) {
       if (!p.id || !p.code) continue;
@@ -111,9 +117,19 @@ export function findAffectedProjects(
       const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
       const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
 
+      if (tProjId && String(p.id) === tProjId) {
+        if (pStore && tStore && pStore !== tStore) continue;
+        if (pYear && tYear && pYear !== tYear) continue;
+        affectedMap.set(p.id, p);
+        continue;
+      }
+
+      if (tProjId && String(p.id) !== tProjId) continue;
+
+      if (!tCode) continue;
       const matchesCode =
-        String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase() ||
-        matchProjectCode(p.code, t.projectCode);
+        String(p.code).trim().toLowerCase() === tCode ||
+        matchProjectCode(p.code, tCode);
 
       if (!matchesCode) continue;
       if (pStore && tStore && pStore !== tStore) continue;

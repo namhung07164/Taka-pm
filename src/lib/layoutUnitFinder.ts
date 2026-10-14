@@ -82,8 +82,7 @@ export function findProjectLayoutUnit(
       projectsList.find((p) => {
         const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
         const pYear = p.year ? String(p.year).trim().toLowerCase() : '';
-        if (p.id && String(p.id).toLowerCase() === targetId) return true;
-        if (p.no && String(p.no).toLowerCase() === targetId) return true;
+        const idMatches = (p.id && String(p.id).toLowerCase() === targetId) || (p.no && String(p.no).toLowerCase() === targetId);
 
         const pCode = String(p.code || '').trim().toLowerCase();
         const codeMatches =
@@ -92,7 +91,7 @@ export function findProjectLayoutUnit(
           (p.linkCodes && extractAllProjectCodes(p).includes(targetId)) ||
           (p.linkCodes && notifProjCode && extractAllProjectCodes(p).includes(notifProjCode));
 
-        if (codeMatches) {
+        if (idMatches || codeMatches) {
           if (notifStore && pStore && notifStore !== pStore) return false;
           if (notifYear && pYear && notifYear !== pYear) return false;
           return true;

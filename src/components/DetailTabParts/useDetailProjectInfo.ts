@@ -93,11 +93,16 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       allCodes.forEach(code => {
         const candidateTasks = tasksByCodeMap.get(code) || [];
         candidateTasks.forEach(t => {
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          if (matchesStore && matchesYear && t && (t.id || t.name)) {
-            mergedTasksMap.set(String(t.id || t.name), t);
-          }
+          if (!t || (!t.id && !t.name)) return;
+          if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
+
+          const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+
+          if (pStore && tStore && pStore !== tStore) return;
+          if (pYear && tYear && pYear !== tYear) return;
+
+          mergedTasksMap.set(String(t.id || t.name), t);
         });
       });
 

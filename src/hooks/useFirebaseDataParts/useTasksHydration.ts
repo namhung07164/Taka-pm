@@ -120,18 +120,20 @@ export function useTasksHydration({
             const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
             const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
 
+            if (pStore && tStore && pStore !== tStore) return false;
+            if (pYear && tYear && pYear !== tYear) return false;
+
             if (t.projectId && String(t.projectId) === String(p.id)) {
-              if (pStore && tStore && pStore !== tStore) return false;
-              if (pYear && tYear && pYear !== tYear) return false;
               return true;
+            }
+
+            if (t.projectId && String(t.projectId) !== String(p.id)) {
+              return false;
             }
 
             if (!t.projectCode || !pCode) return false;
             const tCode = String(t.projectCode).trim().toLowerCase();
             if (tCode !== pCode) return false;
-
-            if (pStore && tStore && pStore !== tStore) return false;
-            if (pYear && tYear && pYear !== tYear) return false;
 
             return true;
           });

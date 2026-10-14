@@ -81,19 +81,21 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
 
     const matchedZustandTasks = tasks.filter((t) => {
       if (t.isDeleted) return false;
+      const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+      const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+
+      if (pStore && tStore && pStore !== tStore) return false;
+      if (pYear && tYear && pYear !== tYear) return false;
+
       if (pId && t.projectId && String(t.projectId) === pId) {
-        const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
-        const tYear = t.projectYear ? String(t.projectYear).trim() : '';
-        if (pStore && tStore && pStore !== tStore) return false;
-        if (pYear && tYear && pYear !== tYear) return false;
         return true;
       }
+      if (pId && t.projectId && String(t.projectId) !== pId) {
+        return false;
+      }
+
       const tCode = String(t.projectCode || '').trim().toUpperCase();
       if (!tCode || tCode !== pCode) return false;
-      const tYear = t.projectYear ? String(t.projectYear).trim() : '';
-      const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
-      if (pYear && tYear && tYear !== pYear) return false;
-      if (pStore && tStore && tStore !== pStore) return false;
       return true;
     });
 

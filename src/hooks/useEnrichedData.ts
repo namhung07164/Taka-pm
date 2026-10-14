@@ -224,7 +224,8 @@ export function useEnrichedData() {
           if (pYear && ftYear && pYear !== ftYear) return false;
 
           if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
-          return ftCode && pCode && ftCode === pCode;
+          if (ft.projectId && p.id && String(ft.projectId) !== String(p.id)) return false;
+          return Boolean(ftCode && pCode && ftCode === pCode);
         });
 
         // ONLY generate virtual tasks if no real tasks exist in memory yet

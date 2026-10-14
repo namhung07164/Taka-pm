@@ -1386,10 +1386,19 @@ export function calculateActiveNotifications(
     if (y && projectByKeyMap.has(`${c}_${y}_${s}`)) {
       return projectByKeyMap.get(`${c}_${y}_${s}`);
     }
-    if (projectByCodeStoreMap.has(`${c}_${s}`)) {
-      return projectByCodeStoreMap.get(`${c}_${s}`);
+    if (y && !store) {
+      if (projectByKeyMap.has(`${c}_${y}_HCM`)) return projectByKeyMap.get(`${c}_${y}_HCM`);
+      if (projectByKeyMap.has(`${c}_${y}_HN`)) return projectByKeyMap.get(`${c}_${y}_HN`);
     }
-    return projectByCodeMap.get(c);
+    if (!y && store) {
+      if (projectByCodeStoreMap.has(`${c}_${s}`)) {
+        return projectByCodeStoreMap.get(`${c}_${s}`);
+      }
+    }
+    if (!y && !store) {
+      return projectByCodeMap.get(c);
+    }
+    return undefined;
   };
 
   // Consolidate tasks: combining explicit `tasks` array with embedded `project.taskSummaries` (task summarize data)
