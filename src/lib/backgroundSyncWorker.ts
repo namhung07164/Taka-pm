@@ -142,6 +142,39 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
       if (!currentStore.tasks || currentStore.tasks.length === 0) {
         const deduped = deduplicateTasks(localTasks, currentStore.projects);
         currentStore.setTasks(deduped);
+
+        // Instant local reconciliation: sync taskCount & taskSummaries for projects from cached tasks
+        if (currentStore.projects && currentStore.projects.length > 0) {
+          const updatedProjects = currentStore.projects.map(p => {
+            const pTasks = deduped.filter(t => 
+              (t.projectId && String(t.projectId) === String(p.id)) ||
+              (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
+            );
+            if (pTasks.length > 0 && pTasks.length !== (p.taskCount || 0)) {
+              const summaryItems = pTasks.map(t => ({
+                id: t.id,
+                name: t.name || '',
+                start: t.start || '',
+                finish: t.finish || '',
+                taskCodePhu: t.taskCodePhu,
+                duration: t.duration,
+                runningStatus: t.runningStatus,
+              }));
+              const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
+              const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
+              return {
+                ...p,
+                taskCount: pTasks.length,
+                taskSummaries: summaryItems,
+                computedTakStart: validStarts[0] || p.computedTakStart,
+                computedTakCompl: validFinishes[0] || p.computedTakCompl,
+              };
+            }
+            return p;
+          });
+          currentStore.setProjects(updatedProjects);
+        }
+
         usePerformanceStore
           .getState()
           .trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');

@@ -411,22 +411,16 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
   if (tasksChanged && !projectsChanged) {
     const delegationGroups = store.delegationGroups || [];
+    const isTasksRequested = store.isTasksRequested;
     updatedProjects = updatedProjects.map(p => {
       const pTasks = getTasksForProject(p, updatedTasks);
-      if (pTasks.length > 0 || (p.taskSummaries && p.taskSummaries.length > 0)) {
+      if (isTasksRequested || pTasks.length > 0) {
         const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
         return {
           ...p,
           ...computedDates,
-          taskCount: Math.max(
-            pTasks.length,
-            computedDates.taskCount !== undefined ? computedDates.taskCount : 0,
-            p.taskCount || 0,
-            p.taskSummaries?.length || 0
-          ),
-          taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (p.taskSummaries?.length || 0))
-            ? computedDates.taskSummaries
-            : (p.taskSummaries || computedDates.taskSummaries || []),
+          taskCount: pTasks.length,
+          taskSummaries: computedDates.taskSummaries || [],
         };
       }
       return p;
