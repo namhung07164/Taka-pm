@@ -46,8 +46,8 @@ export function rollupParentTaskDatesAndStatus(
 
     for (const child of children) {
       const subRollup = getRolledUpDatesAndStatus(child.id, new Set(visited));
-      const childStart = subRollup?.start || child.start || '';
-      const childFinish = subRollup?.finish || child.finish || '';
+      const childStart = subRollup ? subRollup.start : (child.start || '');
+      const childFinish = subRollup ? subRollup.finish : (child.finish || '');
 
       if (childStart) {
         if (!minStart || childStart < minStart) minStart = childStart;
@@ -75,9 +75,9 @@ export function rollupParentTaskDatesAndStatus(
     
     if (childrenMap.has(task.id)) {
       const rolled = getRolledUpDatesAndStatus(task.id);
-      if (rolled && (rolled.start || rolled.finish)) {
-        const newStart = rolled.start || task.start;
-        const newFinish = rolled.finish || task.finish;
+      if (rolled) {
+        const newStart = rolled.start || '';
+        const newFinish = rolled.finish || '';
 
         let newStatus = task.runningStatus;
         if (rolled.allCompleted) {
@@ -86,7 +86,7 @@ export function rollupParentTaskDatesAndStatus(
           newStatus = 'On process';
         }
 
-        if (newStart !== task.start || newFinish !== task.finish || newStatus !== task.runningStatus) {
+        if (newStart !== (task.start || '') || newFinish !== (task.finish || '') || newStatus !== task.runningStatus) {
           result[i] = {
             ...task,
             start: newStart,
@@ -133,8 +133,8 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
     for (const child of children) {
       const childId = child.id;
       const sub = childId ? getSummaryRollup(childId, new Set(visited)) : null;
-      const cStart = sub?.start || child.start || '';
-      const cFinish = sub?.finish || child.finish || '';
+      const cStart = sub ? sub.start : (child.start || '');
+      const cFinish = sub ? sub.finish : (child.finish || '');
 
       if (cStart && (!minStart || cStart < minStart)) minStart = cStart;
       if (cFinish && (!maxFinish || cFinish > maxFinish)) maxFinish = cFinish;
@@ -150,8 +150,8 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
       if (rolled) {
         result[i] = {
           ...item,
-          start: rolled.start || item.start,
-          finish: rolled.finish || item.finish,
+          start: rolled.start || '',
+          finish: rolled.finish || '',
         };
       }
     }

@@ -229,6 +229,8 @@ export function calculateProjectComputedDates(
     .sort();
   if (validStarts.length > 0) {
     computedTakStart = validStarts[0];
+  } else if (allKnownForDates.length > 0 || isTasksProvided) {
+    computedTakStart = project.start || "";
   } else if (!computedTakStart) {
     computedTakStart = project.computedTakStart || project.start || "";
   }
@@ -239,6 +241,8 @@ export function calculateProjectComputedDates(
     .sort((a: string, b: string) => (b || "").localeCompare(a || ""));
   if (validFinishes.length > 0) {
     computedTakCompl = validFinishes[0];
+  } else if (allKnownForDates.length > 0 || isTasksProvided) {
+    computedTakCompl = project.handover || (project as any).takCompl || "";
   } else if (!computedTakCompl) {
     computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
   }
@@ -254,7 +258,11 @@ export function calculateProjectComputedDates(
       .sort((a: string, b: string) => (b || "").localeCompare(a || ""));
     if (validOpeningFinishes.length > 0) {
       computedOpening = validOpeningFinishes[0];
+    } else {
+      computedOpening = project.opening || "";
     }
+  } else if (allKnownForDates.length > 0 || isTasksProvided) {
+    computedOpening = project.opening || "";
   } else if (!computedOpening) {
     computedOpening = project.computedOpening || project.opening || "";
   }

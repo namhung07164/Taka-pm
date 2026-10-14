@@ -167,8 +167,8 @@ export function useTasksHydration({
                 ...p,
                 taskCount: pTasks.length,
                 taskSummaries: summaryItems,
-                computedTakStart: validStarts[0] || p.computedTakStart,
-                computedTakCompl: validFinishes[0] || p.computedTakCompl,
+                computedTakStart: validStarts[0] || p.start || '',
+                computedTakCompl: validFinishes[0] || p.handover || (p as any).takCompl || '',
               };
             }
           }
