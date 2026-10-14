@@ -18,7 +18,8 @@ import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported, getToken } from "firebase/messaging";
 import { addPendingUpdate, isPermanentWriteError } from "./syncQueue";
 import { validateFirestoreData } from "./validation";
-import { queueAutoDelta } from "./autoDeltaQueue";
+import { queueAutoDelta, resolveLogicalCollection } from "./autoDeltaQueue";
+import { deleteLocalRecord } from "./localDb";
 
 export const APP_ID = 'taka-projects-app-v1';
 
@@ -364,6 +365,10 @@ export function setDoc(docRef: any, data: any, options?: any) {
   validateFirestoreData(docRef.path, cleanData, options?.merge === true);
   writeAuditLogAsync("CREATE", docRef, cleanData);
   queueAutoDelta(docRef.path, docRef.id, 'write');
+  if (cleanData?.isDeleted) {
+    const logical = resolveLogicalCollection(docRef.path);
+    if (logical && docRef.id) deleteLocalRecord(logical, docRef.id).catch(() => {});
+  }
   return firestoreSetDoc(docRef, cleanData, options).catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('set', docRef, cleanData, error);
@@ -376,6 +381,10 @@ export function updateDoc(docRef: any, data: any) {
   validateFirestoreData(docRef.path, cleanData, true);
   writeAuditLogAsync("UPDATE", docRef, cleanData);
   queueAutoDelta(docRef.path, docRef.id, 'write');
+  if (cleanData?.isDeleted) {
+    const logical = resolveLogicalCollection(docRef.path);
+    if (logical && docRef.id) deleteLocalRecord(logical, docRef.id).catch(() => {});
+  }
   return firestoreUpdateDoc(docRef, cleanData).catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('update', docRef, cleanData, error);
@@ -386,6 +395,8 @@ export function updateDoc(docRef: any, data: any) {
 export function deleteDoc(docRef: any) {
   writeAuditLogAsync("DELETE", docRef);
   queueAutoDelta(docRef.path, docRef.id, 'delete');
+  const logical = resolveLogicalCollection(docRef.path);
+  if (logical && docRef.id) deleteLocalRecord(logical, docRef.id).catch(() => {});
   return firestoreDeleteDoc(docRef).catch(error => {
     console.warn("Network error during deleteDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('delete', docRef, undefined, error);
@@ -427,7 +438,13 @@ export function writeBatch(dbInstance: any): WriteBatch {
 
   (batch as any).commit = () => {
     // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
-    operations.forEach(op => queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write'));
+    operations.forEach(op => {
+      queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write');
+      if (op.action === 'delete' || op.data?.isDeleted) {
+        const logical = resolveLogicalCollection(op.docRef.path);
+        if (logical && op.docRef.id) deleteLocalRecord(logical, op.docRef.id).catch(() => {});
+      }
+    });
     // B3: Batch audit log consolidation into 1 single document write
     writeBatchAuditLogAsync(dbInstance, auditOps);
     return originalCommit().catch(error => {

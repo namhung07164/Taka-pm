@@ -87,19 +87,25 @@ export async function bootstrapLocalStore(): Promise<{
  */
 export async function hydrateProjectsFromLocal(year?: string, storeFilter?: string): Promise<number> {
   try {
-    const localProjects = await getLocalProjects(year, storeFilter);
+    const store = useAppStore.getState();
+    const targetYear = year || store.globalYearFilter;
+    if (store.projects && store.projects.length > 0) {
+      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.projects.length;
+      const hasForYear = store.projects.some(p => String(p.year || '') === String(targetYear));
+      if (hasForYear) return store.projects.length;
+    }
+
+    const localProjects = await getLocalProjects(targetYear, storeFilter);
     if (localProjects && localProjects.length > 0) {
       const currentStore = useAppStore.getState();
-      const existing = currentStore.projects || [];
-      const pMap = new Map(existing.map(p => [p.id, p]));
-      // Store data (from Firestore listeners / deltas) is fresher than Dexie: never overwrite it
-      localProjects.forEach(p => { if (!pMap.has(p.id)) pMap.set(p.id, p); });
-      const merged = Array.from(pMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
-      currentStore.setProjects(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_projects_hydration', true, localProjects.length, `Instant Local-First Projects Hydration (0ms, 0 Read)`);
-      return localProjects.length;
+      if (!currentStore.projects || currentStore.projects.length === 0) {
+        const sorted = [...localProjects].sort((a, b) => (a.no || 0) - (b.no || 0));
+        currentStore.setProjects(sorted);
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_projects_hydration', true, localProjects.length, `Instant Local-First Projects Hydration (0ms, 0 Read)`);
+        return localProjects.length;
+      }
     }
     return 0;
   } catch (err) {
@@ -113,27 +119,25 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
  */
 export async function hydrateTasksFromLocal(year?: string): Promise<number> {
   try {
-    const localTasks = await getLocalTasks(year);
+    const store = useAppStore.getState();
+    const targetYear = year || store.globalYearFilter;
+    if (store.tasks && store.tasks.length > 0) {
+      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.tasks.length;
+      const hasForYear = store.tasks.some(t => String(t.projectYear || '') === String(targetYear));
+      if (hasForYear) return store.tasks.length;
+    }
+
+    const localTasks = await getLocalTasks(targetYear);
     if (localTasks && localTasks.length > 0) {
       const currentStore = useAppStore.getState();
-      const existingMap = new Map((currentStore.tasks || []).map(t => [t.id, t]));
-      let hasNew = false;
-      const combined = [...(currentStore.tasks || [])];
-      localTasks.forEach(lt => {
-        if (!existingMap.has(lt.id)) {
-          combined.push(lt);
-          hasNew = true;
-        }
-      });
-      if (hasNew || !currentStore.tasks || currentStore.tasks.length === 0) {
-        const deduped = deduplicateTasks(combined, currentStore.projects);
+      if (!currentStore.tasks || currentStore.tasks.length === 0) {
+        const deduped = deduplicateTasks(localTasks, currentStore.projects);
         currentStore.setTasks(deduped);
         usePerformanceStore
           .getState()
           .trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');
         return deduped.length;
       }
-      return currentStore.tasks.length;
     }
     return 0;
   } catch (err) {
@@ -345,7 +349,7 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
         ) => {
           if (!docId || !collectionName) return;
           if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
-          if (action === 'delete') {
+          if (action === 'delete' || data?.isDeleted === true) {
             await deleteLocalRecord(collectionName, docId);
           } else if (action === 'update' || isPatch) {
             await patchLocalRecord(collectionName, docId, data || {});

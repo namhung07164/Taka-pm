@@ -114,9 +114,17 @@ export async function upsertLocalRecord(
       }
     })();
     
+    // [Safety Guard] If item is marked as deleted, remove it from local cache
+    if (item?.isDeleted) {
+      await table.delete(item.id);
+      return;
+    }
+
     // [Safety Guard] Only upsert if the incoming doc is newer than what we have
     const existing = await table.get(item.id);
-    if (existing && tsOf(existing.updatedAt) > tsOf(item.updatedAt)) return;
+    const existingTs = tsOf(existing?.updatedAt);
+    const incomingTs = tsOf(item.updatedAt);
+    if (existing && existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
     await table.put(item);
   } catch (err) {
@@ -145,11 +153,21 @@ export async function patchLocalRecord(
       }
     })();
     
-    // [Safety Guard] Only patch if the incoming patch is newer than what we have
+    // Patch only existing rows. Creating a row from a partial patch produces ghost/incomplete records
     const existing = await table.get(id);
-    if (existing && tsOf(existing.updatedAt) > tsOf(patch.updatedAt)) return;
+    if (!existing) return;
 
-    // Patch only existing rows. Creating a row from a partial patch produced incomplete records
+    // If patch marks doc as deleted, delete it from local Dexie immediately
+    if (patch?.isDeleted) {
+      await table.delete(id);
+      return;
+    }
+
+    // Only skip if incoming patch is explicitly older than existing (both timestamps valid)
+    const existingTs = tsOf(existing.updatedAt);
+    const incomingTs = tsOf(patch.updatedAt);
+    if (existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
+
     await (table as any).update(id, patch);
   } catch (err) {
     console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
@@ -266,7 +284,8 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
 export async function getLocalCosts(year?: string): Promise<Cost[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
-      return await localDb.costs.toArray();
+      const all = await localDb.costs.toArray();
+      return all.filter((c) => !c.isDeleted);
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
@@ -274,8 +293,8 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
       localDb.costs.where('projectYear').equals(strYear).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Cost>();
-    for (const c of byYear) if (c && c.id) merged.set(c.id, c);
-    for (const c of byProjYear) if (c && c.id) merged.set(c.id, c);
+    for (const c of byYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);
+    for (const c of byProjYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);
     return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalCosts error:', err);
@@ -289,7 +308,8 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
 export async function getLocalDelegations(year?: string): Promise<DelegationGroup[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
-      return await localDb.delegations.toArray();
+      const all = await localDb.delegations.toArray();
+      return all.filter((d) => !d.isDeleted);
     }
     const strYear = String(year);
     const numYear = Number(year);
@@ -306,7 +326,7 @@ export async function getLocalDelegations(year?: string): Promise<DelegationGrou
     const merged = new Map<string, DelegationGroup>();
     for (const list of results) {
       for (const d of list) {
-        if (d && d.id) merged.set(d.id, d);
+        if (d && d.id && !d.isDeleted) merged.set(d.id, d);
       }
     }
     return Array.from(merged.values());

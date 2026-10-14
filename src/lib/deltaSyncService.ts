@@ -200,7 +200,9 @@ export function getLastDeltaSyncTime(): number {
     if (!isNaN(num) && num > 0) lastSync = num;
   }
   if (lastSync === 0) {
-    lastSync = Date.now() - 48 * 60 * 60 * 1000;
+    // For fresh boot / cleared storage, rely on baseline data from snapshot listeners
+    // and only pull deltas from the last 5 minutes to catch concurrent in-flight writes
+    lastSync = Date.now() - 5 * 60 * 1000;
   }
   // Sync cursor is strictly bounded by restoreCutoff so past faulty deltas are never re-queried
   return Math.max(lastSync, restoreCutoff);
@@ -260,11 +262,13 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       return Number.isFinite(n) ? n : 0;
     };
 
+    const isDelete = action === 'delete' || data?.isDeleted === true;
+
     // Chỉ bỏ qua khi delta CÓ updatedAt hợp lệ và CŨ HƠN bản đang giữ.
     // Delta xóa, delta không có data, và delta vá không mang updatedAt luôn được áp dụng
     // (thứ tự đã do serverTime quyết định). Tuyệt đối không đọc data.updatedAt khi data có thể null.
     const isStaleVsLocal = (existing: any): boolean => {
-      if (action === 'delete' || !data) return false;
+      if (isDelete || !data) return false;
       const incoming = tsOf(data.updatedAt);
       if (!incoming) return false;
       return tsOf(existing?.updatedAt) > incoming;
@@ -273,14 +277,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     switch (collectionName) {
       case 'taka_projects': {
         const idx = updatedProjects.findIndex((p) => p.id === docId);
+        if (isDelete) {
+          if (idx !== -1) {
+            projectsChanged = true;
+            updatedProjects = updatedProjects.filter((p) => p.id !== docId);
+          }
+          break;
+        }
         if (idx !== -1 && isStaleVsLocal(updatedProjects[idx])) return;
         
         projectsChanged = true;
-        if (action === 'delete') {
-          updatedProjects = updatedProjects.filter((p) => p.id !== docId);
-        } else if (idx !== -1) {
+        if (idx !== -1) {
           updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
-        } else {
+        } else if (action === 'create') {
+          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedProjects.push({ id: docId, ...data } as Project);
         }
         break;
@@ -288,14 +298,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
+        if (isDelete) {
+          if (idx !== -1) {
+            tasksChanged = true;
+            updatedTasks = updatedTasks.filter((t) => t.id !== docId);
+          }
+          break;
+        }
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
 
         tasksChanged = true;
-        if (action === 'delete') {
-          updatedTasks = updatedTasks.filter((t) => t.id !== docId);
-        } else if (idx !== -1) {
+        if (idx !== -1) {
           updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
-        } else {
+        } else if (action === 'create') {
+          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedTasks.push({ id: docId, ...data } as Task);
         }
         break;
@@ -303,14 +319,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_costs': {
         const idx = updatedCosts.findIndex((c) => c.id === docId);
+        if (isDelete) {
+          if (idx !== -1) {
+            costsChanged = true;
+            updatedCosts = updatedCosts.filter((c) => c.id !== docId);
+          }
+          break;
+        }
         if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
 
         costsChanged = true;
-        if (action === 'delete') {
-          updatedCosts = updatedCosts.filter((c) => c.id !== docId);
-        } else if (idx !== -1) {
+        if (idx !== -1) {
           updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
-        } else {
+        } else if (action === 'create') {
+          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedCosts.push({ id: docId, ...data } as Cost);
         }
         break;
@@ -318,14 +340,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_delegations': {
         const idx = updatedDelegations.findIndex((g) => g.id === docId);
+        if (isDelete) {
+          if (idx !== -1) {
+            delegationsChanged = true;
+            updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
+          }
+          break;
+        }
         if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
 
         delegationsChanged = true;
-        if (action === 'delete') {
-          updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
-        } else if (idx !== -1) {
+        if (idx !== -1) {
           updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
-        } else {
+        } else if (action === 'create') {
+          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
         }
         break;
