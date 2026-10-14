@@ -159,10 +159,19 @@ export function useGanttProjectsFilter({
     (p: Project): Task[] => {
       const mergedMap = new Map<string, Task>();
 
+      const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+      const pYear = p.year ? String(p.year).trim() : '';
+
       // 1. By projectId
       if (p.id && tasksByProjectId.has(String(p.id))) {
         tasksByProjectId.get(String(p.id))!.forEach(t => {
-          if (t && (t.id || t.name)) mergedMap.set(String(t.id || t.name), t);
+          if (t && (t.id || t.name)) {
+            const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+            if (pStore && tStore && pStore !== tStore) return;
+            if (pYear && tYear && pYear !== tYear) return;
+            mergedMap.set(String(t.id || t.name), t);
+          }
         });
       }
 

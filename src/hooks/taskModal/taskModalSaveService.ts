@@ -76,8 +76,7 @@ export async function executeTaskSave({
     if (t.id === task?.id || t.isDeleted) return false;
     
     const tPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
-    const sameProject = (tPrjKey === targetPrjKey) || 
-      (t.projectCode && currentProject.code && String(t.projectCode).trim().toLowerCase() === String(currentProject.code).trim().toLowerCase());
+    const sameProject = (tPrjKey === targetPrjKey);
     if (!sameProject) return false;
 
     // Check exact name
@@ -107,6 +106,8 @@ export async function executeTaskSave({
     let realTask = tasks.find(t => 
       !t.id.startsWith('ts_') &&
       t.projectCode === currentProject.code &&
+      (String(t.projectStore || '') === String(currentProject.store || '')) &&
+      (String(t.projectYear || '') === String(currentProject.year || '')) &&
       ((task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
        (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase()))
     );

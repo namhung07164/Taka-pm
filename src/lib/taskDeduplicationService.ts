@@ -62,22 +62,39 @@ export function buildCanonicalProjectKey(
   const pCode = String(projectCode || '').trim().toLowerCase();
   if (!pCode) return '';
 
-  const matchedProj = projectLookupMap 
-    ? projectLookupMap.get(pCode)
-    : projects.find(p => 
-        String(p.code || '').trim().toLowerCase() === pCode ||
-        String(p.no || '').trim().toLowerCase() === pCode ||
-        String(p.id || '').trim().toLowerCase() === pCode
-      );
+  const normStore = normalizeStoreCode(store);
+  const normYear = normalizeYearString(year);
+
+  let matchedProj: Project | undefined = undefined;
+  if (projectLookupMap) {
+    if (normYear && normStore && projectLookupMap.has(`${pCode}__${normYear}__${normStore}`)) {
+      matchedProj = projectLookupMap.get(`${pCode}__${normYear}__${normStore}`);
+    } else if (normStore && projectLookupMap.has(`${pCode}____${normStore}`)) {
+      matchedProj = projectLookupMap.get(`${pCode}____${normStore}`);
+    } else if (normYear && projectLookupMap.has(`${pCode}__${normYear}__`)) {
+      matchedProj = projectLookupMap.get(`${pCode}__${normYear}__`);
+    } else {
+      matchedProj = projectLookupMap.get(pCode);
+    }
+  } else if (projects && projects.length > 0) {
+    matchedProj = projects.find(p => {
+      const pCodeMatch = String(p.code || '').trim().toLowerCase() === pCode ||
+                         String(p.no || '').trim().toLowerCase() === pCode ||
+                         String(p.id || '').trim().toLowerCase() === pCode;
+      if (!pCodeMatch) return false;
+      const pStore = normalizeStoreCode(p.store);
+      const pYear = normalizeYearString(p.year);
+      if (normStore && pStore && normStore !== pStore) return false;
+      if (normYear && pYear && normYear !== pYear) return false;
+      return true;
+    });
+  }
 
   const canonicalCode = matchedProj ? String(matchedProj.code || pCode).trim().toLowerCase() : pCode;
-  const canonicalYear = normalizeYearString(matchedProj?.year ?? year);
-  const canonicalStore = normalizeStoreCode(matchedProj?.store ?? store);
+  const canonicalYear = normalizeYearString(matchedProj?.year || normYear);
+  const canonicalStore = normalizeStoreCode(matchedProj?.store || normStore);
 
-  if (canonicalYear || canonicalStore) {
-    return `${canonicalCode}__${canonicalYear}__${canonicalStore}`;
-  }
-  return canonicalCode;
+  return `${canonicalCode}__${canonicalYear}__${canonicalStore}`;
 }
 
 /**
@@ -97,11 +114,18 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     return { dedupedTasks: tasks, duplicateCount: 0, removedTaskIds: [] };
   }
 
-  // Pre-index projects into Map for O(1) canonical key resolution (eliminates O(N*P) loop bottleneck)
+  // Pre-index projects into Map for O(1) canonical key resolution
   const projectLookupMap = new Map<string, Project>();
   (projects || []).forEach(p => {
-    if (p.code) projectLookupMap.set(String(p.code).trim().toLowerCase(), p);
-    if (p.no) projectLookupMap.set(String(p.no).trim().toLowerCase(), p);
+    const pCode = String(p.code || '').trim().toLowerCase();
+    const pStore = normalizeStoreCode(p.store);
+    const pYear = normalizeYearString(p.year);
+    if (pCode) {
+      if (pYear && pStore) projectLookupMap.set(`${pCode}__${pYear}__${pStore}`, p);
+      if (pStore) projectLookupMap.set(`${pCode}____${pStore}`, p);
+      if (pYear) projectLookupMap.set(`${pCode}__${pYear}__`, p);
+      if (!projectLookupMap.has(pCode)) projectLookupMap.set(pCode, p);
+    }
     if (p.id) projectLookupMap.set(String(p.id).trim().toLowerCase(), p);
   });
 

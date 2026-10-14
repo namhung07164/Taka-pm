@@ -143,7 +143,6 @@ export function useEnrichedData() {
 
     // 3. Pre-index visible projects into O(1) set & map for fast task filtering
     const visibleProjectKeys = new Set<string>();
-    const visibleCodeSet = new Set<string>();
     const projectPartyByCodeKeyMap = new Map<string, string>();
 
     enrichedProjects.forEach((p) => {
@@ -152,15 +151,11 @@ export function useEnrichedData() {
       const rawCode = String(p.code || "").trim().toLowerCase();
       
       visibleProjectKeys.add(`${rawCode}_${pYear}_${pStore}`);
-      visibleProjectKeys.add(`${rawCode}__`);
-      visibleCodeSet.add(rawCode);
       projectPartyByCodeKeyMap.set(`${rawCode}_${pYear}_${pStore}`, String(p.party || ''));
 
       const pCodeParts = rawCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
       pCodeParts.forEach(part => {
         visibleProjectKeys.add(`${part}_${pYear}_${pStore}`);
-        visibleProjectKeys.add(`${part}__`);
-        visibleCodeSet.add(part);
         projectPartyByCodeKeyMap.set(`${part}_${pYear}_${pStore}`, String(p.party || ''));
       });
 
@@ -168,27 +163,31 @@ export function useEnrichedData() {
         const linkParts = String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
         linkParts.forEach(part => {
           visibleProjectKeys.add(`${part}_${pYear}_${pStore}`);
-          visibleProjectKeys.add(`${part}__`);
-          visibleCodeSet.add(part);
           projectPartyByCodeKeyMap.set(`${part}_${pYear}_${pStore}`, String(p.party || ''));
         });
       }
     });
 
     let filteredTasks = tasks.filter((t) => {
-      if (t.isDeleted) return false;
+      if (!t || t.isDeleted) return false;
       const taskCode = String(t.projectCode || "").trim().toLowerCase();
       const taskYear = String(t.projectYear || "").trim().toLowerCase();
       const taskStore = String(t.projectStore || "").trim().toLowerCase();
       const taskKey = `${taskCode}_${taskYear}_${taskStore}`;
 
-      const matchesProject =
-        visibleProjectKeys.has(taskKey) ||
-        visibleProjectKeys.has(`${taskCode}__`) ||
-        visibleCodeSet.has(taskCode) ||
-        (t.projectId && enrichedProjects.some(p => String(p.id) === String(t.projectId)));
+      if (visibleProjectKeys.has(taskKey)) return true;
 
-      return matchesProject;
+      return enrichedProjects.some(p => {
+        const pStore = String(p.store || "").trim().toLowerCase();
+        const pYear = String(p.year || "").trim().toLowerCase();
+        if (taskStore && pStore && taskStore !== pStore) return false;
+        if (taskYear && pYear && taskYear !== pYear) return false;
+
+        if (t.projectId && p.id && String(p.id) === String(t.projectId)) return true;
+
+        const pCode = String(p.code || "").trim().toLowerCase();
+        return pCode && pCode === taskCode;
+      });
     });
 
     if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true) {
@@ -216,15 +215,16 @@ export function useEnrichedData() {
 
         // Check if real tasks exist in memory for this project
         const projectTasks = filteredTasks.filter(ft => {
-          if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
-          if (!ft.projectCode || !pCode) return false;
-          const ftCode = String(ft.projectCode).trim().toLowerCase();
-          const matchesCode = ftCode === pCode;
+          if (!ft || ft.isDeleted) return false;
+          const ftCode = String(ft.projectCode || '').trim().toLowerCase();
           const ftStore = ft.projectStore ? String(ft.projectStore).trim().toLowerCase() : '';
-          const matchesStore = !ftStore || !pStore || ftStore === pStore;
           const ftYear = ft.projectYear !== undefined && ft.projectYear !== null ? String(ft.projectYear).trim().toLowerCase() : '';
-          const matchesYear = !ftYear || !pYear || ftYear === pYear;
-          return matchesCode && matchesStore && matchesYear;
+
+          if (pStore && ftStore && pStore !== ftStore) return false;
+          if (pYear && ftYear && pYear !== ftYear) return false;
+
+          if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
+          return ftCode && pCode && ftCode === pCode;
         });
 
         // ONLY generate virtual tasks if no real tasks exist in memory yet

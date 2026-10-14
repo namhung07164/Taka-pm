@@ -13,6 +13,28 @@ import {
 const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 
 /**
+ * Validates whether a task belongs to a specific project by verifying store and year.
+ */
+export function isTaskBelongsToProject(t: Partial<Task>, p: Project): boolean {
+  if (!t || !p) return false;
+  const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  const pCode = String(p.code || '').trim().toLowerCase();
+
+  const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : '';
+
+  if (pStore && tStore && pStore !== tStore) return false;
+  if (pYear && tYear && pYear !== tYear) return false;
+
+  if (t.projectId && p.id && String(t.projectId) === String(p.id)) return true;
+  if (tCode && pCode && (tCode === pCode || matchProjectCode(tCode, pCode))) return true;
+
+  return false;
+}
+
+/**
  * Ensures tasks for a specific projectCode are loaded into Zustand store.
  * Useful when resolving cross-project predecessors dynamically.
  */
@@ -243,10 +265,7 @@ export async function deleteTaskStateUnified(
           return false;
         }
         for (const dt of tasksToDelete) {
-          const matchesProject =
-            (dt.projectId && String(dt.projectId) === String(p.id)) ||
-            (dt.projectCode && String(dt.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase()) ||
-            (!dt.projectId && !dt.projectCode);
+          const matchesProject = isTaskBelongsToProject(dt, p) || (!dt.projectId && !dt.projectCode);
           if (matchesProject) {
             if (dt.name && String(dt.name).trim().toLowerCase() === tsName) {
               summaryModified = true;
@@ -262,16 +281,10 @@ export async function deleteTaskStateUnified(
       });
     }
 
-    const isProjectAffected = summaryModified || affectedProjects.some(ap => ap.id === p.id) || tasksToDelete.some(dt => 
-      (dt.projectId && String(dt.projectId) === String(p.id)) ||
-      (dt.projectCode && String(dt.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-    );
+    const isProjectAffected = summaryModified || affectedProjects.some(ap => ap.id === p.id) || tasksToDelete.some(dt => isTaskBelongsToProject(dt, p));
 
     if (isProjectAffected || summaryModified) {
-      const remainingProjTasks = cleanedTasks.filter(t =>
-        (t.projectId && String(t.projectId) === String(p.id)) ||
-        (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-      );
+      const remainingProjTasks = cleanedTasks.filter(t => isTaskBelongsToProject(t, p));
       const computed = calculateProjectComputedDates(p, remainingProjTasks);
       return { 
         ...p, 
@@ -446,26 +459,42 @@ export async function deleteProjectStateUnified(
   const pCode = targetProject?.code ? String(targetProject.code).trim().toLowerCase() : targetKey;
   const pId = targetProject?.id ? String(targetProject.id) : (targetProject?.no !== undefined ? String(targetProject.no) : projectIdOrCode);
 
+  const pStore = targetProject?.store ? String(targetProject.store).trim().toLowerCase() : '';
+  const pYear = targetProject?.year !== undefined && targetProject?.year !== null ? String(targetProject.year).trim() : '';
+
   // Xác định các tasks liên quan
   const relatedTasks = currentTasks.filter(t => {
-    if (t.projectId && String(t.projectId) === pId) return true;
-    if (t.projectCode && String(t.projectCode).trim().toLowerCase() === pCode) return true;
-    return false;
+    if (!targetProject) return false;
+    return isTaskBelongsToProject(t, targetProject);
   });
   const relatedTaskIds = new Set(relatedTasks.map(t => String(t.id)));
 
   // Xác định các costs liên quan
   const relatedCosts = currentCosts.filter(c => {
+    const cStore = (c as any).projectStore ? String((c as any).projectStore).trim().toLowerCase() : '';
+    const cYear = (c as any).projectYear !== undefined && (c as any).projectYear !== null ? String((c as any).projectYear).trim() : '';
+    const cCode = c.projectCode ? String(c.projectCode).trim().toLowerCase() : '';
+
+    if (pStore && cStore && pStore !== cStore) return false;
+    if (pYear && cYear && pYear !== cYear) return false;
+
     if ((c as any).projectId && String((c as any).projectId) === pId) return true;
-    if (c.projectCode && String(c.projectCode).trim().toLowerCase() === pCode) return true;
+    if (cCode && pCode && (cCode === pCode || matchProjectCode(cCode, pCode))) return true;
     return false;
   });
   const relatedCostIds = new Set(relatedCosts.map(c => String(c.id)));
 
   // Xác định các delegations liên quan
   const relatedDelegations = currentDelegations.filter(d => {
+    const dStore = (d as any).projectStore ? String((d as any).projectStore).trim().toLowerCase() : '';
+    const dYear = (d as any).projectYear !== undefined && (d as any).projectYear !== null ? String((d as any).projectYear).trim() : '';
+    const dCode = d.projectCode ? String(d.projectCode).trim().toLowerCase() : '';
+
+    if (pStore && dStore && pStore !== dStore) return false;
+    if (pYear && dYear && pYear !== dYear) return false;
+
     if ((d as any).projectId && String((d as any).projectId) === pId) return true;
-    if (d.projectCode && String(d.projectCode).trim().toLowerCase() === pCode) return true;
+    if (dCode && pCode && (dCode === pCode || matchProjectCode(dCode, pCode))) return true;
     if (d.parentTaskId && relatedTaskIds.has(String(d.parentTaskId))) return true;
     return false;
   });
@@ -474,11 +503,19 @@ export async function deleteProjectStateUnified(
   const nowIso = new Date().toISOString();
 
   // 1. Optimistic delete tức thì trong Zustand store
-  const updatedProjects = currentProjects.filter(p => 
-    String(p.id) !== pId && 
-    String(p.code || '').trim().toLowerCase() !== pCode &&
-    String(p.no ?? '') !== pId
-  );
+  const updatedProjects = currentProjects.filter(p => {
+    if (pId && String(p.id) === pId) return false;
+    const pStrCode = String(p.code || '').trim().toLowerCase();
+    const pStrStore = p.store ? String(p.store).trim().toLowerCase() : '';
+    const pStrYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+    if (pStrCode === pCode) {
+      if ((!pStore || !pStrStore || pStore === pStrStore) && (!pYear || !pStrYear || pYear === pStrYear)) {
+        return false;
+      }
+    }
+    return true;
+  });
   const updatedTasks = currentTasks.filter(t => !relatedTaskIds.has(String(t.id)));
   const updatedCosts = currentCosts.filter(c => !relatedCostIds.has(String(c.id)));
   const updatedDelegations = currentDelegations.filter(d => !relatedDelegationIds.has(String(d.id)));

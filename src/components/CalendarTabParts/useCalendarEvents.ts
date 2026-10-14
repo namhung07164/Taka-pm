@@ -78,22 +78,37 @@ export function useCalendarEvents({
       if (showSubTasksInMonth) {
         const projectMap = new Map<string, Project>();
         projects.forEach((p) => {
-          const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-          projectMap.set(key, p);
-          if (p.code) {
-            projectMap.set(p.code, p);
+          const pCode = String(p.code || '').trim().toLowerCase();
+          const pYear = String(p.year || '').trim();
+          const pStore = String(p.store || '').trim().toUpperCase();
+          if (pCode) {
+            projectMap.set(`${pCode}-${pYear}-${pStore}`, p);
           }
         });
 
         const filteredTasks = tasks.filter((t) => {
-          const key = `${t.projectCode || ''}-${t.projectYear || ''}-${t.projectStore || ''}`;
+          if (!t || t.isDeleted) return false;
+          const tCode = String(t.projectCode || '').trim().toLowerCase();
+          const tYear = String(t.projectYear || '').trim();
+          const tStore = String(t.projectStore || '').trim().toUpperCase();
+          const key = `${tCode}-${tYear}-${tStore}`;
+
           const project =
             projectMap.get(key) ||
-            (t.projectCode ? projectMap.get(t.projectCode) : undefined);
+            projects.find((p) => {
+              const pCode = String(p.code || '').trim().toLowerCase();
+              const pYear = String(p.year || '').trim();
+              const pStore = String(p.store || '').trim().toUpperCase();
+              if (pCode !== tCode) return false;
+              if (tStore && pStore && tStore !== pStore) return false;
+              if (tYear && pYear && tYear !== pYear) return false;
+              return true;
+            });
+
           if (!project) return false;
 
-          if (filterStore && project.store !== filterStore) return false;
-          if (filterLocation && project.location !== filterLocation) return false;
+          if (filterStore && filterStore !== 'all' && project.store?.toUpperCase() !== filterStore.toUpperCase()) return false;
+          if (filterLocation && filterLocation !== 'all' && project.location !== filterLocation) return false;
 
           return true;
         });
