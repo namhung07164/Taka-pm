@@ -41,7 +41,6 @@ const PrintPreviewOverlay = lazyWithRetry(() => import("./components/PrintPrevie
 import { AppModals } from "./components/AppModals";
 import { PrintOptionsPanel } from "./components/PrintOptionsPanel";
 import { Toast } from "./components/Toast";
-import { SyncMonitor } from "./components/SyncMonitor";
 import { initAuth } from './lib/firebase';
 import { enrichProjects, calculateActiveNotifications, getUserAllowedStores } from "./lib/utils";
 import { findProjectLayoutUnit, extractFloorFromCodeOrName } from "./lib/layoutUnitFinder";
@@ -2277,7 +2276,6 @@ export default function App() {
         />
       )}
 
-      <SyncMonitor />
 
       <div className="fixed bottom-1 right-3 text-[10px] text-slate-400 z-50 pointer-events-none">
         copyright by Nam Hung CP

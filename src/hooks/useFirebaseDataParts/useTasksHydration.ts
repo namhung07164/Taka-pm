@@ -16,6 +16,12 @@ import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
 import { cleanOrphanTasks } from "../../lib/taskStateService";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+
 
 interface UseTasksHydrationProps {
   querySignature: string | null;
@@ -255,6 +261,7 @@ export function useTasksHydration({
         hydrateDelegationsForProjects(activeProjectIds),
       ]);
       if (isCancelled) return;
+      const markers = await getLoadedMarkers();
 
       setIsTasksLoading(true);
 
@@ -315,7 +322,10 @@ export function useTasksHydration({
             );
             const isClosedOrPastYear = Number(year) < 2026;
 
-            if (hasLocalYearTasks && isClosedOrPastYear) {
+            const deltaManaged =
+              (hasLocalYearTasks && isClosedOrPastYear) ||
+              (DELTA_FIRST.tasks && hasMarker(markers, 'tasks_year', year));
+            if (deltaManaged) {
               tasksPool.current.set(yearKey, () => {});
               setIsTasksLoading(false);
               needTasksDeltaSync = true;
@@ -346,6 +356,14 @@ export function useTasksHydration({
                   setIsTasksLoading(false);
                   batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
                   setCloudStatus("online");
+
+                  if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
+                    markLoaded('tasks_year', year).catch(() => {});
+                    const u = tasksPool.current.get(yearKey);
+                    tasksPool.current.set(yearKey, () => {});
+                    u?.();
+                    usePerformanceStore.getState().unregisterListener(`taka_tasks_${yearKey}`);
+                  }
                 },
                 (e) => {
                   setIsTasksLoading(false);
@@ -389,7 +407,10 @@ export function useTasksHydration({
                 knownHydratedProjectCodes.current.has(p.code);
               const isClosedOrPastYear = Number(year) < 2026;
 
-              if (hasLocalProjTasks && isClosedOrPastYear) {
+              const deltaManaged =
+                (hasLocalProjTasks && isClosedOrPastYear) ||
+                (DELTA_FIRST.tasks && (hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
+              if (deltaManaged) {
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
                 needTasksDeltaSync = true;
@@ -416,6 +437,14 @@ export function useTasksHydration({
                     setIsTasksLoading(false);
                     batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
                     setCloudStatus("online");
+
+                    if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
+                      markLoaded('tasks_proj', p.code).catch(() => {});
+                      const u = tasksPool.current.get(projKey);
+                      tasksPool.current.set(projKey, () => {});
+                      u?.();
+                      usePerformanceStore.getState().unregisterListener(`taka_tasks_${projKey}`);
+                    }
                   },
                   (e) => {
                     setIsTasksLoading(false);

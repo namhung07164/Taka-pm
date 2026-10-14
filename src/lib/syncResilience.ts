@@ -92,6 +92,7 @@ export async function resyncIfStale(lastSyncTime: number, lastSyncKey: string): 
       localDb.tasks.clear(),
       localDb.costs.clear(),
       localDb.delegations.clear(),
+      localDb.syncMeta.clear(),
     ]);
   } catch (err) {
     console.warn('[syncResilience] Failed to clear Dexie:', err);

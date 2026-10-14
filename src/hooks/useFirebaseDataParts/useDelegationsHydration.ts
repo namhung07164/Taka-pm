@@ -12,6 +12,12 @@ import {
 } from "../../lib/backgroundSyncWorker";
 import { getLocalDelegations, deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+
 
 interface UseDelegationsHydrationProps {
   querySignature: string | null;
@@ -205,7 +211,10 @@ export function useDelegationsHydration({
           localCount > 0 ||
           currentDelegations.some((d) => String(d.projectYear || "") === String(year));
 
-        if (hasLocalDelegations && isClosedOrPastYear) {
+        const deltaManaged =
+          (hasLocalDelegations && isClosedOrPastYear) ||
+          (DELTA_FIRST.delegations && hasMarker(await getLoadedMarkers(), 'delegations_year', year));
+        if (deltaManaged) {
           delegationsPool.current.set(year, () => {});
           setIsDelegationsLoading(false);
           pullAndApplyDeltas(year)
@@ -265,6 +274,14 @@ export function useDelegationsHydration({
               .trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
             batchDelegationsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+
+            if (DELTA_FIRST.delegations && !snapshot.metadata.fromCache) {
+              markLoaded('delegations_year', year).catch(() => {});
+              const u = delegationsPool.current.get(year);
+              delegationsPool.current.set(year, () => {});
+              u?.();
+              usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
+            }
           },
           (e) => {
             delegationsPool.current.delete(year);

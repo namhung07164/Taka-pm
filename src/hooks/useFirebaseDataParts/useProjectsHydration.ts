@@ -21,6 +21,12 @@ import {
   YearsMetaMap,
 } from "../../lib/yearsFingerprintService";
 import { startDeltaSyncService, pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+
 
 interface UseProjectsHydrationProps {
   querySignature: string | null;
@@ -172,7 +178,10 @@ export function useProjectsHydration({
           localCount > 0 ||
           (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
 
-        if (hasLocalData && isClosedOrPastYear) {
+        const deltaManaged =
+          (hasLocalData && isClosedOrPastYear) ||
+          (DELTA_FIRST.projects && hasMarker(await getLoadedMarkers(), 'projects_year', year));
+        if (deltaManaged) {
           projectsPool.current.set(year, () => {});
           pullAndApplyDeltas(year)
             .then(() => setCloudStatus("online"))
@@ -220,6 +229,14 @@ export function useProjectsHydration({
             usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
             batchProjectsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
             setCloudStatus("online");
+
+            if (DELTA_FIRST.projects && !snapshot.metadata.fromCache) {
+              markLoaded('projects_year', year).catch(() => {});
+              const u = projectsPool.current.get(year);
+              projectsPool.current.set(year, () => {});
+              u?.();
+              usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
+            }
 
             if (!snapshot.metadata.fromCache) {
               const yearProjects = snapshot.docs
