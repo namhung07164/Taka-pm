@@ -26,7 +26,7 @@ export function startDeltaRealtimeListener(): () => void {
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let detachTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
-  let signedIn = false;
+  let signedIn = !!auth.currentUser;
   let stopped = false;
 
   const flush = () => {
@@ -78,6 +78,8 @@ export function startDeltaRealtimeListener(): () => void {
     );
   };
 
+  if (signedIn) attach();
+
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
       if (detachTimer) clearTimeout(detachTimer);
@@ -105,6 +107,11 @@ export function startDeltaRealtimeListener(): () => void {
     pullAndApplyDeltas().catch(() => {});
   };
 
+  const handleFocus = () => {
+    // When switching windows on desktop/laptop, trigger delta catch-up immediately
+    pullAndApplyDeltas().catch(() => {});
+  };
+
   const unsubAuth = onAuthStateChanged(auth, (user) => {
     signedIn = !!user;
     if (user) attach();
@@ -114,6 +121,7 @@ export function startDeltaRealtimeListener(): () => void {
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('pageshow', handlePageShow as any);
   window.addEventListener('online', handleOnline);
+  window.addEventListener('focus', handleFocus);
 
   return () => {
     stopped = true;
@@ -121,6 +129,7 @@ export function startDeltaRealtimeListener(): () => void {
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('pageshow', handlePageShow as any);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('focus', handleFocus);
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);

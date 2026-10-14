@@ -5,6 +5,7 @@ import {
   orderBy,
   limit,
   getDocs,
+  getDocsFromServer,
   setDoc,
   doc,
   writeBatch,
@@ -542,13 +543,21 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
           limit(500)
         );
 
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
+        let snapshot: any;
+        try {
+          snapshot = await getDocsFromServer(q);
+        } catch (serverErr) {
+          // If offline or network still reconnecting (e.g. iOS waking up), do NOT advance sync cursor
+          console.warn('[deltaSync] getDocsFromServer not reachable yet (device offline or reconnecting):', serverErr);
+          return 0;
+        }
+
+        if (!snapshot || snapshot.empty) {
           break;
         }
 
         let pageMaxTime = currentSince;
-        snapshot.forEach((d) => {
+        snapshot.forEach((d: any) => {
           const item = d.data() as TakaDelta;
           const itemId = item.id || d.id;
           if (appliedDeltaIds.has(itemId)) {
@@ -573,7 +582,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
       }
 
       if (deltas.length === 0) {
-        // Advance lastSyncTime with 60s clock skew buffer so Heartbeat Fingerprint bypass stays active (0-Read)
+        // Server confirmed 0 new deltas: advance sync cursor safely
         const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
         safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
         return 0;
