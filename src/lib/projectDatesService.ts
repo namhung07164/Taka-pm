@@ -210,7 +210,7 @@ export function calculateProjectComputedDates(
     });
 
   const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
-  const isTasksProvided = Array.isArray(projectTasks);
+  const isTasksProvided = Array.isArray(projectTasks) && projectTasks.length > 0;
   const finalSummaries: any[] = rollupTaskSummaries(
     isTasksProvided
       ? taskSummaries
@@ -219,7 +219,7 @@ export function calculateProjectComputedDates(
 
   const finalTaskCount = isTasksProvided
     ? projectTasks.length
-    : (existingCount || finalSummaries.length);
+    : Math.max(existingCount || 0, existingSummaries.length, finalSummaries.length);
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;

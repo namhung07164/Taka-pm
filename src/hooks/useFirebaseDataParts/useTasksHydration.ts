@@ -137,34 +137,40 @@ export function useTasksHydration({
 
             return true;
           });
-          const hasDiscrepancy =
-            pTasks.length !== (p.taskCount ?? 0) ||
-            !p.taskSummaries ||
-            p.taskSummaries.length !== pTasks.length;
-          if (hasDiscrepancy) {
-            projectsNeedUpdate = true;
-            import('../../lib/projectDatesService').then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
-              const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
-              syncProjectDatesToFirestore(p.id, computed).catch(() => {});
-            }).catch(() => {});
-            const summaryItems = pTasks.map(t => ({
-              id: t.id,
-              name: t.name || '',
-              start: t.start || '',
-              finish: t.finish || '',
-              taskCodePhu: t.taskCodePhu,
-              duration: t.duration,
-              runningStatus: t.runningStatus,
-            }));
-            const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
-            const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
-            return {
-              ...p,
-              taskCount: pTasks.length,
-              taskSummaries: summaryItems,
-              computedTakStart: validStarts[0] || p.computedTakStart,
-              computedTakCompl: validFinishes[0] || p.computedTakCompl,
-            };
+          const isHydratedForP = knownHydratedProjectCodes.current.has(pCode) || knownHydratedProjectCodes.current.has(String(p.id));
+          // Safety guard: ONLY perform self-healing if we have loaded tasks for this project (pTasks.length > 0)
+          // OR if this project was explicitly hydrated from Firestore.
+          // NEVER wipe taskSummaries or taskCount for unhydrated projects when expanding another project!
+          if (pTasks.length > 0 || (isHydratedForP && (p.taskCount ?? 0) > 0)) {
+            const hasDiscrepancy =
+              pTasks.length !== (p.taskCount ?? 0) ||
+              !p.taskSummaries ||
+              p.taskSummaries.length !== pTasks.length;
+            if (hasDiscrepancy) {
+              projectsNeedUpdate = true;
+              import('../../lib/projectDatesService').then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
+                const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
+                syncProjectDatesToFirestore(p.id, computed).catch(() => {});
+              }).catch(() => {});
+              const summaryItems = pTasks.map(t => ({
+                id: t.id,
+                name: t.name || '',
+                start: t.start || '',
+                finish: t.finish || '',
+                taskCodePhu: t.taskCodePhu,
+                duration: t.duration,
+                runningStatus: t.runningStatus,
+              }));
+              const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
+              const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
+              return {
+                ...p,
+                taskCount: pTasks.length,
+                taskSummaries: summaryItems,
+                computedTakStart: validStarts[0] || p.computedTakStart,
+                computedTakCompl: validFinishes[0] || p.computedTakCompl,
+              };
+            }
           }
           return p;
         });
