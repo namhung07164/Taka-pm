@@ -21,8 +21,8 @@ import { recordAuditLog } from './auditLogService';
  */
 
 export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
-  queueAutoDelta(ref?.path, ref?.id, 'write');
   const cleanData = removeUndefinedDeep(data);
+  queueAutoDelta(ref?.path, ref?.id, cleanData?.isDeleted ? 'delete' : 'write');
   // Inject serverTimestamp for consistency (Rule 15)
   if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
     (cleanData as any).updatedAt = serverTimestamp();
@@ -46,8 +46,8 @@ export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
 }) as typeof rawSetDoc;
 
 export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
-  queueAutoDelta(ref?.path, ref?.id, 'write');
   const cleanData = removeUndefinedDeep(data);
+  queueAutoDelta(ref?.path, ref?.id, cleanData?.isDeleted ? 'delete' : 'write');
   // Inject serverTimestamp for consistency (Rule 15)
   if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
     (cleanData as any).updatedAt = serverTimestamp();
@@ -116,7 +116,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
   batch.commit = () => {
     // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
     ops.forEach((o) => {
-      queueAutoDelta(o.ref?.path, o.ref?.id, o.kind);
+      queueAutoDelta(o.ref?.path, o.ref?.id, (o.kind === 'delete' || o.isDeleted) ? 'delete' : 'write');
       if (o.kind === 'delete' || o.isDeleted) {
         const logical = resolveLogicalCollection(o.ref?.path);
         if (logical && o.ref?.id) deleteLocalRecord(logical, o.ref.id).catch(() => {});

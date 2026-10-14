@@ -409,11 +409,16 @@ export async function deleteTaskStateUnified(
       const { writeBatch } = await import('./firestoreWrites');
       const { db, APP_ID } = await import('./firebase');
       const { recordBatchDeltas } = await import('./deltaSyncService');
+      const { markExplicitDelta } = await import('./autoDeltaQueue');
       const batch = writeBatch(db);
 
-      tasksToDelete.forEach(t => {
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-        batch.set(docRef, { id: t.id, isDeleted: true, updatedAt: now }, { merge: true });
+      const allIdsToDelete = new Set<string>();
+      rawIds.forEach(id => { if (id) allIdsToDelete.add(String(id)); });
+      tasksToDelete.forEach(t => { if (t?.id) allIdsToDelete.add(String(t.id)); });
+
+      allIdsToDelete.forEach(id => {
+        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+        batch.delete(docRef);
       });
 
       unlinkedChildTasks.forEach(c => {
@@ -421,18 +426,19 @@ export async function deleteTaskStateUnified(
         batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
       });
 
-      await batch.commit();
-
       const currentUser = useAppStore.getState().currentUser;
       const deltaItems: any[] = [
-        ...tasksToDelete.map(t => ({
-          docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
+        ...Array.from(allIdsToDelete).map(id => ({
+          docId: id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
         })),
         ...unlinkedChildTasks.map(c => ({
           docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
           data: { parentTaskId: null, parentId: null, updatedAt: now }
         }))
       ];
+
+      markExplicitDelta(deltaItems);
+      await batch.commit();
       recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
     } catch (e) {
       console.warn('[taskStateService] Failed to persist task deletion to Firestore:', e);

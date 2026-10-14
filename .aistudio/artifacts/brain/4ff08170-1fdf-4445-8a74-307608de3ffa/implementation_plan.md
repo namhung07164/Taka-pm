@@ -1,43 +1,80 @@
-# Implementation Plan - Takashimaya Sync & Task Summarize Optimization (Patch 1E & Realtime Delta)
+# High-Performance Gantt & Table Rendering with Offscreen Asset Caching
 
-## Overview
-This plan addresses data consistency and performance issues when expanding projects or receiving task updates across devices:
-1. **Patch 1E (Safe Self-Healing Guard)**: Fixes `useTasksHydration.ts` so partial task hydration or local cache clearing does not erroneously reset a project's `taskCount` or `taskSummaries` to lower values or 0.
-2. **Hybrid Realtime Delta Sync (200ms Debounced Auto-Batching)**: Speeds up cross-device sync without read storms by batching delta invalidation pulses every 200ms.
-3. **Background Microtask & Memoized Task Summaries**: Offloads `taskSummaries` re-computation and project date rollups to asynchronous microtasks (`queueMicrotask`), ensuring 60 FPS UI responsiveness on iOS and mobile devices.
+Optimize rendering speed, scroll fluidity, and memory footprint in the Takashimaya Project Management application—focusing specifically on large Gantt charts, heavy table views, offscreen Canvas rendering, and memoized asset caching.
 
----
-
-## Proposed Changes
-
-### 1. Apply Patch 1E Guard in `src/hooks/useFirebaseDataParts/useTasksHydration.ts`
-- **File**: `/src/hooks/useFirebaseDataParts/useTasksHydration.ts`
-- **Actions**:
-  - Verify import of `getAppBootAgeMs` and `BOOT_SYNC_GUARD_MS` from `../../lib/projectDatesService`.
-  - Replace legacy O(P × T) self-healing loop in `batchTasksUpdate` with the safe scoped version:
-    - Only evaluate projects with touched tasks in `pendingTasksChanged.current`.
-    - Group tasks once into `Map<string, Task[]>` by `projectId` and `projectCode` in O(T) time.
-    - Ignore cache snapshots (`fromCache`) and boot window (< 15 seconds).
-    - Skip healing if local task count is strictly less than stored `taskCount` (`pTasks.length < (p.taskCount || 0)`), preventing partial data overwrites.
-
-### 2. Hybrid Realtime Delta Sync Optimization (200ms Debounced Auto-Batching)
-- **Files**: `/src/lib/deltaSyncService.ts`, `/src/lib/deltaRealtimeListener.ts`, `/src/lib/autoDeltaQueue.ts`
-- **Actions**:
-  - Configure a 200ms debouncing window for outgoing local mutations before flushing deltas to `taka_deltas`.
-  - Optimize `deltaRealtimeListener.ts` to instantly process incoming deltas with low latency while avoiding redundant full re-queries.
-
-### 3. Background Microtask & Memoized Calculation for `taskSummaries`
-- **Files**: `/src/lib/projectDatesService.ts`, `/src/hooks/useFirebaseDataParts/useTasksHydration.ts`
-- **Actions**:
-  - Wrap `calculateProjectComputedDates` and `syncProjectDatesToFirestore` triggers in `queueMicrotask` / background worker tasks.
-  - Memoize `summaryItems` mapping (`pTasks.map(...)`) and date extraction (`validStarts`, `validFinishes`) to eliminate main-thread stutter on UI interaction or project expansion.
+> [!IMPORTANT] User Preferences Confirmed in Phase 1
+> - **Primary Performance Bottleneck**: Rendering and scrolling large Gantt charts and table views.
+> - **Primary Optimization Focus**: Image & file asset caching combined with offscreen Canvas rendering for drawing-heavy UI elements (Konva / Canvas).
 
 ---
 
-## Verification & Testing Plan
+## 1. Overview & Core Concept
 
-1. **Compilation Check**: Run `compile_applet` to confirm no build or syntax errors.
-2. **Lint & Type Check**: Run `lint_applet` to verify TypeScript compliance.
-3. **Functional Verification**:
-   - Test expanding projects with missing/partial tasks locally; verify `taskCount` and `taskSummaries` never drop to 0 or diminish on Firestore.
-   - Verify task updates reflect across multi-device listeners smoothly with sub-second latency.
+### What It Does
+This optimization package introduces row virtualization for long table views and heavy Gantt task lists, offscreen Canvas pre-rendering for heavy graphics (site maps, ring badges, grid timelines), and memoized asset caching for project files, attachments, and thumbnails.
+
+### Target Audience & Persona
+Project managers, construction site supervisors, and store planners operating on desktop PCs, iPads, and smartphones who require smooth 60 FPS scrolling and instantaneous view rendering across large datasets without UI stutter or memory crashes.
+
+### Key Value Delivered
+- **Smooth 60 FPS Gantt & Table Scrolling**: Virtualization renders only visible DOM nodes (viewport bounds), drastically reducing DOM nodes from thousands to ~20-30.
+- **Zero-Lag Offscreen Canvas Graphics**: Offscreen pre-rendered maps and badges eliminate hit-graph recalculations on every frame wheel/pinch event.
+- **Smart Asset & File Caching**: Image thumbnails and floor plan assets are decoded once in background microtasks and cached in LRU memory.
+
+---
+
+## 2. User Experience & Visual Design
+
+### Key User Flows
+1. **Gantt / Table Navigation**: User opens a large project with hundreds of tasks. The view renders instantly (< 50ms) using windowed DOM virtualization.
+2. **Smooth Pan & Zoom on Gantt Timeline**: Panning or zooming on the timeline canvas draws smoothly from pre-rendered offscreen bitmaps without triggering React re-renders.
+3. **Modal & Form Speed**: Opening task detail modals or filtering tasks executes in < 16ms without dropping frames.
+
+### Visual Identity & Theme
+- **Clean Enterprise Aesthetics**: Clean, high-density tabular typography (`tabular-nums font-mono`) for dates, IDs, and financial metrics.
+- **Viewport Presence**: Unbroken sticky table headers and timeline scales (`sticky top-0 z-20 backdrop-blur-md`) with zero layout reflow or scroll jumps.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+### Decision 1: Row Virtualization for Tables & Gantt Charts
+- **Chosen Approach**: Lightweight, zero-dependency custom windowing hook (`useVirtualizer` pattern) calculating `scrollTop`, row heights, and buffered padding items.
+- **Why**: Eliminates 90%+ of React DOM nodes in large projects while ensuring zero external bundle overhead and full compatibility with existing drag-and-drop & inline editing.
+- **Alternatives Considered**: Modifying full table DOM directly (causes high DOM node count and jank during fast scrolling).
+
+### Decision 2: Offscreen Canvas Pre-Rendering (`useOffscreenImage` & Konva Listening Discipline)
+- **Chosen Approach**: Render complex floorplan overlays, background grids, and status rings onto offscreen HTMLCanvasElement / memoized HTMLImageElement with `listening={false}` and `perfectDrawEnabled={false}`.
+- **Why**: Eliminates Konva hit-graph calculation overhead during mouse move, pinch-zoom, and wheel events.
+- **Alternatives Considered**: Re-drawing raw vector paths on every React render frame (causes 100% CPU spikes and battery drain on mobile/iPads).
+
+### Decision 3: LRU Microtask Asset Caching
+- **Chosen Approach**: In-memory `Map` with weak/bounded reference cache and background image decoding (`img.decode()`) in microtasks.
+- **Why**: Prevents UI freeze when decoding high-resolution floor plans and attachment previews.
+
+---
+
+## 4. Technical Architecture & Data Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Zustand State & Dexie localDB                         │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                      ┌────────────────┴────────────────┐
+                      │  Memoized Computed Data Slices │
+                      └────────────────┬────────────────┘
+                                       │
+          ┌────────────────────────────┼────────────────────────────┐
+          ▼                            ▼                            ▼
+┌───────────────────┐        ┌───────────────────┐        ┌───────────────────┐
+│ Virtualized Table │        │ Virtualized Gantt │        │ Offscreen Canvas  │
+│ Windowing Hook    │        │ Timeline View    │        │ Asset Cache Engine│
+│ (Visible Rows)    │        │ (Canvas Windowing)│        │ (Konva Pre-render)│
+└───────────────────┘        └───────────────────┘        └───────────────────┘
+```
+
+### Virtualization & Asset Cache Flow
+1. **Viewport Detection**: Calculate visible item index bounds `[startIndex, endIndex]` based on container height and `scrollTop`.
+2. **Offscreen Drawing**: Offscreen canvas renders heavy graphics once; main viewport draws cached bitmap context.
+3. **Memoized Calculations**: Task status rollups and project taskSummaries are computed using memoized background microtasks (`useMemo` + `setTimeout(..., 0)`).

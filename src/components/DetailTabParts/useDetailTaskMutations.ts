@@ -52,7 +52,7 @@ export function useDetailTaskMutations({
         try {
           const nowIso = new Date().toISOString();
           const batch = writeBatch(db);
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), { id: t.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id));
           
           const urlsToDelete = extractStorageUrls(t);
           if (urlsToDelete.length > 0) { 
@@ -68,6 +68,8 @@ export function useDetailTaskMutations({
           });
 
           try {
+            const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+            markExplicitDelta([{ docId: t.id, collectionName: 'taka_tasks' }]);
             await batch.commit();
           } catch (error: any) {
             console.error("Batch commit failed", error);
@@ -76,7 +78,7 @@ export function useDetailTaskMutations({
           }
 
           // Xóa tức thì khỏi Zustand store & đồng bộ lại tiến độ/mốc ngày của Project
-          deleteTaskStateUnified([t]);
+          await deleteTaskStateUnified([t]);
           
           undoManager.push({
             description: `Delete Task: ${t.name}`,

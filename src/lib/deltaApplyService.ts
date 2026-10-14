@@ -87,7 +87,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     switch (collectionName) {
       case 'taka_projects': {
         const idx = updatedProjects.findIndex((p) => p.id === docId);
-        if (isDelete) {
+        if (isDelete || data?.isDeleted) {
           if (idx !== -1) {
             projectsChanged = true;
             updatedProjects = updatedProjects.filter((p) => p.id !== docId);
@@ -108,7 +108,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
-        if (isDelete) {
+        if (isDelete || data?.isDeleted) {
           markTasksDeleted([docId, data?.taskCodePhu, data?.name]);
           if (idx !== -1) {
             tasksChanged = true;
@@ -130,7 +130,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_costs': {
         const idx = updatedCosts.findIndex((c) => c.id === docId);
-        if (isDelete) {
+        if (isDelete || data?.isDeleted) {
           if (idx !== -1) {
             costsChanged = true;
             updatedCosts = updatedCosts.filter((c) => c.id !== docId);
@@ -151,7 +151,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_delegations': {
         const idx = updatedDelegations.findIndex((g) => g.id === docId);
-        if (isDelete) {
+        if (isDelete || data?.isDeleted) {
           if (idx !== -1) {
             delegationsChanged = true;
             updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
