@@ -62,12 +62,22 @@ export function calculateUnitFocalPoint(
     if (!targetUnit) {
       try {
         const globalProjects = (useAppStore.getState?.() as any)?.projects || [];
-        const matchedProj = globalProjects.find((p: any) => 
-          (p.code && String(p.code).toLowerCase().trim() === q) ||
-          (p.id && String(p.id).toLowerCase().trim() === q) ||
-          (p.name && String(p.name).toLowerCase().trim() === q) ||
-          ((p as any).unit && String((p as any).unit).toLowerCase().trim() === q)
-        );
+        const activeStore = (useAppStore.getState?.() as any)?.globalStoreFilter || 'HCM';
+        const activeYear = (useAppStore.getState?.() as any)?.globalYearFilter || '2026';
+
+        const matchedProj = globalProjects.find((p: any) => {
+          const pStore = p.store ? String(p.store).trim().toUpperCase() : 'HCM';
+          const pYear = p.year ? String(p.year).trim() : '';
+          if (activeStore && activeStore !== 'ALL' && pStore && pStore !== activeStore.toUpperCase()) return false;
+          if (activeYear && activeYear !== 'all' && pYear && pYear !== 'ALL' && pYear !== activeYear) return false;
+
+          return (
+            (p.code && String(p.code).toLowerCase().trim() === q) ||
+            (p.id && String(p.id).toLowerCase().trim() === q) ||
+            (p.name && String(p.name).toLowerCase().trim() === q) ||
+            ((p as any).unit && String((p as any).unit).toLowerCase().trim() === q)
+          );
+        });
         if (matchedProj) {
           const pCodes = [
             matchedProj.code,

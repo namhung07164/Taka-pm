@@ -111,10 +111,30 @@ export function useTasksHydration({
         const currentProjects = useAppStore.getState().projects || [];
         let projectsNeedUpdate = false;
         const healedProjects = currentProjects.map((p) => {
-          const pTasks = finalTasks.filter((t) =>
-            (t.projectId && String(t.projectId) === String(p.id)) ||
-            (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-          );
+          const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
+          const pYear = p.year ? String(p.year).trim() : '';
+          const pCode = String(p.code || '').trim().toLowerCase();
+
+          const pTasks = finalTasks.filter((t) => {
+            if (!t || t.isDeleted) return false;
+            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+
+            if (t.projectId && String(t.projectId) === String(p.id)) {
+              if (pStore && tStore && pStore !== tStore) return false;
+              if (pYear && tYear && pYear !== tYear) return false;
+              return true;
+            }
+
+            if (!t.projectCode || !pCode) return false;
+            const tCode = String(t.projectCode).trim().toLowerCase();
+            if (tCode !== pCode) return false;
+
+            if (pStore && tStore && pStore !== tStore) return false;
+            if (pYear && tYear && pYear !== tYear) return false;
+
+            return true;
+          });
           const hasDiscrepancy =
             pTasks.length !== (p.taskCount ?? 0) ||
             !p.taskSummaries ||

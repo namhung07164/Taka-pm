@@ -12,6 +12,33 @@ export function getAppBootAgeMs(): number {
 
 let isBackfilling = false;
 
+function matchProjectTasks(project: Project, tasks: Task[]): Task[] {
+  const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
+  const pCode = String(project.code || '').trim().toLowerCase();
+
+  return tasks.filter((t) => {
+    if (!t || t.isDeleted) return false;
+    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+
+    if (t.projectId && String(t.projectId) === String(project.id)) {
+      if (pStore && tStore && pStore !== tStore) return false;
+      if (pYear && tYear && pYear !== tYear) return false;
+      return true;
+    }
+
+    if (!t.projectCode || !pCode) return false;
+    const tCode = String(t.projectCode).trim().toLowerCase();
+    if (tCode !== pCode) return false;
+
+    if (pStore && tStore && pStore !== tStore) return false;
+    if (pYear && tYear && pYear !== tYear) return false;
+
+    return true;
+  });
+}
+
 /**
  * Backfills missing project computed dates for projects that don't have them pre-computed.
  */
@@ -30,11 +57,7 @@ export async function backfillMissingProjectDates(
 
     for (const project of uncomputed) {
       if (!project.id) continue;
-      const pTasks = tasks.filter(
-        (t) =>
-          (t.projectId && String(t.projectId) === String(project.id)) ||
-          (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(project.code || '').trim().toLowerCase())
-      );
+      const pTasks = matchProjectTasks(project, tasks);
       const computed = calculateProjectComputedDates(project, pTasks, delegationGroups);
       await syncProjectDatesToFirestore(project.id, computed);
     }
@@ -75,11 +98,7 @@ export async function syncAllProjectsTaskCountsToFirestore(
     if (onProgress) onProgress(i + 1, totalProjects);
     if (!p || !p.id) continue;
 
-    const pTasks = tasks.filter(
-      (t) =>
-        (t.projectId && String(t.projectId) === String(p.id)) ||
-        (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || "").trim().toLowerCase())
-    );
+    const pTasks = matchProjectTasks(p, tasks);
 
     if (p.taskCount !== pTasks.length) {
       updatedCount++;

@@ -49,6 +49,11 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     if (!t || !t.id || t.isDeleted) return;
 
     if (pIdStr && t.projectId && String(t.projectId) === pIdStr) {
+      const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+      if (pStore && tStore && pStore !== tStore) return;
+      if (pYear && tYear && pYear !== tYear) return;
+
       matchedMap.set(String(t.id), t);
       return;
     }

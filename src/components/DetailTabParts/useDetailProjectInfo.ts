@@ -62,9 +62,18 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     projects.forEach(p => {
       const mergedTasksMap = new Map<string, Task>();
 
+      const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
+      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
       if (p.id && tasksByProjectId.has(String(p.id))) {
         tasksByProjectId.get(String(p.id))!.forEach(t => {
-          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
+          if (t && (t.id || t.name)) {
+            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+            if (pStore && tStore && pStore !== tStore) return;
+            if (pYear && tYear && pYear !== tYear) return;
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
         });
       }
 
