@@ -9,7 +9,8 @@ import { parseDateTime, computeActProgressPercent, getTaskStatus } from './utils
  */
 export function rollupParentTaskDatesAndStatus(
   tasks: Task[],
-  delegationGroups: DelegationGroup[] = []
+  delegationGroups: DelegationGroup[] = [],
+  expandedTaskIdsSet?: Set<string>
 ): Task[] {
   if (!Array.isArray(tasks) || tasks.length === 0) return tasks;
 
@@ -81,6 +82,19 @@ export function rollupParentTaskDatesAndStatus(
         }
         return resultTaskMap.get(childIdStr) || child;
       });
+
+      // User Rule: If expandedTaskIdsSet is provided and this parent task is NOT expanded,
+      // keep its initial summarized data! Only recalculate/rollup when expanded.
+      if (expandedTaskIdsSet) {
+        const isExpanded =
+          expandedTaskIdsSet.has(pId) ||
+          (parentTask.id && expandedTaskIdsSet.has(String(parentTask.id))) ||
+          (parentTask.taskCodePhu && expandedTaskIdsSet.has(String(parentTask.taskCodePhu).trim().toLowerCase()));
+
+        if (!isExpanded) {
+          return parentTask;
+        }
+      }
 
       // Compute rolled up dates
       const validStarts = rolledUpChildren

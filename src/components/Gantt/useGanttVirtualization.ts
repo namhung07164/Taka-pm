@@ -78,7 +78,7 @@ export function useGanttVirtualization({
       });
       if (!rawTasks || rawTasks.length === 0) return;
 
-      const rolledUpTasks = rollupParentTaskDatesAndStatus(rawTasks);
+      const rolledUpTasks = rollupParentTaskDatesAndStatus(rawTasks, [], expandedModularSet);
       const pTasks = sortGroupTasks(rolledUpTasks);
 
       // Create index map for sequential numbering
