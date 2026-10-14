@@ -18,6 +18,7 @@ import { rollupParentTaskDatesAndStatus } from "../../lib/taskRollupService";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS } from "../../lib/projectDatesService";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
@@ -107,75 +108,86 @@ export function useTasksHydration({
         const finalTasks = rolledUpTasks;
         useAppStore.getState().setTasks(finalTasks);
         
-        // Self-healing: if loaded tasks for a project have discrepancies with p.taskCount or taskSummaries, immediately heal in Zustand & Firestore
-        const currentProjects = useAppStore.getState().projects || [];
-        let projectsNeedUpdate = false;
-        const healedProjects = currentProjects.map((p) => {
-          const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-          const pYear = p.year ? String(p.year).trim() : '';
-          const pCode = String(p.code || '').trim().toLowerCase();
-
-          const pTasks = finalTasks.filter((t) => {
-            if (!t || t.isDeleted) return false;
-            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-
-            if (pStore && tStore && pStore !== tStore) return false;
-            if (pYear && tYear && pYear !== tYear) return false;
-
-            if (t.projectId && String(t.projectId) === String(p.id)) {
-              return true;
-            }
-
-            if (t.projectId && String(t.projectId) !== String(p.id)) {
-              return false;
-            }
-
-            if (!t.projectCode || !pCode) return false;
-            const tCode = String(t.projectCode).trim().toLowerCase();
-            if (tCode !== pCode) return false;
-
-            return true;
+        // Self-healing an toàn:
+        // - chỉ xét các dự án có task thay đổi trong lô này (không quét toàn bộ P x T)
+        // - bỏ qua snapshot từ cache và 15 giây đầu sau khi mở app (dữ liệu cục bộ có thể cũ/thiếu)
+        // - KHÔNG chữa theo hướng giảm: ít task hơn taskCount đã lưu nghĩa là có thể mới tải một phần
+        if (!fromCache && getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS && pendingTasksChanged.current.size > 0) {
+          const touchedIds = new Set<string>();
+          const touchedCodes = new Set<string>();
+          pendingTasksChanged.current.forEach((t) => {
+            if (t.projectId) touchedIds.add(String(t.projectId));
+            if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
           });
-          const isHydratedForP = knownHydratedProjectCodes.current.has(pCode) || knownHydratedProjectCodes.current.has(String(p.id));
-          // Safety guard: ONLY perform self-healing if we have loaded tasks for this project (pTasks.length > 0)
-          // OR if this project was explicitly hydrated from Firestore.
-          // NEVER wipe taskSummaries or taskCount for unhydrated projects when expanding another project!
-          if (pTasks.length > 0 || (isHydratedForP && (p.taskCount ?? 0) > 0)) {
+
+          // Gom task theo dự án 1 lần: O(T)
+          const byId = new Map<string, Task[]>();
+          const byCode = new Map<string, Task[]>();
+          finalTasks.forEach((t) => {
+            if (t.projectId) {
+              const k = String(t.projectId);
+              const arr = byId.get(k);
+              if (arr) arr.push(t);
+              else byId.set(k, [t]);
+            }
+            if (t.projectCode) {
+              const k = String(t.projectCode).trim().toLowerCase();
+              const arr = byCode.get(k);
+              if (arr) arr.push(t);
+              else byCode.set(k, [t]);
+            }
+          });
+
+          const currentProjects = useAppStore.getState().projects || [];
+          let projectsNeedUpdate = false;
+          const healedProjects = currentProjects.map((p) => {
+            const codeKey = String(p.code || "").trim().toLowerCase();
+            if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
+
+            const merged = new Map<string, Task>();
+            (byId.get(String(p.id)) || []).forEach((t) => merged.set(t.id, t));
+            if (codeKey) (byCode.get(codeKey) || []).forEach((t) => merged.set(t.id, t));
+            const pTasks = Array.from(merged.values());
+            if (pTasks.length === 0) return p;
+
+            // Có thể mới tải một phần task: không bao giờ ghi số liệu nhỏ hơn lên server
+            if (pTasks.length < (p.taskCount || 0)) return p;
+
             const hasDiscrepancy =
-              pTasks.length !== (p.taskCount ?? 0) ||
+              pTasks.length !== (p.taskCount || 0) ||
               !p.taskSummaries ||
               p.taskSummaries.length !== pTasks.length;
-            if (hasDiscrepancy) {
-              projectsNeedUpdate = true;
-              import('../../lib/projectDatesService').then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
+            if (!hasDiscrepancy) return p;
+
+            projectsNeedUpdate = true;
+            import("../../lib/projectDatesService")
+              .then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
                 const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
                 syncProjectDatesToFirestore(p.id, computed).catch(() => {});
-              }).catch(() => {});
-              const summaryItems = pTasks.map(t => ({
-                id: t.id,
-                name: t.name || '',
-                start: t.start || '',
-                finish: t.finish || '',
-                taskCodePhu: t.taskCodePhu,
-                duration: t.duration,
-                runningStatus: t.runningStatus,
-              }));
-              const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
-              const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
-              return {
-                ...p,
-                taskCount: pTasks.length,
-                taskSummaries: summaryItems,
-                computedTakStart: validStarts[0] || p.start || '',
-                computedTakCompl: validFinishes[0] || p.handover || (p as any).takCompl || '',
-              };
-            }
+              })
+              .catch(() => {});
+            const summaryItems = pTasks.map((t) => ({
+              id: t.id,
+              name: t.name || "",
+              start: t.start || "",
+              finish: t.finish || "",
+              taskCodePhu: t.taskCodePhu,
+              duration: t.duration,
+              runningStatus: t.runningStatus,
+            }));
+            const validStarts = pTasks.map((t) => t.start).filter(Boolean).sort();
+            const validFinishes = pTasks.map((t) => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
+            return {
+              ...p,
+              taskCount: pTasks.length,
+              taskSummaries: summaryItems,
+              computedTakStart: validStarts[0] || p.start || '',
+              computedTakCompl: validFinishes[0] || p.handover || (p as any).takCompl || '',
+            };
+          });
+          if (projectsNeedUpdate) {
+            useAppStore.getState().setProjects(healedProjects);
           }
-          return p;
-        });
-        if (projectsNeedUpdate) {
-          useAppStore.getState().setProjects(healedProjects);
         }
         
         const finalIds = new Set(finalTasks.map(t => t.id));
