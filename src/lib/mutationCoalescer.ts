@@ -4,7 +4,6 @@ import { db, APP_ID } from './firebase';
 import { addPendingUpdate } from './syncQueue';
 import { touchYearMeta } from './yearsFingerprintService';
 import { recordDelta } from './deltaSyncService';
-import { markExplicitDelta, unmarkExplicitDelta } from './autoDeltaQueue';
 
 export interface CoalescedMutation {
   collectionPath: string; // Tên collection, vd: taka_tasks
@@ -97,14 +96,6 @@ async function flushQueueItem(queueKey: string): Promise<void> {
   const fullPath = `artifacts/${APP_ID}/public/data/${item.collectionPath}/${item.docId}`;
   const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', item.collectionPath, item.docId);
 
-  const isCoreCollection = ['taka_projects', 'taka_tasks', 'taka_costs', 'taka_delegations'].includes(item.collectionPath);
-
-  // Đánh dấu TRƯỚC khi ghi: await setDoc chờ server ack (có thể >1.5s trên iOS), nếu đánh dấu SAU
-  // thì auto-delta xả trước và phát thêm 1 delta "invalidate" thừa.
-  if (isCoreCollection) {
-    markExplicitDelta([{ docId: item.docId, collectionName: item.collectionPath }]);
-  }
-
   try {
     if (item.isUpdate) {
       await setDoc(docRef, item.data, { merge: true });
@@ -133,9 +124,6 @@ async function flushQueueItem(queueKey: string): Promise<void> {
       }).catch(() => {});
     }
   } catch (err) {
-    if (isCoreCollection) {
-      unmarkExplicitDelta([{ docId: item.docId, collectionName: item.collectionPath }]);
-    }
     console.error(`[mutationCoalescer] Error flushing ${queueKey}, buffering to syncQueue:`, err);
     // Lưu vào Offline Sync Queue chống mất dữ liệu (Rule 2 AGENTS.md)
     addPendingUpdate({

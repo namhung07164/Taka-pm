@@ -218,18 +218,7 @@ export function useStaticAndAuthHydration() {
 
         const pending = await getPendingUpdates();
         if (pending.length > 0) {
-          // B1: Safety Delay - wait for local hydration and initial delta sync to settle
-          // Prevents old drafts from "winning" over new server data during boot.
-          const timeSinceBoot = Date.now() - FIREBASE_HOOK_BOOT_TIME;
-          if (timeSinceBoot < 20000) {
-             setTimeout(testConnection, 5000);
-             return;
-          }
-
           const currentStore = useAppStore.getState();
-          const { getRestoreCutoffTimestamp } = await import("../../lib/deltaSyncService");
-          const restoreCutoff = getRestoreCutoffTimestamp();
-
           const liveTasks = new Map<string, any>(
             (currentStore.tasks || []).map((t: any) => [t.id, t])
           );
@@ -245,14 +234,7 @@ export function useStaticAndAuthHydration() {
           let skipped = 0;
           const validPending = pending.filter((u: any) => {
             const draftAt = u.data?.updatedAt ? new Date(u.data.updatedAt).getTime() : 0;
-            
-            // B2: Restore Cutoff Guard - discard drafts generated before a version restore
-            if (restoreCutoff > 0 && draftAt > 0 && draftAt <= restoreCutoff) {
-              skipped++;
-              return false;
-            }
-
-            if (draftAt && Date.now() - draftAt > 24 * 60 * 60 * 1000) { // Reduced to 24h for safety
+            if (draftAt && Date.now() - draftAt > 60 * 60 * 1000) {
               skipped++;
               return false;
             }
@@ -278,7 +260,7 @@ export function useStaticAndAuthHydration() {
             if (skipped > 0) {
               setToast({
                 title: "Sync",
-                message: `Đã dọn dẹp ${skipped} thay đổi offline không hợp lệ hoặc cũ.`,
+                message: `Đã bỏ qua ${skipped} thay đổi offline cũ vì đã có dữ liệu mới hơn.`,
               });
             }
             return;

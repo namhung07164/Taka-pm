@@ -152,7 +152,6 @@ export async function recordBatchDeltas(
       action: item.action,
       data: item.data || {},
       year: item.year,
-      isPatch: item.isPatch,
       updatedBy,
     });
   }
@@ -242,6 +241,23 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     data: any,
     year?: string
   ) => {
+    if (!docId) return;
+
+    // 3. Tri-Gate Lazy Loading Guards (Rule 3 AGENTS.md):
+    if (
+      collectionName === 'taka_tasks' &&
+      !store.isTasksRequested &&
+      store.tasks.length === 0
+    ) {
+      return;
+    }
+    if (
+      collectionName === 'taka_costs' &&
+      !store.isCostsRequested &&
+      store.costs.length === 0
+    ) {
+      return;
+    }
     if (
       collectionName === 'taka_delegations' &&
       !store.isDelegationsRequested &&
@@ -250,69 +266,58 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       return;
     }
 
-    // [Safety Guard] Prevent old deltas (e.g. synthetic or out-of-order) from clobbering newer state
-    const tsOf = (v: any): number => {
-      if (!v) return 0;
-      const n = typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
-      return Number.isFinite(n) ? n : 0;
-    };
-
     switch (collectionName) {
       case 'taka_projects': {
-        const idx = updatedProjects.findIndex((p) => p.id === docId);
-        if (idx !== -1 && tsOf(updatedProjects[idx].updatedAt) > tsOf(data.updatedAt)) return;
-        
         projectsChanged = true;
+        const idx = updatedProjects.findIndex((p) => p.id === docId);
         if (action === 'delete') {
           updatedProjects = updatedProjects.filter((p) => p.id !== docId);
         } else if (idx !== -1) {
           updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
-        } else {
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
           updatedProjects.push({ id: docId, ...data } as Project);
         }
         break;
       }
 
       case 'taka_tasks': {
-        const idx = updatedTasks.findIndex((t) => t.id === docId);
-        if (idx !== -1 && tsOf(updatedTasks[idx].updatedAt) > tsOf(data.updatedAt)) return;
-
         tasksChanged = true;
+        const idx = updatedTasks.findIndex((t) => t.id === docId);
         if (action === 'delete') {
           updatedTasks = updatedTasks.filter((t) => t.id !== docId);
         } else if (idx !== -1) {
           updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
-        } else {
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
           updatedTasks.push({ id: docId, ...data } as Task);
         }
         break;
       }
 
       case 'taka_costs': {
-        const idx = updatedCosts.findIndex((c) => c.id === docId);
-        if (idx !== -1 && tsOf(updatedCosts[idx].updatedAt) > tsOf(data.updatedAt)) return;
-
         costsChanged = true;
+        const idx = updatedCosts.findIndex((c) => c.id === docId);
         if (action === 'delete') {
           updatedCosts = updatedCosts.filter((c) => c.id !== docId);
         } else if (idx !== -1) {
           updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
-        } else {
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
           updatedCosts.push({ id: docId, ...data } as Cost);
         }
         break;
       }
 
       case 'taka_delegations': {
-        const idx = updatedDelegations.findIndex((g) => g.id === docId);
-        if (idx !== -1 && tsOf(updatedDelegations[idx].updatedAt) > tsOf(data.updatedAt)) return;
-
         delegationsChanged = true;
+        const idx = updatedDelegations.findIndex((g) => g.id === docId);
         if (action === 'delete') {
           updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
         } else if (idx !== -1) {
           updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
-        } else {
+        } else if (action === 'create') {
+          // 'update' for a doc we do not hold is only a partial patch: skip it (listeners / Dexie load the full doc)
           updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
         }
         break;

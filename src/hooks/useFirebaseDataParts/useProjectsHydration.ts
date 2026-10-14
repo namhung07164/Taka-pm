@@ -11,7 +11,6 @@ import {
   offloadPersistSnapshot,
   hydrateProjectsFromLocal,
 } from "../../lib/backgroundSyncWorker";
-import { deleteLocalRecord } from "../../lib/localDb";
 import {
   fetchYearsMeta,
   setMemoryYearsMeta,
@@ -28,24 +27,6 @@ interface UseProjectsHydrationProps {
   allowedStores: string[];
 }
 
-// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
-const tsOf = (v: any): number => {
-  if (!v) return 0;
-  const n =
-    typeof v === "string" ? Date.parse(v)
-    : typeof v?.toMillis === "function" ? v.toMillis()
-    : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
-// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
-const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
-  if (!existing) return false;
-  const e = tsOf(existing.updatedAt);
-  const i = tsOf(incoming?.updatedAt);
-  return e > 0 && i > 0 && i < e;
-};
-
 export function useProjectsHydration({
   querySignature,
   userRole,
@@ -59,32 +40,24 @@ export function useProjectsHydration({
   const prevSigProjects = useRef<string>("");
   const remoteYearsMetaRef = useRef<YearsMetaMap>({});
 
-  // Atomic batching buffers for Projects and Tasks updates to prevent JS main thread freezing
+  // Atomic batching buffer for Projects updates
   const pendingProjectsMap = useRef<Map<string, Project> | null>(null);
-  const pendingProjectsChanged = useRef<Map<string, Project>>(new Map());
-  const pendingProjectsRemoved = useRef<Set<string>>(new Set());
   const projectsBatchTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const batchProjectsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+  const batchProjectsUpdate = useCallback((docChanges: any[]) => {
     if (!pendingProjectsMap.current) {
       const currentProjects = useAppStore.getState().projects || [];
       const map = new Map<string, Project>();
-      currentProjects.forEach(p => map.set(p.id, p));
+      currentProjects.forEach((p) => map.set(p.id, p));
       pendingProjectsMap.current = map;
     }
 
     docChanges.forEach((change) => {
-      const id = change.doc.id;
-      const data = { id, ...change.doc.data() } as Project;
+      const data = { id: change.doc.id, ...change.doc.data() } as Project;
       if (change.type === "removed" || data.isDeleted) {
-        pendingProjectsMap.current!.delete(id);
-        pendingProjectsChanged.current.delete(id);
-        pendingProjectsRemoved.current.add(id);
+        pendingProjectsMap.current!.delete(change.doc.id);
       } else {
-        if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
-        pendingProjectsMap.current!.set(id, data);
-        pendingProjectsChanged.current.set(id, data);
-        pendingProjectsRemoved.current.delete(id);
+        pendingProjectsMap.current!.set(change.doc.id, data);
       }
     });
 
@@ -97,17 +70,12 @@ export function useProjectsHydration({
         const updatedList = Array.from(pendingProjectsMap.current.values());
         updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
         useAppStore.getState().setProjects(updatedList);
-        // Chỉ ghi Dexie phần thay đổi; xóa khỏi Dexie phần đã bị xóa (chống "sống lại")
-        const changed = Array.from(pendingProjectsChanged.current.values());
-        const removed = Array.from(pendingProjectsRemoved.current);
-        pendingProjectsChanged.current.clear();
-        pendingProjectsRemoved.current.clear();
-        if (changed.length > 0) offloadPersistSnapshot('taka_projects', changed);
-        removed.forEach((id) => { deleteLocalRecord('taka_projects', id).catch(() => {}); });
+        offloadPersistSnapshot("taka_projects", updatedList);
         const setNotifs = useAppStore.getState().setAllProjectsForNotifs;
         if (setNotifs) setNotifs(updatedList);
         pendingProjectsMap.current = null;
       }
+      projectsBatchTimer.current = null;
     }, 40);
   }, []);
 
@@ -218,18 +186,16 @@ export function useProjectsHydration({
           qProjects,
           (snapshot) => {
             usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
-            batchProjectsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+            batchProjectsUpdate(snapshot.docChanges());
             setCloudStatus("online");
 
-            if (!snapshot.metadata.fromCache) {
-              const yearProjects = snapshot.docs
-                .map((d) => ({ id: d.id, ...d.data() } as Project))
-                .filter((p) => !p.isDeleted);
-              if (yearProjects.length > 0) {
-                const updatedAt = remoteYearsMetaRef.current[year]?.updatedAt || new Date().toISOString();
-                saveYearDataToLocal(year, updatedAt, { projects: yearProjects });
-                offloadPersistSnapshot("taka_projects", yearProjects);
-              }
+            const yearProjects = snapshot.docs
+              .map((d) => ({ id: d.id, ...d.data() } as Project))
+              .filter((p) => !p.isDeleted);
+            if (yearProjects.length > 0) {
+              const updatedAt = remoteYearsMetaRef.current[year]?.updatedAt || new Date().toISOString();
+              saveYearDataToLocal(year, updatedAt, { projects: yearProjects });
+              offloadPersistSnapshot("taka_projects", yearProjects);
             }
           },
           (e) => {

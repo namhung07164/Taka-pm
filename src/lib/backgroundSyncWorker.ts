@@ -111,9 +111,10 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
 /**
  * Nạp tức thời Tasks từ Dexie khi người dùng chuyển sang tab yêu cầu Tasks (0ms UI, triệt tiêu Spinner)
  */
-export async function hydrateTasksFromLocal(year?: string): Promise<number> {
+export async function hydrateTasksFromLocal(): Promise<number> {
   try {
-    const localTasks = await getLocalTasks(year);
+    const store = useAppStore.getState();
+    const localTasks = await getLocalTasks();
     if (localTasks && localTasks.length > 0) {
       const currentStore = useAppStore.getState();
       const existingMap = new Map((currentStore.tasks || []).map(t => [t.id, t]));

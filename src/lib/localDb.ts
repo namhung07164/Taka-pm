@@ -40,12 +40,6 @@ export class TakaLocalDB extends Dexie {
   }
 }
 
-const tsOf = (v: any): number => {
-  if (!v) return 0;
-  const n = typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
 export const localDb = new TakaLocalDB();
 
 /**
@@ -103,22 +97,21 @@ export async function upsertLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   item: any
 ): Promise<void> {
-  if (!item?.id) return;
   try {
-    const table = (() => {
-      switch (collectionName) {
-        case 'taka_projects': return localDb.projects;
-        case 'taka_tasks': return localDb.tasks;
-        case 'taka_costs': return localDb.costs;
-        case 'taka_delegations': return localDb.delegations;
-      }
-    })();
-    
-    // [Safety Guard] Only upsert if the incoming doc is newer than what we have
-    const existing = await table.get(item.id);
-    if (existing && tsOf(existing.updatedAt) > tsOf(item.updatedAt)) return;
-
-    await table.put(item);
+    switch (collectionName) {
+      case 'taka_projects':
+        await localDb.projects.put(item);
+        break;
+      case 'taka_tasks':
+        await localDb.tasks.put(item);
+        break;
+      case 'taka_costs':
+        await localDb.costs.put(item);
+        break;
+      case 'taka_delegations':
+        await localDb.delegations.put(item);
+        break;
+    }
   } catch (err) {
     console.warn(`[localDb] upsertLocalRecord error on ${collectionName}:`, err);
   }
@@ -144,12 +137,8 @@ export async function patchLocalRecord(
         case 'taka_delegations': return localDb.delegations;
       }
     })();
-    
-    // [Safety Guard] Only patch if the incoming patch is newer than what we have
-    const existing = await table.get(id);
-    if (existing && tsOf(existing.updatedAt) > tsOf(patch.updatedAt)) return;
-
     // Patch only existing rows. Creating a row from a partial patch produced incomplete records
+    // (missing year/code/store) that later hydrated into the UI as broken data.
     await (table as any).update(id, patch);
   } catch (err) {
     console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
