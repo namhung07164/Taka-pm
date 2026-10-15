@@ -15,8 +15,8 @@ export function markTasksDeleted(keys: (string | undefined | null)[]): void {
   });
 }
 
-// Các nơi gọi truyền thêm (code, name) nhưng hiện chỉ kiểm tra theo id/khóa chính.
-// Không kiểm tra theo tên vì tên task có thể trùng giữa các dự án.
+// Chỉ kiểm tra theo ID task/xác thực chính xác.
+// Tuyệt đối KHÔNG kiểm tra theo taskCodePhu hoặc name vì mã phụ và tên task trùng lặp giữa nhiều dự án khác nhau.
 export function isTaskDeletedInTracker(
   taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null,
   _code?: string,
@@ -27,12 +27,7 @@ export function isTaskDeletedInTracker(
     return deletedTaskKeys.has(taskOrKey.trim().toLowerCase());
   }
   const id = taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '';
-  const code = taskOrKey.taskCodePhu ? String(taskOrKey.taskCodePhu).trim().toLowerCase() : '';
-  const name = taskOrKey.name ? String(taskOrKey.name).trim().toLowerCase() : '';
-
   if (id && deletedTaskKeys.has(id)) return true;
-  if (code && deletedTaskKeys.has(code)) return true;
-  if (name && deletedTaskKeys.has(name)) return true;
 
   return false;
 }
@@ -40,3 +35,4 @@ export function isTaskDeletedInTracker(
 export function getDeletedTaskKeysSet(): Set<string> {
   return deletedTaskKeys;
 }
+

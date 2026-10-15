@@ -120,7 +120,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         noteTouchedProject(idx !== -1 ? updatedTasks[idx] : null);
         noteTouchedProject(data);
         if (isDelete || data?.isDeleted) {
-          markTasksDeleted([docId, data?.taskCodePhu, data?.name]);
+          markTasksDeleted([docId]);
           if (idx !== -1) {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);

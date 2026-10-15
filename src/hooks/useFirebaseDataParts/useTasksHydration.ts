@@ -81,7 +81,7 @@ export function useTasksHydration({
       const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
 
       if (isTrueDelete) {
-        markTasksDeleted([id, data.taskCodePhu, data.name]);
+        markTasksDeleted([id]);
         pendingTasksMap.current!.delete(id);
         pendingTasksChanged.current.delete(id);
         pendingTasksRemoved.current.add(id);

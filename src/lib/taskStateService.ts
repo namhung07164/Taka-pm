@@ -16,7 +16,7 @@ const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 /**
  * Validates whether a task belongs to a specific project by verifying store and year.
  */
-export function isTaskBelongsToProject(t: Partial<Task>, p: Project): boolean {
+export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
   if (!t || !p) return false;
   if (t.isDeleted) return false;
 
@@ -224,16 +224,14 @@ export async function deleteTaskStateUnified(
 
   const affectedProjects = findAffectedProjects(tasksToDelete, currentProjects);
 
-  const deletedCodesAndIds = new Set<string>();
+  const deletedTaskIds = new Set<string>();
   tasksToDelete.forEach(t => {
-    if (t.id) deletedCodesAndIds.add(String(t.id).trim().toLowerCase());
-    if (t.taskCodePhu) deletedCodesAndIds.add(String(t.taskCodePhu).trim().toLowerCase());
-    if (t.name) deletedCodesAndIds.add(String(t.name).trim().toLowerCase());
+    if (t.id) deletedTaskIds.add(String(t.id).trim().toLowerCase());
   });
-  rawIds.forEach(id => deletedCodesAndIds.add(String(id).trim().toLowerCase()));
+  rawIds.forEach(id => deletedTaskIds.add(String(id).trim().toLowerCase()));
 
-  // Immediately track deleted keys globally to prevent stale restoration / virtual task synthesis
-  markTasksDeleted(Array.from(deletedCodesAndIds));
+  // Immediately track deleted task IDs globally to prevent stale restoration / virtual task synthesis
+  markTasksDeleted(Array.from(deletedTaskIds));
 
   const now = new Date().toISOString();
   const tasksAfterDeletion = currentTasks.filter(t => !idSet.has(String(t.id)));
@@ -243,7 +241,7 @@ export async function deleteTaskStateUnified(
     let updated = t;
 
     const rawParent = t.parentTaskId || (t as any).parentId;
-    if (rawParent && deletedCodesAndIds.has(String(rawParent).trim().toLowerCase())) {
+    if (rawParent && deletedTaskIds.has(String(rawParent).trim().toLowerCase())) {
       updated = { ...updated, parentTaskId: undefined, updatedAt: now };
       delete (updated as any).parentId;
       unlinkedChildTasks.push(updated);
@@ -253,7 +251,12 @@ export async function deleteTaskStateUnified(
       const predParts = updated.predecessor.split(',').map(p => p.trim()).filter(Boolean);
       const filteredParts = predParts.filter(part => {
         const codeOnly = part.replace(/(?:SS|FF|SF|FS)?\s*(?:[+-]\d+[dwmy]?)?$/i, '').trim().toLowerCase();
-        return !deletedCodesAndIds.has(codeOnly);
+        const isDeletedPred = tasksToDelete.some(dt => {
+          if (!isTaskBelongsToProject(t, { id: dt.projectId, code: dt.projectCode, store: dt.projectStore, year: dt.projectYear })) return false;
+          return (dt.taskCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === codeOnly) ||
+                 (dt.id && String(dt.id).trim().toLowerCase() === codeOnly);
+        });
+        return !isDeletedPred;
       });
       const newPred = filteredParts.join(', ');
       if (newPred !== updated.predecessor) {
@@ -277,22 +280,23 @@ export async function deleteTaskStateUnified(
         const tsCodePhu = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id)))) {
+        if (deletedTaskIds.has(String(tsId).toLowerCase()) || (ts.id && deletedTaskIds.has(String(ts.id).toLowerCase()))) {
           summaryModified = true;
           return false;
         }
-        if (tsCodePhu && deletedCodesAndIds.has(tsCodePhu)) {
-          summaryModified = true;
-          return false;
-        }
+
+        // Bắt buộc chỉ lọc summary nếu task bị xóa thuộc đúng dự án p
         for (const dt of tasksToDelete) {
-          const matchesProject = isTaskBelongsToProject(dt, p) || (!dt.projectId && !dt.projectCode);
-          if (matchesProject) {
-            if (dt.name && String(dt.name).trim().toLowerCase() === tsName) {
+          if (isTaskBelongsToProject(dt, p)) {
+            if (dt.id && (String(dt.id).toLowerCase() === String(tsId).toLowerCase() || (ts.id && String(dt.id).toLowerCase() === String(ts.id).toLowerCase()))) {
               summaryModified = true;
               return false;
             }
             if (dt.taskCodePhu && tsCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === tsCodePhu) {
+              summaryModified = true;
+              return false;
+            }
+            if (dt.name && tsName && String(dt.name).trim().toLowerCase() === tsName) {
               summaryModified = true;
               return false;
             }
@@ -304,14 +308,15 @@ export async function deleteTaskStateUnified(
 
     const isProjectAffected = summaryModified || affectedProjects.some(ap => ap.id === p.id) || tasksToDelete.some(dt => isTaskBelongsToProject(dt, p));
 
-    if (isProjectAffected || summaryModified) {
+    if (isProjectAffected) {
       const remainingProjTasks = cleanedTasks.filter(t => isTaskBelongsToProject(t, p));
-      const computed = calculateProjectComputedDates(p, remainingProjTasks);
+      const computed = calculateProjectComputedDates({ ...p, taskSummaries: newSummaries }, remainingProjTasks);
+      const effectiveTaskCount = remainingProjTasks.length > 0 ? remainingProjTasks.length : newSummaries.length;
       return { 
         ...p, 
         ...computed,
-        taskCount: remainingProjTasks.length,
-        taskSummaries: computed.taskSummaries || [],
+        taskCount: effectiveTaskCount,
+        taskSummaries: newSummaries,
         updatedAt: now,
       };
     }

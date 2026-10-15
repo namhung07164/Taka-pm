@@ -165,249 +165,6 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
 - **`src/lib/financialService.test.ts`**: Chứa 15 Test Cases bảo vệ logic tài chính cốt lõi (Phân kỳ 3 đợt, số dư Cost, Rollup Budget, cảnh báo sức khỏe tài chính). Bắt buộc phải pass `npm test` khi thay đổi thuật toán.
 
 
-=== FILE: GEMINI.md ===
-# GEMINI INSTRUCTIONS - TAKASHIMAYA PROJECT MANAGEMENT
-
-⛔ **QUY TẮC BẤT KHẢ XÂM PHẠM**: Mọi logic, thiết kế và tính năng hiện tại của ứng dụng TUYỆT ĐỐI KHÔNG ĐƯỢC XÓA, LƯỢC BỎ HAY VÔ HIỆU HÓA trong quá trình viết code/upgrade. Chỉ được phép mở rộng hoặc tối ưu mã nguồn.
-- **Persistent Architecture**: Tuân thủ tuyệt đối các quy tắc kiến trúc, toàn vẹn dữ liệu, và ngăn chặn lỗi trong `AGENTS.md`.
-
-## GEMINI CORE BEHAVIOR - JSON MODE
-1. **Strict JSON Syntax:** 
-   - Chỉ dùng dấu ngoặc kép (`"`) cho key và string. Tuyệt đối không dùng nháy đơn (`'`).
-   - Không để lại dấu phẩy thừa (trailing comma).
-   - Giá trị rỗng trả về `null` (không dùng `"null"`).
-2. **Output Format:**
-   - Trả về JSON thuần túy (Raw JSON), KHÔNG bọc trong markdown (\`\`\`json).
-   - KHÔNG thêm text giải thích trước hoặc sau JSON.
-3. **Data Types:** Số là number, boolean là true/false (không viết hoa, không bọc nháy kép).
-
-
-=== FILE: firestore.indexes.json ===
-{
-  "indexes": [
-    {
-      "collectionGroup": "audit_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "entityType", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "audit_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "action", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "audit_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userEmail", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "audit_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "entityType", "order": "ASCENDING" },
-        { "fieldPath": "action", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "audit_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userEmail", "order": "ASCENDING" },
-        { "fieldPath": "entityType", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "audit_logs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userEmail", "order": "ASCENDING" },
-        { "fieldPath": "action", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_tasks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "projectStore", "order": "ASCENDING" },
-        { "fieldPath": "projectYear", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_tasks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "isDeleted", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_projects",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "year", "order": "ASCENDING" },
-        { "fieldPath": "store", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_projects",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "isDeleted", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_costs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "year", "order": "ASCENDING" },
-        { "fieldPath": "store", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_costs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "isDeleted", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_delegations",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "year", "order": "ASCENDING" },
-        { "fieldPath": "store", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "taka_delegations",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "isDeleted", "order": "ASCENDING" },
-        { "fieldPath": "updatedAt", "order": "ASCENDING" }
-      ]
-    }
-  ],
-  "fieldOverrides": []
-}
-
-
-=== FILE: firestore.rules ===
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // 1. IMMUTABLE AUDIT LOGS (APPEND-ONLY)
-    // Logs cannot be edited or deleted once written - Enterprise Compliance
-    match /audit_logs/{logId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if false;
-      allow delete: if false;
-    }
-
-    // 2. TAKASHIMAYA CORE APPLICATION COLLECTIONS
-    // Projects, Tasks, Costs, Delegation, Users, Rules, Config, Action Logs
-    match /artifacts/{appId}/public/data/{collectionName}/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
-    }
-
-    // 3. CONNECTION TEST PROBE
-    match /test/{docId} {
-      allow read: if isSignedIn();
-      allow write: if false;
-    }
-
-    // 4. DEFAULT-DENY CATCH ALL
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-
-
-=== FILE: index.html ===
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <script>
-      (function() {
-        window.addEventListener('error', function(e) {
-          var f = String((e && e.filename) || '');
-          var m = String((e && e.message) || '');
-          if (f.indexOf('@vite/client') !== -1 || m.indexOf('WebSocket') !== -1 || m.indexOf('vite') !== -1 || m.indexOf('HMR') !== -1) {
-            e.preventDefault();
-            e.stopPropagation();
-            return true;
-          }
-        }, true);
-        window.addEventListener('unhandledrejection', function(e) {
-          var r = String((e && (e.reason && (e.reason.message || e.reason))) || '');
-          if (r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1 || r.indexOf('HMR') !== -1) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        }, true);
-      })();
-    </script>
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Taka PM" />
-    <link rel="manifest" href="/manifest.json?v=5" />
-    <link rel="icon" type="image/png" href="/icon-192.png?v=5" />
-    <link
-      rel="apple-touch-icon"
-      sizes="180x180"
-      href="/apple-touch-icon.png?v=5"
-    />
-    <link
-      rel="apple-touch-icon-precomposed"
-      sizes="180x180"
-      href="/apple-touch-icon.png?v=5"
-    />
-    <title>Takashimaya PM - cloud (offical) ver10042026</title>
-    <meta name="description" content="A comprehensive project management tool with cloud sync, budget tracking, and real-time notifications." />
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <meta property="og:title" content="Takashimaya PM - cloud (offical) ver10042026" />
-    <meta property="og:description" content="A comprehensive project management tool with cloud sync, budget tracking, and real-time notifications." />
-  </head>
-  <body>
-    <div id="root"></div>
-    <div id="portal-root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-
-
-=== FILE: package.json ===
-{"name":"react-example","private":true,"version":"0.0.0","type":"module","scripts":{"dev":"tsx server.ts","prebuild":"rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py; rm -rf tmp workspace","clean:junk":"rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py; rm -rf tmp workspace","build":"vite build \u0026\u0026 esbuild server.ts --bundle --platform\u003dnode --format\u003dcjs --packages\u003dexternal --sourcemap --outfile\u003ddist/server.cjs","start":"node dist/server.cjs","preview":"vite preview","clean":"rm -rf dist","lint":"tsc --noEmit","test":"vitest run"},"dependencies":{"@aws-sdk/client-s3":"^3.1133.0","@aws-sdk/s3-request-presigner":"^3.1133.0","@tailwindcss/vite":"^4.1.14","@tanstack/react-virtual":"^3.14.13","@types/lodash":"^4.17.25","@types/node":"^22.14.0","@types/react-big-calendar":"^1.16.3","@vitejs/plugin-react":"^5.0.4","autoprefixer":"^10.4.21","clsx":"^2.1.1","date-fns":"^4.1.0","dexie":"^4.4.6","dotenv":"^17.4.2","firebase":"^12.11.0","glob":"^13.0.6","html-to-image":"^1.11.13","html5-qrcode":"^2.3.8","jspdf":"^4.2.1","konva":"^10.5.0","lodash":"^4.18.1","lucide-react":"^0.546.0","motion":"^12.23.24","papaparse":"^5.7.0","pdfjs-dist":"^6.3.289","qrcode.react":"^4.2.0","react":"^19.0.0","react-big-calendar":"^1.19.4","react-dom":"^19.0.0","react-draggable":"^4.7.0","react-dropzone":"^20.1.2","react-konva":"^19.3.0","react-markdown":"^10.1.0","react-zoom-pan-pinch":"^4.0.3","recharts":"^3.8.1","tailwind-merge":"^3.5.0","tailwindcss":"^4.1.14","typescript":"~5.8.2","use-image":"^1.1.4","uuid":"^14.0.2","vite":"^6.2.0","xlsx":"^0.18.5","zod":"4.6.5","zustand":"^5.0.14"},"devDependencies":{"@types/express":"^5.0.6","esbuild":"^0.28.2","express":"^5.2.1","jsdom":"^30.0.1","puppeteer":"^25.9.0","tsx":"^4.23.13","vitest":"^4.1.11"}}
-
 === FILE: src/App.tsx ===
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession, safeGetDeviceItemLocal } from "./lib/storage";
 import { useFirebaseData } from "./hooks/useFirebaseData";
@@ -25843,9 +25600,14 @@ export function useDetailTaskMutations({
 
       let targetTaskId = t.id;
       if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
+        const sameProjectIdentity = (x: any) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
         let realTask = tasks.find(tsk => 
           !tsk.id.startsWith('ts_') &&
           tsk.projectCode === t.projectCode &&
+          sameProjectIdentity(tsk) &&
           ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
            (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
         );
@@ -25862,10 +25624,16 @@ export function useDetailTaskMutations({
               const dt = { id: d.id, ...d.data() } as Task;
               if (!dt.isDeleted) loaded.push(dt);
             });
-            if (loaded.length > 0) {
+            // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+            const loadedSame = loaded.filter(sameProjectIdentity);
+            if (loadedSame.length > 0) {
               const latestTasks = useAppStore.getState().tasks || tasks;
-              useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
-              realTask = loaded.find(tsk =>
+              const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+              useAppStore.getState().setTasks([
+                ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+                ...loadedSame.filter(x => !existingIds.has(x.id)),
+              ]);
+              realTask = loadedSame.find(tsk =>
                 (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
                 (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
               );
@@ -68692,146 +68460,6 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
 });
 
 
-=== FILE: src/components/ProjectModal.tsx ===
-import React, { Suspense, useRef } from 'react';
-import Draggable from 'react-draggable';
-import { Portal } from './Portal';
-import { ProjectModalProps } from './ProjectModalParts/projectModalTypes';
-import { ProjectModalHeader } from './ProjectModalParts/ProjectModalHeader';
-import { ProjectDetailsForm } from './ProjectModalParts/ProjectDetailsForm';
-import { useProjectModalData } from './ProjectModalParts/useProjectModalData';
-import { ProjectChat } from './ProjectModal/ProjectChat';
-import { ProjectDelegationTab } from './ProjectDelegationTab';
-import { lazyWithRetry } from '../lib/lazyWithRetry';
-import { getZIndexClass } from '../lib/zIndexManager';
-
-const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
-
-export function ProjectModal(props: ProjectModalProps) {
-  const { isOpen, onClose, project, onOpenTask } = props;
-  const nodeRef = useRef(null);
-
-  const {
-    projects,
-    tasks,
-    delegationGroups,
-    currentUser,
-    locations,
-    parties,
-    appUsers,
-    subAppUsers,
-    activeTab,
-    setActiveTab,
-    isAddingLocation,
-    setIsAddingLocation,
-    newLocation,
-    setNewLocation,
-    formData,
-    setFormData,
-    canWrite,
-    enrichedProject,
-    linkCodesError,
-    confirmModal,
-    setConfirmModal,
-    yearRef,
-    handleAddNewLocation,
-    handleSubmit,
-    handleDelete
-  } = useProjectModalData(props);
-
-  if (!isOpen) return null;
-
-  return (
-    <Portal>
-      <div className={`fixed inset-0 bg-slate-900/60 ${getZIndexClass('MODAL_BASE')} flex items-center justify-center p-0 md:p-4 overscroll-contain`}>
-        <React.Suspense fallback={null}>
-          {confirmModal.isOpen && (
-            <ConfirmModal
-              isOpen={confirmModal.isOpen}
-              title={confirmModal.title}
-              message={confirmModal.message}
-              onConfirm={confirmModal.onConfirm}
-              onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-            />
-          )}
-        </React.Suspense>
-        <Draggable
-          disabled={typeof window !== 'undefined' && window.innerWidth < 768}
-          handle=".modal-handle"
-          bounds="parent"
-          nodeRef={nodeRef}
-          cancel="button"
-        >
-          <div
-            ref={nodeRef}
-            className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-[92vh] md:h-[88vh] max-h-[96vh] md:max-h-[90vh] max-w-3xl overflow-hidden relative flex flex-col pointer-events-auto overscroll-contain"
-          >
-            <ProjectModalHeader
-              project={project}
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              onClose={onClose}
-            />
-
-            {activeTab === 'details' && (
-              <ProjectDetailsForm
-                formData={formData}
-                setFormData={setFormData}
-                linkCodesError={linkCodesError}
-                canWrite={canWrite}
-                currentUser={currentUser}
-                locations={locations}
-                parties={parties}
-                isAddingLocation={isAddingLocation}
-                setIsAddingLocation={setIsAddingLocation}
-                newLocation={newLocation}
-                setNewLocation={setNewLocation}
-                handleAddNewLocation={handleAddNewLocation}
-                enrichedProject={enrichedProject}
-                project={project}
-                handleSubmit={handleSubmit}
-                handleDelete={handleDelete}
-                onClose={onClose}
-                yearRef={yearRef}
-              />
-            )}
-
-            {activeTab === 'chat' && project && (
-              <ProjectChat
-                project={project}
-                projects={projects}
-                tasks={tasks}
-                currentUser={currentUser}
-                appUsers={appUsers}
-                subAppUsers={subAppUsers}
-                delegationGroups={delegationGroups}
-                onOpenTask={onOpenTask}
-              />
-            )}
-
-            {activeTab === 'delegation' && project && (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <ProjectDelegationTab
-                  project={project}
-                  projects={projects}
-                  tasks={tasks}
-                  currentUser={currentUser}
-                  appUsers={appUsers}
-                  delegationGroups={delegationGroups}
-                  setConfirmModal={setConfirmModal}
-                />
-              </div>
-            )}
-          </div>
-        </Draggable>
-      </div>
-    </Portal>
-  );
-}
-
-export type { ProjectModalProps } from './ProjectModalParts/projectModalTypes';
-
-
 === FILE: src/components/ProjectModal/ProjectChat.tsx ===
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLanguage } from '../../lib/LanguageContext';
@@ -69748,6 +69376,146 @@ export function useProjectChatActions({
     handleSendFromInput
   };
 }
+
+
+=== FILE: src/components/ProjectModal.tsx ===
+import React, { Suspense, useRef } from 'react';
+import Draggable from 'react-draggable';
+import { Portal } from './Portal';
+import { ProjectModalProps } from './ProjectModalParts/projectModalTypes';
+import { ProjectModalHeader } from './ProjectModalParts/ProjectModalHeader';
+import { ProjectDetailsForm } from './ProjectModalParts/ProjectDetailsForm';
+import { useProjectModalData } from './ProjectModalParts/useProjectModalData';
+import { ProjectChat } from './ProjectModal/ProjectChat';
+import { ProjectDelegationTab } from './ProjectDelegationTab';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { getZIndexClass } from '../lib/zIndexManager';
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
+
+export function ProjectModal(props: ProjectModalProps) {
+  const { isOpen, onClose, project, onOpenTask } = props;
+  const nodeRef = useRef(null);
+
+  const {
+    projects,
+    tasks,
+    delegationGroups,
+    currentUser,
+    locations,
+    parties,
+    appUsers,
+    subAppUsers,
+    activeTab,
+    setActiveTab,
+    isAddingLocation,
+    setIsAddingLocation,
+    newLocation,
+    setNewLocation,
+    formData,
+    setFormData,
+    canWrite,
+    enrichedProject,
+    linkCodesError,
+    confirmModal,
+    setConfirmModal,
+    yearRef,
+    handleAddNewLocation,
+    handleSubmit,
+    handleDelete
+  } = useProjectModalData(props);
+
+  if (!isOpen) return null;
+
+  return (
+    <Portal>
+      <div className={`fixed inset-0 bg-slate-900/60 ${getZIndexClass('MODAL_BASE')} flex items-center justify-center p-0 md:p-4 overscroll-contain`}>
+        <React.Suspense fallback={null}>
+          {confirmModal.isOpen && (
+            <ConfirmModal
+              isOpen={confirmModal.isOpen}
+              title={confirmModal.title}
+              message={confirmModal.message}
+              onConfirm={confirmModal.onConfirm}
+              onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            />
+          )}
+        </React.Suspense>
+        <Draggable
+          disabled={typeof window !== 'undefined' && window.innerWidth < 768}
+          handle=".modal-handle"
+          bounds="parent"
+          nodeRef={nodeRef}
+          cancel="button"
+        >
+          <div
+            ref={nodeRef}
+            className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-[92vh] md:h-[88vh] max-h-[96vh] md:max-h-[90vh] max-w-3xl overflow-hidden relative flex flex-col pointer-events-auto overscroll-contain"
+          >
+            <ProjectModalHeader
+              project={project}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              onClose={onClose}
+            />
+
+            {activeTab === 'details' && (
+              <ProjectDetailsForm
+                formData={formData}
+                setFormData={setFormData}
+                linkCodesError={linkCodesError}
+                canWrite={canWrite}
+                currentUser={currentUser}
+                locations={locations}
+                parties={parties}
+                isAddingLocation={isAddingLocation}
+                setIsAddingLocation={setIsAddingLocation}
+                newLocation={newLocation}
+                setNewLocation={setNewLocation}
+                handleAddNewLocation={handleAddNewLocation}
+                enrichedProject={enrichedProject}
+                project={project}
+                handleSubmit={handleSubmit}
+                handleDelete={handleDelete}
+                onClose={onClose}
+                yearRef={yearRef}
+              />
+            )}
+
+            {activeTab === 'chat' && project && (
+              <ProjectChat
+                project={project}
+                projects={projects}
+                tasks={tasks}
+                currentUser={currentUser}
+                appUsers={appUsers}
+                subAppUsers={subAppUsers}
+                delegationGroups={delegationGroups}
+                onOpenTask={onOpenTask}
+              />
+            )}
+
+            {activeTab === 'delegation' && project && (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <ProjectDelegationTab
+                  project={project}
+                  projects={projects}
+                  tasks={tasks}
+                  currentUser={currentUser}
+                  appUsers={appUsers}
+                  delegationGroups={delegationGroups}
+                  setConfirmModal={setConfirmModal}
+                />
+              </div>
+            )}
+          </div>
+        </Draggable>
+      </div>
+    </Portal>
+  );
+}
+
+export type { ProjectModalProps } from './ProjectModalParts/projectModalTypes';
 
 
 === FILE: src/components/ProjectModalParts/FastTextarea.tsx ===
@@ -83785,10 +83553,19 @@ export async function executeTaskSave({
           const dt = { id: d.id, ...d.data() } as Task;
           if (!dt.isDeleted) loaded.push(dt);
         });
-        if (loaded.length > 0) {
+        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+        const loadedSame = loaded.filter(x =>
+          String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim()
+        );
+        if (loadedSame.length > 0) {
           const latestTasks = useAppStore.getState().tasks || tasks;
-          useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
-          realTask = loaded.find(t =>
+          const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+          useAppStore.getState().setTasks([
+            ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+            ...loadedSame.filter(x => !existingIds.has(x.id)),
+          ]);
+          realTask = loadedSame.find(t =>
             (task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
             (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase())
           );
@@ -87282,7 +87059,7 @@ export function useTasksHydration({
       const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
 
       if (isTrueDelete) {
-        markTasksDeleted([id, data.taskCodePhu, data.name]);
+        markTasksDeleted([id]);
         pendingTasksMap.current!.delete(id);
         pendingTasksChanged.current.delete(id);
         pendingTasksRemoved.current.add(id);
@@ -87328,23 +87105,15 @@ export function useTasksHydration({
             if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
           });
 
-          // Gom task theo dự án 1 lần: O(T)
-          const byId = new Map<string, Task[]>();
-          const byCode = new Map<string, Task[]>();
-          finalTasks.forEach((t) => {
-            if (t.projectId) {
-              const k = String(t.projectId);
-              const arr = byId.get(k);
-              if (arr) arr.push(t);
-              else byId.set(k, [t]);
-            }
-            if (t.projectCode) {
-              const k = String(t.projectCode).trim().toLowerCase();
-              const arr = byCode.get(k);
-              if (arr) arr.push(t);
-              else byCode.set(k, [t]);
-            }
-          });
+          // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
+          const belongsToProject = (t: Task, p: any): boolean => {
+            if (t.projectId) return String(t.projectId) === String(p.id);
+            return (
+              String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
+              String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+              String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+            );
+          };
 
           const currentProjects = useAppStore.getState().projects || [];
           let projectsNeedUpdate = false;
@@ -87352,10 +87121,7 @@ export function useTasksHydration({
             const codeKey = String(p.code || "").trim().toLowerCase();
             if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
 
-            const merged = new Map<string, Task>();
-            (byId.get(String(p.id)) || []).forEach((t) => merged.set(t.id, t));
-            if (codeKey) (byCode.get(codeKey) || []).forEach((t) => merged.set(t.id, t));
-            const pTasks = Array.from(merged.values());
+            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p));
             if (pTasks.length === 0) return p;
 
             // Có thể mới tải một phần task: không bao giờ ghi số liệu nhỏ hơn lên server
@@ -87636,9 +87402,18 @@ export function useTasksHydration({
 
             if (!tasksPool.current.has(projKey)) {
               const currentTasks = useAppStore.getState().tasks || [];
+              // So khớp theo đúng dự án (projectId, hoặc đủ store + year + code), không chỉ theo mã
+              const belongsHere = (t: Task): boolean => {
+                if (t.projectId) return String(t.projectId) === String(p.id);
+                return (
+                  String(t.projectCode || "") === String(p.code) &&
+                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+                );
+              };
               const hasLocalProjTasks =
-                currentTasks.some((t) => String(t.projectCode || "") === String(p.code)) ||
-                knownHydratedProjectCodes.current.has(p.code);
+                currentTasks.some(belongsHere) ||
+                knownHydratedProjectCodes.current.has(String(p.id));
               const isClosedOrPastYear = Number(year) < 2026;
 
               const deltaManaged =
@@ -87666,10 +87441,24 @@ export function useTasksHydration({
                 const unsub = onSnapshot(
                   qTasks,
                   (snapshot) => {
-                    knownHydratedProjectCodes.current.add(p.code);
+                    knownHydratedProjectCodes.current.add(String(p.id));
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
-                    batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+
+                    // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
+                    // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
+                    const compatibleChanges = snapshot.docChanges().filter((ch) => {
+                      if (ch.type === "removed") return true;
+                      const dt: any = ch.doc.data();
+                      if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                      if (dt.projectStore && p.store &&
+                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                      const dy = dt.projectYear;
+                      if (dy !== undefined && dy !== null && dy !== "" && p.year &&
+                          String(dy).trim() !== String(p.year).trim()) return false;
+                      return true;
+                    });
+                    batchTasksUpdate(compatibleChanges, snapshot.metadata.fromCache);
                     setCloudStatus("online");
 
                     if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
@@ -93155,6 +92944,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   const invalidations: TakaDeltaItem[] = [];
 
+  // Các dự án có task thay đổi trong lô delta này (để chỉ tính lại đúng các dự án đó)
+  const touchedProjectIds = new Set<string>();
+  const touchedProjectCodes = new Set<string>();
+  const noteTouchedProject = (t: any) => {
+    if (!t) return;
+    if (t.projectId) touchedProjectIds.add(String(t.projectId));
+    if (t.projectCode) touchedProjectCodes.add(String(t.projectCode).trim().toLowerCase());
+  };
+
   const applyItem = (
     docId: string,
     collectionNameRaw: string,
@@ -93216,8 +93014,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
+        noteTouchedProject(idx !== -1 ? updatedTasks[idx] : null);
+        noteTouchedProject(data);
         if (isDelete || data?.isDeleted) {
-          markTasksDeleted([docId, data?.taskCodePhu, data?.name]);
+          markTasksDeleted([docId]);
           if (idx !== -1) {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
@@ -93330,7 +93130,19 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (tasksChanged && !projectsChanged) {
     const delegationGroups = store.delegationGroups || [];
     const isTasksRequested = store.isTasksRequested;
+    const hasTouchedInfo = touchedProjectIds.size + touchedProjectCodes.size > 0;
     updatedProjects = updatedProjects.map(p => {
+      if (hasTouchedInfo) {
+        // Dự án khớp theo id, hoặc theo mã chính / mã liên kết (linkCodes)
+        const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
+          .toLowerCase()
+          .split(/[,;/]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const isTouched =
+          touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
+        if (!isTouched) return p;
+      }
       const pTasks = getTasksForProject(p, updatedTasks);
       if (isTasksRequested || pTasks.length > 0) {
         const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
@@ -94420,13 +94232,20 @@ export function startDeltaRealtimeListener(): () => void {
 
   if (signedIn) attach();
 
+  let hiddenAt = 0;
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
       if (detachTimer) clearTimeout(detachTimer);
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      // Force socket reconnect on iOS / Safari tab restore to recover from suspended WebChannel connections
+      const hiddenFor = hiddenAt ? Date.now() - hiddenAt : Infinity;
+      hiddenAt = 0;
+      // Ẩn ngắn (dưới 15 giây, ví dụ chuyển tab): kết nối vẫn sống và listener vẫn nhận delta realtime,
+      // không cần tạo lại listener hay kéo delta (tránh đọc lại cửa sổ 3 phút).
+      if (unsub && hiddenFor < 15000) return;
+      // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari treo
       detach();
       attach();
       pullAndApplyDeltas().catch(() => {});
@@ -94448,7 +94267,8 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const handleFocus = () => {
-    // When switching windows on desktop/laptop, trigger delta catch-up immediately
+    // Listener còn sống thì đã nhận delta realtime (Firestore SDK tự nối lại và bù delta bị lỡ)
+    if (unsub) return;
     pullAndApplyDeltas().catch(() => {});
   };
 
@@ -100226,7 +100046,9 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
   try {
     let collection = localDb.projects.toCollection();
     if (year && year !== 'all' && year !== 'ALL') {
-      collection = localDb.projects.where('year').equals(String(year));
+      const yearKeys: Array<string | number> = [String(year)];
+      if (Number.isFinite(Number(year))) yearKeys.push(Number(year));
+      collection = localDb.projects.where('year').anyOf(yearKeys);
     }
     const results = await collection.toArray();
     const activeProjects = results.filter((p) => !p.isDeleted);
@@ -100283,8 +100105,8 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
-      localDb.tasks.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.tasks.where('projectYear').equals(strYear).toArray().catch(() => []),
+      localDb.tasks.where('year').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
+      localDb.tasks.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Task>();
     for (const t of byYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
@@ -100307,8 +100129,8 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
-      localDb.costs.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.costs.where('projectYear').equals(strYear).toArray().catch(() => []),
+      localDb.costs.where('year').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
+      localDb.costs.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Cost>();
     for (const c of byYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);
@@ -105128,18 +104950,19 @@ export function markTasksDeleted(keys: (string | undefined | null)[]): void {
   });
 }
 
-export function isTaskDeletedInTracker(taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null): boolean {
+// Chỉ kiểm tra theo ID task/xác thực chính xác.
+// Tuyệt đối KHÔNG kiểm tra theo taskCodePhu hoặc name vì mã phụ và tên task trùng lặp giữa nhiều dự án khác nhau.
+export function isTaskDeletedInTracker(
+  taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null,
+  _code?: string,
+  _name?: string
+): boolean {
   if (!taskOrKey) return false;
   if (typeof taskOrKey === 'string') {
     return deletedTaskKeys.has(taskOrKey.trim().toLowerCase());
   }
   const id = taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '';
-  const code = taskOrKey.taskCodePhu ? String(taskOrKey.taskCodePhu).trim().toLowerCase() : '';
-  const name = taskOrKey.name ? String(taskOrKey.name).trim().toLowerCase() : '';
-
   if (id && deletedTaskKeys.has(id)) return true;
-  if (code && deletedTaskKeys.has(code)) return true;
-  if (name && deletedTaskKeys.has(name)) return true;
 
   return false;
 }
@@ -105147,6 +104970,7 @@ export function isTaskDeletedInTracker(taskOrKey: string | { id?: string; taskCo
 export function getDeletedTaskKeysSet(): Set<string> {
   return deletedTaskKeys;
 }
+
 
 
 === FILE: src/lib/taskImportService.test.ts ===
@@ -105741,7 +105565,7 @@ const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 /**
  * Validates whether a task belongs to a specific project by verifying store and year.
  */
-export function isTaskBelongsToProject(t: Partial<Task>, p: Project): boolean {
+export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
   if (!t || !p) return false;
   if (t.isDeleted) return false;
 
@@ -105949,16 +105773,14 @@ export async function deleteTaskStateUnified(
 
   const affectedProjects = findAffectedProjects(tasksToDelete, currentProjects);
 
-  const deletedCodesAndIds = new Set<string>();
+  const deletedTaskIds = new Set<string>();
   tasksToDelete.forEach(t => {
-    if (t.id) deletedCodesAndIds.add(String(t.id).trim().toLowerCase());
-    if (t.taskCodePhu) deletedCodesAndIds.add(String(t.taskCodePhu).trim().toLowerCase());
-    if (t.name) deletedCodesAndIds.add(String(t.name).trim().toLowerCase());
+    if (t.id) deletedTaskIds.add(String(t.id).trim().toLowerCase());
   });
-  rawIds.forEach(id => deletedCodesAndIds.add(String(id).trim().toLowerCase()));
+  rawIds.forEach(id => deletedTaskIds.add(String(id).trim().toLowerCase()));
 
-  // Immediately track deleted keys globally to prevent stale restoration / virtual task synthesis
-  markTasksDeleted(Array.from(deletedCodesAndIds));
+  // Immediately track deleted task IDs globally to prevent stale restoration / virtual task synthesis
+  markTasksDeleted(Array.from(deletedTaskIds));
 
   const now = new Date().toISOString();
   const tasksAfterDeletion = currentTasks.filter(t => !idSet.has(String(t.id)));
@@ -105968,7 +105790,7 @@ export async function deleteTaskStateUnified(
     let updated = t;
 
     const rawParent = t.parentTaskId || (t as any).parentId;
-    if (rawParent && deletedCodesAndIds.has(String(rawParent).trim().toLowerCase())) {
+    if (rawParent && deletedTaskIds.has(String(rawParent).trim().toLowerCase())) {
       updated = { ...updated, parentTaskId: undefined, updatedAt: now };
       delete (updated as any).parentId;
       unlinkedChildTasks.push(updated);
@@ -105978,7 +105800,12 @@ export async function deleteTaskStateUnified(
       const predParts = updated.predecessor.split(',').map(p => p.trim()).filter(Boolean);
       const filteredParts = predParts.filter(part => {
         const codeOnly = part.replace(/(?:SS|FF|SF|FS)?\s*(?:[+-]\d+[dwmy]?)?$/i, '').trim().toLowerCase();
-        return !deletedCodesAndIds.has(codeOnly);
+        const isDeletedPred = tasksToDelete.some(dt => {
+          if (!isTaskBelongsToProject(t, { id: dt.projectId, code: dt.projectCode, store: dt.projectStore, year: dt.projectYear })) return false;
+          return (dt.taskCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === codeOnly) ||
+                 (dt.id && String(dt.id).trim().toLowerCase() === codeOnly);
+        });
+        return !isDeletedPred;
       });
       const newPred = filteredParts.join(', ');
       if (newPred !== updated.predecessor) {
@@ -106002,22 +105829,23 @@ export async function deleteTaskStateUnified(
         const tsCodePhu = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id)))) {
+        if (deletedTaskIds.has(String(tsId).toLowerCase()) || (ts.id && deletedTaskIds.has(String(ts.id).toLowerCase()))) {
           summaryModified = true;
           return false;
         }
-        if (tsCodePhu && deletedCodesAndIds.has(tsCodePhu)) {
-          summaryModified = true;
-          return false;
-        }
+
+        // Bắt buộc chỉ lọc summary nếu task bị xóa thuộc đúng dự án p
         for (const dt of tasksToDelete) {
-          const matchesProject = isTaskBelongsToProject(dt, p) || (!dt.projectId && !dt.projectCode);
-          if (matchesProject) {
-            if (dt.name && String(dt.name).trim().toLowerCase() === tsName) {
+          if (isTaskBelongsToProject(dt, p)) {
+            if (dt.id && (String(dt.id).toLowerCase() === String(tsId).toLowerCase() || (ts.id && String(dt.id).toLowerCase() === String(ts.id).toLowerCase()))) {
               summaryModified = true;
               return false;
             }
             if (dt.taskCodePhu && tsCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === tsCodePhu) {
+              summaryModified = true;
+              return false;
+            }
+            if (dt.name && tsName && String(dt.name).trim().toLowerCase() === tsName) {
               summaryModified = true;
               return false;
             }
@@ -106029,14 +105857,15 @@ export async function deleteTaskStateUnified(
 
     const isProjectAffected = summaryModified || affectedProjects.some(ap => ap.id === p.id) || tasksToDelete.some(dt => isTaskBelongsToProject(dt, p));
 
-    if (isProjectAffected || summaryModified) {
+    if (isProjectAffected) {
       const remainingProjTasks = cleanedTasks.filter(t => isTaskBelongsToProject(t, p));
-      const computed = calculateProjectComputedDates(p, remainingProjTasks);
+      const computed = calculateProjectComputedDates({ ...p, taskSummaries: newSummaries }, remainingProjTasks);
+      const effectiveTaskCount = remainingProjTasks.length > 0 ? remainingProjTasks.length : newSummaries.length;
       return { 
         ...p, 
         ...computed,
-        taskCount: remainingProjTasks.length,
-        taskSummaries: computed.taskSummaries || [],
+        taskCount: effectiveTaskCount,
+        taskSummaries: newSummaries,
         updatedAt: now,
       };
     }
@@ -111246,51 +111075,4 @@ export interface TakaDelta {
 }
 
 
-
-=== FILE: vite.config.ts ===
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, '.'),
-    },
-    dedupe: ['react', 'react-dom'],
-  },
-  server: {
-    port: 3000,
-    host: true,
-    hmr: false,
-  },
-  build: {
-    outDir: 'dist',
-    rollupOptions: {
-      output: {
-        manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            if (id.includes('xlsx')) return 'vendor-xlsx';
-            if (id.includes('html-to-image')) return 'vendor-html2image';
-            if (id.includes('jspdf')) return 'vendor-jspdf';
-            if (id.includes('konva') || id.includes('react-konva') || id.includes('use-image')) return 'vendor-konva';
-            if (id.includes('react-big-calendar')) return 'vendor-calendar';
-            if (id.includes('firebase')) return 'vendor-firebase';
-            if (id.includes('recharts')) return 'vendor-recharts';
-            if (id.includes('lucide-react')) return 'vendor-lucide';
-            if (id.includes('@aws-sdk')) return 'vendor-aws';
-            if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
-            if (id.includes('html5-qrcode') || id.includes('qrcode.react')) return 'vendor-qrcode';
-            if (id.includes('motion')) return 'vendor-motion';
-            if (id.includes('date-fns')) return 'vendor-date-fns';
-            if (id.includes('react-zoom-pan-pinch') || id.includes('react-markdown') || id.includes('react-draggable') || id.includes('react-dropzone')) return 'vendor-ui-helpers';
-            if (id.includes('react-dom') || id.includes('scheduler') || id.includes('/react/')) return 'vendor-react-core';
-          }
-        }
-      }
-    }
-  }
-});
 
