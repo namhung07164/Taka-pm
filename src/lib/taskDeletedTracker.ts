@@ -5,31 +5,47 @@
 
 const deletedTaskKeys = new Set<string>();
 
-export function markTasksDeleted(keys: (string | undefined | null)[]): void {
+export function markTasksDeleted(keys: (string | undefined | null)[], projectId?: string): void {
   if (!keys || !Array.isArray(keys)) return;
+  const pKey = projectId ? String(projectId).trim().toLowerCase() : '';
   keys.forEach(k => {
     if (k && typeof k === 'string') {
       const clean = k.trim().toLowerCase();
-      if (clean) deletedTaskKeys.add(clean);
+      if (clean) {
+        deletedTaskKeys.add(clean);
+        if (pKey) {
+          deletedTaskKeys.add(`${pKey}:::${clean}`);
+        }
+      }
     }
   });
 }
 
 // Chỉ kiểm tra theo ID task/xác thực chính xác.
-// Tuyệt đối KHÔNG kiểm tra theo taskCodePhu hoặc name vì mã phụ và tên task trùng lặp giữa nhiều dự án khác nhau.
+// Hỗ trợ kiểm tra theo project context để tránh xóa nhầm task ở dự án khác khi dùng chung ID ảo hoặc ID nhân bản.
 export function isTaskDeletedInTracker(
-  taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null,
-  _code?: string,
-  _name?: string
+  taskOrKey: string | { id?: string; projectId?: string; taskCodePhu?: string; name?: string } | undefined | null,
+  contextProjectId?: string,
+  _unused?: string
 ): boolean {
   if (!taskOrKey) return false;
-  if (typeof taskOrKey === 'string') {
-    return deletedTaskKeys.has(taskOrKey.trim().toLowerCase());
-  }
-  const id = taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '';
-  if (id && deletedTaskKeys.has(id)) return true;
+  const taskId = typeof taskOrKey === 'string'
+    ? taskOrKey.trim().toLowerCase()
+    : (taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '');
+  if (!taskId) return false;
 
-  return false;
+  const projId = typeof taskOrKey === 'object' && (taskOrKey as any).projectId
+    ? String((taskOrKey as any).projectId).trim().toLowerCase()
+    : (contextProjectId ? String(contextProjectId).trim().toLowerCase() : '');
+
+  if (projId) {
+    if (deletedTaskKeys.has(`${projId}:::${taskId}`)) return true;
+    // Nếu có project ID mà không có trong khóa project-scoped thì KHÔNG coi là xóa
+    // (ngăn chặn task trùng ID từ dự án khác làm mất task dự án này)
+    return false;
+  }
+
+  return deletedTaskKeys.has(taskId);
 }
 
 export function getDeletedTaskKeysSet(): Set<string> {

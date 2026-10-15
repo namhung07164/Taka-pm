@@ -126,7 +126,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
                            (tsName && existingSummarySet.has(tsName));
           if (!hasMatch) {
             rawGroupTasks.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
               name: ts.name || `Task ${idx + 1}`,
               start: ts.start || p.computedTakStart || p.start || '',
               finish: ts.finish || p.computedTakCompl || p.handover || '',
@@ -250,7 +250,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
       // Fallback placeholder tasks from summary ONLY when no in-memory tasks exist yet
       rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-        id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+        id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
         name: ts.name || `Task ${idx + 1}`,
         start: ts.start || p.computedTakStart || p.start || '',
         finish: ts.finish || p.computedTakCompl || p.handover || '',

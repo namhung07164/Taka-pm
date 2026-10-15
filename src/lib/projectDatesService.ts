@@ -111,7 +111,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
         const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-        if (isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name)) {
+        if (isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined)) {
           return;
         }
 
@@ -120,7 +120,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
                          (tsName && existingSummaryMap.has(tsName));
         if (!hasMatch) {
           mergedList.push({
-            id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+            id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
             name: ts.name || `Task ${idx + 1}`,
             start: ts.start || project.computedTakStart || project.start || '',
             finish: ts.finish || project.computedTakCompl || project.handover || '',
@@ -146,9 +146,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
     return project.taskSummaries
-      .filter(ts => !isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name))
+      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined))
       .map((ts, idx) => ({
-      id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+      id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,
       start: ts.start || project.computedTakStart || project.start || '',
       finish: ts.finish || project.computedTakCompl || project.handover || '',

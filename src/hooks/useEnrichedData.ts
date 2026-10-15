@@ -239,11 +239,11 @@ export function useEnrichedData() {
           });
 
           p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+            const tsId = ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
             const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
             const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-            if (isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name)) {
+            if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
               return;
             }
 

@@ -219,7 +219,7 @@ export function useGanttProjectsFilter({
                            (tsName && existingSet.has(tsName));
           if (!hasMatch) {
             resultTasks.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
               name: ts.name || `Task ${idx + 1}`,
               start: ts.start || p.computedTakStart || p.start || '',
               finish: ts.finish || p.computedTakCompl || p.handover || '',

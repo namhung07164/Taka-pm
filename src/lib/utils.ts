@@ -1411,7 +1411,7 @@ export function calculateActiveNotifications(
         const pCode = p.code || "";
         const pStore = String(p.store || "HCM").toUpperCase().trim();
         const pYear = String(p.year || "").trim();
-        const tsId = ts.id || `ts_${pCode}_${pStore}_${pYear}_${idx}`;
+        const tsId = ts.id || `ts_${p.id || pCode}_${pStore}_${pYear}_${idx}`;
 
         taskMap.set(tsId, {
           id: tsId,

@@ -52,7 +52,17 @@ export function useDetailTaskMutations({
         try {
           const nowIso = new Date().toISOString();
           const batch = writeBatch(db);
-          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id));
+          const storeTasks = useAppStore.getState().tasks || tasks || [];
+          const existingDbTask = storeTasks.find(tsk => tsk.id === t.id);
+          const isSameProjectDbTask = !existingDbTask || (
+            (!existingDbTask.projectId || !t.projectId || String(existingDbTask.projectId) === String(t.projectId)) &&
+            (!existingDbTask.projectStore || !t.projectStore || String(existingDbTask.projectStore).trim().toLowerCase() === String(t.projectStore).trim().toLowerCase()) &&
+            (existingDbTask.projectYear === undefined || t.projectYear === undefined || String(existingDbTask.projectYear).trim() === String(t.projectYear).trim())
+          );
+
+          if (isSameProjectDbTask && !t.id.startsWith('ts_')) {
+            batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id));
+          }
           
           const urlsToDelete = extractStorageUrls(t);
           if (urlsToDelete.length > 0) { 
@@ -68,8 +78,10 @@ export function useDetailTaskMutations({
           });
 
           try {
-            const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
-            markExplicitDelta([{ docId: t.id, collectionName: 'taka_tasks' }]);
+            if (isSameProjectDbTask && !t.id.startsWith('ts_')) {
+              const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+              markExplicitDelta([{ docId: t.id, collectionName: 'taka_tasks' }]);
+            }
             await batch.commit();
           } catch (error: any) {
             console.error("Batch commit failed", error);
