@@ -160,9 +160,14 @@ export function useDetailTaskMutations({
 
       let targetTaskId = t.id;
       if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
+        const sameProjectIdentity = (x: any) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
         let realTask = tasks.find(tsk => 
           !tsk.id.startsWith('ts_') &&
           tsk.projectCode === t.projectCode &&
+          sameProjectIdentity(tsk) &&
           ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
            (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
         );
@@ -179,10 +184,16 @@ export function useDetailTaskMutations({
               const dt = { id: d.id, ...d.data() } as Task;
               if (!dt.isDeleted) loaded.push(dt);
             });
-            if (loaded.length > 0) {
+            // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+            const loadedSame = loaded.filter(sameProjectIdentity);
+            if (loadedSame.length > 0) {
               const latestTasks = useAppStore.getState().tasks || tasks;
-              useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
-              realTask = loaded.find(tsk =>
+              const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+              useAppStore.getState().setTasks([
+                ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+                ...loadedSame.filter(x => !existingIds.has(x.id)),
+              ]);
+              realTask = loadedSame.find(tsk =>
                 (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
                 (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
               );

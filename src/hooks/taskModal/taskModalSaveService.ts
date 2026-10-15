@@ -124,10 +124,19 @@ export async function executeTaskSave({
           const dt = { id: d.id, ...d.data() } as Task;
           if (!dt.isDeleted) loaded.push(dt);
         });
-        if (loaded.length > 0) {
+        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+        const loadedSame = loaded.filter(x =>
+          String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim()
+        );
+        if (loadedSame.length > 0) {
           const latestTasks = useAppStore.getState().tasks || tasks;
-          useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
-          realTask = loaded.find(t =>
+          const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+          useAppStore.getState().setTasks([
+            ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+            ...loadedSame.filter(x => !existingIds.has(x.id)),
+          ]);
+          realTask = loadedSame.find(t =>
             (task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
             (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase())
           );

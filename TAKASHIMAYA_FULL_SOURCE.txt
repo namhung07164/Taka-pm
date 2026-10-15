@@ -25843,9 +25843,14 @@ export function useDetailTaskMutations({
 
       let targetTaskId = t.id;
       if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
+        const sameProjectIdentity = (x: any) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
         let realTask = tasks.find(tsk => 
           !tsk.id.startsWith('ts_') &&
           tsk.projectCode === t.projectCode &&
+          sameProjectIdentity(tsk) &&
           ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
            (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
         );
@@ -25862,10 +25867,16 @@ export function useDetailTaskMutations({
               const dt = { id: d.id, ...d.data() } as Task;
               if (!dt.isDeleted) loaded.push(dt);
             });
-            if (loaded.length > 0) {
+            // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+            const loadedSame = loaded.filter(sameProjectIdentity);
+            if (loadedSame.length > 0) {
               const latestTasks = useAppStore.getState().tasks || tasks;
-              useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
-              realTask = loaded.find(tsk =>
+              const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+              useAppStore.getState().setTasks([
+                ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+                ...loadedSame.filter(x => !existingIds.has(x.id)),
+              ]);
+              realTask = loadedSame.find(tsk =>
                 (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
                 (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
               );
@@ -83785,10 +83796,19 @@ export async function executeTaskSave({
           const dt = { id: d.id, ...d.data() } as Task;
           if (!dt.isDeleted) loaded.push(dt);
         });
-        if (loaded.length > 0) {
+        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+        const loadedSame = loaded.filter(x =>
+          String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim()
+        );
+        if (loadedSame.length > 0) {
           const latestTasks = useAppStore.getState().tasks || tasks;
-          useAppStore.getState().setTasks([...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')), ...loaded]);
-          realTask = loaded.find(t =>
+          const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+          useAppStore.getState().setTasks([
+            ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+            ...loadedSame.filter(x => !existingIds.has(x.id)),
+          ]);
+          realTask = loadedSame.find(t =>
             (task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
             (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase())
           );
@@ -87328,23 +87348,15 @@ export function useTasksHydration({
             if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
           });
 
-          // Gom task theo dự án 1 lần: O(T)
-          const byId = new Map<string, Task[]>();
-          const byCode = new Map<string, Task[]>();
-          finalTasks.forEach((t) => {
-            if (t.projectId) {
-              const k = String(t.projectId);
-              const arr = byId.get(k);
-              if (arr) arr.push(t);
-              else byId.set(k, [t]);
-            }
-            if (t.projectCode) {
-              const k = String(t.projectCode).trim().toLowerCase();
-              const arr = byCode.get(k);
-              if (arr) arr.push(t);
-              else byCode.set(k, [t]);
-            }
-          });
+          // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
+          const belongsToProject = (t: Task, p: any): boolean => {
+            if (t.projectId) return String(t.projectId) === String(p.id);
+            return (
+              String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
+              String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+              String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+            );
+          };
 
           const currentProjects = useAppStore.getState().projects || [];
           let projectsNeedUpdate = false;
@@ -87352,10 +87364,7 @@ export function useTasksHydration({
             const codeKey = String(p.code || "").trim().toLowerCase();
             if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
 
-            const merged = new Map<string, Task>();
-            (byId.get(String(p.id)) || []).forEach((t) => merged.set(t.id, t));
-            if (codeKey) (byCode.get(codeKey) || []).forEach((t) => merged.set(t.id, t));
-            const pTasks = Array.from(merged.values());
+            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p));
             if (pTasks.length === 0) return p;
 
             // Có thể mới tải một phần task: không bao giờ ghi số liệu nhỏ hơn lên server
@@ -87636,9 +87645,18 @@ export function useTasksHydration({
 
             if (!tasksPool.current.has(projKey)) {
               const currentTasks = useAppStore.getState().tasks || [];
+              // So khớp theo đúng dự án (projectId, hoặc đủ store + year + code), không chỉ theo mã
+              const belongsHere = (t: Task): boolean => {
+                if (t.projectId) return String(t.projectId) === String(p.id);
+                return (
+                  String(t.projectCode || "") === String(p.code) &&
+                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+                );
+              };
               const hasLocalProjTasks =
-                currentTasks.some((t) => String(t.projectCode || "") === String(p.code)) ||
-                knownHydratedProjectCodes.current.has(p.code);
+                currentTasks.some(belongsHere) ||
+                knownHydratedProjectCodes.current.has(String(p.id));
               const isClosedOrPastYear = Number(year) < 2026;
 
               const deltaManaged =
@@ -87666,10 +87684,24 @@ export function useTasksHydration({
                 const unsub = onSnapshot(
                   qTasks,
                   (snapshot) => {
-                    knownHydratedProjectCodes.current.add(p.code);
+                    knownHydratedProjectCodes.current.add(String(p.id));
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
-                    batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+
+                    // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
+                    // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
+                    const compatibleChanges = snapshot.docChanges().filter((ch) => {
+                      if (ch.type === "removed") return true;
+                      const dt: any = ch.doc.data();
+                      if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                      if (dt.projectStore && p.store &&
+                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                      const dy = dt.projectYear;
+                      if (dy !== undefined && dy !== null && dy !== "" && p.year &&
+                          String(dy).trim() !== String(p.year).trim()) return false;
+                      return true;
+                    });
+                    batchTasksUpdate(compatibleChanges, snapshot.metadata.fromCache);
                     setCloudStatus("online");
 
                     if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
@@ -100257,7 +100289,9 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
   try {
     let collection = localDb.projects.toCollection();
     if (year && year !== 'all' && year !== 'ALL') {
-      collection = localDb.projects.where('year').equals(String(year));
+      const yearKeys: Array<string | number> = [String(year)];
+      if (Number.isFinite(Number(year))) yearKeys.push(Number(year));
+      collection = localDb.projects.where('year').anyOf(yearKeys);
     }
     const results = await collection.toArray();
     const activeProjects = results.filter((p) => !p.isDeleted);
@@ -100314,8 +100348,8 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
-      localDb.tasks.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.tasks.where('projectYear').equals(strYear).toArray().catch(() => []),
+      localDb.tasks.where('year').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
+      localDb.tasks.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Task>();
     for (const t of byYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
@@ -100338,8 +100372,8 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
-      localDb.costs.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.costs.where('projectYear').equals(strYear).toArray().catch(() => []),
+      localDb.costs.where('year').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
+      localDb.costs.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Cost>();
     for (const c of byYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);

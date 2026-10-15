@@ -127,23 +127,15 @@ export function useTasksHydration({
             if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
           });
 
-          // Gom task theo dự án 1 lần: O(T)
-          const byId = new Map<string, Task[]>();
-          const byCode = new Map<string, Task[]>();
-          finalTasks.forEach((t) => {
-            if (t.projectId) {
-              const k = String(t.projectId);
-              const arr = byId.get(k);
-              if (arr) arr.push(t);
-              else byId.set(k, [t]);
-            }
-            if (t.projectCode) {
-              const k = String(t.projectCode).trim().toLowerCase();
-              const arr = byCode.get(k);
-              if (arr) arr.push(t);
-              else byCode.set(k, [t]);
-            }
-          });
+          // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
+          const belongsToProject = (t: Task, p: any): boolean => {
+            if (t.projectId) return String(t.projectId) === String(p.id);
+            return (
+              String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
+              String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+              String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+            );
+          };
 
           const currentProjects = useAppStore.getState().projects || [];
           let projectsNeedUpdate = false;
@@ -151,10 +143,7 @@ export function useTasksHydration({
             const codeKey = String(p.code || "").trim().toLowerCase();
             if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
 
-            const merged = new Map<string, Task>();
-            (byId.get(String(p.id)) || []).forEach((t) => merged.set(t.id, t));
-            if (codeKey) (byCode.get(codeKey) || []).forEach((t) => merged.set(t.id, t));
-            const pTasks = Array.from(merged.values());
+            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p));
             if (pTasks.length === 0) return p;
 
             // Có thể mới tải một phần task: không bao giờ ghi số liệu nhỏ hơn lên server
@@ -435,9 +424,18 @@ export function useTasksHydration({
 
             if (!tasksPool.current.has(projKey)) {
               const currentTasks = useAppStore.getState().tasks || [];
+              // So khớp theo đúng dự án (projectId, hoặc đủ store + year + code), không chỉ theo mã
+              const belongsHere = (t: Task): boolean => {
+                if (t.projectId) return String(t.projectId) === String(p.id);
+                return (
+                  String(t.projectCode || "") === String(p.code) &&
+                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+                );
+              };
               const hasLocalProjTasks =
-                currentTasks.some((t) => String(t.projectCode || "") === String(p.code)) ||
-                knownHydratedProjectCodes.current.has(p.code);
+                currentTasks.some(belongsHere) ||
+                knownHydratedProjectCodes.current.has(String(p.id));
               const isClosedOrPastYear = Number(year) < 2026;
 
               const deltaManaged =
@@ -465,10 +463,24 @@ export function useTasksHydration({
                 const unsub = onSnapshot(
                   qTasks,
                   (snapshot) => {
-                    knownHydratedProjectCodes.current.add(p.code);
+                    knownHydratedProjectCodes.current.add(String(p.id));
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
-                    batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+
+                    // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
+                    // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
+                    const compatibleChanges = snapshot.docChanges().filter((ch) => {
+                      if (ch.type === "removed") return true;
+                      const dt: any = ch.doc.data();
+                      if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                      if (dt.projectStore && p.store &&
+                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                      const dy = dt.projectYear;
+                      if (dy !== undefined && dy !== null && dy !== "" && p.year &&
+                          String(dy).trim() !== String(p.year).trim()) return false;
+                      return true;
+                    });
+                    batchTasksUpdate(compatibleChanges, snapshot.metadata.fromCache);
                     setCloudStatus("online");
 
                     if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {

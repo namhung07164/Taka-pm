@@ -208,7 +208,9 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
   try {
     let collection = localDb.projects.toCollection();
     if (year && year !== 'all' && year !== 'ALL') {
-      collection = localDb.projects.where('year').equals(String(year));
+      const yearKeys: Array<string | number> = [String(year)];
+      if (Number.isFinite(Number(year))) yearKeys.push(Number(year));
+      collection = localDb.projects.where('year').anyOf(yearKeys);
     }
     const results = await collection.toArray();
     const activeProjects = results.filter((p) => !p.isDeleted);
@@ -265,8 +267,8 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
-      localDb.tasks.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.tasks.where('projectYear').equals(strYear).toArray().catch(() => []),
+      localDb.tasks.where('year').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
+      localDb.tasks.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Task>();
     for (const t of byYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
@@ -289,8 +291,8 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
-      localDb.costs.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.costs.where('projectYear').equals(strYear).toArray().catch(() => []),
+      localDb.costs.where('year').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
+      localDb.costs.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Cost>();
     for (const c of byYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);
