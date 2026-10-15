@@ -1109,7 +1109,9 @@ export function enrichProjects(
     const directTasks = tasksByFullKey.get(directKey);
     if (directTasks) {
       for (let i = 0; i < directTasks.length; i++) {
-        matchedTaskMap.set(directTasks[i].id, directTasks[i]);
+        const t = directTasks[i];
+        if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
+        matchedTaskMap.set(t.id, t);
       }
     }
 
@@ -1118,7 +1120,9 @@ export function enrichProjects(
       const subTasks = tasksByFullKey.get(partKey);
       if (subTasks) {
         for (let j = 0; j < subTasks.length; j++) {
-          matchedTaskMap.set(subTasks[j].id, subTasks[j]);
+          const t = subTasks[j];
+          if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
+          matchedTaskMap.set(t.id, t);
         }
       }
     }
@@ -1130,6 +1134,7 @@ export function enrichProjects(
         if (fallbackTasks) {
           for (let j = 0; j < fallbackTasks.length; j++) {
             const t = fallbackTasks[j];
+            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
             const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
             if (pStore && tStore && pStore !== tStore) continue;
             const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';

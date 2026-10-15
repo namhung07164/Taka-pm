@@ -3,6 +3,7 @@ import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { getStatus } from '../../lib/utils';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 export interface ProjectInfo {
   status: string;
@@ -81,7 +82,10 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       const foundByKey = tasksByProjectKey.get(key);
       if (foundByKey && foundByKey.length > 0) {
         foundByKey.forEach(t => {
-          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
+          if (t && (t.id || t.name)) {
+            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
         });
       }
 
@@ -118,6 +122,10 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         });
 
         p.taskSummaries.forEach((ts, idx) => {
+          if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
+            return;
+          }
+
           const tsId = ts.id ? String(ts.id).toLowerCase() : '';
           const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
           const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';

@@ -417,16 +417,22 @@ export async function syncProjectDatesByCode(
   projectCode: string,
   projectStore?: string,
   projectYear?: string | number,
-  overrideTasks?: Task[]
+  overrideTasks?: Task[],
+  targetProjectId?: string
 ): Promise<void> {
-  if (!projectCode) return;
+  if (!projectCode && !targetProjectId) return;
 
   const { projects, tasks, delegationGroups } = useAppStore.getState();
   const project = projects.find(
-    (p) =>
-      (p.code === projectCode || matchProjectCode(p.code, projectCode)) &&
-      (!projectStore || !p.store || String(p.store).trim().toLowerCase() === String(projectStore).trim().toLowerCase()) &&
-      (!projectYear || !p.year || String(p.year).trim() === String(projectYear).trim())
+    (p) => {
+      if (targetProjectId && String(p.id) === String(targetProjectId)) return true;
+      if (targetProjectId && String(p.id) !== String(targetProjectId)) return false;
+      return (
+        (p.code === projectCode || matchProjectCode(p.code, projectCode)) &&
+        (!projectStore || !p.store || String(p.store).trim().toLowerCase() === String(projectStore).trim().toLowerCase()) &&
+        (!projectYear || !p.year || String(p.year).trim() === String(projectYear).trim())
+      );
+    }
   );
 
   if (!project || !project.id) return;

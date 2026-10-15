@@ -390,9 +390,11 @@ export async function executeTaskSave({
 
         if (datesOrStatusChanged) {
           const allTasksCurrent = useAppStore.getState().tasks;
-          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent);
+          const targetProjId = dataToSave.projectId ? String(dataToSave.projectId) : (currentProject?.id ? String(currentProject.id) : undefined);
+          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent, targetProjId);
           if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
-            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent);
+            const oldProjId = task.projectId ? String(task.projectId) : targetProjId;
+            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
           }
         }
       } catch (error: any) {

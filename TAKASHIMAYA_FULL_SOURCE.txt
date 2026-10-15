@@ -103,7 +103,6 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
 - **Write imports (BẮT BUỘC)**: file ghi vào `taka_projects/tasks/costs/delegation_groups` phải import `setDoc/updateDoc/deleteDoc/writeBatch` từ `src/lib/firestoreWrites.ts` (hoặc `src/lib/firebase.ts`), CẤM import trực tiếp từ `firebase/firestore`, nếu không các máy khác sẽ không nhận được thay đổi.
 - **Sync cursor**: delta được sắp/lọc theo `serverTime` (serverTimestamp), không dùng `numericTime` (giờ máy) để truy vấn, để delta tạo lúc offline vẫn tới được các máy khác.
 
-
 === FILE: BUSINESS_LOGIC.md ===
 # TAKASHIMAYA PROJECT MANAGEMENT - TÀI LIỆU BUSINESS LOGIC TOÀN CỤC
 
@@ -164,7 +163,6 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
 ## 4. TỰ ĐỘNG HÓA KIỂM THỬ (VITEST)
 - **`src/lib/financialService.test.ts`**: Chứa 15 Test Cases bảo vệ logic tài chính cốt lõi (Phân kỳ 3 đợt, số dư Cost, Rollup Budget, cảnh báo sức khỏe tài chính). Bắt buộc phải pass `npm test` khi thay đổi thuật toán.
 
-
 === FILE: GEMINI.md ===
 # GEMINI INSTRUCTIONS - TAKASHIMAYA PROJECT MANAGEMENT
 
@@ -180,7 +178,6 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
    - Trả về JSON thuần túy (Raw JSON), KHÔNG bọc trong markdown (\`\`\`json).
    - KHÔNG thêm text giải thích trước hoặc sau JSON.
 3. **Data Types:** Số là number, boolean là true/false (không viết hoa, không bọc nháy kép).
-
 
 === FILE: firestore.indexes.json ===
 {
@@ -304,7 +301,6 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
   "fieldOverrides": []
 }
 
-
 === FILE: firestore.rules ===
 rules_version = '2';
 service cloud.firestore {
@@ -345,7 +341,6 @@ service cloud.firestore {
     }
   }
 }
-
 
 === FILE: index.html ===
 <!doctype html>
@@ -404,10 +399,8 @@ service cloud.firestore {
   </body>
 </html>
 
-
 === FILE: package.json ===
 {"name":"react-example","private":true,"version":"0.0.0","type":"module","scripts":{"dev":"tsx server.ts","prebuild":"rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py; rm -rf tmp workspace","clean:junk":"rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py; rm -rf tmp workspace","build":"vite build \u0026\u0026 esbuild server.ts --bundle --platform\u003dnode --format\u003dcjs --packages\u003dexternal --sourcemap --outfile\u003ddist/server.cjs","start":"node dist/server.cjs","preview":"vite preview","clean":"rm -rf dist","lint":"tsc --noEmit","test":"vitest run"},"dependencies":{"@aws-sdk/client-s3":"^3.1133.0","@aws-sdk/s3-request-presigner":"^3.1133.0","@tailwindcss/vite":"^4.1.14","@tanstack/react-virtual":"^3.14.13","@types/lodash":"^4.17.25","@types/node":"^22.14.0","@types/react-big-calendar":"^1.16.3","@vitejs/plugin-react":"^5.0.4","autoprefixer":"^10.4.21","clsx":"^2.1.1","date-fns":"^4.1.0","dexie":"^4.4.6","dotenv":"^17.4.2","firebase":"^12.11.0","glob":"^13.0.6","html-to-image":"^1.11.13","html5-qrcode":"^2.3.8","jspdf":"^4.2.1","konva":"^10.5.0","lodash":"^4.18.1","lucide-react":"^0.546.0","motion":"^12.23.24","papaparse":"^5.7.0","pdfjs-dist":"^6.3.289","qrcode.react":"^4.2.0","react":"^19.0.0","react-big-calendar":"^1.19.4","react-dom":"^19.0.0","react-draggable":"^4.7.0","react-dropzone":"^20.1.2","react-konva":"^19.3.0","react-markdown":"^10.1.0","react-zoom-pan-pinch":"^4.0.3","recharts":"^3.8.1","tailwind-merge":"^3.5.0","tailwindcss":"^4.1.14","typescript":"~5.8.2","use-image":"^1.1.4","uuid":"^14.0.2","vite":"^6.2.0","xlsx":"^0.18.5","zod":"4.6.5","zustand":"^5.0.14"},"devDependencies":{"@types/express":"^5.0.6","esbuild":"^0.28.2","express":"^5.2.1","jsdom":"^30.0.1","puppeteer":"^25.9.0","tsx":"^4.23.13","vitest":"^4.1.11"}}
-
 === FILE: src/App.tsx ===
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession, safeGetDeviceItemLocal } from "./lib/storage";
 import { useFirebaseData } from "./hooks/useFirebaseData";
@@ -2710,7 +2703,6 @@ export default function App() {
   );
 }
 
-
 === FILE: src/components/AccControlTab.tsx ===
 import React, { Suspense, useMemo, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -2916,7 +2908,6 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
 
 export default AccControlTab;
 
-
 === FILE: src/components/AccControlTabParts/AccControlRbacMatrix.tsx ===
 import React, { FC, Fragment } from 'react';
 import { useLanguage } from "../../lib/LanguageContext";
@@ -3015,7 +3006,6 @@ export const AccControlRbacMatrix: React.FC<AccControlRbacMatrixProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/AccControlTabParts/AccControlUserTable.tsx ===
 import React, { FC, useState } from 'react';
@@ -3438,7 +3428,6 @@ export const AccControlUserTable: React.FC<AccControlUserTableProps> = ({
   );
 };
 
-
 === FILE: src/components/AccControlTabParts/accControlTypes.ts ===
 import { AppUser } from "../../types";
 
@@ -3455,7 +3444,6 @@ export interface AccConfirmModalState {
   message: string;
   onConfirm: () => void;
 }
-
 
 === FILE: src/components/AppModals.tsx ===
 import React, { FC, Suspense, memo } from 'react';
@@ -3578,7 +3566,6 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
     </Suspense>
   );
 });
-
 
 === FILE: src/components/AppTabRouter.tsx ===
 import React, { Dispatch, FC, Profiler, SetStateAction, Suspense, memo } from 'react';
@@ -4072,7 +4059,6 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
   );
 });
 
-
 === FILE: src/components/AppTour.tsx ===
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -4188,7 +4174,6 @@ export function AppTour({ onClose}: AppTourProps) {
     </Portal>
   );
 }
-
 
 === FILE: src/components/AuditDiffViewerModal.tsx ===
 import React, { ReactNode, useEffect, useRef, useState } from 'react';
@@ -4593,7 +4578,6 @@ export function AuditDiffViewerModal({ isOpen, log, onClose }: AuditDiffViewerMo
   );
 }
 
-
 === FILE: src/components/AuditLogParts/AuditLogFilterToolbar.tsx ===
 import React, { FC } from 'react';
 import { Sparkles, Search } from 'lucide-react';
@@ -4700,7 +4684,6 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
   );
 };
 
-
 === FILE: src/components/AuditLogParts/AuditLogRowItem.tsx ===
 import React, { FC, memo } from 'react';
 import { Eye } from 'lucide-react';
@@ -4778,7 +4761,6 @@ export const AuditLogRowItem: React.FC<AuditLogRowItemProps> = React.memo(({ log
     </tr>
   );
 });
-
 
 === FILE: src/components/AuditLogParts/AuditLogTableView.tsx ===
 import React, { FC } from 'react';
@@ -4883,7 +4865,6 @@ export const AuditLogTableView: React.FC<AuditLogTableViewProps> = ({
   );
 };
 
-
 === FILE: src/components/AuditLogParts/auditLogTypes.ts ===
 import { AuditLog } from '../../types';
 
@@ -4923,7 +4904,6 @@ export const getEntityBadgeColor = (entity?: string) => {
       return 'bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300';
   }
 };
-
 
 === FILE: src/components/AuditLogParts/useAuditLogData.ts ===
 import React, { useEffect, useState } from 'react';
@@ -5116,7 +5096,6 @@ export function useAuditLogData() {
   };
 }
 
-
 === FILE: src/components/AuditLogTab.tsx ===
 import React, { Suspense } from 'react';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -5199,7 +5178,6 @@ export function AuditLogTab() {
 }
 
 export default AuditLogTab;
-
 
 === FILE: src/components/BudgetParts/BudgetEditableCell.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -5299,7 +5277,6 @@ export function BudgetEditableCell({
     </div>
   );
 }
-
 
 === FILE: src/components/BudgetParts/BudgetFilterToolbar.tsx ===
 import React, { useRef } from 'react';
@@ -5458,7 +5435,6 @@ export function BudgetFilterToolbar({
     </div>
   );
 }
-
 
 === FILE: src/components/BudgetParts/BudgetLinkChildColumn.tsx ===
 import React, { FC, memo } from 'react';
@@ -5629,7 +5605,6 @@ export const BudgetLinkChildColumn: React.FC<BudgetLinkChildColumnProps> = React
   );
 });
 BudgetLinkChildColumn.displayName = 'BudgetLinkChildColumn';
-
 
 === FILE: src/components/BudgetParts/BudgetLinkModal.tsx ===
 import React, { useEffect, useMemo, useState } from 'react';
@@ -5943,7 +5918,6 @@ export function BudgetLinkModal({
   );
 }
 
-
 === FILE: src/components/BudgetParts/BudgetLinkParentColumn.tsx ===
 import React, { FC, memo } from 'react';
 import { Project } from '../../types';
@@ -6098,7 +6072,6 @@ export const BudgetLinkParentColumn: React.FC<BudgetLinkParentColumnProps> = Rea
   );
 });
 BudgetLinkParentColumn.displayName = 'BudgetLinkParentColumn';
-
 
 === FILE: src/components/BudgetParts/BudgetMobileCard.tsx ===
 import React, { memo } from 'react';
@@ -6317,7 +6290,6 @@ export const BudgetMobileCard = memo(function BudgetMobileCard({
   );
 });
 
-
 === FILE: src/components/BudgetParts/BudgetMobileView.tsx ===
 import React, { Dispatch, ReactNode, SetStateAction } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -6431,7 +6403,6 @@ export function BudgetMobileView({
   );
 }
 
-
 === FILE: src/components/BudgetParts/BudgetSummaryCard.tsx ===
 import React from 'react';
 import { cn } from '../../lib/utils';
@@ -6490,7 +6461,6 @@ export function BudgetSummaryCard({
     </div>
   );
 }
-
 
 === FILE: src/components/BudgetParts/BudgetTableRow.tsx ===
 import React, { memo } from 'react';
@@ -6825,7 +6795,6 @@ export const BudgetTableRow = memo(function BudgetTableRow({
   );
 });
 
-
 === FILE: src/components/BudgetParts/BudgetTableView.tsx ===
 import React, { ReactNode } from 'react';
 import { Project } from '../../types';
@@ -7038,7 +7007,6 @@ export function BudgetTableView({
   );
 }
 
-
 === FILE: src/components/BudgetParts/budgetTreeScope.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { buildBudgetTreeData } from './useBudgetTreeData';
@@ -7101,7 +7069,6 @@ describe('Budget Tree Scope & Cross-Year Guard', () => {
     expect(node2027?.children?.some((c) => c.code === 'L3-CORRIDOR-SUB1')).toBe(false);
   });
 });
-
 
 === FILE: src/components/BudgetParts/budgetTypes.ts ===
 import { Project, Cost } from '../../types';
@@ -7172,7 +7139,6 @@ export interface ProjectFinancials {
   hasForc: boolean;
   remaining: number;
 }
-
 
 === FILE: src/components/BudgetParts/useBudgetCsvOps.ts ===
 import React from 'react';
@@ -7286,7 +7252,6 @@ export function useBudgetCsvOps({ projects, filteredRoots }: UseBudgetCsvOpsPara
     handleImportBudget
   };
 }
-
 
 === FILE: src/components/BudgetParts/useBudgetData.ts ===
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -7787,7 +7752,6 @@ export function useBudgetData({
   };
 }
 
-
 === FILE: src/components/BudgetParts/useBudgetFilterSort.ts ===
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { matchesAdvancedSearch } from '../../lib/utils';
@@ -8050,7 +8014,6 @@ export function useBudgetFilterSort({
   };
 }
 
-
 === FILE: src/components/BudgetParts/useBudgetMutations.ts ===
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -8166,7 +8129,6 @@ export function useBudgetMutations({ projects }: UseBudgetMutationsParams) {
     handleLinkParent
   };
 }
-
 
 === FILE: src/components/BudgetParts/useBudgetTreeData.ts ===
 import React, { useMemo } from "react";
@@ -8379,7 +8341,6 @@ export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams):
   return useMemo(() => buildBudgetTreeData(projects, costs), [projects, costs]);
 }
 
-
 === FILE: src/components/BudgetTab.tsx ===
 import React, { useEffect } from "react";
 import { useAppStore } from '../store/useAppStore';
@@ -8584,7 +8545,6 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = '' }: BudgetTabProps
 }
 
 export default BudgetTab;
-
 
 === FILE: src/components/CalendarSyncModal.tsx ===
 import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
@@ -9076,7 +9036,6 @@ export const CalendarSyncModal: React.FC = () => {
   );
 };
 
-
 === FILE: src/components/CalendarTab.tsx ===
 import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, dateFnsLocalizer, View } from 'react-big-calendar';
@@ -9341,7 +9300,6 @@ export function CalendarTab({ onEditTask, onEditProject }: CalendarTabProps) {
 
 export default CalendarTab;
 
-
 === FILE: src/components/CalendarTabParts/CalendarFilterToolbar.tsx ===
 import React, { Dispatch, FC, SetStateAction } from 'react';
 import { Search, Download, Smartphone } from 'lucide-react';
@@ -9517,7 +9475,6 @@ export const CalendarFilterToolbar: React.FC<CalendarFilterToolbarProps> = ({
   );
 };
 
-
 === FILE: src/components/CalendarTabParts/CalendarMonthDayList.tsx ===
 import React, { FC } from 'react';
 import { format, startOfDay } from 'date-fns';
@@ -9585,7 +9542,6 @@ export const CalendarMonthDayList: React.FC<CalendarMonthDayListProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/CalendarTabParts/CalendarSyncGuideTab.tsx ===
 import React, { FC, memo } from 'react';
@@ -9657,7 +9613,6 @@ export const CalendarSyncGuideTab: React.FC = React.memo(() => {
 });
 CalendarSyncGuideTab.displayName = 'CalendarSyncGuideTab';
 
-
 === FILE: src/components/CalendarTabParts/CalendarSyncQrTab.tsx ===
 import React, { FC, memo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -9701,7 +9656,6 @@ export const CalendarSyncQrTab: React.FC<CalendarSyncQrTabProps> = React.memo(({
   );
 });
 CalendarSyncQrTab.displayName = 'CalendarSyncQrTab';
-
 
 === FILE: src/components/CalendarTabParts/CustomVerticalView.tsx ===
 import React, { FC, useMemo } from 'react';
@@ -9845,7 +9799,6 @@ CustomAgendaView.title = (date: Date) => {
   return `${format(start, 'MMM d')} - ${format(end, 'MMM d')}`;
 };
 
-
 === FILE: src/components/CalendarTabParts/calendarExportUtils.ts ===
 import { format, addDays } from 'date-fns';
 import { CalendarEvent } from './calendarTypes';
@@ -9907,7 +9860,6 @@ export function exportEventsToICS(events: CalendarEvent[]) {
   URL.revokeObjectURL(url);
 }
 
-
 === FILE: src/components/CalendarTabParts/calendarTypes.ts ===
 import { Project, Task } from '../../types';
 
@@ -9928,7 +9880,6 @@ export interface CalendarEvent {
   colorIndex?: number;
   color?: string;
 }
-
 
 === FILE: src/components/CalendarTabParts/useCalendarEvents.ts ===
 import React, { useMemo } from 'react';
@@ -10186,7 +10137,6 @@ export function useCalendarEvents({
   return { events };
 }
 
-
 === FILE: src/components/ColumnAdder.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, SlidersHorizontal } from 'lucide-react';
@@ -10282,7 +10232,6 @@ export function ColumnAdder({
     </div>
   );
 }
-
 
 
 === FILE: src/components/CommandPaletteModal.tsx ===
@@ -10502,7 +10451,6 @@ export function CommandPaletteModal({
 
 export default CommandPaletteModal;
 
-
 === FILE: src/components/CommandPaletteParts/CommandPaletteFooter.tsx ===
 import React, { FC } from 'react';
 
@@ -10540,7 +10488,6 @@ export const CommandPaletteFooter: React.FC<CommandPaletteFooterProps> = ({ tota
     </div>
   );
 };
-
 
 === FILE: src/components/CommandPaletteParts/CommandPaletteItemRow.tsx ===
 import React, { FC, memo } from 'react';
@@ -10629,7 +10576,6 @@ export const CommandPaletteItemRow: React.FC<CommandPaletteItemRowProps> = React
   }
 );
 
-
 === FILE: src/components/CommandPaletteParts/commandPaletteTypes.ts ===
 import React from 'react';
 import { TabId } from '../../types';
@@ -10659,7 +10605,6 @@ export interface PaletteItem {
   onSelect: () => void;
   score?: number;
 }
-
 
 === FILE: src/components/CommandPaletteParts/useCommandPaletteItems.ts ===
 import React, { useMemo } from 'react';
@@ -11062,7 +11007,6 @@ export function useCommandPaletteItems({
   };
 }
 
-
 === FILE: src/components/ConfirmModal.tsx ===
 import React, { useEffect, useRef } from 'react';
 import Draggable from 'react-draggable';
@@ -11156,7 +11100,6 @@ export function ConfirmModal({ isOpen, title = "Confirm", message, confirmText =
     </Portal>
   );
 }
-
 
 === FILE: src/components/CostParts/CostDetailItemRow.tsx ===
 import React, { memo } from 'react';
@@ -11478,7 +11421,6 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
   );
 });
 
-
 === FILE: src/components/CostParts/CostEditableCell.tsx ===
 import React, { memo, useEffect, useState } from 'react';
 import { cn, formatCurrencyValue } from '../../lib/utils';
@@ -11589,7 +11531,6 @@ export const CostEditableCell = React.memo(function CostEditableCell({
     </div>
   );
 });
-
 
 === FILE: src/components/CostParts/CostFilterToolbar.tsx ===
 import React, { memo } from 'react';
@@ -11791,7 +11732,6 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
     </div>
   );
 });
-
 
 === FILE: src/components/CostParts/CostMobileCard.tsx ===
 import React, { memo } from 'react';
@@ -12007,7 +11947,6 @@ export const CostMobileCard = React.memo(function CostMobileCard({
     </div>
   );
 });
-
 
 === FILE: src/components/CostParts/CostMobileItemRow.tsx ===
 import React, { memo } from 'react';
@@ -12322,7 +12261,6 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
   );
 });
 
-
 === FILE: src/components/CostParts/CostMobileView.tsx ===
 import React, { memo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
@@ -12461,7 +12399,6 @@ export const CostMobileView = React.memo(function CostMobileView({
     </>
   );
 });
-
 
 === FILE: src/components/CostParts/CostPaidDateFilterModal.tsx ===
 import React from 'react';
@@ -12603,7 +12540,6 @@ export function CostPaidDateFilterModal({
     </>
   );
 }
-
 
 === FILE: src/components/CostParts/CostSummaryCard.tsx ===
 import React, { memo } from 'react';
@@ -12965,7 +12901,6 @@ export const CostSummaryCard = React.memo(function CostSummaryCard({
   );
 });
 
-
 === FILE: src/components/CostParts/CostTableHeader.tsx ===
 import React, { memo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
@@ -13171,7 +13106,6 @@ export const CostTableHeader = React.memo(function CostTableHeader({
     </thead>
   );
 });
-
 
 === FILE: src/components/CostParts/CostTableRow.tsx ===
 import React, { Fragment, memo } from 'react';
@@ -13463,7 +13397,6 @@ export const CostTableRow = React.memo(function CostTableRow({
   );
 });
 
-
 === FILE: src/components/CostParts/CostTableTotalRow.tsx ===
 import React, { memo } from 'react';
 
@@ -13560,7 +13493,6 @@ export const CostTableTotalRow = React.memo(function CostTableTotalRow({
     </tr>
   );
 });
-
 
 === FILE: src/components/CostParts/CostTableView.tsx ===
 import React, { memo } from 'react';
@@ -13754,7 +13686,6 @@ export const CostTableView = React.memo(function CostTableView({
   );
 });
 
-
 === FILE: src/components/CostParts/costTypes.ts ===
 import { Project, Cost, AppUser } from '../../types';
 
@@ -13808,7 +13739,6 @@ export interface PaidDateMatches {
   secondMatch: boolean;
   thirdMatch: boolean;
 }
-
 
 === FILE: src/components/CostParts/useCostColumns.ts ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -13912,7 +13842,6 @@ export function useCostColumns({ userId }: UseCostColumnsParams) {
     handleToggleColumn,
   };
 }
-
 
 === FILE: src/components/CostParts/useCostCsvOps.ts ===
 import React from 'react';
@@ -14224,7 +14153,6 @@ export function useCostCsvOps({
     handleImportCosts,
   };
 }
-
 
 === FILE: src/components/CostParts/useCostData.ts ===
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -14648,7 +14576,6 @@ export function useCostData({
   };
 }
 
-
 === FILE: src/components/CostParts/useCostDateFilter.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Cost } from '../../types';
@@ -14770,7 +14697,6 @@ export function useCostDateFilter() {
     getCostPaidMatches,
   };
 }
-
 
 === FILE: src/components/CostParts/useCostMutations.ts ===
 import React, { useState } from 'react';
@@ -14952,7 +14878,6 @@ export function useCostMutations({
     handleUpdateCost,
   };
 }
-
 
 === FILE: src/components/CostParts/useCostSearchFilter.ts ===
 import React, { useDeferredValue, useEffect, useRef, useState } from 'react';
@@ -15160,7 +15085,6 @@ export function useCostSearchFilter({
   };
 }
 
-
 === FILE: src/components/CostParts/useCostTotals.ts ===
 import React, { useMemo } from 'react';
 import { Project, Cost } from '../../types';
@@ -15356,7 +15280,6 @@ export function useCostTotals({
     totalRemainingAll,
   };
 }
-
 
 === FILE: src/components/CostTab.tsx ===
 import React, { Suspense, useEffect } from 'react';
@@ -15598,7 +15521,6 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
 
 export default CostTab;
 
-
 === FILE: src/components/CsvExportParts/CsvExportFileSection.tsx ===
 import React, { FC } from 'react';
 
@@ -15745,7 +15667,6 @@ export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
   );
 };
 
-
 === FILE: src/components/CsvExportParts/CsvExportHeaderTabs.tsx ===
 import React, { FC } from 'react';
 import { TAB_CONFIG } from './csvExportTypes';
@@ -15793,7 +15714,6 @@ export const CsvExportHeaderTabs: React.FC<CsvExportHeaderTabsProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/CsvExportParts/CsvExportMappingTable.tsx ===
 import React, { Dispatch, FC, SetStateAction } from 'react';
@@ -15919,7 +15839,6 @@ export const CsvExportMappingTable: React.FC<CsvExportMappingTableProps> = ({
   );
 };
 
-
 === FILE: src/components/CsvExportParts/CsvExportPreviewSection.tsx ===
 import React, { FC } from 'react';
 import { TAB_CONFIG } from './csvExportTypes';
@@ -16021,7 +15940,6 @@ export const CsvExportPreviewSection: React.FC<CsvExportPreviewSectionProps> = (
   );
 };
 
-
 === FILE: src/components/CsvExportParts/CsvExportUnlockModal.tsx ===
 import React, { FC } from 'react';
 
@@ -16088,7 +16006,6 @@ export const CsvExportUnlockModal: React.FC<CsvExportUnlockModalProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/CsvExportParts/csvExportProcessing.ts ===
 import { TAB_CONFIG } from './csvExportTypes';
@@ -16523,7 +16440,6 @@ export async function executeCsvExport({
   }
 }
 
-
 === FILE: src/components/CsvExportParts/csvExportTypes.ts ===
 export interface CsvTabConfigItem {
   id: string;
@@ -16720,7 +16636,6 @@ export const safeSetStorage = (key: string, value: string) => {
     console.warn('Browser blocked localStorage write', e);
   }
 };
-
 
 === FILE: src/components/CsvExportParts/useCsvExportState.ts ===
 import React, { useMemo, useState } from 'react';
@@ -17249,7 +17164,6 @@ export function useCsvExportState() {
   };
 }
 
-
 === FILE: src/components/CsvExportTab.tsx ===
 import React from 'react';
 import { useCsvExportState } from './CsvExportParts/useCsvExportState';
@@ -17366,7 +17280,6 @@ export default function CsvExportTab() {
     </div>
   );
 }
-
 
 === FILE: src/components/DebouncedSearchInput.tsx ===
 import React, { useEffect, useRef, useState, useTransition } from 'react';
@@ -17490,7 +17403,6 @@ export function DebouncedSearchInput({
   );
 }
 
-
 === FILE: src/components/DelegationCalendarParts/DelegationCalendarFilterToolbar.tsx ===
 import React, { FC } from 'react';
 import { Search, Download } from 'lucide-react';
@@ -17607,7 +17519,6 @@ export const DelegationCalendarFilterToolbar: React.FC<DelegationCalendarFilterT
   );
 };
 
-
 === FILE: src/components/DelegationCalendarParts/DelegationCalendarMonthList.tsx ===
 import React, { FC } from 'react';
 import { format, startOfDay } from 'date-fns';
@@ -17656,7 +17567,6 @@ export const DelegationCalendarMonthList: React.FC<DelegationCalendarMonthListPr
     </div>
   );
 };
-
 
 === FILE: src/components/DelegationCalendarParts/DelegationCustomEvent.tsx ===
 import React, { FC } from 'react';
@@ -17755,7 +17665,6 @@ export const CustomEventComponent: React.FC<CustomEventComponentProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/DelegationCalendarParts/DelegationCustomVerticalView.tsx ===
 import React, { FC, useMemo } from 'react';
@@ -17992,7 +17901,6 @@ CustomAgendaView.title = (date: Date) => {
   return `${format(start, 'MMM d')} - ${format(end, 'MMM d')}`;
 };
 
-
 === FILE: src/components/DelegationCalendarParts/delegationCalendarTypes.ts ===
 import { DelegationGroup, DelegationSubTask } from '../../types';
 
@@ -18017,7 +17925,6 @@ export interface DelegationCalendarEvent {
   };
   colorIndex?: number;
 }
-
 
 === FILE: src/components/DelegationCalendarParts/delegationExportUtils.ts ===
 import { format, addDays } from 'date-fns';
@@ -18080,7 +17987,6 @@ export function exportDelegationEventsToICS(events: DelegationCalendarEvent[]) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-
 
 === FILE: src/components/DelegationCalendarParts/useDelegationCalendarEvents.ts ===
 import React, { useMemo } from 'react';
@@ -18320,7 +18226,6 @@ export function useDelegationCalendarEvents({
 
   return { events };
 }
-
 
 === FILE: src/components/DelegationCalendarTab.tsx ===
 import React, { useEffect, useMemo, useState } from 'react';
@@ -18609,7 +18514,6 @@ export function DelegationCalendarTab({
 
 export default DelegationCalendarTab;
 
-
 === FILE: src/components/DelegationParts/MultiSelectInput.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -18758,7 +18662,6 @@ export function MultiSelectInput({
     </div>
   );
 }
-
 
 === FILE: src/components/DesktopOptimizationModal.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -19082,7 +18985,6 @@ export function DesktopOptimizationModal({ isOpen, onClose }: DesktopOptimizatio
     </Portal>
   );
 }
-
 
 === FILE: src/components/DetailTab.tsx ===
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -19582,7 +19484,6 @@ export function DetailTab({
 export type { DetailTableRow } from './DetailTabParts/detailTypes';
 export default DetailTab;
 
-
 === FILE: src/components/DetailTabParts/DetailFilterToolbar.tsx ===
 import React, { memo } from 'react';
 import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
@@ -19977,7 +19878,6 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/DetailFloatingActionBar.tsx ===
 import React, { memo } from 'react';
 import { Trash2, Unlink, X } from 'lucide-react';
@@ -20079,7 +19979,6 @@ export const DetailFloatingActionBar = memo(function DetailFloatingActionBar({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/DetailFocusControls.tsx ===
 import React, { memo } from 'react';
 import { ArrowLeft, EyeOff } from 'lucide-react';
@@ -20122,7 +20021,6 @@ export const DetailFocusControls = memo(function DetailFocusControls({
     </div>
   );
 });
-
 
 === FILE: src/components/DetailTabParts/DetailMobileProjectCard.tsx ===
 import React, { memo } from 'react';
@@ -20561,7 +20459,6 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/DetailMobileTaskItem.tsx ===
 import React, { memo } from 'react';
 import { ChevronUp, ChevronDown, Maximize2, Trash2 } from 'lucide-react';
@@ -20733,7 +20630,6 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/DetailMobileView.tsx ===
 import React, { Dispatch, SetStateAction, memo, useCallback, useEffect } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
@@ -20886,7 +20782,6 @@ export const DetailMobileView = memo(function DetailMobileView({
     </>
   );
 });
-
 
 === FILE: src/components/DetailTabParts/DetailProjectRow.tsx ===
 import React, { memo, useMemo } from 'react';
@@ -21208,7 +21103,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/DetailTableHeader.tsx ===
 import React, { memo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
@@ -21529,7 +21423,6 @@ export const DetailTableHeader = memo(function DetailTableHeader({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/DetailTableView.tsx ===
 import React, { Dispatch, SetStateAction, memo } from 'react';
 import { Project, Task } from '../../types';
@@ -21767,7 +21660,6 @@ export const DetailTableView = memo(function DetailTableView({
     </div>
   );
 });
-
 
 === FILE: src/components/DetailTabParts/DetailTaskRow.tsx ===
 import React, { memo } from 'react';
@@ -22116,7 +22008,6 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/EditableCell.tsx ===
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { formatDisplayDateTime, getDefaultDatetimeLocal, cn } from '../../lib/utils';
@@ -22244,7 +22135,6 @@ export const EditableCell = React.memo(function EditableCell({
   );
 });
 
-
 === FILE: src/components/DetailTabParts/FastToggle.tsx ===
 import React, { useEffect, useState } from 'react';
 import { cn } from '../../lib/utils';
@@ -22304,7 +22194,6 @@ export const FastToggle = ({
     </button>
   );
 };
-
 
 === FILE: src/components/DetailTabParts/PredecessorEditableCell.tsx ===
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -22518,7 +22407,6 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   );
 });
 
-
 === FILE: src/components/DetailTabParts/detailCsvUtils.ts ===
 export const formatToCSVDate = (isoString: string | undefined): string => {
   if (!isoString) return '';
@@ -22559,7 +22447,6 @@ export const parseCSVDate = (csvDate: any): string => {
   }
   return str;
 };
-
 
 === FILE: src/components/DetailTabParts/detailTaskImportExecutor.ts ===
 import { Task, Project, AppUser } from '../../types';
@@ -22954,7 +22841,6 @@ export async function executeImportTasks({
   return { count: tasksToImport.length };
 }
 
-
 === FILE: src/components/DetailTabParts/detailTaskImportParser.ts ===
 import { Project } from '../../types';
 import { parseCSV } from '../../lib/csvUtils';
@@ -23100,7 +22986,6 @@ export async function parseTasksFile(
   return rawParsedRowsByProject;
 }
 
-
 === FILE: src/components/DetailTabParts/detailTypes.ts ===
 import { Project, Task } from '../../types';
 
@@ -23170,7 +23055,6 @@ export interface DraggingTaskState {
   dragOverTaskId: string | null;
   dropPosition: 'before' | 'after' | null;
 }
-
 
 === FILE: src/components/DetailTabParts/useDetailBulkActions.ts ===
 import React, { Dispatch, SetStateAction } from 'react';
@@ -23409,7 +23293,6 @@ export function useDetailBulkActions({
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailColumns.ts ===
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppUser } from '../../types';
@@ -23547,7 +23430,6 @@ export function useDetailColumns({ currentUser, canWrite }: UseDetailColumnsPara
     totalTableWidth,
   };
 }
-
 
 === FILE: src/components/DetailTabParts/useDetailData.ts ===
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -23987,7 +23869,6 @@ export function useDetailData({
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailFlatRows.ts ===
 import React, { useMemo } from 'react';
 import { Project, DelegationGroup } from '../../types';
@@ -24174,7 +24055,6 @@ export function useDetailFlatRows({
 
   return flatTableRows;
 }
-
 
 === FILE: src/components/DetailTabParts/useDetailFocusTracking.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -24436,7 +24316,6 @@ export function useDetailFocusTracking({
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailInitialScroll.ts ===
 import React, { useEffect, useRef } from 'react';
 import { Project, Task, DelegationGroup } from '../../types';
@@ -24544,7 +24423,6 @@ export function useDetailInitialScroll({
   ]);
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailOptions.ts ===
 import React, { useEffect, useMemo, useState } from 'react';
 import { Project, Task, AppUser, AppRole, PermissionMatrix } from '../../types';
@@ -24635,7 +24513,6 @@ export function useDetailOptions({
     years,
   };
 }
-
 
 === FILE: src/components/DetailTabParts/useDetailProjectCsv.ts ===
 import React from 'react';
@@ -24843,13 +24720,13 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailProjectInfo.ts ===
 import React, { useCallback, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { getStatus } from '../../lib/utils';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 export interface ProjectInfo {
   status: string;
@@ -24928,7 +24805,10 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       const foundByKey = tasksByProjectKey.get(key);
       if (foundByKey && foundByKey.length > 0) {
         foundByKey.forEach(t => {
-          if (t && (t.id || t.name)) mergedTasksMap.set(String(t.id || t.name), t);
+          if (t && (t.id || t.name)) {
+            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
         });
       }
 
@@ -24965,6 +24845,10 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
         });
 
         p.taskSummaries.forEach((ts, idx) => {
+          if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
+            return;
+          }
+
           const tsId = ts.id ? String(ts.id).toLowerCase() : '';
           const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
           const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
@@ -24973,7 +24857,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
                            (tsName && existingSummarySet.has(tsName));
           if (!hasMatch) {
             rawGroupTasks.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
               name: ts.name || `Task ${idx + 1}`,
               start: ts.start || p.computedTakStart || p.start || '',
               finish: ts.finish || p.computedTakCompl || p.handover || '',
@@ -25097,7 +24981,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
       // Fallback placeholder tasks from summary ONLY when no in-memory tasks exist yet
       rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-        id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+        id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
         name: ts.name || `Task ${idx + 1}`,
         start: ts.start || p.computedTakStart || p.start || '',
         finish: ts.finish || p.computedTakCompl || p.handover || '',
@@ -25186,7 +25070,6 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     getProjectInfo,
   };
 }
-
 
 === FILE: src/components/DetailTabParts/useDetailProjectMutations.ts ===
 import React, { Dispatch, SetStateAction } from 'react';
@@ -25490,7 +25373,6 @@ export function useDetailProjectMutations({
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailSubTaskSort.ts ===
 import React, { useCallback, useState } from 'react';
 import { Project, Task } from '../../types';
@@ -25542,7 +25424,6 @@ export function useDetailSubTaskSort({
     handleSortActiveOrAll,
   };
 }
-
 
 === FILE: src/components/DetailTabParts/useDetailTaskCsv.ts ===
 import React from 'react';
@@ -25679,7 +25560,6 @@ export function useDetailTaskCsv({
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ===
 import React, { Dispatch, SetStateAction } from 'react';
 import { Project, Task, DelegationGroup, AppUser, TaskNote } from '../../types';
@@ -25735,7 +25615,17 @@ export function useDetailTaskMutations({
         try {
           const nowIso = new Date().toISOString();
           const batch = writeBatch(db);
-          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id));
+          const storeTasks = useAppStore.getState().tasks || tasks || [];
+          const existingDbTask = storeTasks.find(tsk => tsk.id === t.id);
+          const isSameProjectDbTask = !existingDbTask || (
+            (!existingDbTask.projectId || !t.projectId || String(existingDbTask.projectId) === String(t.projectId)) &&
+            (!existingDbTask.projectStore || !t.projectStore || String(existingDbTask.projectStore).trim().toLowerCase() === String(t.projectStore).trim().toLowerCase()) &&
+            (existingDbTask.projectYear === undefined || t.projectYear === undefined || String(existingDbTask.projectYear).trim() === String(t.projectYear).trim())
+          );
+
+          if (isSameProjectDbTask && !t.id.startsWith('ts_')) {
+            batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id));
+          }
           
           const urlsToDelete = extractStorageUrls(t);
           if (urlsToDelete.length > 0) { 
@@ -25751,8 +25641,10 @@ export function useDetailTaskMutations({
           });
 
           try {
-            const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
-            markExplicitDelta([{ docId: t.id, collectionName: 'taka_tasks' }]);
+            if (isSameProjectDbTask && !t.id.startsWith('ts_')) {
+              const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+              markExplicitDelta([{ docId: t.id, collectionName: 'taka_tasks' }]);
+            }
             await batch.commit();
           } catch (error: any) {
             console.error("Batch commit failed", error);
@@ -26130,7 +26022,6 @@ export function useDetailTaskMutations({
   };
 }
 
-
 === FILE: src/components/DetailTabParts/useDetailVirtualization.ts ===
 import React, { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DetailTableRow } from './detailTypes';
@@ -26332,7 +26223,6 @@ export function useDetailVirtualization({
   };
 }
 
-
 === FILE: src/components/ErrorBoundary.tsx ===
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 
@@ -26376,7 +26266,6 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
-
 
 === FILE: src/components/ExecutiveDashboard.tsx ===
 import React, { FC, memo } from 'react';
@@ -26432,7 +26321,6 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
 
 ExecutiveDashboard.displayName = 'ExecutiveDashboard';
 export default ExecutiveDashboard;
-
 
 === FILE: src/components/ExecutiveDashboardParts/ExecutiveDashboardCharts.tsx ===
 import React, { Component, FC, memo } from 'react';
@@ -26569,7 +26457,6 @@ export const ExecutiveDashboardCharts: React.FC<ExecutiveDashboardChartsProps> =
   );
 });
 ExecutiveDashboardCharts.displayName = 'ExecutiveDashboardCharts';
-
 
 === FILE: src/components/ExecutiveDashboardParts/ExecutiveDashboardMetricsCards.tsx ===
 import React, { FC, memo } from 'react';
@@ -26710,7 +26597,6 @@ export const ExecutiveDashboardMetricsCards: React.FC<ExecutiveDashboardMetricsC
   );
 });
 ExecutiveDashboardMetricsCards.displayName = 'ExecutiveDashboardMetricsCards';
-
 
 === FILE: src/components/ExecutiveDashboardParts/ExecutiveDashboardProjectsTable.tsx ===
 import React, { FC, memo } from 'react';
@@ -26872,7 +26758,6 @@ export const ExecutiveDashboardProjectsTable: React.FC<ExecutiveDashboardProject
 });
 ExecutiveDashboardProjectsTable.displayName = 'ExecutiveDashboardProjectsTable';
 
-
 === FILE: src/components/ExecutiveDashboardParts/executiveDashboardTypes.ts ===
 import { Project } from '../../types';
 
@@ -26940,7 +26825,6 @@ export interface CashflowData {
   totalYearActual: number;
   totalYearForecast: number;
 }
-
 
 === FILE: src/components/ExecutiveDashboardParts/useExecutiveDashboardData.ts ===
 import React, { useEffect, useMemo, useState } from 'react';
@@ -27235,7 +27119,6 @@ export function useExecutiveDashboardData({
   };
 }
 
-
 === FILE: src/components/FastInput.tsx ===
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
@@ -27313,7 +27196,6 @@ export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
 );
 
 FastInput.displayName = 'FastInput';
-
 
 === FILE: src/components/FirestorePerformanceDashboard.tsx ===
 import React, { useEffect, useMemo, useState } from 'react';
@@ -27525,7 +27407,6 @@ ${collectionsArray
 }
 
 export default FirestorePerformanceDashboard;
-
 
 === FILE: src/components/FullReplaceImport.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -27797,7 +27678,6 @@ export function FullReplaceImport({
     </div>
   );
 }
-
 
 === FILE: src/components/Gantt/GanttBar.tsx ===
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
@@ -28151,7 +28031,6 @@ export const GanttBar = React.memo(function GanttBar({
   );
 });
 
-
 === FILE: src/components/Gantt/GanttBarTooltip.tsx ===
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from 'react-dom';
@@ -28479,7 +28358,6 @@ export function GanttBarTooltip({
   );
 }
 
-
 === FILE: src/components/Gantt/GanttBaseline.tsx ===
 import React from 'react';
 import { parseDateTime } from '../../lib/utils';
@@ -28537,7 +28415,6 @@ export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({
          prev.dayWidth === next.dayWidth &&
          prev.startDate.getTime() === next.startDate.getTime();
 });
-
 
 === FILE: src/components/Gantt/GanttDependencyLinks.tsx ===
 import React, { useState, useEffect, useRef } from "react";
@@ -28681,7 +28558,6 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
 
 GanttDependencyLinks.displayName = 'GanttDependencyLinks';
 
-
 === FILE: src/components/Gantt/GanttEmptyState.tsx ===
 import React from 'react';
 import { Calendar } from 'lucide-react';
@@ -28716,7 +28592,6 @@ export const GanttEmptyState: React.FC<GanttEmptyStateProps> = React.memo(({ col
 
 GanttEmptyState.displayName = 'GanttEmptyState';
 
-
 === FILE: src/components/Gantt/GanttExportOverlay.tsx ===
 import React from 'react';
 
@@ -28741,7 +28616,6 @@ export const GanttExportOverlay: React.FC<GanttExportOverlayProps> = React.memo(
 });
 
 GanttExportOverlay.displayName = 'GanttExportOverlay';
-
 
 === FILE: src/components/Gantt/GanttFocusControls.tsx ===
 import React, { FC } from 'react';
@@ -28852,7 +28726,6 @@ export const GanttFocusControls: React.FC<GanttFocusControlsProps> = ({
   );
 };
 
-
 === FILE: src/components/Gantt/GanttGridOverlay.tsx ===
 import React, { FC, memo } from 'react';
 
@@ -28898,7 +28771,6 @@ export const GanttGridOverlay: React.FC<GanttGridOverlayProps> = React.memo(({
          (prev.timeUnits.length === 0 || prev.timeUnits[0].date.getTime() === next.timeUnits[0]?.date.getTime());
 });
 
-
 === FILE: src/components/Gantt/GanttHooks.ts ===
 import React, { RefObject, useRef } from 'react';
 
@@ -28937,7 +28809,6 @@ export function useSyncScroll() {
     handleMainScroll,
   };
 }
-
 
 === FILE: src/components/Gantt/GanttLeftHeader.tsx ===
 import React, { FC, memo } from 'react';
@@ -29196,7 +29067,6 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
   );
 });
 GanttLeftHeader.displayName = 'GanttLeftHeader';
-
 
 === FILE: src/components/Gantt/GanttProjectRow.tsx ===
 import React, { Dispatch, FC, SetStateAction, memo, useMemo } from 'react';
@@ -29673,7 +29543,6 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
          (prev.activeTooltip === `project-${prev.p.no}` || next.activeTooltip === `project-${next.p.no}` ? prev.activeTooltip === next.activeTooltip : true);
 });
 
-
 === FILE: src/components/Gantt/GanttSettingsModal.tsx ===
 import React, { FC } from 'react';
 
@@ -29704,7 +29573,6 @@ export const GanttSettingsModal: React.FC<GanttSettingsModalProps> = ({ isOpen, 
 };
 
 export default GanttSettingsModal;
-
 
 === FILE: src/components/Gantt/GanttSumBadge.tsx ===
 import React, { FC, memo } from 'react';
@@ -29754,7 +29622,6 @@ export const GanttSumBadge: React.FC<GanttSumBadgeProps> = React.memo(({
 });
 
 GanttSumBadge.displayName = 'GanttSumBadge';
-
 
 === FILE: src/components/Gantt/GanttTableView.tsx ===
 import React, { Dispatch, SetStateAction, useMemo } from 'react';
@@ -30246,7 +30113,6 @@ export function GanttTableView({
   );
 }
 
-
 === FILE: src/components/Gantt/GanttTaskLeftColumns.tsx ===
 import React, { useRef } from 'react';
 import { ChevronDown, ChevronRight, GripVertical, EyeOff, Unlink } from 'lucide-react';
@@ -30441,7 +30307,6 @@ export function GanttTaskLeftColumns({
     </div>
   );
 }
-
 
 === FILE: src/components/Gantt/GanttTaskRow.tsx ===
 import React, { memo, useMemo } from 'react';
@@ -30822,7 +30687,6 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   );
 });
 
-
 === FILE: src/components/Gantt/GanttTimelineHeader.tsx ===
 import React, { FC, memo } from 'react';
 
@@ -30869,7 +30733,6 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
     </div>
   );
 });
-
 
 === FILE: src/components/Gantt/GanttTodayLine.tsx ===
 import React, { FC, memo } from 'react';
@@ -30981,7 +30844,6 @@ export const GanttTodayLine: React.FC<GanttTodayLineProps> = React.memo(({
 });
 
 GanttTodayLine.displayName = 'GanttTodayLine';
-
 
 === FILE: src/components/Gantt/GanttToolbar.tsx ===
 import React, { Dispatch, SetStateAction, useMemo } from 'react';
@@ -31342,7 +31204,6 @@ export function GanttToolbar({
   );
 }
 
-
 === FILE: src/components/Gantt/GanttToolbarActions.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
 import { Palette, Play, Layers, Unlink, Trash2, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
@@ -31566,7 +31427,6 @@ export function GanttToolbarActions({
   );
 }
 
-
 === FILE: src/components/Gantt/GanttToolbarDateFilter.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
 import { Calendar, Target, Save, X } from 'lucide-react';
@@ -31724,7 +31584,6 @@ export function GanttToolbarDateFilter({
     </div>
   );
 }
-
 
 === FILE: src/components/Gantt/GanttTooltipPredecessor.tsx ===
 import React, { memo, useEffect, useRef, useState } from 'react';
@@ -32042,7 +31901,6 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
   );
 });
 
-
 === FILE: src/components/Gantt/GanttUtils.tsx ===
 import React from 'react';
 import { parseDateTime, cn } from "../../lib/utils";
@@ -32218,7 +32076,6 @@ export const getBarColor = (status: string, duration?: string | number): string 
   return "bg-slate-400 dark:bg-slate-500 hover:bg-slate-500 border border-slate-500/80";
 };
 
-
 === FILE: src/components/Gantt/ganttTypes.ts ===
 import { Project, Task, AppUser } from '../../types';
 
@@ -32283,7 +32140,6 @@ export type GanttTableRow =
       isHidden: boolean;
     };
 
-
 === FILE: src/components/Gantt/index.ts ===
 export * from './GanttBar';
 export * from './GanttBarTooltip';
@@ -32316,7 +32172,6 @@ export * from './GanttTableView';
 export * from './GanttFocusControls';
 export * from './useGanttFocus';
 export * from './GanttSettingsModal';
-
 
 === FILE: src/components/Gantt/useGanttBarDateDrag.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -32436,7 +32291,6 @@ export function useGanttBarDateDrag({
 }
 
 export default useGanttBarDateDrag;
-
 
 === FILE: src/components/Gantt/useGanttBatchOps.ts ===
 import React, { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33151,7 +33005,6 @@ export function useGanttBatchOps({
   };
 }
 
-
 === FILE: src/components/Gantt/useGanttColumnResize.ts ===
 import React, { useCallback, useRef, useState } from 'react';
 import { safeGetDeviceItemLocal, safeSetDeviceItemLocal } from '../../lib/storage';
@@ -33236,7 +33089,6 @@ export function useGanttColumnResize() {
     startResizingColumn,
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttDependencies.ts ===
 import React, { useCallback, useMemo, useState } from 'react';
@@ -33479,7 +33331,6 @@ export function useGanttDependencies({
     delegationGroupByTaskId,
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttDragReorder.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -33807,7 +33658,6 @@ export function useGanttDragReorder({
   };
 }
 
-
 === FILE: src/components/Gantt/useGanttExport.ts ===
 import React, { useCallback, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
@@ -33905,7 +33755,6 @@ export function useGanttExport({ tableRef }: UseGanttExportParams) {
     handleExportToPNG
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttFocus.ts ===
 import React, { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -34095,7 +33944,6 @@ export function useGanttFocus({
   };
 }
 
-
 === FILE: src/components/Gantt/useGanttLayoutState.ts ===
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -34188,7 +34036,6 @@ export function useGanttLayoutState(currentUserId?: string) {
     handleToggleColumn,
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttProjectsFilter.ts ===
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -34412,7 +34259,7 @@ export function useGanttProjectsFilter({
                            (tsName && existingSet.has(tsName));
           if (!hasMatch) {
             resultTasks.push({
-              id: ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
               name: ts.name || `Task ${idx + 1}`,
               start: ts.start || p.computedTakStart || p.start || '',
               finish: ts.finish || p.computedTakCompl || p.handover || '',
@@ -34552,7 +34399,6 @@ export function useGanttProjectsFilter({
     handleLoadMore
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttTimeline.ts ===
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -34807,7 +34653,6 @@ export function useGanttTimeline({
     handleMainScroll
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttVirtualization.ts ===
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35118,7 +34963,6 @@ export function useGanttVirtualization({
   };
 }
 
-
 === FILE: src/components/Gantt/useGanttZoomAndPan.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
@@ -35303,7 +35147,6 @@ export function useGanttZoomAndPan({
     handlePointerDown
   };
 }
-
 
 === FILE: src/components/GanttTab.tsx ===
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -35799,7 +35642,6 @@ export function GanttTab({
 
 export default GanttTab;
 
-
 === FILE: src/components/GeneralTab.tsx ===
 import React, { useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -35968,7 +35810,6 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
 }
 
 export default GeneralTab;
-
 
 === FILE: src/components/GeneralTabParts/GeneralCanvasView.tsx ===
 import React, { Dispatch, SetStateAction, useEffect } from 'react';
@@ -36235,7 +36076,6 @@ export function GeneralCanvasView({
   );
 }
 
-
 === FILE: src/components/GeneralTabParts/GeneralFilterToolbar.tsx ===
 import React from 'react';
 import { RefreshCw, Search } from 'lucide-react';
@@ -36375,7 +36215,6 @@ export function GeneralFilterToolbar({
     </>
   );
 }
-
 
 === FILE: src/components/GeneralTabParts/GeneralMobileCard.tsx ===
 import React, { Fragment, memo } from 'react';
@@ -36749,7 +36588,6 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
   );
 });
 
-
 === FILE: src/components/GeneralTabParts/GeneralMobileView.tsx ===
 import React, { Dispatch, SetStateAction } from 'react';
 import { Project } from '../../types';
@@ -36825,7 +36663,6 @@ export function GeneralMobileView({
     </div>
   );
 }
-
 
 === FILE: src/components/GeneralTabParts/generalCanvasUtils.ts ===
 import React, { Dispatch, SetStateAction } from 'react';
@@ -37352,7 +37189,6 @@ export function resolveCanvasClick({
   }
 }
 
-
 === FILE: src/components/GeneralTabParts/generalTypes.ts ===
 import React from 'react';
 import { Project } from '../../types';
@@ -37378,7 +37214,6 @@ export interface CanvasColDef {
   label: string;
   key: string;
 }
-
 
 === FILE: src/components/GeneralTabParts/useGeneralData.ts ===
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -37691,7 +37526,6 @@ export function useGeneralData({
   };
 }
 
-
 === FILE: src/components/GeneralTabParts/useGeneralDragDrop.ts ===
 import React, { useRef, useState } from 'react';
 import { Project } from '../../types';
@@ -37895,7 +37729,6 @@ export function useGeneralDragDrop({
   };
 }
 
-
 === FILE: src/components/GeneralTabParts/useGeneralGoogleSync.ts ===
 import React, { useState } from "react";
 import { Project, DelegationGroup, AppUser } from '../../types';
@@ -37995,7 +37828,6 @@ export function useGeneralGoogleSync({
     handleGoogleSync
   };
 }
-
 
 === FILE: src/components/GlobalFleetMonitorView.tsx ===
 import React, { useState, useEffect } from "react";
@@ -38434,7 +38266,6 @@ export function GlobalFleetMonitorView() {
     </div>
   );
 }
-
 
 === FILE: src/components/Header.tsx ===
 import { useEnrichedData } from '../hooks/useEnrichedData';
@@ -38931,7 +38762,6 @@ export function Header({
   );
 }
 
-
 === FILE: src/components/HeaderParts/HeaderMenuDrawer.tsx ===
 import React from 'react';
 import { Settings, Calendar, SlidersHorizontal, Sun, Moon, Upload, Download, ShieldAlert, Printer } from 'lucide-react';
@@ -39427,7 +39257,6 @@ export function HeaderMenuDrawer({
   );
 }
 
-
 === FILE: src/components/HeaderParts/HeaderUndoRedoControls.tsx ===
 import { Undo2, Redo2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -39500,7 +39329,6 @@ export const HeaderUndoRedoControls: React.FC<HeaderUndoRedoControlsProps> = ({
 };
 
 export default HeaderUndoRedoControls;
-
 
 === FILE: src/components/LayoutTab.tsx ===
 import React, { useState } from "react";
@@ -39664,7 +39492,6 @@ export function LayoutTab({
 
 export default LayoutTab;
 
-
 === FILE: src/components/LayoutTabParts/LayoutBottomActionBar.tsx ===
 import React from 'react';
 import { Palette, AlertTriangle } from 'lucide-react';
@@ -39738,7 +39565,6 @@ export const LayoutBottomActionBar: React.FC<LayoutBottomActionBarProps> = React
     </div>
   );
 });
-
 
 === FILE: src/components/LayoutTabParts/LayoutCanvasViewport.tsx ===
 import React, { FC, memo } from 'react';
@@ -40074,7 +39900,6 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
     </div>
   );
 });
-
 
 === FILE: src/components/LayoutTabParts/LayoutColorLegendBar.tsx ===
 import React, { Dispatch, FC, SetStateAction, memo, useEffect, useMemo, useRef, useState } from 'react';
@@ -40493,7 +40318,6 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
   );
 });
 
-
 === FILE: src/components/LayoutTabParts/LayoutColorLegendModal.tsx ===
 import React, { FC, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -40661,7 +40485,6 @@ export const LayoutColorLegendModal: React.FC<LayoutColorLegendModalProps> = ({
   }
   return content;
 };
-
 
 === FILE: src/components/LayoutTabParts/LayoutEditModeModal.tsx ===
 import React, { Dispatch, FC, SetStateAction } from 'react';
@@ -41005,7 +40828,6 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
   return content;
 };
 
-
 === FILE: src/components/LayoutTabParts/LayoutFloorVersionSelector.tsx ===
 import React, { FC, memo } from 'react';
 import { Layers } from 'lucide-react';
@@ -41062,7 +40884,6 @@ export const LayoutFloorVersionSelector: React.FC<LayoutFloorVersionSelectorProp
   );
 });
 
-
 === FILE: src/components/LayoutTabParts/LayoutFocusBanner.tsx ===
 import React, { FC } from 'react';
 import { X } from 'lucide-react';
@@ -41100,7 +40921,6 @@ export const LayoutFocusBanner: React.FC<LayoutFocusBannerProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/LayoutKonvaLayers.tsx ===
 import React, { FC, Fragment, memo } from 'react';
@@ -41364,7 +41184,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
   );
 });
 
-
 === FILE: src/components/LayoutTabParts/LayoutMiniGanttModal.tsx ===
 import React, { FC, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -41605,7 +41424,6 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
 
 export default LayoutMiniGanttModal;
 
-
 === FILE: src/components/LayoutTabParts/LayoutPrintLegendOverlay.tsx ===
 import React, { FC } from 'react';
 
@@ -41667,7 +41485,6 @@ export const LayoutPrintLegendOverlay: React.FC<LayoutPrintLegendOverlayProps> =
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/LayoutTabFilterToolbar.tsx ===
 import React, { memo } from 'react';
@@ -42024,7 +41841,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
   );
 });
 
-
 === FILE: src/components/LayoutTabParts/LayoutTabFullscreenView.tsx ===
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
@@ -42311,7 +42127,6 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
   );
 });
 
-
 === FILE: src/components/LayoutTabParts/LayoutTabStaticViewer.tsx ===
 import React from 'react';
 import { Map } from 'lucide-react';
@@ -42357,7 +42172,6 @@ export function LayoutTabStaticViewer({
 }
 
 export default LayoutTabStaticViewer;
-
 
 
 === FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.test.ts ===
@@ -42407,7 +42221,6 @@ describe('normalizeImageUrl', () => {
     expect(normalizeImageUrl('   ')).toBe('');
   });
 });
-
 
 === FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx ===
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
@@ -42829,7 +42642,6 @@ export function LayoutUnitLightboxModal({
   );
 }
 
-
 === FILE: src/components/LayoutTabParts/LayoutUnitTooltip.tsx ===
 import React, { FC, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -43194,7 +43006,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 
 export default LayoutUnitTooltip;
 
-
 === FILE: src/components/LayoutTabParts/LayoutZoomControls.tsx ===
 import React, { Dispatch, FC, SetStateAction, memo } from 'react';
 import { Bell, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
@@ -43273,7 +43084,6 @@ export const LayoutZoomControls: React.FC<LayoutZoomControlsProps> = React.memo(
     </div>
   );
 });
-
 
 === FILE: src/components/LayoutTabParts/LiveCanvas.tsx ===
 import React, { Suspense, memo, useDeferredValue, useEffect, useRef, useState } from 'react';
@@ -43762,7 +43572,6 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   );
 });
 
-
 === FILE: src/components/LayoutTabParts/MiniGanttHeader.tsx ===
 import React, { FC } from 'react';
 import { GripHorizontal, X } from 'lucide-react';
@@ -43829,7 +43638,6 @@ export const MiniGanttHeader: React.FC<MiniGanttHeaderProps> = ({ project, onClo
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/MiniGanttRowItem.tsx ===
 import React, { FC, memo } from 'react';
@@ -44043,7 +43851,6 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
     );
   }
 );
-
 
 === FILE: src/components/LayoutTabParts/PdfNativeCanvasViewer.tsx ===
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -44467,7 +44274,6 @@ export function PdfNativeCanvasViewer({
 
 export default PdfNativeCanvasViewer;
 
-
 === FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx ===
 import React, { useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize, Maximize2, ExternalLink, FileText, AlertCircle, RefreshCw } from 'lucide-react';
@@ -44743,7 +44549,6 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 
 export default PdfOrImageViewer;
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipAlertBanner.tsx ===
 import React from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
@@ -44824,7 +44629,6 @@ export const TooltipAlertBanner: React.FC<TooltipAlertBannerProps> = ({
   );
 };
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipDetailsSection.tsx ===
 import React from 'react';
 import { cn } from '../../../lib/utils';
@@ -44881,7 +44685,6 @@ export const TooltipDetailsSection: React.FC<TooltipDetailsSectionProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipHeaderBar.tsx ===
 import React from 'react';
@@ -45060,7 +44863,6 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipImageGalleryPanel.tsx ===
 import React, { Dispatch, FC, SetStateAction, useRef, useState } from 'react';
@@ -45415,7 +45217,6 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   );
 };
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipMetaRow.tsx ===
 import React from 'react';
 import { MessageSquare, BarChartHorizontal } from 'lucide-react';
@@ -45544,7 +45345,6 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = ({
   );
 };
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipProgressBars.tsx ===
 import React, { FC } from 'react';
 
@@ -45593,7 +45393,6 @@ export const TooltipProgressBars: React.FC<TooltipProgressBarsProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipTitleSection.tsx ===
 import React, { FC } from 'react';
@@ -45649,7 +45448,6 @@ export const TooltipTitleSection: React.FC<TooltipTitleSectionProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/LayoutTabParts/TooltipParts/TooltipZoomableThumbnail.tsx ===
 import React, { FC, lazy, useCallback, useRef, useState } from 'react';
@@ -45833,7 +45631,6 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
 
 export default TooltipZoomableThumbnail;
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/tooltipStoreIsolation.test.ts ===
 import { describe, it, expect, beforeEach } from 'vitest';
 import { extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
@@ -45946,7 +45743,6 @@ describe('Tooltip Store Isolation (HCM vs HN)', () => {
   });
 });
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/tooltipTypes.ts ===
 import React from 'react';
 import { Project } from '../../../types';
@@ -46025,7 +45821,6 @@ export function getMdStatusColorClass(mdStatus: string): string {
   // Default Fallback
   return 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
 }
-
 
 === FILE: src/components/LayoutTabParts/TooltipParts/useTooltipImages.ts ===
 import React, { useEffect, useMemo, useState } from 'react';
@@ -46534,7 +46329,6 @@ export function useTooltipImages({
   };
 }
 
-
 === FILE: src/components/LayoutTabParts/TooltipParts/useTooltipPosition.ts ===
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { TooltipHoverInfo } from './tooltipTypes';
@@ -46757,7 +46551,6 @@ export function useTooltipPosition({
     positionTooltip,
   };
 }
-
 
 === FILE: src/components/LayoutTabParts/layoutDataAggregator.ts ===
 import { Project } from '../../types';
@@ -47197,7 +46990,6 @@ export function buildAggregatedUnitData({
   return dataMap;
 }
 
-
 === FILE: src/components/LayoutTabParts/layoutStageUtils.ts ===
 import { useAppStore } from '../../store/useAppStore';
 import { extractFloorFromCodeOrName } from './layoutTabSearchUtils';
@@ -47612,7 +47404,6 @@ export function hasAggregatedDataChanged(prev: any, next: any): boolean {
   );
 }
 
-
 === FILE: src/components/LayoutTabParts/layoutTabSearchUtils.ts ===
 export interface UnitSuggestionItem {
   unit: string;
@@ -47909,7 +47700,6 @@ export function sortLocationsByFloorRank(locList: string[]): string[] {
   return [...locList].sort((a, b) => floorRank(a) - floorRank(b) || a.localeCompare(b));
 }
 
-
 === FILE: src/components/LayoutTabParts/layoutViewerTypes.ts ===
 import { Project } from '../../types';
 
@@ -47981,7 +47771,6 @@ export interface HoverInfo {
   clientY?: number;
   unitScreenBounds?: UnitScreenBounds;
 }
-
 
 === FILE: src/components/LayoutTabParts/useLayoutAggregates.ts ===
 import React, { useMemo, useRef } from 'react';
@@ -48364,7 +48153,6 @@ export function useLayoutAggregates({
     restrictedProjectCodes,
   };
 }
-
 
 === FILE: src/components/LayoutTabParts/useLayoutFloorData.ts ===
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -48825,7 +48613,6 @@ export function useLayoutFloorData({
   };
 }
 
-
 === FILE: src/components/LayoutTabParts/useLayoutGestures.ts ===
 import React, { useCallback, useEffect, useRef } from 'react';
 import Konva from 'konva';
@@ -49162,7 +48949,6 @@ export function useLayoutGestures({
     handleZoomOut,
   };
 }
-
 
 === FILE: src/components/LayoutTabParts/useLayoutStageInteractions.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -49653,7 +49439,6 @@ export function useLayoutStageInteractions({
   };
 }
 
-
 === FILE: src/components/LayoutTabParts/useLayoutTabData.ts ===
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
@@ -50094,7 +49879,6 @@ export function useLayoutTabData({
   };
 }
 
-
 === FILE: src/components/LayoutTabParts/useLayoutTabSettings.ts ===
 import React, { useCallback, useEffect, useState } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -50253,7 +50037,6 @@ export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTab
   };
 }
 
-
 === FILE: src/components/LayoutTabParts/useLayoutWindowListeners.ts ===
 import React, { Dispatch, SetStateAction, useEffect, useRef } from 'react';
 
@@ -50337,7 +50120,6 @@ export function useLayoutWindowListeners({
     };
   }, [stageRef]);
 }
-
 
 === FILE: src/components/LayoutTabParts/useMiniGanttData.ts ===
 import React, { useEffect, useMemo } from 'react';
@@ -50782,7 +50564,6 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
   };
 }
 
-
 === FILE: src/components/LazyImage.tsx ===
 import React, { lazy, useEffect, useRef, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
@@ -50837,7 +50618,6 @@ export function LazyImage({ src, alt, className }: { src: string, alt: string, c
     </div>
   );
 }
-
 
 === FILE: src/components/LiveLayoutParts/LiveLayoutMainView.tsx ===
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -51154,7 +50934,6 @@ export const LiveLayoutMainView: React.FC<LiveLayoutMainViewProps> = ({
 
 export default LiveLayoutMainView;
 
-
 === FILE: src/components/LiveLayoutParts/LiveLayoutR2Modal.tsx ===
 import React, { FC } from 'react';
 import { X, Cloud, Key, Save } from 'lucide-react';
@@ -51290,7 +51069,6 @@ export const LiveLayoutR2Modal: React.FC<LiveLayoutR2ModalProps> = ({
 
 export default LiveLayoutR2Modal;
 
-
 === FILE: src/components/LiveLayoutParts/liveLayoutTypes.ts ===
 export interface LiveLayoutViewerProps {
   storeFilter: string;
@@ -51305,7 +51083,6 @@ export interface LiveLayoutMainViewProps extends LiveLayoutViewerProps {
   config: any;
   onRefreshConfig?: () => void;
 }
-
 
 === FILE: src/components/LiveLayoutParts/useLiveLayoutR2Config.ts ===
 import React, { useCallback, useEffect, useState } from 'react';
@@ -51650,7 +51427,6 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
 
 export default useLiveLayoutR2Config;
 
-
 === FILE: src/components/LiveLayoutViewer.tsx ===
 import React, { memo } from 'react';
 import Konva from 'konva';
@@ -51752,7 +51528,6 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
 });
 
 export default LiveLayoutViewer;
-
 
 === FILE: src/components/LoginModal.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -51903,7 +51678,6 @@ export function LoginModal({ isOpen, onClose, onLogin}: LoginModalProps) {
     </div>
   );
 }
-
 
 === FILE: src/components/ManualTab.tsx ===
 import React, { useRef } from 'react';
@@ -52062,7 +51836,6 @@ export function ManualTab() {
   );
 }
 
-
 === FILE: src/components/MultiCheckboxSelect.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
@@ -52144,7 +51917,6 @@ export function MultiCheckboxSelect({
     </div>
   );
 }
-
 
 === FILE: src/components/MultiSelect.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -52320,7 +52092,6 @@ export function MultiSelect({ value, onChange, options, placeholder = 'Select...
     </div>
   );
 }
-
 
 === FILE: src/components/Navigation.tsx ===
 import { useAppStore } from '../store/useAppStore';
@@ -52775,7 +52546,6 @@ export function Navigation({
   );
 }
 
-
 === FILE: src/components/NotificationParts/NotificationFilterToolbar.tsx ===
 import React, { Dispatch, FC, SetStateAction } from 'react';
 import { RotateCcw, Archive, AlertCircle, Clock, Zap, UserCheck } from 'lucide-react';
@@ -53161,7 +52931,6 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
   );
 };
 
-
 === FILE: src/components/NotificationParts/NotificationItemCard.tsx ===
 import React, { FC, memo } from 'react';
 import { Bell, Check, RotateCcw, AlertCircle, Clock, Zap, UserCheck, ArrowUpRight } from 'lucide-react';
@@ -53460,7 +53229,6 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
   }
 );
 
-
 === FILE: src/components/NotificationParts/notificationTypes.ts ===
 import { ActiveNotification, NotificationPriority } from '../../types';
 
@@ -53487,7 +53255,6 @@ export type NotificationTypeFilter = 'project' | 'task' | 'task_delegation' | 'a
 export type NotificationStoreFilter = 'all' | 'HCM' | 'HN';
 export type NotificationPriorityFilter = 'all' | NotificationPriority;
 export type NotificationAssigneeFilter = 'all' | 'assigned_to_me';
-
 
 === FILE: src/components/NotificationParts/useNotificationData.ts ===
 import React, { useEffect, useMemo, useState } from 'react';
@@ -53794,7 +53561,6 @@ export function useNotificationData({
   };
 }
 
-
 === FILE: src/components/NotificationTab.tsx ===
 import React from 'react';
 import { Bell } from 'lucide-react';
@@ -53914,7 +53680,6 @@ export function NotificationTab({
 
 export default NotificationTab;
 
-
 === FILE: src/components/PerformanceDashboardParts/PerformanceCollectionTable.tsx ===
 import React from 'react';
 import { Layers } from 'lucide-react';
@@ -54009,7 +53774,6 @@ export const PerformanceCollectionTable: React.FC<PerformanceCollectionTableProp
     </div>
   );
 };
-
 
 === FILE: src/components/PerformanceDashboardParts/PerformanceEventLogs.tsx ===
 import React from 'react';
@@ -54140,7 +53904,6 @@ export const PerformanceEventLogs: React.FC<PerformanceEventLogsProps> = ({
   );
 };
 
-
 === FILE: src/components/PerformanceDashboardParts/PerformanceHeader.tsx ===
 import React from 'react';
 import {
@@ -54269,7 +54032,6 @@ export const PerformanceHeader: React.FC<PerformanceHeaderProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/PerformanceDashboardParts/PerformanceMetricsCards.tsx ===
 import React from 'react';
@@ -54419,7 +54181,6 @@ export const PerformanceMetricsCards: React.FC<PerformanceMetricsCardsProps> = (
   );
 };
 
-
 === FILE: src/components/PerformanceDashboardParts/performanceTypes.ts ===
 export interface FirestorePerformanceDashboardProps {
   onClose?: () => void;
@@ -54432,7 +54193,6 @@ export interface CollectionStatItem {
   activeListeners: number;
   efficiency: string;
 }
-
 
 === FILE: src/components/PictureMapping/DataContext.ts ===
 import { create } from 'zustand';
@@ -55120,7 +54880,6 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
 }));
 
 
-
 === FILE: src/components/PictureMapping/README.md ===
 # Hướng Dẫn Tích Hợp Tab Picture (DataMapping Canvas)
 
@@ -55171,7 +54930,6 @@ export default function App() {
   );
 }
 ```
-
 
 === FILE: src/components/PictureMapping/components/CloudSync/CloudSyncManager.tsx ===
 import React, { useState } from "react";
@@ -56335,7 +56093,6 @@ export default function CloudSyncManager({
   );
 }
 
-
 === FILE: src/components/PictureMapping/components/ColorPicker.tsx ===
 import React from 'react';
 
@@ -56357,7 +56114,6 @@ export function ColorPicker({ color, onChange, className }: ColorPickerProps) {
 }
 
 export default ColorPicker;
-
 
 
 === FILE: src/components/PictureMapping/components/DataMapping/DynamicHierarchyTab.tsx ===
@@ -57627,7 +57383,6 @@ function DynamicHierarchyTab({
 
 export default React.memo(DynamicHierarchyTab);
 
-
 === FILE: src/components/PictureMapping/components/DataMapping/DynamicUnitSummaryTable.tsx ===
 import React, { useState, useMemo } from "react";
 import { DynamicUnitSummaryItem } from '../../lib/dynamicSummaryEngine';
@@ -57889,7 +57644,6 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
     </div>
   );
 });
-
 
 === FILE: src/components/PictureMapping/components/DataMapping/EditTab.tsx ===
 import React, { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -60208,7 +59962,6 @@ function createGridPattern(gridSize: number) {
 
 export default React.memo(EditTab);
 
-
 === FILE: src/components/PictureMapping/components/DataMapping/ReviewOnlyView.tsx ===
 import React, { useState, useEffect, useRef } from "react";
 import { useShallow } from 'zustand/react/shallow';
@@ -60483,7 +60236,6 @@ function ReviewOnlyView() {
 }
 
 export default React.memo(ReviewOnlyView);
-
 
 === FILE: src/components/PictureMapping/components/DataMapping/ReviewTab.tsx ===
 import React, { useState, useEffect, useRef } from "react";
@@ -62501,7 +62253,6 @@ export const ExportAllManager = ({ versions, units, summaryData, dynamicSummaryM
 
 export default React.memo(ReviewTab);
 
-
 === FILE: src/components/PictureMapping/components/DataMapping/types.ts ===
 export type ShapeType = 'rect' | 'circle' | 'polygon';
 
@@ -62560,7 +62311,6 @@ export interface MapVersion {
   year?: string;
   mapUnits?: UnitShape[];
 }
-
 
 === FILE: src/components/PictureMapping/components/DataMappingTab.tsx ===
 import React, { useState } from "react";
@@ -62967,7 +62717,6 @@ export default React.memo(function DataMappingTab() {
     </div>
   );
 });
-
 
 
 === FILE: src/components/PictureMapping/components/R2UploadModal.tsx ===
@@ -63417,7 +63166,6 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
 
   return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;
 }
-
 
 === FILE: src/components/PictureMapping/hooks/useDynamicRules.ts ===
 import React, { useEffect, useMemo, useCallback, useRef } from "react";
@@ -63958,7 +63706,6 @@ export function useDynamicRules(
   };
 }
 
-
 === FILE: src/components/PictureMapping/lib/auth.ts ===
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -64022,7 +63769,6 @@ export const logout = async () => {
   await auth.signOut();
   cachedAccessToken = null;
 };
-
 
 === FILE: src/components/PictureMapping/lib/drive.ts ===
 export async function uploadFileToDrive({
@@ -64096,7 +63842,6 @@ export async function uploadFileToDrive({
 
   return await uploadRes.json();
 }
-
 
 === FILE: src/components/PictureMapping/lib/dynamicExportService.ts ===
 import { doc, setDoc } from 'firebase/firestore';
@@ -65064,7 +64809,6 @@ export async function executeTriggerExportProcess(
   };
 }
 
-
 === FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts ===
 import React, { useMemo } from "react";
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
@@ -65600,7 +65344,6 @@ export function useDynamicUnitSummary({
     effectiveYear,
   };
 }
-
 
 === FILE: src/components/PictureMapping/lib/r2Upload.ts ===
 import type { S3Client as S3ClientType } from '@aws-sdk/client-s3';
@@ -66363,7 +66106,6 @@ export async function uploadFilesToR2(
   };
 }
 
-
 === FILE: src/components/PictureMapping/lib/summaryData.ts ===
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from "react";
@@ -66866,7 +66608,6 @@ export const generateSizeLabel = (unit: Record<string, any>, uInfo: any, selecte
     return generateSizeLabelLines(unit, uInfo, selectedLabels).map(l => l.text).join('\n') || unit.name;
 };
 
-
 === FILE: src/components/PictureMapping/lib/utils.ts ===
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -66946,7 +66687,6 @@ export function standardizeDateToMMDDYYYY(dateStr: string): string {
   return str;
 }
 
-
 === FILE: src/components/PictureMapping/types.ts ===
 export interface UnitInfo {
   unit: string;
@@ -66965,7 +66705,6 @@ export interface SalesInfo {
   sales: number;
 }
 
-
 === FILE: src/components/PictureMappingTab.tsx ===
 import React from 'react';
 import DataMappingTab from './PictureMapping/components/DataMappingTab';
@@ -66979,7 +66718,6 @@ export function PictureMappingTab() {
     </div>
   );
 }
-
 
 === FILE: src/components/Portal.tsx ===
 import React, { useState, useEffect } from "react";
@@ -66998,7 +66736,6 @@ export function Portal({ children }: { children: React.ReactNode }) {
   const target = document.getElementById('portal-root') || document.body;
   return createPortal(children, target);
 }
-
 
 === FILE: src/components/PredecessorDropdownList.tsx ===
 import React from 'react';
@@ -67122,7 +66859,6 @@ export const PredecessorDropdownList: React.FC<PredecessorDropdownListProps> = R
   );
 });
 PredecessorDropdownList.displayName = 'PredecessorDropdownList';
-
 
 === FILE: src/components/PredecessorMultiInput.tsx ===
 import React, { Component, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -67697,7 +67433,6 @@ export function PredecessorMultiInput({
   );
 }
 
-
 === FILE: src/components/PrintFilterHeader.tsx ===
 import React from "react";
 import { Building2, Calendar, FolderGit2, FileText } from "lucide-react";
@@ -67789,7 +67524,6 @@ export const PrintFilterHeader: React.FC<PrintFilterHeaderProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/PrintOptionsPanel.tsx ===
 import React, { useState, useCallback } from "react";
@@ -68232,7 +67966,6 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
 
 PrintOptionsPanel.displayName = 'PrintOptionsPanel';
 
-
 === FILE: src/components/PrintParts/printPresetTypes.ts ===
 export interface PrintPreset {
   id: string;
@@ -68310,7 +68043,6 @@ export const BUILT_IN_PRESETS: PrintPreset[] = [
 ];
 
 export const PRESETS_STORAGE_KEY = "taka_print_presets_v1";
-
 
 === FILE: src/components/PrintPreviewOverlay.tsx ===
 import React, { useState, useEffect } from "react";
@@ -68467,7 +68199,6 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/ProjectDelegationTab.tsx ===
 import React, { useState, useMemo } from "react";
@@ -68702,7 +68433,6 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
   );
 });
 
-
 === FILE: src/components/ProjectModal.tsx ===
 import React, { Suspense, useRef } from 'react';
 import Draggable from 'react-draggable';
@@ -68841,7 +68571,6 @@ export function ProjectModal(props: ProjectModalProps) {
 }
 
 export type { ProjectModalProps } from './ProjectModalParts/projectModalTypes';
-
 
 === FILE: src/components/ProjectModal/ProjectChat.tsx ===
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -69007,7 +68736,6 @@ export const ProjectChat = React.memo(function ProjectChat({
     </div>
   );
 });
-
 
 === FILE: src/components/ProjectModal/chat/ProjectChatInput.tsx ===
 import React, { forwardRef, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
@@ -69320,7 +69048,6 @@ export const ProjectChatInput = React.memo(
   })
 );
 
-
 === FILE: src/components/ProjectModal/chat/ProjectCommentItem.tsx ===
 import React, { FC } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
@@ -69565,7 +69292,6 @@ export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = ({
   );
 };
 
-
 === FILE: src/components/ProjectModal/chat/useProjectChatActions.ts ===
 import { doc } from 'firebase/firestore';
 import { writeBatch } from '../../../lib/firestoreWrites';
@@ -69760,7 +69486,6 @@ export function useProjectChatActions({
   };
 }
 
-
 === FILE: src/components/ProjectModalParts/FastTextarea.tsx ===
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
 
@@ -69811,7 +69536,6 @@ export const FastTextarea = React.forwardRef<HTMLTextAreaElement, FastTextareaPr
 );
 
 FastTextarea.displayName = 'FastTextarea';
-
 
 === FILE: src/components/ProjectModalParts/ProjectDelegationGroupCard.tsx ===
 import React, { FC, memo } from 'react';
@@ -69983,7 +69707,6 @@ export const ProjectDelegationGroupCard: React.FC<ProjectDelegationGroupCardProp
   );
 });
 ProjectDelegationGroupCard.displayName = 'ProjectDelegationGroupCard';
-
 
 === FILE: src/components/ProjectModalParts/ProjectDelegationSubTaskItem.tsx ===
 import React, { FC, memo } from 'react';
@@ -70297,7 +70020,6 @@ export const ProjectDelegationSubTaskItem: React.FC<ProjectDelegationSubTaskItem
   );
 });
 ProjectDelegationSubTaskItem.displayName = 'ProjectDelegationSubTaskItem';
-
 
 === FILE: src/components/ProjectModalParts/ProjectDetailsForm.tsx ===
 import React, { Dispatch, SetStateAction, memo } from 'react';
@@ -70714,7 +70436,6 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
   );
 });
 
-
 === FILE: src/components/ProjectModalParts/ProjectModalHeader.tsx ===
 import React, { memo } from 'react';
 import { X } from 'lucide-react';
@@ -70800,7 +70521,6 @@ export const ProjectModalHeader = memo(function ProjectModalHeader({
     </div>
   );
 });
-
 
 === FILE: src/components/ProjectModalParts/projectModalIdentityService.ts ===
 import { Project, Task } from '../../types';
@@ -71042,7 +70762,6 @@ export async function handleProjectIdentityChange({
   });
 }
 
-
 === FILE: src/components/ProjectModalParts/projectModalTypes.ts ===
 import { Project } from '../../types';
 
@@ -71122,7 +70841,6 @@ export function getLinkCodesValidationError(
 
   return null;
 }
-
 
 === FILE: src/components/ProjectModalParts/useProjectModalData.ts ===
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -71363,7 +71081,6 @@ export function useProjectModalData({
     handleDelete
   };
 }
-
 
 === FILE: src/components/ProjectModalParts/useProjectModalMutations.ts ===
 import React, { Dispatch, SetStateAction, useState } from 'react';
@@ -71670,7 +71387,6 @@ export function useProjectModalMutations({
     handleDelete
   };
 }
-
 
 === FILE: src/components/ProjectQuickNavModal.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -72032,7 +71748,6 @@ export function ProjectQuickNavModal({
   return modalContent;
 }
 
-
 === FILE: src/components/QRCodeButton.tsx ===
 import React, { FC, useEffect, useState } from 'react';
 import { QrCode, X, Copy, Check } from 'lucide-react';
@@ -72110,7 +71825,6 @@ export const QRCodeButton: React.FC<QRCodeButtonProps> = ({ url, title }) => {
     </>
   );
 };
-
 
 === FILE: src/components/QRScannerModal.tsx ===
 import React, { FC, useEffect, useRef, useState } from 'react';
@@ -72583,7 +72297,6 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = (props) => (
   </ErrorBoundary>
 );
 
-
 === FILE: src/components/QuickNavButton.tsx ===
 import React from 'react';
 import { ExternalLink } from 'lucide-react';
@@ -72623,7 +72336,6 @@ export function QuickNavButton({ project, task, taskCode, className = "", title 
     </button>
   );
 }
-
 
 === FILE: src/components/ResizableHeader.tsx ===
 import React, { ReactNode, useState } from 'react';
@@ -72703,7 +72415,6 @@ export function ResizableHeader({
     </th>
   );
 }
-
 
 === FILE: src/components/RibbonDisplayMenu.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -72878,7 +72589,6 @@ export function RibbonDisplayMenu({ className = '', variant = 'navbar' }: Ribbon
     </div>
   );
 }
-
 
 === FILE: src/components/SettingTab.tsx ===
 import React, { Suspense, useState } from 'react';
@@ -73146,7 +72856,6 @@ export function SettingTab({ rules }: SettingTabProps) {
 }
 
 export default SettingTab;
-
 
 === FILE: src/components/SettingTabParts/SettingDataMaintenance.tsx ===
 import React, { FC, useState } from 'react';
@@ -73598,7 +73307,6 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
   );
 };
 
-
 === FILE: src/components/SettingTabParts/SettingNotificationRules.tsx ===
 import React, { FC, useState } from 'react';
 import { useLanguage } from "../../lib/LanguageContext";
@@ -73826,7 +73534,6 @@ export const SettingNotificationRules: React.FC<SettingNotificationRulesProps> =
   );
 };
 
-
 === FILE: src/components/SettingTabParts/maintenanceHelpers.ts ===
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
 import { writeBatch } from '../../lib/firestoreWrites';
@@ -73967,7 +73674,6 @@ export async function archiveHistoricalData(): Promise<number> {
   return Object.values(archiveData).reduce((acc: number, arr: any) => acc + arr.length, 0);
 }
 
-
 === FILE: src/components/SettingTabParts/settingTypes.ts ===
 import { NotificationRule } from "../../types";
 
@@ -73981,7 +73687,6 @@ export interface ConfirmModalState {
   message: string;
   onConfirm: () => void;
 }
-
 
 === FILE: src/components/ShortcutsModal.tsx ===
 import React, { useEffect, useRef } from 'react';
@@ -74064,7 +73769,6 @@ export function ShortcutsModal({ isOpen, onClose}: ShortcutsModalProps) {
     </Portal>
   );
 }
-
 
 === FILE: src/components/SummaryParts/SummaryChartsView.tsx ===
 import React, { FC, memo } from 'react';
@@ -74201,7 +73905,6 @@ export const SummaryChartsView: React.FC<SummaryChartsViewProps> = React.memo(({
   );
 });
 SummaryChartsView.displayName = 'SummaryChartsView';
-
 
 === FILE: src/components/SummaryParts/SummaryFilterToolbar.tsx ===
 import React, { FC, memo } from 'react';
@@ -74372,7 +74075,6 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
 });
 SummaryFilterToolbar.displayName = 'SummaryFilterToolbar';
 
-
 === FILE: src/components/SummaryParts/SummaryMetricsCards.tsx ===
 import React, { FC, memo } from 'react';
 import { TrendingUp, Wallet } from 'lucide-react';
@@ -74442,7 +74144,6 @@ export const SummaryMetricsCards: React.FC<SummaryMetricsCardsProps> = React.mem
 });
 SummaryMetricsCards.displayName = 'SummaryMetricsCards';
 
-
 === FILE: src/components/SummaryParts/summaryTypes.ts ===
 import { Project } from '../../types';
 
@@ -74471,7 +74172,6 @@ export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ];
-
 
 === FILE: src/components/SummaryParts/useSummaryData.ts ===
 import React, { useMemo, useState } from 'react';
@@ -74590,7 +74290,6 @@ export function useSummaryData() {
   };
 }
 
-
 === FILE: src/components/SummaryTab.tsx ===
 import React, { Suspense } from 'react';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -74702,7 +74401,6 @@ export function SummaryTab({}: SummaryTabProps) {
 }
 
 export default SummaryTab;
-
 
 === FILE: src/components/SyncMonitor.tsx ===
 import React, { useEffect, useState } from 'react';
@@ -74880,7 +74578,6 @@ const XIcon = ({ size }: { size: number }) => (
   </svg>
 );
 
-
 === FILE: src/components/TabErrorBoundary.tsx ===
 import React, { Component, ReactNode } from 'react';
 import { RotateCw, AlertTriangle } from 'lucide-react';
@@ -74985,7 +74682,6 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
     return this.props.children;
   }
 }
-
 
 === FILE: src/components/TaskDelegationParts/TaskDelegationDesktopGroupRow.tsx ===
 import React, { Fragment, memo } from 'react';
@@ -75228,7 +74924,6 @@ export const TaskDelegationDesktopGroupRow = React.memo(function TaskDelegationD
     </React.Fragment>
   );
 });
-
 
 === FILE: src/components/TaskDelegationParts/TaskDelegationDesktopSubTaskRow.tsx ===
 import React, { Fragment, lazy, memo } from 'react';
@@ -75720,7 +75415,6 @@ export const TaskDelegationDesktopSubTaskRow = React.memo(function TaskDelegatio
   );
 });
 
-
 === FILE: src/components/TaskDelegationParts/TaskDelegationFilterToolbar.tsx ===
 import React, { memo } from 'react';
 import { Search, Plus, ExternalLink, ArrowLeft, X } from 'lucide-react';
@@ -75983,7 +75677,6 @@ export const TaskDelegationFilterToolbar = React.memo(function TaskDelegationFil
   );
 });
 
-
 === FILE: src/components/TaskDelegationParts/TaskDelegationMobileCard.tsx ===
 import React, { memo } from 'react';
 import { ChevronRight, ChevronDown, Search, Trash2 } from 'lucide-react';
@@ -76183,7 +75876,6 @@ export const TaskDelegationMobileCard = React.memo(function TaskDelegationMobile
     </div>
   );
 });
-
 
 === FILE: src/components/TaskDelegationParts/TaskDelegationMobileSubTaskItem.tsx ===
 import React, { memo } from 'react';
@@ -76583,7 +76275,6 @@ export const TaskDelegationMobileSubTaskItem = React.memo(function TaskDelegatio
   );
 });
 
-
 === FILE: src/components/TaskDelegationParts/TaskDelegationMobileView.tsx ===
 import React, { memo } from 'react';
 import { ChevronRight, ChevronDown, Search } from 'lucide-react';
@@ -76769,7 +76460,6 @@ export const TaskDelegationMobileView = React.memo(function TaskDelegationMobile
     </div>
   );
 });
-
 
 === FILE: src/components/TaskDelegationParts/TaskDelegationTableView.tsx ===
 import React, { Fragment, memo } from 'react';
@@ -77118,7 +76808,6 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
   );
 });
 
-
 === FILE: src/components/TaskDelegationParts/delegationAutoSync.ts ===
 import { doc } from 'firebase/firestore';
 import { writeBatch } from '../../lib/firestoreWrites';
@@ -77190,7 +76879,6 @@ export async function checkAndSyncRealtimeSubTaskCompletion(
     }
   }
 }
-
 
 === FILE: src/components/TaskDelegationParts/delegationFilterSort.ts ===
 import { DelegationGroup, AppUser } from '../../types';
@@ -77463,7 +77151,6 @@ export function filterAndSortDelegationGroups({
     });
 }
 
-
 === FILE: src/components/TaskDelegationParts/taskDelegationTypes.ts ===
 import { DelegationGroup, Project, Task } from '../../types';
 
@@ -77540,7 +77227,6 @@ export const computeFallbackYear = (
   }
   return new Date().getFullYear();
 };
-
 
 === FILE: src/components/TaskDelegationParts/useTaskDelegationData.ts ===
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -77981,7 +77667,6 @@ export function useTaskDelegationData({
     globalStoreFilter,
   };
 }
-
 
 === FILE: src/components/TaskDelegationParts/useTaskDelegationMutations.ts ===
 import React, { useEffect, useState } from 'react';
@@ -78474,7 +78159,6 @@ export function useTaskDelegationMutations({
   };
 }
 
-
 === FILE: src/components/TaskDelegationTab.tsx ===
 import React, { Suspense, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -78675,7 +78359,6 @@ export function TaskDelegationTab({ onBackFromFocus }: TaskDelegationTabProps) {
 
 export default TaskDelegationTab;
 
-
 === FILE: src/components/TaskModal.tsx ===
 import React, { ReactNode, Suspense, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTaskModalLogic } from '../hooks/useTaskModalLogic';
@@ -78813,7 +78496,6 @@ export function TaskModal(props: TaskModalProps) {
     </Portal>
   );
 }
-
 
 === FILE: src/components/TaskModalParts/PredecessorSearchSuggest.tsx ===
 import React, { Component, FC, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -79656,7 +79338,6 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
 
 PredecessorSearchSuggest.displayName = 'PredecessorSearchSuggest';
 
-
 === FILE: src/components/TaskModalParts/TaskBasicInfo.tsx ===
 import React, { memo, useMemo } from 'react';
 import { ExternalLink, Unlink, Trash2 } from 'lucide-react';
@@ -79948,7 +79629,6 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
 });
 
 
-
 === FILE: src/components/TaskModalParts/TaskChat.tsx ===
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task, AppUser, DelegationGroup } from '../../types';
@@ -80132,7 +79812,6 @@ export const TaskChat = React.memo(function TaskChat({
   );
 });
 
-
 === FILE: src/components/TaskModalParts/TaskDatesSection.tsx ===
 import React, { Dispatch, SetStateAction, memo } from 'react';
 import { Pin, Target } from 'lucide-react';
@@ -80289,7 +79968,6 @@ export const TaskDatesSection = memo(function TaskDatesSection({
   );
 });
 
-
 === FILE: src/components/TaskModalParts/TaskModalHeader.tsx ===
 import React, { memo } from 'react';
 import { X, Link as LinkIcon } from 'lucide-react';
@@ -80387,7 +80065,6 @@ export const TaskModalHeader = memo(function TaskModalHeader({
     </div>
   );
 });
-
 
 === FILE: src/components/TaskModalParts/TaskPredecessorSection.tsx ===
 import React, { memo, useMemo } from 'react';
@@ -80489,7 +80166,6 @@ export const TaskPredecessorSection = memo(function TaskPredecessorSection({
     </div>
   );
 });
-
 
 === FILE: src/components/TaskModalParts/TaskPredecessorSelect.tsx ===
 import React, { FC, memo, useMemo, useState } from 'react';
@@ -80624,7 +80300,6 @@ export const TaskPredecessorSelect: React.FC<TaskPredecessorSelectProps> = React
     </div>
   );
 });
-
 
 === FILE: src/components/TaskModalParts/chat/TaskChatApprovalBoard.tsx ===
 import React, { FC } from 'react';
@@ -80838,7 +80513,6 @@ export const TaskChatApprovalBoard: React.FC<TaskChatApprovalBoardProps> = ({
   );
 };
 
-
 === FILE: src/components/TaskModalParts/chat/TaskChatCommentItem.tsx ===
 import React, { FC } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
@@ -81001,7 +80675,6 @@ export const TaskChatCommentItem: React.FC<TaskChatCommentItemProps> = ({
     </div>
   );
 };
-
 
 === FILE: src/components/TaskModalParts/chat/TaskChatDelegationSection.tsx ===
 import React, { FC } from 'react';
@@ -81458,7 +81131,6 @@ export const TaskChatDelegationSection: React.FC<TaskChatDelegationSectionProps>
   );
 };
 
-
 === FILE: src/components/TaskModalParts/chat/TaskChatInput.tsx ===
 import React, { forwardRef, lazy, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
@@ -81830,7 +81502,6 @@ export const TaskChatInput = React.memo(
   })
 );
 
-
 === FILE: src/components/TaskModalParts/chat/TaskChatReportsList.tsx ===
 import React, { FC } from 'react';
 import { Paperclip, Maximize2, ExternalLink, FileText } from 'lucide-react';
@@ -81938,7 +81609,6 @@ export const TaskChatReportsList: React.FC<TaskChatReportsListProps> = ({ linked
     </>
   );
 };
-
 
 === FILE: src/components/TaskModalParts/chat/chatSharedUtils.tsx ===
 import React, { FC } from 'react';
@@ -82069,7 +81739,6 @@ export const ChatHighlightedText: React.FC<ChatHighlightedTextProps> = ({
     </>
   );
 };
-
 
 === FILE: src/components/TaskModalParts/chat/useTaskChatActions.ts ===
 import React, { Dispatch, SetStateAction, useCallback } from 'react';
@@ -82371,7 +82040,6 @@ export function useTaskChatActions({
     handleSendFromInput
   };
 }
-
 
 === FILE: src/components/TaskModularModal.tsx ===
 import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
@@ -82862,7 +82530,6 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
   );
 };
 
-
 === FILE: src/components/TaskNoteModal.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
@@ -83030,7 +82697,6 @@ export function TaskNoteModal({ isOpen, onClose, task, onSave, canWrite}: TaskNo
   );
 }
 
-
 === FILE: src/components/Toast.tsx ===
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
@@ -83068,7 +82734,6 @@ export function Toast({ title, message, onClose}: ToastProps) {
     </div>
   );
 }
-
 
 === FILE: src/components/UserModal.tsx ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -83222,7 +82887,6 @@ export function UserModal({ isOpen, onClose, user}: UserModalProps) {
   );
 }
 
-
 === FILE: src/components/ZoomableImageViewer.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { ZoomableImageViewer } from './ZoomableImageViewer';
@@ -83233,7 +82897,6 @@ describe('ZoomableImageViewer', () => {
     expect(typeof ZoomableImageViewer).toBe('function');
   });
 });
-
 
 === FILE: src/components/ZoomableImageViewer.tsx ===
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -83668,7 +83331,6 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 export default ZoomableImageViewer;
 
 
-
 === FILE: src/hooks/taskModal/taskModalSaveService.ts ===
 import { doc, deleteField } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from '../../lib/firebase';
@@ -84062,9 +83724,11 @@ export async function executeTaskSave({
 
         if (datesOrStatusChanged) {
           const allTasksCurrent = useAppStore.getState().tasks;
-          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent);
+          const targetProjId = dataToSave.projectId ? String(dataToSave.projectId) : (currentProject?.id ? String(currentProject.id) : undefined);
+          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent, targetProjId);
           if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
-            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent);
+            const oldProjId = task.projectId ? String(task.projectId) : targetProjId;
+            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
           }
         }
       } catch (error: any) {
@@ -84108,7 +83772,6 @@ export async function executeTaskSave({
     return false;
   }
 }
-
 
 === FILE: src/hooks/taskModal/useTaskModalFormState.ts ===
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -84417,7 +84080,6 @@ export function useTaskModalFormState({
     toggleDurationManual
   };
 }
-
 
 === FILE: src/hooks/useDeepLinkLogic.ts ===
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -84849,7 +84511,6 @@ const checkAccessLocally = useCallback((data: any): boolean => {
   };
 }
 
-
 === FILE: src/hooks/useDetailPredecessorSync.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Project, Task, TakaDeltaItem } from '../types';
@@ -85059,7 +84720,6 @@ export function useDetailPredecessorSync({
     handleConvertAllSubtasksToHash,
   };
 }
-
 
 === FILE: src/hooks/useDetailTaskReorder.ts ===
 import React, { Dispatch, SetStateAction, useCallback, useMemo, useState } from 'react';
@@ -85443,7 +85103,6 @@ export function useDetailTaskReorder({
   };
 }
 
-
 === FILE: src/hooks/useEnrichedData.ts ===
 import React, { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -85686,11 +85345,11 @@ export function useEnrichedData() {
           });
 
           p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+            const tsId = ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
             const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
             const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-            if (isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name)) {
+            if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
               return;
             }
 
@@ -85759,7 +85418,6 @@ export function useEnrichedData() {
   }, [projects, rawTasks, delegationGroups, currentUser]);
 }
 
-
 === FILE: src/hooks/useFirebaseData.ts ===
 import { useMemo } from "react";
 import { useAppStore } from "../store/useAppStore";
@@ -85804,7 +85462,6 @@ export function useFirebaseData() {
   useDelegationsHydration({ querySignature, userRole, allowedStores });
 }
 
-
 === FILE: src/hooks/useFirebaseDataParts/firebaseQueryHelpers.ts ===
 import { query, where } from "firebase/firestore";
 
@@ -85835,7 +85492,6 @@ export function buildStoreAndYearQuery(
 
   return q;
 }
-
 
 === FILE: src/hooks/useFirebaseDataParts/tasksHydrationHelpers.ts ===
 import { Task, Project } from "../../types";
@@ -85914,7 +85570,6 @@ export function groupActiveProjectsByYear(
 
   return map;
 }
-
 
 === FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ===
 import { useEffect, useRef, useCallback } from "react";
@@ -86209,7 +85864,6 @@ export function useCostsHydration({
     setCloudStatus,
   ]);
 }
-
 
 === FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts ===
 import { useEffect, useRef, useCallback } from "react";
@@ -86516,7 +86170,6 @@ export function useDelegationsHydration({
     setCloudStatus,
   ]);
 }
-
 
 === FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts ===
 import { useEffect, useRef, useCallback } from "react";
@@ -86834,7 +86487,6 @@ export function useProjectsHydration({
     }
   }, [querySignature, userRole, allowedStores, globalYearFilter, globalStoreFilter, batchProjectsUpdate, setCloudStatus]);
 }
-
 
 === FILE: src/hooks/useFirebaseDataParts/useStaticAndAuthHydration.ts ===
 import { useEffect, useRef } from "react";
@@ -87217,7 +86869,6 @@ export function useStaticAndAuthHydration() {
   }, [globalYearFilter]);
 }
 
-
 === FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts ===
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
@@ -87302,7 +86953,7 @@ export function useTasksHydration({
       const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
 
       if (isTrueDelete) {
-        markTasksDeleted([id, data.taskCodePhu, data.name]);
+        markTasksDeleted([id]);
         pendingTasksMap.current!.delete(id);
         pendingTasksChanged.current.delete(id);
         pendingTasksRemoved.current.add(id);
@@ -87691,8 +87342,13 @@ export function useTasksHydration({
                     // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
                     // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
                     const compatibleChanges = snapshot.docChanges().filter((ch) => {
-                      if (ch.type === "removed") return true;
                       const dt: any = ch.doc.data();
+                      if (ch.type === "removed") {
+                        if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                        if (dt && dt.projectStore && p.store &&
+                            String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                        return true;
+                      }
                       if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
                       if (dt.projectStore && p.store &&
                           String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
@@ -87767,7 +87423,6 @@ export function useTasksHydration({
     setCloudStatus,
   ]);
 }
-
 
 === FILE: src/hooks/useGanttDragDrop.ts ===
 import React, { useCallback, useRef, useState } from 'react';
@@ -87877,7 +87532,6 @@ export function useGanttDragDrop(tasks: Task[], projects: Project[]) {
   };
 }
 
-
 === FILE: src/hooks/useLocationOptions.ts ===
 import React, { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -87974,7 +87628,6 @@ export function useLocationOptions() {
     
   }, [enrichedProjects, filteredTasks, locations, globalStoreFilter, globalYearFilter, currentUser, locationVisibility]);
 }
-
 
 === FILE: src/hooks/useNotificationActions.ts ===
 import React, { useCallback } from 'react';
@@ -88260,7 +87913,6 @@ export function useNotificationActions() {
   };
 }
 
-
 === FILE: src/hooks/useOffscreenImage.ts ===
 import React, { useEffect, useState } from 'react';
 import {
@@ -88435,7 +88087,6 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
   return [image, status] as const;
 }
 
-
 === FILE: src/hooks/usePaginatedTasks.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { collection, query, where, orderBy, limit, startAfter, getDocs, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
@@ -88534,7 +88185,6 @@ export function usePaginatedTasks(isActiveTab: boolean) {
 
   return { tasks, loading, hasMore, loadMore: () => fetchTasks(true) };
 }
-
 
 === FILE: src/hooks/usePrintExport.ts ===
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
@@ -89239,7 +88889,6 @@ const handlePrintToPDF = async () => {
   };
 }
 
-
 === FILE: src/hooks/usePushNotifications.ts ===
 import React, { useEffect } from 'react';
 import { onMessage } from "firebase/messaging";
@@ -89306,7 +88955,6 @@ export function usePushNotifications() {
   }, []);
 }
 
-
 === FILE: src/hooks/useTableVirtualizer.ts ===
 import React, { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -89342,7 +88990,6 @@ export function useTableVirtualizer({
     totalSize: virtualizer.getTotalSize(),
   };
 }
-
 
 === FILE: src/hooks/useTaskFilters.ts ===
 import React, { useEffect, useState } from 'react';
@@ -89412,7 +89059,6 @@ export function useTaskFilters(currentUser: AppUser) {
     actStatusFilter, setActStatusFilter
   };
 }
-
 
 === FILE: src/hooks/useTaskModalLogic.ts ===
 import React, { useEffect, useRef, useState } from 'react';
@@ -89731,7 +89377,6 @@ export function useTaskModalLogic({
 
 export type TaskModalLogicType = ReturnType<typeof useTaskModalLogic>;
 
-
 === FILE: src/hooks/useTaskPredecessor.ts ===
 import React, { useCallback } from 'react';
 import { Task, TaskPredecessor } from '../types';
@@ -89859,7 +89504,6 @@ export function useTaskPredecessor() {
 
   return { updatePredecessors, isCyclic };
 }
-
 
 === FILE: src/index.css ===
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -90341,7 +89985,6 @@ body.print-preview-active .print\:overflow-hidden {
 }
 
 
-
 === FILE: src/lib/LanguageContext.tsx ===
 import React, { ReactNode, createContext, useContext, useEffect, useState } from 'react';
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "./storage";
@@ -90544,7 +90187,6 @@ export function useLanguage() {
   return context;
 }
 
-
 === FILE: src/lib/actStatusProgress.test.ts ===
 import { describe, it, expect } from 'vitest';
 import {
@@ -90709,7 +90351,6 @@ describe('Kiểm thử Logic Tính toán % và Phân loại Act Status (Actual S
   });
 });
 
-
 === FILE: src/lib/aggregationService.ts ===
 import {
   collection,
@@ -90802,7 +90443,6 @@ export async function getFinancialAggregates(
   }
 }
 
-
 === FILE: src/lib/auditLogService.ts ===
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
@@ -90852,7 +90492,6 @@ function resolveEntityType(docPath: string): string {
   if (docPath.includes('taka_users')) return 'user';
   return 'unknown';
 }
-
 
 === FILE: src/lib/autoDeltaQueue.ts ===
 import type { TakaDeltaItem } from '../types';
@@ -90963,7 +90602,6 @@ async function flushAutoDeltas(): Promise<void> {
   }
 }
 
-
 === FILE: src/lib/backgroundSyncWorker.ts ===
 import {
   localDb,
@@ -90990,6 +90628,7 @@ import { deduplicateTasks } from './taskDeduplicationService';
 import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
+import { isTaskBelongsToProject } from './taskStateService';
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
@@ -91113,11 +90752,9 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         // Instant local reconciliation: sync taskCount & taskSummaries for projects from cached tasks
         if (currentStore.projects && currentStore.projects.length > 0) {
           const updatedProjects = currentStore.projects.map(p => {
-            const pTasks = deduped.filter(t => 
-              (t.projectId && String(t.projectId) === String(p.id)) ||
-              (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-            );
-            if (pTasks.length > 0 && pTasks.length !== (p.taskCount || 0)) {
+            const pTasks = deduped.filter(t => isTaskBelongsToProject(t, p));
+            // KHÔNG BAO GIỜ chữa theo hướng giảm (ít task hơn taskCount đã lưu nghĩa là cache cục bộ chưa nạp đủ)
+            if (pTasks.length > (p.taskCount || 0)) {
               const summaryItems = pTasks.map(t => ({
                 id: t.id,
                 name: t.name || '',
@@ -91460,7 +91097,6 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () =
   };
 }
 
-
 === FILE: src/lib/broadcastSyncService.test.ts ===
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { broadcastAppliedDeltas, resetBroadcastChannelForTesting } from './broadcastSyncService';
@@ -91506,7 +91142,6 @@ describe('broadcastSyncService', () => {
     expect(sentMsg.deltas).toEqual(testDeltas);
   });
 });
-
 
 === FILE: src/lib/broadcastSyncService.ts ===
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
@@ -91688,7 +91323,6 @@ export function initBroadcastSyncListener(): () => void {
     channel.removeEventListener('message', handleMessage);
   };
 }
-
 
 === FILE: src/lib/budgetTreeService.ts ===
 import { 
@@ -91979,7 +91613,6 @@ export function calculateBudgetGlobalTotals(filteredRoots: BudgetNode[]) {
   return { totalBudget, totalActual, totalSupportingFee, totalRemaining };
 }
 
-
 === FILE: src/lib/changeFlashService.test.ts ===
 import { describe, it, expect, vi } from 'vitest';
 import { triggerChangeFlash, triggerBatchChangeFlash } from './changeFlashService';
@@ -91999,7 +91632,6 @@ describe('changeFlashService', () => {
     expect(true).toBe(true);
   });
 });
-
 
 === FILE: src/lib/changeFlashService.ts ===
 import React, { useEffect, useState } from 'react';
@@ -92178,7 +91810,6 @@ export function useEditingPresence(docId?: string | null, currentUserEmail?: str
   return presence;
 }
 
-
 === FILE: src/lib/cleanup.ts ===
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "./storage";
 export function cleanupLocalStorage() {
@@ -92240,7 +91871,6 @@ export function cleanupLocalStorage() {
   }
 }
 
-
 === FILE: src/lib/colorMappingLogic.ts ===
 import { Project } from "../types";
 import { getStatus } from "./utils";
@@ -92285,7 +91915,6 @@ export function computeColorMap(projects: Project[]): Record<string, string> {
 
   return colorMap;
 }
-
 
 === FILE: src/lib/configCacheService.ts ===
 import { doc, getDoc, getDocs, collection, setDoc, onSnapshot, Unsubscribe } from "firebase/firestore";
@@ -92724,7 +92353,6 @@ export function setupStaticConfigSync(): Unsubscribe {
   };
 }
 
-
 === FILE: src/lib/convertSubtaskToHash.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { convertAllSubtaskCodesAndPredecessorsToHash } from './ganttUtils';
@@ -92816,7 +92444,6 @@ describe('convertAllSubtaskCodesAndPredecessorsToHash', () => {
   });
 });
 
-
 === FILE: src/lib/csvUtils.ts ===
 
 export function downloadCSV(csvContent: string, fileName: string) {
@@ -92875,7 +92502,6 @@ export function generateCSV(headers: string[], data: any[][]): string {
   
   return csvRows.join('\n');
 }
-
 
 === FILE: src/lib/delegationMaintenanceService.test.ts ===
 import { describe, it, expect } from 'vitest';
@@ -93006,7 +92632,6 @@ describe('delegationMaintenanceService - isEmptyDelegationGroup', () => {
   });
 });
 
-
 === FILE: src/lib/delegationMaintenanceService.ts ===
 import { collection, query, where, getDocs, doc } from 'firebase/firestore';
 import { writeBatch } from './firestoreWrites';
@@ -93136,7 +92761,6 @@ export async function pruneEmptyDelegations(
   return { deletedCount };
 }
 
-
 === FILE: src/lib/deltaApplyService.ts ===
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
@@ -93260,7 +92884,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         noteTouchedProject(idx !== -1 ? updatedTasks[idx] : null);
         noteTouchedProject(data);
         if (isDelete || data?.isDeleted) {
-          markTasksDeleted([docId, data?.taskCodePhu, data?.name]);
+          markTasksDeleted([docId]);
           if (idx !== -1) {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
@@ -93444,7 +93068,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   return deltas.length;
 }
 
-
 === FILE: src/lib/deltaBatchSync.test.ts ===
 import { describe, it, expect, vi } from 'vitest';
 import { recordBatchDeltas } from './deltaSyncService';
@@ -93477,7 +93100,6 @@ describe('deltaBatchSync (Phase 2: Delta Coalescing)', () => {
   });
 });
 
-
 === FILE: src/lib/deltaConstants.ts ===
 export const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 export const RESTORE_CUTOFF_KEY = 'taka_restore_cutoff_time_v1';
@@ -93488,7 +93110,6 @@ export const MAX_APPLIED_IDS = 3000;
 export const CLIENT_SESSION_ID = typeof window !== 'undefined'
   ? `sess_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
   : 'server_sess';
-
 
 === FILE: src/lib/deltaInvalidateService.ts ===
 import { collection, documentId, getDocsFromServer, query, where } from 'firebase/firestore';
@@ -93708,7 +93329,6 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
   ];
 }
 
-
 === FILE: src/lib/deltaOrchestratorService.ts ===
 import { useAppStore } from '../store/useAppStore';
 import { pullAndApplyDeltas } from './deltaPullService';
@@ -93825,7 +93445,6 @@ export async function triggerImmediateDeltaSync(year?: string): Promise<number> 
   isHibernating = false;
   return pullAndApplyDeltas(year || useAppStore.getState().globalYearFilter);
 }
-
 
 === FILE: src/lib/deltaPatchService.test.ts ===
 import { describe, it, expect } from 'vitest';
@@ -94016,7 +93635,6 @@ describe('deltaPatchService (Stage 3: Field-Level Granular Patching)', () => {
     });
   });
 });
-
 
 === FILE: src/lib/deltaPatchService.ts ===
 import { TakaDeltaItem } from '../types';
@@ -94240,7 +93858,6 @@ export function measurePayloadDiff(
   };
 }
 
-
 === FILE: src/lib/deltaPullService.ts ===
 import {
   collection,
@@ -94363,7 +93980,6 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
   return inFlightPullPromise;
 }
 
-
 === FILE: src/lib/deltaPurgeService.ts ===
 import {
   collection,
@@ -94390,7 +94006,6 @@ export async function purgeOldDeltas(_retentionHours = DEFAULT_RETENTION_HOURS):
   // Managed server-side via Firestore TTL policy on `expireAt`.
   return 0;
 }
-
 
 === FILE: src/lib/deltaRealtimeListener.ts ===
 import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
@@ -94540,7 +94155,6 @@ export function startDeltaRealtimeListener(): () => void {
   };
 }
 
-
 === FILE: src/lib/deltaSyncService.ts ===
 import { TakaDelta } from '../types';
 import { safeGetItemLocal, safeSetItemLocal } from './storage';
@@ -94655,7 +94269,6 @@ export { recordDelta, recordBatchDeltas } from './deltaWriteService';
 export { applyIncomingDeltas } from './deltaApplyService';
 export { pullAndApplyDeltas } from './deltaPullService';
 export { startDeltaSyncService, triggerImmediateDeltaSync, pruneExpiredDeltas } from './deltaOrchestratorService';
-
 
 === FILE: src/lib/deltaWriteService.ts ===
 import {
@@ -94774,7 +94387,6 @@ export async function recordBatchDeltas(
     console.warn('[deltaSync] Failed to record batch deltas to Firestore:', err);
   }
 }
-
 
 === FILE: src/lib/deviceTelemetry.ts ===
 import { setDoc } from "../lib/firebase";
@@ -94900,7 +94512,6 @@ export async function reportDevicePerformance(forced: boolean = false) {
     isReporting = false;
   }
 }
-
 
 === FILE: src/lib/exportPdfEngine.ts ===
 import { Project } from '../types';
@@ -95408,7 +95019,6 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
   pdf.save(`export_${activeTab}_${Date.now()}.pdf`);
 }
 
-
 === FILE: src/lib/financialAtomicService.ts ===
 import { db, APP_ID } from "./firebase";
 import { doc, increment } from 'firebase/firestore';
@@ -95680,7 +95290,6 @@ export async function deleteCostWithAtomicSummary(
     }).catch(() => {});
   }
 }
-
 
 === FILE: src/lib/financialService.test.ts ===
 import { describe, it, expect } from 'vitest';
@@ -96058,7 +95667,6 @@ describe('9. Kiểm thử Nghiêm ngặt Biên Độ Tài Chính & Chống Sai L
   });
 });
 
-
 === FILE: src/lib/financialService.ts ===
 import { Cost } from "../types";
 
@@ -96190,7 +95798,6 @@ export function calculateCostsSummaryForProject(costs: Array<Partial<Cost>>) {
 // Re-exports for backward compatibility
 export { calculateParentBudgetRollup, buildBudgetTree, filterBudgetRoots, calculateBudgetGlobalTotals } from './budgetTreeService';
 export { saveCostWithAtomicSummary, deleteCostWithAtomicSummary } from './financialAtomicService';
-
 
 === FILE: src/lib/firebase.ts ===
 import { initializeApp } from "firebase/app";
@@ -96654,7 +96261,6 @@ export function writeBatch(dbInstance: any): WriteBatch {
   return batch;
 }
 
-
 === FILE: src/lib/firestoreSanitizer.ts ===
 /**
  * Deeply strips `undefined` properties from objects/arrays so Firestore operations
@@ -96699,7 +96305,6 @@ export function removeUndefinedDeep<T = any>(val: T): T {
   }
   return result as T;
 }
-
 
 === FILE: src/lib/firestoreWrites.ts ===
 import {
@@ -96830,7 +96435,6 @@ export function writeBatch(dbInstance: any): WriteBatch {
   };
   return batch as WriteBatch;
 }
-
 
 === FILE: src/lib/ganttUtils.ts ===
 import { Task, Project } from '../types';
@@ -98637,7 +98241,6 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
 
 
 
-
 === FILE: src/lib/icalGenerator.ts ===
 import { Task, Project } from '../types';
 import { parseDateTime } from './utils';
@@ -98946,7 +98549,6 @@ export function toWebcalUrl(httpUrl: string): string {
   return httpUrl.replace(/^https?:\/\//i, 'webcal://');
 }
 
-
 === FILE: src/lib/idb.ts ===
 const DB_NAME = 'taka_cache_db';
 const STORE_NAME = 'taka_cache_store';
@@ -99030,7 +98632,6 @@ export async function clearAllIDB(): Promise<void> {
   }
 }
 
-
 === FILE: src/lib/imageCompression.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { calculateTargetDimensions } from './imageCompression';
@@ -99060,7 +98661,6 @@ describe('calculateTargetDimensions', () => {
     expect(res.height).toBe(1920);
   });
 });
-
 
 === FILE: src/lib/imageCompression.ts ===
 /**
@@ -99271,7 +98871,6 @@ export async function compressImageToWebp(
     reader.readAsDataURL(file);
   });
 }
-
 
 === FILE: src/lib/imageDBCache.ts ===
 import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
@@ -99579,7 +99178,6 @@ export async function clearCadImageCache(): Promise<void> {
     store.clear();
   } catch (_e) {}
 }
-
 
 === FILE: src/lib/layoutUnitFinder.ts ===
 import { Project, Task, ActiveNotification } from '../types';
@@ -99951,7 +99549,6 @@ export function findProjectLayoutUnit(
   };
 }
 
-
 === FILE: src/lib/lazyWithRetry.ts ===
 import { ComponentType, LazyExoticComponent, lazy } from 'react';
 
@@ -100022,7 +99619,6 @@ export function lazyWithRetry<T extends ComponentType<any>>(
   });
 }
 
-
 === FILE: src/lib/loadedMarkers.ts ===
 import { localDb } from './localDb';
 
@@ -100076,7 +99672,6 @@ export async function clearLoadedMarkers(): Promise<void> {
     await localDb.syncMeta.where('key').startsWith(PREFIX).delete();
   } catch {}
 }
-
 
 === FILE: src/lib/localDb.ts ===
 import Dexie, { type Table } from 'dexie';
@@ -100515,7 +100110,6 @@ export async function clearDexieDatabase(): Promise<void> {
   }
 }
 
-
 === FILE: src/lib/mutationCoalescer.ts ===
 import { doc } from 'firebase/firestore';
 import { setDoc, updateDoc } from './firestoreWrites';
@@ -100684,7 +100278,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-
 === FILE: src/lib/notificationTaskService.test.ts ===
 import { describe, it, expect } from 'vitest';
 import {
@@ -100800,7 +100393,6 @@ describe('notificationTaskService (Method 1: Local-First Notification Optimizati
     expect(filterTasksForNotificationWindow(null as any, past7, future14)).toEqual([]);
   });
 });
-
 
 === FILE: src/lib/notificationTaskService.ts ===
 import { collection, query, where, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
@@ -100930,7 +100522,6 @@ export async function loadNotificationTasks(options?: {
   }
 }
 
-
 === FILE: src/lib/notifications.ts ===
 import { setDoc } from "../lib/firebase";
 import { useAppStore } from '../store/useAppStore';
@@ -101049,7 +100640,6 @@ export const requestNotificationPermission = async (userId: string, silent = fal
   }
 };
 
-
 === FILE: src/lib/predecessorCrossProject.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { buildTaskNoMap, parsePredecessors, calculateTaskDatesFromPredecessors } from './ganttUtils';
@@ -101145,7 +100735,6 @@ describe('Cross-Project Predecessor Resolution & Date Calculation', () => {
     expect(result?.duration).toBe('2');
   });
 });
-
 
 === FILE: src/lib/predecessorMatchUtils.test.ts ===
 import { describe, it, expect } from 'vitest';
@@ -101501,7 +101090,6 @@ describe('predecessorMatchUtils', () => {
     });
   });
 });
-
 
 === FILE: src/lib/predecessorMatchUtils.ts ===
 import { Task, Project } from '../types';
@@ -102133,7 +101721,6 @@ export function resolvePredecessorString(
   return resolvedParts.join(', ');
 }
 
-
 === FILE: src/lib/predecessorMultiInput.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { splitPredecessors, parsePredecessors, buildTaskNoMap, calculateTaskDatesFromPredecessors } from './ganttUtils';
@@ -102230,7 +101817,6 @@ describe('Predecessor Multi Input & Selection After Comma', () => {
     expect(calculated?.finish).toBe('2027-04-06T21:00');
   });
 });
-
 
 === FILE: src/lib/predecessorResolutionBug.test.ts ===
 import { describe, it, expect } from 'vitest';
@@ -102460,7 +102046,6 @@ describe('Predecessor Resolution and Subtask Index Matching', () => {
     expect(parsed[0].task?.name).toBe('Re-instatement');
   });
 });
-
 
 === FILE: src/lib/printFilterHelper.ts ===
 import type { jsPDF } from "jspdf";
@@ -102779,7 +102364,6 @@ export const drawPdfFilterHeader = (
   }
 };
 
-
 === FILE: src/lib/projectDatesBackfill.ts ===
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
@@ -102892,7 +102476,6 @@ export async function syncAllProjectsTaskCountsToFirestore(
 
   return { updatedCount, totalProjects };
 }
-
 
 === FILE: src/lib/projectDatesService.test.ts ===
 import { describe, it, expect } from 'vitest';
@@ -103049,7 +102632,6 @@ describe('Kiểm thử tính toán Pre-computed Dates của Project (calculatePr
   });
 });
 
-
 === FILE: src/lib/projectDatesService.ts ===
 import { setDoc, updateDoc, writeBatch } from "./firestoreWrites";
 import { db, APP_ID } from "./firebase";
@@ -103164,7 +102746,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
         const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
 
-        if (isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name)) {
+        if (isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined)) {
           return;
         }
 
@@ -103173,7 +102755,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
                          (tsName && existingSummaryMap.has(tsName));
         if (!hasMatch) {
           mergedList.push({
-            id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+            id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
             name: ts.name || `Task ${idx + 1}`,
             start: ts.start || project.computedTakStart || project.start || '',
             finish: ts.finish || project.computedTakCompl || project.handover || '',
@@ -103199,9 +102781,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
     return project.taskSummaries
-      .filter(ts => !isTaskDeletedInTracker(ts.id, ts.taskCodePhu, ts.name))
+      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined))
       .map((ts, idx) => ({
-      id: ts.id || `ts_${project.code || project.id}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+      id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,
       start: ts.start || project.computedTakStart || project.start || '',
       finish: ts.finish || project.computedTakCompl || project.handover || '',
@@ -103470,16 +103052,22 @@ export async function syncProjectDatesByCode(
   projectCode: string,
   projectStore?: string,
   projectYear?: string | number,
-  overrideTasks?: Task[]
+  overrideTasks?: Task[],
+  targetProjectId?: string
 ): Promise<void> {
-  if (!projectCode) return;
+  if (!projectCode && !targetProjectId) return;
 
   const { projects, tasks, delegationGroups } = useAppStore.getState();
   const project = projects.find(
-    (p) =>
-      (p.code === projectCode || matchProjectCode(p.code, projectCode)) &&
-      (!projectStore || !p.store || String(p.store).trim().toLowerCase() === String(projectStore).trim().toLowerCase()) &&
-      (!projectYear || !p.year || String(p.year).trim() === String(projectYear).trim())
+    (p) => {
+      if (targetProjectId && String(p.id) === String(targetProjectId)) return true;
+      if (targetProjectId && String(p.id) !== String(targetProjectId)) return false;
+      return (
+        (p.code === projectCode || matchProjectCode(p.code, projectCode)) &&
+        (!projectStore || !p.store || String(p.store).trim().toLowerCase() === String(projectStore).trim().toLowerCase()) &&
+        (!projectYear || !p.year || String(p.year).trim() === String(projectYear).trim())
+      );
+    }
   );
 
   if (!project || !project.id) return;
@@ -103497,7 +103085,6 @@ export {
   backfillMissingProjectDates,
   syncAllProjectsTaskCountsToFirestore,
 } from "./projectDatesBackfill";
-
 
 
 
@@ -103877,7 +103464,6 @@ export async function deleteR2ImageCleanly(
   }
 }
 
-
 === FILE: src/lib/schemas.ts ===
 import { z } from 'zod';
 
@@ -103981,7 +103567,6 @@ export const CostSchema = z.object({
   advanceAmount: z.number().nullable().optional(),
   isDeleted: z.boolean().nullable().optional()
 }).passthrough();
-
 
 === FILE: src/lib/storage.ts ===
 export const safeGetItemLocal = (key: string): string | null => {
@@ -104121,7 +103706,6 @@ export const checkAndCleanStorageQuota = (): void => {
   }
 };
 
-
 === FILE: src/lib/storageBudgetService.ts ===
 import { localDb } from './localDb';
 
@@ -104204,7 +103788,6 @@ export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
   return result;
 }
 
-
 === FILE: src/lib/storageUtils.ts ===
 import { storage } from './firebase';
 import { ref, deleteObject } from 'firebase/storage';
@@ -104253,7 +103836,6 @@ export const deleteStorageFiles = async (urls: string[]) => {
     }
   }
 };
-
 
 === FILE: src/lib/syncQueue.ts ===
 import { doc, getDoc, getDocFromServer } from 'firebase/firestore';
@@ -104549,7 +104131,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-
 === FILE: src/lib/syncResilience.ts ===
 import { disableNetwork, enableNetwork } from 'firebase/firestore';
 import { db } from './firebase';
@@ -104704,7 +104285,6 @@ export const listenerManager = {
   },
 };
 
-
 === FILE: src/lib/taskDeduplicationService.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { 
@@ -104807,7 +104387,6 @@ describe('taskDeduplicationService', () => {
   });
 });
 
-
 === FILE: src/lib/taskDeduplicationService.ts ===
 import { Task, Project } from '../types';
 import { doc, collection, getDocs } from 'firebase/firestore';
@@ -104868,8 +104447,13 @@ export function buildCanonicalProjectKey(
   year?: string | number | null,
   store?: string | null,
   projects: Project[] = [],
-  projectLookupMap?: Map<string, Project>
+  projectLookupMap?: Map<string, Project>,
+  projectId?: string | null
 ): string {
+  if (projectId) {
+    return `proj_${String(projectId).trim().toLowerCase()}`;
+  }
+
   const pCode = String(projectCode || '').trim().toLowerCase();
   if (!pCode) return '';
 
@@ -105001,7 +104585,8 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     }
 
     const tName = String(task.name || '').trim().toLowerCase();
-    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap);
+    const taskProjIdStr = task.projectId ? String(task.projectId).trim().toLowerCase() : '';
+    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, taskProjIdStr);
     const pCode = String(task.projectCode || '').trim().toLowerCase();
     const rawTaskCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
     const parentIdStr = task.parentTaskId ? String(task.parentTaskId).trim().toLowerCase() : '';
@@ -105021,12 +104606,18 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     }
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
+      const existing = seenMap.get(matchedExistingId)!;
+      // Absolute guard: If both tasks have explicit projectIds that do NOT match, they are NEVER duplicates!
+      if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
       // Duplicate task found!
       duplicateCount++;
       removedTaskIds.push(task.id);
       
       // Merge comments, notes, delegation, party, predecessor, attachments from duplicate into surviving task
-      const existing = seenMap.get(matchedExistingId)!;
       if ((!existing.comments || existing.comments.length === 0) && task.comments && task.comments.length > 0) {
         existing.comments = task.comments;
       }
@@ -105124,7 +104715,6 @@ export async function scanAndRemoveDuplicateTasksOnFirestore(projects: Project[]
   }
 }
 
-
 === FILE: src/lib/taskDefaults.test.ts ===
 import { describe, it, expect } from 'vitest';
 import { getDefaultDatetimeLocal } from './utils';
@@ -105174,7 +104764,6 @@ describe('Task Creation Smart Defaults', () => {
   });
 });
 
-
 === FILE: src/lib/taskDeletedTracker.ts ===
 /**
  * Centralized Deleted Task Tracker
@@ -105183,36 +104772,47 @@ describe('Task Creation Smart Defaults', () => {
 
 const deletedTaskKeys = new Set<string>();
 
-export function markTasksDeleted(keys: (string | undefined | null)[]): void {
+export function markTasksDeleted(keys: (string | undefined | null)[], projectId?: string): void {
   if (!keys || !Array.isArray(keys)) return;
+  const pKey = projectId ? String(projectId).trim().toLowerCase() : '';
   keys.forEach(k => {
     if (k && typeof k === 'string') {
       const clean = k.trim().toLowerCase();
-      if (clean) deletedTaskKeys.add(clean);
+      if (clean) {
+        deletedTaskKeys.add(clean);
+        if (pKey) {
+          deletedTaskKeys.add(`${pKey}:::${clean}`);
+        }
+      }
     }
   });
 }
 
-// Các nơi gọi truyền thêm (code, name) nhưng hiện chỉ kiểm tra theo id/khóa chính.
-// Không kiểm tra theo tên vì tên task có thể trùng giữa các dự án.
+// Chỉ kiểm tra theo ID task/xác thực chính xác.
+// Hỗ trợ kiểm tra theo project context để tránh xóa nhầm task ở dự án khác khi dùng chung ID ảo hoặc ID nhân bản.
 export function isTaskDeletedInTracker(
-  taskOrKey: string | { id?: string; taskCodePhu?: string; name?: string } | undefined | null,
-  _code?: string,
-  _name?: string
+  taskOrKey: string | { id?: string; projectId?: string; taskCodePhu?: string; name?: string } | undefined | null,
+  contextProjectId?: string,
+  _unused?: string
 ): boolean {
   if (!taskOrKey) return false;
-  if (typeof taskOrKey === 'string') {
-    return deletedTaskKeys.has(taskOrKey.trim().toLowerCase());
+  const taskId = typeof taskOrKey === 'string'
+    ? taskOrKey.trim().toLowerCase()
+    : (taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '');
+  if (!taskId) return false;
+
+  const projId = typeof taskOrKey === 'object' && (taskOrKey as any).projectId
+    ? String((taskOrKey as any).projectId).trim().toLowerCase()
+    : (contextProjectId ? String(contextProjectId).trim().toLowerCase() : '');
+
+  if (projId) {
+    if (deletedTaskKeys.has(`${projId}:::${taskId}`)) return true;
+    // Nếu có project ID mà không có trong khóa project-scoped thì KHÔNG coi là xóa
+    // (ngăn chặn task trùng ID từ dự án khác làm mất task dự án này)
+    return false;
   }
-  const id = taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '';
-  const code = taskOrKey.taskCodePhu ? String(taskOrKey.taskCodePhu).trim().toLowerCase() : '';
-  const name = taskOrKey.name ? String(taskOrKey.name).trim().toLowerCase() : '';
 
-  if (id && deletedTaskKeys.has(id)) return true;
-  if (code && deletedTaskKeys.has(code)) return true;
-  if (name && deletedTaskKeys.has(name)) return true;
-
-  return false;
+  return deletedTaskKeys.has(taskId);
 }
 
 export function getDeletedTaskKeysSet(): Set<string> {
@@ -105376,7 +104976,6 @@ describe('taskImportService', () => {
     expect(rolled.duration).toBe('10');
   });
 });
-
 
 === FILE: src/lib/taskImportService.ts ===
 import { Task, Project, DelegationGroup } from '../types';
@@ -105628,7 +105227,6 @@ export async function syncAffectedProjectSummaries(
   }
 }
 
-
 === FILE: src/lib/taskRollupService.ts ===
 import { Task, DelegationGroup } from '../types';
 
@@ -105792,7 +105390,6 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
   return result;
 }
 
-
 === FILE: src/lib/taskStateService.ts ===
 import { Task, Project } from "../types";
 import { useAppStore } from "../store/useAppStore";
@@ -105812,7 +105409,7 @@ const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 /**
  * Validates whether a task belongs to a specific project by verifying store and year.
  */
-export function isTaskBelongsToProject(t: Partial<Task>, p: Project): boolean {
+export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
   if (!t || !p) return false;
   if (t.isDeleted) return false;
 
@@ -106019,17 +105616,27 @@ export async function deleteTaskStateUnified(
   });
 
   const affectedProjects = findAffectedProjects(tasksToDelete, currentProjects);
-
-  const deletedCodesAndIds = new Set<string>();
-  tasksToDelete.forEach(t => {
-    if (t.id) deletedCodesAndIds.add(String(t.id).trim().toLowerCase());
-    if (t.taskCodePhu) deletedCodesAndIds.add(String(t.taskCodePhu).trim().toLowerCase());
-    if (t.name) deletedCodesAndIds.add(String(t.name).trim().toLowerCase());
+  const affectedProjectIds = new Set<string>();
+  affectedProjects.forEach(ap => {
+    if (ap.id) affectedProjectIds.add(String(ap.id));
   });
-  rawIds.forEach(id => deletedCodesAndIds.add(String(id).trim().toLowerCase()));
+  tasksToDelete.forEach(dt => {
+    if (dt.projectId) affectedProjectIds.add(String(dt.projectId));
+  });
 
-  // Immediately track deleted keys globally to prevent stale restoration / virtual task synthesis
-  markTasksDeleted(Array.from(deletedCodesAndIds));
+  const deletedTaskIds = new Set<string>();
+  tasksToDelete.forEach(t => {
+    if (t.id) {
+      const cleanId = String(t.id).trim().toLowerCase();
+      deletedTaskIds.add(cleanId);
+      markTasksDeleted([cleanId], t.projectId ? String(t.projectId) : undefined);
+    }
+  });
+  rawIds.forEach(id => {
+    const cleanId = String(id).trim().toLowerCase();
+    deletedTaskIds.add(cleanId);
+    markTasksDeleted([cleanId]);
+  });
 
   const now = new Date().toISOString();
   const tasksAfterDeletion = currentTasks.filter(t => !idSet.has(String(t.id)));
@@ -106039,7 +105646,7 @@ export async function deleteTaskStateUnified(
     let updated = t;
 
     const rawParent = t.parentTaskId || (t as any).parentId;
-    if (rawParent && deletedCodesAndIds.has(String(rawParent).trim().toLowerCase())) {
+    if (rawParent && deletedTaskIds.has(String(rawParent).trim().toLowerCase())) {
       updated = { ...updated, parentTaskId: undefined, updatedAt: now };
       delete (updated as any).parentId;
       unlinkedChildTasks.push(updated);
@@ -106049,7 +105656,12 @@ export async function deleteTaskStateUnified(
       const predParts = updated.predecessor.split(',').map(p => p.trim()).filter(Boolean);
       const filteredParts = predParts.filter(part => {
         const codeOnly = part.replace(/(?:SS|FF|SF|FS)?\s*(?:[+-]\d+[dwmy]?)?$/i, '').trim().toLowerCase();
-        return !deletedCodesAndIds.has(codeOnly);
+        const isDeletedPred = tasksToDelete.some(dt => {
+          if (!isTaskBelongsToProject(t, { id: dt.projectId, code: dt.projectCode, store: dt.projectStore, year: dt.projectYear })) return false;
+          return (dt.taskCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === codeOnly) ||
+                 (dt.id && String(dt.id).trim().toLowerCase() === codeOnly);
+        });
+        return !isDeletedPred;
       });
       const newPred = filteredParts.join(', ');
       if (newPred !== updated.predecessor) {
@@ -106064,50 +105676,54 @@ export async function deleteTaskStateUnified(
 
   // 2. Clear matching summary items from p.taskSummaries and recalculate project computed dates
   const updatedProjects = currentProjects.map(p => {
+    const pIdStr = p.id ? String(p.id) : '';
+
+    // BẢO VỆ TUYỆT ĐỐI DỰ ÁN KHÔNG LIÊN QUAN:
+    // Nếu dự án p không thuộc danh sách dự án bị ảnh hưởng, TUYỆT ĐỐI KHÔNG sửa taskSummaries hay taskCount của nó!
+    if (affectedProjectIds.size > 0 && !affectedProjectIds.has(pIdStr)) {
+      return p;
+    }
+
     let summaryModified = false;
     let newSummaries = p.taskSummaries ? [...p.taskSummaries] : [];
 
     if (p.taskSummaries && p.taskSummaries.length > 0) {
       newSummaries = p.taskSummaries.filter((ts, idx) => {
-        const tsId = ts.id || `ts_${p.code || p.id}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
-        const tsCodePhu = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const tsId = ts.id ? String(ts.id).toLowerCase() : `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`.toLowerCase();
 
-        if (idSet.has(String(tsId)) || (ts.id && idSet.has(String(ts.id)))) {
+        // Chỉ xóa summary item nếu task bị xóa thuộc đúng dự án p này
+        const matchedDeleted = tasksToDelete.some(dt => {
+          if (dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
+          if (!dt.projectId && !isTaskBelongsToProject(dt, p)) return false;
+
+          const dtId = dt.id ? String(dt.id).trim().toLowerCase() : '';
+          if (dtId && tsId && dtId === tsId) return true;
+          if (dt.id && ts.id && String(dt.id).trim().toLowerCase() === String(ts.id).trim().toLowerCase()) return true;
+          return false;
+        });
+
+        if (matchedDeleted) {
           summaryModified = true;
           return false;
-        }
-        if (tsCodePhu && deletedCodesAndIds.has(tsCodePhu)) {
-          summaryModified = true;
-          return false;
-        }
-        for (const dt of tasksToDelete) {
-          const matchesProject = isTaskBelongsToProject(dt, p) || (!dt.projectId && !dt.projectCode);
-          if (matchesProject) {
-            if (dt.name && String(dt.name).trim().toLowerCase() === tsName) {
-              summaryModified = true;
-              return false;
-            }
-            if (dt.taskCodePhu && tsCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === tsCodePhu) {
-              summaryModified = true;
-              return false;
-            }
-          }
         }
         return true;
       });
     }
 
-    const isProjectAffected = summaryModified || affectedProjects.some(ap => ap.id === p.id) || tasksToDelete.some(dt => isTaskBelongsToProject(dt, p));
+    const isProjectAffected = summaryModified || affectedProjectIds.has(pIdStr);
 
-    if (isProjectAffected || summaryModified) {
-      const remainingProjTasks = cleanedTasks.filter(t => isTaskBelongsToProject(t, p));
-      const computed = calculateProjectComputedDates(p, remainingProjTasks);
+    if (isProjectAffected) {
+      // Dùng bản tóm tắt đã loại các mục bị xóa, rồi gộp với task thật đang có trong bộ nhớ.
+      // Như vậy task chưa nạp (chỉ nằm trong taskSummaries) không bị mất khỏi số liệu dự án.
+      const pForCalc = { ...p, taskSummaries: newSummaries };
+      const remainingProjTasks = getTasksForProject(pForCalc, cleanedTasks);
+      const computed = calculateProjectComputedDates(pForCalc, remainingProjTasks);
+      const effectiveTaskCount = remainingProjTasks.length;
       return { 
         ...p, 
         ...computed,
-        taskCount: remainingProjTasks.length,
-        taskSummaries: computed.taskSummaries || [],
+        taskCount: effectiveTaskCount,
+        taskSummaries: computed.taskSummaries || newSummaries,
         updatedAt: now,
       };
     }
@@ -106506,7 +106122,6 @@ export async function reorderTasksStateUnified(
   await syncAffectedProjects(targetProjects, allUpdatedTasks);
 }
 
-
 === FILE: src/lib/undoManager.ts ===
 import { setDoc } from "../lib/firebase";
 import { safeGetItemLocal } from "./storage";
@@ -106672,7 +106287,6 @@ function notify() {
   const currentRedoStack = [...redoStack];
   listeners.forEach((l) => l(currentStack, currentRedoStack));
 }
-
 
 === FILE: src/lib/utils.ts ===
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "./storage";
@@ -107786,7 +107400,9 @@ export function enrichProjects(
     const directTasks = tasksByFullKey.get(directKey);
     if (directTasks) {
       for (let i = 0; i < directTasks.length; i++) {
-        matchedTaskMap.set(directTasks[i].id, directTasks[i]);
+        const t = directTasks[i];
+        if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
+        matchedTaskMap.set(t.id, t);
       }
     }
 
@@ -107795,7 +107411,9 @@ export function enrichProjects(
       const subTasks = tasksByFullKey.get(partKey);
       if (subTasks) {
         for (let j = 0; j < subTasks.length; j++) {
-          matchedTaskMap.set(subTasks[j].id, subTasks[j]);
+          const t = subTasks[j];
+          if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
+          matchedTaskMap.set(t.id, t);
         }
       }
     }
@@ -107807,6 +107425,7 @@ export function enrichProjects(
         if (fallbackTasks) {
           for (let j = 0; j < fallbackTasks.length; j++) {
             const t = fallbackTasks[j];
+            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
             const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
             if (pStore && tStore && pStore !== tStore) continue;
             const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
@@ -108088,7 +107707,7 @@ export function calculateActiveNotifications(
         const pCode = p.code || "";
         const pStore = String(p.store || "HCM").toUpperCase().trim();
         const pYear = String(p.year || "").trim();
-        const tsId = ts.id || `ts_${pCode}_${pStore}_${pYear}_${idx}`;
+        const tsId = ts.id || `ts_${p.id || pCode}_${pStore}_${pYear}_${idx}`;
 
         taskMap.set(tsId, {
           id: tsId,
@@ -109072,7 +108691,6 @@ export const PRIMARY_ACTIVE_YEARS = ['2024', '2025', '2026', '2027'];
 export const SECONDARY_ACTIVE_YEARS = ['2028', '2029', '2030'];
 export const ARCHIVED_YEARS = ['2022', '2023'];
 
-
 === FILE: src/lib/validation.ts ===
 import { TaskSchema, ProjectSchema, CostSchema } from './schemas';
 
@@ -109097,7 +108715,6 @@ export function validateFirestoreData(docPath: string, data: any, isUpdate = fal
     throw new Error(`Zod Runtime Validation Error: ${err.message || JSON.stringify(err)}`);
   }
 }
-
 
 === FILE: src/lib/yearsFingerprintService.ts ===
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -109294,7 +108911,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-
 === FILE: src/lib/zIndexManager.ts ===
 import React, { useEffect, useId, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
@@ -109464,7 +109080,6 @@ export function useOverlayStack(options: {
     zClass: getZIndexClass(layer)
   };
 }
-
 
 === FILE: src/main.tsx ===
 import React, { Component, ReactNode, StrictMode } from 'react';
@@ -109649,9 +109264,7 @@ createRoot(document.getElementById('root')!).render(
   </ErrorBoundary>,
 );
 
-
 === FILE: src/pages/api/r2-upload.ts ===
-
 
 === FILE: src/polyfills.ts ===
 try {
@@ -109740,7 +109353,6 @@ try {
   console.warn("Polyfill initialization failed", e);
 }
 
-
 === FILE: src/store/slices/createDataSlice.ts ===
 import { StateCreator } from "zustand";
 import { safeGetItemLocal } from "../../lib/storage";
@@ -109828,7 +109440,6 @@ export const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) 
   r2Config: initialStaticConfig.r2Config || null,
   setR2Config: (r2Config) => set({ r2Config }),
 });
-
 
 === FILE: src/store/slices/createOptimisticSlice.ts ===
 import { StateCreator } from "zustand";
@@ -109971,7 +109582,6 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
     )
   })),
 });
-
 
 === FILE: src/store/slices/createUISlice.ts ===
 import { StateCreator } from "zustand";
@@ -110402,7 +110012,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
 });
 
-
 === FILE: src/store/storeSelectors.ts ===
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './useAppStore';
@@ -110437,7 +110046,6 @@ export function useOptimisticSlice<T>(selector: (state: OptimisticSlice) => T): 
 export function useStoreShallow<T>(selector: (state: AppState) => T): T {
   return useAppStore(useShallow(selector));
 }
-
 
 === FILE: src/store/storeTypes.ts ===
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
@@ -110701,7 +110309,6 @@ export interface OptimisticSlice {
 
 export type AppState = UISlice & DataSlice & OptimisticSlice;
 
-
 === FILE: src/store/useAppStore.ts ===
 import { create } from "zustand";
 import { AppState } from "./storeTypes";
@@ -110721,7 +110328,6 @@ if (typeof window !== 'undefined') {
 
 export type { AppState };
 export { useUISlice, useDataSlice, useOptimisticSlice, useStoreShallow } from "./storeSelectors";
-
 
 
 === FILE: src/store/usePerformanceStore.ts ===
@@ -110955,7 +110561,6 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
     });
   },
 }));
-
 
 === FILE: src/types.ts ===
 export interface FinancialMetric {
@@ -111317,7 +110922,6 @@ export interface TakaDelta {
 }
 
 
-
 === FILE: vite.config.ts ===
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -111364,4 +110968,3 @@ export default defineConfig({
     }
   }
 });
-

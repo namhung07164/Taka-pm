@@ -470,8 +470,13 @@ export function useTasksHydration({
                     // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
                     // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
                     const compatibleChanges = snapshot.docChanges().filter((ch) => {
-                      if (ch.type === "removed") return true;
                       const dt: any = ch.doc.data();
+                      if (ch.type === "removed") {
+                        if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                        if (dt && dt.projectStore && p.store &&
+                            String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                        return true;
+                      }
                       if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
                       if (dt.projectStore && p.store &&
                           String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;

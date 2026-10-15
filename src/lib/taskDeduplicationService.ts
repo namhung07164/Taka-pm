@@ -57,8 +57,13 @@ export function buildCanonicalProjectKey(
   year?: string | number | null,
   store?: string | null,
   projects: Project[] = [],
-  projectLookupMap?: Map<string, Project>
+  projectLookupMap?: Map<string, Project>,
+  projectId?: string | null
 ): string {
+  if (projectId) {
+    return `proj_${String(projectId).trim().toLowerCase()}`;
+  }
+
   const pCode = String(projectCode || '').trim().toLowerCase();
   if (!pCode) return '';
 
@@ -190,7 +195,8 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     }
 
     const tName = String(task.name || '').trim().toLowerCase();
-    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap);
+    const taskProjIdStr = task.projectId ? String(task.projectId).trim().toLowerCase() : '';
+    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, taskProjIdStr);
     const pCode = String(task.projectCode || '').trim().toLowerCase();
     const rawTaskCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
     const parentIdStr = task.parentTaskId ? String(task.parentTaskId).trim().toLowerCase() : '';
@@ -210,12 +216,18 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     }
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
+      const existing = seenMap.get(matchedExistingId)!;
+      // Absolute guard: If both tasks have explicit projectIds that do NOT match, they are NEVER duplicates!
+      if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
       // Duplicate task found!
       duplicateCount++;
       removedTaskIds.push(task.id);
       
       // Merge comments, notes, delegation, party, predecessor, attachments from duplicate into surviving task
-      const existing = seenMap.get(matchedExistingId)!;
       if ((!existing.comments || existing.comments.length === 0) && task.comments && task.comments.length > 0) {
         existing.comments = task.comments;
       }
