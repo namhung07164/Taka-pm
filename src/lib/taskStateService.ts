@@ -320,14 +320,17 @@ export async function deleteTaskStateUnified(
     const isProjectAffected = summaryModified || affectedProjectIds.has(pIdStr);
 
     if (isProjectAffected) {
-      const remainingProjTasks = cleanedTasks.filter(t => isTaskBelongsToProject(t, p));
-      const computed = calculateProjectComputedDates({ ...p, taskSummaries: newSummaries }, remainingProjTasks);
-      const effectiveTaskCount = remainingProjTasks.length > 0 ? remainingProjTasks.length : newSummaries.length;
+      // Dùng bản tóm tắt đã loại các mục bị xóa, rồi gộp với task thật đang có trong bộ nhớ.
+      // Như vậy task chưa nạp (chỉ nằm trong taskSummaries) không bị mất khỏi số liệu dự án.
+      const pForCalc = { ...p, taskSummaries: newSummaries };
+      const remainingProjTasks = getTasksForProject(pForCalc, cleanedTasks);
+      const computed = calculateProjectComputedDates(pForCalc, remainingProjTasks);
+      const effectiveTaskCount = remainingProjTasks.length;
       return { 
         ...p, 
         ...computed,
         taskCount: effectiveTaskCount,
-        taskSummaries: newSummaries,
+        taskSummaries: computed.taskSummaries || newSummaries,
         updatedAt: now,
       };
     }

@@ -23,6 +23,7 @@ import { deduplicateTasks } from './taskDeduplicationService';
 import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
+import { isTaskBelongsToProject } from './taskStateService';
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
@@ -146,11 +147,9 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         // Instant local reconciliation: sync taskCount & taskSummaries for projects from cached tasks
         if (currentStore.projects && currentStore.projects.length > 0) {
           const updatedProjects = currentStore.projects.map(p => {
-            const pTasks = deduped.filter(t => 
-              (t.projectId && String(t.projectId) === String(p.id)) ||
-              (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-            );
-            if (pTasks.length > 0 && pTasks.length !== (p.taskCount || 0)) {
+            const pTasks = deduped.filter(t => isTaskBelongsToProject(t, p));
+            // KHÔNG BAO GIỜ chữa theo hướng giảm (ít task hơn taskCount đã lưu nghĩa là cache cục bộ chưa nạp đủ)
+            if (pTasks.length > (p.taskCount || 0)) {
               const summaryItems = pTasks.map(t => ({
                 id: t.id,
                 name: t.name || '',

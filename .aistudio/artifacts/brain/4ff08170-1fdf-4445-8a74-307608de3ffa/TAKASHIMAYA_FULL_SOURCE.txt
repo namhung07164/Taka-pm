@@ -91687,6 +91687,7 @@ import { deduplicateTasks } from './taskDeduplicationService';
 import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
+import { isTaskBelongsToProject } from './taskStateService';
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
@@ -91810,11 +91811,9 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         // Instant local reconciliation: sync taskCount & taskSummaries for projects from cached tasks
         if (currentStore.projects && currentStore.projects.length > 0) {
           const updatedProjects = currentStore.projects.map(p => {
-            const pTasks = deduped.filter(t => 
-              (t.projectId && String(t.projectId) === String(p.id)) ||
-              (t.projectCode && String(t.projectCode).trim().toLowerCase() === String(p.code || '').trim().toLowerCase())
-            );
-            if (pTasks.length > 0 && pTasks.length !== (p.taskCount || 0)) {
+            const pTasks = deduped.filter(t => isTaskBelongsToProject(t, p));
+            // KHÔNG BAO GIỜ chữa theo hướng giảm (ít task hơn taskCount đã lưu nghĩa là cache cục bộ chưa nạp đủ)
+            if (pTasks.length > (p.taskCount || 0)) {
               const summaryItems = pTasks.map(t => ({
                 id: t.id,
                 name: t.name || '',
@@ -107035,14 +107034,17 @@ export async function deleteTaskStateUnified(
     const isProjectAffected = summaryModified || affectedProjectIds.has(pIdStr);
 
     if (isProjectAffected) {
-      const remainingProjTasks = cleanedTasks.filter(t => isTaskBelongsToProject(t, p));
-      const computed = calculateProjectComputedDates({ ...p, taskSummaries: newSummaries }, remainingProjTasks);
-      const effectiveTaskCount = remainingProjTasks.length > 0 ? remainingProjTasks.length : newSummaries.length;
+      // Dùng bản tóm tắt đã loại các mục bị xóa, rồi gộp với task thật đang có trong bộ nhớ.
+      // Như vậy task chưa nạp (chỉ nằm trong taskSummaries) không bị mất khỏi số liệu dự án.
+      const pForCalc = { ...p, taskSummaries: newSummaries };
+      const remainingProjTasks = getTasksForProject(pForCalc, cleanedTasks);
+      const computed = calculateProjectComputedDates(pForCalc, remainingProjTasks);
+      const effectiveTaskCount = remainingProjTasks.length;
       return { 
         ...p, 
         ...computed,
         taskCount: effectiveTaskCount,
-        taskSummaries: newSummaries,
+        taskSummaries: computed.taskSummaries || newSummaries,
         updatedAt: now,
       };
     }
