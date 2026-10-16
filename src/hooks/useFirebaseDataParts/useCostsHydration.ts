@@ -179,7 +179,7 @@ export function useCostsHydration({
         const currentCosts = useAppStore.getState().costs || [];
         const hasLocalCosts =
           localCount > 0 || currentCosts.some((c) => String(c.projectYear || "") === String(year));
-        const isClosedOrPastYear = Number(year) < 2026;
+        const isClosedOrPastYear = Number(year) < new Date().getFullYear();
 
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||

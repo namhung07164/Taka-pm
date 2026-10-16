@@ -205,7 +205,7 @@ export function useDelegationsHydration({
     targetYears.forEach(async (year) => {
       if (!delegationsPool.current.has(year)) {
         const localCount = await hydrateDelegationsFromLocal(year);
-        const isClosedOrPastYear = Number(year) < 2026;
+        const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const currentDelegations = useAppStore.getState().delegationGroups || [];
         const hasLocalDelegations =
           localCount > 0 ||

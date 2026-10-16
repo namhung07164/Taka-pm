@@ -17,7 +17,6 @@ import {
   setMemoryYearsMeta,
   isYearCacheValid,
   loadYearDataFromLocal,
-  saveYearDataToLocal,
   YearsMetaMap,
 } from "../../lib/yearsFingerprintService";
 import { startDeltaSyncService, pullAndApplyDeltas } from "../../lib/deltaSyncService";
@@ -51,6 +50,9 @@ const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
   const i = tsOf(incoming?.updatedAt);
   return e > 0 && i > 0 && i < e;
 };
+
+// Các (người dùng, bộ lọc store, năm) thuộc nhóm năm phụ đã được nạp trong phiên này: không truy vấn server lặp lại
+const secondaryYearsFetched = new Set<string>();
 
 export function useProjectsHydration({
   querySignature,
@@ -189,7 +191,7 @@ export function useProjectsHydration({
         // Step 1: Instant Local-First Dexie Hydration (0ms, 0 Read)
         const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
 
-        const isClosedOrPastYear = Number(year) < 2026;
+        const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const hasLocalData =
           localCount > 0 ||
           (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
@@ -253,17 +255,6 @@ export function useProjectsHydration({
               u?.();
               usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
             }
-
-            if (!snapshot.metadata.fromCache) {
-              const yearProjects = snapshot.docs
-                .map((d) => ({ id: d.id, ...d.data() } as Project))
-                .filter((p) => !p.isDeleted);
-              if (yearProjects.length > 0) {
-                const updatedAt = remoteYearsMetaRef.current[year]?.updatedAt || new Date().toISOString();
-                saveYearDataToLocal(year, updatedAt, { projects: yearProjects });
-                offloadPersistSnapshot("taka_projects", yearProjects);
-              }
-            }
           },
           (e) => {
             console.error("Projects listener error:", e);
@@ -277,6 +268,9 @@ export function useProjectsHydration({
     if (isAllYears) {
       SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
         if (projectsPool.current.has(year)) return;
+        const secKey = `${querySignature}_${globalStoreFilter}_${year}`;
+        if (secondaryYearsFetched.has(secKey)) return;
+        secondaryYearsFetched.add(secKey);
         try {
           const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
           const qProjects = buildStoreAndYearQuery(colRef, "store", "year", year, userRole, allowedStores);
@@ -307,7 +301,8 @@ export function useProjectsHydration({
             useAppStore.getState().setProjects(updatedList);
           }
         } catch {
-          // Ignore cache misses
+          // Lỗi mạng hoặc cache: cho phép thử lại ở lần chạy sau
+          secondaryYearsFetched.delete(secKey);
         }
       });
     }

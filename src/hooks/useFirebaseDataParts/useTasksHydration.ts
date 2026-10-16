@@ -342,7 +342,7 @@ export function useTasksHydration({
             const hasLocalYearTasks = currentTasks.some(
               (t) => String(t.projectYear || "") === String(year)
             );
-            const isClosedOrPastYear = Number(year) < 2026;
+            const isClosedOrPastYear = Number(year) < new Date().getFullYear();
 
             const deltaManaged =
               (hasLocalYearTasks && isClosedOrPastYear) ||
@@ -436,7 +436,7 @@ export function useTasksHydration({
               const hasLocalProjTasks =
                 currentTasks.some(belongsHere) ||
                 knownHydratedProjectCodes.current.has(String(p.id));
-              const isClosedOrPastYear = Number(year) < 2026;
+              const isClosedOrPastYear = Number(year) < new Date().getFullYear();
 
               const deltaManaged =
                 (hasLocalProjTasks && isClosedOrPastYear) ||
