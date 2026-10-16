@@ -218,16 +218,40 @@ export function calculateProjectComputedDates(
     });
 
   const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
-  const isTasksProvided = Array.isArray(projectTasks) && projectTasks.length > 0;
+  
+  // Build a set of existing task identifiers from projectTasks (ids, taskCodePhu, normalized names)
+  const knownTaskSet = new Set<string>();
+  (sortedProjTasks || []).forEach(t => {
+    if (t.id) knownTaskSet.add(String(t.id).toLowerCase());
+    if (t.taskCodePhu) knownTaskSet.add(String(t.taskCodePhu).trim().toLowerCase());
+    if (t.name) knownTaskSet.add(String(t.name).trim().toLowerCase());
+  });
+
+  const mergedSummaries = [...taskSummaries];
+  existingSummaries.forEach((es: any) => {
+    if (isTaskDeletedInTracker(es.id, project.id ? String(project.id) : undefined)) return;
+    const esId = es.id ? String(es.id).toLowerCase() : '';
+    const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
+    const esName = es.name ? String(es.name).trim().toLowerCase() : '';
+
+    const hasMatch = (esId && knownTaskSet.has(esId)) ||
+                     (esCode && knownTaskSet.has(esCode)) ||
+                     (esName && knownTaskSet.has(esName));
+    if (!hasMatch) {
+      mergedSummaries.push(es);
+    }
+  });
+
   const finalSummaries: any[] = rollupTaskSummaries(
-    isTasksProvided
-      ? taskSummaries
-      : (existingSummaries.length > 0 ? existingSummaries : taskSummaries)
+    mergedSummaries.length > 0 ? mergedSummaries : existingSummaries
   );
 
-  const finalTaskCount = isTasksProvided
-    ? projectTasks.length
-    : Math.max(existingCount || 0, existingSummaries.length, finalSummaries.length);
+  const finalTaskCount = Math.max(
+    projectTasks.length,
+    existingCount || 0,
+    existingSummaries.length,
+    finalSummaries.length
+  );
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -265,7 +289,7 @@ export function calculateProjectComputedDates(
     } else {
       computedOpening = project.opening || "";
     }
-  } else if (allKnownForDates.length > 0 || isTasksProvided) {
+  } else if (allKnownForDates.length > 0 || (Array.isArray(projectTasks) && projectTasks.length > 0)) {
     computedOpening = project.opening || "";
   } else if (!computedOpening) {
     computedOpening = project.computedOpening || project.opening || "";
