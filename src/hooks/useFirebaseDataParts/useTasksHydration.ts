@@ -18,7 +18,12 @@ import { rollupParentTaskDatesAndStatus } from "../../lib/taskRollupService";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
-import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS } from "../../lib/projectDatesService";
+import {
+  getAppBootAgeMs,
+  BOOT_SYNC_GUARD_MS,
+  calculateProjectComputedDates,
+  syncProjectDatesToFirestore,
+} from "../../lib/projectDatesService";
 import { markTasksDeleted } from "../../lib/taskDeletedTracker";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
@@ -149,36 +154,22 @@ export function useTasksHydration({
             // Có thể mới tải một phần task: không bao giờ ghi số liệu nhỏ hơn lên server
             if (pTasks.length < (p.taskCount || 0)) return p;
 
+            const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
+
             const hasDiscrepancy =
-              pTasks.length !== (p.taskCount || 0) ||
+              p.taskCount !== computed.taskCount ||
               !p.taskSummaries ||
-              p.taskSummaries.length !== pTasks.length;
+              p.taskSummaries.length !== (computed.taskSummaries?.length || 0) ||
+              (p.computedTakStart || '') !== (computed.computedTakStart || '') ||
+              (p.computedTakCompl || '') !== (computed.computedTakCompl || '');
             if (!hasDiscrepancy) return p;
 
             projectsNeedUpdate = true;
-            import("../../lib/projectDatesService")
-              .then(({ calculateProjectComputedDates, syncProjectDatesToFirestore }) => {
-                const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
-                syncProjectDatesToFirestore(p.id, computed).catch(() => {});
-              })
-              .catch(() => {});
-            const summaryItems = pTasks.map((t) => ({
-              id: t.id,
-              name: t.name || "",
-              start: t.start || "",
-              finish: t.finish || "",
-              taskCodePhu: t.taskCodePhu,
-              duration: t.duration,
-              runningStatus: t.runningStatus,
-            }));
-            const validStarts = pTasks.map((t) => t.start).filter(Boolean).sort();
-            const validFinishes = pTasks.map((t) => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
+            syncProjectDatesToFirestore(p.id, computed).catch(() => {});
+
             return {
               ...p,
-              taskCount: pTasks.length,
-              taskSummaries: summaryItems,
-              computedTakStart: validStarts[0] || p.start || '',
-              computedTakCompl: validFinishes[0] || p.handover || (p as any).takCompl || '',
+              ...computed,
             };
           });
           if (projectsNeedUpdate) {

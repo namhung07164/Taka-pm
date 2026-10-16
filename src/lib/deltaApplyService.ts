@@ -252,7 +252,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         return {
           ...p,
           ...computedDates,
-          taskCount: pTasks.length,
+          taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length,
           taskSummaries: computedDates.taskSummaries || [],
         };
       }
