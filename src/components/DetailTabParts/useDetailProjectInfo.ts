@@ -114,11 +114,16 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
       // Safety guard: Merge missing tasks from p.taskSummaries when taskSummaries has more items
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
-        const existingSummarySet = new Set<string>();
+        const existingIdSet = new Set<string>();
+        const existingCodeNameSet = new Set<string>();
+        const existingNameSet = new Set<string>();
+
         rawGroupTasks.forEach(t => {
-          if (t.id) existingSummarySet.add(String(t.id).toLowerCase());
-          if (t.taskCodePhu) existingSummarySet.add(String(t.taskCodePhu).trim().toLowerCase());
-          if (t.name) existingSummarySet.add(String(t.name).trim().toLowerCase());
+          if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+          const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+          const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+          if (tName) existingNameSet.add(tName);
+          if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
         });
 
         p.taskSummaries.forEach((ts, idx) => {
@@ -129,9 +134,10 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           const tsId = ts.id ? String(ts.id).toLowerCase() : '';
           const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
           const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-          const hasMatch = (tsId && existingSummarySet.has(tsId)) ||
-                           (tsCode && existingSummarySet.has(tsCode)) ||
-                           (tsName && existingSummarySet.has(tsName));
+
+          const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                           (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                           (!tsCode && tsName && existingNameSet.has(tsName));
           if (!hasMatch) {
             rawGroupTasks.push({
               id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
@@ -156,13 +162,9 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
       // Ensure unique tasks by id to eliminate any duplicate key collision
       const uniqueTaskMap = new Map<string, Task>();
-      rawGroupTasks.forEach((t, idx) => {
-        if (!t) return;
-        const uKey = (t.id && String(t.id).trim())
-          ? String(t.id).trim().toLowerCase()
-          : (t.taskCodePhu ? `${p.code}_${t.taskCodePhu.toLowerCase()}` : `task_${p.id || p.code}_${idx}`);
-        if (!uniqueTaskMap.has(uKey)) {
-          uniqueTaskMap.set(uKey, t);
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
         }
       });
       rawGroupTasks = Array.from(uniqueTaskMap.values());
@@ -259,25 +261,49 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       });
       rawGroupTasks = Array.from(matchedMap.values());
     }
-    if ((!rawGroupTasks || rawGroupTasks.length === 0) && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-      // Fallback placeholder tasks from summary ONLY when no in-memory tasks exist yet
-      rawGroupTasks = p.taskSummaries.map((ts, idx) => ({
-        id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-        name: ts.name || `Task ${idx + 1}`,
-        start: ts.start || p.computedTakStart || p.start || '',
-        finish: ts.finish || p.computedTakCompl || p.handover || '',
-        projectCode: p.code || '',
-        projectStore: p.store || 'HCM',
-        projectYear: p.year ? String(p.year) : '',
-        party: ts.party || p.party || '',
-        runningStatus: ts.runningStatus || 'On process',
-        duration: ts.duration || '',
-        parentTaskId: ts.parentTaskId,
-        taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-        projectId: p.id,
-        ...ts
-      } as Task));
+    if (!rawGroupTasks) rawGroupTasks = [];
+    if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
+      const existingIdSet = new Set<string>();
+      const existingCodeNameSet = new Set<string>();
+      const existingNameSet = new Set<string>();
+
+      rawGroupTasks.forEach(t => {
+        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+        if (tName) existingNameSet.add(tName);
+        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
+      });
+
+      p.taskSummaries.forEach((ts, idx) => {
+        if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) return;
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                         (!tsCode && tsName && existingNameSet.has(tsName));
+        if (!hasMatch) {
+          rawGroupTasks!.push({
+            id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || p.computedTakStart || p.start || '',
+            finish: ts.finish || p.computedTakCompl || p.handover || '',
+            projectCode: p.code || '',
+            projectStore: p.store || 'HCM',
+            projectYear: p.year ? String(p.year) : '',
+            party: ts.party || p.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: p.id,
+            ...ts
+          } as Task);
+        }
+      });
     }
     // Ensure unique tasks by id to eliminate any duplicate key collision
     if (rawGroupTasks && rawGroupTasks.length > 0) {

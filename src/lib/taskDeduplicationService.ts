@@ -209,16 +209,33 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
 
     let matchedExistingId: string | undefined = undefined;
 
-    if (codeKey && seenCodeMap.has(codeKey)) {
-      matchedExistingId = seenCodeMap.get(codeKey);
-    } else if (exactTaskKey && seenNormMap.has(exactTaskKey)) {
+    if (exactTaskKey && seenNormMap.has(exactTaskKey)) {
       matchedExistingId = seenNormMap.get(exactTaskKey);
+    } else if (codeKey && seenCodeMap.has(codeKey)) {
+      const candidateId = seenCodeMap.get(codeKey);
+      if (candidateId && seenMap.has(candidateId)) {
+        const candidateTask = seenMap.get(candidateId)!;
+        const normCandidate = normalizeTaskNameForComparison(candidateTask.name, candidateTask.projectCode);
+        const normCurrent = normalizeTaskNameForComparison(task.name, task.projectCode);
+        // ONLY match by codeKey if names are identical or one is missing!
+        if (!normCandidate || !normCurrent || normCandidate === normCurrent) {
+          matchedExistingId = candidateId;
+        }
+      }
     }
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
       const existing = seenMap.get(matchedExistingId)!;
-      // Absolute guard: If both tasks have explicit projectIds that do NOT match, they are NEVER duplicates!
+      // Absolute guard 1: If both tasks have explicit projectIds that do NOT match, they are NEVER duplicates!
       if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
+      // Absolute guard 2: Tasks with distinctly different names are NEVER duplicates!
+      const normA = normalizeTaskNameForComparison(task.name, task.projectCode);
+      const normB = normalizeTaskNameForComparison(existing.name, existing.projectCode);
+      if (normA && normB && normA !== normB) {
         seenMap.set(task.id, task);
         return;
       }

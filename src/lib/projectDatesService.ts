@@ -99,12 +99,18 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     // Safety guard: If memory only has a partial task set (e.g. mobile or lazy loading),
     // merge in any remaining tasks from project.taskSummaries so task list never shrinks!
     if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > matchedList.length) {
-      const existingSummaryMap = new Map<string, any>();
+      const existingIdSet = new Set<string>();
+      const existingCodeNameSet = new Set<string>();
+      const existingNameSet = new Set<string>();
+
       matchedList.forEach(t => {
-        if (t.id) existingSummaryMap.set(String(t.id).toLowerCase(), t);
-        if (t.taskCodePhu) existingSummaryMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-        if (t.name) existingSummaryMap.set(String(t.name).trim().toLowerCase(), t);
+        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+        if (tName) existingNameSet.add(tName);
+        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
       });
+
       const mergedList = [...matchedList];
       project.taskSummaries.forEach((ts, idx) => {
         const tsId = ts.id ? String(ts.id).toLowerCase() : '';
@@ -115,9 +121,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
           return;
         }
 
-        const hasMatch = (tsId && existingSummaryMap.has(tsId)) ||
-                         (tsCode && existingSummaryMap.has(tsCode)) ||
-                         (tsName && existingSummaryMap.has(tsName));
+        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                         (!tsCode && tsName && existingNameSet.has(tsName));
         if (!hasMatch) {
           mergedList.push({
             id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
