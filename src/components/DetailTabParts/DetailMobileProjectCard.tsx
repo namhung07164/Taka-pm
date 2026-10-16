@@ -79,12 +79,10 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
   const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
   const rawSorted = pInfo.sortedTasks || [];
-  const sortedTasks = rawSorted.filter((t: Task) => {
-    if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim())) {
-      return false;
-    }
-    return true;
-  });
+  const sortedTasks = rawSorted.map((t: Task, idx: number) => ({
+    ...t,
+    name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || `Task ${idx + 1}`)
+  }));
   const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
     if (!sortConfig) return 0;
     let valA = '';

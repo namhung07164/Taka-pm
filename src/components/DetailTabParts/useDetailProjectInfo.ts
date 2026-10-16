@@ -156,9 +156,13 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
       // Ensure unique tasks by id to eliminate any duplicate key collision
       const uniqueTaskMap = new Map<string, Task>();
-      rawGroupTasks.forEach(t => {
-        if (t && t.id && !uniqueTaskMap.has(t.id)) {
-          uniqueTaskMap.set(t.id, t);
+      rawGroupTasks.forEach((t, idx) => {
+        if (!t) return;
+        const uKey = (t.id && String(t.id).trim())
+          ? String(t.id).trim().toLowerCase()
+          : (t.taskCodePhu ? `${p.code}_${t.taskCodePhu.toLowerCase()}` : `task_${p.id || p.code}_${idx}`);
+        if (!uniqueTaskMap.has(uKey)) {
+          uniqueTaskMap.set(uKey, t);
         }
       });
       rawGroupTasks = Array.from(uniqueTaskMap.values());
