@@ -1,0 +1,277 @@
+=== TAKASHIMAYA LATEST UPDATED CODE (AUTOMATICALLY OVERWRITTEN ON EACH UPDATE) ===
+Updated at: 2026-10-15T23:58:36-07:00
+
+================================================================================
+FILE: src/lib/taskStateService.ts (Cross-Check & Self-Healing Engine)
+================================================================================
+/**
+ * Cross-Check Engine: Tự động kiểm tra chéo và thanh dọn các task rác/cũ (Ghost tasks)
+ * Khi một thiết bị (iPad/iPhone) kết nối Online lại sau khi ở trạng thái Offline,
+ * hàm này đối soát danh sách task trong RAM/Dexie với `p.taskSummaries` chính thức trên Server.
+ * Nếu phát hiện task cục bộ không hề có trên Server (và không nằm trong hàng đợi ghi offline syncQueue),
+ * hệ thống tự động dọn dẹp task đó khỏi RAM & Dexie để đưa số lượng task về khớp 100% với Server.
+ */
+export function reconcileObsoleteLocalTasks(
+  tasks: Task[],
+  projects: Project[]
+): { reconciledTasks: Task[]; purgedCount: number } {
+  if (!tasks || tasks.length === 0 || !projects || projects.length === 0) {
+    return { reconciledTasks: tasks, purgedCount: 0 };
+  }
+
+  const projectSummaryMap = new Map<string, {
+    ids: Set<string>;
+    codeNames: Set<string>;
+    names: Set<string>;
+  }>();
+
+  projects.forEach((p) => {
+    if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+      const ids = new Set<string>();
+      const codeNames = new Set<string>();
+      const names = new Set<string>();
+
+      p.taskSummaries.forEach((ts) => {
+        if (ts.id) ids.add(String(ts.id).toLowerCase());
+        const name = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const code = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        if (name) names.add(name);
+        if (code && name) codeNames.add(`${code}:::${name}`);
+      });
+
+      if (p.id) projectSummaryMap.set(String(p.id).toLowerCase(), { ids, codeNames, names });
+      if (p.code) projectSummaryMap.set(String(p.code).toLowerCase(), { ids, codeNames, names });
+    }
+  });
+
+  if (projectSummaryMap.size === 0) {
+    return { reconciledTasks: tasks, purgedCount: 0 };
+  }
+
+  let purgedCount = 0;
+  const purgedIds: string[] = [];
+
+  const reconciledTasks = tasks.filter((t) => {
+    if (t.isDeleted) return false;
+
+    const pKeyId = t.projectId ? String(t.projectId).toLowerCase() : '';
+    const pKeyCode = t.projectCode ? String(t.projectCode).toLowerCase() : '';
+    const summaryInfo = (pKeyId && projectSummaryMap.get(pKeyId)) || (pKeyCode && projectSummaryMap.get(pKeyCode));
+
+    if (!summaryInfo) {
+      return true;
+    }
+
+    const tId = t.id ? String(t.id).toLowerCase() : '';
+    const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+    const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+
+    const hasMatch =
+      (tId && summaryInfo.ids.has(tId)) ||
+      (tCode && tName && summaryInfo.codeNames.has(`${tCode}:::${tName}`)) ||
+      (tName && summaryInfo.names.has(tName));
+
+    if (hasMatch) {
+      return true;
+    }
+
+    // Local task does not match server taskSummaries! Mark as obsolete ghost task and purge!
+    purgedCount++;
+    if (t.id) purgedIds.push(t.id);
+    return false;
+  });
+
+  if (purgedCount > 0 && purgedIds.length > 0) {
+    markTasksDeleted(purgedIds);
+    purgedIds.forEach((id) => {
+      deleteLocalRecord('taka_tasks', id).catch(() => {});
+    });
+  }
+
+  return { reconciledTasks, purgedCount };
+}
+
+
+================================================================================
+FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts (Batch Hydration & Reconciliation)
+================================================================================
+    tasksBatchTimer.current = setTimeout(() => {
+      if (pendingTasksMap.current) {
+        const rawList = Array.from(pendingTasksMap.current.values());
+        const projects = useAppStore.getState().projects || [];
+        const { dedupedTasks } = deduplicateTasksInMemory(rawList, projects);
+        const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
+        const { reconciledTasks } = reconcileObsoleteLocalTasks(unrolledTasks, projects);
+        const rolledUpTasks = rollupParentTaskDatesAndStatus(reconciledTasks, useAppStore.getState().delegationGroups);
+        rolledUpTasks.sort((a, b) => {
+          if (a.projectCode !== b.projectCode) {
+            return (a.projectCode || "").localeCompare(b.projectCode || "");
+          }
+          return (a.orderIndex || 0) - (b.orderIndex || 0);
+        });
+        const finalTasks = rolledUpTasks;
+        useAppStore.getState().setTasks(finalTasks);
+
+
+================================================================================
+FILE: src/lib/taskDeduplicationService.ts (Absolute Guard Against Deleting Distinct Tasks)
+================================================================================
+    let matchedExistingId: string | undefined = undefined;
+
+    if (exactTaskKey && seenNormMap.has(exactTaskKey)) {
+      matchedExistingId = seenNormMap.get(exactTaskKey);
+    } else if (codeKey && seenCodeMap.has(codeKey)) {
+      const candidateId = seenCodeMap.get(codeKey);
+      if (candidateId && seenMap.has(candidateId)) {
+        const candidateTask = seenMap.get(candidateId)!;
+        const normCandidate = normalizeTaskNameForComparison(candidateTask.name, candidateTask.projectCode);
+        const normCurrent = normalizeTaskNameForComparison(task.name, task.projectCode);
+        // ONLY match by codeKey if names are identical or one is missing!
+        if (!normCandidate || !normCurrent || normCandidate === normCurrent) {
+          matchedExistingId = candidateId;
+        }
+      }
+    }
+
+    if (matchedExistingId && seenMap.has(matchedExistingId)) {
+      const existing = seenMap.get(matchedExistingId)!;
+      // Absolute guard 1: If both tasks have explicit projectIds that do NOT match, they are NEVER duplicates!
+      if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
+      // Absolute guard 2: Tasks with distinctly different names are NEVER duplicates!
+      const normA = normalizeTaskNameForComparison(task.name, task.projectCode);
+      const normB = normalizeTaskNameForComparison(existing.name, existing.projectCode);
+      if (normA && normB && normA !== normB) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
+      // Duplicate task found!
+      duplicateCount++;
+      removedTaskIds.push(task.id);
+
+
+================================================================================
+FILE: src/lib/deltaApplyService.ts (Task Count & Summaries Preservation)
+================================================================================
+        const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+        return {
+          ...p,
+          ...computedDates,
+          taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length,
+          taskSummaries: computedDates.taskSummaries || [],
+        };
+
+
+================================================================================
+FILE: src/components/DetailTabParts/DetailMobileProjectCard.tsx (Mobile Task List Rendering)
+================================================================================
+  const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+  const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+  const rawSorted = pInfo.sortedTasks || [];
+  const sortedTasks = rawSorted.map((t: Task, idx: number) => ({
+    ...t,
+    name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || `Task ${idx + 1}`)
+  }));
+
+
+================================================================================
+FILE: src/components/DetailTabParts/useDetailProjectInfo.ts (Summary Task Merging & Keying)
+================================================================================
+      const existingIdSet = new Set<string>();
+      const existingCodeNameSet = new Set<string>();
+      const existingNameSet = new Set<string>();
+
+      rawGroupTasks.forEach(t => {
+        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+        if (tName) existingNameSet.add(tName);
+        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
+      });
+
+      p.taskSummaries.forEach((ts, idx) => {
+        if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
+          return;
+        }
+
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                         (!tsCode && tsName && existingNameSet.has(tsName));
+        if (!hasMatch) {
+          rawGroupTasks.push({
+            id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || p.computedTakStart || p.start || '',
+            finish: ts.finish || p.computedTakCompl || p.handover || '',
+            projectCode: p.code || '',
+            projectStore: p.store || 'HCM',
+            projectYear: p.year ? String(p.year) : '',
+            party: ts.party || p.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: p.id,
+            ...ts
+          } as Task);
+        }
+      });
+
+
+================================================================================
+FILE: src/lib/projectDatesService.ts (getTasksForProject & Summary Merging)
+================================================================================
+      const existingIdSet = new Set<string>();
+      const existingCodeNameSet = new Set<string>();
+      const existingNameSet = new Set<string>();
+
+      matchedList.forEach(t => {
+        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+        if (tName) existingNameSet.add(tName);
+        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
+      });
+
+      const mergedList = [...matchedList];
+      project.taskSummaries.forEach((ts, idx) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+        if (isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined)) {
+          return;
+        }
+
+        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                         (!tsCode && tsName && existingNameSet.has(tsName));
+        if (!hasMatch) {
+          mergedList.push({
+            id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || project.computedTakStart || project.start || '',
+            finish: ts.finish || project.computedTakCompl || project.handover || '',
+            projectCode: project.code || '',
+            projectStore: project.store || 'HCM',
+            projectYear: project.year ? String(project.year) : '',
+            party: ts.party || project.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: project.id,
+            ...ts
+          } as Task);
+        }
+      });
