@@ -238,10 +238,11 @@ export function useProjectsHydration({
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
     liveTargetYears.forEach(async (year) => {
-      if (!projectsPool.current.has(year)) {
-        // Step 1: Instant Local-First Dexie Hydration (0ms, 0 Read)
-        const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
+      // LUÔN đảm bảo nạp lại dữ liệu từ Dexie Local-First khi người dùng đổi bộ lọc Year hoặc Store,
+      // kể cả khi listener của năm đó đã nằm trong projectsPool!
+      const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
 
+      if (!projectsPool.current.has(year)) {
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const hasLocalData =
           localCount > 0 ||

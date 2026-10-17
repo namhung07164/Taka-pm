@@ -23998,7 +23998,102 @@ export function useDetailData({
     return map;
   }, [delegationGroups]);
 
-  useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+
+  // === Auto-clear stale filters when user changes Year / Store in Task Detail ===
+  const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+
+  useEffect(() => {
+    const currentKey = `${globalYearFilter}_${effectiveStore}`;
+    if (prevYearStoreRef.current !== currentKey) {
+      prevYearStoreRef.current = currentKey;
+
+      // 1. Khi đổi Year hoặc Store: nếu đang có detailTabFilterCode / detailTabFocusTaskId của dự án thuộc Store/Year cũ thì xóa đi
+      const storeState = useAppStore.getState();
+      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
+        storeState.setDetailTabFilterCode('');
+        storeState.setDetailTabFocusTaskId('');
+        if (searchTerm && searchTerm === storeState.detailTabFilterCode) {
+          setSearchTerm('');
+        }
+      }
+
+      // 2. Kiểm tra xem globalLocationFilter hiện tại có hợp lệ với Store/Year mới không
+      const projectsInNewScope = projects.filter((p) => {
+        if (p.isDeleted) return false;
+        const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+        if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+        if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+        return true;
+      });
+
+      if (projectsInNewScope.length > 0) {
+        // Nếu location đang chọn không có dự án nào ở Store/Year mới -> reset location filter
+        if (globalLocationFilter.length > 0) {
+          const hasMatchingLoc = projectsInNewScope.some(
+            (p) => p.location && globalLocationFilter.includes(p.location)
+          );
+          if (!hasMatchingLoc) {
+            setGlobalLocationFilter([]);
+          }
+        }
+
+        // Nếu statusFilter đang khác 'all' mà làm ẩn toàn bộ dự án của Store/Year mới -> tự động mở về 'all'
+        if (statusFilter !== 'all') {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayTime = today.getTime();
+          const hasMatchingStatus = projectsInNewScope.some((p) => {
+            const info = getProjectInfo(p);
+            if (statusFilter === 'On process + Upcoming 3 days') {
+              if (info.status === 'On process') return true;
+              if (info.status === 'Upcoming') {
+                const dStart = parseDateTime(info.start);
+                if (dStart) {
+                  dStart.setHours(0, 0, 0, 0);
+                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
+                  return diffDays <= 3 && diffDays >= 0;
+                }
+              }
+              return false;
+            }
+            return info.status === statusFilter;
+          });
+          if (!hasMatchingStatus) {
+            setStatusFilter('all');
+            safeSetItemSession('taka_detail_status_filter', 'all');
+          }
+        }
+      }
+    }
+  }, [
+    globalYearFilter,
+    effectiveStore,
+    projects,
+    globalLocationFilter,
+    statusFilter,
+    searchTerm,
+    setGlobalLocationFilter,
+    setStatusFilter,
+    setSearchTerm,
+    getProjectInfo,
+  ]);
+
+  // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
+  // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
+  const effectiveLocationFilter = useMemo(() => {
+    if (globalLocationFilter.length === 0) return globalLocationFilter;
+    const available = new Set<string>();
+    projects.forEach((p) => {
+      const pYear = p.year ? String(p.year).trim() : '';
+      if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter).trim()) return;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return;
+      if (p.location) available.add(p.location);
+    });
+    return globalLocationFilter.filter((loc) => available.has(loc));
+  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
+
+  
 
   const filteredProjects = useMemo(() => {
     const today = new Date();
@@ -87860,9 +87955,11 @@ export function useProjectsHydration({
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
     liveTargetYears.forEach(async (year) => {
+      // LUÔN đảm bảo nạp lại dữ liệu từ Dexie Local-First khi người dùng đổi bộ lọc Year hoặc Store,
+      // kể cả khi listener của năm đó đã nằm trong projectsPool!
+      const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
+
       if (!projectsPool.current.has(year)) {
-        // Step 1: Instant Local-First Dexie Hydration (0ms, 0 Read)
-        const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
 
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const hasLocalData =
@@ -92243,28 +92340,43 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
   try {
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
-    if (store.projects && store.projects.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.projects.length;
-      const hasForYear = store.projects.some(p => String(p.year || '') === String(targetYear));
-      if (hasForYear) return store.projects.length;
-    }
 
     const localProjects = await getLocalProjects(targetYear, storeFilter);
-    if (localProjects && localProjects.length > 0) {
-      const currentStore = useAppStore.getState();
-      if (!currentStore.projects || currentStore.projects.length === 0) {
-        const sorted = [...localProjects]
-          .map(p => ({
-            ...p,
-            taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
-          }))
-          .sort((a, b) => (a.no || 0) - (b.no || 0));
-        currentStore.setProjects(sorted);
-        usePerformanceStore
-          .getState()
-          .trackGetDoc('dexie_projects_hydration', true, localProjects.length, `Instant Local-First Projects Hydration (0ms, 0 Read)`);
-        return localProjects.length;
+    const currentProjects = store.projects || [];
+    const mergedMap = new Map<string, Project>();
+
+    // 1. Nạp danh sách dự án hiện có trong RAM (bảo toàn 100% dự án các năm/store khác)
+    currentProjects.forEach((p) => {
+      if (p && p.id && !p.isDeleted) {
+        mergedMap.set(String(p.id), p);
       }
+    });
+
+    // 2. Gộp dự án từ Dexie thuộc năm/store target vào RAM
+    if (localProjects && localProjects.length > 0) {
+      localProjects.forEach((p) => {
+        if (p && p.id && !p.isDeleted) {
+          const existing = mergedMap.get(String(p.id));
+          if (!existing) {
+            mergedMap.set(String(p.id), {
+              ...p,
+              taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+            });
+          }
+        }
+      });
+    }
+
+    const mergedList = Array.from(mergedMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
+    if (mergedList.length !== currentProjects.length) {
+      store.setProjects(mergedList);
+    }
+
+    if (localProjects && localProjects.length > 0) {
+      usePerformanceStore
+        .getState()
+        .trackGetDoc('dexie_projects_hydration', true, localProjects.length, );
+      return localProjects.length;
     }
     return 0;
   } catch (err) {
@@ -92273,9 +92385,6 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
   }
 }
 
-/**
- * Nạp tức thời Tasks từ Dexie khi người dùng chuyển sang tab yêu cầu Tasks (0ms UI, triệt tiêu Spinner)
- */
 export async function hydrateTasksFromLocal(year?: string): Promise<number> {
   try {
     const store = useAppStore.getState();

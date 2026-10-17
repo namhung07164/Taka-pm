@@ -1528,6 +1528,7 @@ import { useAppStore } from "../store/useAppStore";
 import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
+import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
 
 export interface ComputedProjectDates {
   computedTakStart?: string;
@@ -1634,7 +1635,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
       });
 
       const mergedList = [...matchedList];
+      const taskByIdForGuard = buildTaskByIdMap(safeAllTasks);
       project.taskSummaries.forEach((ts, idx) => {
+        if (isForeignSummaryEntry(ts.id, project, taskByIdForGuard)) return;
         const tsId = ts.id ? String(ts.id).toLowerCase() : '';
         const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
@@ -1673,8 +1676,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+    const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
     return project.taskSummaries
-      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined))
+      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined) && !isForeignSummaryEntry(ts.id, project, taskByIdFallback))
       .map((ts, idx) => ({
       id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,
@@ -2014,7 +2018,6 @@ export {
   backfillMissingProjectDates,
   syncAllProjectsTaskCountsToFirestore,
 } from "./projectDatesBackfill";
-
 
 
 
@@ -5298,19 +5301,21 @@ export function useTaskModalLogic({
     if (isOpen) {
       const pCode = task?.projectCode || prefillProjectCode;
       const pId = task?.projectId;
+      const pYear = task?.projectYear ?? prefillProjectYear;
+      const pStore = task?.projectStore ?? prefillProjectStore;
       const keys = [pId, pCode].filter(Boolean) as string[];
       if (keys.length > 0) {
-        hydrateTasksForProjects(keys).catch(() => {});
-        hydrateDelegationsForProjects(keys).catch(() => {});
-        if (pCode) {
-          ensureProjectTasksLoaded(pCode).catch(() => {});
+        hydrateTasksForProjects(keys, pYear, pStore).catch(() => {});
+        hydrateDelegationsForProjects(keys, pYear, pStore).catch(() => {});
+        if (pCode || pId) {
+          ensureProjectTasksLoaded(pCode || '').catch(() => {});
         }
       }
       if (task?.id) {
         hydrateDelegationsForTasks([task.id]).catch(() => {});
       }
     }
-  }, [isOpen, task?.id, task?.projectId, task?.projectCode, prefillProjectCode]);
+  }, [isOpen, task?.id, task?.projectId, task?.projectCode, task?.projectYear, task?.projectStore, prefillProjectCode, prefillProjectYear, prefillProjectStore]);
 
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
@@ -5319,7 +5324,12 @@ export function useTaskModalLogic({
 
   const handleOpenProjectComments = () => {
     if (task) {
-      const parentProject = projects.find(p => p.code === task.projectCode && String(p.year) === String(task.projectYear) && p.store === task.projectStore);
+      const parentProject = projects.find(p =>
+        (task.projectId && p.id === task.projectId) ||
+        (p.code === task.projectCode &&
+          (!task.projectYear || !p.year || String(p.year) === String(task.projectYear)) &&
+          (!task.projectStore || !p.store || String(p.store).toUpperCase() === String(task.projectStore).toUpperCase()))
+      );
       if (parentProject) {
         setIsTaskModalOpen(false);
         setEditingProject(parentProject);
@@ -5464,7 +5474,6 @@ export function useTaskModalLogic({
 }
 
 export type TaskModalLogicType = ReturnType<typeof useTaskModalLogic>;
-
 
 // === FILE: src/hooks/taskModal/taskModalSaveService.ts ===
 import { doc, deleteField } from 'firebase/firestore';
@@ -8882,6 +8891,2080 @@ export function useDelegationsHydration({
     setIsDelegationsLoading,
     setCloudStatus,
   ]);
+}
+
+
+
+// === FILE: src/lib/summaryGhostFilter.ts ===
+import type { Project, Task } from '../types';
+
+const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+
+/** Bản đồ id -> task cho các task thật đang nạp trong bộ nhớ */
+export function buildTaskByIdMap(tasks: Task[]): Map<string, Task> {
+  const m = new Map<string, Task>();
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (t && t.id && !t.isDeleted) m.set(String(t.id), t);
+  }
+  return m;
+}
+
+/**
+ * Mục tóm tắt là "ma" nếu id của nó trùng một task THẬT đang nạp nhưng task đó thuộc dự án khác
+ * (khác projectId, hoặc cùng thiếu projectId nhưng khác store/năm một cách rõ ràng).
+ * Không kết luận khi task chưa nạp: khi đó mục tóm tắt vẫn hiển thị như cũ.
+ */
+export function isForeignSummaryEntry(
+  tsId: string | undefined,
+  project: Partial<Project>,
+  taskById: Map<string, Task>
+): boolean {
+  if (!tsId) return false;
+  const t = taskById.get(String(tsId));
+  if (!t) return false;
+
+  if (t.projectId && project.id) return String(t.projectId) !== String(project.id);
+
+  const ps = norm(project.store);
+  const ts = norm(t.projectStore);
+  if (ps && ts && ps !== ts) return true;
+
+  const py = String(project.year ?? '').trim();
+  const ty = String(t.projectYear ?? '').trim();
+  if (py && ty && py !== ty) return true;
+
+  return false;
+}
+
+
+// === FILE: src/components/DetailTabParts/useDetailProjectInfo.ts ===
+import React, { useCallback, useMemo } from 'react';
+import { Project, Task } from '../../types';
+import { sortGroupTasks } from '../../lib/ganttUtils';
+import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
+import { getStatus } from '../../lib/utils';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { buildTaskByIdMap, isForeignSummaryEntry } from '../../lib/summaryGhostFilter';
+
+export interface ProjectInfo {
+  status: string;
+  start: string;
+  finish: string;
+  computedTakStart?: string;
+  computedTakCompl?: string;
+  computedOpening?: string;
+  sortedTasks: Task[];
+}
+
+interface UseDetailProjectInfoParams {
+  projects: Project[];
+  tasks: Task[];
+}
+
+export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoParams) {
+  const { tasksByProjectId, tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
+    const idMap = new Map<string, Task[]>();
+    const keyMap = new Map<string, Task[]>();
+    const codeMap = new Map<string, Task[]>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      if (t.isDeleted) continue;
+      if (t.projectId) {
+        const pIdStr = String(t.projectId);
+        let pList = idMap.get(pIdStr);
+        if (!pList) {
+          pList = [];
+          idMap.set(pIdStr, pList);
+        }
+        pList.push(t);
+      }
+      const key = `${t.projectCode || ''}-${t.projectYear || ''}-${t.projectStore || ''}`;
+      let list = keyMap.get(key);
+      if (!list) {
+        list = [];
+        keyMap.set(key, list);
+      }
+      list.push(t);
+      if (t.projectCode) {
+        const c = String(t.projectCode).trim().toLowerCase();
+        let cList = codeMap.get(c);
+        if (!cList) {
+          cList = [];
+          codeMap.set(c, cList);
+        }
+        cList.push(t);
+      }
+    }
+    return { tasksByProjectId: idMap, tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
+  }, [tasks]);
+
+  const taskById = useMemo(() => buildTaskByIdMap(tasks), [tasks]);
+
+  const projectInfoMap = useMemo(() => {
+    const map = new Map<string, ProjectInfo>();
+
+    projects.forEach(p => {
+      const mergedTasksMap = new Map<string, Task>();
+
+      const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
+      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+      if (p.id && tasksByProjectId.has(String(p.id))) {
+        tasksByProjectId.get(String(p.id))!.forEach(t => {
+          if (t && (t.id || t.name)) {
+            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+            if (pStore && tStore && pStore !== tStore) return;
+            if (pYear && tYear && pYear !== tYear) return;
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
+        });
+      }
+
+      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+      const foundByKey = tasksByProjectKey.get(key);
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(t => {
+          if (t && (t.id || t.name)) {
+            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
+            mergedTasksMap.set(String(t.id || t.name), t);
+          }
+        });
+      }
+
+      const allCodes = new Set<string>();
+      if (p.code) allCodes.add(String(p.code).trim().toLowerCase());
+      if (p.linkCodes) {
+        String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
+      }
+      allCodes.forEach(code => {
+        const candidateTasks = tasksByCodeMap.get(code) || [];
+        candidateTasks.forEach(t => {
+          if (!t || (!t.id && !t.name)) return;
+          if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
+
+          const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+
+          if (pStore && tStore && pStore !== tStore) return;
+          if (pYear && tYear && pYear !== tYear) return;
+
+          mergedTasksMap.set(String(t.id || t.name), t);
+        });
+      });
+
+      let rawGroupTasks: Task[] = Array.from(mergedTasksMap.values());
+
+      // Safety guard: Merge missing tasks from p.taskSummaries when taskSummaries has more items
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
+        const existingIdSet = new Set<string>();
+        const existingCodeNameSet = new Set<string>();
+        const existingNameSet = new Set<string>();
+
+        rawGroupTasks.forEach(t => {
+          if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+          const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+          const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+          if (tName) existingNameSet.add(tName);
+          if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
+        });
+
+        p.taskSummaries.forEach((ts, idx) => {
+          if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
+            return;
+          }
+          if (isForeignSummaryEntry(ts.id, p, taskById)) return;
+
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+          const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                           (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                           (!tsCode && tsName && existingNameSet.has(tsName));
+          if (!hasMatch) {
+            rawGroupTasks.push({
+              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
+      }
+
+      // Ensure unique tasks by id to eliminate any duplicate key collision
+      const uniqueTaskMap = new Map<string, Task>();
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
+        }
+      });
+      rawGroupTasks = Array.from(uniqueTaskMap.values());
+      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(rawGroupTasks || []);
+      const sortedTasks = sortGroupTasks(rolledUpGroupTasks);
+      let computedTakStart = p.computedTakStart || p.start;
+      let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
+      let computedOpening = p.computedOpening || p.opening;
+
+      if (sortedTasks.length > 0) {
+        let minStart: string | undefined = undefined;
+        let maxFinish: string | undefined = undefined;
+        for (let i = 0; i < sortedTasks.length; i++) {
+          const t = sortedTasks[i];
+          if (t.start && (!minStart || t.start < minStart)) {
+            minStart = t.start;
+          }
+          if (t.finish && (!maxFinish || t.finish > maxFinish)) {
+            maxFinish = t.finish;
+          }
+          const name = String(t.name || '').toLowerCase();
+          if (name.includes('opening') || name.includes('open')) {
+            if (t.finish && (!computedOpening || t.finish > computedOpening)) {
+              computedOpening = t.finish;
+            }
+          }
+        }
+        if (minStart) computedTakStart = minStart;
+        if (maxFinish) computedTakCompl = maxFinish;
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        let minStart: string | undefined = undefined;
+        let maxFinish: string | undefined = undefined;
+        for (let i = 0; i < p.taskSummaries.length; i++) {
+          const ts = p.taskSummaries[i];
+          if (ts.start && (!minStart || ts.start < minStart)) {
+            minStart = ts.start;
+          }
+          if (ts.finish && (!maxFinish || ts.finish > maxFinish)) {
+            maxFinish = ts.finish;
+          }
+          const name = String(ts.name || '').toLowerCase();
+          if (name.includes('opening') || name.includes('open')) {
+            if (ts.finish && (!computedOpening || ts.finish > computedOpening)) {
+              computedOpening = ts.finish;
+            }
+          }
+        }
+        if (minStart) computedTakStart = minStart;
+        if (maxFinish) computedTakCompl = maxFinish;
+      }
+
+      const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+      const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
+      const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      map.set(pUniqueKey, {
+        status,
+        start: computedTakStart || '9999-12-31',
+        finish,
+        computedTakStart,
+        computedTakCompl,
+        computedOpening,
+        sortedTasks
+      });
+    });
+    return map;
+  }, [projects, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
+
+  const getProjectInfo = useCallback((p: Project): ProjectInfo => {
+    const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+    const cached = projectInfoMap.get(pUniqueKey);
+    if (cached) return cached;
+    
+    let rawGroupTasks = p.id ? tasksByProjectId.get(String(p.id)) : undefined;
+    if (!rawGroupTasks || rawGroupTasks.length === 0) {
+      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+      rawGroupTasks = tasksByProjectKey.get(key);
+    }
+    if (!rawGroupTasks || rawGroupTasks.length === 0) {
+      const allCodes = new Set<string>();
+      if (p.code) allCodes.add(String(p.code).trim().toLowerCase());
+      if (p.linkCodes) {
+        String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
+      }
+      const matchedMap = new Map<string, Task>();
+      allCodes.forEach(code => {
+        const candidateTasks = tasksByCodeMap.get(code) || [];
+        candidateTasks.forEach(t => {
+          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+          if (matchesStore && matchesYear && t && (t.id || t.name)) {
+            matchedMap.set(String(t.id || t.name), t);
+          }
+        });
+      });
+      rawGroupTasks = Array.from(matchedMap.values());
+    }
+    if (!rawGroupTasks) rawGroupTasks = [];
+    if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
+      const existingIdSet = new Set<string>();
+      const existingCodeNameSet = new Set<string>();
+      const existingNameSet = new Set<string>();
+
+      rawGroupTasks.forEach(t => {
+        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+        if (tName) existingNameSet.add(tName);
+        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
+      });
+
+      p.taskSummaries.forEach((ts, idx) => {
+        if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) return;
+        if (isForeignSummaryEntry(ts.id, p, taskById)) return;
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+
+        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                         (!tsCode && tsName && existingNameSet.has(tsName));
+        if (!hasMatch) {
+          rawGroupTasks!.push({
+            id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+            name: ts.name || `Task ${idx + 1}`,
+            start: ts.start || p.computedTakStart || p.start || '',
+            finish: ts.finish || p.computedTakCompl || p.handover || '',
+            projectCode: p.code || '',
+            projectStore: p.store || 'HCM',
+            projectYear: p.year ? String(p.year) : '',
+            party: ts.party || p.party || '',
+            runningStatus: ts.runningStatus || 'On process',
+            duration: ts.duration || '',
+            parentTaskId: ts.parentTaskId,
+            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+            projectId: p.id,
+            ...ts
+          } as Task);
+        }
+      });
+    }
+    // Ensure unique tasks by id to eliminate any duplicate key collision
+    if (rawGroupTasks && rawGroupTasks.length > 0) {
+      const uniqueTaskMap = new Map<string, Task>();
+      rawGroupTasks.forEach(t => {
+        if (t && t.id && !uniqueTaskMap.has(t.id)) {
+          uniqueTaskMap.set(t.id, t);
+        }
+      });
+      rawGroupTasks = Array.from(uniqueTaskMap.values());
+    }
+    const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(rawGroupTasks || []);
+    const sortedTasks = sortGroupTasks(rolledUpGroupTasks);
+    let computedTakStart = p.computedTakStart || p.start;
+    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
+    let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
+
+    if (sortedTasks.length > 0) {
+      let minStart: string | undefined = undefined;
+      let maxFinish: string | undefined = undefined;
+      let hasOpeningTask = false;
+      for (let i = 0; i < sortedTasks.length; i++) {
+        const t = sortedTasks[i];
+        if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
+        if (t.finish && (!maxFinish || t.finish > maxFinish)) maxFinish = t.finish;
+        const name = String(t.name || '').toLowerCase();
+        if (name.includes('opening') || name.includes('open')) {
+          if (t.finish && (!hasOpeningTask || t.finish > computedOpening)) {
+            computedOpening = t.finish;
+            hasOpeningTask = true;
+          }
+        }
+      }
+      if (minStart) computedTakStart = minStart;
+      if (maxFinish) computedTakCompl = maxFinish;
+      if (!hasOpeningTask && p.openingMode !== 'manual') {
+        computedOpening = '';
+      }
+    } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+      let minStart: string | undefined = undefined;
+      let maxFinish: string | undefined = undefined;
+      let hasOpeningTask = false;
+      for (let i = 0; i < p.taskSummaries.length; i++) {
+        const ts = p.taskSummaries[i];
+        if (ts.start && (!minStart || ts.start < minStart)) minStart = ts.start;
+        if (ts.finish && (!maxFinish || ts.finish > maxFinish)) maxFinish = ts.finish;
+        const name = String(ts.name || '').toLowerCase();
+        if (name.includes('opening') || name.includes('open')) {
+          if (ts.finish && (!hasOpeningTask || ts.finish > computedOpening)) {
+            computedOpening = ts.finish;
+            hasOpeningTask = true;
+          }
+        }
+      }
+      if (minStart) computedTakStart = minStart;
+      if (maxFinish) computedTakCompl = maxFinish;
+      if (!hasOpeningTask && p.openingMode !== 'manual') {
+        computedOpening = '';
+      }
+    }
+
+    const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+    const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
+    return { status, start: computedTakStart || '9999-12-31', finish, sortedTasks, computedTakStart, computedTakCompl, computedOpening };
+  }, [projectInfoMap, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
+
+  return {
+    tasksByProjectKey,
+    tasksByCodeMap,
+    projectInfoMap,
+    getProjectInfo,
+  };
+}
+
+
+// === FILE: src/components/DetailTabParts/useDetailData.ts ===
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, DelegationGroup, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getTaskStatus, 
+  parseDateTime, 
+  formatDisplayDateMain, 
+  formatDisplayDateTime, 
+  resolveActualStatus, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { SortConfig } from './detailTypes';
+import { useDetailProjectInfo } from './useDetailProjectInfo';
+import { useDetailFlatRows } from './useDetailFlatRows';
+import { useDetailFocusTracking } from './useDetailFocusTracking';
+
+interface UseDetailDataParams {
+  projects: Project[];
+  tasks: Task[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  effectiveStore: string;
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  globalStoreFilter: string;
+  setGlobalStoreFilter: (store: string) => void;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  initialFilterCode?: string;
+  initialFocusTaskId?: string;
+  returnScrollId?: string;
+  onClearFocus?: () => void;
+  onBackToGantt?: () => void;
+  sortConfig: SortConfig | null;
+  expandedCodes: string[];
+  setExpandedCodes: (codes: string[]) => void;
+  setVisibleActiveProjectIds: (ids: string[]) => void;
+  canWrite: boolean;
+}
+
+export function useDetailData({
+  projects,
+  tasks,
+  delegationGroups,
+  currentUser: _currentUser,
+  effectiveStore,
+  globalYearFilter,
+  setGlobalYearFilter,
+  globalStoreFilter,
+  setGlobalStoreFilter,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  initialFilterCode,
+  initialFocusTaskId,
+  returnScrollId: _returnScrollId,
+  onClearFocus,
+  onBackToGantt,
+  sortConfig,
+  expandedCodes,
+  setExpandedCodes,
+  setVisibleActiveProjectIds,
+}: UseDetailDataParams) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (statusFilter !== 'all') {
+        lastSelectedStatusFilterRef.current = statusFilter;
+        safeSetItemSession("taka_detail_status_filter", statusFilter);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setStatusFilter('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days';
+      setStatusFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const lastCheckedTaskIdRef = useRef<string | null>(null);
+
+  // Focus & Viewport Tracking Hook
+  const {
+    activeProjectInView,
+    handleClearFocus,
+    handleBackToGantt,
+  } = useDetailFocusTracking({
+    projects,
+    tasks,
+    initialFilterCode,
+    initialFocusTaskId,
+    onClearFocus,
+    onBackToGantt,
+    searchTerm,
+    setSearchTerm,
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    statusFilter,
+    setStatusFilter,
+    expandedCodes,
+    setExpandedCodes,
+  });
+
+  // Project Info Map & Helpers Hook
+  const {
+    tasksByProjectKey,
+    projectInfoMap,
+    getProjectInfo,
+  } = useDetailProjectInfo({ projects, tasks });
+
+  // Auto-jump to matched project location(s) when searching (Debounced)
+  useEffect(() => {
+    const term = deferredSearchTerm.trim();
+    if (!term) return;
+
+    const timer = setTimeout(() => {
+      const matchedProjects = projects.filter(p => {
+        const pYear = p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null);
+        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+        if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+
+        const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+        const isMatch = matchesAdvancedSearch(
+          term,
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
+          [],
+          (tLower) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(tLower)
+            ) || false;
+            const taskMatches = groupTasks.some((t, idx) => {
+              const taskFields = [
+                t.taskCodePhu,
+                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                t.name,
+                t.duration,
+                t.start,
+                t.finish,
+                t.party,
+                formatDisplayDateMain(t.start),
+                formatDisplayDateTime(t.start),
+                formatDisplayDateMain(t.finish),
+                formatDisplayDateTime(t.finish)
+              ];
+              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
+              return fieldMatch || notesMatch;
+            });
+            return summariesMatch || taskMatches;
+          }
+        );
+        return isMatch;
+      });
+
+      const matchedLocations = Array.from(
+        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [deferredSearchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  const delegationGroupByParentKey = useMemo(() => {
+    const map = new Map<string, DelegationGroup>();
+    delegationGroups.forEach(g => {
+      if (g.parentTaskId) {
+        const keyWithStore = `${g.parentTaskId}-${g.projectStore || ''}`;
+        map.set(keyWithStore, g);
+        if (!map.has(g.parentTaskId)) {
+          map.set(g.parentTaskId, g);
+        }
+      }
+    });
+    return map;
+  }, [delegationGroups]);
+
+  useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+
+  // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
+  // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
+  const effectiveLocationFilter = useMemo(() => {
+    if (globalLocationFilter.length === 0) return globalLocationFilter;
+    const available = new Set<string>();
+    projects.forEach((p) => {
+      const pYear = p.year ? String(p.year).trim() : '';
+      if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter).trim()) return;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return;
+      if (p.location) available.add(p.location);
+    });
+    return globalLocationFilter.filter((loc) => available.has(loc));
+  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
+
+  const filteredProjects = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTime = today.getTime();
+
+    return projects.filter(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pYear = p.year ? String(p.year).trim() : (info.computedTakStart ? String(info.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
+      if (effectiveLocationFilter.length > 0 && (!p.location || !effectiveLocationFilter.includes(p.location))) return false;
+
+      let matchesStatus = true;
+      if (statusFilter === 'On process + Upcoming 3 days') {
+        if (info.status === 'On process') {
+          matchesStatus = true;
+        } else if (info.status === 'Upcoming') {
+          const dStart = parseDateTime(info.start);
+          if (dStart) {
+            dStart.setHours(0, 0, 0, 0);
+            const diffTime = dStart.getTime() - todayTime;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            matchesStatus = diffDays <= 3 && diffDays >= 0;
+          } else {
+            matchesStatus = false;
+          }
+        } else {
+          matchesStatus = false;
+        }
+      } else {
+        matchesStatus = statusFilter === 'all' || info.status === statusFilter;
+      }
+      if (!matchesStatus) return false;
+
+      const groupTasks = info.sortedTasks || tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+      if (deferredSearchTerm) {
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
+          [],
+          (term) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(term)
+            ) || false;
+            const taskMatches = groupTasks.some((t, idx) => {
+              const taskFields = [
+                t.taskCodePhu,
+                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                t.name,
+                t.duration,
+                t.start,
+                t.finish,
+                t.party,
+                formatDisplayDateMain(t.start),
+                formatDisplayDateTime(t.start),
+                formatDisplayDateMain(t.finish),
+                formatDisplayDateTime(t.finish)
+              ];
+              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(term));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(term)) || false;
+              return fieldMatch || notesMatch;
+            });
+            return summariesMatch || taskMatches;
+          }
+        );
+        if (!isMatch) return false;
+      }
+
+      return true;
+    });
+  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
+
+  // Chẩn đoán: bảng trống dù store có dự án
+  useEffect(() => {
+    if (filteredProjects.length === 0 && projects.length > 0) {
+      console.warn('[Detail] 0 dự án sau khi lọc', {
+        totalProjects: projects.length,
+        year: globalYearFilter,
+        store: effectiveStore,
+        locationSelected: globalLocationFilter,
+        locationEffective: effectiveLocationFilter,
+        status: statusFilter,
+        search: deferredSearchTerm,
+      });
+    }
+  }, [filteredProjects.length, projects.length, globalYearFilter, effectiveStore, globalLocationFilter, effectiveLocationFilter, statusFilter, deferredSearchTerm]);
+
+  // Ensure visibleCount is large enough to render target project row
+  useEffect(() => {
+    if (!initialFilterCode) return;
+    const filterClean = String(initialFilterCode).trim().toUpperCase();
+    const projIdx = filteredProjects.findIndex(p => {
+      const pCode = String(p.code || '').trim().toUpperCase();
+      const pId = String(p.id || '').trim().toUpperCase();
+      return pId === filterClean || pCode === filterClean || (pCode && filterClean.startsWith(pCode));
+    });
+    if (projIdx >= 0 && projIdx >= visibleCount) {
+      setVisibleCount(projIdx + 25);
+    }
+  }, [initialFilterCode, filteredProjects, visibleCount]);
+
+  const prevVisibleIdsRef = useRef<string>("");
+  useEffect(() => {
+    const targetProjects = filteredProjects.length > 0
+      ? filteredProjects.slice(0, visibleCount)
+      : projects.filter(p => {
+          const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+          if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+          if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+          if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
+          return true;
+        }).slice(0, visibleCount);
+
+    const visibleIds = targetProjects.map(p => String(p.id || p.no));
+    const idsKey = visibleIds.join(',');
+    if (prevVisibleIdsRef.current !== idsKey) {
+      prevVisibleIdsRef.current = idsKey;
+      setVisibleActiveProjectIds(visibleIds);
+    }
+  }, [filteredProjects, projects, visibleCount, globalYearFilter, effectiveStore, globalLocationFilter, setVisibleActiveProjectIds]);
+
+  useEffect(() => {
+    return () => {
+      useAppStore.getState().setVisibleActiveProjectIds([]);
+    };
+  }, []);
+
+  const allVisibleTaskIds = useMemo(() => {
+    return filteredProjects.slice(0, visibleCount).flatMap(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+      return (pInfo.sortedTasks || []).map(t => t.id);
+    });
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
+
+  const lowerSearchTerm = searchTerm.toLowerCase().trim();
+
+  // Task code & status maps
+  const taskCodeMap = useMemo(() => {
+    return computeAllTaskCodes(projects, tasks);
+  }, [projects, tasks]);
+
+  const taskActualStatusMap = useMemo(() => {
+    const map = new Map<string, { label: string; color: string }>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      const taskStatus = getTaskStatus(t.start, t.finish);
+      const delegationGroup = delegationGroupByParentKey.get(t.id);
+      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || [], t);
+      map.set(t.id, actStatus);
+    }
+    return map;
+  }, [tasks, delegationGroupByParentKey]);
+
+  // Pre-indexed O(1) map of subtask counts per parent to avoid 250,000 array filters in DetailTaskRow
+  const childTasksCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const child = tasks[idx];
+      if (child.parentTaskId) {
+        map.set(child.parentTaskId, (map.get(child.parentTaskId) || 0) + 1);
+      }
+    }
+    return map;
+  }, [tasks]);
+
+  // Virtual Windowing Flat Rows
+  const flatTableRows = useDetailFlatRows({
+    filteredProjects,
+    visibleCount,
+    projectInfoMap,
+    getProjectInfo,
+    sortConfig,
+    expandedCodes,
+    delegationGroups,
+    lowerSearchTerm,
+    taskCodeMap,
+  });
+
+  // Selection handlers
+  const handleSelectAllTasksInProject = useCallback((groupTasks: Task[], select: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      groupTasks.forEach(t => {
+        if (select) next.add(t.id);
+        else next.delete(t.id);
+      });
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
+    const strTaskId = String(taskId);
+    setSelectedTaskIds(prev => {
+      const next = new Set(Array.from(prev).map(String));
+      const isChecked = !next.has(strTaskId);
+      if (isChecked) {
+        if (shiftKey && lastCheckedTaskIdRef.current && lastCheckedTaskIdRef.current !== strTaskId) {
+          const visibleIds = allVisibleTaskIds.map(String);
+          const lastIdx = visibleIds.indexOf(lastCheckedTaskIdRef.current);
+          const currentIdx = visibleIds.indexOf(strTaskId);
+          if (lastIdx !== -1 && currentIdx !== -1) {
+            const minIdx = Math.min(lastIdx, currentIdx);
+            const maxIdx = Math.max(lastIdx, currentIdx);
+            for (let idx = minIdx; idx <= maxIdx; idx++) {
+              next.add(visibleIds[idx]);
+            }
+          } else {
+            next.add(strTaskId);
+          }
+        } else {
+          next.add(strTaskId);
+        }
+        lastCheckedTaskIdRef.current = strTaskId;
+      } else {
+        next.delete(strTaskId);
+        lastCheckedTaskIdRef.current = null;
+      }
+      return next;
+    });
+  }, [allVisibleTaskIds]);
+
+  return {
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    visibleCount,
+    setVisibleCount,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    selectedTaskIds,
+    setSelectedTaskIds,
+    lastCheckedTaskIdRef,
+    activeProjectInView,
+    delegationGroupByParentKey,
+    projectInfoMap,
+    getProjectInfo,
+    filteredProjects,
+    allVisibleTaskIds,
+    lowerSearchTerm,
+    taskCodeMap,
+    taskActualStatusMap,
+    childTasksCountMap,
+    flatTableRows,
+    handleSelectAllTasksInProject,
+    handleToggleSelectTask,
+    handleClearFocus,
+    handleBackToGantt,
+  };
+}
+
+
+// === FILE: src/components/ProjectModal/chat/ProjectChatInput.tsx ===
+import React, { forwardRef, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useLanguage } from '../../../lib/LanguageContext';
+import { AppUser, Task } from '../../../types';
+import { storage, googleSignIn, getAccessToken } from '../../../lib/firebase';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { Paperclip, AtSign, Hash, Send, Loader2 } from 'lucide-react';
+import { recordMention, getMentionFrequencies } from '../../TaskModalParts/chat/chatSharedUtils';
+
+export interface ProjectChatInputHandle {
+  insertTaskTag: (tagName: string) => void;
+}
+
+export interface ProjectChatInputProps {
+  onSend: (text: string, mentions: string[]) => void;
+  appUsers: AppUser[];
+  projectTasks: Task[];
+}
+
+export const ProjectChatInput = React.memo(
+  React.forwardRef<ProjectChatInputHandle, ProjectChatInputProps>(function ProjectChatInput(
+    { onSend, appUsers, projectTasks },
+    ref
+  ) {
+    const { t } = useLanguage();
+    const [commentText, setCommentText] = useState('');
+    const [mentions, setMentions] = useState<string[]>([]);
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [showMentionMenu, setShowMentionMenu] = useState(false);
+    const [taskQuery, setTaskQuery] = useState('');
+    const [showTaskMenu, setShowTaskMenu] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+
+    const inputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    React.useImperativeHandle(ref, () => ({
+      insertTaskTag: (tagName: string) => {
+        setCommentText((prev) => `${prev} #${tagName} `);
+        setTimeout(() => inputRef.current?.focus(), 50);
+      },
+    }));
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsUploading(true);
+      try {
+        let accessToken = await getAccessToken();
+        if (!accessToken) {
+          const result = await googleSignIn();
+          if (result) accessToken = result.accessToken;
+        }
+
+        let downloadURL = '';
+        try {
+          const storageReference = storageRef(storage, `comments/${Date.now()}_${file.name}`);
+          const uploadTask = await uploadBytesResumable(storageReference, file);
+          downloadURL = await getDownloadURL(uploadTask.ref);
+        } catch (err) {
+          console.error('Firebase Storage upload failed:', err);
+        }
+
+        let driveUrl = '';
+        if (accessToken) {
+          try {
+            const res1 = await fetch('https://www.googleapis.com/drive/v3/files', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ name: file.name, mimeType: file.type }),
+            });
+            const data1 = await res1.json();
+            const fileId = data1.id;
+
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': file.type,
+              },
+              body: file,
+            });
+
+            await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+            });
+
+            driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
+          } catch (err) {
+            console.error('Drive upload failed:', err);
+          }
+        }
+
+        const finalUrl = [downloadURL, driveUrl].filter(Boolean).join(' ');
+        if (!finalUrl) throw new Error('Upload failed');
+        setCommentText((prev) => (prev ? `${prev} ${finalUrl} ` : `${finalUrl} `));
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (error) {
+        console.error('Upload error', error);
+      } finally {
+        setIsUploading(false);
+      }
+    };
+
+    const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const text = e.target.value;
+      setCommentText(text);
+
+      const cursorPosition = e.target.selectionStart || 0;
+      const textBeforeCursor = text.substring(0, cursorPosition);
+      const mentionMatch = textBeforeCursor.match(/@(\S*)$/);
+      const taskMatch = textBeforeCursor.match(/#([^#]*)$/);
+
+      if (mentionMatch) {
+        setMentionQuery(mentionMatch[1]);
+        setShowMentionMenu(true);
+        setShowTaskMenu(false);
+      } else if (taskMatch) {
+        setTaskQuery(taskMatch[1]);
+        setShowTaskMenu(true);
+        setShowMentionMenu(false);
+      } else {
+        setShowMentionMenu(false);
+        setShowTaskMenu(false);
+      }
+    };
+
+    const insertMention = (user: AppUser) => {
+      recordMention(user.id);
+      const cursorPosition = inputRef.current?.selectionStart || 0;
+      const textBeforeMention = commentText.substring(0, cursorPosition).replace(/@\S*$/, '');
+      const textAfterMention = commentText.substring(cursorPosition);
+
+      setCommentText(`${textBeforeMention}@${user.username} ${textAfterMention}`);
+      if (!mentions.includes(user.id)) {
+        setMentions([...mentions, user.id]);
+      }
+      setShowMentionMenu(false);
+      inputRef.current?.focus();
+    };
+
+    const insertTask = (task: Task) => {
+      const cursorPosition = inputRef.current?.selectionStart || 0;
+      const textBeforeTask = commentText.substring(0, cursorPosition).replace(/#([^#]*)$/, '');
+      const textAfterTask = commentText.substring(cursorPosition);
+
+      setCommentText(`${textBeforeTask}#${task.name} ${textAfterTask}`);
+      setShowTaskMenu(false);
+      inputRef.current?.focus();
+    };
+
+    const handleSend = () => {
+      if (!commentText.trim()) return;
+
+      const lowerCommentText = (commentText || '').toLowerCase();
+      const activeMentions = Array.from(
+        new Set([
+          ...mentions.filter((userId) => {
+            const user = (appUsers || []).find((u) => u && u.id === userId);
+            return user && typeof user.username === 'string' && lowerCommentText.includes(`@${user.username.toLowerCase()}`);
+          }),
+          ...(appUsers || [])
+            .filter((u) => u && typeof u.username === 'string' && lowerCommentText.includes(`@${u.username.toLowerCase()}`))
+            .map((u) => u.id),
+        ])
+      );
+
+      activeMentions.forEach((userId) => recordMention(userId));
+
+      onSend(commentText, activeMentions);
+      setCommentText('');
+      setMentions([]);
+    };
+
+    const filteredUsers = useMemo(() => {
+      const freqs = getMentionFrequencies();
+      const q = (mentionQuery || '').toLowerCase();
+      return (appUsers || [])
+        .filter((u) => u && typeof u.username === 'string' && u.username.toLowerCase().includes(q))
+        .sort((a, b) => {
+          const freqA = freqs[a.id] || 0;
+          const freqB = freqs[b.id] || 0;
+          if (freqA !== freqB) return freqB - freqA;
+          return (a.username || '').localeCompare(b.username || '');
+        });
+    }, [appUsers, mentionQuery]);
+
+    const filteredTasks = useMemo(() => {
+      const q = (taskQuery || '').toLowerCase();
+      return (projectTasks || []).filter((t) => t && typeof t.name === 'string' && t.name.toLowerCase().includes(q));
+    }, [projectTasks, taskQuery]);
+
+    return (
+      <div className="p-4 border-t border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20] relative shrink-0">
+        {showMentionMenu && filteredUsers.length > 0 && (
+          <div className="absolute bottom-full left-4 mb-2 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl w-64 max-h-48 overflow-y-auto z-10">
+            {filteredUsers.map((u) => (
+              <button
+                type="button"
+                key={u.id}
+                onClick={() => insertMention(u)}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-[#333336] dark:text-[#e3e3e3] transition-colors flex items-center gap-2"
+              >
+                <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center font-bold text-[10px]">
+                  {(u.username || u.email || 'U').substring(0, 2).toUpperCase()}
+                </div>
+                {u.username || u.email || 'User'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {showTaskMenu && filteredTasks.length > 0 && (
+          <div className="absolute bottom-full left-4 mb-2 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl w-80 max-h-48 overflow-y-auto z-10">
+            {filteredTasks.map((t) => (
+              <button
+                type="button"
+                key={t.id}
+                onClick={() => insertTask(t)}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-[#333336] dark:text-[#e3e3e3] transition-colors flex items-center justify-between"
+              >
+                <span className="font-medium text-slate-800 dark:text-[#f3f3f3] truncate">{t.name}</span>
+                {t.party && <span className="text-xs text-slate-500 dark:text-[#a3a3a3]">{t.party}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageUpload}
+            className="hidden"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors disabled:opacity-50"
+            title={t('Attach File / Image')}
+          >
+            {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCommentText((prev) => `${prev}@`);
+              setShowMentionMenu(true);
+              inputRef.current?.focus();
+            }}
+            className="p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors"
+            title={t('Mention User')}
+          >
+            <AtSign className="w-5 h-5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCommentText((prev) => `${prev}#`);
+              setShowTaskMenu(true);
+              inputRef.current?.focus();
+            }}
+            className="p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors"
+            title={t('Tag Task')}
+          >
+            <Hash className="w-5 h-5" />
+          </button>
+
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={commentText}
+              onChange={handleTextChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={t('Write a comment... Use @ for users, # for tasks')}
+              className="w-full px-4 py-2 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-[#e3e3e3]"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!commentText.trim()}
+            className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all disabled:opacity-50 active:scale-95 touch-manipulation shadow-sm"
+            title={t('Send')}
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    );
+  })
+);
+
+
+// === FILE: src/components/BudgetParts/useBudgetData.ts ===
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Cost, AppUser, AppRole } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  formatCurrencyValue 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeSetItemLocal, safeSetItemSession, safeGetItemSession, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
+import { AVAILABLE_COLUMNS, ProjectFinancials } from './budgetTypes';
+import { useBudgetTreeData } from './useBudgetTreeData';
+import { useBudgetFilterSort } from './useBudgetFilterSort';
+import { useBudgetCsvOps } from './useBudgetCsvOps';
+
+interface UseBudgetDataParams {
+  projects: Project[];
+  costs: Cost[];
+  currentUser: AppUser;
+  initialSearchTerm?: string;
+}
+
+export function useBudgetData({
+  projects,
+  costs,
+  currentUser,
+  initialSearchTerm = ''
+}: UseBudgetDataParams) {
+  const permissionMatrix = useAppStore(state => state.permissionMatrix);
+  const currency = useAppStore(state => state.currency);
+  const jpyRate = useAppStore(state => state.jpyRate);
+  const usdRate = useAppStore(state => state.usdRate);
+
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
+  const setDetailTabStoreFilter = useAppStore(state => state.setDetailTabStoreFilter);
+  const setActiveTab = useAppStore(state => state.setActiveTab);
+  const budgetTabSearchTerm = useAppStore(state => state.budgetTabSearchTerm);
+
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || budgetTabSearchTerm || '');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+    } else if (budgetTabSearchTerm) {
+      setSearchTerm(budgetTabSearchTerm);
+    }
+  }, [initialSearchTerm, budgetTabSearchTerm]);
+
+  const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
+  const [moneyFilter, setMoneyFilter] = useState(() => {
+    if ((initialSearchTerm || '').trim()) return 'all';
+    return safeGetItemSession("taka_budget_money_filter") || 'has_money';
+  });
+  const lastSelectedMoneyFilterRef = useRef<string>(
+    safeGetItemSession("taka_budget_money_filter") || 'has_money'
+  );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
+
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (moneyFilter !== 'all') {
+        lastSelectedMoneyFilterRef.current = moneyFilter;
+        safeSetItemSession("taka_budget_money_filter", moneyFilter);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setMoneyFilter('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedMoneyFilterRef.current || safeGetItemSession("taka_budget_money_filter") || 'has_money';
+      setMoneyFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    no: 80,
+    year: 80,
+    store: 80,
+    location: 130,
+    code: 165,
+    projectName: 220,
+    totalBudget: 140,
+    actual: 140,
+    supportingFee: 140,
+    variance: 140,
+    type: 130,
+    note: 200,
+    actions: 90
+  });
+
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [selectedParentProject, setSelectedParentProject] = useState<Project | null>(null);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [childSearchTerm, setChildSearchTerm] = useState('');
+  const [parentSearchTerm, setParentSearchTerm] = useState('');
+
+  // 1. Build hierarchy tree data
+  const treeData = useBudgetTreeData({ projects, costs });
+
+  // 2. Filter, search and sort tree roots
+  const {
+    sortConfig,
+    visibleCount,
+    setVisibleCount,
+    filteredRoots,
+    handleBudgetScroll,
+    handleSort,
+    totalGlobalBudget,
+    totalGlobalActual,
+    totalGlobalSupportingFee,
+    totalGlobalRemaining,
+    totalVarianceColor
+  } = useBudgetFilterSort({
+    treeData,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    moneyFilter,
+    searchTerm,
+    deferredSearchTerm
+  });
+
+  // 3. Export / Import CSV
+  const { handleExportBudget, handleImportBudget } = useBudgetCsvOps({ projects, filteredRoots });
+
+  const getProjectFinancials = (p: Project): ProjectFinancials => {
+    const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: p.actual || 0, totalForecastPaid: 0 };
+    const budget = fin.totalApproved || p.budget || 0;
+    const actual = fin.totalActualPaid;
+    const hasForc = fin.totalForecastPaid > 0;
+    const supportingFee = p.supportingFee || 0;
+    const remaining = budget - (actual + fin.totalForecastPaid) + supportingFee;
+    return { budget, actual, supportingFee, hasForc, remaining };
+  };
+
+  // Candidates for Parent Project Selection
+  const candidateParentProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const term = parentSearchTerm.trim().toLowerCase();
+    return projects.filter(p => {
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      
+      return searchPool.some(val => val.includes(term));
+    }).slice(0, 100);
+  }, [projects, parentSearchTerm]);
+
+  // Candidates for Child Project Selection
+  const candidateChildProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const parentCode = selectedParentProject ? String(selectedParentProject.code || '').trim().toUpperCase() : '';
+    const parentId = selectedParentProject?.id || (selectedParentProject ? `${selectedParentProject.code}-${selectedParentProject.year}-${selectedParentProject.store}-${selectedParentProject.no}` : '');
+    const term = childSearchTerm.trim().toLowerCase();
+
+    const filtered = projects.filter(p => {
+      const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+      const pCode = String(p.code || '').trim().toUpperCase();
+
+      if (selectedParentProject && (pId === parentId || pCode === parentCode)) return false;
+      if (selectedParentProject?.parentId && String(selectedParentProject.parentId).trim().toUpperCase() === pCode) return false;
+
+      // Restrict candidate children to same fiscal year and store as selected parent
+      if (selectedParentProject) {
+        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+        const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : (selectedParentProject.start ? String(selectedParentProject.start).substring(0, 4) : '');
+        if (pYear && parentYear && pYear !== parentYear) return false;
+
+        const pStore = String(p.store || '').trim().toUpperCase();
+        const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
+        if (pStore && parentStore && pStore !== parentStore) return false;
+      }
+
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      
+      return searchPool.some(val => val.includes(term));
+    });
+
+    if (parentCode) {
+      filtered.sort((a, b) => {
+        const aIsChild = a.parentId && String(a.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        const bIsChild = b.parentId && String(b.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+    }
+
+    return filtered.slice(0, 100);
+  }, [projects, selectedParentProject, childSearchTerm]);
+
+  const linkedChildrenCount = useMemo(() => {
+    if (!selectedParentProject) return 0;
+    const parentCode = String(selectedParentProject.code || '').trim().toUpperCase();
+    const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : (selectedParentProject.start ? String(selectedParentProject.start).substring(0, 4) : '');
+    const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
+
+    return projects.filter(p => {
+      if (!p.parentId || String(p.parentId).trim().toUpperCase() !== parentCode) return false;
+      const cYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+      const cStore = String(p.store || '').trim().toUpperCase();
+      if (parentYear && cYear && cYear !== parentYear) return false;
+      if (parentStore && cStore && cStore !== parentStore) return false;
+      return true;
+    }).length;
+  }, [projects, selectedParentProject]);
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isLinkModalOpen || selectedParentProject) {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsLinkModalOpen(false);
+          setSelectedParentProject(null);
+          return;
+        }
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+        if (searchTerm) {
+          e.preventDefault();
+          const activeElement = document.activeElement;
+          if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+            (activeElement as HTMLElement).blur();
+          }
+          setSearchTerm("");
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLinkModalOpen, selectedParentProject, searchTerm]);
+
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
+
+  useEffect(() => {
+    const loadDeviceConfig = () => {
+      const saved = safeGetDeviceItemLocal('taka_budget_col_widths', currentUser.id);
+      if (saved) {
+        try { 
+          const parsed = JSON.parse(saved);
+          if (parsed.code && parsed.code < 165) {
+            parsed.code = 165;
+          }
+          if (parsed.no && parsed.no < 60) {
+            parsed.no = 80;
+          }
+          setColWidths(prev => ({ ...prev, ...parsed })); 
+        } catch (e) {}
+      }
+      const savedCols = safeGetDeviceItemLocal('taka_budget_visible_cols', currentUser.id);
+      if (savedCols) {
+        try { 
+          const parsed = JSON.parse(savedCols);
+          if (Array.isArray(parsed)) {
+            let cleaned = parsed.filter((id: string) => id !== 'budget' && id !== 'linkCost');
+            if (!cleaned.includes('no')) {
+              cleaned = ['no', ...cleaned];
+            }
+            setVisibleColumns(cleaned);
+          }
+        } catch (e) {}
+      } else {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          setVisibleColumns(['no', 'code', 'projectName', 'totalBudget', 'actual', 'variance']);
+        }
+      }
+    };
+
+    loadDeviceConfig();
+
+    const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        loadDeviceConfig();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [currentUser.id]);
+
+  const handleResize = (col: string, newWidth: number) => {
+    setColWidths(prev => {
+      const next = { ...prev, [col]: newWidth };
+      safeSetDeviceItemLocal('taka_budget_col_widths', JSON.stringify(next), currentUser.id);
+      return next;
+    });
+  };
+
+  const handleToggleColumn = (colId: string) => {
+    setVisibleColumns(prev => {
+      const next = prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId];
+      safeSetDeviceItemLocal('taka_budget_visible_cols', JSON.stringify(next), currentUser.id);
+      return next;
+    });
+  };
+
+  const toggleExpand = (id: string) => {
+    if (searchTerm.trim()) {
+      setCollapsedInSearch(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    } else {
+      setExpandedParents(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    }
+  };
+
+  const toggleAllParents = () => {
+    if (expandedParents.size === 0) {
+      const allParentIds = new Set<string>();
+      const collectParents = (nodes: any[]) => {
+        nodes.forEach(n => {
+          if (n.filteredChildren && n.filteredChildren.length > 0) {
+            allParentIds.add(n.id || n.code);
+            collectParents(n.filteredChildren);
+          }
+        });
+      };
+      collectParents(filteredRoots);
+      setExpandedParents(allParentIds);
+    } else {
+      setExpandedParents(new Set());
+    }
+  };
+
+  const isAdmin = currentUser.role === 'admin';
+  const role = currentUser.role as AppRole;
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = (isAdmin || !!currentUser?.canWrite || !!permissionMatrix[role]?.Write?.budget) && !isArchiveYear;
+
+  const formatCurrency = (val: number | undefined) => {
+    return formatCurrencyValue(val, currency, jpyRate, usdRate);
+  };
+
+  const years = useMemo(() => {
+    const projYears = projects.map(p => {
+      if (p.year) return String(p.year);
+      if (p.start) return String(p.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const baseYears = ['2026', '2027'];
+    const unique = Array.from(new Set([...projYears, ...baseYears])).filter(Boolean).sort();
+    return unique.length > 0 ? unique : ['2026', '2027'];
+  }, [projects, currentUser?.role]);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const stores = allowedStores;
+  const locationOptions = useLocationOptions();
+
+  useEffect(() => {
+    if (locationOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
+
+  const handleOpenLinkModal = (projectToSelect?: Project) => {
+    if (projectToSelect) {
+      setSelectedParentProject(projectToSelect);
+      setParentSearchTerm(String(projectToSelect.code || '').trim());
+    } else {
+      if (!selectedParentProject && filteredRoots.length > 0) {
+        setSelectedParentProject(filteredRoots[0].project);
+        setParentSearchTerm(String(filteredRoots[0].project.code || '').trim());
+      } else if (selectedParentProject) {
+        setParentSearchTerm(String(selectedParentProject.code || '').trim());
+      }
+    }
+    setIsLinkModalOpen(true);
+  };
+
+  const handleProjectLinkClick = (p: Project) => {
+    if (!p) return;
+    setDetailTabFilterCode(p.code);
+    setDetailTabStoreFilter(p.store || "all");
+    if (p.year) {
+      setGlobalYearFilter(String(p.year));
+      safeSetItemSession("taka_detail_year", String(p.year));
+    } else {
+      setGlobalYearFilter("all");
+      safeSetItemSession("taka_detail_year", "all");
+    }
+    if (p.store) {
+      setGlobalStoreFilter(p.store);
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
+    } else {
+      setGlobalStoreFilter("all");
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, "all");
+    }
+    setActiveTab("detail");
+  };
+
+  return {
+    currency,
+    jpyRate,
+    usdRate,
+    canWrite,
+    globalYearFilter,
+    setGlobalYearFilter,
+    effectiveStore,
+    setGlobalStoreFilter,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    moneyFilter,
+    setMoneyFilter,
+    lastSelectedMoneyFilterRef,
+    collapsedInSearch,
+    expandedParents,
+    sortConfig,
+    visibleColumns,
+    colWidths,
+    visibleCount,
+    setVisibleCount,
+    years,
+    stores,
+    locationOptions,
+    filteredRoots,
+    totalGlobalBudget,
+    totalGlobalActual,
+    totalGlobalSupportingFee,
+    totalGlobalRemaining,
+    totalVarianceColor,
+    candidateParentProjects,
+    candidateChildProjects,
+    linkedChildrenCount,
+    selectedParentProject,
+    setSelectedParentProject,
+    isLinkModalOpen,
+    setIsLinkModalOpen,
+    parentSearchTerm,
+    setParentSearchTerm,
+    childSearchTerm,
+    setChildSearchTerm,
+    getProjectFinancials,
+    handleResize,
+    handleToggleColumn,
+    toggleExpand,
+    toggleAllParents,
+    handleSort,
+    handleBudgetScroll,
+    handleOpenLinkModal,
+    handleExportBudget,
+    handleImportBudget,
+    handleProjectLinkClick,
+    formatCurrency
+  };
+}
+
+
+// === FILE: src/types.ts ===
+export interface FinancialMetric {
+  totalBudget: number;
+  totalApproved: number;
+  totalActualPaid: number;     // Lũy kế các đợt có status === 'Actual'
+  totalForecastPaid: number;   // Lũy kế các đợt có status === 'Forecast'
+  totalBalance: number;        // Còn lại = totalApproved - (totalActualPaid + totalForecastPaid)
+}
+
+export interface ProjectFinancialSummary extends FinancialMetric {
+  byStore: {
+    HCM: FinancialMetric;
+    HN: FinancialMetric;
+    [storeKey: string]: FinancialMetric;
+  };
+  byYear: {
+    [year: string]: FinancialMetric;
+  };
+}
+
+export interface TaskSummaryItem {
+  id?: string;
+  name: string;
+  start: string;
+  finish: string;
+  link?: string;
+  imageUrl?: string;
+  thumbnail?: string;
+  attachments?: any[];
+  [key: string]: any;
+}
+
+export interface Project {
+  id?: string;
+  no: number;
+  store: string;
+  year: number | string;
+  code: string;
+  linkCodes?: string;
+  name: string;
+  detail?: string;
+  party?: string;
+  start?: string;
+  baselineStart?: string;
+  baselineFinish?: string;
+  handover?: string;
+  opening?: string;
+  startMode?: 'auto' | 'manual';
+  handoverMode?: 'auto' | 'manual';
+  openingMode?: 'auto' | 'manual';
+  budget?: number;
+  actual?: number;
+  location?: string;
+  type?: string;
+  note?: string;
+  supportingFee?: number;
+  computedTakStart?: string;
+  computedTakCompl?: string;
+  computedOpening?: string;
+  computedStatus?: string;
+  computedPlanProgress?: number;
+  computedActProgress?: number;
+  computedActStatus?: string;
+  taskCount?: number;
+  taskSummaries?: TaskSummaryItem[];
+  realtimeUpdate?: boolean;
+  delegation?: boolean;
+  updatedAt?: string;
+  textColor?: string;
+  bgColor?: string;
+  comments?: TaskComment[];
+  mdStatus?: MdStatusType | string;
+  isPinned?: boolean;
+  pinnedOrder?: number;
+  parentId?: string;
+  financial?: ProjectFinancialSummary;
+  isDeleted?: boolean;
+  imageUrl?: string;
+  thumbnail?: string;
+  imageLinks?: any[];
+}
+
+export const MD_STATUS_OPTIONS = [
+  'approached',
+  'negotiation',
+  'Verbally agreed',
+  'MOU signed',
+  'Signed agreement',
+  'Rejected',
+] as const;
+
+export type MdStatusType = typeof MD_STATUS_OPTIONS[number];
+
+export interface TaskNote {
+  id: string;
+  content: string;
+  updatedAt: string;
+}
+
+export interface TaskComment {
+  id: string;
+  text: string;
+  createdAt: string;
+  userId: string;
+  userName?: string;
+  mentions?: string[];
+  attachments?: { name: string; url: string; fullPath: string; type?: string }[];
+}
+
+export interface Task {
+  id: string;
+  projectId?: string;
+  projectCode: string;
+  projectYear?: number | string;
+  projectStore?: string;
+  location?: string;
+  name: string;
+  start: string;
+  baselineStart?: string;
+  baselineFinish?: string;
+  finish: string;
+  duration: string;
+  durationManual: boolean;
+  finishManual: boolean;
+  approval?: 'Approved' | 'Rejected' | 'Pending' | string;
+  approvedAt?: string | null;
+  realtimeUpdate?: boolean;
+  startManual?: boolean;
+  party?: string;
+  delegation?: boolean;
+  predecessor?: string;
+  notes?: TaskNote[];
+  runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming';
+  isShared?: boolean;
+  updatedAt?: string;
+  orderIndex?: number;
+  comments?: TaskComment[];
+  textColor?: string;
+  taskCodePhu?: string;
+  parentTaskId?: string;
+  isDeleted?: boolean;
+  predecessors?: TaskPredecessor[]; // Lưu trữ danh sách Hard Link dưới dạng mảng Object
+  predecessorTaskIds?: string[]; // IDs of tasks mentioned in the predecessor string
+}
+
+export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface TaskPredecessor {
+  taskId: string;
+  type: PredecessorType;
+}
+
+export interface Cost {
+  id: string;
+  projectCode: string;
+  projectYear?: number | string;
+  projectStore?: string;
+  amount?: number;
+  approvedAmount?: number;
+  actual: number;
+  costType?: 'act' | 'forc';
+  firstPaid?: number;
+  firstPaidAt?: string;
+  firstStatus?: 'Actual' | 'Forecast' | string;
+  secondPaid?: number;
+  secondPaidAt?: string;
+  secondStatus?: 'Actual' | 'Forecast' | string;
+  thirdPaid?: number;
+  thirdPaidAt?: string;
+  thirdStatus?: 'Actual' | 'Forecast' | string;
+  advanceAmount?: number;
+  advancePaid?: number;
+  advanceStatus?: 'Actual' | 'Forecast' | string;
+  interimAmount?: number;
+  interimPaid?: number;
+  interimStatus?: 'Actual' | 'Forecast' | string;
+  balanceAmount?: number;
+  balancePaid?: number;
+  balanceStatus?: 'Actual' | 'Forecast' | string;
+  supportingFee: number;
+  description: string;
+  vendor: string;
+  updatedAt?: string;
+  isDeleted?: boolean;
+}
+
+export type AppRole = 'Manager' | 'Staff' | 'CP' | 'External';
+export type PermissionAction = 'See' | 'Write';
+export type PermissionModule = 'general' | 'detail' | 'calendar' | 'budget' | 'costDetail' | 'report' | 'summary' | 'taskDelegation' | 'layout' | 'pictureMapping' | 'importCsv';
+
+export type PermissionMatrix = Record<AppRole, Record<PermissionAction, Record<PermissionModule, boolean>>>;
+
+export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
+  Manager: {
+    See: { general: false, detail: false, calendar: true, budget: false, costDetail: false, report: true, summary: true, taskDelegation: false, layout: true, pictureMapping: false, importCsv: false },
+    Write: { general: true, detail: true, calendar: false, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  },
+  Staff: {
+    See: { general: true, detail: true, calendar: false, budget: false, costDetail: false, report: true, summary: true, taskDelegation: false, layout: true, pictureMapping: false, importCsv: false },
+    Write: { general: false, detail: false, calendar: true, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  },
+  External: {
+    See: { general: false, detail: false, calendar: false, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false },
+    Write: { general: false, detail: false, calendar: false, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  },
+  CP: {
+    See: { general: false, detail: false, calendar: true, budget: false, costDetail: false, report: true, summary: true, taskDelegation: false, layout: true, pictureMapping: false, importCsv: false },
+    Write: { general: true, detail: true, calendar: false, budget: true, costDetail: true, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  }
+};
+
+export interface AppUser {
+  id: string;
+  username: string;
+  password?: string;
+  name?: string;
+  email?: string;
+  role: 'Manager' | 'Staff' | 'CP' | 'External' | 'admin' | 'user' | 'guest';
+  canSee: boolean;
+  canWrite: boolean;
+  notification?: boolean;
+  storePermissions?: {
+    hcm?: boolean;
+    hn?: boolean;
+  };
+  locationPermissions?: Record<string, boolean>;
+  byPartyAccess?: boolean;
+  partyPermissions?: Record<string, boolean>;
+  readNotifs?: string[];
+  preferences?: {
+    defaultStore?: string;
+    defaultYear?: string;
+    currency?: 'VND' | 'JPY' | 'USD';
+    language?: string;
+    firstPage?: TabId;
+  };
+}
+
+export interface NotificationRule {
+  id: string;
+  target: 'project' | 'task' | 'task_delegation';
+  field: string;
+  daysBefore: number;
+  hoursBefore: number;
+  customMessage?: string;
+  color?: string;
+  icon?: string;
+}
+
+export type NotificationPriority = 'critical' | 'urgent' | 'action_required' | 'info';
+
+export interface ActiveNotification {
+  id: string;
+  title: string;
+  subtitle: string;
+  message: string;
+  dateStr: string;
+  diffMs: number;
+  generatedAt: number;
+  targetType: 'project' | 'task' | 'task_delegation';
+  targetId: string | number;
+  count?: number;
+  projectCode?: string;
+  projectStore?: string;
+  projectYear?: string | number;
+  action?: 'cross_year_rollover' | 'complete_task' | 'approve_delegation';
+  actionData?: any;
+  priority?: NotificationPriority;
+  isAssignedToMe?: boolean;
+  party?: string;
+}
+
+export interface DelegationSubTask {
+  id: string;
+  name?: string;
+  comments: string;
+  status: string;
+  approvalStatus?: string;
+  approvedAt?: string | null;
+  party: string;
+  priority?: 'High' | 'Mid-high' | 'Mid' | 'Low';
+  start?: string;
+  finish?: string;
+  startAct?: string;
+  finishAct?: string;
+  childReport?: string;
+  childFileUrl?: string;
+  childFileName?: string;
+  delegationStatus?: string;
+  report?: string;
+  fileUrl?: string;
+  fileName?: string;
+  updatedAt: string;
+  createdBy?: string;
+  involvedUsers?: string[];
+  attachments?: { type?: string; name?: string; url?: string }[];
+}
+
+export interface DelegationGroup {
+  id: string;
+  projectId?: string;
+  parentTaskId?: string; // ID of the taka_task if linked
+  name: string; // Custom name if not linked, or task name if linked
+  projectCode?: string; // If linked
+  projectStore?: string;
+  projectYear?: number | string;
+  subTasks: DelegationSubTask[];
+  updatedAt: string;
+  createdBy?: string;
+  actStatus?: string;
+  plStatus?: string;
+  isDeleted?: boolean;
+}
+
+export type TabId = 'general' | 'detail' | 'budget' | 'cost' | 'accControl' | 'notification' | 'notificationRule' | 'calendar' | 'gantt' | 'summary' | 'taskDelegation' | 'taskDelegationCalendar' | 'setting' | 'layout' | 'manual' | 'csv_export' | 'picture_mapping' | 'audit';
+
+
+export interface AuditLog {
+  id: string;
+  timestamp: number;
+  userId: string;
+  userEmail: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE';
+  entityType?: string;
+  docPath: string;
+  docId: string;
+  data: any;
+  previousData?: any;
+}
+
+export interface TakaDeltaItem {
+  docId: string;
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  action: 'create' | 'update' | 'delete';
+  year?: string;
+  data?: Record<string, any>;
+  isPatch?: boolean;
+  /** Signal-only item: receivers re-read this doc from the server (used for writes that carry no patch). */
+  invalidate?: boolean;
+}
+
+export interface TakaDelta {
+  id: string;
+  docId?: string;
+  collectionName?: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  action: 'create' | 'update' | 'delete' | 'batch_update';
+  year?: string;
+  data?: Record<string, any>;
+  isPatch?: boolean;
+  batchItems?: TakaDeltaItem[];
+  updatedBy?: string;
+  sessionId?: string;
+  timestamp: string;
+  numericTime: number;
+  /** Server arrival time (Firestore serverTimestamp). Sync cursor: immune to device clocks and offline delays. */
+  serverTime?: any;
+  /** Firestore TTL policy timestamp: documents expire automatically without client-side reads */
+  expireAt?: any;
 }
 
 

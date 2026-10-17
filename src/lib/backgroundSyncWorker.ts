@@ -94,32 +94,39 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
   try {
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
-    if (store.projects && store.projects.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.projects.length;
-      const hasForYear = store.projects.some(p => String(p.year || '') === String(targetYear));
-      if (hasForYear) return store.projects.length;
-    }
 
     const localProjects = await getLocalProjects(targetYear, storeFilter);
-    if (localProjects && localProjects.length > 0) {
-      const currentStore = useAppStore.getState();
-      const existing = currentStore.projects || [];
-      const isAll = !targetYear || targetYear === 'all' || targetYear === 'ALL';
-      const baseExisting = isAll
-        ? existing
-        : existing.filter(p => String(p.year || '') === String(targetYear));
-      const pMap = new Map<string, Project>();
-      localProjects.forEach(p => {
-        pMap.set(p.id, {
-          ...p,
-          taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
-        });
-      });
-      // Preserve fresher in-memory records of the target year
-      baseExisting.forEach(p => pMap.set(p.id, p));
+    const currentProjects = store.projects || [];
+    const mergedMap = new Map<string, Project>();
 
-      const sorted = Array.from(pMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
-      currentStore.setProjects(sorted);
+    // 1. Nạp danh sách dự án hiện có trong RAM (bảo toàn 100% dự án các năm/store khác)
+    currentProjects.forEach((p) => {
+      if (p && p.id && !p.isDeleted) {
+        mergedMap.set(String(p.id), p);
+      }
+    });
+
+    // 2. Gộp dự án từ Dexie thuộc năm/store target vào RAM
+    if (localProjects && localProjects.length > 0) {
+      localProjects.forEach((p) => {
+        if (p && p.id && !p.isDeleted) {
+          const existing = mergedMap.get(String(p.id));
+          if (!existing) {
+            mergedMap.set(String(p.id), {
+              ...p,
+              taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+            });
+          }
+        }
+      });
+    }
+
+    const mergedList = Array.from(mergedMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
+    if (mergedList.length !== currentProjects.length) {
+      store.setProjects(mergedList);
+    }
+
+    if (localProjects && localProjects.length > 0) {
       usePerformanceStore
         .getState()
         .trackGetDoc('dexie_projects_hydration', true, localProjects.length, `Instant Local-First Projects Hydration (0ms, 0 Read)`);

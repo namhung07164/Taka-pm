@@ -197,6 +197,85 @@ export function useDetailData({
 
   useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
 
+  // === Auto-clear stale filters when user changes Year / Store in Task Detail ===
+  const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+
+  useEffect(() => {
+    const currentKey = `${globalYearFilter}_${effectiveStore}`;
+    if (prevYearStoreRef.current !== currentKey) {
+      prevYearStoreRef.current = currentKey;
+
+      // 1. Khi đổi Year hoặc Store: nếu đang có detailTabFilterCode / detailTabFocusTaskId của dự án thuộc Store/Year cũ thì xóa đi
+      const storeState = useAppStore.getState();
+      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
+        storeState.setDetailTabFilterCode('');
+        storeState.setDetailTabFocusTaskId('');
+        if (searchTerm && searchTerm === storeState.detailTabFilterCode) {
+          setSearchTerm('');
+        }
+      }
+
+      // 2. Kiểm tra xem globalLocationFilter hiện tại có hợp lệ với Store/Year mới không
+      const projectsInNewScope = projects.filter((p) => {
+        if (p.isDeleted) return false;
+        const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+        if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+        if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+        return true;
+      });
+
+      if (projectsInNewScope.length > 0) {
+        // Nếu location đang chọn không có dự án nào ở Store/Year mới -> reset location filter
+        if (globalLocationFilter.length > 0) {
+          const hasMatchingLoc = projectsInNewScope.some(
+            (p) => p.location && globalLocationFilter.includes(p.location)
+          );
+          if (!hasMatchingLoc) {
+            setGlobalLocationFilter([]);
+          }
+        }
+
+        // Nếu statusFilter đang khác 'all' mà làm ẩn toàn bộ dự án của Store/Year mới -> tự động mở về 'all'
+        if (statusFilter !== 'all') {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayTime = today.getTime();
+          const hasMatchingStatus = projectsInNewScope.some((p) => {
+            const info = getProjectInfo(p);
+            if (statusFilter === 'On process + Upcoming 3 days') {
+              if (info.status === 'On process') return true;
+              if (info.status === 'Upcoming') {
+                const dStart = parseDateTime(info.start);
+                if (dStart) {
+                  dStart.setHours(0, 0, 0, 0);
+                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
+                  return diffDays <= 3 && diffDays >= 0;
+                }
+              }
+              return false;
+            }
+            return info.status === statusFilter;
+          });
+          if (!hasMatchingStatus) {
+            setStatusFilter('all');
+            safeSetItemSession('taka_detail_status_filter', 'all');
+          }
+        }
+      }
+    }
+  }, [
+    globalYearFilter,
+    effectiveStore,
+    projects,
+    globalLocationFilter,
+    statusFilter,
+    searchTerm,
+    setGlobalLocationFilter,
+    setStatusFilter,
+    setSearchTerm,
+    getProjectInfo,
+  ]);
+
   // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
   // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
   const effectiveLocationFilter = useMemo(() => {
