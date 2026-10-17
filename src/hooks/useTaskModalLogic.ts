@@ -100,19 +100,21 @@ export function useTaskModalLogic({
     if (isOpen) {
       const pCode = task?.projectCode || prefillProjectCode;
       const pId = task?.projectId;
+      const pYear = task?.projectYear ?? prefillProjectYear;
+      const pStore = task?.projectStore ?? prefillProjectStore;
       const keys = [pId, pCode].filter(Boolean) as string[];
       if (keys.length > 0) {
-        hydrateTasksForProjects(keys).catch(() => {});
-        hydrateDelegationsForProjects(keys).catch(() => {});
-        if (pCode) {
-          ensureProjectTasksLoaded(pCode).catch(() => {});
+        hydrateTasksForProjects(keys, pYear, pStore).catch(() => {});
+        hydrateDelegationsForProjects(keys, pYear, pStore).catch(() => {});
+        if (pCode || pId) {
+          ensureProjectTasksLoaded(pCode || '', pId, pYear, pStore).catch(() => {});
         }
       }
       if (task?.id) {
         hydrateDelegationsForTasks([task.id]).catch(() => {});
       }
     }
-  }, [isOpen, task?.id, task?.projectId, task?.projectCode, prefillProjectCode]);
+  }, [isOpen, task?.id, task?.projectId, task?.projectCode, task?.projectYear, task?.projectStore, prefillProjectCode, prefillProjectYear, prefillProjectStore]);
 
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
@@ -121,7 +123,12 @@ export function useTaskModalLogic({
 
   const handleOpenProjectComments = () => {
     if (task) {
-      const parentProject = projects.find(p => p.code === task.projectCode && String(p.year) === String(task.projectYear) && p.store === task.projectStore);
+      const parentProject = projects.find(p =>
+        (task.projectId && p.id === task.projectId) ||
+        (p.code === task.projectCode &&
+          (!task.projectYear || !p.year || String(p.year) === String(task.projectYear)) &&
+          (!task.projectStore || !p.store || String(p.store).toUpperCase() === String(task.projectStore).toUpperCase()))
+      );
       if (parentProject) {
         setIsTaskModalOpen(false);
         setEditingProject(parentProject);

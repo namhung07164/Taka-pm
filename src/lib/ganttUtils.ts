@@ -1,5 +1,5 @@
 import { Task, Project } from '../types';
-import { parseDateTime, formatToDatetimeLocal } from './utils';
+import { parseDateTime, formatToDatetimeLocal, isTaskBelongsToProject } from './utils';
 import { useAppStore } from '../store/useAppStore';
 import { parsePredecessorToken } from './predecessorMatchUtils';
 
@@ -640,15 +640,11 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
   const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
 
   safeProjects.forEach((p) => {
-    if (!p) return;
+    if (!p || p.isDeleted) return;
     const pCode = String(p.code || '').trim();
     if (!pCode) return;
 
-    const pTasks = safeTasks.filter(t => 
-      t &&
-      ((p.id && t.projectId ? t.projectId === p.id : false) || 
-       (t.projectCode && String(t.projectCode).trim().toLowerCase() === pCode.toLowerCase()))
-    );
+    const pTasks = safeTasks.filter(t => isTaskBelongsToProject(t, p));
     const groupTasks = sortGroupTasks(pTasks);
     groupTasks.forEach((t, i) => {
       if (!t) return;
@@ -680,7 +676,7 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
   });
 
   safeTasks.forEach(t => {
-    if (!t) return;
+    if (!t || t.isDeleted) return;
     const computed = taskCodeMap.get(t.id) || t.taskCodePhu || '';
     if (computed) {
       addKey(t, computed);
@@ -703,21 +699,32 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 }
 
 export function computeTaskCode(projects: Project[], tasks: Task[], task: Task): string {
-  if (!task) return '';
+  if (!task || task.isDeleted) return '';
 
   const taskPCode = String(task.projectCode || '').trim();
-  const p = (task.projectId ? (projects || []).find(proj => proj.id === task.projectId) : undefined) || 
-            (taskPCode ? (projects || []).find(proj => String(proj.code || '').trim().toLowerCase() === taskPCode.toLowerCase()) : undefined);
+  const taskYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
+  const taskStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
+
+  const p =
+    (task.projectId ? (projects || []).find(proj => proj && !proj.isDeleted && String(proj.id) === String(task.projectId)) : undefined) ||
+    (projects || []).find(proj => proj && !proj.isDeleted && isTaskBelongsToProject(task, proj));
 
   const currentPCode = p ? String(p.code).trim() : taskPCode;
   
   // Nếu không có Project Code, trả về rỗng để hệ thống không sinh mã rác
   if (!currentPCode) return '';
 
-  const pTasks = (tasks || []).filter(t => 
-    t && ((p?.id && t.projectId === p.id) || 
-    (t.projectCode && String(t.projectCode).trim().toLowerCase() === currentPCode.toLowerCase()))
-  );
+  const pTasks = p
+    ? (tasks || []).filter(t => isTaskBelongsToProject(t, p))
+    : (tasks || []).filter(t => {
+        if (!t || t.isDeleted) return false;
+        if (!t.projectCode || String(t.projectCode).trim().toLowerCase() !== currentPCode.toLowerCase()) return false;
+        const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+        const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+        if (taskYear && tYear && taskYear !== tYear) return false;
+        if (taskStore && tStore && taskStore !== tStore) return false;
+        return true;
+      });
   
   const sorted = sortGroupTasks(pTasks);
   const idx = sorted.findIndex(t => t.id === task.id);
@@ -749,23 +756,35 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
   const map = new Map<string, string>();
   if (!tasks || !Array.isArray(tasks)) return map;
 
-  const projectMapByCode = new Map<string, Project>();
+  const projectMapByScopedCode = new Map<string, Project>();
   const projectMapById = new Map<string, Project>();
   (projects || []).forEach(p => {
-    if (p.id) projectMapById.set(p.id, p);
+    if (!p || p.isDeleted) return;
+    if (p.id) projectMapById.set(String(p.id), p);
     if (p.code) {
-      projectMapByCode.set(String(p.code).trim().toLowerCase(), p);
-      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`.toLowerCase();
-      projectMapByCode.set(key, p);
+      const key = `${String(p.code).trim()}-${p.year || ''}-${p.store || ''}`.toLowerCase();
+      projectMapByScopedCode.set(key, p);
     }
   });
 
-  const tasksByGroupKey = new Map<string, Task[]>();
+  const resolveTaskProject = (t: Task): Project | undefined => {
+    if (t.projectId) {
+      const byId = projectMapById.get(String(t.projectId));
+      if (byId && isTaskBelongsToProject(t, byId)) return byId;
+    }
+    if (t.projectCode) {
+      const scopedKey = `${String(t.projectCode).trim()}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
+      const byScoped = projectMapByScopedCode.get(scopedKey);
+      if (byScoped && isTaskBelongsToProject(t, byScoped)) return byScoped;
+    }
+    return (projects || []).find(proj => proj && !proj.isDeleted && isTaskBelongsToProject(t, proj));
+  };
+
+  const tasksByGroupKey = new Map<string, { pCode: string; tasks: Task[] }>();
   for (let idx = 0; idx < tasks.length; idx++) {
     const t = tasks[idx];
-    if (!t) continue;
-    const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
-              (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
+    if (!t || t.isDeleted) continue;
+    const p = resolveTaskProject(t);
     const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
 
     if (!pCode) {
@@ -775,22 +794,21 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
       continue;
     }
 
-    const groupKey = `${pCode}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
+    const groupKey = p?.id
+      ? `pid:${p.id}`
+      : `${pCode}-${p?.year ?? t.projectYear ?? ''}-${p?.store ?? t.projectStore ?? ''}`.toLowerCase();
     
-    let list = tasksByGroupKey.get(groupKey);
-    if (!list) {
-      list = [];
-      tasksByGroupKey.set(groupKey, list);
+    let entry = tasksByGroupKey.get(groupKey);
+    if (!entry) {
+      entry = { pCode, tasks: [] };
+      tasksByGroupKey.set(groupKey, entry);
     }
-    list.push(t);
+    entry.tasks.push(t);
   }
 
-  tasksByGroupKey.forEach((groupTasks) => {
+  tasksByGroupKey.forEach(({ pCode, tasks: groupTasks }) => {
     const sorted = sortGroupTasks(groupTasks);
     sorted.forEach((t, i) => {
-      const p = (t.projectId ? projectMapById.get(t.projectId) : undefined) ||
-                (t.projectCode ? projectMapByCode.get(String(t.projectCode).trim().toLowerCase()) : undefined);
-      const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
       const orderNum = i + 1;
       const code = pCode ? `${pCode}#${orderNum}` : (t.taskCodePhu || '');
       map.set(t.id, code);
@@ -1704,13 +1722,18 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
 
   const canonicalTaskCodes = computeAllTaskCodes(allProjects, allTasks);
   const taskOldToNewCodeMap = new Map<string, string>();
+  const buildScopedOldKey = (t: Task, codeLower: string) =>
+    `${String(t.projectId || '').trim()}__${String(t.projectCode || '').trim().toLowerCase()}__${String(t.projectYear || '').trim()}__${String(t.projectStore || '').trim().toUpperCase()}__${codeLower}`;
 
   const updatedTasksWithCodes = (allTasks || []).map((t, idx) => {
     const oldCode = (t.taskCodePhu || '').trim();
     const newCode = canonicalTaskCodes.get(t.id) || oldCode;
 
     if (oldCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
-      taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
+      taskOldToNewCodeMap.set(buildScopedOldKey(t, oldCode.toLowerCase()), newCode);
+      if (!taskOldToNewCodeMap.has(oldCode.toLowerCase())) {
+        taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
+      }
     }
 
     return {
@@ -1739,9 +1762,10 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
         const { query, suffix } = parsePredecessorToken(token);
         const queryLower = query.toLowerCase();
 
-        // 1. Direct mapping from taskOldToNewCodeMap
-        if (taskOldToNewCodeMap.has(queryLower)) {
-          const mapped = taskOldToNewCodeMap.get(queryLower)!;
+        // 1. Direct mapping from taskOldToNewCodeMap (scoped to same project first)
+        const scopedKey = buildScopedOldKey(t, queryLower);
+        const mapped = taskOldToNewCodeMap.get(scopedKey) || taskOldToNewCodeMap.get(queryLower);
+        if (mapped) {
           const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
           return `${mapped}${formattedSuffix}`;
         }

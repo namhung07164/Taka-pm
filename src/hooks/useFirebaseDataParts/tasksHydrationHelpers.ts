@@ -1,4 +1,5 @@
 import { Task, Project } from "../../types";
+import { isTaskBelongsToProject } from "../../lib/utils";
 
 /**
  * Checks if incoming doc from Firestore/cache is staler than existing local doc in memory.
@@ -19,7 +20,11 @@ export function isStaleCacheDoc(existingDoc: Task | undefined, newDoc: Task): bo
 /**
  * Extracts set of project keys/codes to hydrate from active project IDs.
  */
-export function extractKeysToHydrate(activeProjectIds: string[], projects: Project[]): Set<string> {
+export function extractKeysToHydrate(
+  activeProjectIds: string[],
+  projects: Project[],
+  globalYearFilter?: string
+): Set<string> {
   const keys = new Set<string>();
   if (!Array.isArray(activeProjectIds) || activeProjectIds.length === 0) return keys;
 
@@ -29,7 +34,14 @@ export function extractKeysToHydrate(activeProjectIds: string[], projects: Proje
     if (!p) return;
     const pId = String(p.id || '');
     const pCode = String(p.code || '').trim();
-    if (idSet.has(pId) || idSet.has(pCode)) {
+    const matchesById = pId && idSet.has(pId);
+    const matchesByCode = pCode && idSet.has(pCode) && (
+      !globalYearFilter ||
+      globalYearFilter === 'all' ||
+      !p.year ||
+      String(p.year).trim() === String(globalYearFilter).trim()
+    );
+    if (matchesById || matchesByCode) {
       if (pCode) keys.add(pCode);
       if (p.linkCodes) {
         p.linkCodes.split(/[,;/]+/).forEach(c => {
@@ -63,8 +75,15 @@ export function groupActiveProjectsByYear(
     if (!p) return;
     const pId = String(p.id || '');
     const pCode = String(p.code || '').trim();
+    const matchesById = pId && activeIdSet.has(pId);
+    const matchesByCode = pCode && activeIdSet.has(pCode) && (
+      !globalYearFilter ||
+      globalYearFilter === 'all' ||
+      !p.year ||
+      String(p.year).trim() === String(globalYearFilter).trim()
+    );
 
-    if (activeIdSet.has(pId) || activeIdSet.has(pCode)) {
+    if (matchesById || matchesByCode) {
       const year = p.year ? String(p.year).trim() : (globalYearFilter || '2026');
       const list = map.get(year) || [];
       list.push(p);
@@ -79,12 +98,7 @@ export function groupActiveProjectsByYear(
  * Checks if a task belongs to a specific project by ID or (code + store + year).
  */
 export function doesTaskBelongToProject(t: Task, p: Project): boolean {
-  if (t.projectId) return String(t.projectId) === String(p.id);
-  return (
-    String(t.projectCode || "") === String(p.code) &&
-    String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
-    String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
-  );
+  return isTaskBelongsToProject(t, p);
 }
 
 /**
@@ -94,12 +108,22 @@ export function filterCompatibleProjectChanges(docChanges: any[], p: Project): a
   return docChanges.filter((ch) => {
     const dt: any = ch.doc.data();
     if (ch.type === "removed") {
-      if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+      if (dt && dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
       if (
         dt &&
         dt.projectStore &&
         p.store &&
         String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
+      ) {
+        return false;
+      }
+      if (
+        dt &&
+        dt.projectYear !== undefined &&
+        dt.projectYear !== null &&
+        dt.projectYear !== "" &&
+        p.year &&
+        String(dt.projectYear).trim() !== String(p.year).trim()
       ) {
         return false;
       }

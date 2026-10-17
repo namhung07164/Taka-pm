@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Project, Task } from '../../types';
-import { parseDateTime } from '../../lib/utils';
+import { parseDateTime, isTaskBelongsToProject } from '../../lib/utils';
 import { CalendarEvent } from './calendarTypes';
 
 interface UseCalendarEventsParams {
@@ -23,8 +23,37 @@ export function useCalendarEvents({
   const events = useMemo(() => {
     const calendarEvents: CalendarEvent[] = [];
 
+    const projectMapById = new Map<string, Project>();
+    const projectMapByScopedKey = new Map<string, Project>();
+    projects.forEach((p) => {
+      if (!p || p.isDeleted) return;
+      if (p.id) projectMapById.set(String(p.id).trim(), p);
+      const pCode = String(p.code || '').trim().toLowerCase();
+      const pYear = String(p.year || '').trim();
+      const pStore = String(p.store || '').trim().toUpperCase();
+      if (pCode) {
+        projectMapByScopedKey.set(`${pCode}-${pYear}-${pStore}`, p);
+      }
+    });
+
+    const resolveParentProject = (t: Task): Project | undefined => {
+      if (t.projectId) {
+        const byId = projectMapById.get(String(t.projectId).trim());
+        if (byId && isTaskBelongsToProject(t, byId)) return byId;
+      }
+      const tCode = String(t.projectCode || '').trim().toLowerCase();
+      const tYear = String(t.projectYear || '').trim();
+      const tStore = String(t.projectStore || '').trim().toUpperCase();
+      if (tCode) {
+        const byScoped = projectMapByScopedKey.get(`${tCode}-${tYear}-${tStore}`);
+        if (byScoped && isTaskBelongsToProject(t, byScoped)) return byScoped;
+      }
+      return projects.find((p) => isTaskBelongsToProject(t, p));
+    };
+
     if (currentView === 'month') {
       const filteredProjects = projects.filter((p) => {
+        if (!p || p.isDeleted) return false;
         if (filterStore && p.store !== filterStore) return false;
         if (filterLocation && p.location !== filterLocation) return false;
         return true;
@@ -76,35 +105,9 @@ export function useCalendarEvents({
       });
 
       if (showSubTasksInMonth) {
-        const projectMap = new Map<string, Project>();
-        projects.forEach((p) => {
-          const pCode = String(p.code || '').trim().toLowerCase();
-          const pYear = String(p.year || '').trim();
-          const pStore = String(p.store || '').trim().toUpperCase();
-          if (pCode) {
-            projectMap.set(`${pCode}-${pYear}-${pStore}`, p);
-          }
-        });
-
         const filteredTasks = tasks.filter((t) => {
           if (!t || t.isDeleted) return false;
-          const tCode = String(t.projectCode || '').trim().toLowerCase();
-          const tYear = String(t.projectYear || '').trim();
-          const tStore = String(t.projectStore || '').trim().toUpperCase();
-          const key = `${tCode}-${tYear}-${tStore}`;
-
-          const project =
-            projectMap.get(key) ||
-            projects.find((p) => {
-              const pCode = String(p.code || '').trim().toLowerCase();
-              const pYear = String(p.year || '').trim();
-              const pStore = String(p.store || '').trim().toUpperCase();
-              if (pCode !== tCode) return false;
-              if (tStore && pStore && tStore !== pStore) return false;
-              if (tYear && pYear && tYear !== pYear) return false;
-              return true;
-            });
-
+          const project = resolveParentProject(t);
           if (!project) return false;
 
           if (filterStore && filterStore !== 'all' && project.store?.toUpperCase() !== filterStore.toUpperCase()) return false;
@@ -155,24 +158,13 @@ export function useCalendarEvents({
         });
       }
     } else {
-      const projectMap = new Map<string, Project>();
-      projects.forEach((p) => {
-        const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-        projectMap.set(key, p);
-        if (p.code) {
-          projectMap.set(p.code, p);
-        }
-      });
-
       const filteredTasks = tasks.filter((t) => {
-        const key = `${t.projectCode || ''}-${t.projectYear || ''}-${t.projectStore || ''}`;
-        const project =
-          projectMap.get(key) ||
-          (t.projectCode ? projectMap.get(t.projectCode) : undefined);
+        if (!t || t.isDeleted) return false;
+        const project = resolveParentProject(t);
         if (!project) return false;
 
-        if (filterStore && project.store !== filterStore) return false;
-        if (filterLocation && project.location !== filterLocation) return false;
+        if (filterStore && filterStore !== 'all' && project.store?.toUpperCase() !== filterStore.toUpperCase()) return false;
+        if (filterLocation && filterLocation !== 'all' && project.location !== filterLocation) return false;
 
         return true;
       });

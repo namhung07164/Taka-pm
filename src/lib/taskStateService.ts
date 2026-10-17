@@ -8,63 +8,86 @@ import {
   syncProjectDatesToFirestore,
   matchProjectCode 
 } from "./projectDatesService";
-import { markTasksDeleted } from "./taskDeletedTracker";
+import { markTasksDeleted, isTaskDeletedInTracker } from "./taskDeletedTracker";
+import { isTaskBelongsToProject as isTaskBelongsToProjectCanonical } from "./utils";
 
 // Cache in-flight requests to avoid duplicate fetches
 const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 
 /**
- * Validates whether a task belongs to a specific project by verifying store and year.
+ * Validates whether a task belongs to a specific project by verifying store, year, projectId, and projectCode.
  */
 export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
-  if (!t || !p) return false;
-  if (t.isDeleted) return false;
-
-  const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  const pCode = String(p.code || '').trim().toLowerCase();
-
-  const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-  const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : '';
-
-  if (pStore && tStore && pStore !== tStore) return false;
-  if (pYear && tYear && pYear !== tYear) return false;
-
-  if (t.projectId && p.id && String(t.projectId) === String(p.id)) return true;
-  if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return false;
-
-  if (tCode && pCode && (tCode === pCode || matchProjectCode(tCode, pCode))) return true;
-
-  return false;
+  return isTaskBelongsToProjectCanonical(t as Task, p);
 }
 
 /**
- * Ensures tasks for a specific projectCode are loaded into Zustand store.
- * Useful when resolving cross-project predecessors dynamically.
+ * Ensures tasks for a specific project (by projectCode + optional projectId/year/store) are loaded into Zustand store.
+ * Useful when resolving cross-project predecessors or opening modals dynamically.
  */
-export async function ensureProjectTasksLoaded(projectCode: string): Promise<Task[]> {
-  if (!projectCode) return [];
-  const cleanCode = projectCode.trim();
+export async function ensureProjectTasksLoaded(
+  projectCode: string,
+  projectId?: string | null,
+  projectYear?: string | number | null,
+  projectStore?: string | null
+): Promise<Task[]> {
+  if (!projectCode && !projectId) return [];
+  const cleanCode = (projectCode || '').trim();
+  const cleanId = (projectId || '').trim();
+  const normYear = projectYear !== undefined && projectYear !== null && String(projectYear).toLowerCase() !== 'all'
+    ? String(projectYear).trim()
+    : '';
+  const normStore = projectStore && String(projectStore).toLowerCase() !== 'all'
+    ? String(projectStore).trim().toUpperCase()
+    : '';
+
+  const projects = useAppStore.getState().projects || [];
+  const targetProject =
+    (cleanId ? projects.find(p => String(p.id).trim() === cleanId) : undefined) ||
+    projects.find(p => {
+      if (!p || !p.code || String(p.code).trim().toLowerCase() !== cleanCode.toLowerCase()) return false;
+      if (normYear && p.year && String(p.year).trim() !== normYear) return false;
+      if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore) return false;
+      return true;
+    });
+
+  const effectiveYear = normYear || (targetProject?.year ? String(targetProject.year).trim() : '');
+  const effectiveStore = normStore || (targetProject?.store ? String(targetProject.store).trim().toUpperCase() : '');
+  const effectiveId = cleanId || (targetProject?.id ? String(targetProject.id).trim() : '');
+
+  const matchesTargetTask = (t: Task): boolean => {
+    if (!t || t.isDeleted || isTaskDeletedInTracker(t.id)) return false;
+    if (targetProject) {
+      return isTaskBelongsToProject(t, targetProject);
+    }
+    if (effectiveId && t.projectId && String(t.projectId).trim() === effectiveId) return true;
+    if (effectiveId && t.projectId && String(t.projectId).trim() !== effectiveId) return false;
+    if (!cleanCode || !t.projectCode || String(t.projectCode).trim().toLowerCase() !== cleanCode.toLowerCase()) {
+      return false;
+    }
+    if (effectiveYear && t.projectYear && String(t.projectYear).trim() !== effectiveYear) return false;
+    if (effectiveStore && t.projectStore && String(t.projectStore).trim().toUpperCase() !== effectiveStore) return false;
+    return true;
+  };
+
   const currentTasks = useAppStore.getState().tasks || [];
-  
-  // 1. If we already have tasks for this project in memory, return them (0 Read)
-  const existing = currentTasks.filter(t => 
-    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase() && !t.isDeleted
-  );
+
+  // 1. If we already have tasks for this exact project (matching year/store/id/code) in memory, return them (0 Read)
+  const existing = currentTasks.filter(matchesTargetTask);
   if (existing.length > 0) return existing;
 
-  // If already fetching, return existing promise
-  if (pendingProjectFetches.has(cleanCode.toLowerCase())) {
-    return pendingProjectFetches.get(cleanCode.toLowerCase())!;
+  const cacheKey = `${cleanCode.toLowerCase()}__${effectiveYear}__${effectiveStore}__${effectiveId}`;
+  if (pendingProjectFetches.has(cacheKey)) {
+    return pendingProjectFetches.get(cacheKey)!;
   }
 
   const fetchPromise = (async () => {
     try {
       // 2. Check Dexie Local-First Database before touching Firestore (0 Read)
       const { getLocalTasksForProjects, bulkPersistTasks } = await import('./localDb');
-      const localTasks = await getLocalTasksForProjects([cleanCode]);
-      const validLocal = (localTasks || []).filter(t => !t.isDeleted && !isTaskDeletedInTracker(t.id));
+      const queryKeys = [effectiveId, cleanCode].filter(Boolean);
+      const localTasks = await getLocalTasksForProjects(queryKeys, effectiveYear || undefined, effectiveStore || undefined);
+      const validLocal = (localTasks || []).filter(matchesTargetTask);
       if (validLocal.length > 0) {
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map(t => t.id));
@@ -75,11 +98,15 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
         return validLocal;
       }
 
-      // 3. Check if project has 0 tasks according to project summary (0 Read)
-      const projects = useAppStore.getState().projects || [];
-      const matchingProjs = projects.filter(
-        p => p.code && p.code.trim().toLowerCase() === cleanCode.toLowerCase()
-      );
+      // 3. Check if target project has 0 tasks according to project summary (0 Read)
+      const matchingProjs = targetProject
+        ? [targetProject]
+        : projects.filter(p => {
+            if (!p || !p.code || p.code.trim().toLowerCase() !== cleanCode.toLowerCase()) return false;
+            if (effectiveYear && p.year && String(p.year).trim() !== effectiveYear) return false;
+            if (effectiveStore && p.store && String(p.store).trim().toUpperCase() !== effectiveStore) return false;
+            return true;
+          });
       if (
         matchingProjs.length > 0 &&
         matchingProjs.every(p => (p.taskCount || 0) === 0 && (!p.taskSummaries || p.taskSummaries.length === 0))
@@ -88,36 +115,41 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       }
 
       // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
+      if (!cleanCode) return [];
       const q = query(
         collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
         where("projectCode", "==", cleanCode)
       );
       const snap = await getDocs(q);
-      const loaded: Task[] = [];
+      const allLoaded: Task[] = [];
       snap.forEach(docSnap => {
         const d = { id: docSnap.id, ...docSnap.data() } as Task;
-        if (!d.isDeleted && !isTaskDeletedInTracker(d.id)) loaded.push(d);
+        if (!d.isDeleted && !isTaskDeletedInTracker(d.id)) allLoaded.push(d);
       });
 
-      if (loaded.length > 0) {
-        bulkPersistTasks(loaded).catch(() => {});
+      if (allLoaded.length > 0) {
+        bulkPersistTasks(allLoaded).catch(() => {});
+      }
+
+      const matchingLoaded = allLoaded.filter(matchesTargetTask);
+      if (matchingLoaded.length > 0) {
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map(t => t.id));
-        const toAdd = loaded.filter(t => !currentIds.has(t.id));
+        const toAdd = matchingLoaded.filter(t => !currentIds.has(t.id));
         if (toAdd.length > 0) {
           useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
         }
       }
-      return loaded;
+      return matchingLoaded;
     } catch (err) {
       console.warn("Failed to fetch tasks for external project:", cleanCode, err);
       return [];
     } finally {
-      pendingProjectFetches.delete(cleanCode.toLowerCase());
+      pendingProjectFetches.delete(cacheKey);
     }
   })();
 
-  pendingProjectFetches.set(cleanCode.toLowerCase(), fetchPromise);
+  pendingProjectFetches.set(cacheKey, fetchPromise);
   return fetchPromise;
 }
 
@@ -603,13 +635,27 @@ export async function deleteProjectStateUnified(
   store.setCosts(updatedCosts);
   store.setDelegationGroups(updatedDelegations);
 
-  // 2. Clear khỏi Dexie (IndexedDB) lập tức
+  // 2. Clear khỏi Dexie (IndexedDB) lập tức (chỉ xóa đúng dự án cùng year & store, không xóa nhầm dự án năm khác cùng code)
   try {
     const { localDb } = await import('./localDb');
     await localDb.projects.delete(pId);
     if (targetProject?.id) await localDb.projects.delete(targetProject.id);
     if (pCode) {
-      await localDb.projects.where('code').equalsIgnoreCase(pCode).delete().catch(() => {});
+      const sameCodeProjs = await localDb.projects.where('code').equalsIgnoreCase(pCode).toArray().catch(() => []);
+      const idsToDelete = sameCodeProjs
+        .filter(sp => {
+          if (pId && String(sp.id) === pId) return true;
+          const spStore = sp.store ? String(sp.store).trim().toLowerCase() : '';
+          const spYear = sp.year !== undefined && sp.year !== null ? String(sp.year).trim() : '';
+          if (pStore && spStore && pStore !== spStore) return false;
+          if (pYear && spYear && pYear !== spYear) return false;
+          return true;
+        })
+        .map(sp => sp.id)
+        .filter(Boolean);
+      if (idsToDelete.length > 0) {
+        await localDb.projects.bulkDelete(idsToDelete).catch(() => {});
+      }
     }
     if (relatedTaskIds.size > 0) {
       await localDb.tasks.bulkDelete(Array.from(relatedTaskIds));
@@ -704,11 +750,16 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
   if (!tasks || tasks.length === 0) return { cleaned: tasks, fixedCount: 0 };
 
   const taskMap = new Map<string, Task>();
-  const taskCodeMap = new Map<string, Task>();
+  const taskScopedCodeMap = new Map<string, Task>();
+
+  const buildScopedParentKey = (t: Task, code: string) =>
+    `${String(t.projectCode || '').trim().toLowerCase()}__${String(t.projectYear || '').trim()}__${String(t.projectStore || '').trim().toLowerCase()}__${code.trim().toLowerCase()}`;
 
   tasks.forEach(t => {
     if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
-    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    if (t.taskCodePhu) {
+      taskScopedCodeMap.set(buildScopedParentKey(t, String(t.taskCodePhu)), t);
+    }
   });
 
   const now = new Date().toISOString();
@@ -720,7 +771,9 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
     if (!rawParent) return t;
 
     const parentStr = String(rawParent).trim().toLowerCase();
-    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+    const parentTask =
+      taskMap.get(parentStr) ||
+      taskScopedCodeMap.get(buildScopedParentKey(t, parentStr));
 
     if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
       // Parent task deleted or missing -> Promote orphan task to root task

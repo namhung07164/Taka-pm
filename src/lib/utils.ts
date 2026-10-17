@@ -520,17 +520,9 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
   let derivedFromTasks = false;
   let projectTasks: Task[] = [];
   if (tasks && tasks.length > 0) {
-    const pCode = String(p.code || "").trim().toLowerCase();
-    const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
-    const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
-
     let hasOpeningTask = false;
     tasks.forEach(t => {
-      if (!t.projectCode) return;
-      const tCode = String(t.projectCode).trim().toLowerCase();
-      if (tCode !== pCode) return;
-      if (pYear && t.projectYear !== undefined && t.projectYear !== null && String(t.projectYear).trim() !== pYear) return;
-      if (pStore && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStore) return;
+      if (!isTaskBelongsToProject(t, p)) return;
 
       derivedFromTasks = true;
       projectTasks.push(t);
@@ -955,27 +947,75 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
   return partsA.some(pa => partsB.includes(pa));
 }
 
-export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
-  if (!project.code || !allTasks || allTasks.length === 0) return [];
-  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
-  const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
-  const rawPCode = String(project.code).trim().toLowerCase();
+export function isTaskBelongsToProject(
+  t: Task | undefined | null,
+  p: Partial<Project> | undefined | null
+): boolean {
+  if (!t || !p || t.isDeleted || (p as any).isDeleted) return false;
+
+  const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+  const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+  if (tStore && pStore && tStore !== pStore) return false;
+
+  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  if (tYear && pYear && tYear !== pYear) return false;
+
+  const tProjId = t.projectId ? String(t.projectId).trim() : '';
+  const pId = p.id ? String(p.id).trim() : '';
+  if (tProjId && pId) {
+    if (tProjId === pId) return true;
+    if (!tYear || !pYear || tYear !== pYear || !tStore || !pStore || tStore !== pStore) {
+      return false;
+    }
+  }
+
+  if (!t.projectCode || !p.code) return false;
+  const tCode = String(t.projectCode).trim().toLowerCase();
+  const rawPCode = String(p.code).trim().toLowerCase();
+  if (tCode === rawPCode) return true;
+
   const pCodeParts = rawPCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  return pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, p.code);
+}
 
-  return allTasks.filter(t => {
-    if (!t.projectCode) return false;
-    const tCode = String(t.projectCode).trim().toLowerCase();
-    const matchesCode = tCode === rawPCode || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, project.code);
-    if (!matchesCode) return false;
+export function isDelegationGroupBelongsToProject(
+  g: DelegationGroup | undefined | null,
+  p: Partial<Project> | undefined | null,
+  matchedTaskIds?: Set<string>
+): boolean {
+  if (!g || !p || g.isDeleted || (p as any).isDeleted) return false;
 
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-    if (pStore && tStore && pStore !== tStore) return false;
-
-    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-    if (pYear && tYear && pYear !== tYear) return false;
-
+  if (g.parentTaskId && matchedTaskIds && matchedTaskIds.has(g.parentTaskId)) {
     return true;
-  });
+  }
+
+  const gStore = g.projectStore ? String(g.projectStore).trim().toUpperCase() : '';
+  const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+  if (gStore && pStore && gStore !== pStore) return false;
+
+  const gYear = g.projectYear !== undefined && g.projectYear !== null ? String(g.projectYear).trim() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  if (gYear && pYear && gYear !== pYear) return false;
+
+  const gProjId = g.projectId ? String(g.projectId).trim() : '';
+  const pId = p.id ? String(p.id).trim() : '';
+  if (gProjId && pId) {
+    if (gProjId === pId) return true;
+    if (!gYear || !pYear || gYear !== pYear || !gStore || !pStore || gStore !== pStore) {
+      return false;
+    }
+  }
+
+  if (!g.projectCode || !p.code) return false;
+  const gCode = String(g.projectCode).trim().toLowerCase();
+  const pCode = String(p.code).trim().toLowerCase();
+  return gCode === pCode || matchProjectCode(g.projectCode, p.code);
+}
+
+export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
+  if ((!project.code && !project.id) || !allTasks || allTasks.length === 0) return [];
+  return allTasks.filter(t => isTaskBelongsToProject(t, project));
 }
 
 export function computeProjectActStatus(
@@ -987,13 +1027,8 @@ export function computeProjectActStatus(
   if ((p as any).actualStatus) return String((p as any).actualStatus);
 
   if (delegationGroups && delegationGroups.length > 0) {
-    const pCode = String(p.code || '').trim().toLowerCase();
     const matchedTaskIds = new Set(matchedTasks.map(t => t.id).filter(Boolean));
-    const pGroups = delegationGroups.filter(g => {
-      if (g.projectCode && String(g.projectCode).trim().toLowerCase() === pCode) return true;
-      if (g.parentTaskId && matchedTaskIds.has(g.parentTaskId)) return true;
-      return false;
-    });
+    const pGroups = delegationGroups.filter(g => isDelegationGroupBelongsToProject(g, p, matchedTaskIds));
 
     if (pGroups.length > 0) {
       const statuses = pGroups.map(g => {

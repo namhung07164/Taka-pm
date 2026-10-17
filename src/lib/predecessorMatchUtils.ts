@@ -130,7 +130,14 @@ export function resolveProjectContext(
   let ctxLoc = (context?.projectLocation || context?.location || '').trim();
 
   if ((!ctxYear || !ctxStore || !ctxLoc || !ctxCode) && (ctxProjId || ctxCode)) {
-    const parent = projects.find(p => (ctxProjId && p.id === ctxProjId) || (ctxCode && p.code && p.code.trim().toLowerCase() === ctxCode.toLowerCase()));
+    const parent =
+      (ctxProjId ? projects.find(p => String(p.id).trim() === ctxProjId) : undefined) ||
+      projects.find(p => {
+        if (!ctxCode || !p.code || p.code.trim().toLowerCase() !== ctxCode.toLowerCase()) return false;
+        if (ctxYear && p.year && String(p.year).trim() !== ctxYear) return false;
+        if (ctxStore && p.store && String(p.store).trim().toUpperCase() !== ctxStore.toUpperCase()) return false;
+        return true;
+      });
     if (parent) {
       if (!ctxCode && parent.code) ctxCode = parent.code;
       if (!ctxYear && parent.year) ctxYear = String(parent.year);
@@ -165,7 +172,14 @@ export function resolveTaskProjectContext(
   let taskLoc = (task.location || (task as any).projectLocation || '').trim();
 
   if ((!taskYear || !taskStore || !taskLoc || !taskCode) && (taskProjId || taskCode)) {
-    const parent = projects.find(p => (taskProjId && p.id === taskProjId) || (taskCode && p.code && p.code.trim().toLowerCase() === taskCode.toLowerCase()));
+    const parent =
+      (taskProjId ? projects.find(p => String(p.id).trim() === taskProjId) : undefined) ||
+      projects.find(p => {
+        if (!taskCode || !p.code || p.code.trim().toLowerCase() !== taskCode.toLowerCase()) return false;
+        if (taskYear && p.year && String(p.year).trim() !== taskYear) return false;
+        if (taskStore && p.store && String(p.store).trim().toUpperCase() !== taskStore.toUpperCase()) return false;
+        return true;
+      });
     if (parent) {
       if (!taskCode && parent.code) taskCode = parent.code;
       if (!taskYear && parent.year) taskYear = String(parent.year);

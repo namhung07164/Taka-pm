@@ -227,9 +227,14 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
 }
 
 /**
- * Đọc Tasks từ Local Database theo danh sách Project IDs hoặc Project Codes
+/**
+ * Đọc Tasks từ Local Database theo danh sách Project IDs hoặc Project Codes (hỗ trợ lọc theo year & store)
  */
-export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Promise<Task[]> {
+export async function getLocalTasksForProjects(
+  projectIdsOrCodes: string[],
+  year?: string | number | null,
+  store?: string | null
+): Promise<Task[]> {
   if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return [];
   try {
     const rawIds = projectIdsOrCodes.map(id => String(id).trim()).filter(Boolean);
@@ -239,15 +244,39 @@ export async function getLocalTasksForProjects(projectIdsOrCodes: string[]): Pro
       localDb.tasks.where('projectCode').anyOf(rawIds).toArray().catch(() => []),
       localDb.tasks.where('code').anyOf(rawIds).toArray().catch(() => []),
     ]);
+
+    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
+      ? String(year).trim()
+      : '';
+    const normStore = store && String(store).toLowerCase() !== 'all'
+      ? String(store).trim().toUpperCase()
+      : '';
+
+    const matchesScope = (t: Task, matchedById: boolean): boolean => {
+      if (!t || !t.id || t.isDeleted) return false;
+      const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+      const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+      if (normYear && tYear && tYear !== normYear) return false;
+      if (normStore && tStore && tStore !== normStore) return false;
+      if (!matchedById && t.projectId && rawIds.length > 0) {
+        // If rawIds contains a project UUID and t.projectId points to a DIFFERENT UUID while missing year/store, guard against cross-year collision
+        const hasUuidInQuery = rawIds.some(k => k.length >= 16 && !k.includes(' '));
+        if (hasUuidInQuery && !rawIds.includes(String(t.projectId).trim())) {
+          if (!normYear || !tYear || !normStore || !tStore) return false;
+        }
+      }
+      return true;
+    };
+
     const mergedMap = new Map<string, Task>();
     for (const t of byProjId) {
-      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
+      if (matchesScope(t, true)) mergedMap.set(t.id, t);
     }
     for (const t of byProjCode) {
-      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
+      if (matchesScope(t, false)) mergedMap.set(t.id, t);
     }
     for (const t of byCode) {
-      if (t && t.id && !t.isDeleted) mergedMap.set(t.id, t);
+      if (matchesScope(t, false)) mergedMap.set(t.id, t);
     }
     return Array.from(mergedMap.values());
   } catch (err) {
@@ -339,9 +368,13 @@ export async function getLocalDelegations(year?: string): Promise<DelegationGrou
 }
 
 /**
- * Đọc Delegations từ Local Database theo danh sách Project IDs hoặc Project Codes
+ * Đọc Delegations từ Local Database theo danh sách Project IDs hoặc Project Codes (hỗ trợ lọc theo year & store)
  */
-export async function getLocalDelegationsForProjects(projectIdsOrCodes: string[]): Promise<DelegationGroup[]> {
+export async function getLocalDelegationsForProjects(
+  projectIdsOrCodes: string[],
+  year?: string | number | null,
+  store?: string | null
+): Promise<DelegationGroup[]> {
   if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return [];
   try {
     const rawKeys = projectIdsOrCodes.map(k => String(k).trim()).filter(Boolean);
@@ -353,10 +386,32 @@ export async function getLocalDelegationsForProjects(projectIdsOrCodes: string[]
       localDb.delegations.where('code').anyOf(rawKeys).toArray().catch(() => []),
     ]);
 
+    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
+      ? String(year).trim()
+      : '';
+    const normStore = store && String(store).toLowerCase() !== 'all'
+      ? String(store).trim().toUpperCase()
+      : '';
+
+    const matchesScope = (d: DelegationGroup, matchedById: boolean): boolean => {
+      if (!d || !d.id || d.isDeleted) return false;
+      const dYear = d.projectYear !== undefined && d.projectYear !== null ? String(d.projectYear).trim() : '';
+      const dStore = d.projectStore ? String(d.projectStore).trim().toUpperCase() : '';
+      if (normYear && dYear && dYear !== normYear) return false;
+      if (normStore && dStore && dStore !== normStore) return false;
+      if (!matchedById && d.projectId && rawKeys.length > 0) {
+        const hasUuidInQuery = rawKeys.some(k => k.length >= 16 && !k.includes(' '));
+        if (hasUuidInQuery && !rawKeys.includes(String(d.projectId).trim())) {
+          if (!normYear || !dYear || !normStore || !dStore) return false;
+        }
+      }
+      return true;
+    };
+
     const merged = new Map<string, DelegationGroup>();
-    for (const d of byProjCode) if (d && d.id) merged.set(d.id, d);
-    for (const d of byProjId) if (d && d.id) merged.set(d.id, d);
-    for (const d of byCode) if (d && d.id) merged.set(d.id, d);
+    for (const d of byProjId) if (matchesScope(d, true)) merged.set(d.id, d);
+    for (const d of byProjCode) if (matchesScope(d, false)) merged.set(d.id, d);
+    for (const d of byCode) if (matchesScope(d, false)) merged.set(d.id, d);
 
     return Array.from(merged.values());
   } catch (err) {
@@ -380,8 +435,8 @@ export async function getLocalDelegationsForTasks(taskIds: string[]): Promise<De
     ]);
 
     const merged = new Map<string, DelegationGroup>();
-    for (const d of byParentTaskId) if (d && d.id) merged.set(d.id, d);
-    for (const d of byId) if (d && d.id) merged.set(d.id, d);
+    for (const d of byParentTaskId) if (d && d.id && !d.isDeleted) merged.set(d.id, d);
+    for (const d of byId) if (d && d.id && !d.isDeleted) merged.set(d.id, d);
 
     return Array.from(merged.values());
   } catch (err) {

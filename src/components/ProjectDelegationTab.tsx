@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { Project, Task, AppUser, DelegationGroup } from '../types';
 import { computeTaskCode } from '../lib/ganttUtils';
+import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from '../lib/utils';
 import { doc } from 'firebase/firestore';
 import { deleteDoc, setDoc } from '../lib/firestoreWrites';
 import { db, APP_ID } from "../lib/firebase";
@@ -99,62 +100,52 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
 
   const projectGroups = useMemo(() => {
     if (!project) return [];
-    
-    // Normalize current project identifiers
-    const normalizedProjCode = String(project.code || '').trim().toLowerCase();
-    const projCodeParts = normalizedProjCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-    
-    // Collect all task IDs and taskCodePhu belonging to this project
+
+    // Collect all tasks, task IDs, and taskCodePhu belonging strictly to this project (matching year, store, projectId, and projectCode)
+    const projectTasks: Task[] = [];
     const projectTaskIds = new Set<string>();
     const projectTaskCodePhuSet = new Set<string>();
 
     tasks.forEach(t => {
-      if (!t) return;
-      const tProjCode = String(t.projectCode || '').trim().toLowerCase();
-      const codeParts = tProjCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-      const matchesCode = projCodeParts.some(cp => codeParts.includes(cp));
-      const matchesId = Boolean(project.id && t.projectId === project.id);
-      
-      if (matchesCode || matchesId) {
-        if (t.id) projectTaskIds.add(t.id);
-        if (t.taskCodePhu) projectTaskCodePhuSet.add(String(t.taskCodePhu).trim().toLowerCase());
-      }
+      if (!isTaskBelongsToProject(t, project)) return;
+      projectTasks.push(t);
+      if (t.id) projectTaskIds.add(t.id);
+      if (t.taskCodePhu) projectTaskCodePhuSet.add(String(t.taskCodePhu).trim().toLowerCase());
     });
 
     return (delegationGroups || []).filter(g => {
-      if (!g) return false;
+      if (!g || g.isDeleted) return false;
 
       const gParentTaskId = String(g.parentTaskId || '').trim();
       const gParentTaskIdLower = gParentTaskId.toLowerCase();
-      const gProjectCode = String(g.projectCode || '').trim().toLowerCase();
-      const gProjectId = String((g as any).projectId || '').trim();
 
-      // 1. Direct match with project tasks
-      const matchesTask = Boolean(
-        gParentTaskId && (projectTaskIds.has(gParentTaskId) || projectTaskCodePhuSet.has(gParentTaskIdLower))
-      );
+      // 1. Direct match with project's own tasks
+      if (gParentTaskId && projectTaskIds.has(gParentTaskId)) {
+        return true;
+      }
 
-      // 2. Direct match with project code or project ID
-      const matchesDirectProject = Boolean(
-        (gProjectCode && projCodeParts.includes(gProjectCode)) ||
-        (gProjectId && project.id && gProjectId === project.id) ||
-        (gParentTaskId && projCodeParts.includes(gParentTaskIdLower)) ||
-        (gParentTaskId && project.id && gParentTaskId === project.id)
-      );
+      // 2. Match by taskCodePhu only if group does not belong to a conflicting year/store/projectId
+      if (gParentTaskIdLower && projectTaskCodePhuSet.has(gParentTaskIdLower)) {
+        if (isDelegationGroupBelongsToProject({ ...g, projectCode: g.projectCode || project.code }, project)) {
+          return true;
+        }
+      }
 
-      // 3. Indirect match via parent task's project code
-      const parentTask = tasks.find(x => x && (x.id === g.parentTaskId || (x.taskCodePhu && String(x.taskCodePhu).toLowerCase() === gParentTaskIdLower)));
-      const matchesTaskProjectCode = parentTask ? Boolean(
-        projCodeParts.some(cp => String(parentTask.projectCode || '').trim().toLowerCase().split(/[,;/]+/).map(s => s.trim()).includes(cp)) ||
-        (project.id && parentTask.projectId === project.id)
-      ) : false;
+      // 3. Direct match with project (verifying store, year, projectId, and projectCode)
+      if (isDelegationGroupBelongsToProject(g, project, projectTaskIds)) {
+        return true;
+      }
 
-      return matchesTask || matchesDirectProject || matchesTaskProjectCode;
+      return false;
     }).map(g => {
       const gParentTaskIdLower = String(g.parentTaskId || '').trim().toLowerCase();
-      const parentTask = tasks.find(t => t && (t.id === g.parentTaskId || (t.taskCodePhu && String(t.taskCodePhu).toLowerCase() === gParentTaskIdLower)));
+      const parentTask =
+        projectTasks.find(t => t.id === g.parentTaskId || (t.taskCodePhu && String(t.taskCodePhu).toLowerCase() === gParentTaskIdLower)) ||
+        tasks.find(t => t && t.id === g.parentTaskId);
       const isChildTask = parentTask ? Boolean(parentTask.parentTaskId) : false;
-      const rootParentTask = isChildTask ? tasks.find(t => t.id === parentTask?.parentTaskId) : null;
+      const rootParentTask = isChildTask
+        ? (projectTasks.find(t => t.id === parentTask?.parentTaskId) || tasks.find(t => t.id === parentTask?.parentTaskId))
+        : null;
       return {
         ...g,
         _taskCode: parentTask ? computeTaskCode(projects, tasks, parentTask) : (g.projectCode || ''),

@@ -56,11 +56,11 @@ export function useProjectModalData({
     if (isOpen && project) {
       const keys = [project.id, project.code].filter(Boolean) as string[];
       if (keys.length > 0) {
-        hydrateTasksForProjects(keys).catch(() => {});
-        hydrateDelegationsForProjects(keys).catch(() => {});
+        hydrateTasksForProjects(keys, project.year, project.store).catch(() => {});
+        hydrateDelegationsForProjects(keys, project.year, project.store).catch(() => {});
       }
     }
-  }, [isOpen, project?.id, project?.code]);
+  }, [isOpen, project?.id, project?.code, project?.year, project?.store]);
 
   // Tri-Gate Lazy Loading: Activate delegation pipeline if user selects delegation tab
   useEffect(() => {
