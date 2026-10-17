@@ -103,41 +103,27 @@ export function useProjectsHydration({
           taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
         } : data;
 
-        // If this is a live server update and taskSummaries has shrunk (a task was deleted on another device),
-        // immediately detect the removed task IDs and purge them from Zustand tasks & Dexie!
-        if (!fromCache && Array.isArray(data.taskSummaries)) {
+        // If this is a live server update and taskSummaries has shrunk compared to existing project state
+        // (a task was deleted on another device), immediately detect the removed task IDs and purge them!
+        if (
+          !fromCache &&
+          existing &&
+          Array.isArray(existing.taskSummaries) &&
+          Array.isArray(data.taskSummaries) &&
+          data.taskSummaries.length < existing.taskSummaries.length
+        ) {
           const incomingIds = new Set(
             data.taskSummaries
               .map((s: any) => (s?.id ? String(s.id).trim().toLowerCase() : ""))
               .filter(Boolean)
           );
-          if (existing && Array.isArray(existing.taskSummaries)) {
-            existing.taskSummaries.forEach((oldS: any) => {
-              const oldId = oldS?.id ? String(oldS.id).trim() : "";
-              if (oldId && !incomingIds.has(oldId.toLowerCase())) {
-                markTasksDeleted([oldId], id);
-                pendingDeletedTaskIds.current.add(oldId);
-              }
-            });
-          }
-          // Also check in-memory tasks belonging to this project if all incoming summaries carry IDs (or summaries is empty)
-          const allIncomingHaveIds = data.taskSummaries.every((s: any) => Boolean(s?.id));
-          if (allIncomingHaveIds) {
-            const currentTasks = useAppStore.getState().tasks || [];
-            const nowMs = Date.now();
-            currentTasks.forEach((t) => {
-              if (!t || !t.id || t.isDeleted) return;
-              if (!isTaskBelongsToProject(t, resolvedData)) return;
-              const tIdLower = String(t.id).trim().toLowerCase();
-              if (!incomingIds.has(tIdLower)) {
-                // Guard against tasks created/updated locally within the last 15 seconds (optimistic UI in-flight)
-                const taskUpdatedMs = tsOf(t.updatedAt || (t as any).createdAt);
-                if (taskUpdatedMs > 0 && nowMs - taskUpdatedMs < 15000) return;
-                markTasksDeleted([t.id], id);
-                pendingDeletedTaskIds.current.add(t.id);
-              }
-            });
-          }
+          existing.taskSummaries.forEach((oldS: any) => {
+            const oldId = oldS?.id ? String(oldS.id).trim() : "";
+            if (oldId && !incomingIds.has(oldId.toLowerCase())) {
+              markTasksDeleted([oldId], id);
+              pendingDeletedTaskIds.current.add(oldId);
+            }
+          });
         }
 
         pendingProjectsMap.current!.set(id, resolvedData);
@@ -226,7 +212,10 @@ export function useProjectsHydration({
   // Unmount cleanup
   useEffect(() => {
     return () => {
-      projectsPool.current.forEach((u) => u());
+      projectsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
+      });
       projectsPool.current.clear();
       if (projectsBatchTimer.current) clearTimeout(projectsBatchTimer.current);
     };
@@ -237,7 +226,10 @@ export function useProjectsHydration({
     if (!querySignature) return;
 
     if (prevSigProjects.current !== querySignature) {
-      projectsPool.current.forEach((u) => u());
+      projectsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
+      });
       projectsPool.current.clear();
       prevSigProjects.current = querySignature;
     }
@@ -304,10 +296,45 @@ export function useProjectsHydration({
           qProjects,
           (snapshot) => {
             usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
-            batchProjectsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+            const fromCache = snapshot.metadata.fromCache;
+            let changesToApply: any[] = snapshot.docChanges();
+
+            // Server snapshot reconciliation: purge any zombie project in Dexie/Zustand for this year that no longer exists on server
+            if (!fromCache) {
+              const serverIds = new Set<string>();
+              snapshot.docs.forEach((d) => serverIds.add(d.id));
+              const currentProjectsNow = useAppStore.getState().projects || [];
+              const nowMs = Date.now();
+              const allowedLower = allowedStores.map((s) => s.toLowerCase());
+              const isStoreRestricted = userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+              const zombieRemovals: any[] = [];
+              currentProjectsNow.forEach((p) => {
+                if (
+                  p?.id &&
+                  String(p.year ?? "").trim() === String(year).trim() &&
+                  !serverIds.has(p.id)
+                ) {
+                  if (isStoreRestricted && p.store && !allowedLower.includes(String(p.store).trim().toLowerCase())) {
+                    return;
+                  }
+                  const updatedMs = tsOf(p.updatedAt);
+                  if (!updatedMs || nowMs - updatedMs > 30000) {
+                    zombieRemovals.push({
+                      type: "removed",
+                      doc: { id: p.id, data: () => ({ ...p, isDeleted: true }) },
+                    });
+                  }
+                }
+              });
+              if (zombieRemovals.length > 0) {
+                changesToApply = [...changesToApply, ...zombieRemovals];
+              }
+            }
+
+            batchProjectsUpdate(changesToApply, fromCache);
             setCloudStatus("online");
 
-            if (DELTA_FIRST.projects && !snapshot.metadata.fromCache) {
+            if (DELTA_FIRST.projects && !fromCache) {
               markLoaded('projects_year', year).catch(() => {});
               const u = projectsPool.current.get(year);
               projectsPool.current.set(year, () => {});

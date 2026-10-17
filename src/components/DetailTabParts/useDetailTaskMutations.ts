@@ -155,17 +155,22 @@ export function useDetailTaskMutations({
         );
         if (!realTask && t.projectCode) {
           try {
-            const { collection, query, where, getDocs } = await import('firebase/firestore');
-            const q = query(
-              collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-              where('projectCode', '==', t.projectCode)
-            );
-            const snap = await getDocs(q);
-            const loaded: Task[] = [];
-            snap.forEach(d => {
-              const dt = { id: d.id, ...d.data() } as Task;
-              if (!dt.isDeleted) loaded.push(dt);
-            });
+            const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
+            let loaded: Task[] = (await getLocalTasksForProjects([t.projectCode])).filter(dt => !dt.isDeleted);
+            if (!loaded.some(sameProjectIdentity)) {
+              const { collection, query, where, getDocs } = await import('firebase/firestore');
+              const q = query(
+                collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+                where('projectCode', '==', t.projectCode)
+              );
+              const snap = await getDocs(q);
+              loaded = [];
+              snap.forEach(d => {
+                const dt = { id: d.id, ...d.data() } as Task;
+                if (!dt.isDeleted) loaded.push(dt);
+              });
+              if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
+            }
             // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
             const loadedSame = loaded.filter(sameProjectIdentity);
             if (loadedSame.length > 0) {
@@ -372,22 +377,24 @@ export function useDetailTaskMutations({
         ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
         ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
       ];
+      const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+        const prev = tasks.find((tsk) => tsk.id === item.id);
+        return createPatchDeltaItem({
+          docId: item.id,
+          collectionName: 'taka_tasks',
+          previous: prev,
+          updated: item,
+          action: 'update',
+          year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+        });
+      });
+
       saveTaskStateUnified(allUpdatesToSave);
 
       try {
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
         await batch.commit();
-
-        const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
-          const prev = tasks.find((tsk) => tsk.id === item.id);
-          return createPatchDeltaItem({
-            docId: item.id,
-            collectionName: 'taka_tasks',
-            previous: prev,
-            updated: item,
-            action: 'update',
-            year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
-          });
-        });
         recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
       } catch (error: any) {
         console.error("Batch commit failed", error);

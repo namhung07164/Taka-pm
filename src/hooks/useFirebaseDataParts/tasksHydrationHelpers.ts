@@ -74,3 +74,123 @@ export function groupActiveProjectsByYear(
 
   return map;
 }
+
+/**
+ * Checks if a task belongs to a specific project by ID or (code + store + year).
+ */
+export function doesTaskBelongToProject(t: Task, p: Project): boolean {
+  if (t.projectId) return String(t.projectId) === String(p.id);
+  return (
+    String(t.projectCode || "") === String(p.code) &&
+    String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+    String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+  );
+}
+
+/**
+ * Filters snapshot.docChanges() from a projectCode query so only tasks belonging to project `p` are applied.
+ */
+export function filterCompatibleProjectChanges(docChanges: any[], p: Project): any[] {
+  return docChanges.filter((ch) => {
+    const dt: any = ch.doc.data();
+    if (ch.type === "removed") {
+      if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+      if (
+        dt &&
+        dt.projectStore &&
+        p.store &&
+        String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
+      ) {
+        return false;
+      }
+      return true;
+    }
+    if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+    if (
+      dt.projectStore &&
+      p.store &&
+      String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
+    ) {
+      return false;
+    }
+    const dy = dt.projectYear;
+    if (
+      dy !== undefined &&
+      dy !== null &&
+      dy !== "" &&
+      p.year &&
+      String(dy).trim() !== String(p.year).trim()
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Builds synthetic "removed" docChanges for any local task in `year` that no longer exists in a server snapshot.
+ */
+export function buildZombieTaskRemovalsForYear(
+  snapshotDocs: any[],
+  currentTasks: Task[],
+  year: string | number,
+  userRole: string | undefined,
+  allowedStores: string[]
+): any[] {
+  const serverIds = new Set<string>();
+  snapshotDocs.forEach((d) => serverIds.add(d.id));
+  const nowMs = Date.now();
+  const allowedLower = allowedStores.map((s) => s.toLowerCase());
+  const isStoreRestricted = userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+  const zombieRemovals: any[] = [];
+
+  currentTasks.forEach((t) => {
+    if (
+      t?.id &&
+      !t.id.startsWith("ts_") &&
+      String(t.projectYear ?? "").trim() === String(year).trim() &&
+      !serverIds.has(t.id)
+    ) {
+      if (isStoreRestricted && t.projectStore && !allowedLower.includes(String(t.projectStore).trim().toLowerCase())) {
+        return;
+      }
+      const updatedMs = t.updatedAt ? Date.parse(String(t.updatedAt)) : 0;
+      if (!updatedMs || nowMs - updatedMs > 30000) {
+        zombieRemovals.push({
+          type: "removed",
+          doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
+        });
+      }
+    }
+  });
+
+  return zombieRemovals;
+}
+
+/**
+ * Builds synthetic "removed" docChanges for any local task of project `p` that no longer exists in a server snapshot.
+ */
+export function buildZombieTaskRemovalsForProject(
+  snapshotDocs: any[],
+  currentTasks: Task[],
+  p: Project
+): any[] {
+  const serverIds = new Set<string>();
+  snapshotDocs.forEach((d) => serverIds.add(d.id));
+  const nowMs = Date.now();
+  const zombieRemovals: any[] = [];
+
+  currentTasks.forEach((t) => {
+    if (t?.id && !t.id.startsWith("ts_") && doesTaskBelongToProject(t, p) && !serverIds.has(t.id)) {
+      const updatedMs = t.updatedAt ? Date.parse(String(t.updatedAt)) : 0;
+      if (!updatedMs || nowMs - updatedMs > 30000) {
+        zombieRemovals.push({
+          type: "removed",
+          doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
+        });
+      }
+    }
+  });
+
+  return zombieRemovals;
+}

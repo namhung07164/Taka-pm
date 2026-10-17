@@ -142,10 +142,20 @@ async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
 }
 
 async function fetchChunk(coll: Logical, ids: string[]) {
-  const col = collection(db, 'artifacts', APP_ID, 'public', 'data', LOGICAL_TO_FS[coll]);
+  const fsColl = LOGICAL_TO_FS[coll];
+  const col = collection(db, 'artifacts', APP_ID, 'public', 'data', fsColl);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await getDocsFromServer(query(col, where(documentId(), 'in', ids)));
+      const snap = await getDocsFromServer(query(col, where(documentId(), 'in', ids)));
+      usePerformanceStore
+        .getState()
+        .trackGetDoc(
+          `${fsColl}_invalidate`,
+          false,
+          snap.size || 1,
+          `Delta invalidate fetch (${ids.length} id)`
+        );
+      return snap;
     } catch (err) {
       if (attempt === 1) console.warn('[deltaInvalidate] fetch failed:', err);
       else await sleep(2000);

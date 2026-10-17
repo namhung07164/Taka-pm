@@ -48,9 +48,9 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
   const cleanCode = projectCode.trim();
   const currentTasks = useAppStore.getState().tasks || [];
   
-  // If we already have tasks for this project in memory, return them
+  // 1. If we already have tasks for this project in memory, return them (0 Read)
   const existing = currentTasks.filter(t => 
-    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase()
+    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase() && !t.isDeleted
   );
   if (existing.length > 0) return existing;
 
@@ -61,6 +61,33 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
 
   const fetchPromise = (async () => {
     try {
+      // 2. Check Dexie Local-First Database before touching Firestore (0 Read)
+      const { getLocalTasksForProjects, bulkPersistTasks } = await import('./localDb');
+      const localTasks = await getLocalTasksForProjects([cleanCode]);
+      const validLocal = (localTasks || []).filter(t => !t.isDeleted && !isTaskDeletedInTracker(t.id));
+      if (validLocal.length > 0) {
+        const latestTasks = useAppStore.getState().tasks || [];
+        const currentIds = new Set(latestTasks.map(t => t.id));
+        const toAdd = validLocal.filter(t => !currentIds.has(t.id));
+        if (toAdd.length > 0) {
+          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
+        }
+        return validLocal;
+      }
+
+      // 3. Check if project has 0 tasks according to project summary (0 Read)
+      const projects = useAppStore.getState().projects || [];
+      const matchingProjs = projects.filter(
+        p => p.code && p.code.trim().toLowerCase() === cleanCode.toLowerCase()
+      );
+      if (
+        matchingProjs.length > 0 &&
+        matchingProjs.every(p => (p.taskCount || 0) === 0 && (!p.taskSummaries || p.taskSummaries.length === 0))
+      ) {
+        return [];
+      }
+
+      // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
       const q = query(
         collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
         where("projectCode", "==", cleanCode)
@@ -69,10 +96,11 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       const loaded: Task[] = [];
       snap.forEach(docSnap => {
         const d = { id: docSnap.id, ...docSnap.data() } as Task;
-        if (!d.isDeleted) loaded.push(d);
+        if (!d.isDeleted && !isTaskDeletedInTracker(d.id)) loaded.push(d);
       });
 
       if (loaded.length > 0) {
+        bulkPersistTasks(loaded).catch(() => {});
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map(t => t.id));
         const toAdd = loaded.filter(t => !currentIds.has(t.id));
@@ -608,12 +636,17 @@ export async function deleteProjectStateUnified(
     }
   } catch (e) {}
 
+  if (relatedTaskIds.size > 0) {
+    markTasksDeleted(Array.from(relatedTaskIds), pId);
+  }
+
   // 4. Batch commit đánh dấu isDeleted = true trên Firestore
   try {
     const { doc } = await import('firebase/firestore');
     const { writeBatch } = await import('./firestoreWrites');
     const { db, APP_ID } = await import('./firebase');
     const { recordBatchDeltas } = await import('./deltaSyncService');
+    const { markExplicitDelta } = await import('./autoDeltaQueue');
 
     const batch = writeBatch(db);
 
@@ -639,22 +672,24 @@ export async function deleteProjectStateUnified(
       batch.delete(delRef);
     });
 
+    const currentUser = store.currentUser;
+    const deltaItems: any[] = [
+      { docId: pId, collectionName: 'taka_projects', action: 'delete', isPatch: false, data: { id: pId, isDeleted: true }, ...(pYear ? { year: pYear } : {}) },
+      ...relatedTasks.map(t => ({
+        docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: { id: t.id, isDeleted: true, projectId: pId }, ...(t.projectYear ? { year: String(t.projectYear) } : {})
+      })),
+      ...relatedCosts.map(c => ({
+        docId: c.id, collectionName: 'taka_costs', action: 'delete', isPatch: false, data: { id: c.id, isDeleted: true }, ...((c as any).projectYear ? { year: String((c as any).projectYear) } : {})
+      })),
+      ...relatedDelegations.map(d => ({
+        docId: d.id, collectionName: 'taka_delegations', action: 'delete', isPatch: false, data: { id: d.id, isDeleted: true }, ...((d as any).projectYear ? { year: String((d as any).projectYear) } : {})
+      }))
+    ];
+
+    markExplicitDelta(deltaItems);
     await batch.commit();
 
     // 5. Ghi Delta Log
-    const currentUser = store.currentUser;
-    const deltaItems: any[] = [
-      { docId: pId, collectionName: 'taka_projects', action: 'delete', isPatch: false, data: null },
-      ...relatedTasks.map(t => ({
-        docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
-      })),
-      ...relatedCosts.map(c => ({
-        docId: c.id, collectionName: 'taka_costs', action: 'delete', isPatch: false, data: null
-      })),
-      ...relatedDelegations.map(d => ({
-        docId: d.id, collectionName: 'taka_delegation_groups', action: 'delete', isPatch: false, data: null
-      }))
-    ];
     recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
   } catch (err) {
     console.error('[taskStateService] deleteProjectStateUnified Firestore batch commit failed:', err);

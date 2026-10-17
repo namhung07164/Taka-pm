@@ -51,16 +51,13 @@ export function useProjectModalData({
     onConfirm: () => {}
   });
 
-  // JIT Targeted Local-First Task & Delegation Hydration for Project (0ms, 0 Read)
+  // JIT Targeted Local-First Task & Delegation Hydration for Project (0ms, 0 Read - Rule 8)
   useEffect(() => {
     if (isOpen && project) {
       const keys = [project.id, project.code].filter(Boolean) as string[];
       if (keys.length > 0) {
         hydrateTasksForProjects(keys).catch(() => {});
         hydrateDelegationsForProjects(keys).catch(() => {});
-        if (project.code) {
-          ensureProjectTasksLoaded(project.code).catch(() => {});
-        }
       }
     }
   }, [isOpen, project?.id, project?.code]);

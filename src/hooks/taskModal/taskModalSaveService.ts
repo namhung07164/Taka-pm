@@ -113,22 +113,27 @@ export async function executeTaskSave({
     );
     if (!realTask && currentProject?.code) {
       try {
-        const { collection, query, where, getDocs } = await import('firebase/firestore');
-        const q = query(
-          collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-          where('projectCode', '==', currentProject.code)
-        );
-        const snap = await getDocs(q);
-        const loaded: Task[] = [];
-        snap.forEach(d => {
-          const dt = { id: d.id, ...d.data() } as Task;
-          if (!dt.isDeleted) loaded.push(dt);
-        });
-        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
-        const loadedSame = loaded.filter(x =>
+        const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
+        const sameIdentity = (x: Task) =>
           String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
-          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim()
-        );
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim();
+        let loaded: Task[] = (await getLocalTasksForProjects([currentProject.code])).filter(dt => !dt.isDeleted);
+        if (!loaded.some(sameIdentity)) {
+          const { collection, query, where, getDocs } = await import('firebase/firestore');
+          const q = query(
+            collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+            where('projectCode', '==', currentProject.code)
+          );
+          const snap = await getDocs(q);
+          loaded = [];
+          snap.forEach(d => {
+            const dt = { id: d.id, ...d.data() } as Task;
+            if (!dt.isDeleted) loaded.push(dt);
+          });
+          if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
+        }
+        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+        const loadedSame = loaded.filter(sameIdentity);
         if (loadedSame.length > 0) {
           const latestTasks = useAppStore.getState().tasks || tasks;
           const existingIds = new Set(latestTasks.map(tsk => tsk.id));
@@ -374,7 +379,6 @@ export async function executeTaskSave({
     // Offload network commit, delta emission, and project date rollups to non-blocking background microtask
     setTimeout(async () => {
       try {
-        await batch.commit();
         const deltaItems = optimisticList.map(item => {
           const prev = tasks.find(t => t.id === item.id);
           return createPatchDeltaItem({
@@ -386,6 +390,9 @@ export async function executeTaskSave({
             year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
           });
         });
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
+        await batch.commit();
         recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
 
         if (datesOrStatusChanged) {

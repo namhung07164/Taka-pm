@@ -46,23 +46,33 @@ export async function handleProjectIdentityChange({
     return matchesCode && matchesYear && matchesStore;
   });
 
-  // If memory does not have tasks for this project (e.g. mobile lazy load), fetch them from Firestore
-  if (relatedTasks.length === 0 && project.code) {
+  // If memory does not have tasks for this project (e.g. mobile lazy load), check Dexie first, then Firestore only if needed
+  if (relatedTasks.length === 0 && project.code && (project.taskCount || (project.taskSummaries && project.taskSummaries.length > 0))) {
     try {
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      const q = query(
-        collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-        where('projectCode', '==', project.code)
-      );
-      const snap = await getDocs(q);
-      const loaded: Task[] = [];
-      snap.forEach(d => {
-        const dt = { id: d.id, ...d.data() } as Task;
-        if (!dt.isDeleted) loaded.push(dt);
-      });
+      const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
+      let loaded: Task[] = (await getLocalTasksForProjects([project.code])).filter(dt => !dt.isDeleted);
+      if (loaded.length === 0) {
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const q = query(
+          collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+          where('projectCode', '==', project.code)
+        );
+        const snap = await getDocs(q);
+        loaded = [];
+        snap.forEach(d => {
+          const dt = { id: d.id, ...d.data() } as Task;
+          if (!dt.isDeleted) loaded.push(dt);
+        });
+        if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
+      }
       if (loaded.length > 0) {
-        relatedTasks = loaded;
-        rawTasks = [...rawTasks, ...loaded];
+        relatedTasks = loaded.filter(t => {
+          const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
+          const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
+          return matchesYear && matchesStore;
+        });
+        const existingIds = new Set(rawTasks.map(t => t.id));
+        rawTasks = [...rawTasks, ...loaded.filter(t => !existingIds.has(t.id))];
         useAppStore.getState().setTasks(rawTasks);
       }
     } catch (err) {
@@ -178,24 +188,29 @@ export async function handleProjectIdentityChange({
   });
   useAppStore.getState().setProjects(updatedProjects);
 
+  const identityDeltaItems = [
+    { docId, collectionName: 'taka_projects' as const, action: 'update' as const, data: dataToSave, year: String(yearNum) },
+    ...relatedTasks.map(t => ({
+      docId: t.id,
+      collectionName: 'taka_tasks' as const,
+      action: 'update' as const,
+      data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
+      year: String(yearNum)
+    })),
+    ...relatedCosts.map(c => ({
+      docId: c.id,
+      collectionName: 'taka_costs' as const,
+      action: 'update' as const,
+      data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
+      year: String(yearNum)
+    }))
+  ];
+  import('../../lib/autoDeltaQueue')
+    .then(({ markExplicitDelta }) => markExplicitDelta(identityDeltaItems))
+    .catch(() => {});
+
   batch.commit().then(() => {
-    recordBatchDeltas([
-      { docId, collectionName: 'taka_projects', action: 'update', data: dataToSave, year: String(yearNum) },
-      ...relatedTasks.map(t => ({
-        docId: t.id,
-        collectionName: 'taka_tasks' as const,
-        action: 'update' as const,
-        data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
-        year: String(yearNum)
-      })),
-      ...relatedCosts.map(c => ({
-        docId: c.id,
-        collectionName: 'taka_costs' as const,
-        action: 'update' as const,
-        data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
-        year: String(yearNum)
-      }))
-    ]).catch(console.error);
+    recordBatchDeltas(identityDeltaItems).catch(console.error);
   }).catch(e => {
     console.error("Batch commit failed", e);
     setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });

@@ -129,7 +129,10 @@ export function useCostsHydration({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      costsPool.current.forEach((u) => u());
+      costsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+      });
       costsPool.current.clear();
       costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
       costsTTLTimeouts.current.clear();
@@ -161,7 +164,10 @@ export function useCostsHydration({
     costsTTLTimeouts.current.clear();
 
     if (prevSigCosts.current !== querySignature) {
-      costsPool.current.forEach((u) => u());
+      costsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+      });
       costsPool.current.clear();
       prevSigCosts.current = querySignature;
     }

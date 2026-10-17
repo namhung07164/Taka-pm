@@ -361,19 +361,26 @@ export async function syncProjectDatesToFirestore(
       JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(safeTaskSummaries || dates.taskSummaries || []);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
+    let updatedProjectObj: Project | null = null;
     if (existingProject) {
       const updated = projects.map((p) => {
         if (p.id === projectId) {
-          return {
+          updatedProjectObj = {
             ...p,
             ...dates,
             taskCount: safeTaskCount !== undefined ? safeTaskCount : dates.taskCount,
             taskSummaries: safeTaskSummaries !== undefined ? safeTaskSummaries : dates.taskSummaries,
           };
+          return updatedProjectObj;
         }
         return p;
       });
       setProjects(updated);
+      if (updatedProjectObj && hasChanged) {
+        import("./localDb")
+          .then(({ bulkPersistProjects }) => bulkPersistProjects([updatedProjectObj!]))
+          .catch(() => {});
+      }
     }
 
     if (!hasChanged) {
@@ -424,6 +431,9 @@ export async function syncProjectDatesToFirestore(
         return item;
       });
     }
+
+    const { markExplicitDelta } = await import("./autoDeltaQueue");
+    markExplicitDelta([{ docId: projectId, collectionName: "taka_projects" }]);
 
     await setDoc(projectRef, updatePayload, { merge: true });
 

@@ -81,10 +81,19 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   });
 
   // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
+  let hiddenSince = 0;
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
-      wakeAndSync();
+      const hiddenDuration = hiddenSince ? Date.now() - hiddenSince : 0;
+      hiddenSince = 0;
+      lastActivityTime = Date.now();
+      if (isHibernating || hiddenDuration >= 15000) {
+        wakeAndSync();
+      } else {
+        startPolling();
+      }
     } else {
+      hiddenSince = Date.now();
       hibernate();
     }
   };
@@ -94,7 +103,9 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     wakeAndSync();
   };
   const handleFocus = () => {
-    if (document.visibilityState === 'visible') {
+    lastActivityTime = Date.now();
+    // Only force a server pull on focus if the poller had entered hibernation (>5 min idle)
+    if (document.visibilityState === 'visible' && isHibernating) {
       wakeAndSync();
     }
   };

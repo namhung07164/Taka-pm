@@ -134,7 +134,10 @@ export function useDelegationsHydration({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      delegationsPool.current.forEach((u) => u());
+      delegationsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${key}`);
+      });
       delegationsPool.current.clear();
       delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
       delegationsTTLTimeouts.current.clear();
@@ -156,7 +159,10 @@ export function useDelegationsHydration({
 
     if (prevQuerySigDelegations.current !== querySignature) {
       if (prevQuerySigDelegations.current !== "") {
-        delegationsPool.current.forEach((u) => u());
+        delegationsPool.current.forEach((u, key) => {
+          u();
+          usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${key}`);
+        });
         delegationsPool.current.clear();
         delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
         delegationsTTLTimeouts.current.clear();

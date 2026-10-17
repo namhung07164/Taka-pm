@@ -39,7 +39,15 @@ interface UseTasksHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear } from "./tasksHydrationHelpers";
+import {
+  isStaleCacheDoc,
+  extractKeysToHydrate,
+  groupActiveProjectsByYear,
+  doesTaskBelongToProject,
+  filterCompatibleProjectChanges,
+  buildZombieTaskRemovalsForYear,
+  buildZombieTaskRemovalsForProject,
+} from "./tasksHydrationHelpers";
 
 export function useTasksHydration({
   querySignature,
@@ -398,10 +406,22 @@ export function useTasksHydration({
                 (snapshot) => {
                   usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
                   setIsTasksLoading(false);
-                  batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+                  const fromCache = snapshot.metadata.fromCache;
+                  let changesToApply: any[] = snapshot.docChanges();
+                  if (!fromCache) {
+                    const zombieRemovals = buildZombieTaskRemovalsForYear(
+                      snapshot.docs,
+                      useAppStore.getState().tasks || [],
+                      year,
+                      userRole,
+                      allowedStores
+                    );
+                    if (zombieRemovals.length > 0) changesToApply = [...changesToApply, ...zombieRemovals];
+                  }
+                  batchTasksUpdate(changesToApply, fromCache);
                   setCloudStatus("online");
 
-                  if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
+                  if (DELTA_FIRST.tasks && !fromCache) {
                     markLoaded('tasks_year', year).catch(() => {});
                     const u = tasksPool.current.get(yearKey);
                     tasksPool.current.set(yearKey, () => {});
@@ -419,9 +439,7 @@ export function useTasksHydration({
             }
           }
         } else {
-          const visibleSet = new Set(
-            (visibleActiveProjectIdsRef.current || []).map((id) => String(id))
-          );
+          const visibleSet = new Set((visibleActiveProjectIdsRef.current || []).map((id) => String(id)));
           const sortedProjs = [...projs].sort((a, b) => {
             const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
             const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
@@ -446,33 +464,31 @@ export function useTasksHydration({
 
             if (!tasksPool.current.has(projKey)) {
               const currentTasks = useAppStore.getState().tasks || [];
-              // So khớp theo đúng dự án (projectId, hoặc đủ store + year + code), không chỉ theo mã
-              const belongsHere = (t: Task): boolean => {
-                if (t.projectId) return String(t.projectId) === String(p.id);
-                return (
-                  String(t.projectCode || "") === String(p.code) &&
-                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
-                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
-                );
-              };
+              const localProjTasks = currentTasks.filter((t) => doesTaskBelongToProject(t, p));
               const hasLocalProjTasks =
-                currentTasks.some(belongsHere) ||
+                localProjTasks.length > 0 ||
                 knownHydratedProjectCodes.current.has(String(p.id));
               const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+              const isZeroTaskProject =
+                (p.taskCount || 0) === 0 &&
+                Array.isArray(p.taskSummaries) &&
+                p.taskSummaries.length === 0 &&
+                localProjTasks.length === 0;
 
               const deltaManaged =
+                isZeroTaskProject ||
                 (hasLocalProjTasks && isClosedOrPastYear) ||
-                (DELTA_FIRST.tasks && (hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
+                (DELTA_FIRST.tasks && (hasMarker(markers, 'tasks_proj', p.id) || hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
               if (deltaManaged) {
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
-                needTasksDeltaSync = true;
+                if (!isZeroTaskProject) needTasksDeltaSync = true;
                 usePerformanceStore
                   .getState()
                   .trackGetDoc(
                     `taka_tasks_${projKey}`,
                     true,
-                    1,
+                    localProjTasks.length,
                     "Dexie Local-First Project Tasks (0 Read)"
                   );
               } else {
@@ -488,30 +504,23 @@ export function useTasksHydration({
                     knownHydratedProjectCodes.current.add(String(p.id));
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
+                    const fromCache = snapshot.metadata.fromCache;
+                    let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), p);
 
-                    // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
-                    // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
-                    const compatibleChanges = snapshot.docChanges().filter((ch) => {
-                      const dt: any = ch.doc.data();
-                      if (ch.type === "removed") {
-                        if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
-                        if (dt && dt.projectStore && p.store &&
-                            String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
-                        return true;
-                      }
-                      if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
-                      if (dt.projectStore && p.store &&
-                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
-                      const dy = dt.projectYear;
-                      if (dy !== undefined && dy !== null && dy !== "" && p.year &&
-                          String(dy).trim() !== String(p.year).trim()) return false;
-                      return true;
-                    });
-                    batchTasksUpdate(compatibleChanges, snapshot.metadata.fromCache);
+                    if (!fromCache) {
+                      const zombieRemovals = buildZombieTaskRemovalsForProject(
+                        snapshot.docs,
+                        useAppStore.getState().tasks || [],
+                        p
+                      );
+                      if (zombieRemovals.length > 0) compatibleChanges = [...compatibleChanges, ...zombieRemovals];
+                    }
+
+                    batchTasksUpdate(compatibleChanges, fromCache);
                     setCloudStatus("online");
 
-                    if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
-                      markLoaded('tasks_proj', p.code).catch(() => {});
+                    if (DELTA_FIRST.tasks && !fromCache) {
+                      markLoaded('tasks_proj', p.id).catch(() => {});
                       const u = tasksPool.current.get(projKey);
                       tasksPool.current.set(projKey, () => {});
                       u?.();

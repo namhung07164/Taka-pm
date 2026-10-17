@@ -14,7 +14,7 @@ import type { TakaDelta } from '../types';
  * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
  */
 
-const OVERLAP_MS = 3 * 60 * 1000; // clock-skew window, duplicates filtered by delta id
+const OVERLAP_MS = 10 * 1000; // serverTime overlap window, duplicates filtered by delta id
 const DETACH_AFTER_HIDDEN_MS = 2 * 60 * 1000;
 const RETRY_MS = 30 * 1000;
 
@@ -61,7 +61,10 @@ export function startDeltaRealtimeListener(): () => void {
       q,
       (snap) => {
         snap.docChanges().forEach((c) => {
-          if (c.type === 'added') buffer.push(c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta);
+          if (c.type === 'added' || c.type === 'modified') {
+            const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
+            buffer.push({ ...raw, id: raw.id || c.doc.id });
+          }
         });
         if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
       },

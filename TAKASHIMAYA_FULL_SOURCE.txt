@@ -1,8 +1,3 @@
-// ============================================================================
-// TAKASHIMAYA FULL SOURCE - SINGLE SOURCE OF TRUTH
-// Updated at: 2026-10-17T07:38:38.567Z
-// ============================================================================
-
 // === FILE: firebase-applet-config.json ===
 {
   "projectId": "taka---projec-1",
@@ -25955,17 +25950,22 @@ export function useDetailTaskMutations({
         );
         if (!realTask && t.projectCode) {
           try {
-            const { collection, query, where, getDocs } = await import('firebase/firestore');
-            const q = query(
-              collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-              where('projectCode', '==', t.projectCode)
-            );
-            const snap = await getDocs(q);
-            const loaded: Task[] = [];
-            snap.forEach(d => {
-              const dt = { id: d.id, ...d.data() } as Task;
-              if (!dt.isDeleted) loaded.push(dt);
-            });
+            const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
+            let loaded: Task[] = (await getLocalTasksForProjects([t.projectCode])).filter(dt => !dt.isDeleted);
+            if (!loaded.some(sameProjectIdentity)) {
+              const { collection, query, where, getDocs } = await import('firebase/firestore');
+              const q = query(
+                collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+                where('projectCode', '==', t.projectCode)
+              );
+              const snap = await getDocs(q);
+              loaded = [];
+              snap.forEach(d => {
+                const dt = { id: d.id, ...d.data() } as Task;
+                if (!dt.isDeleted) loaded.push(dt);
+              });
+              if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
+            }
             // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
             const loadedSame = loaded.filter(sameProjectIdentity);
             if (loadedSame.length > 0) {
@@ -26172,22 +26172,24 @@ export function useDetailTaskMutations({
         ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
         ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
       ];
+      const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+        const prev = tasks.find((tsk) => tsk.id === item.id);
+        return createPatchDeltaItem({
+          docId: item.id,
+          collectionName: 'taka_tasks',
+          previous: prev,
+          updated: item,
+          action: 'update',
+          year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+        });
+      });
+
       saveTaskStateUnified(allUpdatesToSave);
 
       try {
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
         await batch.commit();
-
-        const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
-          const prev = tasks.find((tsk) => tsk.id === item.id);
-          return createPatchDeltaItem({
-            docId: item.id,
-            collectionName: 'taka_tasks',
-            previous: prev,
-            updated: item,
-            action: 'update',
-            year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
-          });
-        });
         recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
       } catch (error: any) {
         console.error("Batch commit failed", error);
@@ -70860,23 +70862,33 @@ export async function handleProjectIdentityChange({
     return matchesCode && matchesYear && matchesStore;
   });
 
-  // If memory does not have tasks for this project (e.g. mobile lazy load), fetch them from Firestore
-  if (relatedTasks.length === 0 && project.code) {
+  // If memory does not have tasks for this project (e.g. mobile lazy load), check Dexie first, then Firestore only if needed
+  if (relatedTasks.length === 0 && project.code && (project.taskCount || (project.taskSummaries && project.taskSummaries.length > 0))) {
     try {
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      const q = query(
-        collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-        where('projectCode', '==', project.code)
-      );
-      const snap = await getDocs(q);
-      const loaded: Task[] = [];
-      snap.forEach(d => {
-        const dt = { id: d.id, ...d.data() } as Task;
-        if (!dt.isDeleted) loaded.push(dt);
-      });
+      const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
+      let loaded: Task[] = (await getLocalTasksForProjects([project.code])).filter(dt => !dt.isDeleted);
+      if (loaded.length === 0) {
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const q = query(
+          collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+          where('projectCode', '==', project.code)
+        );
+        const snap = await getDocs(q);
+        loaded = [];
+        snap.forEach(d => {
+          const dt = { id: d.id, ...d.data() } as Task;
+          if (!dt.isDeleted) loaded.push(dt);
+        });
+        if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
+      }
       if (loaded.length > 0) {
-        relatedTasks = loaded;
-        rawTasks = [...rawTasks, ...loaded];
+        relatedTasks = loaded.filter(t => {
+          const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
+          const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
+          return matchesYear && matchesStore;
+        });
+        const existingIds = new Set(rawTasks.map(t => t.id));
+        rawTasks = [...rawTasks, ...loaded.filter(t => !existingIds.has(t.id))];
         useAppStore.getState().setTasks(rawTasks);
       }
     } catch (err) {
@@ -70992,24 +71004,29 @@ export async function handleProjectIdentityChange({
   });
   useAppStore.getState().setProjects(updatedProjects);
 
+  const identityDeltaItems = [
+    { docId, collectionName: 'taka_projects' as const, action: 'update' as const, data: dataToSave, year: String(yearNum) },
+    ...relatedTasks.map(t => ({
+      docId: t.id,
+      collectionName: 'taka_tasks' as const,
+      action: 'update' as const,
+      data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
+      year: String(yearNum)
+    })),
+    ...relatedCosts.map(c => ({
+      docId: c.id,
+      collectionName: 'taka_costs' as const,
+      action: 'update' as const,
+      data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
+      year: String(yearNum)
+    }))
+  ];
+  import('../../lib/autoDeltaQueue')
+    .then(({ markExplicitDelta }) => markExplicitDelta(identityDeltaItems))
+    .catch(() => {});
+
   batch.commit().then(() => {
-    recordBatchDeltas([
-      { docId, collectionName: 'taka_projects', action: 'update', data: dataToSave, year: String(yearNum) },
-      ...relatedTasks.map(t => ({
-        docId: t.id,
-        collectionName: 'taka_tasks' as const,
-        action: 'update' as const,
-        data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
-        year: String(yearNum)
-      })),
-      ...relatedCosts.map(c => ({
-        docId: c.id,
-        collectionName: 'taka_costs' as const,
-        action: 'update' as const,
-        data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
-        year: String(yearNum)
-      }))
-    ]).catch(console.error);
+    recordBatchDeltas(identityDeltaItems).catch(console.error);
   }).catch(e => {
     console.error("Batch commit failed", e);
     setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
@@ -71187,16 +71204,13 @@ export function useProjectModalData({
     onConfirm: () => {}
   });
 
-  // JIT Targeted Local-First Task & Delegation Hydration for Project (0ms, 0 Read)
+  // JIT Targeted Local-First Task & Delegation Hydration for Project (0ms, 0 Read - Rule 8)
   useEffect(() => {
     if (isOpen && project) {
       const keys = [project.id, project.code].filter(Boolean) as string[];
       if (keys.length > 0) {
         hydrateTasksForProjects(keys).catch(() => {});
         hydrateDelegationsForProjects(keys).catch(() => {});
-        if (project.code) {
-          ensureProjectTasksLoaded(project.code).catch(() => {});
-        }
       }
     }
   }, [isOpen, project?.id, project?.code]);
@@ -83998,22 +84012,27 @@ export async function executeTaskSave({
     );
     if (!realTask && currentProject?.code) {
       try {
-        const { collection, query, where, getDocs } = await import('firebase/firestore');
-        const q = query(
-          collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-          where('projectCode', '==', currentProject.code)
-        );
-        const snap = await getDocs(q);
-        const loaded: Task[] = [];
-        snap.forEach(d => {
-          const dt = { id: d.id, ...d.data() } as Task;
-          if (!dt.isDeleted) loaded.push(dt);
-        });
-        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
-        const loadedSame = loaded.filter(x =>
+        const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
+        const sameIdentity = (x: Task) =>
           String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
-          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim()
-        );
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim();
+        let loaded: Task[] = (await getLocalTasksForProjects([currentProject.code])).filter(dt => !dt.isDeleted);
+        if (!loaded.some(sameIdentity)) {
+          const { collection, query, where, getDocs } = await import('firebase/firestore');
+          const q = query(
+            collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+            where('projectCode', '==', currentProject.code)
+          );
+          const snap = await getDocs(q);
+          loaded = [];
+          snap.forEach(d => {
+            const dt = { id: d.id, ...d.data() } as Task;
+            if (!dt.isDeleted) loaded.push(dt);
+          });
+          if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
+        }
+        // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+        const loadedSame = loaded.filter(sameIdentity);
         if (loadedSame.length > 0) {
           const latestTasks = useAppStore.getState().tasks || tasks;
           const existingIds = new Set(latestTasks.map(tsk => tsk.id));
@@ -84259,7 +84278,6 @@ export async function executeTaskSave({
     // Offload network commit, delta emission, and project date rollups to non-blocking background microtask
     setTimeout(async () => {
       try {
-        await batch.commit();
         const deltaItems = optimisticList.map(item => {
           const prev = tasks.find(t => t.id === item.id);
           return createPatchDeltaItem({
@@ -84271,6 +84289,9 @@ export async function executeTaskSave({
             year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
           });
         });
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
+        await batch.commit();
         recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
 
         if (datesOrStatusChanged) {
@@ -86130,6 +86151,126 @@ export function groupActiveProjectsByYear(
   return map;
 }
 
+/**
+ * Checks if a task belongs to a specific project by ID or (code + store + year).
+ */
+export function doesTaskBelongToProject(t: Task, p: Project): boolean {
+  if (t.projectId) return String(t.projectId) === String(p.id);
+  return (
+    String(t.projectCode || "") === String(p.code) &&
+    String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+    String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
+  );
+}
+
+/**
+ * Filters snapshot.docChanges() from a projectCode query so only tasks belonging to project `p` are applied.
+ */
+export function filterCompatibleProjectChanges(docChanges: any[], p: Project): any[] {
+  return docChanges.filter((ch) => {
+    const dt: any = ch.doc.data();
+    if (ch.type === "removed") {
+      if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+      if (
+        dt &&
+        dt.projectStore &&
+        p.store &&
+        String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
+      ) {
+        return false;
+      }
+      return true;
+    }
+    if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+    if (
+      dt.projectStore &&
+      p.store &&
+      String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
+    ) {
+      return false;
+    }
+    const dy = dt.projectYear;
+    if (
+      dy !== undefined &&
+      dy !== null &&
+      dy !== "" &&
+      p.year &&
+      String(dy).trim() !== String(p.year).trim()
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Builds synthetic "removed" docChanges for any local task in `year` that no longer exists in a server snapshot.
+ */
+export function buildZombieTaskRemovalsForYear(
+  snapshotDocs: any[],
+  currentTasks: Task[],
+  year: string | number,
+  userRole: string | undefined,
+  allowedStores: string[]
+): any[] {
+  const serverIds = new Set<string>();
+  snapshotDocs.forEach((d) => serverIds.add(d.id));
+  const nowMs = Date.now();
+  const allowedLower = allowedStores.map((s) => s.toLowerCase());
+  const isStoreRestricted = userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+  const zombieRemovals: any[] = [];
+
+  currentTasks.forEach((t) => {
+    if (
+      t?.id &&
+      !t.id.startsWith("ts_") &&
+      String(t.projectYear ?? "").trim() === String(year).trim() &&
+      !serverIds.has(t.id)
+    ) {
+      if (isStoreRestricted && t.projectStore && !allowedLower.includes(String(t.projectStore).trim().toLowerCase())) {
+        return;
+      }
+      const updatedMs = t.updatedAt ? Date.parse(String(t.updatedAt)) : 0;
+      if (!updatedMs || nowMs - updatedMs > 30000) {
+        zombieRemovals.push({
+          type: "removed",
+          doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
+        });
+      }
+    }
+  });
+
+  return zombieRemovals;
+}
+
+/**
+ * Builds synthetic "removed" docChanges for any local task of project `p` that no longer exists in a server snapshot.
+ */
+export function buildZombieTaskRemovalsForProject(
+  snapshotDocs: any[],
+  currentTasks: Task[],
+  p: Project
+): any[] {
+  const serverIds = new Set<string>();
+  snapshotDocs.forEach((d) => serverIds.add(d.id));
+  const nowMs = Date.now();
+  const zombieRemovals: any[] = [];
+
+  currentTasks.forEach((t) => {
+    if (t?.id && !t.id.startsWith("ts_") && doesTaskBelongToProject(t, p) && !serverIds.has(t.id)) {
+      const updatedMs = t.updatedAt ? Date.parse(String(t.updatedAt)) : 0;
+      if (!updatedMs || nowMs - updatedMs > 30000) {
+        zombieRemovals.push({
+          type: "removed",
+          doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
+        });
+      }
+    }
+  });
+
+  return zombieRemovals;
+}
+
 
 // === FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ===
 import { useEffect, useRef, useCallback } from "react";
@@ -86263,7 +86404,10 @@ export function useCostsHydration({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      costsPool.current.forEach((u) => u());
+      costsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+      });
       costsPool.current.clear();
       costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
       costsTTLTimeouts.current.clear();
@@ -86295,7 +86439,10 @@ export function useCostsHydration({
     costsTTLTimeouts.current.clear();
 
     if (prevSigCosts.current !== querySignature) {
-      costsPool.current.forEach((u) => u());
+      costsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+      });
       costsPool.current.clear();
       prevSigCosts.current = querySignature;
     }
@@ -86561,7 +86708,10 @@ export function useDelegationsHydration({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      delegationsPool.current.forEach((u) => u());
+      delegationsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${key}`);
+      });
       delegationsPool.current.clear();
       delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
       delegationsTTLTimeouts.current.clear();
@@ -86583,7 +86733,10 @@ export function useDelegationsHydration({
 
     if (prevQuerySigDelegations.current !== querySignature) {
       if (prevQuerySigDelegations.current !== "") {
-        delegationsPool.current.forEach((u) => u());
+        delegationsPool.current.forEach((u, key) => {
+          u();
+          usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${key}`);
+        });
         delegationsPool.current.clear();
         delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
         delegationsTTLTimeouts.current.clear();
@@ -86835,41 +86988,27 @@ export function useProjectsHydration({
           taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
         } : data;
 
-        // If this is a live server update and taskSummaries has shrunk (a task was deleted on another device),
-        // immediately detect the removed task IDs and purge them from Zustand tasks & Dexie!
-        if (!fromCache && Array.isArray(data.taskSummaries)) {
+        // If this is a live server update and taskSummaries has shrunk compared to existing project state
+        // (a task was deleted on another device), immediately detect the removed task IDs and purge them!
+        if (
+          !fromCache &&
+          existing &&
+          Array.isArray(existing.taskSummaries) &&
+          Array.isArray(data.taskSummaries) &&
+          data.taskSummaries.length < existing.taskSummaries.length
+        ) {
           const incomingIds = new Set(
             data.taskSummaries
               .map((s: any) => (s?.id ? String(s.id).trim().toLowerCase() : ""))
               .filter(Boolean)
           );
-          if (existing && Array.isArray(existing.taskSummaries)) {
-            existing.taskSummaries.forEach((oldS: any) => {
-              const oldId = oldS?.id ? String(oldS.id).trim() : "";
-              if (oldId && !incomingIds.has(oldId.toLowerCase())) {
-                markTasksDeleted([oldId], id);
-                pendingDeletedTaskIds.current.add(oldId);
-              }
-            });
-          }
-          // Also check in-memory tasks belonging to this project if all incoming summaries carry IDs (or summaries is empty)
-          const allIncomingHaveIds = data.taskSummaries.every((s: any) => Boolean(s?.id));
-          if (allIncomingHaveIds) {
-            const currentTasks = useAppStore.getState().tasks || [];
-            const nowMs = Date.now();
-            currentTasks.forEach((t) => {
-              if (!t || !t.id || t.isDeleted) return;
-              if (!isTaskBelongsToProject(t, resolvedData)) return;
-              const tIdLower = String(t.id).trim().toLowerCase();
-              if (!incomingIds.has(tIdLower)) {
-                // Guard against tasks created/updated locally within the last 15 seconds (optimistic UI in-flight)
-                const taskUpdatedMs = tsOf(t.updatedAt || (t as any).createdAt);
-                if (taskUpdatedMs > 0 && nowMs - taskUpdatedMs < 15000) return;
-                markTasksDeleted([t.id], id);
-                pendingDeletedTaskIds.current.add(t.id);
-              }
-            });
-          }
+          existing.taskSummaries.forEach((oldS: any) => {
+            const oldId = oldS?.id ? String(oldS.id).trim() : "";
+            if (oldId && !incomingIds.has(oldId.toLowerCase())) {
+              markTasksDeleted([oldId], id);
+              pendingDeletedTaskIds.current.add(oldId);
+            }
+          });
         }
 
         pendingProjectsMap.current!.set(id, resolvedData);
@@ -86958,7 +87097,10 @@ export function useProjectsHydration({
   // Unmount cleanup
   useEffect(() => {
     return () => {
-      projectsPool.current.forEach((u) => u());
+      projectsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
+      });
       projectsPool.current.clear();
       if (projectsBatchTimer.current) clearTimeout(projectsBatchTimer.current);
     };
@@ -86969,7 +87111,10 @@ export function useProjectsHydration({
     if (!querySignature) return;
 
     if (prevSigProjects.current !== querySignature) {
-      projectsPool.current.forEach((u) => u());
+      projectsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
+      });
       projectsPool.current.clear();
       prevSigProjects.current = querySignature;
     }
@@ -87036,10 +87181,45 @@ export function useProjectsHydration({
           qProjects,
           (snapshot) => {
             usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
-            batchProjectsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+            const fromCache = snapshot.metadata.fromCache;
+            let changesToApply: any[] = snapshot.docChanges();
+
+            // Server snapshot reconciliation: purge any zombie project in Dexie/Zustand for this year that no longer exists on server
+            if (!fromCache) {
+              const serverIds = new Set<string>();
+              snapshot.docs.forEach((d) => serverIds.add(d.id));
+              const currentProjectsNow = useAppStore.getState().projects || [];
+              const nowMs = Date.now();
+              const allowedLower = allowedStores.map((s) => s.toLowerCase());
+              const isStoreRestricted = userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+              const zombieRemovals: any[] = [];
+              currentProjectsNow.forEach((p) => {
+                if (
+                  p?.id &&
+                  String(p.year ?? "").trim() === String(year).trim() &&
+                  !serverIds.has(p.id)
+                ) {
+                  if (isStoreRestricted && p.store && !allowedLower.includes(String(p.store).trim().toLowerCase())) {
+                    return;
+                  }
+                  const updatedMs = tsOf(p.updatedAt);
+                  if (!updatedMs || nowMs - updatedMs > 30000) {
+                    zombieRemovals.push({
+                      type: "removed",
+                      doc: { id: p.id, data: () => ({ ...p, isDeleted: true }) },
+                    });
+                  }
+                }
+              });
+              if (zombieRemovals.length > 0) {
+                changesToApply = [...changesToApply, ...zombieRemovals];
+              }
+            }
+
+            batchProjectsUpdate(changesToApply, fromCache);
             setCloudStatus("online");
 
-            if (DELTA_FIRST.projects && !snapshot.metadata.fromCache) {
+            if (DELTA_FIRST.projects && !fromCache) {
               markLoaded('projects_year', year).catch(() => {});
               const u = projectsPool.current.get(year);
               projectsPool.current.set(year, () => {});
@@ -87531,7 +87711,15 @@ interface UseTasksHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear } from "./tasksHydrationHelpers";
+import {
+  isStaleCacheDoc,
+  extractKeysToHydrate,
+  groupActiveProjectsByYear,
+  doesTaskBelongToProject,
+  filterCompatibleProjectChanges,
+  buildZombieTaskRemovalsForYear,
+  buildZombieTaskRemovalsForProject,
+} from "./tasksHydrationHelpers";
 
 export function useTasksHydration({
   querySignature,
@@ -87890,10 +88078,22 @@ export function useTasksHydration({
                 (snapshot) => {
                   usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
                   setIsTasksLoading(false);
-                  batchTasksUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+                  const fromCache = snapshot.metadata.fromCache;
+                  let changesToApply: any[] = snapshot.docChanges();
+                  if (!fromCache) {
+                    const zombieRemovals = buildZombieTaskRemovalsForYear(
+                      snapshot.docs,
+                      useAppStore.getState().tasks || [],
+                      year,
+                      userRole,
+                      allowedStores
+                    );
+                    if (zombieRemovals.length > 0) changesToApply = [...changesToApply, ...zombieRemovals];
+                  }
+                  batchTasksUpdate(changesToApply, fromCache);
                   setCloudStatus("online");
 
-                  if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
+                  if (DELTA_FIRST.tasks && !fromCache) {
                     markLoaded('tasks_year', year).catch(() => {});
                     const u = tasksPool.current.get(yearKey);
                     tasksPool.current.set(yearKey, () => {});
@@ -87911,9 +88111,7 @@ export function useTasksHydration({
             }
           }
         } else {
-          const visibleSet = new Set(
-            (visibleActiveProjectIdsRef.current || []).map((id) => String(id))
-          );
+          const visibleSet = new Set((visibleActiveProjectIdsRef.current || []).map((id) => String(id)));
           const sortedProjs = [...projs].sort((a, b) => {
             const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
             const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
@@ -87938,33 +88136,31 @@ export function useTasksHydration({
 
             if (!tasksPool.current.has(projKey)) {
               const currentTasks = useAppStore.getState().tasks || [];
-              // So khớp theo đúng dự án (projectId, hoặc đủ store + year + code), không chỉ theo mã
-              const belongsHere = (t: Task): boolean => {
-                if (t.projectId) return String(t.projectId) === String(p.id);
-                return (
-                  String(t.projectCode || "") === String(p.code) &&
-                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
-                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
-                );
-              };
+              const localProjTasks = currentTasks.filter((t) => doesTaskBelongToProject(t, p));
               const hasLocalProjTasks =
-                currentTasks.some(belongsHere) ||
+                localProjTasks.length > 0 ||
                 knownHydratedProjectCodes.current.has(String(p.id));
               const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+              const isZeroTaskProject =
+                (p.taskCount || 0) === 0 &&
+                Array.isArray(p.taskSummaries) &&
+                p.taskSummaries.length === 0 &&
+                localProjTasks.length === 0;
 
               const deltaManaged =
+                isZeroTaskProject ||
                 (hasLocalProjTasks && isClosedOrPastYear) ||
-                (DELTA_FIRST.tasks && (hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
+                (DELTA_FIRST.tasks && (hasMarker(markers, 'tasks_proj', p.id) || hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
               if (deltaManaged) {
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
-                needTasksDeltaSync = true;
+                if (!isZeroTaskProject) needTasksDeltaSync = true;
                 usePerformanceStore
                   .getState()
                   .trackGetDoc(
                     `taka_tasks_${projKey}`,
                     true,
-                    1,
+                    localProjTasks.length,
                     "Dexie Local-First Project Tasks (0 Read)"
                   );
               } else {
@@ -87980,30 +88176,23 @@ export function useTasksHydration({
                     knownHydratedProjectCodes.current.add(String(p.id));
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
+                    const fromCache = snapshot.metadata.fromCache;
+                    let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), p);
 
-                    // Truy vấn theo projectCode trả về cả task của store/năm khác có cùng mã: chỉ nhận task đúng dự án.
-                    // Task cũ thiếu projectStore/projectYear vẫn được giữ (khớp lỏng như getTasksForProject).
-                    const compatibleChanges = snapshot.docChanges().filter((ch) => {
-                      const dt: any = ch.doc.data();
-                      if (ch.type === "removed") {
-                        if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
-                        if (dt && dt.projectStore && p.store &&
-                            String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
-                        return true;
-                      }
-                      if (dt.projectId && String(dt.projectId) !== String(p.id)) return false;
-                      if (dt.projectStore && p.store &&
-                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
-                      const dy = dt.projectYear;
-                      if (dy !== undefined && dy !== null && dy !== "" && p.year &&
-                          String(dy).trim() !== String(p.year).trim()) return false;
-                      return true;
-                    });
-                    batchTasksUpdate(compatibleChanges, snapshot.metadata.fromCache);
+                    if (!fromCache) {
+                      const zombieRemovals = buildZombieTaskRemovalsForProject(
+                        snapshot.docs,
+                        useAppStore.getState().tasks || [],
+                        p
+                      );
+                      if (zombieRemovals.length > 0) compatibleChanges = [...compatibleChanges, ...zombieRemovals];
+                    }
+
+                    batchTasksUpdate(compatibleChanges, fromCache);
                     setCloudStatus("online");
 
-                    if (DELTA_FIRST.tasks && !snapshot.metadata.fromCache) {
-                      markLoaded('tasks_proj', p.code).catch(() => {});
+                    if (DELTA_FIRST.tasks && !fromCache) {
+                      markLoaded('tasks_proj', p.id).catch(() => {});
                       const u = tasksPool.current.get(projKey);
                       tasksPool.current.set(projKey, () => {});
                       u?.();
@@ -91134,7 +91323,7 @@ export const LOGICAL_TO_FS: Record<Logical, string> = {
   taka_delegations: 'taka_delegation_groups',
 };
 
-const FLUSH_DELAY_MS = 200;
+const FLUSH_DELAY_MS = 1200;
 const MAX_ITEMS_PER_DELTA = 300;
 const EXPLICIT_BEFORE_MS = 5000;
 const EXPLICIT_AFTER_MS = 15000;
@@ -93575,12 +93764,89 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         }
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
 
-        tasksChanged = true;
+        const mergedTask = (idx !== -1 ? applyFieldPatch(updatedTasks[idx], data) : { id: docId, ...data }) as Task;
+
+        // Upsert task summary in matching project if project already has taskSummaries (keeps collapsed/General view 100% synced)
+        if (mergedTask.start && mergedTask.finish && mergedTask.name) {
+          const docIdLower = String(docId).trim().toLowerCase();
+          const tProjId = mergedTask.projectId ? String(mergedTask.projectId) : '';
+          const tCodeLower = mergedTask.projectCode ? String(mergedTask.projectCode).trim().toLowerCase() : '';
+          const tStoreLower = mergedTask.projectStore ? String(mergedTask.projectStore).trim().toLowerCase() : '';
+          const tYearStr = mergedTask.projectYear !== undefined && mergedTask.projectYear !== null ? String(mergedTask.projectYear).trim() : '';
+
+          updatedProjects = updatedProjects.map((p) => {
+            const matchesProj =
+              (tProjId && String(p.id) === tProjId) ||
+              (!tProjId &&
+                tCodeLower &&
+                String(p.code || '').trim().toLowerCase() === tCodeLower &&
+                (!tStoreLower || !p.store || String(p.store).trim().toLowerCase() === tStoreLower) &&
+                (!tYearStr || !p.year || String(p.year).trim() === tYearStr));
+            if (!matchesProj) return p;
+
+            const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
+            const sIdx = currentSummaries.findIndex((s: any) => String(s?.id || '').trim().toLowerCase() === docIdLower);
+            const summaryItem = {
+              ...(sIdx !== -1 ? currentSummaries[sIdx] : {}),
+              id: docId,
+              name: mergedTask.name,
+              start: mergedTask.start,
+              finish: mergedTask.finish,
+              orderIndex: mergedTask.orderIndex ?? (sIdx !== -1 ? currentSummaries[sIdx].orderIndex : currentSummaries.length),
+              ...(mergedTask.baselineStart ? { baselineStart: mergedTask.baselineStart } : {}),
+              ...(mergedTask.baselineFinish ? { baselineFinish: mergedTask.baselineFinish } : {}),
+              ...(mergedTask.approval ? { approval: mergedTask.approval } : {}),
+              ...(mergedTask.party ? { party: mergedTask.party } : {}),
+              ...(mergedTask.taskCodePhu ? { taskCodePhu: mergedTask.taskCodePhu } : {}),
+              ...(mergedTask.parentTaskId ? { parentTaskId: mergedTask.parentTaskId } : {}),
+              ...(mergedTask.duration !== undefined ? { duration: mergedTask.duration } : {}),
+              ...(mergedTask.runningStatus ? { runningStatus: mergedTask.runningStatus } : {}),
+              ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
+            };
+            if (sIdx !== -1) {
+              currentSummaries[sIdx] = summaryItem;
+              projectsChanged = true;
+              return { ...p, taskSummaries: currentSummaries, taskCount: currentSummaries.length };
+            } else if (action === 'create') {
+              currentSummaries.push(summaryItem);
+              projectsChanged = true;
+              return { ...p, taskSummaries: currentSummaries, taskCount: currentSummaries.length };
+            }
+            return p;
+          });
+        }
+
         if (idx !== -1) {
-          updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
+          tasksChanged = true;
+          updatedTasks[idx] = mergedTask;
         } else if (action === 'create') {
-          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
-          updatedTasks.push({ id: docId, ...data } as Task);
+          // Tri-Gate & Partial-Hydration Guard (Rule 14):
+          // Only push new task into in-memory Zustand if Tasks slice is requested AND the project is hydrated/expanded
+          // (Dexie still receives 100% of deltas via applyDeltasToLocalDatabase below)
+          if (store.isTasksRequested || updatedTasks.length > 0) {
+            const expandedSet = new Set([...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String));
+            const tProjId = mergedTask.projectId ? String(mergedTask.projectId) : '';
+            const tCode = mergedTask.projectCode ? String(mergedTask.projectCode) : '';
+            const projInMemory = updatedTasks.some(
+              (t) =>
+                (tProjId && String(t.projectId) === tProjId) ||
+                (tCode && String(t.projectCode || '').toLowerCase() === tCode.toLowerCase())
+            );
+            const matchingProj = updatedProjects.find(
+              (p) => (tProjId && String(p.id) === tProjId) || (tCode && String(p.code || '').toLowerCase() === tCode.toLowerCase())
+            );
+            const isProjExpandedOrEmpty =
+              projInMemory ||
+              (tProjId && expandedSet.has(tProjId)) ||
+              (tCode && expandedSet.has(tCode)) ||
+              !matchingProj ||
+              (matchingProj.taskSummaries?.length || 0) <= 1;
+
+            if (isProjExpandedOrEmpty) {
+              tasksChanged = true;
+              updatedTasks.push(mergedTask);
+            }
+          }
         }
         break;
       }
@@ -93588,12 +93854,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_costs': {
         const idx = updatedCosts.findIndex((c) => c.id === docId);
         if (isDelete || data?.isDeleted) {
+          localDb.costs.delete(docId).catch(() => {});
           if (idx !== -1) {
             costsChanged = true;
             updatedCosts = updatedCosts.filter((c) => c.id !== docId);
           }
           break;
         }
+        // Tri-Gate Guard (Rule 14): Do not populate in-memory costs if Cost slice has not been requested yet
+        if (!store.isCostsRequested && updatedCosts.length === 0) return;
         if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
 
         costsChanged = true;
@@ -93609,6 +93878,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_delegations': {
         const idx = updatedDelegations.findIndex((g) => g.id === docId);
         if (isDelete || data?.isDeleted) {
+          localDb.delegations.delete(docId).catch(() => {});
           if (idx !== -1) {
             delegationsChanged = true;
             updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
@@ -93692,12 +93962,44 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       if (!isTouched) return p;
 
       const pTasks = getTasksForProject(p, updatedTasks);
-      const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+      const existingSummaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : [];
+
+      // If tasks for this project are not hydrated in RAM (e.g. General tab or collapsed project),
+      // compute project dates from p.taskSummaries instead of wiping taskSummaries with an empty pTasks array!
+      const useInMemoryTasks = pTasks.length > 0 && pTasks.length >= existingSummaries.length;
+      const sourceTasksForCalc: Task[] = useInMemoryTasks
+        ? pTasks
+        : existingSummaries.map((s: any, idx: number) => ({
+            id: s.id || `ts_${p.id}_${idx}`,
+            projectId: p.id,
+            projectCode: p.code,
+            projectStore: p.store,
+            projectYear: p.year,
+            name: s.name,
+            start: s.start,
+            finish: s.finish,
+            orderIndex: s.orderIndex ?? idx,
+            baselineStart: s.baselineStart || s.start,
+            baselineFinish: s.baselineFinish || s.finish,
+            approval: s.approval,
+            party: s.party,
+            taskCodePhu: s.taskCodePhu,
+            parentTaskId: s.parentTaskId,
+            duration: s.duration ?? 0,
+            runningStatus: s.runningStatus,
+            delegation: s.delegation,
+          } as Task));
+
+      const computedDates = calculateProjectComputedDates(p, sourceTasksForCalc, delegationGroups);
       const nextProj: Project = {
         ...p,
         ...computedDates,
-        taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length,
-        taskSummaries: computedDates.taskSummaries || [],
+        taskCount: useInMemoryTasks
+          ? (computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length)
+          : existingSummaries.length,
+        taskSummaries: useInMemoryTasks
+          ? (computedDates.taskSummaries || [])
+          : existingSummaries,
       };
       touchedProjectsToPersist.push(nextProj);
       return nextProj;
@@ -93790,7 +94092,7 @@ describe('deltaBatchSync (Phase 2: Delta Coalescing)', () => {
 export const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 export const RESTORE_CUTOFF_KEY = 'taka_restore_cutoff_time_v1';
 export const DELTA_COLLECTION = 'taka_deltas';
-export const CLOCK_SKEW_OVERLAP_MS = 3 * 60 * 1000;
+export const CLOCK_SKEW_OVERLAP_MS = 10 * 1000;
 export const MAX_APPLIED_IDS = 3000;
 
 export const CLIENT_SESSION_ID = typeof window !== 'undefined'
@@ -93943,10 +94245,20 @@ async function filterRelevant(coll: Logical, ids: string[]): Promise<string[]> {
 }
 
 async function fetchChunk(coll: Logical, ids: string[]) {
-  const col = collection(db, 'artifacts', APP_ID, 'public', 'data', LOGICAL_TO_FS[coll]);
+  const fsColl = LOGICAL_TO_FS[coll];
+  const col = collection(db, 'artifacts', APP_ID, 'public', 'data', fsColl);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await getDocsFromServer(query(col, where(documentId(), 'in', ids)));
+      const snap = await getDocsFromServer(query(col, where(documentId(), 'in', ids)));
+      usePerformanceStore
+        .getState()
+        .trackGetDoc(
+          `${fsColl}_invalidate`,
+          false,
+          snap.size || 1,
+          `Delta invalidate fetch (${ids.length} id)`
+        );
+      return snap;
     } catch (err) {
       if (attempt === 1) console.warn('[deltaInvalidate] fetch failed:', err);
       else await sleep(2000);
@@ -94101,10 +94413,19 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   });
 
   // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
+  let hiddenSince = 0;
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
-      wakeAndSync();
+      const hiddenDuration = hiddenSince ? Date.now() - hiddenSince : 0;
+      hiddenSince = 0;
+      lastActivityTime = Date.now();
+      if (isHibernating || hiddenDuration >= 15000) {
+        wakeAndSync();
+      } else {
+        startPolling();
+      }
     } else {
+      hiddenSince = Date.now();
       hibernate();
     }
   };
@@ -94114,7 +94435,9 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     wakeAndSync();
   };
   const handleFocus = () => {
-    if (document.visibilityState === 'visible') {
+    lastActivityTime = Date.now();
+    // Only force a server pull on focus if the poller had entered hibernation (>5 min idle)
+    if (document.visibilityState === 'visible' && isHibernating) {
       wakeAndSync();
     }
   };
@@ -94727,7 +95050,7 @@ import type { TakaDelta } from '../types';
  * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
  */
 
-const OVERLAP_MS = 3 * 60 * 1000; // clock-skew window, duplicates filtered by delta id
+const OVERLAP_MS = 10 * 1000; // serverTime overlap window, duplicates filtered by delta id
 const DETACH_AFTER_HIDDEN_MS = 2 * 60 * 1000;
 const RETRY_MS = 30 * 1000;
 
@@ -94774,7 +95097,10 @@ export function startDeltaRealtimeListener(): () => void {
       q,
       (snap) => {
         snap.docChanges().forEach((c) => {
-          if (c.type === 'added') buffer.push(c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta);
+          if (c.type === 'added' || c.type === 'modified') {
+            const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
+            buffer.push({ ...raw, id: raw.id || c.doc.id });
+          }
         });
         if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
       },
@@ -97059,9 +97385,9 @@ import { recordAuditLog } from './auditLogService';
 
 export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
   const cleanData = removeUndefinedDeep(data);
-  queueAutoDelta(ref?.path, ref?.id, cleanData?.isDeleted ? 'delete' : 'write');
+  const isDel = Boolean(cleanData?.isDeleted);
   // Inject serverTimestamp for consistency (Rule 15)
-  if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+  if (cleanData && typeof cleanData === 'object' && !isDel) {
     (cleanData as any).updatedAt = serverTimestamp();
   }
   
@@ -97075,18 +97401,22 @@ export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
     }).catch(() => {});
   }
 
-  if (cleanData?.isDeleted) {
+  if (isDel) {
     const logical = resolveLogicalCollection(ref?.path);
     if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
   }
-  return (rawSetDoc as any)(ref, cleanData, ...rest);
+  const p = (rawSetDoc as any)(ref, cleanData, ...rest);
+  Promise.resolve(p).then(() => {
+    queueAutoDelta(ref?.path, ref?.id, isDel ? 'delete' : 'write');
+  }).catch(() => {});
+  return p;
 }) as typeof rawSetDoc;
 
 export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
   const cleanData = removeUndefinedDeep(data);
-  queueAutoDelta(ref?.path, ref?.id, cleanData?.isDeleted ? 'delete' : 'write');
+  const isDel = Boolean(cleanData?.isDeleted);
   // Inject serverTimestamp for consistency (Rule 15)
-  if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+  if (cleanData && typeof cleanData === 'object' && !isDel) {
     (cleanData as any).updatedAt = serverTimestamp();
   }
 
@@ -97100,15 +97430,18 @@ export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
     }).catch(() => {});
   }
 
-  if (cleanData?.isDeleted) {
+  if (isDel) {
     const logical = resolveLogicalCollection(ref?.path);
     if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
   }
-  return (rawUpdateDoc as any)(ref, cleanData, ...rest);
+  const p = (rawUpdateDoc as any)(ref, cleanData, ...rest);
+  Promise.resolve(p).then(() => {
+    queueAutoDelta(ref?.path, ref?.id, isDel ? 'delete' : 'write');
+  }).catch(() => {});
+  return p;
 }) as typeof rawUpdateDoc;
 
 export const deleteDoc = ((ref: any) => {
-  queueAutoDelta(ref?.path, ref?.id, 'delete');
   const logical = resolveLogicalCollection(ref?.path);
 
   // Audit log for financial/core changes (Rule 4)
@@ -97122,7 +97455,11 @@ export const deleteDoc = ((ref: any) => {
   }
 
   if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
-  return rawDeleteDoc(ref);
+  const p = rawDeleteDoc(ref);
+  Promise.resolve(p).then(() => {
+    queueAutoDelta(ref?.path, ref?.id, 'delete');
+  }).catch(() => {});
+  return p;
 }) as typeof rawDeleteDoc;
 
 export function writeBatch(dbInstance: any): WriteBatch {
@@ -97151,15 +97488,20 @@ export function writeBatch(dbInstance: any): WriteBatch {
   };
   batch.delete = (ref: any) => { ops.push({ ref, kind: 'delete' }); return origDelete(ref); };
   batch.commit = () => {
-    // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
     ops.forEach((o) => {
-      queueAutoDelta(o.ref?.path, o.ref?.id, (o.kind === 'delete' || o.isDeleted) ? 'delete' : 'write');
       if (o.kind === 'delete' || o.isDeleted) {
         const logical = resolveLogicalCollection(o.ref?.path);
         if (logical && o.ref?.id) deleteLocalRecord(logical, o.ref.id).catch(() => {});
       }
     });
-    return origCommit();
+    const p = origCommit();
+    // Queue auto-delta after server commit resolves so explicit recordBatchDeltas right after await batch.commit() cancels it
+    Promise.resolve(p).then(() => {
+      ops.forEach((o) => {
+        queueAutoDelta(o.ref?.path, o.ref?.id, (o.kind === 'delete' || o.isDeleted) ? 'delete' : 'write');
+      });
+    }).catch(() => {});
+    return p;
   };
   return batch as WriteBatch;
 }
@@ -103720,19 +104062,26 @@ export async function syncProjectDatesToFirestore(
       JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(safeTaskSummaries || dates.taskSummaries || []);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
+    let updatedProjectObj: Project | null = null;
     if (existingProject) {
       const updated = projects.map((p) => {
         if (p.id === projectId) {
-          return {
+          updatedProjectObj = {
             ...p,
             ...dates,
             taskCount: safeTaskCount !== undefined ? safeTaskCount : dates.taskCount,
             taskSummaries: safeTaskSummaries !== undefined ? safeTaskSummaries : dates.taskSummaries,
           };
+          return updatedProjectObj;
         }
         return p;
       });
       setProjects(updated);
+      if (updatedProjectObj && hasChanged) {
+        import("./localDb")
+          .then(({ bulkPersistProjects }) => bulkPersistProjects([updatedProjectObj!]))
+          .catch(() => {});
+      }
     }
 
     if (!hasChanged) {
@@ -103783,6 +104132,9 @@ export async function syncProjectDatesToFirestore(
         return item;
       });
     }
+
+    const { markExplicitDelta } = await import("./autoDeltaQueue");
+    markExplicitDelta([{ docId: projectId, collectionName: "taka_projects" }]);
 
     await setDoc(projectRef, updatePayload, { merge: true });
 
@@ -106570,9 +106922,9 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
   const cleanCode = projectCode.trim();
   const currentTasks = useAppStore.getState().tasks || [];
   
-  // If we already have tasks for this project in memory, return them
+  // 1. If we already have tasks for this project in memory, return them (0 Read)
   const existing = currentTasks.filter(t => 
-    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase()
+    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase() && !t.isDeleted
   );
   if (existing.length > 0) return existing;
 
@@ -106583,6 +106935,33 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
 
   const fetchPromise = (async () => {
     try {
+      // 2. Check Dexie Local-First Database before touching Firestore (0 Read)
+      const { getLocalTasksForProjects, bulkPersistTasks } = await import('./localDb');
+      const localTasks = await getLocalTasksForProjects([cleanCode]);
+      const validLocal = (localTasks || []).filter(t => !t.isDeleted && !isTaskDeletedInTracker(t.id));
+      if (validLocal.length > 0) {
+        const latestTasks = useAppStore.getState().tasks || [];
+        const currentIds = new Set(latestTasks.map(t => t.id));
+        const toAdd = validLocal.filter(t => !currentIds.has(t.id));
+        if (toAdd.length > 0) {
+          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
+        }
+        return validLocal;
+      }
+
+      // 3. Check if project has 0 tasks according to project summary (0 Read)
+      const projects = useAppStore.getState().projects || [];
+      const matchingProjs = projects.filter(
+        p => p.code && p.code.trim().toLowerCase() === cleanCode.toLowerCase()
+      );
+      if (
+        matchingProjs.length > 0 &&
+        matchingProjs.every(p => (p.taskCount || 0) === 0 && (!p.taskSummaries || p.taskSummaries.length === 0))
+      ) {
+        return [];
+      }
+
+      // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
       const q = query(
         collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
         where("projectCode", "==", cleanCode)
@@ -106591,10 +106970,11 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       const loaded: Task[] = [];
       snap.forEach(docSnap => {
         const d = { id: docSnap.id, ...docSnap.data() } as Task;
-        if (!d.isDeleted) loaded.push(d);
+        if (!d.isDeleted && !isTaskDeletedInTracker(d.id)) loaded.push(d);
       });
 
       if (loaded.length > 0) {
+        bulkPersistTasks(loaded).catch(() => {});
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map(t => t.id));
         const toAdd = loaded.filter(t => !currentIds.has(t.id));
@@ -107130,12 +107510,17 @@ export async function deleteProjectStateUnified(
     }
   } catch (e) {}
 
+  if (relatedTaskIds.size > 0) {
+    markTasksDeleted(Array.from(relatedTaskIds), pId);
+  }
+
   // 4. Batch commit đánh dấu isDeleted = true trên Firestore
   try {
     const { doc } = await import('firebase/firestore');
     const { writeBatch } = await import('./firestoreWrites');
     const { db, APP_ID } = await import('./firebase');
     const { recordBatchDeltas } = await import('./deltaSyncService');
+    const { markExplicitDelta } = await import('./autoDeltaQueue');
 
     const batch = writeBatch(db);
 
@@ -107161,22 +107546,24 @@ export async function deleteProjectStateUnified(
       batch.delete(delRef);
     });
 
+    const currentUser = store.currentUser;
+    const deltaItems: any[] = [
+      { docId: pId, collectionName: 'taka_projects', action: 'delete', isPatch: false, data: { id: pId, isDeleted: true }, ...(pYear ? { year: pYear } : {}) },
+      ...relatedTasks.map(t => ({
+        docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: { id: t.id, isDeleted: true, projectId: pId }, ...(t.projectYear ? { year: String(t.projectYear) } : {})
+      })),
+      ...relatedCosts.map(c => ({
+        docId: c.id, collectionName: 'taka_costs', action: 'delete', isPatch: false, data: { id: c.id, isDeleted: true }, ...((c as any).projectYear ? { year: String((c as any).projectYear) } : {})
+      })),
+      ...relatedDelegations.map(d => ({
+        docId: d.id, collectionName: 'taka_delegations', action: 'delete', isPatch: false, data: { id: d.id, isDeleted: true }, ...((d as any).projectYear ? { year: String((d as any).projectYear) } : {})
+      }))
+    ];
+
+    markExplicitDelta(deltaItems);
     await batch.commit();
 
     // 5. Ghi Delta Log
-    const currentUser = store.currentUser;
-    const deltaItems: any[] = [
-      { docId: pId, collectionName: 'taka_projects', action: 'delete', isPatch: false, data: null },
-      ...relatedTasks.map(t => ({
-        docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
-      })),
-      ...relatedCosts.map(c => ({
-        docId: c.id, collectionName: 'taka_costs', action: 'delete', isPatch: false, data: null
-      })),
-      ...relatedDelegations.map(d => ({
-        docId: d.id, collectionName: 'taka_delegation_groups', action: 'delete', isPatch: false, data: null
-      }))
-    ];
     recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
   } catch (err) {
     console.error('[taskStateService] deleteProjectStateUnified Firestore batch commit failed:', err);

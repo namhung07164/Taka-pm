@@ -185,12 +185,89 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         }
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
 
-        tasksChanged = true;
+        const mergedTask = (idx !== -1 ? applyFieldPatch(updatedTasks[idx], data) : { id: docId, ...data }) as Task;
+
+        // Upsert task summary in matching project if project already has taskSummaries (keeps collapsed/General view 100% synced)
+        if (mergedTask.start && mergedTask.finish && mergedTask.name) {
+          const docIdLower = String(docId).trim().toLowerCase();
+          const tProjId = mergedTask.projectId ? String(mergedTask.projectId) : '';
+          const tCodeLower = mergedTask.projectCode ? String(mergedTask.projectCode).trim().toLowerCase() : '';
+          const tStoreLower = mergedTask.projectStore ? String(mergedTask.projectStore).trim().toLowerCase() : '';
+          const tYearStr = mergedTask.projectYear !== undefined && mergedTask.projectYear !== null ? String(mergedTask.projectYear).trim() : '';
+
+          updatedProjects = updatedProjects.map((p) => {
+            const matchesProj =
+              (tProjId && String(p.id) === tProjId) ||
+              (!tProjId &&
+                tCodeLower &&
+                String(p.code || '').trim().toLowerCase() === tCodeLower &&
+                (!tStoreLower || !p.store || String(p.store).trim().toLowerCase() === tStoreLower) &&
+                (!tYearStr || !p.year || String(p.year).trim() === tYearStr));
+            if (!matchesProj) return p;
+
+            const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
+            const sIdx = currentSummaries.findIndex((s: any) => String(s?.id || '').trim().toLowerCase() === docIdLower);
+            const summaryItem = {
+              ...(sIdx !== -1 ? currentSummaries[sIdx] : {}),
+              id: docId,
+              name: mergedTask.name,
+              start: mergedTask.start,
+              finish: mergedTask.finish,
+              orderIndex: mergedTask.orderIndex ?? (sIdx !== -1 ? currentSummaries[sIdx].orderIndex : currentSummaries.length),
+              ...(mergedTask.baselineStart ? { baselineStart: mergedTask.baselineStart } : {}),
+              ...(mergedTask.baselineFinish ? { baselineFinish: mergedTask.baselineFinish } : {}),
+              ...(mergedTask.approval ? { approval: mergedTask.approval } : {}),
+              ...(mergedTask.party ? { party: mergedTask.party } : {}),
+              ...(mergedTask.taskCodePhu ? { taskCodePhu: mergedTask.taskCodePhu } : {}),
+              ...(mergedTask.parentTaskId ? { parentTaskId: mergedTask.parentTaskId } : {}),
+              ...(mergedTask.duration !== undefined ? { duration: mergedTask.duration } : {}),
+              ...(mergedTask.runningStatus ? { runningStatus: mergedTask.runningStatus } : {}),
+              ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
+            };
+            if (sIdx !== -1) {
+              currentSummaries[sIdx] = summaryItem;
+              projectsChanged = true;
+              return { ...p, taskSummaries: currentSummaries, taskCount: currentSummaries.length };
+            } else if (action === 'create') {
+              currentSummaries.push(summaryItem);
+              projectsChanged = true;
+              return { ...p, taskSummaries: currentSummaries, taskCount: currentSummaries.length };
+            }
+            return p;
+          });
+        }
+
         if (idx !== -1) {
-          updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
+          tasksChanged = true;
+          updatedTasks[idx] = mergedTask;
         } else if (action === 'create') {
-          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
-          updatedTasks.push({ id: docId, ...data } as Task);
+          // Tri-Gate & Partial-Hydration Guard (Rule 14):
+          // Only push new task into in-memory Zustand if Tasks slice is requested AND the project is hydrated/expanded
+          // (Dexie still receives 100% of deltas via applyDeltasToLocalDatabase below)
+          if (store.isTasksRequested || updatedTasks.length > 0) {
+            const expandedSet = new Set([...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String));
+            const tProjId = mergedTask.projectId ? String(mergedTask.projectId) : '';
+            const tCode = mergedTask.projectCode ? String(mergedTask.projectCode) : '';
+            const projInMemory = updatedTasks.some(
+              (t) =>
+                (tProjId && String(t.projectId) === tProjId) ||
+                (tCode && String(t.projectCode || '').toLowerCase() === tCode.toLowerCase())
+            );
+            const matchingProj = updatedProjects.find(
+              (p) => (tProjId && String(p.id) === tProjId) || (tCode && String(p.code || '').toLowerCase() === tCode.toLowerCase())
+            );
+            const isProjExpandedOrEmpty =
+              projInMemory ||
+              (tProjId && expandedSet.has(tProjId)) ||
+              (tCode && expandedSet.has(tCode)) ||
+              !matchingProj ||
+              (matchingProj.taskSummaries?.length || 0) <= 1;
+
+            if (isProjExpandedOrEmpty) {
+              tasksChanged = true;
+              updatedTasks.push(mergedTask);
+            }
+          }
         }
         break;
       }
@@ -198,12 +275,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_costs': {
         const idx = updatedCosts.findIndex((c) => c.id === docId);
         if (isDelete || data?.isDeleted) {
+          localDb.costs.delete(docId).catch(() => {});
           if (idx !== -1) {
             costsChanged = true;
             updatedCosts = updatedCosts.filter((c) => c.id !== docId);
           }
           break;
         }
+        // Tri-Gate Guard (Rule 14): Do not populate in-memory costs if Cost slice has not been requested yet
+        if (!store.isCostsRequested && updatedCosts.length === 0) return;
         if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
 
         costsChanged = true;
@@ -219,6 +299,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_delegations': {
         const idx = updatedDelegations.findIndex((g) => g.id === docId);
         if (isDelete || data?.isDeleted) {
+          localDb.delegations.delete(docId).catch(() => {});
           if (idx !== -1) {
             delegationsChanged = true;
             updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
@@ -302,12 +383,44 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       if (!isTouched) return p;
 
       const pTasks = getTasksForProject(p, updatedTasks);
-      const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+      const existingSummaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : [];
+
+      // If tasks for this project are not hydrated in RAM (e.g. General tab or collapsed project),
+      // compute project dates from p.taskSummaries instead of wiping taskSummaries with an empty pTasks array!
+      const useInMemoryTasks = pTasks.length > 0 && pTasks.length >= existingSummaries.length;
+      const sourceTasksForCalc: Task[] = useInMemoryTasks
+        ? pTasks
+        : existingSummaries.map((s: any, idx: number) => ({
+            id: s.id || `ts_${p.id}_${idx}`,
+            projectId: p.id,
+            projectCode: p.code,
+            projectStore: p.store,
+            projectYear: p.year,
+            name: s.name,
+            start: s.start,
+            finish: s.finish,
+            orderIndex: s.orderIndex ?? idx,
+            baselineStart: s.baselineStart || s.start,
+            baselineFinish: s.baselineFinish || s.finish,
+            approval: s.approval,
+            party: s.party,
+            taskCodePhu: s.taskCodePhu,
+            parentTaskId: s.parentTaskId,
+            duration: s.duration ?? 0,
+            runningStatus: s.runningStatus,
+            delegation: s.delegation,
+          } as Task));
+
+      const computedDates = calculateProjectComputedDates(p, sourceTasksForCalc, delegationGroups);
       const nextProj: Project = {
         ...p,
         ...computedDates,
-        taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length,
-        taskSummaries: computedDates.taskSummaries || [],
+        taskCount: useInMemoryTasks
+          ? (computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length)
+          : existingSummaries.length,
+        taskSummaries: useInMemoryTasks
+          ? (computedDates.taskSummaries || [])
+          : existingSummaries,
       };
       touchedProjectsToPersist.push(nextProj);
       return nextProj;
