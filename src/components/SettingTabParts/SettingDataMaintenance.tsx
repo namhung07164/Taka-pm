@@ -16,6 +16,7 @@ import { Project, Task } from "../../types";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from "../../lib/firebase";
+import { SummaryAuditPanel } from "./SummaryAuditPanel";
 
 interface SettingDataMaintenanceProps {
   isAdmin: boolean;
@@ -443,6 +444,8 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
         <Hash className="w-4 h-4 text-cyan-500" />
         {isConvertingToHash ? "Converting..." : "Standardize Subtask Codes (#)"}
       </button>
+
+      <SummaryAuditPanel isAdmin={isAdmin} onConfirmAction={onConfirmAction} />
     </div>
   );
 };

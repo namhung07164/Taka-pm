@@ -165,7 +165,9 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     // Prefer latest updatedAt
     const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
     const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-    return bTime - aTime;
+    if (bTime !== aTime) return bTime - aTime;
+    // Tie-break: use ID to ensure all devices pick the same task, independent of load order
+    return String(a.id).localeCompare(String(b.id));
   });
 
   sorted.forEach(task => {
@@ -212,16 +214,11 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     if (exactTaskKey && seenNormMap.has(exactTaskKey)) {
       matchedExistingId = seenNormMap.get(exactTaskKey);
     } else if (codeKey && seenCodeMap.has(codeKey)) {
-      const candidateId = seenCodeMap.get(codeKey);
-      if (candidateId && seenMap.has(candidateId)) {
-        const candidateTask = seenMap.get(candidateId)!;
-        const normCandidate = normalizeTaskNameForComparison(candidateTask.name, candidateTask.projectCode);
-        const normCurrent = normalizeTaskNameForComparison(task.name, task.projectCode);
-        // ONLY match by codeKey if names are identical or one is missing!
-        if (!normCandidate || !normCurrent || normCandidate === normCurrent) {
-          matchedExistingId = candidateId;
-        }
-      }
+      const candId = seenCodeMap.get(codeKey);
+      const cand = candId ? seenMap.get(candId) : undefined;
+      const candName = String(cand?.name || '').trim().toLowerCase();
+      // Position-based subtask codes can temporarily overlap between different tasks: only treat as duplicate if names match
+      if (cand && candName === tName) matchedExistingId = candId;
     }
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
