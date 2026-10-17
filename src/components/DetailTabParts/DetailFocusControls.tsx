@@ -20,7 +20,7 @@ export const DetailFocusControls = memo(function DetailFocusControls({
   if (!initialFocusTaskId && !initialFilterCode) return null;
 
   return (
-    <div className="fixed bottom-[118px] right-4 md:bottom-20 md:right-8 flex items-center gap-2 print:hidden pointer-events-none z-50">
+    <div className="fixed bottom-[118px] right-4 md:bottom-[118px] md:right-4 flex items-center gap-2 print:hidden pointer-events-none z-50">
       <button
         onClick={onBackToGantt}
         className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-slate-700/80 hover:bg-slate-800 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-white rounded-full shadow-lg transition-all active:scale-95 text-xs backdrop-blur-sm cursor-pointer border border-slate-600/30"

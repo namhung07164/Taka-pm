@@ -114,7 +114,7 @@ export function PdfNativeCanvasViewer({
         if (!isMounted) {
           try {
             doc.cleanup?.();
-            doc.destroy?.();
+            (doc as any).destroy?.();
           } catch {}
           return;
         }

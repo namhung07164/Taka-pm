@@ -23,7 +23,7 @@ export const GanttFocusControls: React.FC<GanttFocusControlsProps> = ({
 
   return (
     <div
-      className="fixed bottom-5 right-5 z-[999] bg-slate-900/95 dark:bg-[#18181b]/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-md p-3 max-w-sm w-auto animate-in slide-in-from-bottom-5 duration-200 select-none pointer-events-auto"
+      className="fixed bottom-28 right-4 md:bottom-28 md:right-5 z-[999] bg-slate-900/95 dark:bg-[#18181b]/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-md p-3 max-w-sm w-auto animate-in slide-in-from-bottom-5 duration-200 select-none pointer-events-auto"
       style={{ touchAction: 'none' }}
     >
       {/* Top Header: Badge & Close */}
