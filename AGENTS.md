@@ -101,3 +101,17 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
 - **Ghost record guard**: delta `update` cho doc chưa có trong store/Dexie phải bị bỏ qua, cấm tạo bản ghi từ patch một phần.
 - **Write imports (BẮT BUỘC)**: file ghi vào `taka_projects/tasks/costs/delegation_groups` phải import `setDoc/updateDoc/deleteDoc/writeBatch` từ `src/lib/firestoreWrites.ts` (hoặc `src/lib/firebase.ts`), CẤM import trực tiếp từ `firebase/firestore`, nếu không các máy khác sẽ không nhận được thay đổi.
 - **Sync cursor**: delta được sắp/lọc theo `serverTime` (serverTimestamp), không dùng `numericTime` (giờ máy) để truy vấn, để delta tạo lúc offline vẫn tới được các máy khác.
+
+## 16. Quy Chuẩn Đồng Bộ Đa Thiết Bị & Cô Lập Khóa Dữ Liệu Tuyệt Đối (Multi-Device Sync & Composite Key Isolation)
+- **Cô Lập Tuyệt Đối 4 Khóa (`projectId` + `projectCode` + `year` + `store`)**:
+  - Không bao giờ dùng riêng lẻ `projectCode` để đối chiếu, gom nhóm, hoặc truy vấn dữ liệu.
+  - Mọi hàm liên kết thực thể (Task, Delegation, Cost) với Project (như `isTaskBelongsToProject`, `isDelegationGroupBelongsToProject`, `getTasksForProject`, `computeProjectActStatus`, `resolveProjectContext`, `computeTaskCode`, `buildTaskNoMap`) bắt buộc kiểm tra:
+    1. Bỏ qua bản ghi có `isDeleted: true` hoặc nằm trong `taskDeletedTracker`.
+    2. Khớp theo `projectId` / `id` làm ưu tiên cao nhất. Nếu cả 2 bên có ID nhưng khác nhau -> lập tức loại trừ (`return false`), cấm fallback sang `projectCode` làm gộp nhầm dữ liệu.
+    3. Nếu cả 2 bên có `store`: bắt buộc cùng chi nhánh (so khớp không phân biệt hoa thường). Nếu khác nhau -> loại trừ ngay.
+    4. Nếu cả 2 bên có `year`: bắt buộc cùng năm tài chính. Nếu khác nhau -> loại trừ ngay.
+- **Đồng Bộ Đa Màn Hình / Đa Thiết Bị (iPhone, iPad, Desktop)**:
+  - Khi thao tác Thêm / Sửa / Xóa trên thiết bị A, cập nhật ngay tức thì vào Zustand và Dexie local (0ms lag), đồng thời phát sinh `taka_deltas` lên Firestore với đầy đủ thông tin định danh (`id`, `projectId`, `projectCode`, `projectYear`, `projectStore`).
+  - Thiết bị B đón nhận qua `deltaRealtimeListener.ts` và áp dụng tức thì vào Zustand + Dexie.
+  - Khi xóa Task/Project trên một thiết bị: Các thiết bị khác khi nhận delta xóa phải ngay lập tức loại bỏ task khỏi `localDb.tasks`, đánh dấu vào `taskDeletedTracker`, cắt đứt task khỏi `p.taskSummaries`, và tự động kích hoạt tính toán lại `calculateProjectComputedDates` cho dự án tương ứng.
+  - Cơ chế hồi phục kết nối iOS/Safari: Khi thiết bị mở lại từ chế độ ngủ / ẩn màn hình (`visibilitychange`, `pageshow`, `online`), hệ thống tự động kiểm tra socket, khôi phục listener và kích hoạt `pullAndApplyDeltas(undefined, true)` để bù đắp các delta phát sinh trong thời gian ngoại tuyến.

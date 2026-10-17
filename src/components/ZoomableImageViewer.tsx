@@ -1,23 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCcw, 
-  ExternalLink, 
-  Copy, 
-  Check, 
-  Loader2, 
+import {
+  X,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  ExternalLink,
+  Copy,
+  Check,
+  Loader2,
   AlertCircle,
   Maximize2,
   FileText,
-  FileCheck,
-  RefreshCw
+  RefreshCw,
+  Hand,
+  Layers,
 } from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { normalizeImageUrl } from './LayoutTabParts/LayoutUnitLightboxModal';
 import { PdfNativeCanvasViewer } from './LayoutTabParts/PdfNativeCanvasViewer';
+import {
+  TouchPinchZoomStage,
+  TouchPinchZoomStageHandle,
+} from './LayoutTabParts/TouchPinchZoomStage';
 import { useAppStore } from '../store/useAppStore';
 
 export interface ZoomableImageViewerProps {
@@ -36,16 +40,24 @@ export function isPdfUrl(url?: string): boolean {
   if (!url) return false;
   const lower = url.toLowerCase();
   if (/\.pdf($|\?|#)/i.test(lower)) return true;
-  if (lower.includes('type=pdf') || lower.includes('format=pdf') || lower.includes('application/pdf')) return true;
-  if (lower.includes('drive.google.com') && !lower.includes('thumbnail')) return true;
+  if (
+    lower.includes('type=pdf') ||
+    lower.includes('format=pdf') ||
+    lower.includes('application/pdf')
+  )
+    return true;
+  if (lower.includes('drive.google.com') && !lower.includes('thumbnail'))
+    return true;
   if (lower.includes('docs.google.com')) return true;
   return false;
 }
 
 function getPdfIframeUrl(url: string, useGdocsViewer: boolean): string {
   if (!url) return '';
-  const driveMatch = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
-                     url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+  const driveMatch =
+    url.match(
+      /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i
+    ) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
   if (driveMatch && driveMatch[1]) {
     return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
   }
@@ -70,9 +82,10 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   initialScale: propInitialScale,
 }) => {
   const storeZoomableImageSrc = useAppStore((state) => state.zoomableImageSrc);
-  const setStoreZoomableImageSrc = useAppStore((state) => state.setZoomableImageSrc);
+  const setStoreZoomableImageSrc = useAppStore(
+    (state) => state.setZoomableImageSrc
+  );
 
-  // Global event listener state for uncontrolled / window-event usage
   const [eventState, setEventState] = useState<{
     isOpen: boolean;
     url: string;
@@ -88,13 +101,22 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   const [hasError, setHasError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [useGdocsFallback, setUseGdocsFallback] = useState(false);
-  const transformRef = useRef<any>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [touchZoomMode, setTouchZoomMode] = useState<'pinch' | 'scroll'>('pinch');
 
-  // Listen to window-level custom events: 'taka_open_image_viewer'
+  const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
   useEffect(() => {
     const handleOpenEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ url?: string; imageUrl?: string; src?: string; title?: string; initialScale?: number }>;
+      const customEvent = e as CustomEvent<{
+        url?: string;
+        imageUrl?: string;
+        src?: string;
+        title?: string;
+        initialScale?: number;
+      }>;
       const detail = customEvent.detail;
       if (detail) {
         const rawUrl = detail.url || detail.imageUrl || detail.src || '';
@@ -118,37 +140,57 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   const isControlled = propIsOpen !== undefined;
   const isVisible = isControlled
     ? propIsOpen
-    : (eventState.isOpen || Boolean(storeZoomableImageSrc));
+    : eventState.isOpen || Boolean(storeZoomableImageSrc);
 
   const rawTargetUrl = isControlled
-    ? (propImageUrl || propUrl || propSrc || propImage?.url || '')
-    : (storeZoomableImageSrc || eventState.url);
+    ? propImageUrl || propUrl || propSrc || propImage?.url || ''
+    : storeZoomableImageSrc || eventState.url;
 
-  const activeTitle = (isControlled ? (propTitle || propAlt || propImage?.title) : eventState.title) || 
+  const activeTitle =
+    (isControlled ? propTitle || propAlt || propImage?.title : eventState.title) ||
     (isPdfUrl(rawTargetUrl) ? 'PDF Document Viewer' : 'Image Viewer');
 
-  const effectiveInitialScale = (isControlled ? (propInitialScale || propImage?.initialScale) : eventState.initialScale) || 1;
+  const effectiveInitialScale =
+    (isControlled
+      ? propInitialScale || propImage?.initialScale
+      : eventState.initialScale) || 1;
 
   const isPdf = isPdfUrl(rawTargetUrl);
-  const resolvedUrl = normalizeImageUrl(rawTargetUrl);
+  const isDriveOrDocs =
+    rawTargetUrl.toLowerCase().includes('drive.google.com') ||
+    rawTargetUrl.toLowerCase().includes('docs.google.com');
+
+  const resolvedUrl = normalizeImageUrl(rawTargetUrl, 'w1600');
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
 
   const handleClose = useCallback(() => {
+    if (iframeRef.current) {
+      try {
+        iframeRef.current.src = 'about:blank';
+      } catch {}
+    }
+    if (imgRef.current) {
+      try {
+        imgRef.current.src = '';
+      } catch {}
+    }
     if (isControlled) {
       propOnClose?.();
     } else {
-      setEventState(prev => ({ ...prev, isOpen: false }));
+      setEventState((prev) => ({ ...prev, isOpen: false }));
       setStoreZoomableImageSrc(null);
     }
   }, [isControlled, propOnClose, setStoreZoomableImageSrc]);
 
   const handleImageError = useCallback(() => {
-    const driveMatch = rawTargetUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
-                       rawTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    const driveMatch =
+      rawTargetUrl.match(
+        /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/
+      ) || rawTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}`);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}=w1600`);
       return;
     }
     setIsLoading(false);
@@ -159,41 +201,26 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
     setIsLoading(false);
     setHasError(false);
     if (effectiveInitialScale > 1) {
-      try {
-        transformRef.current?.centerView(effectiveInitialScale);
-      } catch {}
+      zoomStageRef.current?.centerView(effectiveInitialScale);
     }
   }, [effectiveInitialScale]);
 
-  // Reset loading and error states when URL changes
   useEffect(() => {
+    if (!isVisible) return;
     setCurrentSrc(resolvedUrl);
     setHasTriedCdnFallback(false);
     setHasError(false);
     setUseGdocsFallback(false);
+    setZoomScale(effectiveInitialScale);
+    setTouchZoomMode('pinch');
 
     if (!resolvedUrl) {
       setIsLoading(false);
       return;
     }
+    setIsLoading(true);
+  }, [isVisible, resolvedUrl, effectiveInitialScale]);
 
-    if (isPdf) {
-      setIsLoading(true);
-      return;
-    }
-
-    const testImg = new Image();
-    testImg.src = resolvedUrl;
-    if (testImg.complete && testImg.naturalWidth > 0) {
-      setIsLoading(false);
-    } else {
-      setIsLoading(true);
-      testImg.onload = () => setIsLoading(false);
-      testImg.onerror = () => handleImageError();
-    }
-  }, [resolvedUrl, isPdf, handleImageError]);
-
-  // Handle ESC key to close
   useEffect(() => {
     if (!isVisible) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -214,18 +241,21 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 
   if (!isVisible || typeof document === 'undefined') return null;
 
+  const useEmbedViewer = isPdf && (isDriveOrDocs || useGdocsFallback);
+  const iframeSrc = useEmbedViewer
+    ? getPdfIframeUrl(rawTargetUrl, useGdocsFallback)
+    : '';
+
   return createPortal(
-    <div 
-      className="fixed inset-0 z-[999999] flex flex-col bg-slate-950/95 backdrop-blur-md animate-in fade-in duration-200 select-none"
+    <div
+      className="fixed inset-0 z-[999999] flex flex-col bg-slate-950/98 select-none overscroll-none"
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          handleClose();
-        }
+        if (e.target === e.currentTarget) handleClose();
       }}
     >
       {/* Top Floating Header & Controls */}
-      <div 
-        className="flex items-center justify-between px-4 py-3 bg-slate-900/95 border-b border-slate-800 text-white z-20 shrink-0"
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border-b border-slate-800 text-white z-20 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 max-w-[45%] min-w-0">
@@ -234,39 +264,43 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
           ) : (
             <Maximize2 className="w-4 h-4 text-blue-400 shrink-0" />
           )}
-          <span className="text-sm font-semibold truncate text-slate-100" title={activeTitle}>
+          <span
+            className="text-sm font-semibold truncate text-slate-100"
+            title={activeTitle}
+          >
             {activeTitle}
           </span>
         </div>
 
         {/* Toolbar Action Buttons */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {!isPdf && (
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          {(!isPdf || useEmbedViewer) && (
             <>
-              {/* Zoom In */}
               <button
                 type="button"
-                onClick={() => transformRef.current?.zoomIn()}
-                title="Zoom In (+)"
-                className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
-
-              {/* Zoom Out */}
-              <button
-                type="button"
-                onClick={() => transformRef.current?.zoomOut()}
+                onClick={() => zoomStageRef.current?.zoomOut(0.45)}
                 title="Zoom Out (-)"
                 className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
 
-              {/* Reset Zoom */}
+              <span className="px-2 py-0.5 text-xs font-mono font-bold text-blue-300 bg-slate-800 rounded border border-slate-700 min-w-[3.2rem] text-center">
+                {Math.round(zoomScale * 100)}%
+              </span>
+
               <button
                 type="button"
-                onClick={() => transformRef.current?.resetTransform()}
+                onClick={() => zoomStageRef.current?.zoomIn(0.45)}
+                title="Zoom In (+)"
+                className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => zoomStageRef.current?.resetTransform()}
                 title="Reset Zoom (1:1)"
                 className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
               >
@@ -275,19 +309,56 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
             </>
           )}
 
-          {isPdf && (
+          {useEmbedViewer && (
             <button
               type="button"
-              onClick={() => setUseGdocsFallback(prev => !prev)}
-              title={useGdocsFallback ? "Switch to Direct Embed" : "Switch to Google Docs Viewer"}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 hover:text-white transition-colors active:scale-95 flex items-center gap-1.5"
+              onClick={() => {
+                if (touchZoomMode === 'pinch') {
+                  zoomStageRef.current?.resetTransform();
+                  setTouchZoomMode('scroll');
+                } else {
+                  setTouchZoomMode('pinch');
+                }
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors active:scale-95 touch-manipulation flex items-center gap-1.5 ${
+                touchZoomMode === 'pinch'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+              }`}
+              title="Toggle between Finger Pinch Zoom and Page Scroll"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{useGdocsFallback ? "Direct Embed" : "Google Docs Viewer"}</span>
+              {touchZoomMode === 'pinch' ? (
+                <>
+                  <Hand className="w-3.5 h-3.5" />
+                  <span>Pinch Zoom</span>
+                </>
+              ) : (
+                <>
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Scroll Pages</span>
+                </>
+              )}
             </button>
           )}
 
-          {/* Copy Link */}
+          {isPdf && !isDriveOrDocs && (
+            <button
+              type="button"
+              onClick={() => setUseGdocsFallback((prev) => !prev)}
+              title={
+                useGdocsFallback
+                  ? 'Switch to Native Canvas'
+                  : 'Switch to Google Docs Viewer'
+              }
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 hover:text-white transition-colors active:scale-95 flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {useGdocsFallback ? 'Native Canvas' : 'Embed Viewer'}
+              </span>
+            </button>
+          )}
+
           {rawTargetUrl && (
             <button
               type="button"
@@ -295,11 +366,14 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
               title="Copy Direct Link"
               className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
             >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              {copied ? (
+                <Check className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
             </button>
           )}
 
-          {/* Open In New Tab */}
           {rawTargetUrl && (
             <a
               href={rawTargetUrl}
@@ -314,12 +388,11 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 
           <div className="w-[1px] h-5 bg-slate-700 mx-1" />
 
-          {/* Close Modal Button */}
           <button
             type="button"
             onClick={handleClose}
             title="Close (Esc)"
-            className="p-1.5 sm:p-2 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white transition-colors active:scale-95 touch-manipulation font-bold flex items-center gap-1 shadow-sm"
+            className="p-1.5 sm:p-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors active:scale-95 touch-manipulation font-bold flex items-center gap-1 shadow-sm"
           >
             <X className="w-4 h-4 stroke-[2.5]" />
             <span className="hidden sm:inline text-xs font-semibold">Close</span>
@@ -328,32 +401,54 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
       </div>
 
       {/* Main Container Stage */}
-      <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center p-2 sm:p-4">
+      <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center p-1 sm:p-2">
         {isPdf ? (
-          <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900/50 rounded-xl overflow-hidden border border-slate-800">
-            <PdfNativeCanvasViewer
-              url={rawTargetUrl}
-              isFullscreen={true}
-              onFallbackToIframe={() => setUseGdocsFallback(true)}
-            />
-          </div>
+          useEmbedViewer ? (
+            <TouchPinchZoomStage
+              ref={zoomStageRef}
+              initialScale={effectiveInitialScale}
+              minScale={0.5}
+              maxScale={8}
+              onScaleChange={setZoomScale}
+              captureOverlay={touchZoomMode === 'pinch'}
+              allowNativeTouch={touchZoomMode === 'scroll'}
+              className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-slate-900"
+            >
+              <iframe
+                ref={iframeRef}
+                src={iframeSrc}
+                onLoad={() => setIsLoading(false)}
+                className="w-full h-full border-0 bg-white"
+                title={activeTitle}
+                allow="autoplay; fullscreen"
+              />
+            </TouchPinchZoomStage>
+          ) : (
+            <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
+              <PdfNativeCanvasViewer
+                url={rawTargetUrl}
+                isFullscreen={true}
+                onFallbackToIframe={() => setUseGdocsFallback(true)}
+              />
+            </div>
+          )
         ) : (
           <>
-            {/* Loading Spinner */}
             {isLoading && !hasError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                <span className="text-xs font-medium">Loading high resolution image...</span>
+                <span className="text-xs font-medium">Loading image...</span>
               </div>
             )}
 
-            {/* Error Fallback */}
             {hasError ? (
               <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md mx-auto">
                 <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
                   <AlertCircle className="w-6 h-6" />
                 </div>
-                <div className="text-sm font-semibold text-slate-200">Unable to load image directly</div>
+                <div className="text-sm font-semibold text-slate-200">
+                  Unable to load image directly
+                </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   The file could not be rendered inline due to network or security restrictions. You can open or copy the direct link.
                 </p>
@@ -370,49 +465,36 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
                 )}
               </div>
             ) : (
-              <TransformWrapper
-                ref={transformRef}
+              <TouchPinchZoomStage
+                ref={zoomStageRef}
                 initialScale={effectiveInitialScale}
                 minScale={0.5}
-                maxScale={8}
-                centerOnInit
-                smooth={false}
-                wheel={{ step: 0.05 }}
-                zoomAnimation={{ disabled: true }}
-                pinch={{ step: 2 }}
-                doubleClick={{ mode: 'toggle' }}
+                maxScale={10}
+                onScaleChange={setZoomScale}
               >
-                <TransformComponent
-                  wrapperClass="!w-full !h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
-                  contentClass="!w-full !h-full flex items-center justify-center"
-                >
-                  <img
-                    ref={imgRef}
-                    src={currentSrc}
-                    alt={activeTitle}
-                    decoding="async"
-                    className="max-w-[95vw] max-h-[85vh] object-contain drop-shadow-2xl"
-                    onLoad={handleImageLoad}
-                    onError={handleImageError}
-                    draggable={false}
-                  />
-                </TransformComponent>
-              </TransformWrapper>
+                <img
+                  ref={imgRef}
+                  src={currentSrc}
+                  alt={activeTitle}
+                  decoding="async"
+                  className="max-w-[95vw] max-h-[85vh] object-contain"
+                  onLoad={handleImageLoad}
+                  onError={handleImageError}
+                  draggable={false}
+                />
+              </TouchPinchZoomStage>
             )}
           </>
         )}
       </div>
 
       {/* Bottom Hint Footer */}
-      <div 
-        className="px-4 py-2 bg-slate-900/90 border-t border-slate-800/80 text-center text-[11px] text-slate-400 shrink-0 z-20 flex items-center justify-between"
+      <div
+        className="px-4 py-2 bg-slate-900 border-t border-slate-800 text-center text-[11px] text-slate-400 shrink-0 z-20 flex items-center justify-between"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="hidden sm:inline">
-          {isPdf ? 'Tip: You can scroll, view or download the PDF directly.' : 'Tip: Scroll or pinch to zoom. Drag to pan. Double click to toggle zoom.'}
-        </span>
-        <span className="sm:hidden">
-          {isPdf ? 'Document Preview' : 'Pinch to zoom • Drag to pan'}
+        <span>
+          Pinch with 2 fingers to zoom • Drag to pan • Double-tap to toggle zoom
         </span>
         <button
           type="button"
@@ -428,4 +510,3 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 };
 
 export default ZoomableImageViewer;
-

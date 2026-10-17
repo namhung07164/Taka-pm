@@ -1,27 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCcw, 
-  Maximize2, 
-  Download, 
-  ExternalLink, 
-  AlertCircle, 
-  Loader2, 
-  Layers,
-  Maximize,
+import {
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Maximize2,
+  ExternalLink,
+  AlertCircle,
+  Loader2,
   RefreshCw,
-  Eye
 } from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-
-// Configure pdfjs worker URL cleanly
-if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
-}
+import {
+  TouchPinchZoomStage,
+  TouchPinchZoomStageHandle,
+} from './TouchPinchZoomStage';
 
 export interface PdfNativeCanvasViewerProps {
   url: string;
@@ -30,6 +23,8 @@ export interface PdfNativeCanvasViewerProps {
   className?: string;
   onFallbackToIframe?: () => void;
 }
+
+const MAX_CANVAS_DIMENSION = 2048; // Safe iOS WebKit GPU canvas texture cap
 
 export function PdfNativeCanvasViewer({
   url,
@@ -42,58 +37,85 @@ export function PdfNativeCanvasViewer({
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageInput, setPageInput] = useState<string>('1');
-  const [scale, setScale] = useState<number>(1.2);
+  const [zoomScale, setZoomScale] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'single' | 'fitWidth' | 'fitPage'>('fitWidth');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
   const renderTaskRef = useRef<any>(null);
   const activePdfRef = useRef<any>(null);
+  const loadingTaskRef = useRef<any>(null);
+  const pageBitmapCacheRef = useRef<
+    Map<number, { bitmap: ImageBitmap; width: number; height: number; cssWidth: number; cssHeight: number }>
+  >(new Map());
 
-  // Load PDF Document asynchronously
+  const clearBitmapCache = useCallback(() => {
+    pageBitmapCacheRef.current.forEach((entry) => {
+      try {
+        entry.bitmap.close?.();
+      } catch {}
+    });
+    pageBitmapCacheRef.current.clear();
+  }, []);
+
+  // Load PDF Document asynchronously with dynamic import of pdfjs-dist
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
     setError(null);
-    setLoadingProgress(5);
+    setLoadingProgress(10);
     setPdfDoc(null);
     setCurrentPage(1);
     setPageInput('1');
+    setZoomScale(1);
+    clearBitmapCache();
 
-    // Cancel previous document if active
     if (activePdfRef.current) {
       try {
-        (activePdfRef.current as any).destroy?.() || (activePdfRef.current as any).cleanup?.();
-      } catch (e) {
-        // ignore cleanup error
-      }
+        activePdfRef.current.cleanup?.();
+        activePdfRef.current.destroy?.();
+      } catch {}
       activePdfRef.current = null;
     }
 
-    const loadingTask = pdfjsLib.getDocument({
-      url,
-      cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
-      cMapPacked: true,
-    });
+    (async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        if (!isMounted) return;
 
-    loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
-      if (!isMounted) return;
-      if (progress.total > 0) {
-        const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
-        setLoadingProgress(pct);
-      } else {
-        setLoadingProgress((prev) => Math.min(90, prev + 15));
-      }
-    };
+        if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
+        }
 
-    loadingTask.promise
-      .then((doc) => {
+        const loadingTask = pdfjsLib.getDocument({
+          url,
+          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
+          cMapPacked: true,
+          disableAutoFetch: true,
+          disableStream: false,
+        });
+        loadingTaskRef.current = loadingTask;
+
+        loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
+          if (!isMounted) return;
+          if (progress.total > 0) {
+            const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
+            setLoadingProgress(pct);
+          } else {
+            setLoadingProgress((prev) => Math.min(90, prev + 15));
+          }
+        };
+
+        const doc = await loadingTask.promise;
         if (!isMounted) {
-          (doc as any).destroy?.() || (doc as any).cleanup?.();
+          try {
+            doc.cleanup?.();
+            doc.destroy?.();
+          } catch {}
           return;
         }
         activePdfRef.current = doc;
@@ -101,83 +123,135 @@ export function PdfNativeCanvasViewer({
         setNumPages(doc.numPages);
         setIsLoading(false);
         setLoadingProgress(100);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!isMounted) return;
         console.warn('Native PDF loading failed or blocked by CORS:', err);
         setError('Cannot load PDF natively (CORS or network policy).');
         setIsLoading(false);
-      });
+      }
+    })();
 
     return () => {
       isMounted = false;
       if (renderTaskRef.current) {
-        try { renderTaskRef.current.cancel(); } catch (e) {}
+        try {
+          renderTaskRef.current.cancel();
+        } catch {}
+        renderTaskRef.current = null;
+      }
+      if (loadingTaskRef.current) {
+        try {
+          loadingTaskRef.current.destroy?.();
+        } catch {}
+        loadingTaskRef.current = null;
+      }
+      clearBitmapCache();
+      if (canvasRef.current) {
+        canvasRef.current.width = 0;
+        canvasRef.current.height = 0;
       }
       if (activePdfRef.current) {
-        try { (activePdfRef.current as any).destroy?.() || (activePdfRef.current as any).cleanup?.(); } catch (e) {}
+        try {
+          activePdfRef.current.cleanup?.();
+          activePdfRef.current.destroy?.();
+        } catch {}
         activePdfRef.current = null;
       }
     };
-  }, [url]);
+  }, [url, clearBitmapCache]);
 
-  // Render Page to Canvas
+  // Render Page ONCE per page change — zooming uses 60fps GPU transform without re-rendering canvas!
   const renderPage = useCallback(
-    async (pageNum: number, pageScale: number) => {
+    async (pageNum: number) => {
       if (!pdfDoc || !canvasRef.current) return;
 
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) return;
+
+      // 1. Instant 0ms restore if page is already in bitmap cache
+      const cached = pageBitmapCacheRef.current.get(pageNum);
+      if (cached) {
+        canvas.width = cached.width;
+        canvas.height = cached.height;
+        canvas.style.width = `${cached.cssWidth}px`;
+        canvas.style.height = `${cached.cssHeight}px`;
+        context.drawImage(cached.bitmap, 0, 0);
+        return;
+      }
+
       if (renderTaskRef.current) {
-        try { renderTaskRef.current.cancel(); } catch (e) {}
+        try {
+          renderTaskRef.current.cancel();
+        } catch {}
         renderTaskRef.current = null;
       }
 
       setIsRendering(true);
       try {
         const page = await pdfDoc.getPage(pageNum);
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvasRef.current) return;
 
-        const context = canvas.getContext('2d', { alpha: false });
-        if (!context) return;
+        const containerWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
+        const containerHeight = Math.max(320, (containerRef.current?.clientHeight || 700) - 72);
+        const unscaledViewport = page.getViewport({ scale: 1 });
 
-        // Calculate auto scale for fitWidth / fitPage
-        let targetScale = pageScale;
-        if (containerRef.current) {
-          const containerWidth = containerRef.current.clientWidth - 32;
-          const containerHeight = containerRef.current.clientHeight - 80;
-          const unscaledViewport = page.getViewport({ scale: 1 });
+        const scaleX = containerWidth / unscaledViewport.width;
+        const scaleY = containerHeight / unscaledViewport.height;
+        const fitScale = Math.max(0.6, Math.min(scaleX, scaleY * 1.15, 2.2));
 
-          if (viewMode === 'fitWidth' && containerWidth > 100) {
-            targetScale = containerWidth / unscaledViewport.width;
-          } else if (viewMode === 'fitPage' && containerHeight > 100) {
-            const scaleX = containerWidth / unscaledViewport.width;
-            const scaleY = containerHeight / unscaledViewport.height;
-            targetScale = Math.min(scaleX, scaleY);
-          }
-        }
+        const viewport = page.getViewport({ scale: fitScale });
+        const rawDpr = Math.min(window.devicePixelRatio || 1, 1.75);
+        const maxAllowedDpr = Math.min(
+          rawDpr,
+          MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1)
+        );
+        const dpr = Math.max(1, maxAllowedDpr);
 
-        const viewport = page.getViewport({ scale: Math.max(0.4, Math.min(4, targetScale)) });
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const pixelWidth = Math.floor(viewport.width * dpr);
+        const pixelHeight = Math.floor(viewport.height * dpr);
+        const cssWidth = Math.floor(viewport.width);
+        const cssHeight = Math.floor(viewport.height);
 
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
 
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = 'high';
 
         const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
-
-        const renderContext = {
+        const renderTask = page.render({
           canvasContext: context,
           transform,
           viewport,
-        };
-
-        const renderTask = page.render(renderContext);
+        });
         renderTaskRef.current = renderTask;
         await renderTask.promise;
+
+        // Cache up to 5 rendered pages as lightweight ImageBitmap for instant page flipping
+        if (typeof createImageBitmap === 'function' && canvas.width > 0 && canvas.height > 0) {
+          try {
+            if (pageBitmapCacheRef.current.size >= 5) {
+              const oldestKey = pageBitmapCacheRef.current.keys().next().value;
+              if (oldestKey !== undefined) {
+                pageBitmapCacheRef.current.get(oldestKey)?.bitmap.close?.();
+                pageBitmapCacheRef.current.delete(oldestKey);
+              }
+            }
+            const bmp = await createImageBitmap(canvas);
+            pageBitmapCacheRef.current.set(pageNum, {
+              bitmap: bmp,
+              width: pixelWidth,
+              height: pixelHeight,
+              cssWidth,
+              cssHeight,
+            });
+          } catch {}
+        }
+
+        page.cleanup?.();
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
           console.error('PDF page render error:', err);
@@ -186,14 +260,15 @@ export function PdfNativeCanvasViewer({
         setIsRendering(false);
       }
     },
-    [pdfDoc, viewMode]
+    [pdfDoc]
   );
 
   useEffect(() => {
     if (pdfDoc && currentPage >= 1 && currentPage <= numPages) {
-      renderPage(currentPage, scale);
+      zoomStageRef.current?.resetTransform();
+      renderPage(currentPage);
     }
-  }, [pdfDoc, currentPage, scale, viewMode, renderPage]);
+  }, [pdfDoc, currentPage, numPages, renderPage]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= numPages) {
@@ -218,7 +293,7 @@ export function PdfNativeCanvasViewer({
         <AlertCircle className="w-10 h-10 text-amber-400 mb-3 shrink-0" />
         <p className="text-base font-semibold text-slate-100">Cannot load PDF directly in canvas</p>
         <p className="text-xs text-slate-400 mt-1 max-w-md">
-          The document server prevents direct binary access. You can use embedded mode or open in new window.
+          The document server prevents direct binary access. You can use embedded mode or open in a new window.
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           {onFallbackToIframe && (
@@ -246,12 +321,12 @@ export function PdfNativeCanvasViewer({
   }
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className={`w-full h-full relative flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none ${className}`}
     >
-      {/* Top Toolbar: Navigation & Per-Page Zoom Controls */}
-      <div className="z-[60] flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md shrink-0">
+      {/* Top Toolbar: Page Navigation & Instant GPU Zoom Controls */}
+      <div className="z-[60] flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-900 border-b border-slate-800 shrink-0">
         {/* Left: Page Navigation */}
         <div className="flex items-center gap-1.5">
           <button
@@ -287,52 +362,38 @@ export function PdfNativeCanvasViewer({
           </button>
         </div>
 
-        {/* Center: Zoom & View Mode */}
+        {/* Center: 0ms GPU Zoom Controls */}
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => { setViewMode('single'); setScale((s) => Math.max(0.5, s - 0.25)); }}
+            onClick={() => zoomStageRef.current?.zoomOut(0.4)}
             className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Zoom Out"
+            title="Zoom Out (-)"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
 
-          <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-300 bg-slate-800/80 rounded border border-slate-700">
-            {Math.round(scale * 100)}%
+          <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 bg-slate-800 rounded border border-slate-700 min-w-[3.2rem] text-center">
+            {Math.round(zoomScale * 100)}%
           </span>
 
           <button
             type="button"
-            onClick={() => { setViewMode('single'); setScale((s) => Math.min(3.5, s + 0.25)); }}
+            onClick={() => zoomStageRef.current?.zoomIn(0.4)}
             className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Zoom In"
+            title="Zoom In (+)"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
 
-          <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
-
           <button
             type="button"
-            onClick={() => { setViewMode('fitWidth'); setScale(1); }}
-            className={`px-2 py-1 text-[11px] font-semibold rounded transition-colors ${
-              viewMode === 'fitWidth' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-            title="Fit Width"
+            onClick={() => zoomStageRef.current?.resetTransform()}
+            className="px-2 py-1 text-[11px] font-semibold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors active:scale-95 touch-manipulation flex items-center gap-1"
+            title="Reset Zoom (100%)"
           >
-            Fit Width
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setViewMode('fitPage'); setScale(1); }}
-            className={`px-2 py-1 text-[11px] font-semibold rounded transition-colors hidden sm:inline-block ${
-              viewMode === 'fitPage' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-            title="Fit Page"
-          >
-            Fit Page
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset</span>
           </button>
         </div>
 
@@ -360,58 +421,40 @@ export function PdfNativeCanvasViewer({
         </div>
       </div>
 
-      {/* Main Canvas Viewport with Touch Pan & Zoom */}
-      <div className="flex-grow w-full h-full relative overflow-auto bg-slate-950 flex items-center justify-center p-2 sm:p-4 scrollbar-thin scrollbar-thumb-slate-800">
+      {/* Main Canvas Viewport with 60fps iOS Pinch-to-Zoom & Pan */}
+      <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center">
         {isLoading && (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-xs text-slate-300">
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300">
             <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-            <p className="text-xs font-semibold tracking-wide">Loading PDF Document ({loadingProgress}%)...</p>
+            <p className="text-xs font-semibold tracking-wide">
+              Loading PDF Document ({loadingProgress}%)...
+            </p>
             <div className="w-48 h-1.5 bg-slate-800 rounded-full mt-2.5 overflow-hidden">
-              <div 
-                className="h-full bg-indigo-500 transition-all duration-200"
+              <div
+                className="h-full bg-indigo-500 transition-all duration-150"
                 style={{ width: `${loadingProgress}%` }}
               />
             </div>
           </div>
         )}
 
-        <TransformWrapper
+        <TouchPinchZoomStage
+          ref={zoomStageRef}
           initialScale={1}
           minScale={0.5}
-          maxScale={10}
-          centerOnInit={true}
-          smooth={false}
-          wheel={{ step: 0.25 }}
-          pinch={{ step: 12 }}
-          doubleClick={{ mode: 'reset' }}
+          maxScale={8}
+          onScaleChange={setZoomScale}
         >
-          {() => (
-            <TransformComponent
-              wrapperStyle={{ width: '100%', height: '100%' }}
-              contentStyle={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-slate-900">
-                <canvas
-                  ref={canvasRef}
-                  className="block max-w-full h-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
-                  style={{ opacity: isRendering ? 0.85 : 1 }}
-                />
-                {isRendering && (
-                  <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700 shadow-xs">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Rendering...</span>
-                  </div>
-                )}
+          <div className="relative shadow-xl rounded-lg overflow-hidden border border-slate-800 bg-white">
+            <canvas ref={canvasRef} className="block max-w-full h-auto" />
+            {isRendering && (
+              <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Rendering...</span>
               </div>
-            </TransformComponent>
-          )}
-        </TransformWrapper>
+            )}
+          </div>
+        </TouchPinchZoomStage>
       </div>
     </div>
   );

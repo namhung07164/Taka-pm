@@ -46,7 +46,31 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
   const prefillProjectYear = useAppStore(state => state.prefillProjectYear);
   const prefillProjectStore = useAppStore(state => state.prefillProjectStore);
 
+  const zoomableImageSrc = useAppStore(state => state.zoomableImageSrc);
+  const [eventViewerImage, setEventViewerImage] = React.useState<{
+    url: string;
+    title?: string;
+    initialScale?: number;
+  } | null>(null);
+
+  React.useEffect(() => {
+    const handleOpenEvent = (e: Event) => {
+      const detail = (e as CustomEvent<{ url?: string; imageUrl?: string; src?: string; title?: string; initialScale?: number }>).detail;
+      const rawUrl = detail?.url || detail?.imageUrl || detail?.src || '';
+      if (rawUrl) {
+        setEventViewerImage({
+          url: rawUrl,
+          title: detail?.title || '',
+          initialScale: detail?.initialScale,
+        });
+      }
+    };
+    window.addEventListener('taka_open_image_viewer', handleOpenEvent);
+    return () => window.removeEventListener('taka_open_image_viewer', handleOpenEvent);
+  }, []);
+
   const { filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
+  const isImageViewerActive = Boolean(zoomableImageSrc || eventViewerImage);
 
   return (
     <Suspense fallback={null}>
@@ -114,7 +138,19 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
       )}
 
       {isCalendarSyncModalOpen && <CalendarSyncModal />}
-      <ZoomableImageViewer />
+      {isImageViewerActive && (
+        <ZoomableImageViewer
+          isOpen={true}
+          image={
+            eventViewerImage ||
+            (zoomableImageSrc ? { url: zoomableImageSrc } : null)
+          }
+          onClose={() => {
+            setEventViewerImage(null);
+            useAppStore.getState().setZoomableImageSrc(null);
+          }}
+        />
+      )}
     </Suspense>
   );
 });
