@@ -56,6 +56,12 @@ export function useStaticAndAuthHydration() {
       const elapsedSleepMs = now - lastActiveTimestampRef.current;
       lastActiveTimestampRef.current = now;
 
+      if (elapsedSleepMs > 30 * 1000) {
+        import("../../lib/deltaOrchestratorService").then(m => {
+          m.triggerImmediateDeltaSync().catch(() => {});
+        });
+      }
+
       const IS_LONG_SLEEP = elapsedSleepMs > 10 * 60 * 1000; // > 10 min
       if (IS_LONG_SLEEP) {
         // Dispatch recovery event to sub-hooks

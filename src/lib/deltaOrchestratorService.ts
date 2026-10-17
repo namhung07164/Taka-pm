@@ -24,16 +24,15 @@ export async function pruneExpiredDeltas(retentionDays: number = 7): Promise<num
 export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  // Real-time channel (onSnapshot). The interval below is only a slow safety-net poll (B5).
   const stopRealtime = startDeltaRealtimeListener();
 
   let lastTriggerAt = 0;
-  const triggerSync = () => {
+  const triggerSync = (force: boolean = false) => {
     const now = Date.now();
-    if (now - lastTriggerAt < 15000) return;
+    if (!force && now - lastTriggerAt < 10000) return;
     lastTriggerAt = now;
     const year = useAppStore.getState().globalYearFilter;
-    pullAndApplyDeltas(year).catch(() => {});
+    pullAndApplyDeltas(year, force).catch(() => {});
   };
 
   const stopPolling = () => {
@@ -46,7 +45,6 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   const startPolling = () => {
     stopPolling();
     syncIntervalTimer = setInterval(() => {
-      // Check for hidden tab or inactivity sleep
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         hibernate();
         return;
@@ -55,7 +53,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
         hibernate();
         return;
       }
-      triggerSync();
+      triggerSync(false);
     }, intervalMs);
   };
 
@@ -67,17 +65,20 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
 
   const wakeAndSync = () => {
     lastActivityTime = Date.now();
-    if (isHibernating || !syncIntervalTimer) {
-      isHibernating = false;
-      triggerSync(); // Sync immediately on wake
-      startPolling();
-    }
+    isHibernating = false;
+    triggerSync(true); // Ép đồng bộ ngay khi thức giấc (bỏ qua throttle)
+    startPolling();
   };
 
   // 1. Initial boot sync & start timer
-  triggerSync();
+  triggerSync(true);
   startPolling();
-  const stopNetworkRecovery = initNetworkRecovery(() => triggerSync());
+  // Khi syncResilience khôi phục xong mạng (sau disableNetwork -> enableNetwork), ép pull delta ngay lập tức với force=true!
+  const stopNetworkRecovery = initNetworkRecovery(() => {
+    triggerSync(true);
+    // Phát sự kiện để deltaRealtimeListener gắn lại (re-attach) trên socket mới
+    window.dispatchEvent(new CustomEvent('taka_network_recovered'));
+  });
 
   // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
   const handleVisibilityChange = () => {
@@ -88,13 +89,19 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     }
   };
 
-  // 3. Online network reconnection
+  // 3. Online network reconnection & Window Focus (iPad Split-View / App Switcher)
   const handleOnline = () => {
     wakeAndSync();
+  };
+  const handleFocus = () => {
+    if (document.visibilityState === 'visible') {
+      wakeAndSync();
+    }
   };
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('online', handleOnline);
+  window.addEventListener('focus', handleFocus);
 
   return () => {
     stopPolling();
@@ -102,14 +109,12 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     stopRealtime();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('focus', handleFocus);
   };
 }
 
-/**
- * Kích hoạt đồng bộ Delta ngay lập tức khi ứng dụng thức giấc từ trạng thái ngủ sâu (iOS Sleep/Wake Guard)
- */
 export async function triggerImmediateDeltaSync(year?: string): Promise<number> {
   lastActivityTime = Date.now();
   isHibernating = false;
-  return pullAndApplyDeltas(year || useAppStore.getState().globalYearFilter);
+  return pullAndApplyDeltas(year || useAppStore.getState().globalYearFilter, true);
 }

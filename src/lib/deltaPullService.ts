@@ -28,15 +28,16 @@ let lastPullCompletedAt = 0;
  * Tiết kiệm hơn 80% Read so với việc onSnapshot cả collection
  * B4: In-flight deduplication prevents concurrent identical queries across tabs/effects
  */
-export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
+export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = false): Promise<number> {
   if (inFlightPullPromise) {
     return inFlightPullPromise;
   }
   const now = Date.now();
-  if (now - lastPullCompletedAt < 3000) {
+  if (!force && now - lastPullCompletedAt < 2000) {
     return 0;
   }
 
+  let pullSucceeded = false;
   inFlightPullPromise = (async () => {
     const lastSyncTime = getLastDeltaSyncTime();
     const restoreCutoff = getRestoreCutoffTimestamp();
@@ -65,7 +66,7 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
         try {
           snapshot = await getDocsFromServer(q);
         } catch (serverErr) {
-          // If offline or network still reconnecting (e.g. iOS waking up), do NOT advance sync cursor
+          // Nếu mạng đang reconnect lúc iOS mới thức dậy, KHÔNG đánh dấu pullSucceeded để lần gọi ngay sau đó chạy được ngay
           console.warn('[deltaSync] getDocsFromServer not reachable yet (device offline or reconnecting):', serverErr);
           return 0;
         }
@@ -99,6 +100,8 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
         }
       }
 
+      pullSucceeded = true;
+
       if (deltas.length === 0) {
         // Server confirmed 0 new deltas: advance sync cursor safely
         const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
@@ -111,7 +114,9 @@ export async function pullAndApplyDeltas(yearFilter?: string): Promise<number> {
       console.warn('[deltaSync] Error pulling deltas:', err);
       return 0;
     } finally {
-      lastPullCompletedAt = Date.now();
+      if (pullSucceeded) {
+        lastPullCompletedAt = Date.now();
+      }
       inFlightPullPromise = null;
     }
   })();

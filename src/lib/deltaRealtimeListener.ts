@@ -96,7 +96,15 @@ export function startDeltaRealtimeListener(): () => void {
       // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari treo
       detach();
       attach();
-      pullAndApplyDeltas().catch(() => {});
+      pullAndApplyDeltas(undefined, true).catch(() => {});
+    }
+  };
+
+  const onNetworkRecovered = () => {
+    if (document.visibilityState === 'visible') {
+      detach();
+      attach();
+      pullAndApplyDeltas(undefined, true).catch(() => {});
     }
   };
 
@@ -104,20 +112,20 @@ export function startDeltaRealtimeListener(): () => void {
     if (e.persisted) {
       detach();
       attach();
-      pullAndApplyDeltas().catch(() => {});
+      pullAndApplyDeltas(undefined, true).catch(() => {});
     }
   };
 
   const handleOnline = () => {
     detach();
     attach();
-    pullAndApplyDeltas().catch(() => {});
+    pullAndApplyDeltas(undefined, true).catch(() => {});
   };
 
   const handleFocus = () => {
     // Listener còn sống thì đã nhận delta realtime (Firestore SDK tự nối lại và bù delta bị lỡ)
     if (unsub) return;
-    pullAndApplyDeltas().catch(() => {});
+    pullAndApplyDeltas(undefined, true).catch(() => {});
   };
 
   const unsubAuth = onAuthStateChanged(auth, (user) => {
@@ -127,6 +135,7 @@ export function startDeltaRealtimeListener(): () => void {
   });
 
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('taka_network_recovered', onNetworkRecovered);
   window.addEventListener('pageshow', handlePageShow as any);
   window.addEventListener('online', handleOnline);
   window.addEventListener('focus', handleFocus);
@@ -135,6 +144,7 @@ export function startDeltaRealtimeListener(): () => void {
     stopped = true;
     unsubAuth();
     document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('taka_network_recovered', onNetworkRecovered);
     window.removeEventListener('pageshow', handlePageShow as any);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('focus', handleFocus);

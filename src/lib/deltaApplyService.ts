@@ -125,6 +125,19 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
           }
+          // Cắt đứt ngay lập tức task đã xóa khỏi project.taskSummaries trên máy nhận (chống hiện tượng bóng ma hồi sinh task trên iPad)
+          updatedProjects = updatedProjects.map((p) => {
+            if (Array.isArray(p.taskSummaries) && p.taskSummaries.some((s: any) => s.id === docId)) {
+              projectsChanged = true;
+              const filteredSummaries = p.taskSummaries.filter((s: any) => s.id !== docId);
+              return {
+                ...p,
+                taskSummaries: filteredSummaries,
+                taskCount: filteredSummaries.length,
+              };
+            }
+            return p;
+          });
           break;
         }
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
