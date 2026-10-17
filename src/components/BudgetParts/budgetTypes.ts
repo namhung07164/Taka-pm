@@ -3,6 +3,7 @@ import { Project, Cost } from '../../types';
 export interface BudgetTabProps {
   onGoToCost: (code: string) => void;
   initialSearchTerm?: string;
+  onAddBudget?: () => void;
 }
 
 export interface BudgetColumnDef {

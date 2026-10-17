@@ -152,6 +152,7 @@ const jaDictionary: Record<string, string> = {
 
   // More strings
   'Add Project': 'プロジェクトを追加',
+  'Add Budget': '予算を追加',
   'Add Task': 'タスクを追加',
   'Edit': '編集',
   'Delete': '削除',

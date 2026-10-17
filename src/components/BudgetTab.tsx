@@ -10,12 +10,24 @@ import { BudgetMobileView } from './BudgetParts/BudgetMobileView';
 import { BudgetSummaryCard } from './BudgetParts/BudgetSummaryCard';
 import { BudgetLinkModal } from './BudgetParts/BudgetLinkModal';
 
-export function BudgetTab({ onGoToCost, initialSearchTerm = '' }: BudgetTabProps) {
+export function BudgetTab({ onGoToCost, initialSearchTerm = '', onAddBudget }: BudgetTabProps) {
   const { enrichedProjects: projects } = useEnrichedData();
   const costs = useAppStore(state => state.costs);
   const isCostsRequested = useAppStore(state => state.isCostsRequested);
   const setIsCostsRequested = useAppStore(state => state.setIsCostsRequested);
   const currentUser = useAppStore(state => state.currentUser)!;
+
+  const handleAddBudget = () => {
+    if (onAddBudget) {
+      onAddBudget();
+    } else {
+      const state = useAppStore.getState();
+      state.setEditingProject(null);
+      state.setIsReadOnlyModal(false);
+      state.setModalInitialTab("details");
+      state.setIsProjectModalOpen(true);
+    }
+  };
 
   useEffect(() => {
     if (!isCostsRequested) {
@@ -110,6 +122,7 @@ export function BudgetTab({ onGoToCost, initialSearchTerm = '' }: BudgetTabProps
         handleToggleColumn={handleToggleColumn}
         handleExportBudget={handleExportBudget}
         handleImportBudget={handleImportBudget}
+        onAddBudget={handleAddBudget}
       />
 
       {/* Desktop Table View (Scrollable / Virtualized) */}
