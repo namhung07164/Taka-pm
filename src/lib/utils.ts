@@ -1,3 +1,4 @@
+import { useAppStore } from "../store/useAppStore";
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "./storage";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -973,17 +974,31 @@ export function isTaskBelongsToProject(
     return tProjId === pId;
   }
 
-  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  if (tYear && pYear && tYear !== pYear) return false;
-
   if (!t.projectCode || !p.code) return false;
   const tCode = String(t.projectCode).trim().toLowerCase();
   const rawPCode = String(p.code).trim().toLowerCase();
-  if (tCode === rawPCode) return true;
 
   const pCodeParts = rawPCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-  return pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, p.code);
+  const matchesCode = tCode === rawPCode || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, p.code);
+  if (!matchesCode) return false;
+
+  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+  if (tYear && pYear && tYear !== pYear) {
+    const allProjects = useAppStore.getState().projects || [];
+    const hasOtherProjectForTaskYear = allProjects.some(
+      (other) =>
+        !(other as any).isDeleted &&
+        String(other.id) !== String(p.id) &&
+        String(other.code || '').trim().toLowerCase() === rawPCode &&
+        (!pStore || !other.store || String(other.store).trim().toUpperCase() === pStore) &&
+        String(other.year ?? '').trim() === tYear
+    );
+    if (hasOtherProjectForTaskYear) return false;
+  }
+
+  return true;
 }
 
 export function isDelegationGroupBelongsToProject(

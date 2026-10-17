@@ -1,4 +1,5 @@
 import type { Project, Task } from '../types';
+import { useAppStore } from '../store/useAppStore';
 
 const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 
@@ -12,11 +13,6 @@ export function buildTaskByIdMap(tasks: Task[]): Map<string, Task> {
   return m;
 }
 
-/**
- * Mục tóm tắt là "ma" nếu id của nó trùng một task THẬT đang nạp nhưng task đó thuộc dự án khác
- * (khác projectId, hoặc cùng thiếu projectId nhưng khác store/năm một cách rõ ràng).
- * Không kết luận khi task chưa nạp: khi đó mục tóm tắt vẫn hiển thị như cũ.
- */
 export function isForeignSummaryEntry(
   tsId: string | undefined,
   project: Partial<Project>,
@@ -32,9 +28,26 @@ export function isForeignSummaryEntry(
   const ts = norm(t.projectStore);
   if (ps && ts && ps !== ts) return true;
 
+  const pCode = norm(project.code);
+  const tCode = norm(t.projectCode);
+  if (pCode && tCode && pCode !== tCode) return true;
+
   const py = String(project.year ?? '').trim();
   const ty = String(t.projectYear ?? '').trim();
-  if (py && ty && py !== ty) return true;
+  if (py && ty && py !== ty) {
+    // Nếu trong store có nhiều hơn 1 dự án cùng mã pCode (ví dụ dự án lặp lại mỗi năm), mới coi khác năm là ngoại lai.
+    // Còn nếu mã dự án pCode là duy nhất trong store (dự án kéo dài vắt qua 2 năm 2026-2027), thì task đó thuộc chính dự án này!
+    const allProjects = useAppStore.getState().projects || [];
+    const hasOtherProjectForTaskYear = allProjects.some(
+      (other) =>
+        !(other as any).isDeleted &&
+        String(other.id) !== String(project.id) &&
+        norm(other.code) === pCode &&
+        (!ps || !other.store || norm(other.store) === ps) &&
+        String(other.year ?? '').trim() === ty
+    );
+    return hasOtherProjectForTaskYear;
+  }
 
   return false;
 }

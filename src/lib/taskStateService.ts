@@ -17,8 +17,7 @@ const pendingProjectFetches = new Map<string, Promise<Task[]>>();
  * Validates whether a task belongs to a specific project by verifying store and year.
  */
 export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
-  if (!t || !p) return false;
-  if (t.isDeleted) return false;
+  if (!t || !p || t.isDeleted || (p as any).isDeleted) return false;
 
   const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
@@ -29,14 +28,29 @@ export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): b
   const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : '';
 
   if (pStore && tStore && pStore !== tStore) return false;
-  if (pYear && tYear && pYear !== tYear) return false;
 
-  if (t.projectId && p.id && String(t.projectId) === String(p.id)) return true;
-  if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return false;
+  if (t.projectId && p.id) {
+    return String(t.projectId) === String(p.id);
+  }
 
-  if (tCode && pCode && (tCode === pCode || matchProjectCode(tCode, pCode))) return true;
+  if (!tCode || !pCode || !(tCode === pCode || matchProjectCode(tCode, pCode))) {
+    return false;
+  }
 
-  return false;
+  if (pYear && tYear && pYear !== tYear) {
+    const allProjects = useAppStore.getState().projects || [];
+    const hasOtherProjectForTaskYear = allProjects.some(
+      (other) =>
+        !(other as any).isDeleted &&
+        String(other.id) !== String(p.id) &&
+        String(other.code || '').trim().toLowerCase() === pCode &&
+        (!pStore || !other.store || String(other.store).trim().toLowerCase() === pStore) &&
+        String(other.year ?? '').trim() === tYear
+    );
+    if (hasOtherProjectForTaskYear) return false;
+  }
+
+  return true;
 }
 
 /**
