@@ -160,15 +160,15 @@ export const ProjectChatInput = React.memo(
     const handleSend = () => {
       if (!commentText.trim()) return;
 
-      const lowerCommentText = commentText.toLowerCase();
+      const lowerCommentText = (commentText || '').toLowerCase();
       const activeMentions = Array.from(
         new Set([
           ...mentions.filter((userId) => {
-            const user = appUsers.find((u) => u.id === userId);
-            return user && lowerCommentText.includes(`@${user.username.toLowerCase()}`);
+            const user = (appUsers || []).find((u) => u && u.id === userId);
+            return user && typeof user.username === 'string' && lowerCommentText.includes(`@${user.username.toLowerCase()}`);
           }),
-          ...appUsers
-            .filter((u) => lowerCommentText.includes(`@${u.username.toLowerCase()}`))
+          ...(appUsers || [])
+            .filter((u) => u && typeof u.username === 'string' && lowerCommentText.includes(`@${u.username.toLowerCase()}`))
             .map((u) => u.id),
         ])
       );
@@ -182,18 +182,20 @@ export const ProjectChatInput = React.memo(
 
     const filteredUsers = useMemo(() => {
       const freqs = getMentionFrequencies();
-      return appUsers
-        .filter((u) => u.username.toLowerCase().includes(mentionQuery.toLowerCase()))
+      const q = (mentionQuery || '').toLowerCase();
+      return (appUsers || [])
+        .filter((u) => u && typeof u.username === 'string' && u.username.toLowerCase().includes(q))
         .sort((a, b) => {
           const freqA = freqs[a.id] || 0;
           const freqB = freqs[b.id] || 0;
           if (freqA !== freqB) return freqB - freqA;
-          return a.username.localeCompare(b.username);
+          return (a.username || '').localeCompare(b.username || '');
         });
     }, [appUsers, mentionQuery]);
 
     const filteredTasks = useMemo(() => {
-      return projectTasks.filter((t) => t.name?.toLowerCase().includes(taskQuery.toLowerCase()));
+      const q = (taskQuery || '').toLowerCase();
+      return (projectTasks || []).filter((t) => t && typeof t.name === 'string' && t.name.toLowerCase().includes(q));
     }, [projectTasks, taskQuery]);
 
     return (
@@ -208,9 +210,9 @@ export const ProjectChatInput = React.memo(
                 className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-[#333336] dark:text-[#e3e3e3] transition-colors flex items-center gap-2"
               >
                 <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center font-bold text-[10px]">
-                  {u.username.substring(0, 2).toUpperCase()}
+                  {(u.username || u.email || 'U').substring(0, 2).toUpperCase()}
                 </div>
-                {u.username}
+                {u.username || u.email || 'User'}
               </button>
             ))}
           </div>

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Search, Download, Upload } from 'lucide-react';
+import { Search, Download, Upload, Plus } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { ColumnAdder } from '../ColumnAdder';
@@ -27,6 +27,7 @@ interface BudgetFilterToolbarProps {
   handleToggleColumn: (colId: string) => void;
   handleExportBudget: () => void;
   handleImportBudget: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onAddBudget?: () => void;
 }
 
 export function BudgetFilterToolbar({
@@ -48,7 +49,8 @@ export function BudgetFilterToolbar({
   visibleColumns,
   handleToggleColumn,
   handleExportBudget,
-  handleImportBudget
+  handleImportBudget,
+  onAddBudget
 }: BudgetFilterToolbarProps) {
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,20 +105,29 @@ export function BudgetFilterToolbar({
         </div>
 
         <div className="relative w-full">
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-[#838383] z-10">
-            <Search className="w-4 h-4" />
-          </div>
           <DebouncedSearchInput 
             value={searchTerm} 
             onChange={(val) => setSearchTerm(val)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block w-full pl-9 pr-3 p-2 outline-none shadow-sm" 
             placeholder={t('Search anything...')}
           />
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 justify-end">
+        {canWrite && (
+          <button 
+            type="button"
+            onClick={onAddBudget}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
+            title={t('Add Budget')}
+          >
+            <Plus className="w-4 h-4" />
+            <span>{t('Add Budget')}</span>
+          </button>
+        )}
+
         <button 
+          type="button"
           onClick={handleExportBudget} 
           className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
           title="Export Filtered CSV"
@@ -135,6 +146,7 @@ export function BudgetFilterToolbar({
               className="hidden" 
             />
             <button 
+              type="button"
               onClick={() => fileInputRef.current?.click()} 
               className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
               title="Import Budget CSV (Updates matching projects)"
@@ -145,11 +157,13 @@ export function BudgetFilterToolbar({
           </>
         )}
 
-        <ColumnAdder 
-          availableColumns={AVAILABLE_COLUMNS} 
-          visibleColumns={visibleColumns} 
-          onAddColumn={handleToggleColumn} 
-        />
+        <div className="hidden xl:flex items-center gap-2 shrink-0">
+          <ColumnAdder 
+            availableColumns={AVAILABLE_COLUMNS} 
+            visibleColumns={visibleColumns} 
+            onAddColumn={handleToggleColumn} 
+          />
+        </div>
       </div>
     </div>
   );

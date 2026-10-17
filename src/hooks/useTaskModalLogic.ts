@@ -107,7 +107,7 @@ export function useTaskModalLogic({
         hydrateTasksForProjects(keys, pYear, pStore).catch(() => {});
         hydrateDelegationsForProjects(keys, pYear, pStore).catch(() => {});
         if (pCode || pId) {
-          ensureProjectTasksLoaded(pCode || '', pId, pYear, pStore).catch(() => {});
+          ensureProjectTasksLoaded(pCode || '').catch(() => {});
         }
       }
       if (task?.id) {

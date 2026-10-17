@@ -371,7 +371,7 @@ export function useBudgetData({
   const isAdmin = currentUser.role === 'admin';
   const role = currentUser.role as AppRole;
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
-  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.budget) && !isArchiveYear;
+  const canWrite = (isAdmin || !!currentUser?.canWrite || !!permissionMatrix[role]?.Write?.budget) && !isArchiveYear;
 
   const formatCurrency = (val: number | undefined) => {
     return formatCurrencyValue(val, currency, jpyRate, usdRate);

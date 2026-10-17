@@ -299,6 +299,12 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                       setCostTabSearchTerm(code ? String(code).replace(/["']/g, '').trim() : "");
                       handleTabChange("cost");
                     }}
+                    onAddBudget={() => {
+                      setEditingProject(null);
+                      setIsReadOnlyModal(false);
+                      setModalInitialTab("details");
+                      setIsProjectModalOpen(true);
+                    }}
                   />
                 )}
 
