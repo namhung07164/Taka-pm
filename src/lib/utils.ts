@@ -520,17 +520,19 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
   let derivedFromTasks = false;
   let projectTasks: Task[] = [];
   if (tasks && tasks.length > 0) {
+    let minStart: string | undefined = undefined;
+    let maxCompl: string | undefined = undefined;
     let hasOpeningTask = false;
     tasks.forEach(t => {
       if (!isTaskBelongsToProject(t, p)) return;
 
       derivedFromTasks = true;
       projectTasks.push(t);
-      if (t.start && (!computedTakStart || t.start < computedTakStart)) {
-        computedTakStart = t.start;
+      if (t.start && (!minStart || t.start < minStart)) {
+        minStart = t.start;
       }
-      if (t.finish && (!computedTakCompl || t.finish > computedTakCompl)) {
-        computedTakCompl = t.finish;
+      if (t.finish && (!maxCompl || t.finish > maxCompl)) {
+        maxCompl = t.finish;
       }
       const name = t.name ? String(t.name).toLowerCase() : "";
       if ((name.includes("opening") || name.includes("open")) && t.finish) {
@@ -540,19 +542,25 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
         }
       }
     });
-    if (!hasOpeningTask && p.openingMode !== 'manual') {
-      computedOpening = '';
+    if (derivedFromTasks) {
+      if (minStart) computedTakStart = minStart;
+      if (maxCompl) computedTakCompl = maxCompl;
+      if (!hasOpeningTask && p.openingMode !== 'manual') {
+        computedOpening = '';
+      }
     }
   }
 
   if (!derivedFromTasks && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+    let minStart: string | undefined = undefined;
+    let maxCompl: string | undefined = undefined;
     let hasOpeningTask = false;
     p.taskSummaries.forEach(ts => {
-      if (ts.start && (!computedTakStart || ts.start < computedTakStart)) {
-        computedTakStart = ts.start;
+      if (ts.start && (!minStart || ts.start < minStart)) {
+        minStart = ts.start;
       }
-      if (ts.finish && (!computedTakCompl || ts.finish > computedTakCompl)) {
-        computedTakCompl = ts.finish;
+      if (ts.finish && (!maxCompl || ts.finish > maxCompl)) {
+        maxCompl = ts.finish;
       }
       const name = ts.name ? String(ts.name).toLowerCase() : "";
       if ((name.includes("opening") || name.includes("open")) && ts.finish) {
@@ -562,6 +570,8 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
         }
       }
     });
+    if (minStart) computedTakStart = minStart;
+    if (maxCompl) computedTakCompl = maxCompl;
     if (!hasOpeningTask && p.openingMode !== 'manual') {
       computedOpening = '';
     }
@@ -957,18 +967,15 @@ export function isTaskBelongsToProject(
   const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
   if (tStore && pStore && tStore !== pStore) return false;
 
-  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  if (tYear && pYear && tYear !== pYear) return false;
-
   const tProjId = t.projectId ? String(t.projectId).trim() : '';
   const pId = p.id ? String(p.id).trim() : '';
   if (tProjId && pId) {
-    if (tProjId === pId) return true;
-    if (!tYear || !pYear || tYear !== pYear || !tStore || !pStore || tStore !== pStore) {
-      return false;
-    }
+    return tProjId === pId;
   }
+
+  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  if (tYear && pYear && tYear !== pYear) return false;
 
   if (!t.projectCode || !p.code) return false;
   const tCode = String(t.projectCode).trim().toLowerCase();
@@ -1115,12 +1122,24 @@ export function enrichProjects(
     });
   });
 
+  const codeStoreProjectCount = new Map<string, number>();
+  projects.forEach(proj => {
+    if ((proj as any).isDeleted) return;
+    const c = String(proj.code || "").trim().toLowerCase();
+    const s = proj.store ? String(proj.store).trim().toLowerCase() : "";
+    if (c) {
+      const k = `${c}__${s}`;
+      codeStoreProjectCount.set(k, (codeStoreProjectCount.get(k) || 0) + 1);
+    }
+  });
+
   const enrichedProjects = projects.map((p) => {
     const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
     const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
     const rawCodeCombined = (p.linkCodes && p.linkCodes.trim()) ? `${pCode}, ${p.linkCodes.toLowerCase()}` : pCode;
     const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+    const isUniqueCodeInStore = pCode ? (codeStoreProjectCount.get(`${pCode}__${pStore}`) || 0) <= 1 : false;
 
     const matchedTaskMap = new Map<string, Task>();
 
@@ -1133,7 +1152,7 @@ export function enrichProjects(
           const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
           const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
           if (pStore && tStore && pStore !== tStore) continue;
-          if (pYear && tYear && pYear !== tYear) continue;
+          if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear && String(t.projectId) !== String(p.id)) continue;
           matchedTaskMap.set(t.id, t);
         }
       }
@@ -1162,10 +1181,13 @@ export function enrichProjects(
       }
     }
 
-    // Fast fallback to code-only if no exact store/year match
-    if (matchedTaskMap.size === 0 && tasks.length > 0) {
+    // Fast fallback to code-only if no exact store/year match or if project code is unique in store (spanning 2 years)
+    if ((matchedTaskMap.size === 0 || isUniqueCodeInStore) && tasks.length > 0) {
       for (let i = 0; i < pCodeParts.length; i++) {
-        const fallbackTasks = tasksByCodeOnly.get(pCodeParts[i]);
+        const partCode = pCodeParts[i];
+        const isPartUniqueInStore = (codeStoreProjectCount.get(`${partCode}__${pStore}`) || 0) <= 1;
+        if (matchedTaskMap.size > 0 && !isUniqueCodeInStore && !isPartUniqueInStore) continue;
+        const fallbackTasks = tasksByCodeOnly.get(partCode);
         if (fallbackTasks) {
           for (let j = 0; j < fallbackTasks.length; j++) {
             const t = fallbackTasks[j];
@@ -1173,7 +1195,7 @@ export function enrichProjects(
             const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
             if (pStore && tStore && pStore !== tStore) continue;
             const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-            if (pYear && tYear && pYear !== tYear) continue;
+            if (!isUniqueCodeInStore && !isPartUniqueInStore && pYear && tYear && pYear !== tYear) continue;
             matchedTaskMap.set(t.id, t);
           }
         }
@@ -1206,11 +1228,11 @@ export function enrichProjects(
     });
 
     const taskSummaries = sortedProjTasks.length > 0
-      ? sortedProjTasks.filter(t => t.start && t.finish && t.name).map((t, idx) => ({
+      ? sortedProjTasks.filter(t => Boolean(t.name)).map((t, idx) => ({
           id: t.id,
           name: t.name!,
-          start: t.start!,
-          finish: t.finish!,
+          start: t.start || '',
+          finish: t.finish || '',
           orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
           duration: t.duration,
           parentTaskId: t.parentTaskId,
@@ -1226,14 +1248,16 @@ export function enrichProjects(
     let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
 
     if (projectTasks.length > 0) {
+      let minStart: string | undefined = undefined;
+      let maxCompl: string | undefined = undefined;
       let hasOpeningTask = false;
       for (let i = 0; i < projectTasks.length; i++) {
         const t = projectTasks[i];
-        if (t.start && (!computedTakStart || t.start < computedTakStart)) {
-          computedTakStart = t.start;
+        if (t.start && (!minStart || t.start < minStart)) {
+          minStart = t.start;
         }
-        if (t.finish && (!computedTakCompl || t.finish > computedTakCompl)) {
-          computedTakCompl = t.finish;
+        if (t.finish && (!maxCompl || t.finish > maxCompl)) {
+          maxCompl = t.finish;
         }
         const name = t.name ? String(t.name).toLowerCase() : "";
         if ((name.includes("opening") || name.includes("open")) && t.finish) {
@@ -1243,22 +1267,22 @@ export function enrichProjects(
           }
         }
       }
+      if (minStart) computedTakStart = minStart;
+      if (maxCompl) computedTakCompl = maxCompl;
       if (!hasOpeningTask && p.openingMode !== 'manual') {
         computedOpening = '';
       }
     } else if (taskSummaries.length > 0) {
+      let minStart: string | undefined = undefined;
+      let maxCompl: string | undefined = undefined;
       let hasOpeningTask = false;
       for (let i = 0; i < taskSummaries.length; i++) {
         const ts = taskSummaries[i];
-        if (ts.start && !computedTakStart) {
-          computedTakStart = ts.start;
-        } else if (ts.start && computedTakStart && ts.start < computedTakStart) {
-          computedTakStart = ts.start;
+        if (ts.start && (!minStart || ts.start < minStart)) {
+          minStart = ts.start;
         }
-        if (ts.finish && !computedTakCompl) {
-          computedTakCompl = ts.finish;
-        } else if (ts.finish && computedTakCompl && ts.finish > computedTakCompl) {
-          computedTakCompl = ts.finish;
+        if (ts.finish && (!maxCompl || ts.finish > maxCompl)) {
+          maxCompl = ts.finish;
         }
         const name = ts.name ? String(ts.name).toLowerCase() : "";
         if ((name.includes("opening") || name.includes("open")) && ts.finish) {
@@ -1268,6 +1292,8 @@ export function enrichProjects(
           }
         }
       }
+      if (minStart) computedTakStart = minStart;
+      if (maxCompl) computedTakCompl = maxCompl;
       if (!hasOpeningTask && p.openingMode !== 'manual') {
         computedOpening = '';
       }
@@ -1286,8 +1312,8 @@ export function enrichProjects(
           : (taskSummaries.length > 0 ? computeActProgressFromSummaries(taskSummaries) : (p.computedActProgress ?? 0)));
 
     const taskCount = projectTasks.length > 0
-      ? Math.max(projectTasks.length, taskSummaries.length)
-      : (Array.isArray(p.taskSummaries) ? p.taskSummaries.length : (p.taskCount ?? 0));
+      ? projectTasks.length
+      : (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0 ? p.taskSummaries.length : (p.taskCount ?? 0));
 
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const actStatus = computeProjectActStatus(

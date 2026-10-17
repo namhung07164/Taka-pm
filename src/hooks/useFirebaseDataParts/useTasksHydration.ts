@@ -163,7 +163,7 @@ export function useTasksHydration({
         // - chỉ xét các dự án có task thay đổi trong lô này (không quét toàn bộ P x T)
         // - bỏ qua snapshot từ cache và 15 giây đầu sau khi mở app (dữ liệu cục bộ có thể cũ/thiếu)
         // - KHÔNG chữa theo hướng giảm: ít task hơn taskCount đã lưu nghĩa là có thể mới tải một phần
-        if (!fromCache && getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS && pendingTasksChanged.current.size > 0) {
+        if (!fromCache && (getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS || knownHydratedProjectCodes.current.size > 0) && pendingTasksChanged.current.size > 0) {
           const touchedIds = new Set<string>();
           const touchedCodes = new Set<string>();
           pendingTasksChanged.current.forEach((t) => {
@@ -171,36 +171,53 @@ export function useTasksHydration({
             if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
           });
 
+          const currentProjects = useAppStore.getState().projects || [];
+
           // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
-          const belongsToProject = (t: Task, p: any): boolean => {
+          // (hoặc khớp vắt qua 2 năm nếu mã dự án p.code là duy nhất trong p.store)
+          const belongsToProject = (t: Task, p: any, isUniqueCodeInStore: boolean): boolean => {
             if (t.projectId) return String(t.projectId) === String(p.id);
-            return (
-              String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
-              String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
-              String(t.projectYear ?? "").trim() === String(p.year ?? "").trim()
-            );
+            const codeMatches = String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase();
+            if (!codeMatches) return false;
+            const storeMatches = !p.store || !t.projectStore || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+            if (!storeMatches) return false;
+            if (isUniqueCodeInStore) return true;
+            return String(t.projectYear ?? "").trim() === String(p.year ?? "").trim();
           };
 
-          const currentProjects = useAppStore.getState().projects || [];
           let projectsNeedUpdate = false;
           const healedProjects = currentProjects.map((p) => {
             const codeKey = String(p.code || "").trim().toLowerCase();
             if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
+            if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS && !knownHydratedProjectCodes.current.has(String(p.id))) return p;
 
-            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p));
+            const sameCodeStoreProjects = currentProjects.filter(
+              (proj) =>
+                !proj.isDeleted &&
+                String(proj.code || "").trim().toLowerCase() === codeKey &&
+                (!p.store || !proj.store || String(proj.store).trim().toLowerCase() === String(p.store).trim().toLowerCase())
+            );
+            const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
+
+            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p, isUniqueCodeInStore));
             if (pTasks.length === 0) return p;
 
-            // Có thể mới tải một phần task: không bao giờ ghi số liệu nhỏ hơn lên server
-            if (pTasks.length < (p.taskCount || 0)) return p;
+            const isFullyHydratedProject =
+              knownHydratedProjectCodes.current.has(String(p.id)) ||
+              tasksPool.current.has(`proj_${p.id}`) ||
+              tasksPool.current.has(`year_${p.year}`);
+
+            if (!isFullyHydratedProject && pTasks.length < (p.taskCount || 0)) return p;
 
             const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
-
             const hasDiscrepancy =
               p.taskCount !== computed.taskCount ||
               !p.taskSummaries ||
               p.taskSummaries.length !== (computed.taskSummaries?.length || 0) ||
               (p.computedTakStart || '') !== (computed.computedTakStart || '') ||
-              (p.computedTakCompl || '') !== (computed.computedTakCompl || '');
+              (p.computedTakCompl || '') !== (computed.computedTakCompl || '') ||
+              (p.computedPlanProgress ?? 0) !== (computed.computedPlanProgress ?? 0) ||
+              (p.computedActProgress ?? 0) !== (computed.computedActProgress ?? 0);
             if (!hasDiscrepancy) return p;
 
             projectsNeedUpdate = true;
@@ -505,7 +522,29 @@ export function useTasksHydration({
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
                     const fromCache = snapshot.metadata.fromCache;
-                    let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), p);
+                    const allProjectsNow = useAppStore.getState().projects || [];
+                    const sameCodeStoreProjects = allProjectsNow.filter(
+                      (proj) =>
+                        !proj.isDeleted &&
+                        String(proj.code || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
+                        (!p.store || !proj.store || String(proj.store).trim().toLowerCase() === String(p.store).trim().toLowerCase())
+                    );
+                    const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
+
+                    let compatibleChanges = snapshot.docChanges().filter((ch) => {
+                      const dt: any = ch.doc.data();
+                      if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                      if (dt && dt.projectStore && p.store &&
+                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                      if (ch.type === "removed") return true;
+                      if (dt && dt.projectId && String(dt.projectId) === String(p.id)) return true;
+                      if (!isUniqueCodeInStore) {
+                        const dy = dt.projectYear;
+                        if (dy !== undefined && dy !== null && dy !== "" && p.year &&
+                            String(dy).trim() !== String(p.year).trim()) return false;
+                      }
+                      return true;
+                    });
 
                     if (!fromCache) {
                       const zombieRemovals = buildZombieTaskRemovalsForProject(

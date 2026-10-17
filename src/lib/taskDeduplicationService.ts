@@ -196,30 +196,20 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
       return;
     }
 
-    const tName = String(task.name || '').trim().toLowerCase();
     const taskProjIdStr = task.projectId ? String(task.projectId).trim().toLowerCase() : '';
-    const prjKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, taskProjIdStr);
-    const pCode = String(task.projectCode || '').trim().toLowerCase();
-    const rawTaskCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
-    const parentIdStr = task.parentTaskId ? String(task.parentTaskId).trim().toLowerCase() : '';
-    const startStr = task.start ? String(task.start).trim() : '';
-    const finishStr = task.finish ? String(task.finish).trim() : '';
+    const projKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, taskProjIdStr);
+    const codePhu = String(task.taskCodePhu || '').trim().toLowerCase();
+    const exactName = String(task.name || '').trim().toLowerCase();
+    const startStr = String(task.start || '').trim();
+    const finishStr = String(task.finish || '').trim();
+    const partyStr = String(task.party || '').trim().toLowerCase();
 
-    const codeKey = prjKey && rawTaskCode ? `${prjKey}:::code:::${rawTaskCode}` : '';
-    // Require exact match on project, parent, name, start, and finish to prevent falsely merging distinct tasks!
-    const exactTaskKey = prjKey && tName ? `${prjKey}:::parent:${parentIdStr}:::name:${tName}:::start:${startStr}:::finish:${finishStr}` : '';
+    // Đưa đầy đủ codePhu + exactName + start + finish + party vào signature để không bao giờ xóa nhầm các hạng mục WBS trùng tên
+    const taskUniqueSignature = `${projKey}__${codePhu || 'nocode'}__${exactName}__${startStr}__${finishStr}__${partyStr}`;
 
-    let matchedExistingId: string | undefined = undefined;
-
-    if (exactTaskKey && seenNormMap.has(exactTaskKey)) {
-      matchedExistingId = seenNormMap.get(exactTaskKey);
-    } else if (codeKey && seenCodeMap.has(codeKey)) {
-      const candId = seenCodeMap.get(codeKey);
-      const cand = candId ? seenMap.get(candId) : undefined;
-      const candName = String(cand?.name || '').trim().toLowerCase();
-      // Position-based subtask codes can temporarily overlap between different tasks: only treat as duplicate if names match
-      if (cand && candName === tName) matchedExistingId = candId;
-    }
+    const matchedExistingId = (projKey && exactName && seenNormMap.has(taskUniqueSignature))
+      ? seenNormMap.get(taskUniqueSignature)
+      : undefined;
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
       const existing = seenMap.get(matchedExistingId)!;
@@ -229,10 +219,8 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
         return;
       }
 
-      // Absolute guard 2: Tasks with distinctly different names are NEVER duplicates!
-      const normA = normalizeTaskNameForComparison(task.name, task.projectCode);
-      const normB = normalizeTaskNameForComparison(existing.name, existing.projectCode);
-      if (normA && normB && normA !== normB) {
+      // Absolute guard 2: If both tasks have explicit parentTaskIds that do NOT match, they are NEVER duplicates!
+      if (task.parentTaskId && existing.parentTaskId && String(task.parentTaskId) !== String(existing.parentTaskId)) {
         seenMap.set(task.id, task);
         return;
       }
@@ -265,8 +253,9 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
       }
     } else {
       seenMap.set(task.id, task);
-      if (codeKey) seenCodeMap.set(codeKey, task.id);
-      if (exactTaskKey) seenNormMap.set(exactTaskKey, task.id);
+      if (projKey && exactName) {
+        seenNormMap.set(taskUniqueSignature, task.id);
+      }
     }
   });
 

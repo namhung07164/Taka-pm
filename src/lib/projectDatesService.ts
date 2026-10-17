@@ -41,9 +41,21 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+  const pCodeLower = String(project.code || '').trim().toLowerCase();
   const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
   const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
   const pIdStr = project.id ? String(project.id) : '';
+
+  const allProjects = useAppStore.getState().projects || [];
+  const sameCodeStoreProjects = pCodeLower
+    ? allProjects.filter(
+        proj =>
+          !(proj as any).isDeleted &&
+          String(proj.code || '').trim().toLowerCase() === pCodeLower &&
+          (!pStore || !proj.store || String(proj.store).trim().toLowerCase() === pStore)
+      )
+    : [];
+  const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
 
   const matchedMap = new Map<string, Task>();
 
@@ -55,7 +67,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
     if (pIdStr && t.projectId && String(t.projectId) === pIdStr) {
       if (pStore && tStore && pStore !== tStore) return;
-      if (pYear && tYear && pYear !== tYear) return;
+      if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear) return;
 
       matchedMap.set(String(t.id), t);
       return;
@@ -68,13 +80,13 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
     if (t.projectCode && project.code) {
       const tCode = String(t.projectCode).trim().toLowerCase();
-      const matchesCode = tCode === String(project.code).trim().toLowerCase() ||
+      const matchesCode = tCode === pCodeLower ||
                           pCodeParts.includes(tCode) ||
                           matchProjectCode(t.projectCode, project.code) ||
                           matchProjectCode(t.projectCode, project.linkCodes);
       if (matchesCode) {
         if (pStore && tStore && pStore !== tStore) return;
-        if (pYear && tYear && pYear !== tYear) return;
+        if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear) return;
 
         matchedMap.set(String(t.id), t);
       }
@@ -97,58 +109,6 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   const matchedList = Array.from(matchedMap.values());
   if (matchedList.length > 0) {
-    // Safety guard: If memory only has a partial task set (e.g. mobile or lazy loading),
-    // merge in any remaining tasks from project.taskSummaries so task list never shrinks!
-    if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > matchedList.length) {
-      const existingIdSet = new Set<string>();
-      const existingCodeNameSet = new Set<string>();
-      const existingNameSet = new Set<string>();
-
-      matchedList.forEach(t => {
-        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
-        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
-        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
-        if (tName) existingNameSet.add(tName);
-        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
-      });
-
-      const mergedList = [...matchedList];
-      const taskByIdForGuard = buildTaskByIdMap(safeAllTasks);
-      project.taskSummaries.forEach((ts, idx) => {
-        if (isForeignSummaryEntry(ts.id, project, taskByIdForGuard)) return;
-        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-
-        if (isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined)) {
-          return;
-        }
-
-        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
-                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
-                         (!tsCode && tsName && existingNameSet.has(tsName));
-        if (!hasMatch) {
-          mergedList.push({
-            id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
-            name: ts.name || `Task ${idx + 1}`,
-            start: ts.start || project.computedTakStart || project.start || '',
-            finish: ts.finish || project.computedTakCompl || project.handover || '',
-            projectCode: project.code || '',
-            projectStore: project.store || 'HCM',
-            projectYear: project.year ? String(project.year) : '',
-            party: ts.party || project.party || '',
-            runningStatus: ts.runningStatus || 'On process',
-            duration: ts.duration || '',
-            parentTaskId: ts.parentTaskId,
-            taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
-            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-            projectId: project.id,
-            ...ts
-          } as Task);
-        }
-      });
-      return mergedList;
-    }
     return matchedList;
   }
 
@@ -203,7 +163,7 @@ export function calculateProjectComputedDates(
   const sortedProjTasks = sortGroupTasks(rolledUpProjTasks);
 
   const taskSummariesRaw = sortedProjTasks
-    .filter(t => t.start || t.finish || t.name)
+    .filter(t => Boolean(t.name))
     .map((t, idx) => {
       const summary: {
         name: string;
@@ -228,42 +188,18 @@ export function calculateProjectComputedDates(
     });
 
   const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
-  
-  // Build a set of existing task identifiers from projectTasks (ids, taskCodePhu, normalized names)
-  const knownTaskSet = new Set<string>();
-  (sortedProjTasks || []).forEach(t => {
-    if (t.id) knownTaskSet.add(String(t.id).toLowerCase());
-    if (t.taskCodePhu) knownTaskSet.add(String(t.taskCodePhu).trim().toLowerCase());
-    if (t.name) knownTaskSet.add(String(t.name).trim().toLowerCase());
-  });
-
-  const mergedSummaries = [...taskSummaries];
-  existingSummaries.forEach((es: any) => {
-    if (isTaskDeletedInTracker(es.id, project.id ? String(project.id) : undefined)) return;
-    const esId = es.id ? String(es.id).toLowerCase() : '';
-    const esCode = es.taskCodePhu ? String(es.taskCodePhu).trim().toLowerCase() : '';
-    const esName = es.name ? String(es.name).trim().toLowerCase() : '';
-
-    const hasMatch = (esId && knownTaskSet.has(esId)) ||
-                     (esCode && knownTaskSet.has(esCode)) ||
-                     (esName && knownTaskSet.has(esName));
-    if (!hasMatch) {
-      mergedSummaries.push(es);
-    }
-  });
 
   const activeExistingSummaries = existingSummaries.filter((es: any) => 
     !isTaskDeletedInTracker(es.id, project.id ? String(project.id) : undefined)
   );
 
-  const finalSummaries: any[] = rollupTaskSummaries(
-    mergedSummaries.length > 0 ? mergedSummaries : activeExistingSummaries
-  );
+  const finalSummaries: any[] = sortedProjTasks.length > 0
+    ? taskSummaries
+    : rollupTaskSummaries(activeExistingSummaries);
 
-  const finalTaskCount = Math.max(
-    projectTasks.length,
-    finalSummaries.length
-  );
+  const finalTaskCount = projectTasks && projectTasks.length > 0
+    ? projectTasks.length
+    : (finalSummaries.length > 0 ? finalSummaries.length : existingCount);
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -307,10 +243,10 @@ export function calculateProjectComputedDates(
     computedOpening = project.computedOpening || project.opening || "";
   }
 
-  const planProgressPercent = finalSummaries.length > 0 
-    ? computePlanProgressFromSummaries(finalSummaries) 
-    : (projectTasks && projectTasks.length > 0
-        ? computePlanProgressPercent(projectTasks)
+  const planProgressPercent = projectTasks && projectTasks.length > 0
+    ? computePlanProgressPercent(projectTasks)
+    : (finalSummaries.length > 0 
+        ? computePlanProgressFromSummaries(finalSummaries) 
         : (project.computedPlanProgress ?? 0));
   
   const actProgressPercent = projectTasks && projectTasks.length > 0

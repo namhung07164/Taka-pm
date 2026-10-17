@@ -114,7 +114,14 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
           if (!existing) {
             mergedMap.set(String(p.id), {
               ...p,
-              taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+              taskCount: p.taskCount !== undefined ? p.taskCount : (p.taskSummaries?.length ?? 0),
+            });
+          } else {
+            mergedMap.set(String(p.id), {
+              ...existing,
+              ...p,
+              taskCount: p.taskCount !== undefined ? p.taskCount : (p.taskSummaries?.length ?? existing.taskCount),
+              taskSummaries: p.taskSummaries || existing.taskSummaries,
             });
           }
         }
@@ -122,9 +129,7 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
     }
 
     const mergedList = Array.from(mergedMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
-    if (mergedList.length !== currentProjects.length) {
-      store.setProjects(mergedList);
-    }
+    store.setProjects(mergedList);
 
     if (localProjects && localProjects.length > 0) {
       usePerformanceStore
