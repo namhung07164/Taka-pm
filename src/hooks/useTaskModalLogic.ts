@@ -211,56 +211,9 @@ export function useTaskModalLogic({
       title: "Delete Task",
       message: `Are you sure you want to delete task "${task.name || ''}"? This action cannot be undone.`,
       onConfirm: async () => {
-        const now = new Date().toISOString();
-        const prevTasks = useAppStore.getState().tasks;
-        const taskId = task.id;
-
-        // Unlink subtasks if this was a parent task
-        const parentCode = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
-        const childrenToUnlink = prevTasks.filter(t => {
-          if (t.id === taskId) return false;
-          const rawParent = t.parentTaskId || (t as any).parentId;
-          if (rawParent) {
-            const rawStr = String(rawParent).trim().toLowerCase();
-            return String(rawParent) === taskId || (parentCode && rawStr === parentCode);
-          }
-          return false;
-        });
-
-        // 1. Optimistic delete in Zustand & Dexie & projects sync
-        const { deleteTaskStateUnified } = await import('../lib/taskStateService');
-        await deleteTaskStateUnified([task || taskId]);
-        if (childrenToUnlink.length > 0) {
-          const unlinkedChildIds = new Set(childrenToUnlink.map(c => c.id));
-          const tasksAfterUnlink = useAppStore.getState().tasks.map(t => 
-            unlinkedChildIds.has(t.id) ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t
-          );
-          useAppStore.getState().setTasks(tasksAfterUnlink);
-        }
-
-        // 2. Commit batch to Firestore
         try {
-          const { doc, deleteField } = await import('firebase/firestore');
-          const { writeBatch } = await import('../lib/firestoreWrites');
-          const { db, APP_ID } = await import('../lib/firebase');
-          const { recordBatchDeltas } = await import('../lib/deltaSyncService');
-          const batch = writeBatch(db);
-          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId));
-          childrenToUnlink.forEach(child => {
-            const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', child.id);
-            batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
-          });
-          await batch.commit();
-
-          const deltaItems: any[] = [
-            { docId: taskId, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null },
-            ...childrenToUnlink.map(c => ({
-              docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
-              data: { parentTaskId: null, parentId: null, updatedAt: now }
-            }))
-          ];
-          recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
-
+          const { deleteTaskStateUnified } = await import('../lib/taskStateService');
+          await deleteTaskStateUnified([task]);
           setToast({ title: "Success", message: "Task deleted successfully." });
           onClose();
         } catch (err: any) {

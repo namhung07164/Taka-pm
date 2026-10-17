@@ -21,6 +21,8 @@ import {
 } from "../../lib/yearsFingerprintService";
 import { startDeltaSyncService, pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { markTasksDeleted } from "../../lib/taskDeletedTracker";
+import { isTaskBelongsToProject } from "../../lib/taskStateService";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
@@ -71,6 +73,7 @@ export function useProjectsHydration({
   const pendingProjectsMap = useRef<Map<string, Project> | null>(null);
   const pendingProjectsChanged = useRef<Map<string, Project>>(new Map());
   const pendingProjectsRemoved = useRef<Set<string>>(new Set());
+  const pendingDeletedTaskIds = useRef<Set<string>>(new Set());
   const projectsBatchTimer = useRef<NodeJS.Timeout | null>(null);
 
   const batchProjectsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
@@ -85,14 +88,12 @@ export function useProjectsHydration({
       const id = change.doc.id;
       const rawDocData = change.doc.data();
       const data = { id, ...rawDocData } as Project;
-      const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
 
       if (isTrueDelete) {
         pendingProjectsMap.current!.delete(id);
         pendingProjectsChanged.current.delete(id);
         pendingProjectsRemoved.current.add(id);
-      } else if (change.type === "removed") {
-        // Doc left sub-query scope — do NOT delete from Dexie
       } else {
         if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
         const existing = pendingProjectsMap.current!.get(id);
@@ -101,6 +102,44 @@ export function useProjectsHydration({
           taskCount: data.taskCount !== undefined ? data.taskCount : (existing.taskCount ?? 0),
           taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
         } : data;
+
+        // If this is a live server update and taskSummaries has shrunk (a task was deleted on another device),
+        // immediately detect the removed task IDs and purge them from Zustand tasks & Dexie!
+        if (!fromCache && Array.isArray(data.taskSummaries)) {
+          const incomingIds = new Set(
+            data.taskSummaries
+              .map((s: any) => (s?.id ? String(s.id).trim().toLowerCase() : ""))
+              .filter(Boolean)
+          );
+          if (existing && Array.isArray(existing.taskSummaries)) {
+            existing.taskSummaries.forEach((oldS: any) => {
+              const oldId = oldS?.id ? String(oldS.id).trim() : "";
+              if (oldId && !incomingIds.has(oldId.toLowerCase())) {
+                markTasksDeleted([oldId], id);
+                pendingDeletedTaskIds.current.add(oldId);
+              }
+            });
+          }
+          // Also check in-memory tasks belonging to this project if all incoming summaries carry IDs (or summaries is empty)
+          const allIncomingHaveIds = data.taskSummaries.every((s: any) => Boolean(s?.id));
+          if (allIncomingHaveIds) {
+            const currentTasks = useAppStore.getState().tasks || [];
+            const nowMs = Date.now();
+            currentTasks.forEach((t) => {
+              if (!t || !t.id || t.isDeleted) return;
+              if (!isTaskBelongsToProject(t, resolvedData)) return;
+              const tIdLower = String(t.id).trim().toLowerCase();
+              if (!incomingIds.has(tIdLower)) {
+                // Guard against tasks created/updated locally within the last 15 seconds (optimistic UI in-flight)
+                const taskUpdatedMs = tsOf(t.updatedAt || (t as any).createdAt);
+                if (taskUpdatedMs > 0 && nowMs - taskUpdatedMs < 15000) return;
+                markTasksDeleted([t.id], id);
+                pendingDeletedTaskIds.current.add(t.id);
+              }
+            });
+          }
+        }
+
         pendingProjectsMap.current!.set(id, resolvedData);
         pendingProjectsChanged.current.set(id, resolvedData);
         pendingProjectsRemoved.current.delete(id);
@@ -116,6 +155,26 @@ export function useProjectsHydration({
         const updatedList = Array.from(pendingProjectsMap.current.values());
         updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
         useAppStore.getState().setProjects(updatedList);
+
+        if (pendingDeletedTaskIds.current.size > 0) {
+          const delIdsLower = new Set(
+            Array.from(pendingDeletedTaskIds.current).map((tid) => String(tid).trim().toLowerCase())
+          );
+          const delRawIds = Array.from(pendingDeletedTaskIds.current);
+          pendingDeletedTaskIds.current.clear();
+
+          const currentTasks = useAppStore.getState().tasks || [];
+          const filteredTasks = currentTasks.filter(
+            (t) => !t?.id || !delIdsLower.has(String(t.id).trim().toLowerCase())
+          );
+          if (filteredTasks.length !== currentTasks.length) {
+            useAppStore.getState().setTasks(filteredTasks);
+          }
+          delRawIds.forEach((tid) => {
+            deleteLocalRecord('taka_tasks', tid).catch(() => {});
+          });
+        }
+
         // Chỉ ghi Dexie phần thay đổi; xóa khỏi Dexie phần đã bị xóa (chống "sống lại")
         const changed = Array.from(pendingProjectsChanged.current.values());
         const removed = Array.from(pendingProjectsRemoved.current);

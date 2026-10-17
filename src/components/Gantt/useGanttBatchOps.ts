@@ -532,20 +532,14 @@ export function useGanttBatchOps({
           return false;
         });
 
-        // 1. Optimistic UI update (0ms)
+        // 1. Optimistic UI update & atomic task deletion via deleteTaskStateUnified (0ms)
         if (deletedTaskIds.length > 0) {
-          deleteTaskStateUnified(deletedTaskIds).catch(() => {});
-          if (childrenToUnlink.length > 0) {
-            const unlinkedChildIds = new Set(childrenToUnlink.map(c => String(c.id)));
-            const tasksAfterUnlink = useAppStore.getState().tasks.map(t => 
-              unlinkedChildIds.has(String(t.id)) ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t
-            );
-            useAppStore.getState().setTasks(tasksAfterUnlink);
-          }
+          const taskObjsToDelete = currentTasks.filter(t => deletedTaskIds.includes(String(t.id)));
+          deleteTaskStateUnified(taskObjsToDelete.length > 0 ? taskObjsToDelete : deletedTaskIds).catch(() => {});
         }
 
         if (deletedProjectIds.length > 0) {
-          const remainingProjects = currentProjects.filter(p => 
+          const remainingProjects = useAppStore.getState().projects.filter(p => 
             !projSet.has(String(p.id)) && !projSet.has(String(p.no))
           );
           useAppStore.getState().setProjects(remainingProjects);
@@ -555,53 +549,22 @@ export function useGanttBatchOps({
           } catch (e) {}
         }
 
-        if (childrenToUnlink.length > 0) {
-          try {
-            const { localDb } = await import('../../lib/localDb');
-            await Promise.all(
-              childrenToUnlink.map(c => (localDb.tasks.update as any)(c.id, { parentTaskId: null, parentId: null, updatedAt: now }))
-            );
-          } catch (e) {}
-        }
-
         setSelectedTaskIds([]);
         setSelectedProjectIds([]);
 
-        // 2. Commit batch to Firestore
-        const batch = writeBatch(db);
-        deletedTaskIds.forEach(id => {
-          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-          batch.delete(docRef);
-        });
-        childrenToUnlink.forEach(child => {
-          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', child.id);
-          batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
-        });
-        deletedProjectIds.forEach(id => {
-          const p = currentProjects.find(item => String(item.id) === id || String(item.no) === id);
-          const docId = p?.id ? String(p.id) : id;
-          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
-          batch.delete(docRef);
-        });
-
+        // 2. Commit project deletions to Firestore (task deletions & child unlinks are already committed by deleteTaskStateUnified)
         try {
-          await batch.commit();
-          const deltaItems: TakaDeltaItem[] = [
-            ...deletedTaskIds.map(id => ({
-              docId: id,
-              collectionName: 'taka_tasks' as const,
-              action: 'delete' as const,
-              isPatch: false,
-              data: null
-            })),
-            ...childrenToUnlink.map(child => ({
-              docId: child.id,
-              collectionName: 'taka_tasks' as const,
-              action: 'update' as const,
-              isPatch: true,
-              data: { parentTaskId: null, parentId: null, updatedAt: now }
-            })),
-            ...deletedProjectIds.map(id => {
+          if (deletedProjectIds.length > 0) {
+            const batch = writeBatch(db);
+            deletedProjectIds.forEach(id => {
+              const p = currentProjects.find(item => String(item.id) === id || String(item.no) === id);
+              const docId = p?.id ? String(p.id) : id;
+              const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
+              batch.delete(docRef);
+            });
+            await batch.commit();
+
+            const deltaItems: TakaDeltaItem[] = deletedProjectIds.map(id => {
               const p = currentProjects.find(item => String(item.id) === id || String(item.no) === id);
               const docId = p?.id ? String(p.id) : id;
               return {
@@ -611,10 +574,10 @@ export function useGanttBatchOps({
                 isPatch: false,
                 data: null
               };
-            })
-          ];
-          if (deltaItems.length > 0) {
-            recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+            });
+            if (deltaItems.length > 0) {
+              recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+            }
           }
 
           useAppStore.getState().setToast({

@@ -83,15 +83,13 @@ export function useTasksHydration({
       const id = change.doc.id;
       const rawDocData = change.doc.data();
       const data = { id, ...rawDocData } as Task;
-      const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
 
       if (isTrueDelete) {
-        markTasksDeleted([id]);
+        markTasksDeleted([id], data.projectId ? String(data.projectId) : undefined);
         pendingTasksMap.current!.delete(id);
         pendingTasksChanged.current.delete(id);
         pendingTasksRemoved.current.add(id);
-      } else if (change.type === "removed") {
-        // Doc left sub-query scope (e.g. year/project filter change) — do NOT add to pendingTasksRemoved (do NOT delete from Dexie)
       } else {
         if (fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
         pendingTasksMap.current!.set(id, data);
@@ -119,6 +117,39 @@ export function useTasksHydration({
         });
         const finalTasks = rolledUpTasks;
         useAppStore.getState().setTasks(finalTasks);
+
+        // Immediately prune any removed task IDs from project.taskSummaries in store.projects
+        if (pendingTasksRemoved.current.size > 0) {
+          const removedSet = new Set(Array.from(pendingTasksRemoved.current).map(id => String(id).trim().toLowerCase()));
+          const currentProjects = useAppStore.getState().projects || [];
+          const modifiedProjects: any[] = [];
+          const prunedProjects = currentProjects.map((p) => {
+            if (Array.isArray(p.taskSummaries) && p.taskSummaries.some((s: any) => s?.id && removedSet.has(String(s.id).trim().toLowerCase()))) {
+              const filteredSummaries = p.taskSummaries.filter((s: any) => !s?.id || !removedSet.has(String(s.id).trim().toLowerCase()));
+              const pForCalc = { ...p, taskSummaries: filteredSummaries, taskCount: filteredSummaries.length };
+              const pTasks = finalTasks.filter((t) => !t.isDeleted && (
+                (t.projectId && String(t.projectId) === String(p.id)) ||
+                (!t.projectId && String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
+                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
+                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim())
+              ));
+              const computed = calculateProjectComputedDates(pForCalc, pTasks, useAppStore.getState().delegationGroups);
+              const nextProj = {
+                ...p,
+                ...computed,
+                taskSummaries: computed.taskSummaries || filteredSummaries,
+                taskCount: computed.taskCount !== undefined ? computed.taskCount : filteredSummaries.length,
+              };
+              modifiedProjects.push(nextProj);
+              return nextProj;
+            }
+            return p;
+          });
+          if (modifiedProjects.length > 0) {
+            useAppStore.getState().setProjects(prunedProjects);
+            offloadPersistSnapshot('taka_projects', modifiedProjects);
+          }
+        }
         
         // Self-healing an toàn:
         // - chỉ xét các dự án có task thay đổi trong lô này (không quét toàn bộ P x T)

@@ -70,6 +70,8 @@ const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 const isPWA = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any)?.standalone);
 
 export const db = initializeFirestore(app, {
+  // Prevent any Firestore write/delta from ever throwing on undefined fields
+  ignoreUndefinedProperties: true,
   // iOS Safari/PWA and corporate proxies often break WebChannel streaming (listener looks connected but gets no
   // updates). Auto-detect falls back to long-polling when streaming fails.
   experimentalAutoDetectLongPolling: true,

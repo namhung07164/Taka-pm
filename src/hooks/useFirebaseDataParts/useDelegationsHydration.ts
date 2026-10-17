@@ -80,14 +80,12 @@ export function useDelegationsHydration({
       const id = change.doc.id;
       const rawDocData = change.doc.data();
       const data = { id, ...rawDocData } as DelegationGroup;
-      const isTrueDelete = Boolean(data.isDeleted || (change.type === "removed" && (!rawDocData || rawDocData.isDeleted === true)));
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
 
       if (isTrueDelete) {
         pendingDelegationsMap.current!.delete(id);
         pendingDelegationsChanged.current.delete(id);
         pendingDelegationsRemoved.current.add(id);
-      } else if (change.type === "removed") {
-        // Doc left sub-query scope — do NOT delete from Dexie
       } else {
         if (fromCache && isStaleCacheDoc(pendingDelegationsMap.current!.get(id), data)) return;
         pendingDelegationsMap.current!.set(id, data);

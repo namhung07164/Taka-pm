@@ -107,7 +107,32 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         
         projectsChanged = true;
         if (idx !== -1) {
-          updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
+          const prevProj = updatedProjects[idx];
+          // If incoming project update has pruned taskSummaries, also remove those deleted task IDs from updatedTasks
+          if (Array.isArray(data?.taskSummaries) && Array.isArray(prevProj.taskSummaries)) {
+            const incomingSummaryIds = new Set(
+              data.taskSummaries
+                .map((s: any) => (s?.id ? String(s.id).trim().toLowerCase() : ''))
+                .filter(Boolean)
+            );
+            const removedIdsLower = new Set<string>();
+            prevProj.taskSummaries.forEach((oldS: any) => {
+              const oldId = oldS?.id ? String(oldS.id).trim() : '';
+              if (oldId && !incomingSummaryIds.has(oldId.toLowerCase())) {
+                markTasksDeleted([oldId], docId);
+                removedIdsLower.add(oldId.toLowerCase());
+                localDb.tasks.delete(oldId).catch(() => {});
+              }
+            });
+            if (removedIdsLower.size > 0) {
+              const beforeLen = updatedTasks.length;
+              updatedTasks = updatedTasks.filter((t) => !t?.id || !removedIdsLower.has(String(t.id).trim().toLowerCase()));
+              if (updatedTasks.length !== beforeLen) {
+                tasksChanged = true;
+              }
+            }
+          }
+          updatedProjects[idx] = applyFieldPatch(prevProj, data) as Project;
         } else if (action === 'create') {
           // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedProjects.push({ id: docId, ...data } as Project);
@@ -117,24 +142,42 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
-        noteTouchedProject(idx !== -1 ? updatedTasks[idx] : null);
+        const existingTask = idx !== -1 ? updatedTasks[idx] : null;
+        noteTouchedProject(existingTask);
         noteTouchedProject(data);
         if (isDelete || data?.isDeleted) {
-          markTasksDeleted([docId]);
+          const pIdHint = data?.projectId || existingTask?.projectId;
+          markTasksDeleted([docId], pIdHint ? String(pIdHint) : undefined);
+          localDb.tasks.delete(docId).catch(() => {});
           if (idx !== -1) {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
           }
+          const docIdLower = String(docId).trim().toLowerCase();
+          const delNameLower = String(data?.name || existingTask?.name || '').trim().toLowerCase();
+          const delCodeLower = String(data?.taskCodePhu || existingTask?.taskCodePhu || '').trim().toLowerCase();
+
           // Cắt đứt ngay lập tức task đã xóa khỏi project.taskSummaries trên máy nhận (chống hiện tượng bóng ma hồi sinh task trên iPad)
           updatedProjects = updatedProjects.map((p) => {
-            if (Array.isArray(p.taskSummaries) && p.taskSummaries.some((s: any) => s.id === docId)) {
-              projectsChanged = true;
-              const filteredSummaries = p.taskSummaries.filter((s: any) => s.id !== docId);
-              return {
-                ...p,
-                taskSummaries: filteredSummaries,
-                taskCount: filteredSummaries.length,
-              };
+            if (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+              const filteredSummaries = p.taskSummaries.filter((s: any) => {
+                const sId = s?.id ? String(s.id).trim().toLowerCase() : '';
+                if (sId && sId === docIdLower) return false;
+                if (!sId && delNameLower && String(s?.name || '').trim().toLowerCase() === delNameLower) {
+                  const sCode = s?.taskCodePhu ? String(s.taskCodePhu).trim().toLowerCase() : '';
+                  if (!delCodeLower || !sCode || sCode === delCodeLower) return false;
+                }
+                return true;
+              });
+              if (filteredSummaries.length !== p.taskSummaries.length) {
+                projectsChanged = true;
+                noteTouchedProject({ projectId: p.id, projectCode: p.code });
+                return {
+                  ...p,
+                  taskSummaries: filteredSummaries,
+                  taskCount: filteredSummaries.length,
+                };
+              }
             }
             return p;
           });
@@ -243,9 +286,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   });
 
   // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
+  const touchedProjectsToPersist: Project[] = [];
   if ((tasksChanged || projectsChanged) && (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)) {
     const delegationGroups = store.delegationGroups || [];
-    const isTasksRequested = store.isTasksRequested;
     updatedProjects = updatedProjects.map(p => {
       // Dự án khớp theo id, hoặc theo mã chính / mã liên kết (linkCodes)
       const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
@@ -259,16 +302,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       if (!isTouched) return p;
 
       const pTasks = getTasksForProject(p, updatedTasks);
-      if (isTasksRequested || pTasks.length > 0) {
-        const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
-        return {
-          ...p,
-          ...computedDates,
-          taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length,
-          taskSummaries: computedDates.taskSummaries || [],
-        };
-      }
-      return p;
+      const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
+      const nextProj: Project = {
+        ...p,
+        ...computedDates,
+        taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length,
+        taskSummaries: computedDates.taskSummaries || [],
+      };
+      touchedProjectsToPersist.push(nextProj);
+      return nextProj;
     });
     projectsChanged = true;
   }
@@ -277,6 +319,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (tasksChanged) store.setTasks(updatedTasks);
   if (costsChanged) store.setCosts(updatedCosts);
   if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
+
+  if (touchedProjectsToPersist.length > 0) {
+    localDb.projects.bulkPut(touchedProjectsToPersist).catch(() => {});
+  }
 
   // Trụ cột 3: Kích hoạt Smart Change Flash cho các dòng vừa nhận thay đổi từ đồng nghiệp (Google Sheets standard)
   const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];

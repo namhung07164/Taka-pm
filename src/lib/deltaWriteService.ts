@@ -11,6 +11,7 @@ import { touchYearMeta } from './yearsFingerprintService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { markExplicitDelta } from './autoDeltaQueue';
 import { CLIENT_SESSION_ID, DELTA_COLLECTION } from './deltaConstants';
+import { removeUndefinedDeep } from './firestoreSanitizer';
 
 /**
  * Ghi lại 1 delta change log khi có mutation phát sinh
@@ -20,7 +21,7 @@ export async function recordDelta(delta: {
   docId: string;
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
   action: 'create' | 'update' | 'delete';
-  data: Record<string, any>;
+  data: Record<string, any> | null;
   year?: string;
   updatedBy?: string;
   isPatch?: boolean;
@@ -35,9 +36,9 @@ export async function recordDelta(delta: {
     docId: delta.docId,
     collectionName: delta.collectionName,
     action: delta.action,
-    year: delta.year ? String(delta.year) : undefined,
-    data: delta.data,
-    isPatch: delta.isPatch,
+    ...(delta.year ? { year: String(delta.year) } : {}),
+    data: delta.data || {},
+    ...(delta.isPatch !== undefined ? { isPatch: delta.isPatch } : {}),
     updatedBy: delta.updatedBy || useAppStore.getState().currentUser?.email || 'system',
     sessionId: CLIENT_SESSION_ID,
     timestamp: nowIso,
@@ -48,7 +49,8 @@ export async function recordDelta(delta: {
 
   try {
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION, deltaId);
-    await setDoc(docRef, deltaPayload);
+    const cleanPayload = removeUndefinedDeep(deltaPayload);
+    await setDoc(docRef, cleanPayload);
 
     // Kích hoạt cập nhật fingerprint năm tương ứng
     if (delta.year) {
@@ -102,7 +104,8 @@ export async function recordBatchDeltas(
 
   try {
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION, deltaId);
-    await setDoc(docRef, deltaPayload);
+    const cleanPayload = removeUndefinedDeep(deltaPayload);
+    await setDoc(docRef, cleanPayload);
 
     // Kích hoạt cập nhật fingerprint các năm bị ảnh hưởng
     const affectedYears = new Set(items.map((i) => i.year).filter(Boolean));
