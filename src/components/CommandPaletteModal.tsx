@@ -141,13 +141,12 @@ export function CommandPaletteModal({
           </div>
 
           <div className="relative flex items-center">
-            <Search className="absolute left-3.5 w-5 h-5 text-slate-400 dark:text-[#838383] pointer-events-none z-10" />
             <DebouncedSearchInput
               value={searchQuery}
               onChange={(val) => setSearchQuery(val)}
               debounceMs={180}
               placeholder="Search projects, tasks, floors, actions, or jump to tab..."
-              className="w-full pl-11 pr-24 py-2.5 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl text-slate-800 dark:text-[#f3f3f3] placeholder-slate-400 dark:placeholder-[#838383] text-sm sm:text-base font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs transition-all"
+              className="w-full"
             />
             <div className="absolute right-3 flex items-center gap-1 pointer-events-none z-10">
               <kbd className="text-[10px] font-mono font-bold bg-slate-100 dark:bg-[#28282a] text-slate-500 dark:text-[#a3a3a3] border border-slate-200 dark:border-[#444446] px-1.5 py-0.5 rounded shadow-2xs">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { AppUser } from '../../types';
@@ -121,13 +121,9 @@ export function GeneralFilterToolbar({
           </div>
 
           <div className="relative w-full">
-            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-[#838383] z-10">
-              <Search className="w-4 h-4" />
-            </div>
             <DebouncedSearchInput 
               value={searchTerm}
               onChange={(val) => setSearchTerm(val)}
-              className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block w-full pl-9 pr-3 p-2 outline-none shadow-sm" 
               placeholder={t('Search anything...')}
             />
           </div>

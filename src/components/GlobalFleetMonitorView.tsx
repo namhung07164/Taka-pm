@@ -235,12 +235,11 @@ export function GlobalFleetMonitorView() {
       <div className="bg-white dark:bg-[#27272a] rounded-xl border border-slate-200 dark:border-[#3f3f46] p-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-2 flex-grow max-w-md">
           <div className="relative w-full">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10 pointer-events-none" />
             <DebouncedSearchInput
               placeholder="Tìm theo tên máy, người dùng, hệ điều hành (Windows, iPhone...)..."
               value={searchTerm}
               onChange={(val) => setSearchTerm(val)}
-              className="w-full pl-9 pr-8 py-1.5 text-xs bg-slate-50 dark:bg-[#1f1f22] border border-slate-200 dark:border-[#3f3f46] rounded-lg text-slate-800 dark:text-white outline-none focus:border-blue-500"
+              className="w-full"
             />
           </div>
           <select

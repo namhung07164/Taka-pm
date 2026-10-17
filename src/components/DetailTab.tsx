@@ -475,6 +475,7 @@ export function DetailTab({
 
       <DetailFocusControls 
         initialFocusTaskId={initialFocusTaskId}
+        initialFilterCode={initialFilterCode}
         onBackToGantt={handleBackToGantt}
         onClearFocus={onClearFocus ? handleClearFocus : undefined}
       />

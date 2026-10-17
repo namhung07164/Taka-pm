@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import { Sparkles, Search } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 
 interface AuditLogFilterToolbarProps {
@@ -64,14 +64,13 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
           </select>
 
           <div className="flex relative items-center">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 z-10 pointer-events-none" />
             <DebouncedSearchInput
               placeholder="User email..."
               value={userEmailFilter}
               onChange={(val) => setUserEmailFilter(val)}
               debounceMs={250}
               onKeyDown={(e) => e.key === 'Enter' && onSearch()}
-              className="w-full sm:w-64 pl-9 py-2 bg-white dark:bg-[#18181a] border border-slate-200 dark:border-[#333336] rounded-l-lg text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full sm:w-64"
             />
             <button
               onClick={onSearch}

@@ -152,13 +152,12 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
         <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{isAdmin ? 'User Account Control' : 'My Account'}</h2>
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 z-10" />
             <DebouncedSearchInput
               placeholder="Search users..."
               value={searchTerm}
               onChange={(val) => setSearchTerm(val)}
               debounceMs={500}
-              className="pl-9 pr-8 py-1.5 border border-slate-200 dark:border-[#444446] rounded-lg text-sm bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-[#e3e3e3] outline-none focus:ring-2 focus:ring-blue-500 w-64"
+              className="w-64"
             />
           </div>
           {isAdmin && (

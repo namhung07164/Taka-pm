@@ -144,8 +144,8 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 self-end xl:self-center">
+      {/* Controls - Column customization is only used on desktop table view (xl), hidden on iOS/mobile */}
+      <div className="hidden xl:flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 self-end xl:self-center">
         <ColumnAdder 
           availableColumns={availableColumnsForUser} 
           visibleColumns={visibleColumns} 

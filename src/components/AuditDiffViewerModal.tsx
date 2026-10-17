@@ -253,13 +253,12 @@ export function AuditDiffViewerModal({ isOpen, log, onClose }: AuditDiffViewerMo
 
               {viewMode !== 'raw' && (
                 <div className="relative w-full sm:w-64">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5 z-10 pointer-events-none" />
                   <DebouncedSearchInput
                     placeholder="Filter field changes..."
                     value={searchTerm}
                     onChange={(val) => setSearchTerm(val)}
                     debounceMs={200}
-                    className="w-full pl-8 py-1.5 bg-slate-50 dark:bg-[#222226] border border-slate-200 dark:border-[#333336] rounded-lg text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full"
                   />
                 </div>
               )}

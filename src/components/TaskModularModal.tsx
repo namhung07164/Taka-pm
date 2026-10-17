@@ -338,12 +338,11 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
               {/* Search input */}
               <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" />
                 <DebouncedSearchInput
                   value={searchTerm}
                   onChange={(val) => setSearchTerm(val)}
                   placeholder="Search parent task by name, project code..."
-                  className="w-full pl-8 pr-7 py-1.5 border rounded-lg bg-white dark:bg-[#18181a] border-slate-200 dark:border-[#38383a] text-xs text-slate-900 dark:text-[#e3e3e3] focus:ring-2 focus:ring-purple-500 outline-none shadow-xs font-medium"
+                  className="w-full"
                 />
               </div>
             </div>
