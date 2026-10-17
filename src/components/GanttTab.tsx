@@ -36,7 +36,7 @@ export function GanttTab({
   printDateRangeOverride
 }: GanttTabProps) {
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
-  const currentUser = useAppStore(state => state.currentUser);
+  const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
   const isTasksLoading = useAppStore(state => state.isTasksLoading);
   const isTasksRequested = useAppStore(state => state.isTasksRequested);
@@ -307,14 +307,12 @@ export function GanttTab({
   });
 
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
-  const canWrite = Boolean(
-    currentUser && (
-      currentUser.role === 'admin' || 
-      currentUser.canWrite === true || 
-      (currentUser.role && !!permissionMatrix?.[currentUser.role]?.Write?.detail) || 
-      (currentUser.role && !!permissionMatrix?.[currentUser.role]?.Write?.report) ||
-      (currentUser.role && !!(permissionMatrix?.[currentUser.role]?.Write as any)?.gantt)
-    )
+  const canWrite = (
+    currentUser.role === 'admin' || 
+    currentUser.canWrite === true || 
+    !!permissionMatrix[currentUser.role]?.Write?.detail || 
+    !!permissionMatrix[currentUser.role]?.Write?.report ||
+    !!(permissionMatrix[currentUser.role]?.Write as any)?.gantt
   ) && !isArchiveYear;
 
   return (

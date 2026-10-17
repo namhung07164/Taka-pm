@@ -136,7 +136,6 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
   const appUsers = useAppStore(state => state.appUsers);
   const setActiveTab = useAppStore(state => state.setActiveTab);
-  if (!currentUser) return null;
 
   return (
     <div className="flex-grow flex flex-col min-h-0 relative z-[10]">
@@ -163,7 +162,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
             className="flex flex-col flex-grow min-h-0"
           >
               {activeTab === "layout" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.layout) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.layout) && (
                   <LayoutTab
                     initialStore={layoutTabFilters?.store}
                     initialLocation={layoutTabFilters?.location}
@@ -181,14 +180,14 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "summary" &&
-                (currentUser?.role === "admin" ||
-                  permissionMatrix?.[userRole]?.See?.summary ||
-                  permissionMatrix?.[userRole]?.See?.report) && (
+                (currentUser.role === "admin" ||
+                  permissionMatrix[userRole]?.See?.summary ||
+                  permissionMatrix[userRole]?.See?.report) && (
                   <SummaryTab />
                 )}
 
               {activeTab === "general" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.general) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.general) && (
                   <GeneralTab
                     onProjectClick={(p) => {
                       setQuickNavTarget({ project: p });
@@ -197,7 +196,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "detail" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.detail) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.detail) && (
                   <Profiler id="DetailTab" onRender={onRenderCallback}>
                     <DetailTab
                       initialFilterCode={detailTabFilterCode}
@@ -259,9 +258,9 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "calendar" &&
-                (currentUser?.role === "admin" ||
-                  permissionMatrix?.[userRole]?.See?.calendar ||
-                  permissionMatrix?.[userRole]?.See?.report) && (
+                (currentUser.role === "admin" ||
+                  permissionMatrix[userRole]?.See?.calendar ||
+                  permissionMatrix[userRole]?.See?.report) && (
                   <CalendarTab
                     onEditTask={(t, isReadOnly) => {
                       setEditingTask(t);
@@ -279,7 +278,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "gantt" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.report) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.report) && (
                   <Profiler id="GanttTab" onRender={onRenderCallback}>
                     <div className="flex flex-col flex-grow min-h-0">
                       <GanttTab
@@ -293,7 +292,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "budget" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.budget) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.budget) && (
                   <BudgetTab
                     initialSearchTerm={budgetTabSearchTerm}
                     onGoToCost={(code) => {
@@ -310,7 +309,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "taskDelegation" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.taskDelegation) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.taskDelegation) && (
                   <TaskDelegationTab
                     onBackFromFocus={() => {
                       if (tabHistory.length > 0) {
@@ -325,7 +324,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "taskDelegationCalendar" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.taskDelegation) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.taskDelegation) && (
                   <DelegationCalendarTab
                     groups={visibleDelegationGroups}
                     onTabChange={handleTabChange}
@@ -333,7 +332,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 )}
 
               {activeTab === "cost" &&
-                (currentUser?.role === "admin" || permissionMatrix?.[userRole]?.See?.costDetail) && (
+                (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.costDetail) && (
                   <CostTab
                     initialSearchTerm={costTabSearchTerm}
                     onGoToBudget={(code) => {
@@ -478,15 +477,15 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                 <ManualTab />
               )}
 
-              {activeTab === "audit" && (currentUser?.role === "admin" || (permissionMatrix?.[userRole]?.See as any)?.audit) && (
+              {activeTab === "audit" && (currentUser.role === "admin" || (permissionMatrix[userRole]?.See as any)?.audit) && (
                 <AuditLogTab />
               )}
 
-              {activeTab === "csv_export" && (currentUser?.role === "admin" || !!permissionMatrix?.[userRole]?.See?.importCsv || !!permissionMatrix?.[userRole]?.Write?.importCsv) && (
+              {activeTab === "csv_export" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.importCsv || !!permissionMatrix[userRole]?.Write?.importCsv) && (
                 <CsvExportTab />
               )}
 
-              {activeTab === "picture_mapping" && (currentUser?.role === "admin" || !!permissionMatrix?.[userRole]?.See?.pictureMapping || !!permissionMatrix?.[userRole]?.Write?.pictureMapping) && (
+              {activeTab === "picture_mapping" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.pictureMapping || !!permissionMatrix[userRole]?.Write?.pictureMapping) && (
                 <PictureMappingTab />
               )}
             </motion.div>
