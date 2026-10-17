@@ -7,6 +7,7 @@ import { getStatus, computeActProgressPercent, computeActProgressFromSummaries }
 import { formatGanttDate, renderGanttDateCell } from './GanttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 export interface GanttProjectRowProps {
   p: Project;
@@ -90,9 +91,12 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     ? 'Completed' 
     : (p.computedActStatus && p.computedActStatus !== 'Planned' ? p.computedActStatus : baseStatus);
   const pStatus = effectiveProjectStatus;
-  const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-  const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
-  const effectiveTaskCount = Math.max(projectTasks?.length || 0, projectDocCount);
+  const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+    ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+    : [];
+  const summaryCount = activeSummaries.length;
+  const loadedCount = projectTasks?.length || 0;
+  const effectiveTaskCount = loadedCount > 0 ? loadedCount : Math.max(p.taskCount ?? 0, summaryCount);
   const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
 
   const rowId = `project-${p.no}`;

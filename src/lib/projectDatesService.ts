@@ -248,14 +248,16 @@ export function calculateProjectComputedDates(
     }
   });
 
+  const activeExistingSummaries = existingSummaries.filter((es: any) => 
+    !isTaskDeletedInTracker(es.id, project.id ? String(project.id) : undefined)
+  );
+
   const finalSummaries: any[] = rollupTaskSummaries(
-    mergedSummaries.length > 0 ? mergedSummaries : existingSummaries
+    mergedSummaries.length > 0 ? mergedSummaries : activeExistingSummaries
   );
 
   const finalTaskCount = Math.max(
     projectTasks.length,
-    existingCount || 0,
-    existingSummaries.length,
     finalSummaries.length
   );
 

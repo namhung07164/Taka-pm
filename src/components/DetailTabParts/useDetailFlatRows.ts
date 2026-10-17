@@ -117,10 +117,12 @@ export function useDetailFlatRows({
             })
           : validGroupTasks;
 
-      const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-      const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
+      const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+        ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+        : [];
+      const summaryCount = activeSummaries.length;
       const loadedTaskCount = validGroupTasks.length;
-      const authoritativeCount = Math.max(loadedTaskCount, projectDocCount);
+      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : Math.max(p.taskCount ?? 0, summaryCount);
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
         : authoritativeCount;
