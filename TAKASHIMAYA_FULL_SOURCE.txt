@@ -23875,6 +23875,7 @@ import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
 import { useAppStore } from '../../store/useAppStore';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 interface UseDetailFlatRowsParams {
   filteredProjects: Project[];
@@ -23987,10 +23988,12 @@ export function useDetailFlatRows({
             })
           : validGroupTasks;
 
-      const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-      const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
+      const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+        ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+        : [];
+      const summaryCount = activeSummaries.length;
       const loadedTaskCount = validGroupTasks.length;
-      const authoritativeCount = Math.max(loadedTaskCount, projectDocCount);
+      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : Math.max(p.taskCount ?? 0, summaryCount);
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
         : authoritativeCount;
@@ -24053,7 +24056,6 @@ export function useDetailFlatRows({
 
   return flatTableRows;
 }
-
 === FILE: src/components/DetailTabParts/useDetailFocusTracking.ts ===
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
@@ -29080,6 +29082,7 @@ import { getStatus, computeActProgressPercent, computeActProgressFromSummaries }
 import { formatGanttDate, renderGanttDateCell } from './GanttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 export interface GanttProjectRowProps {
   p: Project;
@@ -29163,9 +29166,12 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     ? 'Completed' 
     : (p.computedActStatus && p.computedActStatus !== 'Planned' ? p.computedActStatus : baseStatus);
   const pStatus = effectiveProjectStatus;
-  const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-  const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
-  const effectiveTaskCount = Math.max(projectTasks?.length || 0, projectDocCount);
+  const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+    ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+    : [];
+  const summaryCount = activeSummaries.length;
+  const loadedCount = projectTasks?.length || 0;
+  const effectiveTaskCount = loadedCount > 0 ? loadedCount : Math.max(p.taskCount ?? 0, summaryCount);
   const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
 
   const rowId = `project-${p.no}`;
@@ -29544,7 +29550,6 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
          prev.dayWidth === next.dayWidth &&
          (prev.activeTooltip === `project-${prev.p.no}` || next.activeTooltip === `project-${next.p.no}` ? prev.activeTooltip === next.activeTooltip : true);
 });
-
 === FILE: src/components/Gantt/GanttSettingsModal.tsx ===
 import React, { FC } from 'react';
 
@@ -102695,12 +102700,18 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     // Safety guard: If memory only has a partial task set (e.g. mobile or lazy loading),
     // merge in any remaining tasks from project.taskSummaries so task list never shrinks!
     if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > matchedList.length) {
-      const existingSummaryMap = new Map<string, any>();
+      const existingIdSet = new Set<string>();
+      const existingCodeNameSet = new Set<string>();
+      const existingNameSet = new Set<string>();
+
       matchedList.forEach(t => {
-        if (t.id) existingSummaryMap.set(String(t.id).toLowerCase(), t);
-        if (t.taskCodePhu) existingSummaryMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-        if (t.name) existingSummaryMap.set(String(t.name).trim().toLowerCase(), t);
+        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
+        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
+        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
+        if (tName) existingNameSet.add(tName);
+        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
       });
+
       const mergedList = [...matchedList];
       project.taskSummaries.forEach((ts, idx) => {
         const tsId = ts.id ? String(ts.id).toLowerCase() : '';
@@ -102711,9 +102722,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
           return;
         }
 
-        const hasMatch = (tsId && existingSummaryMap.has(tsId)) ||
-                         (tsCode && existingSummaryMap.has(tsCode)) ||
-                         (tsName && existingSummaryMap.has(tsName));
+        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
+                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
+                         (!tsCode && tsName && existingNameSet.has(tsName));
         if (!hasMatch) {
           mergedList.push({
             id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
@@ -102838,14 +102849,16 @@ export function calculateProjectComputedDates(
     }
   });
 
+  const activeExistingSummaries = existingSummaries.filter((es: any) => 
+    !isTaskDeletedInTracker(es.id, project.id ? String(project.id) : undefined)
+  );
+
   const finalSummaries: any[] = rollupTaskSummaries(
-    mergedSummaries.length > 0 ? mergedSummaries : existingSummaries
+    mergedSummaries.length > 0 ? mergedSummaries : activeExistingSummaries
   );
 
   const finalTaskCount = Math.max(
     projectTasks.length,
-    existingCount || 0,
-    existingSummaries.length,
     finalSummaries.length
   );
 
@@ -103070,7 +103083,6 @@ export {
   backfillMissingProjectDates,
   syncAllProjectsTaskCountsToFirestore,
 } from "./projectDatesBackfill";
-
 
 
 === FILE: src/lib/r2StorageUtils.ts ===

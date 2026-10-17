@@ -5,6 +5,7 @@ import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
 import { useAppStore } from '../../store/useAppStore';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 interface UseDetailFlatRowsParams {
   filteredProjects: Project[];
