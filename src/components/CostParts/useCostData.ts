@@ -92,7 +92,7 @@ export function useCostData({
     (p: Project) => {
       const pCode = String(p.code || '').trim().toLowerCase();
       const candidateCosts = costsMapByCode.get(pCode) || [];
-      const pYr = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+      const pYr = String(p.year || '').trim();
       const pStore = String(p.store || '').trim().toLowerCase();
 
       return candidateCosts.filter((c) => {

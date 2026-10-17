@@ -94,7 +94,7 @@ export function BudgetLinkModal({
     const term = parentSearchTerm.trim().toLowerCase();
     return allProjects.filter(p => {
       if (modalYearFilter !== 'all') {
-        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+        const pYear = p.year ? String(p.year).trim() : '';
         if (pYear && pYear !== modalYearFilter) return false;
       }
       if (modalStoreFilter !== 'all') {
@@ -134,7 +134,7 @@ export function BudgetLinkModal({
         ? String(selectedParentProject.year).trim() 
         : (modalYearFilter !== 'all' ? modalYearFilter : '');
       if (targetYear) {
-        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+        const pYear = p.year ? String(p.year).trim() : '';
         if (pYear && pYear !== targetYear) return false;
       }
 

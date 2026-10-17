@@ -1,4 +1,4008 @@
 // ================================================================================
+// FILE: src/components/LayoutTabParts/useLayoutTabData.ts
+// ================================================================================
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
+import { AppRole } from '../../types';
+import { getUserAllowedStores, getEffectiveStoreFilter } from '../../lib/utils';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { useLayoutTabSettings } from './useLayoutTabSettings';
+import { 
+  buildUnitSuggestions, 
+  scoreAndFilterUnitSuggestions, 
+  resolveTargetFloorForUnit, 
+  resolveInitialTargetLocation,
+  sortLocationsByFloorRank
+} from './layoutTabSearchUtils';
+
+export interface UseLayoutTabDataProps {
+  propInitialStore?: string;
+  propInitialLocation?: string;
+  propInitialProjectCode?: string;
+  onClearFocus?: () => void;
+}
+
+export function useLayoutTabData({
+  propInitialStore,
+  propInitialLocation,
+  propInitialProjectCode,
+  onClearFocus,
+}: UseLayoutTabDataProps) {
+  const layoutTabFilters = useAppStore(state => state.layoutTabFilters);
+  const initialStore = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || 'all');
+  const initialLocation = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || 'all');
+  const initialProjectCode = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
+
+  const { enrichedProjects: projects, filteredTasks: tasks } = useEnrichedData();
+  const currentUser = useAppStore(state => state.currentUser)!;
+  const permissionMatrix = useAppStore(state => state.permissionMatrix);
+  const locations = useAppStore(state => state.locations);
+  const locationVisibility = useAppStore(state => state.locationVisibility);
+
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+
+  const [projectCodeFilter, setProjectCodeFilter] = useState(initialProjectCode);
+  
+  const isAdmin = currentUser.role === 'admin';
+  const role = currentUser.role as AppRole;
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
+
+  const allowedStores = useMemo(() => {
+    return getUserAllowedStores(currentUser);
+  }, [currentUser]);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const activeStore = effectiveStore === 'all' ? (allowedStores[0] || '') : (allowedStores.includes(effectiveStore) ? effectiveStore : (allowedStores[0] || ''));
+
+  const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
+  const storeLocationData = useDataStore((state) => state.storeLocationData);
+  const mapVersions = useDataStore((state) => state.mapVersions);
+
+  // Stable memoized versions for activeStore to prevent reference churn across partition updates
+  const prevStoreVersionsRef = useRef<any[]>([]);
+  const prevStoreVersionsKeyRef = useRef<string>('');
+
+  const allStoreVersions = useMemo(() => {
+    try {
+      const vers = getAllStoreVersions((activeStore === 'HN' ? 'HN' : 'HCM'));
+      if (!Array.isArray(vers)) return [];
+      const sig = `${activeStore}_${vers.map(v => `${v?.id || ''}_${v?.backgroundUrl || ''}`).join('|')}`;
+      if (sig === prevStoreVersionsKeyRef.current) {
+        return prevStoreVersionsRef.current;
+      }
+      prevStoreVersionsKeyRef.current = sig;
+      prevStoreVersionsRef.current = vers;
+      return vers;
+    } catch {
+      return [];
+    }
+  }, [getAllStoreVersions, activeStore, storeLocationData, mapVersions]);
+
+  // Initial params sync effect - runs on mount or when props / layoutTabFilters change!
+  const hasSyncedInitialRef = useRef(false);
+  const lastInitialPropKeyRef = useRef('');
+
+  useEffect(() => {
+    const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
+    const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
+    const activeCodeParam = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
+    const filterTs = (layoutTabFilters as any)?._ts || '';
+
+    const propKey = `${activeStoreParam}_${activeLocParam}_${activeCodeParam}_${filterTs}`;
+    if (hasSyncedInitialRef.current && propKey === lastInitialPropKeyRef.current) {
+      return;
+    }
+    hasSyncedInitialRef.current = true;
+    lastInitialPropKeyRef.current = propKey;
+
+    if (activeStoreParam && activeStoreParam !== 'all') {
+      setGlobalStoreFilter(activeStoreParam);
+    }
+    
+    if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
+      setIsLiveMapMode(true);
+      setGlobalLocationFilter([activeLocParam.toUpperCase().trim()]);
+    }
+    
+    if (activeCodeParam) {
+      setProjectCodeFilter(activeCodeParam);
+      setUnitSearchInput(activeCodeParam);
+      setTargetUnitSearch(activeCodeParam);
+      setIsLiveMapMode(true);
+    }
+
+    const unitInfo = useDataStore.getState().unitInfo || [];
+    const targetLoc = resolveInitialTargetLocation(
+      activeLocParam, 
+      activeCodeParam, 
+      projects, 
+      tasks, 
+      allStoreVersions, 
+      unitInfo
+    );
+
+    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+      setGlobalLocationFilter([targetLoc]);
+    }
+  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
+
+  // Available years: based on user permissions, projects, tasks, and store versions
+  const prevAvailableYearsRef = useRef<string[]>([]);
+  const prevAvailableYearsKeyRef = useRef<string>('');
+
+  const availableYears = useMemo(() => {
+    const storeProjects = projects.filter(p => {
+      if (!activeStore || activeStore === 'all') return true;
+      const pStore = String(p.store || 'HCM').toUpperCase().trim();
+      return pStore === activeStore;
+    });
+
+    const projectYearsSet = new Set<string>();
+    storeProjects.forEach(p => {
+      const y = String(p.year || '').trim();
+      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
+        projectYearsSet.add(y);
+      }
+    });
+
+    const storeTasks = tasks.filter(t => {
+      if (!activeStore || activeStore === 'all') return true;
+      const tStore = String(t.projectStore || 'HCM').toUpperCase().trim();
+      return tStore === activeStore;
+    });
+    const taskYearsSet = new Set<string>();
+    storeTasks.forEach(t => {
+      const y = String(t.projectYear || '').trim();
+      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
+        taskYearsSet.add(y);
+      }
+    });
+
+    const userPermittedYears = new Set([...projectYearsSet, ...taskYearsSet]);
+
+    const versionYears = Array.from(
+      new Set(
+        allStoreVersions
+          .filter(v => {
+            if (!activeStore || activeStore === 'all') return true;
+            const vStore = String(v.store || (activeStore === 'HN' ? 'HN' : 'HCM')).toUpperCase().trim();
+            return vStore === activeStore;
+          })
+          .map(v => (v.year ? String(v.year).trim() : ''))
+          .filter(y => y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y))
+      )
+    );
+
+    const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
+
+    const finalYears = Array.from(new Set([...userPermittedYears, ...versionYears, ...defaultStoreYears]))
+      .filter(Boolean)
+      .sort((a, b) => Number(b) - Number(a));
+
+    const key = finalYears.join('|');
+    if (key === prevAvailableYearsKeyRef.current) {
+      return prevAvailableYearsRef.current;
+    }
+    prevAvailableYearsKeyRef.current = key;
+    prevAvailableYearsRef.current = finalYears;
+    return finalYears;
+  }, [allStoreVersions, projects, tasks, activeStore]);
+
+  const effectiveYear = useMemo(() => {
+    if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
+      return globalYearFilter;
+    }
+    return availableYears[0] || '';
+  }, [globalYearFilter, availableYears]);
+
+  // Layout tab requires specific year selection (no 'all' option allowed)
+  useEffect(() => {
+    if (availableYears.length > 0 && (!globalYearFilter || globalYearFilter === 'all' || !availableYears.includes(globalYearFilter))) {
+      setGlobalYearFilter(effectiveYear);
+    }
+  }, [globalYearFilter, availableYears, effectiveYear, setGlobalYearFilter]);
+
+  // Layout tab only supports store-specific floor plans (HCM, HN), hide all-stores
+  useEffect(() => {
+    if (allowedStores.length > 0 && (!globalStoreFilter || globalStoreFilter === 'all' || !allowedStores.includes(globalStoreFilter))) {
+      setGlobalStoreFilter(allowedStores[0]);
+    }
+  }, [globalStoreFilter, allowedStores, setGlobalStoreFilter]);
+
+  // Danh sách location của Tab Layout (Cached to prevent array reference churn)
+  const prevAvailableLocationsRef = useRef<string[]>([]);
+  const prevAvailableLocationsKeyRef = useRef<string>('');
+
+  const availableLocations = useMemo(() => {
+    const storeParam = (activeStore === 'HN' ? 'HN' : 'HCM');
+    const isUserAdmin = currentUser?.role === 'admin';
+    const locPerms = currentUser?.locationPermissions || {};
+    const hasAll = isUserAdmin || locPerms['all'] === true;
+
+    const isFloorName = (name: string) => {
+      if (!name) return false;
+      const n = name.toUpperCase().trim();
+      const nonFloors = ['BUDGET', 'COST', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
+      if (nonFloors.includes(n)) return false;
+      return true;
+    };
+
+    const isPermitted = (loc: string) => {
+      if (!loc || !isFloorName(loc)) return false;
+      if (locationVisibility[loc] === false) return false;
+      if (hasAll) return true;
+      const lLower = loc.toLowerCase().trim();
+      const cleanLoc = lLower.replace(/^md-/, '');
+      return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower]);
+    };
+
+    const pmLocationsSet = new Set<string>();
+
+    allStoreVersions.forEach(v => {
+      const loc = String(v.location || '').toUpperCase().trim();
+      if (loc && isPermitted(loc)) {
+        pmLocationsSet.add(loc);
+      }
+    });
+
+    if (storeLocationData) {
+      Object.entries(storeLocationData).forEach(([key, partition]) => {
+        if (key.startsWith(`${storeParam}_`)) {
+          const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
+          if (loc && isPermitted(loc)) {
+            if (
+              (partition?.mapVersions && partition.mapVersions.length > 0) ||
+              (partition?.mapUnits && partition.mapUnits.length > 0) ||
+              partition?.activeMapVersionId
+            ) {
+              pmLocationsSet.add(loc);
+            }
+          }
+        }
+      });
+    }
+
+    let finalLocations: string[] = [];
+    if (pmLocationsSet.size > 0) {
+      finalLocations = Array.from(pmLocationsSet);
+    } else {
+      finalLocations = (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
+    }
+
+    const sorted = sortLocationsByFloorRank(finalLocations);
+    const key = sorted.join('|');
+    if (key === prevAvailableLocationsKeyRef.current) {
+      return prevAvailableLocationsRef.current;
+    }
+    prevAvailableLocationsKeyRef.current = key;
+    prevAvailableLocationsRef.current = sorted;
+    return sorted;
+  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations]);
+
+  // Ensure globalLocationFilter is never 'all' or empty in Layout tab
+  useEffect(() => {
+    if (availableLocations.length > 0) {
+      const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
+      if (!currentLoc || currentLoc === 'ALL') {
+        const initialTargetLoc = resolveInitialTargetLocation(
+          propInitialLocation || layoutTabFilters?.location || '', 
+          propInitialProjectCode || layoutTabFilters?.projectCode || '', 
+          projects, 
+          tasks, 
+          allStoreVersions, 
+          useDataStore.getState().unitInfo || []
+        );
+        if (initialTargetLoc && availableLocations.includes(initialTargetLoc)) {
+          setGlobalLocationFilter([initialTargetLoc]);
+          return;
+        }
+      }
+      const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
+      if (matched) {
+        if (globalLocationFilter[0] !== matched) {
+          setGlobalLocationFilter([matched]);
+        }
+      } else {
+        const initialTargetLoc = resolveInitialTargetLocation(
+          propInitialLocation || layoutTabFilters?.location || '', 
+          propInitialProjectCode || layoutTabFilters?.projectCode || '', 
+          projects, 
+          tasks, 
+          allStoreVersions, 
+          useDataStore.getState().unitInfo || []
+        );
+        if (initialTargetLoc && availableLocations.includes(initialTargetLoc)) {
+          setGlobalLocationFilter([initialTargetLoc]);
+        } else {
+          setGlobalLocationFilter([availableLocations[0]]);
+        }
+      }
+    }
+  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions]);
+
+  const locFilterStr = useMemo(() => {
+    const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
+    if (currentLoc && currentLoc !== 'ALL') {
+      const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
+      if (matched) return matched;
+      return currentLoc;
+    }
+    return availableLocations[0] || '';
+  }, [globalLocationFilter, availableLocations]);
+  const [isLiveMapMode, setIsLiveMapMode] = useState(true);
+  const [isFullscreenView, setIsFullscreenView] = useState(false);
+
+  // Settings, URL persistence, and export triggers
+  const {
+    url,
+    isEditing,
+    setIsEditing,
+    editUrl,
+    setEditUrl,
+    handleSave,
+    isExporting,
+    exportStatusMessage,
+    handleTriggerReExport,
+    getCleanUrl,
+    fallbackSvg,
+    cacheBuster,
+    setCacheBuster,
+  } = useLayoutTabSettings({ activeStore, locFilterStr });
+
+  // Search Unit functionality next to Trigger Export
+  const [unitSearchInput, setUnitSearchInput] = useState('');
+  const [targetUnitSearch, setTargetUnitSearch] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  const getAllStoreUnits = useDataStore((state) => state.getAllStoreUnits);
+
+  // Lazy autocomplete suggestions: ONLY compute when user opens or types into search box
+  const unitSuggestions = useMemo(() => {
+    if (!showSuggestions && !unitSearchInput.trim()) {
+      return [];
+    }
+    const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
+    return buildUnitSuggestions(storeUnits, projects, activeStore, availableLocations, isAdmin);
+  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin, showSuggestions, unitSearchInput]);
+
+  const filteredUnitSuggestions = useMemo(() => {
+    if (!unitSearchInput.trim()) return [];
+    const currentLoc = globalLocationFilter[0] || '';
+    return scoreAndFilterUnitSuggestions(unitSuggestions, unitSearchInput, currentLoc);
+  }, [unitSuggestions, unitSearchInput, globalLocationFilter]);
+
+  const handleSelectSearchUnit = useCallback((unitItem: { unit: string; location?: string; brand?: string; project?: string; code?: string }) => {
+    setUnitSearchInput(unitItem.unit);
+    setShowSuggestions(false);
+
+    if (!isLiveMapMode) {
+      setIsLiveMapMode(true);
+    }
+
+    const targetFloor = resolveTargetFloorForUnit(unitItem, projects);
+    if (targetFloor && targetFloor.toLowerCase() !== 'all') {
+      setGlobalLocationFilter([targetFloor]);
+    }
+
+    setTargetUnitSearch(unitItem.unit);
+  }, [isLiveMapMode, projects, setGlobalLocationFilter]);
+
+  const handleClearSearchAndFocus = useCallback(() => {
+    setUnitSearchInput('');
+    setTargetUnitSearch(null);
+    setShowSuggestions(false);
+    onClearFocus?.();
+  }, [onClearFocus]);
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // When activeStore, locFilterStr, or effectiveYear changes, reset search & focus states to default
+  const prevFilterStateRef = useRef({ store: activeStore, loc: locFilterStr, yr: effectiveYear });
+  useEffect(() => {
+    const prev = prevFilterStateRef.current;
+    if (prev.store !== activeStore || prev.loc !== locFilterStr || prev.yr !== effectiveYear) {
+      prevFilterStateRef.current = { store: activeStore, loc: locFilterStr, yr: effectiveYear };
+      setUnitSearchInput('');
+      setTargetUnitSearch(null);
+      setShowSuggestions(false);
+      onClearFocus?.();
+    }
+  }, [activeStore, locFilterStr, effectiveYear, onClearFocus]);
+
+  return {
+    allowedStores, activeStore, setGlobalStoreFilter,
+    globalLocationFilter, setGlobalLocationFilter,
+    availableLocations, locFilterStr,
+    availableYears, effectiveYear, setGlobalYearFilter, globalYearFilter,
+    canWrite, isAdmin, isEditing, setIsEditing, editUrl, setEditUrl, handleSave,
+    isLiveMapMode, setIsLiveMapMode, url, getCleanUrl, fallbackSvg,
+    isExporting, exportStatusMessage, handleTriggerReExport,
+    unitSearchInput, setUnitSearchInput, targetUnitSearch, setTargetUnitSearch,
+    showSuggestions, setShowSuggestions, searchContainerRef,
+    filteredUnitSuggestions, handleSelectSearchUnit, handleClearSearchAndFocus,
+    isFullscreenView, setIsFullscreenView,
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/CostParts/useCostData.ts
+// ================================================================================
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Project, Cost, AppUser, AppRole } from '../../types';
+import {
+  getUserAllowedStores,
+  getEffectiveStoreFilter,
+  matchesAdvancedSearch,
+  formatCurrencyValue,
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeSetItemLocal, safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
+import { useCostDateFilter } from './useCostDateFilter';
+import { useCostColumns } from './useCostColumns';
+import { useCostTotals } from './useCostTotals';
+import { useCostSearchFilter } from './useCostSearchFilter';
+
+interface UseCostDataParams {
+  projects: Project[];
+  costs: Cost[];
+  currentUser: AppUser;
+  initialSearchTerm?: string;
+}
+
+export function useCostData({
+  projects,
+  costs,
+  currentUser,
+  initialSearchTerm = '',
+}: UseCostDataParams) {
+  const permissionMatrix = useAppStore((state) => state.permissionMatrix);
+  const currency = useAppStore((state) => state.currency);
+  const jpyRate = useAppStore((state) => state.jpyRate);
+  const usdRate = useAppStore((state) => state.usdRate);
+
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore((state) => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore((state) => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore((state) => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore((state) => state.setGlobalLocationFilter);
+  const setDetailTabFilterCode = useAppStore((state) => state.setDetailTabFilterCode);
+  const setDetailTabStoreFilter = useAppStore((state) => state.setDetailTabStoreFilter);
+  const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const costTabSearchTerm = useAppStore((state) => state.costTabSearchTerm);
+
+  const expandedCodes = useAppStore((state) => state.expandedProjectIds);
+  const toggleProjectExpansion = useAppStore((state) => state.toggleProjectExpansion);
+  const setExpandedCodes = useAppStore((state) => state.setExpandedProjectIds);
+
+  const handleProjectLinkClick = (p: Project) => {
+    if (!p) return;
+    setDetailTabFilterCode(p.code);
+    setDetailTabStoreFilter(p.store || 'all');
+    if (p.year) {
+      setGlobalYearFilter(String(p.year));
+      safeSetItemSession('taka_detail_year', String(p.year));
+    } else {
+      setGlobalYearFilter('all');
+      safeSetItemSession('taka_detail_year', 'all');
+    }
+    if (p.store) {
+      setGlobalStoreFilter(p.store);
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
+    } else {
+      setGlobalStoreFilter('all');
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, 'all');
+    }
+    setActiveTab('detail');
+  };
+
+  // O(1) Pre-indexed Map for Costs by Project Code
+  const costsMapByCode = useMemo(() => {
+    const map = new Map<string, Cost[]>();
+    for (let i = 0; i < costs.length; i++) {
+      const c = costs[i];
+      if (c.isDeleted) continue;
+      const cCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
+      if (!cCode) continue;
+      let list = map.get(cCode);
+      if (!list) {
+        list = [];
+        map.set(cCode, list);
+      }
+      list.push(c);
+    }
+    return map;
+  }, [costs]);
+
+  // Helper to get matching costs for a project in O(1) + O(k) candidate filter
+  const getGroupCostsForProject = useCallback(
+    (p: Project) => {
+      const pCode = String(p.code || '').trim().toLowerCase();
+      const candidateCosts = costsMapByCode.get(pCode) || [];
+      const pYr = String(p.year || '').trim();
+      const pStore = String(p.store || '').trim().toLowerCase();
+
+      return candidateCosts.filter((c) => {
+        const costYear = String(c.projectYear || (c as any).year || '').trim();
+        const matchesYear = !costYear || !pYr || costYear === pYr;
+        if (!matchesYear) return false;
+
+        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
+        const matchesStore = !costStore || !pStore || costStore === pStore;
+        if (!matchesStore) return false;
+
+        return true;
+      });
+    },
+    [costsMapByCode]
+  );
+
+  // Sub-hook: Search term & filter synchronization
+  const {
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    hasActForcFilter,
+    setHasActForcFilter,
+  } = useCostSearchFilter({
+    projects,
+    costs,
+    currentUser,
+    initialSearchTerm,
+    costTabSearchTerm,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    getGroupCostsForProject,
+  });
+
+  // Sub-hook: Columns visibility & resizable widths
+  const {
+    visibleColumns,
+    colWidths,
+    handleResize,
+    handleToggleColumn,
+  } = useCostColumns({ userId: currentUser.id });
+
+  // Sub-hook: Paid Date filter
+  const {
+    isPaidDateFilterOpen,
+    setIsPaidDateFilterOpen,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    setPaidStageFilter,
+    tempDateStart,
+    tempDateEnd,
+    handleTempStartChange,
+    handleTempEndChange,
+    commitDateFilter,
+    handleClearPaidDateFilter,
+    getCostPaidMatches,
+  } = useCostDateFilter();
+
+  const isAdmin = currentUser.role === 'admin';
+  const role = currentUser.role as AppRole;
+  const isArchiveYear =
+    globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite =
+    (isAdmin || !!permissionMatrix[role]?.Write?.costDetail) && !isArchiveYear;
+
+  const years = useMemo(() => {
+    const projYears = projects
+      .map((p) => {
+        if (p.year) return String(p.year).trim();
+        if (p.start) return String(p.start).substring(0, 4);
+        return null;
+      })
+      .filter(Boolean) as string[];
+
+    const baseYears = ['2026', '2027'];
+    const unique = Array.from(new Set([...projYears, ...baseYears]))
+      .filter(Boolean)
+      .sort();
+    return unique.length > 0 ? unique : ['2026', '2027'];
+  }, [projects]);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const stores = allowedStores;
+  const locationOptions = useLocationOptions();
+
+  const toggleGroup = (id: string | number) => {
+    toggleProjectExpansion(String(id));
+  };
+
+  const formatCurrency = (val: number | undefined) => {
+    return formatCurrencyValue(val, currency, jpyRate, usdRate);
+  };
+
+  const filteredProjectsForDisplay = useMemo(() => {
+    return projects.filter((p) => {
+      const pYear = p.year
+        ? String(p.year).trim()
+        : p.start
+        ? String(p.start).substring(0, 4)
+        : null;
+      if (
+        globalYearFilter !== 'all' &&
+        (pYear === null || pYear !== String(globalYearFilter).trim())
+      )
+        return false;
+      if (
+        effectiveStore !== 'all' &&
+        (!p.store ||
+          String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())
+      )
+        return false;
+      if (
+        globalLocationFilter.length > 0 &&
+        (!p.location || !globalLocationFilter.includes(p.location))
+      )
+        return false;
+
+      const groupCosts = getGroupCostsForProject(p);
+
+      if (paidDateStart || paidDateEnd) {
+        const hasMatchingPaidCost = groupCosts.some(
+          (c) => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches
+        );
+        if (!hasMatchingPaidCost) return false;
+      }
+
+      const matchingGroupCosts =
+        paidDateStart || paidDateEnd
+          ? groupCosts.filter(
+              (c) =>
+                getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches
+            )
+          : groupCosts;
+
+      if (deferredSearchTerm) {
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [
+            p.store,
+            p.location,
+            p.year,
+            p.code,
+            p.linkCodes,
+            p.name,
+            p.detail,
+            (p as any).description,
+            p.note,
+          ],
+          [],
+          (term) => {
+            return matchingGroupCosts.some((c) => {
+              const cBalance =
+                (c.actual || 0) -
+                (c.firstPaid || 0) -
+                (c.secondPaid || 0) -
+                (c.thirdPaid || 0);
+              const costFields = [
+                c.description,
+                c.vendor,
+                c.actual,
+                c.firstPaid,
+                c.secondPaid,
+                c.thirdPaid,
+                c.supportingFee,
+                cBalance,
+              ];
+              return costFields.some((val) =>
+                String(val || '').toLowerCase().includes(term)
+              );
+            });
+          }
+        );
+        if (!isMatch) return false;
+      }
+
+      const totalAct =
+        matchingGroupCosts.length > 0
+          ? matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0)
+          : p.financial?.totalActualPaid || p.actual || 0;
+      if (
+        hasActForcFilter === 'has_value' &&
+        totalAct === 0 &&
+        !paidDateStart &&
+        !paidDateEnd
+      )
+        return false;
+
+      return true;
+    });
+  }, [
+    projects,
+    costs,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    deferredSearchTerm,
+    hasActForcFilter,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    getGroupCostsForProject,
+    getCostPaidMatches,
+  ]);
+
+  // Sub-hook: Aggregated Financial Totals
+  const {
+    filteredCostsForTotals,
+    totalActAll,
+    totalFirstPaidAll,
+    totalSecondPaidAll,
+    totalThirdPaidAll,
+    totalBalanceAll,
+    totalSupAll,
+    totalRemainingAll,
+  } = useCostTotals({
+    filteredProjectsForDisplay,
+    projects,
+    costs,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    getGroupCostsForProject,
+    getCostPaidMatches,
+  });
+
+  const sortedProjects = projects;
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  const handleCostScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      const st = target.scrollTop;
+      const sh = target.scrollHeight;
+      const ch = target.clientHeight;
+
+      if (sh - (st + ch) < 350) {
+        if (visibleCount < filteredProjectsForDisplay.length) {
+          setVisibleCount((prev) => Math.min(prev + 30, filteredProjectsForDisplay.length));
+        }
+      }
+    },
+    [visibleCount, filteredProjectsForDisplay.length]
+  );
+
+  useEffect(() => {
+    if (paidDateStart || paidDateEnd) {
+      setExpandedCodes(
+        filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
+      );
+    }
+  }, [paidDateStart, paidDateEnd, paidStageFilter, filteredProjectsForDisplay, setExpandedCodes]);
+
+  const toggleAll = () => {
+    if (expandedCodes.length === 0) {
+      setExpandedCodes(
+        filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
+      );
+    } else {
+      setExpandedCodes([]);
+    }
+  };
+
+  return {
+    currency,
+    jpyRate,
+    usdRate,
+    canWrite,
+    isAdmin,
+    globalYearFilter,
+    setGlobalYearFilter,
+    effectiveStore,
+    setGlobalStoreFilter,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    searchTerm,
+    setSearchTerm,
+    hasActForcFilter,
+    setHasActForcFilter,
+    years,
+    stores,
+    locationOptions,
+    visibleColumns,
+    colWidths,
+    handleResize,
+    handleToggleColumn,
+    expandedCodes,
+    setExpandedCodes,
+    toggleGroup,
+    toggleAll,
+    toggleProjectExpansion,
+    handleProjectLinkClick,
+    formatCurrency,
+    filteredProjectsForDisplay,
+    filteredCostsForTotals,
+    totalActAll,
+    totalFirstPaidAll,
+    totalSecondPaidAll,
+    totalThirdPaidAll,
+    totalBalanceAll,
+    totalSupAll,
+    totalRemainingAll,
+    sortedProjects,
+    visibleCount,
+    setVisibleCount,
+    handleCostScroll,
+    getGroupCostsForProject,
+    getCostPaidMatches,
+    isPaidDateFilterOpen,
+    setIsPaidDateFilterOpen,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    setPaidStageFilter,
+    tempDateStart,
+    tempDateEnd,
+    handleTempStartChange,
+    handleTempEndChange,
+    commitDateFilter,
+    handleClearPaidDateFilter,
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/DetailTabParts/useDetailData.ts
+// ================================================================================
+
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, DelegationGroup, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getTaskStatus, 
+  parseDateTime, 
+  formatDisplayDateMain, 
+  formatDisplayDateTime, 
+  resolveActualStatus, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { SortConfig } from './detailTypes';
+import { useDetailProjectInfo } from './useDetailProjectInfo';
+import { useDetailFlatRows } from './useDetailFlatRows';
+import { useDetailFocusTracking } from './useDetailFocusTracking';
+
+interface UseDetailDataParams {
+  projects: Project[];
+  tasks: Task[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  effectiveStore: string;
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  globalStoreFilter: string;
+  setGlobalStoreFilter: (store: string) => void;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  initialFilterCode?: string;
+  initialFocusTaskId?: string;
+  returnScrollId?: string;
+  onClearFocus?: () => void;
+  onBackToGantt?: () => void;
+  sortConfig: SortConfig | null;
+  expandedCodes: string[];
+  setExpandedCodes: (codes: string[]) => void;
+  setVisibleActiveProjectIds: (ids: string[]) => void;
+  canWrite: boolean;
+}
+
+export function useDetailData({
+  projects,
+  tasks,
+  delegationGroups,
+  currentUser: _currentUser,
+  effectiveStore,
+  globalYearFilter,
+  setGlobalYearFilter,
+  globalStoreFilter,
+  setGlobalStoreFilter,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  initialFilterCode,
+  initialFocusTaskId,
+  returnScrollId: _returnScrollId,
+  onClearFocus,
+  onBackToGantt,
+  sortConfig,
+  expandedCodes,
+  setExpandedCodes,
+  setVisibleActiveProjectIds,
+}: UseDetailDataParams) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (statusFilter !== 'all') {
+        lastSelectedStatusFilterRef.current = statusFilter;
+        safeSetItemSession("taka_detail_status_filter", statusFilter);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setStatusFilter('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days';
+      setStatusFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const lastCheckedTaskIdRef = useRef<string | null>(null);
+
+  // Focus & Viewport Tracking Hook
+  const {
+    activeProjectInView,
+    handleClearFocus,
+    handleBackToGantt,
+  } = useDetailFocusTracking({
+    projects,
+    tasks,
+    initialFilterCode,
+    initialFocusTaskId,
+    onClearFocus,
+    onBackToGantt,
+    searchTerm,
+    setSearchTerm,
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    statusFilter,
+    setStatusFilter,
+    expandedCodes,
+    setExpandedCodes,
+  });
+
+  // Project Info Map & Helpers Hook
+  const {
+    tasksByProjectKey,
+    projectInfoMap,
+    getProjectInfo,
+  } = useDetailProjectInfo({ projects, tasks });
+
+  // Auto-jump to matched project location(s) when searching (Debounced)
+  useEffect(() => {
+    const term = deferredSearchTerm.trim();
+    if (!term) return;
+
+    const timer = setTimeout(() => {
+      const matchedProjects = projects.filter(p => {
+        const pYear = p.year ? String(p.year) : null;
+        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+        if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+
+        const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+        const isMatch = matchesAdvancedSearch(
+          term,
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
+          [],
+          (tLower) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(tLower)
+            ) || false;
+            const taskMatches = groupTasks.some((t, idx) => {
+              const taskFields = [
+                t.taskCodePhu,
+                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                t.name,
+                t.duration,
+                t.start,
+                t.finish,
+                t.party,
+                formatDisplayDateMain(t.start),
+                formatDisplayDateTime(t.start),
+                formatDisplayDateMain(t.finish),
+                formatDisplayDateTime(t.finish)
+              ];
+              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
+              return fieldMatch || notesMatch;
+            });
+            return summariesMatch || taskMatches;
+          }
+        );
+        return isMatch;
+      });
+
+      const matchedLocations = Array.from(
+        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [deferredSearchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  const delegationGroupByParentKey = useMemo(() => {
+    const map = new Map<string, DelegationGroup>();
+    delegationGroups.forEach(g => {
+      if (g.parentTaskId) {
+        const keyWithStore = `${g.parentTaskId}-${g.projectStore || ''}`;
+        map.set(keyWithStore, g);
+        if (!map.has(g.parentTaskId)) {
+          map.set(g.parentTaskId, g);
+        }
+      }
+    });
+    return map;
+  }, [delegationGroups]);
+
+  useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+
+  // === Auto-clear stale filters when user changes Year / Store in Task Detail ===
+  const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+
+  useEffect(() => {
+    const currentKey = `${globalYearFilter}_${effectiveStore}`;
+    if (prevYearStoreRef.current !== currentKey) {
+      prevYearStoreRef.current = currentKey;
+
+      // 1. Khi đổi Year hoặc Store: nếu đang có detailTabFilterCode / detailTabFocusTaskId của dự án thuộc Store/Year cũ thì xóa đi
+      const storeState = useAppStore.getState();
+      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
+        storeState.setDetailTabFilterCode('');
+        storeState.setDetailTabFocusTaskId('');
+        if (searchTerm && searchTerm === storeState.detailTabFilterCode) {
+          setSearchTerm('');
+        }
+      }
+
+      // 2. Kiểm tra xem globalLocationFilter hiện tại có hợp lệ với Store/Year mới không
+      const projectsInNewScope = projects.filter((p) => {
+        if (p.isDeleted) return false;
+        const pYear = p.year ? String(p.year) : null;
+        if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+        if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+        return true;
+      });
+
+      if (projectsInNewScope.length > 0) {
+        // Nếu location đang chọn không có dự án nào ở Store/Year mới -> reset location filter
+        if (globalLocationFilter.length > 0) {
+          const hasMatchingLoc = projectsInNewScope.some(
+            (p) => p.location && globalLocationFilter.includes(p.location)
+          );
+          if (!hasMatchingLoc) {
+            setGlobalLocationFilter([]);
+          }
+        }
+
+        // Nếu statusFilter đang khác 'all' mà làm ẩn toàn bộ dự án của Store/Year mới -> tự động mở về 'all'
+        if (statusFilter !== 'all') {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayTime = today.getTime();
+          const hasMatchingStatus = projectsInNewScope.some((p) => {
+            const info = getProjectInfo(p);
+            if (statusFilter === 'On process + Upcoming 3 days') {
+              if (info.status === 'On process') return true;
+              if (info.status === 'Upcoming') {
+                const dStart = parseDateTime(info.start);
+                if (dStart) {
+                  dStart.setHours(0, 0, 0, 0);
+                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
+                  return diffDays <= 3 && diffDays >= 0;
+                }
+              }
+              return false;
+            }
+            return info.status === statusFilter;
+          });
+          if (!hasMatchingStatus) {
+            setStatusFilter('all');
+            safeSetItemSession('taka_detail_status_filter', 'all');
+          }
+        }
+      }
+    }
+  }, [
+    globalYearFilter,
+    effectiveStore,
+    projects,
+    globalLocationFilter,
+    statusFilter,
+    searchTerm,
+    setGlobalLocationFilter,
+    setStatusFilter,
+    setSearchTerm,
+    getProjectInfo,
+  ]);
+
+  // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
+  // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
+  const effectiveLocationFilter = useMemo(() => {
+    if (globalLocationFilter.length === 0) return globalLocationFilter;
+    const available = new Set<string>();
+    projects.forEach((p) => {
+      const pYear = p.year ? String(p.year).trim() : '';
+      if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter).trim()) return;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return;
+      if (p.location) available.add(p.location);
+    });
+    return globalLocationFilter.filter((loc) => available.has(loc));
+  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
+
+  const filteredProjects = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTime = today.getTime();
+
+    return projects.filter(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pYear = p.year ? String(p.year).trim() : null;
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
+      if (effectiveLocationFilter.length > 0 && (!p.location || !effectiveLocationFilter.includes(p.location))) return false;
+
+      let matchesStatus = true;
+      if (statusFilter === 'On process + Upcoming 3 days') {
+        if (info.status === 'On process') {
+          matchesStatus = true;
+        } else if (info.status === 'Upcoming') {
+          const dStart = parseDateTime(info.start);
+          if (dStart) {
+            dStart.setHours(0, 0, 0, 0);
+            const diffTime = dStart.getTime() - todayTime;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            matchesStatus = diffDays <= 3 && diffDays >= 0;
+          } else {
+            matchesStatus = false;
+          }
+        } else {
+          matchesStatus = false;
+        }
+      } else {
+        matchesStatus = statusFilter === 'all' || info.status === statusFilter;
+      }
+      if (!matchesStatus) return false;
+
+      const groupTasks = info.sortedTasks || tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+      if (deferredSearchTerm) {
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
+          [],
+          (term) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(term)
+            ) || false;
+            const taskMatches = groupTasks.some((t, idx) => {
+              const taskFields = [
+                t.taskCodePhu,
+                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
+                t.name,
+                t.duration,
+                t.start,
+                t.finish,
+                t.party,
+                formatDisplayDateMain(t.start),
+                formatDisplayDateTime(t.start),
+                formatDisplayDateMain(t.finish),
+                formatDisplayDateTime(t.finish)
+              ];
+              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(term));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(term)) || false;
+              return fieldMatch || notesMatch;
+            });
+            return summariesMatch || taskMatches;
+          }
+        );
+        if (!isMatch) return false;
+      }
+
+      return true;
+    });
+  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
+
+  // Chẩn đoán: bảng trống dù store có dự án
+  useEffect(() => {
+    if (filteredProjects.length === 0 && projects.length > 0) {
+      console.warn('[Detail] 0 dự án sau khi lọc', {
+        totalProjects: projects.length,
+        year: globalYearFilter,
+        store: effectiveStore,
+        locationSelected: globalLocationFilter,
+        locationEffective: effectiveLocationFilter,
+        status: statusFilter,
+        search: deferredSearchTerm,
+      });
+    }
+  }, [filteredProjects.length, projects.length, globalYearFilter, effectiveStore, globalLocationFilter, effectiveLocationFilter, statusFilter, deferredSearchTerm]);
+
+  // Ensure visibleCount is large enough to render target project row
+  useEffect(() => {
+    if (!initialFilterCode) return;
+    const filterClean = String(initialFilterCode).trim().toUpperCase();
+    const projIdx = filteredProjects.findIndex(p => {
+      const pCode = String(p.code || '').trim().toUpperCase();
+      const pId = String(p.id || '').trim().toUpperCase();
+      return pId === filterClean || pCode === filterClean || (pCode && filterClean.startsWith(pCode));
+    });
+    if (projIdx >= 0 && projIdx >= visibleCount) {
+      setVisibleCount(projIdx + 25);
+    }
+  }, [initialFilterCode, filteredProjects, visibleCount]);
+
+  const prevVisibleIdsRef = useRef<string>("");
+  useEffect(() => {
+    const targetProjects = filteredProjects.length > 0
+      ? filteredProjects.slice(0, visibleCount)
+      : projects.filter(p => {
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
+          if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
+          if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
+          return true;
+        }).slice(0, visibleCount);
+
+    const visibleIds = targetProjects.map(p => String(p.id || p.no));
+    const idsKey = visibleIds.join(',');
+    if (prevVisibleIdsRef.current !== idsKey) {
+      prevVisibleIdsRef.current = idsKey;
+      setVisibleActiveProjectIds(visibleIds);
+    }
+  }, [filteredProjects, projects, visibleCount, globalYearFilter, effectiveStore, globalLocationFilter, setVisibleActiveProjectIds]);
+
+  useEffect(() => {
+    return () => {
+      useAppStore.getState().setVisibleActiveProjectIds([]);
+    };
+  }, []);
+
+  const allVisibleTaskIds = useMemo(() => {
+    return filteredProjects.slice(0, visibleCount).flatMap(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+      return (pInfo.sortedTasks || []).map(t => t.id);
+    });
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
+
+  const lowerSearchTerm = searchTerm.toLowerCase().trim();
+
+  // Task code & status maps
+  const taskCodeMap = useMemo(() => {
+    return computeAllTaskCodes(projects, tasks);
+  }, [projects, tasks]);
+
+  const taskActualStatusMap = useMemo(() => {
+    const map = new Map<string, { label: string; color: string }>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      const taskStatus = getTaskStatus(t.start, t.finish);
+      const delegationGroup = delegationGroupByParentKey.get(t.id);
+      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || [], t);
+      map.set(t.id, actStatus);
+    }
+    return map;
+  }, [tasks, delegationGroupByParentKey]);
+
+  // Pre-indexed O(1) map of subtask counts per parent to avoid 250,000 array filters in DetailTaskRow
+  const childTasksCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const child = tasks[idx];
+      if (child.parentTaskId) {
+        map.set(child.parentTaskId, (map.get(child.parentTaskId) || 0) + 1);
+      }
+    }
+    return map;
+  }, [tasks]);
+
+  // Virtual Windowing Flat Rows
+  const flatTableRows = useDetailFlatRows({
+    filteredProjects,
+    visibleCount,
+    projectInfoMap,
+    getProjectInfo,
+    sortConfig,
+    expandedCodes,
+    delegationGroups,
+    lowerSearchTerm,
+    taskCodeMap,
+  });
+
+  // Selection handlers
+  const handleSelectAllTasksInProject = useCallback((groupTasks: Task[], select: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      groupTasks.forEach(t => {
+        if (select) next.add(t.id);
+        else next.delete(t.id);
+      });
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
+    const strTaskId = String(taskId);
+    setSelectedTaskIds(prev => {
+      const next = new Set(Array.from(prev).map(String));
+      const isChecked = !next.has(strTaskId);
+      if (isChecked) {
+        if (shiftKey && lastCheckedTaskIdRef.current && lastCheckedTaskIdRef.current !== strTaskId) {
+          const visibleIds = allVisibleTaskIds.map(String);
+          const lastIdx = visibleIds.indexOf(lastCheckedTaskIdRef.current);
+          const currentIdx = visibleIds.indexOf(strTaskId);
+          if (lastIdx !== -1 && currentIdx !== -1) {
+            const minIdx = Math.min(lastIdx, currentIdx);
+            const maxIdx = Math.max(lastIdx, currentIdx);
+            for (let idx = minIdx; idx <= maxIdx; idx++) {
+              next.add(visibleIds[idx]);
+            }
+          } else {
+            next.add(strTaskId);
+          }
+        } else {
+          next.add(strTaskId);
+        }
+        lastCheckedTaskIdRef.current = strTaskId;
+      } else {
+        next.delete(strTaskId);
+        lastCheckedTaskIdRef.current = null;
+      }
+      return next;
+    });
+  }, [allVisibleTaskIds]);
+
+  return {
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    visibleCount,
+    setVisibleCount,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    selectedTaskIds,
+    setSelectedTaskIds,
+    lastCheckedTaskIdRef,
+    activeProjectInView,
+    delegationGroupByParentKey,
+    projectInfoMap,
+    getProjectInfo,
+    filteredProjects,
+    allVisibleTaskIds,
+    lowerSearchTerm,
+    taskCodeMap,
+    taskActualStatusMap,
+    childTasksCountMap,
+    flatTableRows,
+    handleSelectAllTasksInProject,
+    handleToggleSelectTask,
+    handleClearFocus,
+    handleBackToGantt,
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/Gantt/useGanttProjectsFilter.ts
+// ================================================================================
+
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getStatus, 
+  getProjectDatesAndStatus,
+  matchProjectStatusFilter,
+  parseDateTime, 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+
+interface UseGanttProjectsFilterParams {
+  projects: Project[];
+  tasks: Task[];
+  delegationGroups: any[];
+  currentUser: AppUser;
+}
+
+export function useGanttProjectsFilter({
+  projects,
+  tasks,
+  delegationGroups,
+  currentUser
+}: UseGanttProjectsFilterParams) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const setExpandedProjects = useAppStore(state => state.setExpandedProjectIds);
+  const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
+  const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
+
+  const [searchTerm, setSearchTerm] = useState(() => safeGetItemSession("taka_gantt_search") || "");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  // Sync QuickNav targeted project filter
+  useEffect(() => {
+    if (ganttTabFilterProjectId) {
+      const targetProj = projects.find(
+        p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+             (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+      );
+      const codeToDisplay = targetProj?.code || ganttTabFilterProjectId;
+      setSearchTerm(codeToDisplay);
+      setFilterProjectStatus('all');
+    }
+  }, [ganttTabFilterProjectId, projects]);
+
+  const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
+    if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
+    return safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
+  });
+
+  const lastSelectedStatusFilterRef = useRef<string>(
+    safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days'
+  );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      safeSetItemSession("taka_gantt_search", searchTerm);
+      if (ganttTabFilterProjectId) {
+        const targetProj = projects.find(
+          p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+               (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+        );
+        const expectedCode = targetProj?.code || ganttTabFilterProjectId;
+        if (!searchTerm.trim() || searchTerm.trim().toUpperCase() !== expectedCode.trim().toUpperCase()) {
+          setGanttTabFilterProjectId('');
+        }
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchTerm, ganttTabFilterProjectId, setGanttTabFilterProjectId, projects]);
+
+  const onStatusFilterChange = useCallback((status: string) => {
+    setFilterProjectStatus(status);
+    if (!searchTerm.trim()) {
+      lastSelectedStatusFilterRef.current = status;
+      safeSetItemSession("taka_gantt_status_filter", status);
+    }
+  }, [searchTerm]);
+
+  // Status & Location filter preservation during search
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (filterProjectStatus !== 'all') {
+        lastSelectedStatusFilterRef.current = filterProjectStatus;
+        safeSetItemSession("taka_gantt_status_filter", filterProjectStatus);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setFilterProjectStatus('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
+      setFilterProjectStatus(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  const uniqueYears = useMemo(() => {
+    const yearsSet = new Set<string>();
+    projects.forEach(p => {
+      if (p.year) yearsSet.add(String(p.year));
+    });
+    ['2026', '2027'].forEach(y => yearsSet.add(y));
+    return Array.from(yearsSet).sort();
+  }, [projects]);
+
+  const uniqueStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const locationOptions = useLocationOptions();
+
+  // Index tasks by project ID, project key, and code
+  const tasksByProjectId = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      if (t.projectId) {
+        const pId = String(t.projectId);
+        if (!map.has(pId)) map.set(pId, []);
+        map.get(pId)!.push(t);
+      }
+    });
+    return map;
+  }, [tasks]);
+
+  const tasksByProject = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const key = `${String(t.projectCode || '').trim().toUpperCase()}_${String(t.projectYear || '').trim()}_${String(t.projectStore || '').trim().toUpperCase()}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const tasksMapByCode = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const code = String(t.projectCode || '').trim().toUpperCase();
+      if (!map.has(code)) map.set(code, []);
+      map.get(code)!.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const getGroupTasksForProject = useCallback(
+    (p: Project): Task[] => {
+      const mergedMap = new Map<string, Task>();
+
+      const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+      const pYear = p.year ? String(p.year).trim() : '';
+
+      // 1. By projectId
+      if (p.id && tasksByProjectId.has(String(p.id))) {
+        tasksByProjectId.get(String(p.id))!.forEach(t => {
+          if (t && (t.id || t.name)) {
+            const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+            if (pStore && tStore && pStore !== tStore) return;
+            if (pYear && tYear && pYear !== tYear) return;
+            mergedMap.set(String(t.id || t.name), t);
+          }
+        });
+      }
+
+      // 2. By project key (CODE_YEAR_STORE)
+      const key = `${String(p.code || '').trim().toUpperCase()}_${String(p.year || '').trim()}_${String(p.store || '').trim().toUpperCase()}`;
+      const foundByKey = tasksByProject.get(key);
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(t => {
+          if (t && (t.id || t.name)) mergedMap.set(String(t.id || t.name), t);
+        });
+      }
+
+      // 3. By project code
+      const codeKey = String(p.code || '').trim().toUpperCase();
+      if (codeKey) {
+        const foundByCode = tasksMapByCode.get(codeKey);
+        if (foundByCode && foundByCode.length > 0) {
+          foundByCode.forEach(t => {
+            const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toUpperCase() === String(p.store).trim().toUpperCase();
+            const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
+            if (matchesStore && matchesYear && t && (t.id || t.name)) {
+              mergedMap.set(String(t.id || t.name), t);
+            }
+          });
+        }
+      }
+
+      let resultTasks = Array.from(mergedMap.values());
+
+      // Fallback & Merge from taskSummaries if taskSummaries has more items
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > resultTasks.length) {
+        const existingSet = new Set<string>();
+        resultTasks.forEach(t => {
+          if (t.id) existingSet.add(String(t.id).toLowerCase());
+          if (t.taskCodePhu) existingSet.add(String(t.taskCodePhu).trim().toLowerCase());
+          if (t.name) existingSet.add(String(t.name).trim().toLowerCase());
+        });
+
+        p.taskSummaries.forEach((ts, idx) => {
+          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
+          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+          const hasMatch = (tsId && existingSet.has(tsId)) ||
+                           (tsCode && existingSet.has(tsCode)) ||
+                           (tsName && existingSet.has(tsName));
+          if (!hasMatch) {
+            resultTasks.push({
+              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
+              name: ts.name || `Task ${idx + 1}`,
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts
+            } as Task);
+          }
+        });
+      }
+
+      return resultTasks;
+    },
+    [tasksByProjectId, tasksByProject, tasksMapByCode]
+  );
+
+  // Pre-indexed Search Pool Cache to eliminate Garbage Collection pauses on mobile Safari
+  const projectSearchIndex = useMemo(() => {
+    const map = new Map<string, { pPool: (string | number | undefined | null)[]; tPools: (string | number | undefined | null)[][] }>();
+    projects.forEach(p => {
+      const pTasks = getGroupTasksForProject(p);
+      const pPool = [p.code, p.name, p.store, p.location, p.year, p.detail, p.party];
+      const tPools = pTasks.map(t => [
+        t.name,
+        t.taskCodePhu,
+        t.party,
+        t.runningStatus,
+        t.predecessor,
+        ...(t.notes ? t.notes.map(n => n.content) : [])
+      ]);
+      map.set(p.id || p.code, { pPool, tPools });
+    });
+    return map;
+  }, [projects, getGroupTasksForProject]);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      // Strict single-project isolation when navigated via Quick Navigation
+      if (ganttTabFilterProjectId) {
+        const isTarget = (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+                         (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase());
+        return isTarget;
+      }
+
+      const { computedTakStart, status } = getProjectDatesAndStatus(p, tasks);
+      const pYear = p.year ? String(p.year).trim() : null;
+      const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+      const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+      const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
+
+      const matchesStatus = matchProjectStatusFilter(status, filterProjectStatus, computedTakStart);
+
+      if (!matchesYear || !matchesStore || !matchesLocation || !matchesStatus) return false;
+
+      if (!deferredSearchTerm.trim()) return true;
+
+      const indexed = projectSearchIndex.get(p.id || p.code);
+      if (indexed) {
+        if (matchesAdvancedSearch(deferredSearchTerm, [...indexed.pPool, status])) return true;
+        return indexed.tPools.some(tPool => matchesAdvancedSearch(deferredSearchTerm, tPool));
+      }
+
+      return matchesAdvancedSearch(deferredSearchTerm, [p.code, p.name, p.store, p.location, status]);
+    });
+  }, [
+    projects,
+    ganttTabFilterProjectId,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    filterProjectStatus,
+    deferredSearchTerm,
+    projectSearchIndex
+  ]);
+
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const sortedProjects = useMemo(() => {
+    return [...filteredProjects].sort((a, b) => {
+      const startA = a.computedTakStart || '9999-12-31';
+      const startB = b.computedTakStart || '9999-12-31';
+      if (startA !== startB) return startA.localeCompare(startB);
+      return a.code.localeCompare(b.code);
+    });
+  }, [filteredProjects]);
+
+  const paginatedProjects = useMemo(() => {
+    return sortedProjects.slice(0, visibleCount);
+  }, [sortedProjects, visibleCount]);
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
+  }, [sortedProjects.length]);
+
+  // Search filter operates on Project Summaries + loaded tasks first (Tri-Gate Lazy Loading).
+  // Projects remain in summarized/collapsed state until user taps Expand (+), which triggers Delta Sync task fetching.
+  const lastAutoExpandedSearchRef = useRef<string>('');
+  useEffect(() => {
+    const term = deferredSearchTerm.trim();
+    if (!term) {
+      lastAutoExpandedSearchRef.current = '';
+    }
+  }, [deferredSearchTerm]);
+
+  return {
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    filterProjectStatus,
+    onStatusFilterChange,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    uniqueYears,
+    uniqueStores,
+    locationOptions,
+    tasksByProject,
+    tasksMapByCode,
+    getGroupTasksForProject,
+    filteredProjects,
+    sortedProjects,
+    paginatedProjects,
+    visibleCount,
+    setVisibleCount,
+    handleLoadMore
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/SummaryParts/useSummaryData.ts
+// ================================================================================
+
+import React, { useMemo, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
+import { getStatus, parseDateTime, getUserAllowedStores, getEffectiveStoreFilter } from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { StatusCountItem } from './summaryTypes';
+
+export function useSummaryData() {
+  const { enrichedProjects: projects } = useEnrichedData();
+  const currentUser = useAppStore((state) => state.currentUser)!;
+
+  const [activeSubTab, setActiveSubTab] = useState<'project_summary' | 'exec_dashboard'>('project_summary');
+
+  const years = useMemo(() => {
+    const yearsSet = new Set<string>();
+    projects.forEach((p) => {
+      const year = p.year ? String(p.year) : null;
+      if (year) yearsSet.add(year);
+    });
+    yearsSet.add('2026');
+    yearsSet.add('2027');
+    const arr = Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
+    return arr.length > 0 ? arr : ['2027', '2026'];
+  }, [projects, currentUser?.role]);
+
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore((state) => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore((state) => state.setGlobalStoreFilter);
+  const globalLocationFilter = useAppStore((state) => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore((state) => state.setGlobalLocationFilter);
+
+  const [startMonth, setStartMonth] = useState<number>(1);
+  const [endMonth, setEndMonth] = useState<number>(12);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const stores = allowedStores;
+
+  const locationOptions = useLocationOptions();
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter((p) => {
+      const pYear = p.year ? String(p.year) : null;
+      const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
+      const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
+      const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
+      return matchesYear && matchesStore && matchesLocation;
+    });
+  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
+
+  const projectsInPeriod = useMemo(() => {
+    return filteredProjects.filter((p) => {
+      const dateStr = p.computedTakStart || p.start;
+      if (!dateStr) return false;
+      const date = parseDateTime(dateStr);
+      if (!date) return false;
+      const month = date.getMonth() + 1; // 1-indexed
+
+      const minM = Math.min(startMonth, endMonth);
+      const maxM = Math.max(startMonth, endMonth);
+
+      return month >= minM && month <= maxM;
+    });
+  }, [filteredProjects, startMonth, endMonth]);
+
+  const yearChartData: StatusCountItem[] = useMemo(() => {
+    const counts: Record<string, number> = {};
+    filteredProjects.forEach((p) => {
+      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [filteredProjects]);
+
+  const monthChartData: StatusCountItem[] = useMemo(() => {
+    const counts: Record<string, number> = {};
+    projectsInPeriod.forEach((p) => {
+      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [projectsInPeriod]);
+
+  const totalBudget = useMemo(() => filteredProjects.reduce((acc, curr) => acc + (curr.budget || 0), 0), [filteredProjects]);
+  const totalActual = useMemo(() => filteredProjects.reduce((acc, curr) => acc + (curr.actual || 0), 0), [filteredProjects]);
+  const periodBudget = useMemo(() => projectsInPeriod.reduce((acc, curr) => acc + (curr.budget || 0), 0), [projectsInPeriod]);
+  const periodActual = useMemo(() => projectsInPeriod.reduce((acc, curr) => acc + (curr.actual || 0), 0), [projectsInPeriod]);
+
+  return {
+    activeSubTab,
+    setActiveSubTab,
+    years,
+    stores,
+    locationOptions,
+    globalYearFilter,
+    setGlobalYearFilter,
+    effectiveStore,
+    setGlobalStoreFilter,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    startMonth,
+    setStartMonth,
+    endMonth,
+    setEndMonth,
+    filteredProjects,
+    projectsInPeriod,
+    yearChartData,
+    monthChartData,
+    totalBudget,
+    totalActual,
+    periodBudget,
+    periodActual,
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/BudgetParts/useBudgetFilterSort.ts
+// ================================================================================
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { matchesAdvancedSearch } from '../../lib/utils';
+import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
+
+interface UseBudgetFilterSortParams {
+  treeData: BudgetTreeNode[];
+  globalYearFilter: string;
+  effectiveStore: string;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  moneyFilter: string;
+  searchTerm: string;
+  deferredSearchTerm: string;
+}
+
+export function useBudgetFilterSort({
+  treeData,
+  globalYearFilter,
+  effectiveStore,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  moneyFilter,
+  searchTerm,
+  deferredSearchTerm
+}: UseBudgetFilterSortParams) {
+  const [sortConfig, setSortConfig] = useState<BudgetSortConfig | null>(null);
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  const isChildMatchSearch = (child: any, term: string): boolean => {
+    if (!term) return false;
+    const cSearchFields = [
+      child.code,
+      child.name,
+      child.store,
+      child.location,
+      child.type,
+      child.note,
+      child.year,
+      child.budget,
+      child.totalActual,
+      child.remaining
+    ];
+    return matchesAdvancedSearch(term, cSearchFields);
+  };
+
+  const isParentMatchSearch = (node: any, term: string): boolean => {
+    if (!term) return false;
+    const searchFields = [
+      node.code,
+      node.name,
+      node.store,
+      node.location,
+      node.type,
+      node.note,
+      node.year,
+      node.totalBudget,
+      node.totalActual,
+      node.remaining
+    ];
+    return matchesAdvancedSearch(term, searchFields);
+  };
+
+  // Auto-jump to matched project location(s) when searching (Debounced)
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+    if (!treeData || treeData.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const matchedLocationsList: string[] = [];
+
+      treeData.forEach((node: any) => {
+        const pYear = node.year ? String(node.year) : null;
+        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return;
+        if (effectiveStore !== 'all' && node.store !== effectiveStore) return;
+
+        const parentMatch = isParentMatchSearch(node, term);
+        if (parentMatch && node.location) {
+          matchedLocationsList.push(node.location);
+        }
+
+        if (node.children && node.children.length > 0) {
+          node.children.forEach((child: any) => {
+            const cYear = child.year ? String(child.year) : null;
+            if (globalYearFilter !== 'all' && cYear && cYear !== globalYearFilter) return;
+            if (effectiveStore !== 'all' && child.store && child.store !== effectiveStore) return;
+
+            if (isChildMatchSearch(child, term) || parentMatch) {
+              if (child.location) matchedLocationsList.push(child.location);
+              else if (node.location) matchedLocationsList.push(node.location);
+            }
+          });
+        }
+      });
+
+      const matchedLocations = Array.from(
+        new Set(matchedLocationsList.filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  const filterNode = (node: any): boolean => {
+    const pYear = node.year ? String(node.year).trim() : null;
+    const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+    const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+    
+    // Strict Scope Guard: A parent project that does not belong to the selected Year or Store scope MUST NOT be displayed
+    if (!matchesYear || !matchesStore) {
+      return false;
+    }
+
+    const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location));
+    
+    const hasBudget = (node.totalBudget || 0) !== 0;
+    const hasActForc = (node.totalActual || 0) !== 0;
+    let matchesMoney = true;
+    if (moneyFilter === 'has_money') matchesMoney = hasBudget || hasActForc;
+    else if (moneyFilter === 'has_budget') matchesMoney = hasBudget;
+    else if (moneyFilter === 'has_act_forc') matchesMoney = hasActForc;
+    
+    const baseParentMatch = matchesLocation && matchesMoney;
+    const parentMatchesSearch = !deferredSearchTerm || isParentMatchSearch(node, deferredSearchTerm);
+
+    if (node.children && node.children.length > 0) {
+      const validChildren = node.children.filter((child: any) => {
+        const cYear = child.year ? String(child.year).trim() : pYear;
+        const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === String(globalYearFilter).trim();
+        const cStore = child.store ? String(child.store).toUpperCase().trim() : (node.store ? String(node.store).toUpperCase().trim() : '');
+        const cMatchesStore = effectiveStore === 'all' || !cStore || cStore === effectiveStore.toUpperCase().trim();
+        const cMatchesLocation = globalLocationFilter.length === 0 || (!child.location) || globalLocationFilter.includes(child.location);
+        
+        const cHasBudget = (child.budget || 0) !== 0;
+        const cHasActForc = (child.totalActual || 0) !== 0;
+        let cMatchesMoney = true;
+        if (moneyFilter === 'has_money') cMatchesMoney = cHasBudget || cHasActForc || matchesMoney;
+        else if (moneyFilter === 'has_budget') cMatchesMoney = cHasBudget || hasBudget;
+        else if (moneyFilter === 'has_act_forc') cMatchesMoney = cHasActForc || hasActForc;
+
+        return cMatchesYear && cMatchesStore && cMatchesLocation && cMatchesMoney;
+      });
+
+      const hasMultiChildren = node.children.length >= 2;
+
+      if (!deferredSearchTerm.trim()) {
+        node.filteredChildren = validChildren.map((c: any) => ({ ...c, isSearchMatch: false }));
+        return baseParentMatch || validChildren.length > 0;
+      }
+
+      const matchingChildIds = new Set<string>();
+      validChildren.forEach((child: any) => {
+        if (isChildMatchSearch(child, deferredSearchTerm)) {
+          matchingChildIds.add(child.id);
+        }
+      });
+
+      const anyChildMatchesSearch = matchingChildIds.size > 0;
+
+      if (hasMultiChildren) {
+        if (anyChildMatchesSearch || (baseParentMatch && parentMatchesSearch)) {
+          const shouldFilterChildren = !parentMatchesSearch && anyChildMatchesSearch;
+          node.filteredChildren = validChildren
+            .filter((child: any) => shouldFilterChildren ? matchingChildIds.has(child.id) : true)
+            .map((child: any) => ({
+              ...child,
+              isSearchMatch: matchingChildIds.has(child.id)
+            }));
+          return true;
+        }
+        node.filteredChildren = [];
+        return false;
+      } else {
+        if (anyChildMatchesSearch) {
+          node.filteredChildren = validChildren
+            .filter((c: any) => matchingChildIds.has(c.id))
+            .map((c: any) => ({ ...c, isSearchMatch: true }));
+          return true;
+        } else if (baseParentMatch && parentMatchesSearch) {
+          node.filteredChildren = validChildren.map((c: any) => ({ ...c, isSearchMatch: false }));
+          return true;
+        }
+        node.filteredChildren = [];
+        return false;
+      }
+    } else {
+      node.filteredChildren = [];
+      return baseParentMatch && parentMatchesSearch;
+    }
+  };
+
+  const filteredRoots = useMemo(() => {
+    let roots = treeData.filter(filterNode);
+    if (sortConfig) {
+      const sortFn = (a: any, b: any) => {
+        let valA = 0, valB = 0;
+        if (sortConfig.key === 'totalBudget') { valA = a.totalBudget || 0; valB = b.totalBudget || 0; }
+        else if (sortConfig.key === 'actual') { valA = a.totalActual || 0; valB = b.totalActual || 0; }
+        else if (sortConfig.key === 'variance') { valA = a.remaining || 0; valB = b.remaining || 0; }
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      };
+      roots = [...roots].sort(sortFn);
+    }
+    return roots;
+  }, [treeData, globalYearFilter, effectiveStore, globalLocationFilter, moneyFilter, deferredSearchTerm, sortConfig]);
+
+  const handleBudgetScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const st = target.scrollTop;
+    const sh = target.scrollHeight;
+    const ch = target.clientHeight;
+    if (sh - (st + ch) < 350) {
+      if (visibleCount < filteredRoots.length) {
+        setVisibleCount(prev => Math.min(prev + 30, filteredRoots.length));
+      }
+    }
+  }, [visibleCount, filteredRoots.length]);
+
+  const handleSort = (key: string) => {
+    setSortConfig(prev => {
+      if (prev && prev.key === key) {
+        if (prev.direction === 'asc') return { key, direction: 'desc' };
+        return null;
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const totalGlobalBudget = filteredRoots.reduce((sum, p) => sum + (p.totalBudget || 0), 0);
+  const totalGlobalActual = filteredRoots.reduce((sum, p) => sum + (p.totalActual || 0), 0);
+  const totalGlobalSupportingFee = filteredRoots.reduce((sum, p) => sum + (p.totalSupportingFee || 0), 0);
+  const totalGlobalRemaining = totalGlobalBudget - totalGlobalActual + totalGlobalSupportingFee;
+  const totalVarianceColor = totalGlobalRemaining < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400';
+
+  return {
+    sortConfig,
+    setSortConfig,
+    visibleCount,
+    setVisibleCount,
+    filteredRoots,
+    handleBudgetScroll,
+    handleSort,
+    totalGlobalBudget,
+    totalGlobalActual,
+    totalGlobalSupportingFee,
+    totalGlobalRemaining,
+    totalVarianceColor
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/BudgetParts/BudgetLinkModal.tsx
+// ================================================================================
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { motion, useDragControls } from 'motion/react';
+import { Layers, X, Filter, RotateCcw } from 'lucide-react';
+import { Project } from '../../types';
+import { ProjectFinancials } from './budgetTypes';
+import { useLanguage } from '../../lib/LanguageContext';
+import { getZIndexClass } from '../../lib/zIndexManager';
+import { BudgetLinkParentColumn } from './BudgetLinkParentColumn';
+import { BudgetLinkChildColumn } from './BudgetLinkChildColumn';
+
+interface BudgetLinkModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedParentProject: Project | null;
+  setSelectedParentProject: (p: Project | null) => void;
+  parentSearchTerm: string;
+  setParentSearchTerm: (term: string) => void;
+  childSearchTerm: string;
+  setChildSearchTerm: (term: string) => void;
+  candidateParentProjects: Project[];
+  candidateChildProjects: Project[];
+  linkedChildrenCount: number;
+  getProjectFinancials: (p: Project) => ProjectFinancials;
+  handleLinkParent: (childProject: Project, parentCode: string | null) => Promise<void>;
+  formatCurrency: (val: number | undefined) => string;
+  projects?: Project[];
+  initialYear?: string;
+  initialStore?: string;
+  initialLocation?: string;
+}
+
+export function BudgetLinkModal({
+  isOpen,
+  onClose,
+  selectedParentProject,
+  setSelectedParentProject,
+  parentSearchTerm,
+  setParentSearchTerm,
+  childSearchTerm,
+  setChildSearchTerm,
+  candidateParentProjects,
+  candidateChildProjects,
+  linkedChildrenCount,
+  getProjectFinancials,
+  handleLinkParent,
+  formatCurrency,
+  projects,
+  initialYear,
+  initialStore,
+  initialLocation
+}: BudgetLinkModalProps) {
+  const { t } = useLanguage();
+  const dragControls = useDragControls();
+
+  const [modalYearFilter, setModalYearFilter] = useState<string>(initialYear || 'all');
+  const [modalStoreFilter, setModalStoreFilter] = useState<string>(initialStore || 'all');
+  const [modalLocationFilter, setModalLocationFilter] = useState<string>(initialLocation || 'all');
+
+  useEffect(() => {
+    if (isOpen) {
+      if (selectedParentProject) {
+        if (selectedParentProject.year) setModalYearFilter(String(selectedParentProject.year));
+        if (selectedParentProject.store) setModalStoreFilter(String(selectedParentProject.store).toUpperCase());
+      } else {
+        setModalYearFilter(initialYear || 'all');
+        setModalStoreFilter(initialStore || 'all');
+        setModalLocationFilter(initialLocation || 'all');
+      }
+    }
+  }, [isOpen, selectedParentProject, initialYear, initialStore, initialLocation]);
+
+  const allProjects = projects && projects.length > 0 ? projects : candidateParentProjects;
+
+  const availableYears = useMemo(() => {
+    const set = new Set<string>();
+    allProjects.forEach(p => {
+      if (p.year) set.add(String(p.year).trim());
+      else if (p.start) set.add(String(p.start).substring(0, 4));
+    });
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [allProjects]);
+
+  const availableLocations = useMemo(() => {
+    const set = new Set<string>();
+    allProjects.forEach(p => {
+      if (p.location && p.location.trim()) {
+        set.add(p.location.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [allProjects]);
+
+  const filteredParentProjects = useMemo(() => {
+    const term = parentSearchTerm.trim().toLowerCase();
+    return allProjects.filter(p => {
+      if (modalYearFilter !== 'all') {
+        const pYear = p.year ? String(p.year).trim() : '';
+        if (pYear && pYear !== modalYearFilter) return false;
+      }
+      if (modalStoreFilter !== 'all') {
+        const pStore = String(p.store || '').trim().toUpperCase();
+        if (pStore && pStore !== modalStoreFilter.toUpperCase()) return false;
+      }
+      if (modalLocationFilter !== 'all') {
+        if (p.location !== modalLocationFilter) return false;
+      }
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      return searchPool.some(val => val.includes(term));
+    }).slice(0, 100);
+  }, [allProjects, parentSearchTerm, modalYearFilter, modalStoreFilter, modalLocationFilter]);
+
+  const filteredChildProjects = useMemo(() => {
+    const parentCode = selectedParentProject ? String(selectedParentProject.code || '').trim().toUpperCase() : '';
+    const parentId = selectedParentProject?.id || (selectedParentProject ? `${selectedParentProject.code}-${selectedParentProject.year}-${selectedParentProject.store}-${selectedParentProject.no}` : '');
+    const term = childSearchTerm.trim().toLowerCase();
+
+    const filtered = allProjects.filter(p => {
+      const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+      const pCode = String(p.code || '').trim().toUpperCase();
+
+      if (selectedParentProject && (pId === parentId || pCode === parentCode)) return false;
+      if (selectedParentProject?.parentId && String(selectedParentProject.parentId).trim().toUpperCase() === pCode) return false;
+
+      const targetYear = selectedParentProject?.year 
+        ? String(selectedParentProject.year).trim() 
+        : (modalYearFilter !== 'all' ? modalYearFilter : '');
+      if (targetYear) {
+        const pYear = p.year ? String(p.year).trim() : '';
+        if (pYear && pYear !== targetYear) return false;
+      }
+
+      const targetStore = selectedParentProject?.store 
+        ? String(selectedParentProject.store).trim().toUpperCase() 
+        : (modalStoreFilter !== 'all' ? modalStoreFilter.toUpperCase() : '');
+      if (targetStore) {
+        const pStore = String(p.store || '').trim().toUpperCase();
+        if (pStore && pStore !== targetStore) return false;
+      }
+
+      if (modalLocationFilter !== 'all') {
+        if (p.location !== modalLocationFilter) return false;
+      }
+
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      return searchPool.some(val => val.includes(term));
+    });
+
+    if (parentCode) {
+      filtered.sort((a, b) => {
+        const aIsChild = a.parentId && String(a.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        const bIsChild = b.parentId && String(b.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+    }
+
+    return filtered.slice(0, 100);
+  }, [allProjects, selectedParentProject, childSearchTerm, modalYearFilter, modalStoreFilter, modalLocationFilter]);
+
+  if (!isOpen && !selectedParentProject) return null;
+
+  const parentStats = selectedParentProject ? getProjectFinancials(selectedParentProject) : null;
+
+  return (
+    <div className={`fixed inset-0 ${getZIndexClass('MODAL_MODULAR')} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto`}>
+      <motion.div
+        drag
+        dragControls={dragControls}
+        dragListener={false}
+        dragMomentum={false}
+        className="bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl w-[96vw] max-w-6xl xl:max-w-7xl h-[90vh] max-h-[860px] flex flex-col border border-slate-200 dark:border-[#333336] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      >
+        {/* Modal Drag Header */}
+        <div 
+          onPointerDown={(e) => dragControls.start(e)}
+          className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-[#333336] flex items-center justify-between bg-slate-50/90 dark:bg-[#18181a] cursor-grab active:cursor-grabbing select-none shrink-0"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-[#8ab4f8]">
+              <Layers className="w-5 h-5" />
+            </div>
+            <h3 className="font-bold text-base md:text-lg text-slate-900 dark:text-[#e3e3e3]">
+              {t('Project Modular (Link Budget)')}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Scope Filter Toolbar: Year, Store, Location */}
+        <div className="px-3.5 sm:px-4 py-2 bg-slate-50 dark:bg-[#18181a] border-b border-slate-200 dark:border-[#333336] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 mr-1">
+              <Filter className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8]" />
+              <span>{t('Filter Scope')}:</span>
+            </div>
+
+            {/* Year Selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('Year')}:</span>
+              <select
+                value={modalYearFilter}
+                onChange={(e) => setModalYearFilter(e.target.value)}
+                className="text-xs bg-white dark:bg-[#222225] border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-2xs"
+              >
+                <option value="all">{t('All Years')}</option>
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Store Selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('Store')}:</span>
+              <select
+                value={modalStoreFilter}
+                onChange={(e) => setModalStoreFilter(e.target.value)}
+                className="text-xs bg-white dark:bg-[#222225] border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-2xs"
+              >
+                <option value="all">{t('All Stores')}</option>
+                <option value="HCM">HCM</option>
+                <option value="HN">HN</option>
+              </select>
+            </div>
+
+            {/* Location Selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t('Location')}:</span>
+              <select
+                value={modalLocationFilter}
+                onChange={(e) => setModalLocationFilter(e.target.value)}
+                className="text-xs bg-white dark:bg-[#222225] border border-slate-200 dark:border-[#444446] rounded-lg px-2 py-1 font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer shadow-2xs max-w-[140px] truncate"
+              >
+                <option value="all">{t('All Locations')}</option>
+                {availableLocations.map(loc => (
+                  <option key={loc} value={loc}>{loc}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Quick Reset Filter */}
+          {(modalYearFilter !== 'all' || modalStoreFilter !== 'all' || modalLocationFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setModalYearFilter('all');
+                setModalStoreFilter('all');
+                setModalLocationFilter('all');
+              }}
+              className="text-[11px] font-bold text-slate-500 hover:text-blue-600 dark:hover:text-[#8ab4f8] flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{t('Reset Filter')}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Modal Main Content: 2 Columns Side-by-Side */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 overflow-y-auto lg:overflow-hidden">
+          {/* Column 1: Parent Projects */}
+          <BudgetLinkParentColumn
+            filteredParentProjects={filteredParentProjects}
+            selectedParentProject={selectedParentProject}
+            setSelectedParentProject={setSelectedParentProject}
+            parentSearchTerm={parentSearchTerm}
+            setParentSearchTerm={setParentSearchTerm}
+            parentStats={parentStats}
+            linkedChildrenCount={linkedChildrenCount}
+            formatCurrency={formatCurrency}
+          />
+
+          {/* Column 2: Child Projects */}
+          <BudgetLinkChildColumn
+            selectedParentProject={selectedParentProject}
+            childSearchTerm={childSearchTerm}
+            setChildSearchTerm={setChildSearchTerm}
+            filteredChildProjects={filteredChildProjects}
+            handleLinkParent={handleLinkParent}
+            getProjectFinancials={getProjectFinancials}
+            formatCurrency={formatCurrency}
+          />
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+
+// ================================================================================
+// FILE: src/components/BudgetParts/useBudgetData.ts
+// ================================================================================
+
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Cost, AppUser, AppRole } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  formatCurrencyValue 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeSetItemLocal, safeSetItemSession, safeGetItemSession, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from '../../lib/storage';
+import { AVAILABLE_COLUMNS, ProjectFinancials } from './budgetTypes';
+import { useBudgetTreeData } from './useBudgetTreeData';
+import { useBudgetFilterSort } from './useBudgetFilterSort';
+import { useBudgetCsvOps } from './useBudgetCsvOps';
+
+interface UseBudgetDataParams {
+  projects: Project[];
+  costs: Cost[];
+  currentUser: AppUser;
+  initialSearchTerm?: string;
+}
+
+export function useBudgetData({
+  projects,
+  costs,
+  currentUser,
+  initialSearchTerm = ''
+}: UseBudgetDataParams) {
+  const permissionMatrix = useAppStore(state => state.permissionMatrix);
+  const currency = useAppStore(state => state.currency);
+  const jpyRate = useAppStore(state => state.jpyRate);
+  const usdRate = useAppStore(state => state.usdRate);
+
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const setDetailTabFilterCode = useAppStore(state => state.setDetailTabFilterCode);
+  const setDetailTabStoreFilter = useAppStore(state => state.setDetailTabStoreFilter);
+  const setActiveTab = useAppStore(state => state.setActiveTab);
+  const budgetTabSearchTerm = useAppStore(state => state.budgetTabSearchTerm);
+
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || budgetTabSearchTerm || '');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+    } else if (budgetTabSearchTerm) {
+      setSearchTerm(budgetTabSearchTerm);
+    }
+  }, [initialSearchTerm, budgetTabSearchTerm]);
+
+  const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
+  const [moneyFilter, setMoneyFilter] = useState(() => {
+    if ((initialSearchTerm || '').trim()) return 'all';
+    return safeGetItemSession("taka_budget_money_filter") || 'has_money';
+  });
+  const lastSelectedMoneyFilterRef = useRef<string>(
+    safeGetItemSession("taka_budget_money_filter") || 'has_money'
+  );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
+
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (moneyFilter !== 'all') {
+        lastSelectedMoneyFilterRef.current = moneyFilter;
+        safeSetItemSession("taka_budget_money_filter", moneyFilter);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setMoneyFilter('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedMoneyFilterRef.current || safeGetItemSession("taka_budget_money_filter") || 'has_money';
+      setMoneyFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    no: 80,
+    year: 80,
+    store: 80,
+    location: 130,
+    code: 165,
+    projectName: 220,
+    totalBudget: 140,
+    actual: 140,
+    supportingFee: 140,
+    variance: 140,
+    type: 130,
+    note: 200,
+    actions: 90
+  });
+
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [selectedParentProject, setSelectedParentProject] = useState<Project | null>(null);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [childSearchTerm, setChildSearchTerm] = useState('');
+  const [parentSearchTerm, setParentSearchTerm] = useState('');
+
+  // 1. Build hierarchy tree data
+  const treeData = useBudgetTreeData({ projects, costs });
+
+  // 2. Filter, search and sort tree roots
+  const {
+    sortConfig,
+    visibleCount,
+    setVisibleCount,
+    filteredRoots,
+    handleBudgetScroll,
+    handleSort,
+    totalGlobalBudget,
+    totalGlobalActual,
+    totalGlobalSupportingFee,
+    totalGlobalRemaining,
+    totalVarianceColor
+  } = useBudgetFilterSort({
+    treeData,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    moneyFilter,
+    searchTerm,
+    deferredSearchTerm
+  });
+
+  // 3. Export / Import CSV
+  const { handleExportBudget, handleImportBudget } = useBudgetCsvOps({ projects, filteredRoots });
+
+  const getProjectFinancials = (p: Project): ProjectFinancials => {
+    const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: p.actual || 0, totalForecastPaid: 0 };
+    const budget = fin.totalApproved || p.budget || 0;
+    const actual = fin.totalActualPaid;
+    const hasForc = fin.totalForecastPaid > 0;
+    const supportingFee = p.supportingFee || 0;
+    const remaining = budget - (actual + fin.totalForecastPaid) + supportingFee;
+    return { budget, actual, supportingFee, hasForc, remaining };
+  };
+
+  // Candidates for Parent Project Selection
+  const candidateParentProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const term = parentSearchTerm.trim().toLowerCase();
+    return projects.filter(p => {
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      
+      return searchPool.some(val => val.includes(term));
+    }).slice(0, 100);
+  }, [projects, parentSearchTerm]);
+
+  // Candidates for Child Project Selection
+  const candidateChildProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const parentCode = selectedParentProject ? String(selectedParentProject.code || '').trim().toUpperCase() : '';
+    const parentId = selectedParentProject?.id || (selectedParentProject ? `${selectedParentProject.code}-${selectedParentProject.year}-${selectedParentProject.store}-${selectedParentProject.no}` : '');
+    const term = childSearchTerm.trim().toLowerCase();
+
+    const filtered = projects.filter(p => {
+      const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+      const pCode = String(p.code || '').trim().toUpperCase();
+
+      if (selectedParentProject && (pId === parentId || pCode === parentCode)) return false;
+      if (selectedParentProject?.parentId && String(selectedParentProject.parentId).trim().toUpperCase() === pCode) return false;
+
+      // Restrict candidate children to same fiscal year and store as selected parent
+      if (selectedParentProject) {
+        const pYear = p.year ? String(p.year).trim() : '';
+        const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : '';
+        if (pYear && parentYear && pYear !== parentYear) return false;
+
+        const pStore = String(p.store || '').trim().toUpperCase();
+        const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
+        if (pStore && parentStore && pStore !== parentStore) return false;
+      }
+
+      if (!term) return true;
+      const searchPool = [
+        p.code,
+        p.name,
+        p.year,
+        p.store,
+        p.location,
+        p.type,
+        p.note
+      ].map(v => String(v || '').toLowerCase());
+      
+      return searchPool.some(val => val.includes(term));
+    });
+
+    if (parentCode) {
+      filtered.sort((a, b) => {
+        const aIsChild = a.parentId && String(a.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        const bIsChild = b.parentId && String(b.parentId).trim().toUpperCase() === parentCode ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+    }
+
+    return filtered.slice(0, 100);
+  }, [projects, selectedParentProject, childSearchTerm]);
+
+  const linkedChildrenCount = useMemo(() => {
+    if (!selectedParentProject) return 0;
+    const parentCode = String(selectedParentProject.code || '').trim().toUpperCase();
+    const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : '';
+    const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
+
+    return projects.filter(p => {
+      if (!p.parentId || String(p.parentId).trim().toUpperCase() !== parentCode) return false;
+      const cYear = p.year ? String(p.year).trim() : '';
+      const cStore = String(p.store || '').trim().toUpperCase();
+      if (parentYear && cYear && cYear !== parentYear) return false;
+      if (parentStore && cStore && cStore !== parentStore) return false;
+      return true;
+    }).length;
+  }, [projects, selectedParentProject]);
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isLinkModalOpen || selectedParentProject) {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsLinkModalOpen(false);
+          setSelectedParentProject(null);
+          return;
+        }
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+        if (searchTerm) {
+          e.preventDefault();
+          const activeElement = document.activeElement;
+          if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+            (activeElement as HTMLElement).blur();
+          }
+          setSearchTerm("");
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLinkModalOpen, selectedParentProject, searchTerm]);
+
+  const prevScreenTypeRef = useRef(getDeviceScreenType());
+
+  useEffect(() => {
+    const loadDeviceConfig = () => {
+      const saved = safeGetDeviceItemLocal('taka_budget_col_widths', currentUser.id);
+      if (saved) {
+        try { 
+          const parsed = JSON.parse(saved);
+          if (parsed.code && parsed.code < 165) {
+            parsed.code = 165;
+          }
+          if (parsed.no && parsed.no < 60) {
+            parsed.no = 80;
+          }
+          setColWidths(prev => ({ ...prev, ...parsed })); 
+        } catch (e) {}
+      }
+      const savedCols = safeGetDeviceItemLocal('taka_budget_visible_cols', currentUser.id);
+      if (savedCols) {
+        try { 
+          const parsed = JSON.parse(savedCols);
+          if (Array.isArray(parsed)) {
+            let cleaned = parsed.filter((id: string) => id !== 'budget' && id !== 'linkCost');
+            if (!cleaned.includes('no')) {
+              cleaned = ['no', ...cleaned];
+            }
+            setVisibleColumns(cleaned);
+          }
+        } catch (e) {}
+      } else {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          setVisibleColumns(['no', 'code', 'projectName', 'totalBudget', 'actual', 'variance']);
+        }
+      }
+    };
+
+    loadDeviceConfig();
+
+    const handleResize = () => {
+      const currentScreenType = getDeviceScreenType();
+      if (currentScreenType !== prevScreenTypeRef.current) {
+        prevScreenTypeRef.current = currentScreenType;
+        loadDeviceConfig();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [currentUser.id]);
+
+  const handleResize = (col: string, newWidth: number) => {
+    setColWidths(prev => {
+      const next = { ...prev, [col]: newWidth };
+      safeSetDeviceItemLocal('taka_budget_col_widths', JSON.stringify(next), currentUser.id);
+      return next;
+    });
+  };
+
+  const handleToggleColumn = (colId: string) => {
+    setVisibleColumns(prev => {
+      const next = prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId];
+      safeSetDeviceItemLocal('taka_budget_visible_cols', JSON.stringify(next), currentUser.id);
+      return next;
+    });
+  };
+
+  const toggleExpand = (id: string) => {
+    if (searchTerm.trim()) {
+      setCollapsedInSearch(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    } else {
+      setExpandedParents(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    }
+  };
+
+  const toggleAllParents = () => {
+    if (expandedParents.size === 0) {
+      const allParentIds = new Set<string>();
+      const collectParents = (nodes: any[]) => {
+        nodes.forEach(n => {
+          if (n.filteredChildren && n.filteredChildren.length > 0) {
+            allParentIds.add(n.id || n.code);
+            collectParents(n.filteredChildren);
+          }
+        });
+      };
+      collectParents(filteredRoots);
+      setExpandedParents(allParentIds);
+    } else {
+      setExpandedParents(new Set());
+    }
+  };
+
+  const isAdmin = currentUser.role === 'admin';
+  const role = currentUser.role as AppRole;
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = (isAdmin || !!currentUser?.canWrite || !!permissionMatrix[role]?.Write?.budget) && !isArchiveYear;
+
+  const formatCurrency = (val: number | undefined) => {
+    return formatCurrencyValue(val, currency, jpyRate, usdRate);
+  };
+
+  const years = useMemo(() => {
+    const projYears = projects.map(p => {
+      if (p.year) return String(p.year);
+      if (p.start) return String(p.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const baseYears = ['2026', '2027'];
+    const unique = Array.from(new Set([...projYears, ...baseYears])).filter(Boolean).sort();
+    return unique.length > 0 ? unique : ['2026', '2027'];
+  }, [projects, currentUser?.role]);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const stores = allowedStores;
+  const locationOptions = useLocationOptions();
+
+  useEffect(() => {
+    if (locationOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
+
+  const handleOpenLinkModal = (projectToSelect?: Project) => {
+    if (projectToSelect) {
+      setSelectedParentProject(projectToSelect);
+      setParentSearchTerm(String(projectToSelect.code || '').trim());
+    } else {
+      if (!selectedParentProject && filteredRoots.length > 0) {
+        setSelectedParentProject(filteredRoots[0].project);
+        setParentSearchTerm(String(filteredRoots[0].project.code || '').trim());
+      } else if (selectedParentProject) {
+        setParentSearchTerm(String(selectedParentProject.code || '').trim());
+      }
+    }
+    setIsLinkModalOpen(true);
+  };
+
+  const handleProjectLinkClick = (p: Project) => {
+    if (!p) return;
+    setDetailTabFilterCode(p.code);
+    setDetailTabStoreFilter(p.store || "all");
+    if (p.year) {
+      setGlobalYearFilter(String(p.year));
+      safeSetItemSession("taka_detail_year", String(p.year));
+    } else {
+      setGlobalYearFilter("all");
+      safeSetItemSession("taka_detail_year", "all");
+    }
+    if (p.store) {
+      setGlobalStoreFilter(p.store);
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
+    } else {
+      setGlobalStoreFilter("all");
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, "all");
+    }
+    setActiveTab("detail");
+  };
+
+  return {
+    currency,
+    jpyRate,
+    usdRate,
+    canWrite,
+    globalYearFilter,
+    setGlobalYearFilter,
+    effectiveStore,
+    setGlobalStoreFilter,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    moneyFilter,
+    setMoneyFilter,
+    lastSelectedMoneyFilterRef,
+    collapsedInSearch,
+    expandedParents,
+    sortConfig,
+    visibleColumns,
+    colWidths,
+    visibleCount,
+    setVisibleCount,
+    years,
+    stores,
+    locationOptions,
+    filteredRoots,
+    totalGlobalBudget,
+    totalGlobalActual,
+    totalGlobalSupportingFee,
+    totalGlobalRemaining,
+    totalVarianceColor,
+    candidateParentProjects,
+    candidateChildProjects,
+    linkedChildrenCount,
+    selectedParentProject,
+    setSelectedParentProject,
+    isLinkModalOpen,
+    setIsLinkModalOpen,
+    parentSearchTerm,
+    setParentSearchTerm,
+    childSearchTerm,
+    setChildSearchTerm,
+    getProjectFinancials,
+    handleResize,
+    handleToggleColumn,
+    toggleExpand,
+    toggleAllParents,
+    handleSort,
+    handleBudgetScroll,
+    handleOpenLinkModal,
+    handleExportBudget,
+    handleImportBudget,
+    handleProjectLinkClick,
+    formatCurrency
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/BudgetParts/useBudgetTreeData.ts
+// ================================================================================
+
+import React, { useMemo } from "react";
+import { Project, Cost } from '../../types';
+import { calculateParentBudgetRollup } from '../../lib/financialService';
+import { BudgetTreeNode } from './budgetTypes';
+
+interface UseBudgetTreeDataParams {
+  projects: Project[];
+  costs: Cost[];
+}
+
+export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetTreeNode[] {
+  const projectMap = new Map<string, any>();
+  const codeToProjects = new Map<string, any[]>();
+
+    projects.forEach(p => {
+      const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+      const projectCosts = costs.filter(c => {
+        const costCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
+        const pCode = String(p.code || '').trim().toLowerCase();
+        if (costCode !== pCode) return false;
+
+        const costYear = String(c.projectYear || (c as any).year || '').trim();
+        const pYear = String(p.year || '').trim();
+        const matchesYear = !costYear || !pYear || costYear === pYear;
+        if (!matchesYear) return false;
+
+        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
+        const pStore = String(p.store || '').trim().toLowerCase();
+        const matchesStore = !costStore || !pStore || costStore === pStore;
+        if (!matchesStore) return false;
+
+        return true;
+      });
+      
+      const computedActual = projectCosts.reduce((sum, c) => sum + (Number(c.actual) || 0), 0);
+      const computedForc = projectCosts.filter(c => c.costType === 'forc').reduce((sum, c) => sum + (Number(c.actual) || 0), 0);
+      const computedSupportingFee = projectCosts.reduce((sum, c) => sum + (Number(c.supportingFee) || 0), 0);
+
+      const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: p.actual || 0, totalForecastPaid: 0 };
+      const hasCosts = projectCosts.length > 0;
+      const finalActual = hasCosts ? computedActual : (fin.totalActualPaid || p.actual || 0);
+      const finalForc = hasCosts ? computedForc : (fin.totalForecastPaid || 0);
+      const finalSupportingFee = hasCosts ? computedSupportingFee : (p.supportingFee || 0);
+
+      const pData = {
+        ...p,
+        ownActual: finalActual,
+        ownForc: finalForc,
+        ownSupportingFee: finalSupportingFee,
+        hasForc: finalForc > 0,
+        ownBudget: fin.totalApproved || p.budget || 0,
+      };
+
+      projectMap.set(key, pData);
+
+      const codeKey = String(p.code).trim().toUpperCase();
+      if (!codeToProjects.has(codeKey)) {
+        codeToProjects.set(codeKey, []);
+      }
+      codeToProjects.get(codeKey)!.push(pData);
+    });
+
+    const getProjectYear = (p: any): string => 
+      p.year ? String(p.year).trim() : '';
+
+    const getProjectStore = (p: any): string => 
+      String(p.store || '').trim().toUpperCase();
+
+    // Map linked children to parent codes, scoped by parentCode + year + store
+    const parentToChildrenMap = new Map<string, any[]>();
+    const linkedChildIds = new Set<string>();
+
+    projects.forEach(p => {
+      if (p.parentId && String(p.parentId).trim()) {
+        const parentCode = String(p.parentId).trim().toUpperCase();
+        const candidateParents = codeToProjects.get(parentCode);
+        if (candidateParents && candidateParents.length > 0) {
+          let childYear = getProjectYear(p);
+          let childStore = getProjectStore(p);
+
+          // If child year/store missing, inherit from candidate parent if unambiguous
+          if (!childYear && candidateParents.length === 1) {
+            childYear = getProjectYear(candidateParents[0]);
+          }
+          if (!childStore && candidateParents.length === 1) {
+            childStore = getProjectStore(candidateParents[0]);
+          }
+
+          const scopedKey = `${parentCode}_${childYear}_${childStore}`;
+          if (!parentToChildrenMap.has(scopedKey)) {
+            parentToChildrenMap.set(scopedKey, []);
+          }
+          const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+          const pData = projectMap.get(key) || p;
+          parentToChildrenMap.get(scopedKey)!.push(pData);
+          linkedChildIds.add(p.id || `${p.code}-${p.year}-${p.store}-${p.no}`);
+        }
+      }
+    });
+
+    const roots: BudgetTreeNode[] = [];
+
+    projects.forEach(p => {
+      const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+
+      // If project is linked as child of another project, it is only a child, not a root parent
+      if (linkedChildIds.has(pId)) {
+        return;
+      }
+
+      const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+      const pData = projectMap.get(key) || p;
+      const parentCode = String(p.code).trim().toUpperCase();
+      const pYear = getProjectYear(p);
+      const pStore = getProjectStore(p);
+      const scopedKey = `${parentCode}_${pYear}_${pStore}`;
+
+      // Child 1: Self-Child of this project (its own budget)
+      const selfBudget = pData.ownBudget ?? 0;
+      const selfActual = pData.ownActual ?? 0;
+      const selfSupportingFee = pData.ownSupportingFee ?? 0;
+      const selfRemaining = selfBudget - selfActual + selfSupportingFee;
+
+      const selfChild: BudgetTreeNode = {
+        id: `${pId}_self`,
+        isSelf: true,
+        isParentNode: false,
+        code: p.code,
+        name: p.name,
+        year: p.year,
+        store: p.store,
+        location: p.location,
+        type: p.type,
+        note: p.note,
+        budget: selfBudget,
+        totalBudget: selfBudget,
+        ownActual: selfActual,
+        totalActual: selfActual,
+        ownSupportingFee: selfSupportingFee,
+        totalSupportingFee: selfSupportingFee,
+        hasForc: pData.hasForc,
+        remaining: selfRemaining,
+        project: p,
+        children: [],
+      };
+
+      // Child 2+: Any other projects linked as children under this parent in the same year and store
+      const matchedChildren = parentToChildrenMap.get(scopedKey) || [];
+      const linkedProjects: BudgetTreeNode[] = matchedChildren.map((childP: any) => {
+        const childId = childP.id || `${childP.code}-${childP.year}-${childP.store}-${childP.no}`;
+        const cBudget = childP.ownBudget ?? 0;
+        const cActual = childP.ownActual ?? 0;
+        const cSupportingFee = childP.ownSupportingFee ?? 0;
+        const cRemaining = cBudget - cActual + cSupportingFee;
+
+        return {
+          id: childId,
+          isSelf: false,
+          isParentNode: false,
+          code: childP.code,
+          name: childP.name,
+          year: childP.year,
+          store: childP.store,
+          location: childP.location,
+          type: childP.type,
+          note: childP.note,
+          budget: cBudget,
+          totalBudget: cBudget,
+          ownActual: cActual,
+          totalActual: cActual,
+          ownSupportingFee: cSupportingFee,
+          totalSupportingFee: cSupportingFee,
+          hasForc: childP.hasForc,
+          remaining: cRemaining,
+          parentId: childP.parentId,
+          project: childP,
+          children: [],
+        };
+      });
+
+      const allChildren = [selfChild, ...linkedProjects];
+
+      // Roll-up sums for Parent Node (Budget Mẹ) utilizing central financialService
+      const rollup = calculateParentBudgetRollup(allChildren);
+
+      const parentNode: BudgetTreeNode = {
+        ...pData,
+        id: pId,
+        isParentNode: true,
+        isSelf: false,
+        totalBudget: rollup.totalBudget,
+        totalActual: rollup.totalActual,
+        totalSupportingFee: rollup.totalSupportingFee,
+        ownSupportingFee: selfSupportingFee,
+        hasForc: rollup.hasForc,
+        remaining: rollup.remaining,
+        children: allChildren,
+        project: p,
+      };
+
+      roots.push(parentNode);
+    });
+
+    return roots;
+}
+
+export function useBudgetTreeData({ projects, costs }: UseBudgetTreeDataParams): BudgetTreeNode[] {
+  return useMemo(() => buildBudgetTreeData(projects, costs), [projects, costs]);
+}
+
+
+// ================================================================================
+// FILE: src/components/GeneralTabParts/useGeneralGoogleSync.ts
+// ================================================================================
+
+import React, { useState } from "react";
+import { Project, DelegationGroup, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { getStatus, formatDisplayDateMain } from '../../lib/utils';
+
+interface UseGeneralGoogleSyncParams {
+  currentUser: AppUser;
+  projects: Project[];
+  delegationGroups: DelegationGroup[];
+}
+
+export function useGeneralGoogleSync({
+  currentUser,
+  projects,
+  delegationGroups
+}: UseGeneralGoogleSyncParams) {
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleGoogleSync = async () => {
+    if (currentUser.role !== 'admin') return;
+    if (!useAppStore.getState().isDelegationsRequested) {
+      useAppStore.getState().setIsDelegationsRequested(true);
+    }
+    const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwPAZcZ8wGQ1CVPYn_5h4arJ2dqX7T9rpWPMAmEuc3Q2G4BB7l59Mbxb8Ep0aQE6GA1/exec';
+    
+    setIsSyncing(true);
+    
+    const projectsData = projects.map(p => {
+      const pYear = p.year ? String(p.year) : '';
+      const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+      
+      const projectDelegations = delegationGroups.filter(g => g.projectCode === p.code);
+      let delegationTaskStr = '';
+      if (projectDelegations.length > 0) {
+        delegationTaskStr = projectDelegations.map(g => {
+          let st = g.subTasks?.[0]?.delegationStatus || g.subTasks?.[0]?.status || 'Assigned';
+          if (st === 'Accepted') st = 'On process';
+          return `${g.name} (${st})`;
+        }).join('; ');
+      }
+      
+      const now = new Date();
+      let activeTaskNames: string[] = [];
+      if (p.taskSummaries) {
+        const activeTasks = p.taskSummaries.filter(t => {
+          if (!t.start || !t.finish) return false;
+          const start = new Date(t.start);
+          const finish = new Date(t.finish);
+          return now >= start && now <= finish;
+        });
+        activeTaskNames = activeTasks.map(t => t.name);
+      }
+      let taskLines: string[] = [];
+      activeTaskNames.forEach(name => {
+        taskLines.push(...name.split('\n').filter((l: string) => l.trim() !== ''));
+      });
+      let detailString = taskLines.length > 0 ? taskLines.join('\n') : (p.detail || '');
+      
+      return {
+        projectId: p.id || p.no, // Unique ID for upsert
+        year: pYear,
+        store: p.store || '',
+        location: p.location || '',
+        code: p.code || '',
+        linkCodes: p.linkCodes || p.code || '',
+        projectName: p.name || '',
+        status: status,
+        detail: detailString,
+        startPlan: p.computedTakStart ? formatDisplayDateMain(p.computedTakStart) : '',
+        finishPlan: p.computedTakCompl ? formatDisplayDateMain(p.computedTakCompl) : '',
+        delegationTask: delegationTaskStr
+      };
+    });
+
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'upsert', projects: projectsData })
+      });
+      
+      useAppStore.getState().setToast({ title: "Notice", message: "Sent project sync request to Google Sheets!" });
+    } catch(err) {
+      console.error(err);
+      useAppStore.getState().setToast({ title: "Error", message: (err instanceof Error ? err.message : String(err)) });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return {
+    isSyncing,
+    handleGoogleSync
+  };
+}
+
+
+// ================================================================================
+// FILE: src/components/GeneralTabParts/useGeneralData.ts
+// ================================================================================
+
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getStatus, 
+  getProjectDatesAndStatus,
+  matchProjectStatusFilter,
+  parseDateTime, 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { SortConfig } from './generalTypes';
+
+interface UseGeneralDataParams {
+  projects: Project[];
+  tasks: Task[];
+  currentUser: AppUser;
+}
+
+const statusWeight: Record<string, number> = {
+  'On process': 1,
+  'Upcoming': 2,
+  'Completed': 3,
+  'Handover': 4,
+  'Canceled': 5
+};
+
+export function useGeneralData({
+  projects,
+  tasks,
+  currentUser
+}: UseGeneralDataParams) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const pinnedProjects = useAppStore(state => state.pinnedProjects);
+  const setPinnedProjects = useAppStore(state => state.setPinnedProjects);
+  const theme = useAppStore(state => state.theme);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(false);
+
+  const [flashToggle, setFlashToggle] = useState(true);
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  // Status and Location Filter Preservation when Searching
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (statusFilter !== 'all') {
+        lastSelectedStatusFilterRef.current = statusFilter;
+        safeSetItemSession("taka_general_status_filter", statusFilter);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setStatusFilter('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days';
+      setStatusFilter(restored);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  // Auto-jump to matched project location(s) when searching (Debounced)
+  useEffect(() => {
+    const term = deferredSearchTerm.trim();
+    if (!term) return;
+
+    const timer = setTimeout(() => {
+      const matchedProjects = projects.filter(p => {
+        const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
+        const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
+        const matchesSearch = matchesAdvancedSearch(term, searchFields);
+        const pYear = p.year ? String(p.year) : null;
+        const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
+        const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
+        return matchesSearch && matchesYear && matchesStore;
+      });
+      const matchedLocations = Array.from(
+        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [deferredSearchTerm, projects, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  // Handle Escape key globally to clear search when not in modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && searchTerm) {
+        const state = useAppStore.getState();
+        const hasOpenModal =
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isLoginModalOpen ||
+          state.isCalendarSyncModalOpen;
+        if (hasOpenModal) return;
+        e.preventDefault();
+        const activeElement = document.activeElement;
+        if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
+          (activeElement as HTMLElement).blur();
+        }
+        setSearchTerm("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [searchTerm]);
+
+  const years = useMemo(() => {
+    const projYears = projects.map(p => {
+      if (p.year) return String(p.year);
+      if (p.computedTakStart) return String(p.computedTakStart).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const taskYears = tasks.map(t => {
+      if (t.projectYear) return String(t.projectYear);
+      if (t.start) return String(t.start).substring(0, 4);
+      return null;
+    }).filter(Boolean) as string[];
+    const baseYears = ['2026', '2027'];
+    const unique = Array.from(new Set([...projYears, ...taskYears, ...baseYears])).filter(Boolean).sort();
+    return unique.length > 0 ? unique : ['2026', '2027'];
+  }, [projects, tasks, currentUser?.role]);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const stores = allowedStores;
+  const locationOptions = useLocationOptions();
+
+  useEffect(() => {
+    if (locationOptions.length > 0 && globalLocationFilter.length > 0) {
+      const valid = globalLocationFilter.filter(loc => locationOptions.includes(loc));
+      if (valid.length !== globalLocationFilter.length) {
+        setGlobalLocationFilter(valid);
+      }
+    }
+  }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
+
+  const filteredProjects = useMemo(() => {
+    // Pre-calculate project dates & status once (O(N)) to eliminate O(N log N) recalculations during sorting
+    const infoMap = new Map<string, ReturnType<typeof getProjectDatesAndStatus>>();
+    projects.forEach(p => {
+      const pKey = p.id || p.code || String(p.no || '');
+      infoMap.set(pKey, getProjectDatesAndStatus(p, tasks));
+    });
+
+    const getMemoizedInfo = (p: Project) => {
+      const pKey = p.id || p.code || String(p.no || '');
+      return infoMap.get(pKey) || getProjectDatesAndStatus(p, tasks);
+    };
+
+    return projects.filter(p => {
+      const { computedTakStart, computedTakCompl, computedOpening, status } = getMemoizedInfo(p);
+      const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
+      const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
+      const pYear = p.year ? String(p.year).trim() : null;
+      const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+      const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+      const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
+
+      const matchesStatus = matchProjectStatusFilter(status, statusFilter, computedTakStart);
+
+      return matchesSearch && matchesYear && matchesStore && matchesLocation && matchesStatus;
+    }).sort((a, b) => {
+      const isPinnedA = a.id && pinnedProjects.includes(a.id);
+      const isPinnedB = b.id && pinnedProjects.includes(b.id);
+      
+      if (isPinnedA !== isPinnedB) {
+        return isPinnedA ? -1 : 1;
+      }
+      if (isPinnedA && isPinnedB) {
+        const orderA = pinnedProjects.indexOf(a.id as string);
+        const orderB = pinnedProjects.indexOf(b.id as string);
+        if (orderA !== orderB) return orderA - orderB;
+      }
+
+      const infoA = getMemoizedInfo(a);
+      const infoB = getMemoizedInfo(b);
+
+      if (sortConfig) {
+        let valA = '';
+        let valB = '';
+        if (sortConfig.key === 'start') {
+          valA = infoA.computedTakStart || '9999-12-31';
+          valB = infoB.computedTakStart || '9999-12-31';
+        } else if (sortConfig.key === 'handover') {
+          valA = infoA.computedTakCompl || '9999-12-31';
+          valB = infoB.computedTakCompl || '9999-12-31';
+        } else if (sortConfig.key === 'opening') {
+          valA = infoA.computedOpening || a.opening || '9999-12-31';
+          valB = infoB.computedOpening || b.opening || '9999-12-31';
+        }
+        
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      }
+
+      const statusA = infoA.status;
+      const statusB = infoB.status;
+      
+      const weightA = statusWeight[statusA] || 99;
+      const weightB = statusWeight[statusB] || 99;
+      if (weightA !== weightB) {
+        return weightA - weightB;
+      }
+
+      // Special sorting for 'On process' : prioritize finish date proximity to today
+      if (statusA === 'On process') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const finishA = parseDateTime(a.computedTakCompl || a.handover || a.computedOpening || a.opening);
+        const finishB = parseDateTime(b.computedTakCompl || b.handover || b.computedOpening || b.opening);
+        
+        if (finishA && finishB) {
+          const diffA = Math.abs(finishA.getTime() - today.getTime());
+          const diffB = Math.abs(finishB.getTime() - today.getTime());
+          if (diffA !== diffB) {
+            return diffA - diffB;
+          }
+        } else if (finishA) {
+          return -1;
+        } else if (finishB) {
+          return 1;
+        }
+      }
+
+      const startA = a.computedTakStart || '9999-12-31';
+      const startB = b.computedTakStart || '9999-12-31';
+      if (startA !== startB) {
+        return startA.localeCompare(startB);
+      }
+
+      const complA = a.computedTakCompl || '9999-12-31';
+      const complB = b.computedTakCompl || '9999-12-31';
+      if (complA !== complB) {
+        return complA.localeCompare(complB);
+      }
+
+      const openA = a.computedOpening || a.opening || '9999-12-31';
+      const openB = b.computedOpening || b.opening || '9999-12-31';
+      if (openA !== openB) {
+        return openA.localeCompare(openB);
+      }
+      
+      return a.code.localeCompare(b.code) || String(a.year || '').localeCompare(String(b.year || ''));
+    });
+  }, [projects, tasks, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setFlashToggle(prev => !prev), 600);
+    return () => clearInterval(interval);
+  }, []);
+
+  const paginatedProjects = useMemo(() => {
+    return filteredProjects.slice(0, visibleCount);
+  }, [filteredProjects, visibleCount]);
+
+  return {
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    pinnedProjects,
+    setPinnedProjects,
+    theme,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    flashToggle,
+    sortConfig,
+    setSortConfig,
+    visibleCount,
+    setVisibleCount,
+    years,
+    stores,
+    locationOptions,
+    filteredProjects,
+    paginatedProjects
+  };
+}
+
+
+// ================================================================================
+// FILE: src/lib/budgetTreeService.ts
+// ================================================================================
+
+import { 
+  calculatePaidBreakdown, 
+  calculateBudgetRemaining, 
+  BudgetRollupChild, 
+  BudgetRollupResult 
+} from './financialService';
+
+export function calculateParentBudgetRollup(children: BudgetRollupChild[]): BudgetRollupResult {
+  const totalBudget = children.reduce((sum, c) => sum + (Number(c.budget) || 0), 0);
+  const totalActual = children.reduce((sum, c) => sum + (Number(c.totalActual) || 0), 0);
+  const totalSupportingFee = children.reduce((sum, c) => sum + (Number(c.totalSupportingFee) || 0), 0);
+  const hasForc = children.some(c => Boolean(c.hasForc));
+  const remaining = calculateBudgetRemaining(totalBudget, totalActual, totalSupportingFee);
+
+  return {
+    totalBudget,
+    totalActual,
+    totalSupportingFee,
+    hasForc,
+    remaining
+  };
+}
+
+export interface BudgetNode {
+  id: string;
+  isSelf: boolean;
+  isParentNode: boolean;
+  code: string;
+  name?: string;
+  year?: string | number;
+  store?: string;
+  location?: string;
+  type?: string;
+  note?: string;
+  budget: number;
+  totalBudget: number;
+  ownActual: number;
+  totalActual: number;
+  ownSupportingFee: number;
+  totalSupportingFee: number;
+  hasForc: boolean;
+  remaining: number;
+  project: any;
+  parentId?: string;
+  children: BudgetNode[];
+  filteredChildren?: BudgetNode[];
+  isSearchMatch?: boolean;
+}
+
+export interface BudgetTreeResult {
+  roots: BudgetNode[];
+  projectMap: Map<string, any>;
+  codeToProjects: Map<string, any[]>;
+}
+
+export function buildBudgetTree(projects: any[], costs: any[]): BudgetTreeResult {
+  const projectMap = new Map<string, any>();
+  const codeToProjects = new Map<string, any[]>();
+
+  projects.forEach(p => {
+    const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+    const projectCosts = costs.filter(c => {
+      const costCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
+      const pCode = String(p.code || '').trim().toLowerCase();
+      if (costCode !== pCode) return false;
+
+      const costYear = String(c.projectYear || (c as any).year || '').trim();
+      const pYear = String(p.year || '').trim();
+      const matchesYear = !costYear || !pYear || costYear === pYear;
+      if (!matchesYear) return false;
+
+      const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
+      const pStore = String(p.store || '').trim().toLowerCase();
+      const matchesStore = !costStore || !pStore || costStore === pStore;
+      if (!matchesStore) return false;
+
+      return true;
+    });
+
+    const computedActual = projectCosts.reduce((sum, c) => sum + (Number(c.actual) || 0), 0);
+    const computedForc = projectCosts.filter(c => c.costType === 'forc').reduce((sum, c) => sum + (Number(c.actual) || 0), 0);
+    const computedSupportingFee = projectCosts.reduce((sum, c) => sum + (Number(c.supportingFee) || 0), 0);
+
+    const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: p.actual || 0, totalForecastPaid: 0 };
+    const hasCosts = projectCosts.length > 0;
+
+    const finalActual = hasCosts ? computedActual : (fin.totalActualPaid || p.actual || 0);
+    const finalForc = hasCosts ? computedForc : (fin.totalForecastPaid || 0);
+    const finalSupportingFee = hasCosts ? computedSupportingFee : (p.supportingFee || 0);
+
+    const pData = {
+      ...p,
+      ownActual: finalActual,
+      ownForc: finalForc,
+      ownSupportingFee: finalSupportingFee,
+      hasForc: finalForc > 0,
+      ownBudget: fin.totalApproved || p.budget || 0,
+    };
+    projectMap.set(key, pData);
+
+    const codeKey = String(p.code).trim().toUpperCase();
+    if (!codeToProjects.has(codeKey)) {
+      codeToProjects.set(codeKey, []);
+    }
+    codeToProjects.get(codeKey)!.push(pData);
+  });
+
+  const parentToChildrenMap = new Map<string, any[]>();
+  const linkedChildIds = new Set<string>();
+
+  projects.forEach(p => {
+    if (p.parentId && String(p.parentId).trim()) {
+      const parentCode = String(p.parentId).trim().toUpperCase();
+      if (codeToProjects.has(parentCode)) {
+        if (!parentToChildrenMap.has(parentCode)) {
+          parentToChildrenMap.set(parentCode, []);
+        }
+        const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+        const pData = projectMap.get(key) || p;
+        parentToChildrenMap.get(parentCode)!.push(pData);
+        linkedChildIds.add(p.id || `${p.code}-${p.year}-${p.store}-${p.no}`);
+      }
+    }
+  });
+
+  const roots: BudgetNode[] = [];
+
+  projects.forEach(p => {
+    const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+    if (linkedChildIds.has(pId)) {
+      return;
+    }
+
+    const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+    const pData = projectMap.get(key) || p;
+    const parentCode = String(p.code).trim().toUpperCase();
+
+    const selfBudget = pData.ownBudget ?? 0;
+    const selfActual = pData.ownActual ?? 0;
+    const selfSupportingFee = pData.ownSupportingFee ?? 0;
+    const selfRemaining = selfBudget - selfActual + selfSupportingFee;
+
+    const selfChild: BudgetNode = {
+      id: `${pId}_self`,
+      isSelf: true,
+      isParentNode: false,
+      code: p.code,
+      name: p.name,
+      year: p.year,
+      store: p.store,
+      location: p.location,
+      type: p.type,
+      note: p.note,
+      budget: selfBudget,
+      totalBudget: selfBudget,
+      ownActual: selfActual,
+      totalActual: selfActual,
+      ownSupportingFee: selfSupportingFee,
+      totalSupportingFee: selfSupportingFee,
+      hasForc: pData.hasForc,
+      remaining: selfRemaining,
+      project: p,
+      children: [],
+    };
+
+    const linkedProjects = (parentToChildrenMap.get(parentCode) || []).map((childP: any) => {
+      const childId = childP.id || `${childP.code}-${childP.year}-${childP.store}-${childP.no}`;
+      const cBudget = childP.ownBudget ?? 0;
+      const cActual = childP.ownActual ?? 0;
+      const cSupportingFee = childP.ownSupportingFee ?? 0;
+      const cRemaining = cBudget - cActual + cSupportingFee;
+
+      return {
+        id: childId,
+        isSelf: false,
+        isParentNode: false,
+        code: childP.code,
+        name: childP.name,
+        year: childP.year,
+        store: childP.store,
+        location: childP.location,
+        type: childP.type,
+        note: childP.note,
+        budget: cBudget,
+        totalBudget: cBudget,
+        ownActual: cActual,
+        totalActual: cActual,
+        ownSupportingFee: cSupportingFee,
+        totalSupportingFee: cSupportingFee,
+        hasForc: childP.hasForc,
+        remaining: cRemaining,
+        parentId: childP.parentId,
+        project: childP,
+        children: [],
+      };
+    });
+
+    const allChildren = [selfChild, ...linkedProjects];
+    const rollup = calculateParentBudgetRollup(allChildren);
+
+    const parentNode: BudgetNode = {
+      ...pData,
+      id: pId,
+      isParentNode: true,
+      isSelf: false,
+      totalBudget: rollup.totalBudget,
+      totalActual: rollup.totalActual,
+      totalSupportingFee: rollup.totalSupportingFee,
+      ownSupportingFee: selfSupportingFee,
+      hasForc: rollup.hasForc,
+      remaining: rollup.remaining,
+      children: allChildren,
+      project: p,
+    };
+
+    roots.push(parentNode);
+  });
+
+  return { roots, projectMap, codeToProjects };
+}
+
+export interface BudgetFilterOptions {
+  globalYearFilter?: string;
+  effectiveStore?: string;
+  globalLocationFilter?: string[];
+  codeFilter?: string;
+  searchTerm?: string;
+  moneyFilter?: 'all' | 'has_money' | 'has_budget' | 'has_act_forc';
+}
+
+export function filterBudgetRoots(roots: BudgetNode[], options: BudgetFilterOptions = {}): BudgetNode[] {
+  const {
+    globalYearFilter = 'all',
+    effectiveStore = 'all',
+    globalLocationFilter = [],
+    codeFilter = '',
+    searchTerm = '',
+    moneyFilter = 'all'
+  } = options;
+
+  const cleanCode = (codeFilter || '').replace(/["']/g, '').trim().toLowerCase();
+
+  return roots.filter(node => {
+    const pYear = node.year ? String(node.year) : null;
+    const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
+    const matchesStore = effectiveStore === 'all' || node.store === effectiveStore;
+    const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location));
+
+    const hasBudget = (node.totalBudget || 0) !== 0;
+    const hasActForc = (node.totalActual || 0) !== 0;
+    let matchesMoney = true;
+    if (moneyFilter === 'has_money') matchesMoney = hasBudget || hasActForc;
+    else if (moneyFilter === 'has_budget') matchesMoney = hasBudget;
+    else if (moneyFilter === 'has_act_forc') matchesMoney = hasActForc;
+
+    const baseParentMatch = matchesYear && matchesStore && matchesLocation && matchesMoney;
+
+    const matchesCode = !cleanCode || String(node.code || '').toLowerCase().includes(cleanCode) ||
+      (node.children && node.children.some(c => String(c.code || '').toLowerCase().includes(cleanCode)));
+    if (!matchesCode) return false;
+
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase().trim();
+      const isParentMatch = [
+        node.code, node.name, node.store, node.location, node.type, node.note, node.year,
+        node.totalBudget, node.totalActual, node.remaining
+      ].some(val => String(val ?? '').toLowerCase().includes(lowerTerm));
+
+      const anyChildMatch = node.children && node.children.some(child => [
+        child.code, child.name, child.store, child.location, child.type, child.note, child.year,
+        child.budget, child.totalActual, child.remaining
+      ].some(val => String(val ?? '').toLowerCase().includes(lowerTerm)));
+
+      if (!isParentMatch && !anyChildMatch) return false;
+    }
+
+    return baseParentMatch;
+  });
+}
+
+export function calculateBudgetGlobalTotals(filteredRoots: BudgetNode[]) {
+  const totalBudget = filteredRoots.reduce((sum, p) => sum + (p.totalBudget || 0), 0);
+  const totalActual = filteredRoots.reduce((sum, p) => sum + (p.totalActual || 0), 0);
+  const totalSupportingFee = filteredRoots.reduce((sum, p) => sum + (p.totalSupportingFee || 0), 0);
+  const totalRemaining = totalBudget - totalActual + totalSupportingFee;
+  return { totalBudget, totalActual, totalSupportingFee, totalRemaining };
+}
+
+
+// ================================================================================
+// FILE: src/lib/storageBudgetService.ts
+// ================================================================================
+
+import { localDb } from './localDb';
+
+/**
+ * Storage Budget Service
+ * Giám sát và quản trị trần bộ nhớ IndexedDB cho iOS Safari (40MB limit theo chuẩn AGENTS.md)
+ * Ngăn ngừa WebKit kích hoạt Emergency Wipe khi iPhone ngủ 2-4-8 tiếng
+ */
+
+const IS_IOS = typeof window !== 'undefined' && (
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+);
+
+// Ngưỡng an toàn tối đa cho iOS (35MB để không chạm trần 40MB của WebKit)
+const IOS_SAFE_QUOTA_BYTES = 35 * 1024 * 1024;
+
+export interface StorageBudgetReport {
+  usageBytes: number;
+  quotaBytes: number;
+  percentageUsed: number;
+  isIOS: boolean;
+  evictedCount: number;
+  status: 'safe' | 'warning' | 'pruned';
+}
+
+/**
+ * Kiểm tra và dọn dẹp các bản ghi năm cũ (LRU eviction) nếu chạm ngưỡng bộ nhớ Safari
+ */
+export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
+  const result: StorageBudgetReport = {
+    usageBytes: 0,
+    quotaBytes: IOS_SAFE_QUOTA_BYTES,
+    percentageUsed: 0,
+    isIOS: IS_IOS,
+    evictedCount: 0,
+    status: 'safe',
+  };
+
+  try {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+      const estimate = await navigator.storage.estimate();
+      result.usageBytes = estimate.usage || 0;
+      if (estimate.quota) {
+        result.quotaBytes = IS_IOS ? Math.min(estimate.quota, IOS_SAFE_QUOTA_BYTES) : estimate.quota;
+      }
+      if (result.quotaBytes > 0) {
+        result.percentageUsed = Math.round((result.usageBytes / result.quotaBytes) * 100);
+      }
+    }
+
+    // Nếu là môi trường iOS và dung lượng vượt 80% ngưỡng an toàn
+    const needsPruning = IS_IOS && (result.percentageUsed > 80 || result.usageBytes > IOS_SAFE_QUOTA_BYTES * 0.85);
+
+    if (needsPruning) {
+      const currentYear = new Date().getFullYear();
+      const cutoffYear = String(currentYear - 2); // Giữ các năm hiện hành (2025, 2026); dọn <= 2024
+
+      // Chỉ dọn dẹp các task đã hoàn thành thuộc các năm lưu trữ cũ khỏi Dexie nội bộ (không chạm vào Firestore)
+      const oldTasks = await localDb.tasks
+        .filter((t: any) => {
+          const taskYear = String(t.projectYear || t.year || '');
+          const status = String(t.runningStatus || t.status || '').toLowerCase();
+          return Boolean(taskYear && taskYear <= cutoffYear && status === 'completed');
+        })
+        .toArray();
+
+      if (oldTasks.length > 0) {
+        const oldIds = oldTasks.map((t) => t.id);
+        await localDb.tasks.bulkDelete(oldIds);
+        result.evictedCount += oldIds.length;
+        result.status = 'pruned';
+        console.info(`[storageBudgetService] Evicted ${oldIds.length} completed tasks of <= ${cutoffYear} to preserve iOS 40MB limit.`);
+      }
+    }
+  } catch (err) {
+    console.warn('[storageBudgetService] Storage budget check completed safely:', err);
+  }
+
+  return result;
+}
+
+
+// ================================================================================
 // FILE: src/lib/deltaInvalidateService.ts
 // ================================================================================
 
@@ -7662,556 +11666,6 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () =
       syncCoordinatorTimer = null;
     }
     cleanupBroadcast();
-  };
-}
-
-
-// ================================================================================
-// FILE: src/components/DetailTabParts/useDetailData.ts
-// ================================================================================
-
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Project, Task, DelegationGroup, AppUser } from '../../types';
-import { useAppStore } from '../../store/useAppStore';
-import { 
-  getTaskStatus, 
-  parseDateTime, 
-  formatDisplayDateMain, 
-  formatDisplayDateTime, 
-  resolveActualStatus, 
-  matchesAdvancedSearch 
-} from '../../lib/utils';
-import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
-import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
-import { SortConfig } from './detailTypes';
-import { useDetailProjectInfo } from './useDetailProjectInfo';
-import { useDetailFlatRows } from './useDetailFlatRows';
-import { useDetailFocusTracking } from './useDetailFocusTracking';
-
-interface UseDetailDataParams {
-  projects: Project[];
-  tasks: Task[];
-  delegationGroups: DelegationGroup[];
-  currentUser: AppUser;
-  effectiveStore: string;
-  globalYearFilter: string;
-  setGlobalYearFilter: (year: string) => void;
-  globalStoreFilter: string;
-  setGlobalStoreFilter: (store: string) => void;
-  globalLocationFilter: string[];
-  setGlobalLocationFilter: (locs: string[]) => void;
-  initialFilterCode?: string;
-  initialFocusTaskId?: string;
-  returnScrollId?: string;
-  onClearFocus?: () => void;
-  onBackToGantt?: () => void;
-  sortConfig: SortConfig | null;
-  expandedCodes: string[];
-  setExpandedCodes: (codes: string[]) => void;
-  setVisibleActiveProjectIds: (ids: string[]) => void;
-  canWrite: boolean;
-}
-
-export function useDetailData({
-  projects,
-  tasks,
-  delegationGroups,
-  currentUser: _currentUser,
-  effectiveStore,
-  globalYearFilter,
-  setGlobalYearFilter,
-  globalStoreFilter,
-  setGlobalStoreFilter,
-  globalLocationFilter,
-  setGlobalLocationFilter,
-  initialFilterCode,
-  initialFocusTaskId,
-  returnScrollId: _returnScrollId,
-  onClearFocus,
-  onBackToGantt,
-  sortConfig,
-  expandedCodes,
-  setExpandedCodes,
-  setVisibleActiveProjectIds,
-}: UseDetailDataParams) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const deferredSearchTerm = useDeferredValue(searchTerm);
-  const [visibleCount, setVisibleCount] = useState(30);
-  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
-  const wasSearchingRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    const isSearching = !!deferredSearchTerm.trim();
-    if (!wasSearchingRef.current && isSearching) {
-      if (statusFilter !== 'all') {
-        lastSelectedStatusFilterRef.current = statusFilter;
-        safeSetItemSession("taka_detail_status_filter", statusFilter);
-      }
-      lastSelectedLocationFilterRef.current = globalLocationFilter;
-      setStatusFilter('all');
-      wasSearchingRef.current = true;
-    } else if (wasSearchingRef.current && !isSearching) {
-      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days';
-      setStatusFilter(restored);
-      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
-      wasSearchingRef.current = false;
-    }
-  }, [deferredSearchTerm]);
-
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-  const lastCheckedTaskIdRef = useRef<string | null>(null);
-
-  // Focus & Viewport Tracking Hook
-  const {
-    activeProjectInView,
-    handleClearFocus,
-    handleBackToGantt,
-  } = useDetailFocusTracking({
-    projects,
-    tasks,
-    initialFilterCode,
-    initialFocusTaskId,
-    onClearFocus,
-    onBackToGantt,
-    searchTerm,
-    setSearchTerm,
-    globalYearFilter,
-    setGlobalYearFilter,
-    globalStoreFilter,
-    setGlobalStoreFilter,
-    statusFilter,
-    setStatusFilter,
-    expandedCodes,
-    setExpandedCodes,
-  });
-
-  // Project Info Map & Helpers Hook
-  const {
-    tasksByProjectKey,
-    projectInfoMap,
-    getProjectInfo,
-  } = useDetailProjectInfo({ projects, tasks });
-
-  // Auto-jump to matched project location(s) when searching (Debounced)
-  useEffect(() => {
-    const term = deferredSearchTerm.trim();
-    if (!term) return;
-
-    const timer = setTimeout(() => {
-      const matchedProjects = projects.filter(p => {
-        const pYear = p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null);
-        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-        if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
-
-        const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
-        const isMatch = matchesAdvancedSearch(
-          term,
-          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
-          [],
-          (tLower) => {
-            const summariesMatch = p.taskSummaries?.some(ts =>
-              String(ts.name || "").toLowerCase().includes(tLower)
-            ) || false;
-            const taskMatches = groupTasks.some((t, idx) => {
-              const taskFields = [
-                t.taskCodePhu,
-                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-                t.name,
-                t.duration,
-                t.start,
-                t.finish,
-                t.party,
-                formatDisplayDateMain(t.start),
-                formatDisplayDateTime(t.start),
-                formatDisplayDateMain(t.finish),
-                formatDisplayDateTime(t.finish)
-              ];
-              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
-              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
-              return fieldMatch || notesMatch;
-            });
-            return summariesMatch || taskMatches;
-          }
-        );
-        return isMatch;
-      });
-
-      const matchedLocations = Array.from(
-        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
-      );
-      if (matchedLocations.length > 0) {
-        const currentLocs = globalLocationFilter || [];
-        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
-        if (!isSame) {
-          setGlobalLocationFilter(matchedLocations);
-        }
-      }
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [deferredSearchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
-
-  const delegationGroupByParentKey = useMemo(() => {
-    const map = new Map<string, DelegationGroup>();
-    delegationGroups.forEach(g => {
-      if (g.parentTaskId) {
-        const keyWithStore = `${g.parentTaskId}-${g.projectStore || ''}`;
-        map.set(keyWithStore, g);
-        if (!map.has(g.parentTaskId)) {
-          map.set(g.parentTaskId, g);
-        }
-      }
-    });
-    return map;
-  }, [delegationGroups]);
-
-  useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
-
-  // === Auto-clear stale filters when user changes Year / Store in Task Detail ===
-  const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
-
-  useEffect(() => {
-    const currentKey = `${globalYearFilter}_${effectiveStore}`;
-    if (prevYearStoreRef.current !== currentKey) {
-      prevYearStoreRef.current = currentKey;
-
-      // 1. Khi đổi Year hoặc Store: nếu đang có detailTabFilterCode / detailTabFocusTaskId của dự án thuộc Store/Year cũ thì xóa đi
-      const storeState = useAppStore.getState();
-      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
-        storeState.setDetailTabFilterCode('');
-        storeState.setDetailTabFocusTaskId('');
-        if (searchTerm && searchTerm === storeState.detailTabFilterCode) {
-          setSearchTerm('');
-        }
-      }
-
-      // 2. Kiểm tra xem globalLocationFilter hiện tại có hợp lệ với Store/Year mới không
-      const projectsInNewScope = projects.filter((p) => {
-        if (p.isDeleted) return false;
-        const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
-        if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
-        if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
-        return true;
-      });
-
-      if (projectsInNewScope.length > 0) {
-        // Nếu location đang chọn không có dự án nào ở Store/Year mới -> reset location filter
-        if (globalLocationFilter.length > 0) {
-          const hasMatchingLoc = projectsInNewScope.some(
-            (p) => p.location && globalLocationFilter.includes(p.location)
-          );
-          if (!hasMatchingLoc) {
-            setGlobalLocationFilter([]);
-          }
-        }
-
-        // Nếu statusFilter đang khác 'all' mà làm ẩn toàn bộ dự án của Store/Year mới -> tự động mở về 'all'
-        if (statusFilter !== 'all') {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayTime = today.getTime();
-          const hasMatchingStatus = projectsInNewScope.some((p) => {
-            const info = getProjectInfo(p);
-            if (statusFilter === 'On process + Upcoming 3 days') {
-              if (info.status === 'On process') return true;
-              if (info.status === 'Upcoming') {
-                const dStart = parseDateTime(info.start);
-                if (dStart) {
-                  dStart.setHours(0, 0, 0, 0);
-                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
-                  return diffDays <= 3 && diffDays >= 0;
-                }
-              }
-              return false;
-            }
-            return info.status === statusFilter;
-          });
-          if (!hasMatchingStatus) {
-            setStatusFilter('all');
-            safeSetItemSession('taka_detail_status_filter', 'all');
-          }
-        }
-      }
-    }
-  }, [
-    globalYearFilter,
-    effectiveStore,
-    projects,
-    globalLocationFilter,
-    statusFilter,
-    searchTerm,
-    setGlobalLocationFilter,
-    setStatusFilter,
-    setSearchTerm,
-    getProjectInfo,
-  ]);
-
-  // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
-  // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
-  const effectiveLocationFilter = useMemo(() => {
-    if (globalLocationFilter.length === 0) return globalLocationFilter;
-    const available = new Set<string>();
-    projects.forEach((p) => {
-      const pYear = p.year ? String(p.year).trim() : '';
-      if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter).trim()) return;
-      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return;
-      if (p.location) available.add(p.location);
-    });
-    return globalLocationFilter.filter((loc) => available.has(loc));
-  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
-
-  const filteredProjects = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayTime = today.getTime();
-
-    return projects.filter(p => {
-      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
-      const pYear = p.year ? String(p.year).trim() : (info.computedTakStart ? String(info.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
-      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
-      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
-      if (effectiveLocationFilter.length > 0 && (!p.location || !effectiveLocationFilter.includes(p.location))) return false;
-
-      let matchesStatus = true;
-      if (statusFilter === 'On process + Upcoming 3 days') {
-        if (info.status === 'On process') {
-          matchesStatus = true;
-        } else if (info.status === 'Upcoming') {
-          const dStart = parseDateTime(info.start);
-          if (dStart) {
-            dStart.setHours(0, 0, 0, 0);
-            const diffTime = dStart.getTime() - todayTime;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            matchesStatus = diffDays <= 3 && diffDays >= 0;
-          } else {
-            matchesStatus = false;
-          }
-        } else {
-          matchesStatus = false;
-        }
-      } else {
-        matchesStatus = statusFilter === 'all' || info.status === statusFilter;
-      }
-      if (!matchesStatus) return false;
-
-      const groupTasks = info.sortedTasks || tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
-      if (deferredSearchTerm) {
-        const isMatch = matchesAdvancedSearch(
-          deferredSearchTerm,
-          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
-          [],
-          (term) => {
-            const summariesMatch = p.taskSummaries?.some(ts =>
-              String(ts.name || "").toLowerCase().includes(term)
-            ) || false;
-            const taskMatches = groupTasks.some((t, idx) => {
-              const taskFields = [
-                t.taskCodePhu,
-                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-                t.name,
-                t.duration,
-                t.start,
-                t.finish,
-                t.party,
-                formatDisplayDateMain(t.start),
-                formatDisplayDateTime(t.start),
-                formatDisplayDateMain(t.finish),
-                formatDisplayDateTime(t.finish)
-              ];
-              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(term));
-              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(term)) || false;
-              return fieldMatch || notesMatch;
-            });
-            return summariesMatch || taskMatches;
-          }
-        );
-        if (!isMatch) return false;
-      }
-
-      return true;
-    });
-  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
-
-  // Chẩn đoán: bảng trống dù store có dự án
-  useEffect(() => {
-    if (filteredProjects.length === 0 && projects.length > 0) {
-      console.warn('[Detail] 0 dự án sau khi lọc', {
-        totalProjects: projects.length,
-        year: globalYearFilter,
-        store: effectiveStore,
-        locationSelected: globalLocationFilter,
-        locationEffective: effectiveLocationFilter,
-        status: statusFilter,
-        search: deferredSearchTerm,
-      });
-    }
-  }, [filteredProjects.length, projects.length, globalYearFilter, effectiveStore, globalLocationFilter, effectiveLocationFilter, statusFilter, deferredSearchTerm]);
-
-  // Ensure visibleCount is large enough to render target project row
-  useEffect(() => {
-    if (!initialFilterCode) return;
-    const filterClean = String(initialFilterCode).trim().toUpperCase();
-    const projIdx = filteredProjects.findIndex(p => {
-      const pCode = String(p.code || '').trim().toUpperCase();
-      const pId = String(p.id || '').trim().toUpperCase();
-      return pId === filterClean || pCode === filterClean || (pCode && filterClean.startsWith(pCode));
-    });
-    if (projIdx >= 0 && projIdx >= visibleCount) {
-      setVisibleCount(projIdx + 25);
-    }
-  }, [initialFilterCode, filteredProjects, visibleCount]);
-
-  const prevVisibleIdsRef = useRef<string>("");
-  useEffect(() => {
-    const targetProjects = filteredProjects.length > 0
-      ? filteredProjects.slice(0, visibleCount)
-      : projects.filter(p => {
-          const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
-          if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-          if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
-          if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
-          return true;
-        }).slice(0, visibleCount);
-
-    const visibleIds = targetProjects.map(p => String(p.id || p.no));
-    const idsKey = visibleIds.join(',');
-    if (prevVisibleIdsRef.current !== idsKey) {
-      prevVisibleIdsRef.current = idsKey;
-      setVisibleActiveProjectIds(visibleIds);
-    }
-  }, [filteredProjects, projects, visibleCount, globalYearFilter, effectiveStore, globalLocationFilter, setVisibleActiveProjectIds]);
-
-  useEffect(() => {
-    return () => {
-      useAppStore.getState().setVisibleActiveProjectIds([]);
-    };
-  }, []);
-
-  const allVisibleTaskIds = useMemo(() => {
-    return filteredProjects.slice(0, visibleCount).flatMap(p => {
-      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
-      return (pInfo.sortedTasks || []).map(t => t.id);
-    });
-  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
-
-  const lowerSearchTerm = searchTerm.toLowerCase().trim();
-
-  // Task code & status maps
-  const taskCodeMap = useMemo(() => {
-    return computeAllTaskCodes(projects, tasks);
-  }, [projects, tasks]);
-
-  const taskActualStatusMap = useMemo(() => {
-    const map = new Map<string, { label: string; color: string }>();
-    for (let idx = 0; idx < tasks.length; idx++) {
-      const t = tasks[idx];
-      const taskStatus = getTaskStatus(t.start, t.finish);
-      const delegationGroup = delegationGroupByParentKey.get(t.id);
-      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || [], t);
-      map.set(t.id, actStatus);
-    }
-    return map;
-  }, [tasks, delegationGroupByParentKey]);
-
-  // Pre-indexed O(1) map of subtask counts per parent to avoid 250,000 array filters in DetailTaskRow
-  const childTasksCountMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (let idx = 0; idx < tasks.length; idx++) {
-      const child = tasks[idx];
-      if (child.parentTaskId) {
-        map.set(child.parentTaskId, (map.get(child.parentTaskId) || 0) + 1);
-      }
-    }
-    return map;
-  }, [tasks]);
-
-  // Virtual Windowing Flat Rows
-  const flatTableRows = useDetailFlatRows({
-    filteredProjects,
-    visibleCount,
-    projectInfoMap,
-    getProjectInfo,
-    sortConfig,
-    expandedCodes,
-    delegationGroups,
-    lowerSearchTerm,
-    taskCodeMap,
-  });
-
-  // Selection handlers
-  const handleSelectAllTasksInProject = useCallback((groupTasks: Task[], select: boolean) => {
-    setSelectedTaskIds(prev => {
-      const next = new Set(prev);
-      groupTasks.forEach(t => {
-        if (select) next.add(t.id);
-        else next.delete(t.id);
-      });
-      return next;
-    });
-  }, []);
-
-  const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
-    const strTaskId = String(taskId);
-    setSelectedTaskIds(prev => {
-      const next = new Set(Array.from(prev).map(String));
-      const isChecked = !next.has(strTaskId);
-      if (isChecked) {
-        if (shiftKey && lastCheckedTaskIdRef.current && lastCheckedTaskIdRef.current !== strTaskId) {
-          const visibleIds = allVisibleTaskIds.map(String);
-          const lastIdx = visibleIds.indexOf(lastCheckedTaskIdRef.current);
-          const currentIdx = visibleIds.indexOf(strTaskId);
-          if (lastIdx !== -1 && currentIdx !== -1) {
-            const minIdx = Math.min(lastIdx, currentIdx);
-            const maxIdx = Math.max(lastIdx, currentIdx);
-            for (let idx = minIdx; idx <= maxIdx; idx++) {
-              next.add(visibleIds[idx]);
-            }
-          } else {
-            next.add(strTaskId);
-          }
-        } else {
-          next.add(strTaskId);
-        }
-        lastCheckedTaskIdRef.current = strTaskId;
-      } else {
-        next.delete(strTaskId);
-        lastCheckedTaskIdRef.current = null;
-      }
-      return next;
-    });
-  }, [allVisibleTaskIds]);
-
-  return {
-    searchTerm,
-    setSearchTerm,
-    deferredSearchTerm,
-    visibleCount,
-    setVisibleCount,
-    statusFilter,
-    setStatusFilter,
-    lastSelectedStatusFilterRef,
-    selectedTaskIds,
-    setSelectedTaskIds,
-    lastCheckedTaskIdRef,
-    activeProjectInView,
-    delegationGroupByParentKey,
-    projectInfoMap,
-    getProjectInfo,
-    filteredProjects,
-    allVisibleTaskIds,
-    lowerSearchTerm,
-    taskCodeMap,
-    taskActualStatusMap,
-    childTasksCountMap,
-    flatTableRows,
-    handleSelectAllTasksInProject,
-    handleToggleSelectTask,
-    handleClearFocus,
-    handleBackToGantt,
   };
 }
 

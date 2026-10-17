@@ -70,7 +70,7 @@ export function useBudgetFilterSort({
       const matchedLocationsList: string[] = [];
 
       treeData.forEach((node: any) => {
-        const pYear = node.year ? String(node.year) : (node.start ? String(node.start).substring(0, 4) : null);
+        const pYear = node.year ? String(node.year) : null;
         if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return;
         if (effectiveStore !== 'all' && node.store !== effectiveStore) return;
 
@@ -110,7 +110,7 @@ export function useBudgetFilterSort({
   }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filterNode = (node: any): boolean => {
-    const pYear = node.year ? String(node.year).trim() : (node.start ? String(node.start).substring(0, 4) : null);
+    const pYear = node.year ? String(node.year).trim() : null;
     const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
     const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
     
@@ -133,7 +133,7 @@ export function useBudgetFilterSort({
 
     if (node.children && node.children.length > 0) {
       const validChildren = node.children.filter((child: any) => {
-        const cYear = child.year ? String(child.year).trim() : (child.start ? String(child.start).substring(0, 4) : pYear);
+        const cYear = child.year ? String(child.year).trim() : pYear;
         const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === String(globalYearFilter).trim();
         const cStore = child.store ? String(child.store).toUpperCase().trim() : (node.store ? String(node.store).toUpperCase().trim() : '');
         const cMatchesStore = effectiveStore === 'all' || !cStore || cStore === effectiveStore.toUpperCase().trim();

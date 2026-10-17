@@ -182,8 +182,8 @@ export function useBudgetData({
 
       // Restrict candidate children to same fiscal year and store as selected parent
       if (selectedParentProject) {
-        const pYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
-        const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : (selectedParentProject.start ? String(selectedParentProject.start).substring(0, 4) : '');
+        const pYear = p.year ? String(p.year).trim() : '';
+        const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : '';
         if (pYear && parentYear && pYear !== parentYear) return false;
 
         const pStore = String(p.store || '').trim().toUpperCase();
@@ -219,12 +219,12 @@ export function useBudgetData({
   const linkedChildrenCount = useMemo(() => {
     if (!selectedParentProject) return 0;
     const parentCode = String(selectedParentProject.code || '').trim().toUpperCase();
-    const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : (selectedParentProject.start ? String(selectedParentProject.start).substring(0, 4) : '');
+    const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : '';
     const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
 
     return projects.filter(p => {
       if (!p.parentId || String(p.parentId).trim().toUpperCase() !== parentCode) return false;
-      const cYear = p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+      const cYear = p.year ? String(p.year).trim() : '';
       const cStore = String(p.store || '').trim().toUpperCase();
       if (parentYear && cYear && cYear !== parentYear) return false;
       if (parentStore && cStore && cStore !== parentStore) return false;

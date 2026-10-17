@@ -112,8 +112,6 @@ export function useGanttProjectsFilter({
     const yearsSet = new Set<string>();
     projects.forEach(p => {
       if (p.year) yearsSet.add(String(p.year));
-      else if (p.computedTakStart) yearsSet.add(String(p.computedTakStart).substring(0, 4));
-      else if (p.start) yearsSet.add(String(p.start).substring(0, 4));
     });
     ['2026', '2027'].forEach(y => yearsSet.add(y));
     return Array.from(yearsSet).sort();
@@ -273,7 +271,7 @@ export function useGanttProjectsFilter({
       }
 
       const { computedTakStart, status } = getProjectDatesAndStatus(p, tasks);
-      const pYear = p.year ? String(p.year).trim() : (computedTakStart ? String(computedTakStart).substring(0, 4) : null);
+      const pYear = p.year ? String(p.year).trim() : null;
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
       const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));

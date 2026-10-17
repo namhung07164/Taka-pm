@@ -142,7 +142,7 @@ export function useLayoutTabData({
 
     const projectYearsSet = new Set<string>();
     storeProjects.forEach(p => {
-      const y = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+      const y = String(p.year || '').trim();
       if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
         projectYearsSet.add(y);
       }
@@ -155,7 +155,7 @@ export function useLayoutTabData({
     });
     const taskYearsSet = new Set<string>();
     storeTasks.forEach(t => {
-      const y = String(t.projectYear || (t.start ? String(t.start).substring(0, 4) : '')).trim();
+      const y = String(t.projectYear || '').trim();
       if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
         taskYearsSet.add(y);
       }

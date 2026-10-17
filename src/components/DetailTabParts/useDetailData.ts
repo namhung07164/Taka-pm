@@ -129,7 +129,7 @@ export function useDetailData({
 
     const timer = setTimeout(() => {
       const matchedProjects = projects.filter(p => {
-        const pYear = p.year ? String(p.year) : (p.start ? String(p.start).substring(0, 4) : null);
+        const pYear = p.year ? String(p.year) : null;
         if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
         if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
 
@@ -218,7 +218,7 @@ export function useDetailData({
       // 2. Kiểm tra xem globalLocationFilter hiện tại có hợp lệ với Store/Year mới không
       const projectsInNewScope = projects.filter((p) => {
         if (p.isDeleted) return false;
-        const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+        const pYear = p.year ? String(p.year) : null;
         if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
         if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
         return true;
@@ -298,7 +298,7 @@ export function useDetailData({
     return projects.filter(p => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
       const info = projectInfoMap.get(pKey) || getProjectInfo(p);
-      const pYear = p.year ? String(p.year).trim() : (info.computedTakStart ? String(info.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      const pYear = p.year ? String(p.year).trim() : null;
       if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
       if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
       if (effectiveLocationFilter.length > 0 && (!p.location || !effectiveLocationFilter.includes(p.location))) return false;
@@ -397,7 +397,7 @@ export function useDetailData({
     const targetProjects = filteredProjects.length > 0
       ? filteredProjects.slice(0, visibleCount)
       : projects.filter(p => {
-          const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+          const pYear = p.year ? String(p.year) : null;
           if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
           if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
           if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;

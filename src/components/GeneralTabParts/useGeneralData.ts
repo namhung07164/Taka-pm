@@ -84,7 +84,7 @@ export function useGeneralData({
         const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
         const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
         const matchesSearch = matchesAdvancedSearch(term, searchFields);
-        const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : null);
+        const pYear = p.year ? String(p.year) : null;
         const matchesYear = globalYearFilter === 'all' || pYear === globalYearFilter;
         const matchesStore = effectiveStore === 'all' || p.store === effectiveStore;
         return matchesSearch && matchesYear && matchesStore;
@@ -174,7 +174,7 @@ export function useGeneralData({
       const { computedTakStart, computedTakCompl, computedOpening, status } = getMemoizedInfo(p);
       const searchFields = [p.no, p.store, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party, status, p.year];
       const matchesSearch = matchesAdvancedSearch(deferredSearchTerm, searchFields);
-      const pYear = p.year ? String(p.year).trim() : (computedTakStart ? String(computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
+      const pYear = p.year ? String(p.year).trim() : null;
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
       const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));

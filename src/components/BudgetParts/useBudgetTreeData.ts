@@ -20,7 +20,7 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
         if (costCode !== pCode) return false;
 
         const costYear = String(c.projectYear || (c as any).year || '').trim();
-        const pYear = String(p.year || (p.start ? String(p.start).substring(0, 4) : '')).trim();
+        const pYear = String(p.year || '').trim();
         const matchesYear = !costYear || !pYear || costYear === pYear;
         if (!matchesYear) return false;
 
@@ -61,7 +61,7 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
     });
 
     const getProjectYear = (p: any): string => 
-      p.year ? String(p.year).trim() : (p.start ? String(p.start).substring(0, 4) : '');
+      p.year ? String(p.year).trim() : '';
 
     const getProjectStore = (p: any): string => 
       String(p.store || '').trim().toUpperCase();

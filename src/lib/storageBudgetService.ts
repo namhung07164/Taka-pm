@@ -58,7 +58,7 @@ export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
       // Chỉ dọn dẹp các task đã hoàn thành thuộc các năm lưu trữ cũ khỏi Dexie nội bộ (không chạm vào Firestore)
       const oldTasks = await localDb.tasks
         .filter((t: any) => {
-          const taskYear = String(t.projectYear || t.year || (t.start ? t.start.substring(0, 4) : ''));
+          const taskYear = String(t.projectYear || t.year || '');
           const status = String(t.runningStatus || t.status || '').toLowerCase();
           return Boolean(taskYear && taskYear <= cutoffYear && status === 'completed');
         })

@@ -26,7 +26,7 @@ export function useGeneralGoogleSync({
     setIsSyncing(true);
     
     const projectsData = projects.map(p => {
-      const pYear = p.year ? String(p.year) : (p.computedTakStart ? String(p.computedTakStart).substring(0, 4) : '');
+      const pYear = p.year ? String(p.year) : '';
       const status = getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code);
       
       const projectDelegations = delegationGroups.filter(g => g.projectCode === p.code);
