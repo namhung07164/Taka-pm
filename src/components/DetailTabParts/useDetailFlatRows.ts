@@ -123,7 +123,7 @@ export function useDetailFlatRows({
         : [];
       const summaryCount = activeSummaries.length;
       const loadedTaskCount = validGroupTasks.length;
-      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : Math.max(p.taskCount ?? 0, summaryCount);
+      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : (Array.isArray(p.taskSummaries) ? summaryCount : (p.taskCount ?? 0));
       const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
         ? tasksToRender.length
         : authoritativeCount;

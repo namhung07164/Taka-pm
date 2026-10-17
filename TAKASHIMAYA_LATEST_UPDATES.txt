@@ -1,353 +1,1508 @@
 === TAKASHIMAYA LATEST UPDATED CODE (AUTOMATICALLY OVERWRITTEN ON EACH UPDATE) ===
-Updated at: 2026-10-16T21:51:30-07:00
+Updated at: 2026-10-16T23:05:00-07:00
 
-Summary: Integrated SummaryAuditPanel and summaryAuditService for cross-checking Firestore data consistency.
-Improved task deduplication logic in taskDeduplicationService.ts to be more strict and deterministic.
+Summary: 
+- Moved floating "Edit Mode" button to bottom-16 right-4 in Detail and Gantt tabs to prevent overlapping search bars and column adders on mobile/tablet.
+- Simplified Search Row layout in DetailFilterToolbar.tsx.
+- Updated DebouncedSearchInput.tsx with refined UI and simplified props.
+- Fixed task count display logic in useDetailFlatRows.ts and GanttProjectRow.tsx to prioritize active (non-deleted) summaries over stale taskCount from Firestore.
 
 ================================================================================
-FILE: src/lib/summaryAuditService.ts
+FILE: src/components/DebouncedSearchInput.tsx
 ================================================================================
-/**
- * summaryAuditService.ts
- *
- * Kiểm tra chéo 3 lớp dữ liệu:
- *   (1) Task thật trên Firestore  (nguồn sự thật)
- *   (2) "Summary" của từng dự án trên Firestore (taskCount + taskSummaries trong tài liệu dự án)
- *   (3) Dữ liệu đang giữ trên thiết bị này (Zustand + Dexie)
- *
- * Quy trình: đọc toàn bộ dự án và task từ SERVER một lần (tốn đúng bằng số tài liệu), rồi so sánh.
- * Chỉ dùng thủ công (admin). Đọc: số dự án + số task. Không ghi gì cho đến khi bấm sửa.
- */
-import { collection, getDocsFromServer } from 'firebase/firestore';
-import { db, APP_ID } from './firebase';
-import { useAppStore } from '../store/useAppStore';
-import { Project, Task } from '../types';
-import {
-  calculateProjectComputedDates,
-  syncProjectDatesToFirestore,
-  matchProjectCode,
-} from './projectDatesService';
-import { normalizeStoreCode, normalizeYearString } from './taskDeduplicationService';
-import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord } from './localDb';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, X } from 'lucide-react';
+import { cn } from '../lib/utils';
 
-const RECENT_EDIT_GUARD_MS = 10 * 60 * 1000; // task sửa trong 10 phút gần đây: không coi là "thừa" trên thiết bị
-
-const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
-
-const identityKey = (code: unknown, store: unknown, year: unknown): string =>
-  `${norm(code)}__${normalizeStoreCode(store as any)}__${normalizeYearString(year as any)}`;
-
-export interface AuditRow {
-  projectId: string;
-  code: string;
-  store: string;
-  year: string;
-  serverTaskCount: number; // số task thật (chưa xóa) thuộc dự án trên Firestore
-  summaryTaskCount: number; // project.taskCount trên Firestore
-  summaryEntryCount: number; // độ dài taskSummaries trên Firestore
-  missingInSummary: string[]; // task thật nhưng không có trong summary
-  ghostInSummary: string[]; // mục summary không có task thật tương ứng
-  noIdEntries: number; // mục summary không có id
-  countMismatch: boolean;
-  summaryIssue: boolean;
-  loadedLocally: boolean; // thiết bị này đã nạp task của dự án
-  missingLocal: string[]; // task có trên server nhưng thiết bị chưa có
-  ghostLocal: string[]; // task thiết bị có nhưng server không có
-  localProjectStale: boolean; // bản dự án trên thiết bị khác bản trên server
-  deviceIssue: boolean;
+interface DebouncedSearchInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  inputClassName?: string;
+  delay?: number;
 }
 
-export interface AuditReport {
-  generatedAt: number;
-  projectCount: number;
-  taskCount: number;
-  orphanCount: number; // task không thuộc dự án nào
-  ambiguousCount: number; // task khớp nhiều dự án
-  issues: AuditRow[];
-  internal: {
-    projects: Map<string, Project>;
-    ownerTasks: Map<string, Task[]>;
-    serverTasksById: Map<string, Task>;
+export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
+  value,
+  onChange,
+  placeholder = 'Search...',
+  className,
+  inputClassName,
+  delay = 250,
+}) => {
+  const [localValue, setLocalValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.value;
+    setLocalValue(nextVal);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onChange(nextVal);
+    }, delay);
   };
-}
 
-type OwnerResult = { owner?: Project; status: 'ok' | 'ambiguous' | 'orphan' };
-
-function buildOwnerResolver(projects: Project[]) {
-  const byId = new Map<string, Project>();
-  const byIdentity = new Map<string, Project[]>();
-  projects.forEach((p) => {
-    if (p.id) byId.set(String(p.id), p);
-    const k = identityKey(p.code, p.store, p.year);
-    const arr = byIdentity.get(k);
-    if (arr) arr.push(p);
-    else byIdentity.set(k, [p]);
-  });
-
-  return (t: Task): OwnerResult => {
-    if (t.projectId) {
-      const p = byId.get(String(t.projectId));
-      return p ? { owner: p, status: 'ok' } : { status: 'orphan' };
-    }
-    const exact = byIdentity.get(identityKey(t.projectCode, t.projectStore, t.projectYear));
-    if (exact && exact.length === 1) return { owner: exact[0], status: 'ok' };
-    if (exact && exact.length > 1) return { status: 'ambiguous' };
-
-    // Task cũ thiếu store/year, hoặc dự án nhiều mã (linkCodes): khớp theo mã, chỉ nhận khi duy nhất
-    const sameStore = (p: Project) =>
-      !t.projectStore || normalizeStoreCode(p.store) === normalizeStoreCode(t.projectStore as any);
-    const sameYear = (p: Project) =>
-      t.projectYear === undefined ||
-      t.projectYear === null ||
-      t.projectYear === '' ||
-      normalizeYearString(p.year as any) === normalizeYearString(t.projectYear as any);
-    const candidates = projects.filter(
-      (p) =>
-        sameStore(p) &&
-        sameYear(p) &&
-        (matchProjectCode(p.code, t.projectCode) || matchProjectCode((p as any).linkCodes, t.projectCode))
-    );
-    if (candidates.length === 1) return { owner: candidates[0], status: 'ok' };
-    if (candidates.length > 1) return { status: 'ambiguous' };
-    return { status: 'orphan' };
+  const handleClear = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setLocalValue('');
+    onChange('');
+    inputRef.current?.focus();
   };
-}
 
-const isRecent = (t: Task): boolean => {
-  const ts = t.updatedAt ? new Date(t.updatedAt as any).getTime() : 0;
-  return ts > 0 && Date.now() - ts < RECENT_EDIT_GUARD_MS;
+  return (
+    <div className={cn('relative flex items-center w-full min-w-0', className)}>
+      <Search className="w-4 h-4 text-slate-400 dark:text-[#838383] absolute left-3 pointer-events-none shrink-0"/>
+      <input
+        ref={inputRef}
+        type="text"
+        value={localValue}
+        onChange={handleInputChange}
+        placeholder={placeholder}
+        className={cn(
+          'w-full pl-9 pr-10 py-2 text-xs sm:text-sm bg-white dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-xl text-slate-800 dark:text-[#e3e3e3] placeholder:text-slate-400 dark:placeholder:text-[#737373] focus:outline-none focus:ring-2 focus:ring-blue-500/60 transition-all',
+          inputClassName
+        )}
+      />
+      {localValue && (
+        <button
+          type="button"
+          onClick={handleClear}
+          title="Clear search"
+          aria-label="Clear search"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-[#a3a3a3] dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-[#333336] active:scale-90 transition-all touch-manipulation cursor-pointer z-10"
+        >
+          <X className="w-4 h-4 stroke-[2.2]"/>
+        </button>
+      )}
+    </div>
+  );
 };
 
-export async function runSummaryAudit(onProgress?: (msg: string) => void): Promise<AuditReport> {
-  onProgress?.('Đang đọc dự án từ Firestore (server)...');
-  const projSnap = await getDocsFromServer(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')
-  );
-  const projects = projSnap.docs
-    .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
-    .filter((p) => !p.isDeleted);
+================================================================================
+FILE: src/components/DetailTabParts/DetailFilterToolbar.tsx
+================================================================================
+import React, { memo } from 'react';
+import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { ColumnAdder } from '../ColumnAdder';
+import { FullReplaceImport } from '../FullReplaceImport';
+import { Project, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { doc } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { generateId } from '../../lib/utils';
 
-  onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore (server)...`);
-  const taskSnap = await getDocsFromServer(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks')
-  );
-  const serverTasks = taskSnap.docs
-    .map((d) => ({ ...(d.data() as any), id: d.id } as Task))
-    .filter((t) => !t.isDeleted);
-
-  onProgress?.(`Đã đọc ${serverTasks.length} task. Đang đối chiếu...`);
-
-  const resolve = buildOwnerResolver(projects);
-  const projectsById = new Map<string, Project>();
-  projects.forEach((p) => p.id && projectsById.set(String(p.id), p));
-
-  const serverTasksById = new Map<string, Task>();
-  const ownerTasks = new Map<string, Task[]>();
-  let orphanCount = 0;
-  let ambiguousCount = 0;
-  serverTasks.forEach((t) => {
-    serverTasksById.set(t.id, t);
-    const r = resolve(t);
-    if (r.status === 'ok' && r.owner?.id) {
-      const k = String(r.owner.id);
-      const arr = ownerTasks.get(k);
-      if (arr) arr.push(t);
-      else ownerTasks.set(k, [t]);
-    } else if (r.status === 'ambiguous') ambiguousCount++;
-    else orphanCount++;
-  });
-
-  // Dữ liệu trên thiết bị này
-  const st = useAppStore.getState();
-  const localTasks: Task[] = (st.tasks || []).filter((t) => !t.isDeleted && !String(t.id).startsWith('ts_'));
-  const localProjects: Project[] = st.projects || [];
-  const localProjectsById = new Map<string, Project>();
-  localProjects.forEach((p) => p.id && localProjectsById.set(String(p.id), p));
-  const localOwner = new Map<string, Task[]>();
-  localTasks.forEach((t) => {
-    const r = resolve(t);
-    if (r.status === 'ok' && r.owner?.id) {
-      const k = String(r.owner.id);
-      const arr = localOwner.get(k);
-      if (arr) arr.push(t);
-      else localOwner.set(k, [t]);
-    }
-  });
-
-  const issues: AuditRow[] = [];
-  projects.forEach((p) => {
-    const pid = String(p.id);
-    const owned = ownerTasks.get(pid) || [];
-    const ownedIds = new Set(owned.map((t) => t.id));
-    const expectedSummaryIds = new Set(
-      owned.filter((t) => t.name || t.start || t.finish).map((t) => t.id)
-    );
-
-    const summaries: any[] = Array.isArray(p.taskSummaries) ? (p.taskSummaries as any[]) : [];
-    const summaryIds = new Set<string>();
-    let noIdEntries = 0;
-    summaries.forEach((s) => {
-      if (s && s.id) summaryIds.add(String(s.id));
-      else noIdEntries++;
-    });
-
-    const missingInSummary = [...expectedSummaryIds].filter((id) => !summaryIds.has(id));
-    const ghostInSummary = [...summaryIds].filter((id) => !ownedIds.has(id));
-    const countMismatch = Number(p.taskCount ?? 0) !== owned.length;
-    const summaryIssue =
-      missingInSummary.length > 0 || ghostInSummary.length > 0 || noIdEntries > 0 || countMismatch;
-
-    const localOwned = localOwner.get(pid) || [];
-    const localIds = new Set(localOwned.map((t) => t.id));
-    const loadedLocally = localOwned.length > 0;
-    const missingLocal = loadedLocally ? [...ownedIds].filter((id) => !localIds.has(id)) : [];
-    const ghostLocal = loadedLocally
-      ? localOwned.filter((t) => !serverTasksById.has(t.id) && !isRecent(t)).map((t) => t.id)
-      : [];
-    const lp = localProjectsById.get(pid);
-    const localProjectStale = lp
-      ? Number(lp.taskCount ?? 0) !== Number(p.taskCount ?? 0) ||
-        (lp.taskSummaries?.length ?? 0) !== summaries.length
-      : false;
-    const deviceIssue = missingLocal.length > 0 || ghostLocal.length > 0 || localProjectStale;
-
-    if (summaryIssue || deviceIssue) {
-      issues.push({
-        projectId: pid,
-        code: String(p.code || ''),
-        store: String(p.store || ''),
-        year: String(p.year ?? ''),
-        serverTaskCount: owned.length,
-        summaryTaskCount: Number(p.taskCount ?? 0),
-        summaryEntryCount: summaries.length,
-        missingInSummary,
-        ghostInSummary,
-        noIdEntries,
-        countMismatch,
-        summaryIssue,
-        loadedLocally,
-        missingLocal,
-        ghostLocal,
-        localProjectStale,
-        deviceIssue,
-      });
-    }
-  });
-
-  issues.sort((a, b) => a.code.localeCompare(b.code));
-  return {
-    generatedAt: Date.now(),
-    projectCount: projects.length,
-    taskCount: serverTasks.length,
-    orphanCount,
-    ambiguousCount,
-    issues,
-    internal: { projects: projectsById, ownerTasks, serverTasksById },
-  };
+interface DetailFilterToolbarProps {
+  globalYearFilter: string;
+  setGlobalYearFilter: (v: string) => void;
+  years: (number | string)[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (v: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (v: string[]) => void;
+  locationFilterOptions: string[];
+  statusFilter: string;
+  onStatusFilterChange: (v: string) => void;
+  searchTerm: string;
+  onSearchTermChange: (v: string) => void;
+  availableColumnsForUser: { id: string; label: string }[];
+  visibleColumns: string[];
+  onToggleColumn: (col: string) => void;
+  hasWritePermission: boolean;
+  isEditMode: boolean;
+  setIsEditMode: (v: boolean) => void;
+  canWrite: boolean;
+  onAddProject: () => void;
+  onAddTask: (p?: Project | null) => void;
+  activeProjectInView?: Project | null;
+  filteredProjects: Project[];
+  projects: Project[];
+  handleSyncAllPredecessors: (v: boolean) => void;
+  isSyncingPredecessors: boolean;
+  handleConvertAllSubtasksToHash?: () => void;
+  isConvertingToHash?: boolean;
+  currentUser: AppUser;
+  handleExportProjects: () => void;
+  handleImportProjects: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleExportTasks: () => void;
+  handleImportTasks: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  parseCSVDate?: (d: any) => string;
+  onSortSubTasks?: () => void;
+  isSortingSubTasks?: boolean;
+  selectedTaskCount?: number;
+  onBulkAction?: (action: any) => void;
 }
 
-/**
- * Sửa summary trên Firestore: dựng lại taskCount + taskSummaries CHỈ từ task thật (không gộp summary cũ).
- * Bỏ qua dự án mà server không có task nào nhưng summary đang có dữ liệu (cần xem thủ công).
- */
-export async function repairServerSummaries(
-  report: AuditReport,
-  onProgress?: (done: number, total: number) => void
-): Promise<{ fixed: number; skippedEmpty: number }> {
-  if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
-    throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi sửa.');
-  }
-  const targets = report.issues.filter((r) => r.summaryIssue);
-  let fixed = 0;
-  let skippedEmpty = 0;
+export const DetailFilterToolbar = memo(function DetailFilterToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationFilterOptions,
+  statusFilter,
+  onStatusFilterChange,
+  searchTerm,
+  onSearchTermChange,
+  availableColumnsForUser,
+  visibleColumns,
+  onToggleColumn,
+  hasWritePermission,
+  isEditMode,
+  setIsEditMode,
+  canWrite,
+  onAddProject,
+  onAddTask,
+  activeProjectInView,
+  filteredProjects,
+  projects,
+  handleSyncAllPredecessors,
+  isSyncingPredecessors,
+  handleConvertAllSubtasksToHash,
+  isConvertingToHash,
+  currentUser,
+  handleExportProjects,
+  handleImportProjects,
+  handleExportTasks,
+  handleImportTasks,
+  parseCSVDate,
+  onSortSubTasks,
+  isSortingSubTasks,
+  selectedTaskCount = 0,
+  onBulkAction
+}: DetailFilterToolbarProps) {
+  return (
+    <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
+      <div className="flex flex-col gap-2.5 sm:gap-3 w-full xl:w-auto flex-grow max-w-4xl">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
+          <select 
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none"
+          >
+            <option value="all">All Years</option>
+            {years.map(y => <option key={y} value={y}>Year {y}</option>)}
+          </select>
+          <select 
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none"
+          >
+            {stores.length > 1 && <option value="all">All Stores</option>}
+            {stores.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <MultiCheckboxSelect 
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationFilterOptions}
+            placeholder="All Locations"
+            className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+          />
+          <select 
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+          >
+            <option value="all">All Status</option>
+            <option value="Upcoming">Upcoming</option>
+            <option value="On process">On process</option>
+            <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
+            <option value="Handover">Handover</option>
+            <option value="Completed">Completed</option>
+            <option value="Canceled">Canceled</option>
+          </select>
+        </div>
+        <div className="relative w-full">
+          <DebouncedSearchInput 
+            value={searchTerm}
+            onChange={onSearchTermChange}
+            placeholder="Search in detail..."
+          />
+        </div>
+      </div>
 
-  for (let i = 0; i < targets.length; i++) {
-    const row = targets[i];
-    onProgress?.(i + 1, targets.length);
-    const serverProject = report.internal.projects.get(row.projectId);
-    if (!serverProject) continue;
-    if (row.serverTaskCount === 0 && (row.summaryTaskCount > 0 || row.summaryEntryCount > 0)) {
-      skippedEmpty++;
-      continue;
+      {/* Controls */}
+      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 self-end xl:self-center">
+        <ColumnAdder 
+          availableColumns={availableColumnsForUser} 
+          visibleColumns={visibleColumns} 
+          onAddColumn={onToggleColumn} 
+        />
+      </div>
+
+      {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
+      {hasWritePermission && !isEditMode && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit3 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {hasWritePermission && isEditMode && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+              <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+              <span>Editing Mode</span>
+            </div>
+
+            {canWrite && (
+              <>
+                <button 
+                  onClick={onAddProject}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs cursor-pointer active:scale-95"
+                  title="Add Project"
+                >
+                  <Plus className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Add Project
+                  </span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    const targetProj = activeProjectInView || (filteredProjects && filteredProjects.length > 0 ? filteredProjects[0] : (projects && projects.length > 0 ? projects[0] : null));
+                    onAddTask(targetProj);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer"
+                  title={activeProjectInView?.code ? `Add Task for ${activeProjectInView.code}` : "Add New Task"}
+                >
+                  <Plus className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    {activeProjectInView?.code ? `+ Task (${activeProjectInView.code})` : 'Add New Task'}
+                  </span>
+                </button>
+
+                {onSortSubTasks && (
+                  <button 
+                    onClick={onSortSubTasks}
+                    disabled={isSortingSubTasks}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white rounded-lg hover:bg-amber-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title={activeProjectInView?.code ? `Sort sub-tasks for ${activeProjectInView.code} by Start Date & Dependencies` : "Sort sub-tasks by Start Date & Dependencies"}
+                  >
+                    <ArrowUpDown className={`w-4 h-4 pointer-events-none ${isSortingSubTasks ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isSortingSubTasks ? 'Sorting...' : (activeProjectInView?.code ? `Sort (${activeProjectInView.code})` : 'Sort Sub-tasks')}
+                    </span>
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => handleSyncAllPredecessors(true)}
+                  disabled={isSyncingPredecessors}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Fix and synchronize all predecessor references with subtask codes"
+                >
+                  <Wand2 className={`w-4 h-4 pointer-events-none ${isSyncingPredecessors ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline pointer-events-none">
+                    {isSyncingPredecessors ? 'Syncing...' : 'Sync Predecessor'}
+                  </span>
+                </button>
+
+                {handleConvertAllSubtasksToHash && (
+                  <button 
+                    onClick={() => handleConvertAllSubtasksToHash()}
+                    disabled={isConvertingToHash}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-cyan-600 dark:bg-cyan-600 border border-cyan-700 text-white rounded-lg hover:bg-cyan-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Scan and convert '-' to '#' for subtask codes and predecessors"
+                  >
+                    <Hash className={`w-4 h-4 pointer-events-none ${isConvertingToHash ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isConvertingToHash ? 'Converting...' : "Convert '-' to '#'"}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onBulkAction && onBulkAction('unlink')}
+                  disabled={selectedTaskCount < 1}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer",
+                    selectedTaskCount >= 1
+                      ? "bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white hover:bg-amber-700"
+                      : "opacity-40 cursor-not-allowed bg-slate-200 dark:bg-[#333336] text-slate-400 border border-slate-300 dark:border-slate-700"
+                  )}
+                  title="Unlink selected tasks from parent modular link"
+                >
+                  <Unlink className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Unlink{selectedTaskCount > 0 ? ` (${selectedTaskCount})` : ''}
+                  </span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsEditMode(false)}
+              className="flex items-center justify-center p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-[#e3e3e3] rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors shrink-0 ml-1 cursor-pointer"
+              title="Done Editing"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {hasWritePermission && (
+          <>
+            <div className="flex gap-1 items-center">
+              {currentUser.role === 'admin' && (
+                <FullReplaceImport 
+                  collectionName="taka_projects"
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} projects.`) })}
+                  onParseRow={(row, headers) => {
+                    const p: any = {};
+                    let rowNo: any = null;
+                    headers.forEach((h, i) => {
+                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no' };
+                      const target = fieldMap[h];
+                      if (target) {
+                        let val: any = row[i];
+                        if (target === 'year' || target === 'no') val = isNaN(Number(val)) ? val : Number(val);
+                        p[target] = val;
+                        if (target === 'no') rowNo = val;
+                      }
+                    });
+                    if (!p.code) return null;
+                    return p;
+                  }}
+                  id="detail-full-import-projects-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button id="detail-export-projects-btn" onClick={handleExportProjects} className="hidden" />
+              <input id="detail-import-projects-input" type="file" accept=".csv" onChange={handleImportProjects} className="hidden" />
+            </div>
+            <div className="flex gap-1 items-center hidden">
+              {currentUser.role === 'admin' && (
+                <FullReplaceImport 
+                  collectionName="taka_tasks"
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} tasks.`) })}
+                  onParseRow={(row, headers) => {
+                    const t: any = {};
+                    headers.forEach((h, i) => {
+                      let key = h;
+                      if (h === 'task name') key = 'name';
+                      if (h === 'projectcode') key = 'projectCode';
+                      if (h === 'year' || h === 'projectyear') key = 'projectYear';
+                      if (h === 'store' || h === 'projectstore') key = 'projectStore';
+                      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') key = 'taskCodePhu';
+                      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
+                      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') key = 'delegation';
+                      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') key = 'realtimeUpdate';
+                      if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'id'].includes(key)) {
+                        let val: any = row[i];
+                        if (key === 'start' || key === 'finish') val = parseCSVDate(val);
+                        else if (key === 'delegation' || key === 'realtimeUpdate') {
+                          const strVal = String(val || '').trim().toLowerCase();
+                          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
+                        } else if (key === 'projectYear') {
+                          val = isNaN(Number(val)) ? val : Number(val);
+                        }
+                        t[key] = val;
+                      }
+                    });
+                    if (!t.projectCode || !t.name) return null;
+                    return t;
+                  }}
+                  onRecordSave={(record, batch) => {
+                     if (record.delegation) {
+                        const now = new Date().toISOString();
+                        const dateStr = now.substring(0, 10);
+                        const activeUser = useAppStore.getState().currentUser || currentUser;
+                        const activeUserId = activeUser?.id && activeUser.id !== 'guest' ? activeUser.id : (activeUser?.username || 'system');
+                        const rawParty = (record.party && record.party.trim()) ? record.party.trim() : '';
+                        const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+                        const deterministicGroupId = `del_${record.id}`;
+
+                        if (parsedParty) {
+                          const newGroup = {
+                            id: deterministicGroupId,
+                            parentTaskId: record.id,
+                            name: record.name || 'Delegated Task',
+                            projectCode: record.projectCode,
+                            projectStore: record.projectStore,
+                            projectYear: (record.projectYear !== undefined && record.projectYear !== null && !isNaN(Number(record.projectYear))) ? Number(record.projectYear) : (Number(projects.find(p => p.code === record.projectCode)?.year) || new Date().getFullYear()),
+                            subTasks: [{ 
+                               id: generateId(), 
+                               name: '', 
+                               comments: '', 
+                               status: 'Assigned', 
+                               delegationStatus: 'Assigned', 
+                               priority: 'Mid', 
+                               party: parsedParty, 
+                               startAct: dateStr, 
+                               finishAct: dateStr, 
+                               updatedAt: now 
+                            }],
+                            updatedAt: now,
+                            createdBy: activeUserId
+                          };
+                          const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+                          batch.set(delRef, newGroup, { merge: true });
+                        }
+                     }
+                  }}
+                  id="detail-full-import-tasks-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button id="detail-export-tasks-btn" onClick={handleExportTasks} className="hidden" />
+              <input id="detail-import-tasks-input" type="file" accept=".csv, .xlsx, .xls" onChange={handleImportTasks} className="hidden" />
+            </div>
+          </>
+        )}
+    </div>
+  );
+});
+
+================================================================================
+FILE: src/components/Gantt/GanttToolbar.tsx
+================================================================================
+import React, { Dispatch, SetStateAction, useMemo } from 'react';
+import { Search, Loader2, Edit2, X, Target } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { ColumnAdder } from '../ColumnAdder';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { ViewMode } from './ganttTypes';
+import { GanttToolbarActions } from './GanttToolbarActions';
+import { GanttToolbarDateFilter } from './GanttToolbarDateFilter';
+
+const GANTT_AVAILABLE_COLUMNS = [
+  { id: 'start', label: 'Start' },
+  { id: 'finish', label: 'Finish' },
+  { id: 'party', label: 'Party' },
+  { id: 'duration', label: 'Duration' },
+  { id: 'predecessor', label: 'Predecessor' },
+];
+
+export interface GanttToolbarProps {
+  // Year & Store & Location & Status filters
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  uniqueYears: string[];
+
+  effectiveStore: string;
+  setGlobalStoreFilter: (store: string) => void;
+  uniqueStores: string[];
+
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  locationOptions: string[];
+
+  filterProjectStatus: string;
+  onStatusFilterChange: (status: string) => void;
+
+  isTasksLoading: boolean;
+
+  // Delegation Highlight
+  canWrite: boolean;
+  isEditMode: boolean;
+  setIsEditMode: (val: boolean) => void;
+  isHighlightDelegationOn: boolean;
+  setIsHighlightDelegationOn: (val: boolean) => void;
+
+  // Edit Mode actions
+  selectedProjectIds: string[];
+  selectedTaskIds: string[];
+  setSelectedProjectIds: (ids: string[]) => void;
+  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
+  handleSetTextColor: (color: string | null) => void;
+  handleSetBaselineSelected: () => void;
+  handleToggleRealtimeUpdate: () => void;
+  handleUnlinkModularTasks?: (childTaskIds?: string[]) => void | Promise<void>;
+  isTaskModularModalOpen?: boolean;
+  setIsTaskModularModalOpen: (val: boolean) => void;
+  sumMode: "none" | "duration";
+  setSumMode: (val: "none" | "duration") => void;
+  handleDeleteSelected: () => void;
+  handleDragStart: (e: React.DragEvent) => void;
+  isHideMode: boolean;
+  setIsHideMode: (val: boolean) => void;
+  hiddenRows: string[];
+  setHiddenRows: (rows: string[]) => void;
+  handleExportToPDF: () => void;
+  isExporting: boolean;
+
+  // Date Filter
+  tempStartDate: string;
+  setTempStartDate: (val: string) => void;
+  tempEndDate: string;
+  setTempEndDate: (val: string) => void;
+  setFilterStartDate: (val: string) => void;
+  setFilterEndDate: (val: string) => void;
+
+  // Columns & View Controls
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  handleTodayClick: () => void;
+
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+
+  scaleInput: string;
+  setScaleInput: (val: string) => void;
+  dayWidth: number;
+  setDayWidth: (val: number) => void;
+  isWidthChanged: boolean;
+  setIsWidthChanged: (val: boolean) => void;
+  saveDayWidth: () => void;
+
+  // Search
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  initialFocusTaskId?: string;
+  ganttTabFocusTaskId?: string | null;
+  ganttTabFilterProjectId?: string | null;
+  handleClearFocus: () => void;
+}
+
+export function GanttToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  uniqueYears,
+  effectiveStore,
+  setGlobalStoreFilter,
+  uniqueStores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  filterProjectStatus,
+  onStatusFilterChange,
+  isTasksLoading,
+  canWrite,
+  isEditMode,
+  setIsEditMode,
+  isHighlightDelegationOn,
+  setIsHighlightDelegationOn,
+  selectedProjectIds,
+  selectedTaskIds,
+  setSelectedProjectIds,
+  setSelectedTaskIds,
+  handleSetTextColor,
+  handleSetBaselineSelected,
+  handleUnlinkModularTasks,
+  isTaskModularModalOpen = false,
+  setIsTaskModularModalOpen,
+  sumMode,
+  setSumMode,
+  handleDeleteSelected,
+  isHideMode,
+  setIsHideMode,
+  hiddenRows,
+  setHiddenRows,
+  handleExportToPDF,
+  isExporting,
+  tempStartDate,
+  setTempStartDate,
+  tempEndDate,
+  setTempEndDate,
+  setFilterStartDate,
+  setFilterEndDate,
+  visibleColumns,
+  handleToggleColumn,
+  handleTodayClick,
+  viewMode,
+  setViewMode,
+  scaleInput,
+  setScaleInput,
+  dayWidth,
+  setDayWidth,
+  isWidthChanged,
+  setIsWidthChanged,
+  saveDayWidth,
+  searchTerm,
+  setSearchTerm,
+  initialFocusTaskId,
+  ganttTabFocusTaskId,
+  ganttTabFilterProjectId,
+  handleClearFocus,
+}: GanttToolbarProps) {
+  const { t } = useLanguage();
+  const tasks = useAppStore((state) => state.tasks);
+
+  const activeFocusTaskId = initialFocusTaskId || ganttTabFocusTaskId;
+  const focusedTask = React.useMemo(() => {
+    if (!activeFocusTaskId || !tasks) return null;
+    return tasks.find(t => String(t.id) === String(activeFocusTaskId)) || null;
+  }, [activeFocusTaskId, tasks]);
+
+  return (
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Years')}</option>
+            {uniqueYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+
+          {/* Col 2: Store */}
+          <select
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {uniqueStores.length > 1 && <option value="all">{t('All Stores')}</option>}
+            {uniqueStores.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationOptions}
+            placeholder={t('All Locations')}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+          />
+
+          {/* Col 4: Status */}
+          <select
+            value={filterProjectStatus}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Statuses')}</option>
+            <option value="On process & Upcoming">{t('On Process & Upcoming')}</option>
+            <option value="On process">{t('On process')}</option>
+            <option value="On process + Upcoming 3 days">{t('On process + Upcoming 3 days')}</option>
+            <option value="Upcoming">{t('Upcoming')}</option>
+            <option value="Completed">{t('Completed')}</option>
+            <option value="Handover">{t('Handover')}</option>
+            <option value="Canceled">{t('Canceled')}</option>
+          </select>
+        </div>
+
+      {/* Floating Sticky Edit Mode Button - Moved to bottom-16 right-4 */}
+      {canWrite && !isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit2 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {canWrite && isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+            <Edit2 className="w-3.5 h-3.5 text-blue-500" />
+            <span>Editing Mode</span>
+          </div>
+
+          {/* Highlight Me Button INSIDE Edit Mode Panel */}
+          <button
+            type="button"
+            onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
+            className={cn(
+              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8 shrink-0",
+              isHighlightDelegationOn
+                ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50 font-extrabold"
+                : "bg-slate-100 dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-[#252528]"
+            )}
+            title={t('Highlight My Tasks')}
+          >
+            <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
+            <span>Highlight Me</span>
+          </button>
+
+          {/* Edit Mode Batch Actions */}
+          <GanttToolbarActions
+            selectedProjectIds={selectedProjectIds}
+            selectedTaskIds={selectedTaskIds}
+            handleSetTextColor={handleSetTextColor}
+            handleSetBaselineSelected={handleSetBaselineSelected}
+            handleUnlinkModularTasks={handleUnlinkModularTasks}
+            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+            sumMode={sumMode}
+            setSumMode={setSumMode}
+            handleDeleteSelected={handleDeleteSelected}
+            isHideMode={isHideMode}
+            setIsHideMode={setIsHideMode}
+            hiddenRows={hiddenRows}
+            setHiddenRows={setHiddenRows}
+            handleExportToPDF={handleExportToPDF}
+            isExporting={isExporting}
+          />
+
+          {/* Close Edit Mode button */}
+          <button
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-[#38383c] dark:hover:bg-[#444448] text-slate-700 dark:text-slate-200 font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer active:scale-95"
+            title="Done / Exit Edit Mode"
+          >
+            <span>Done</span>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      </div>
+
+      {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today) */}
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+          <div className="flex flex-wrap items-center gap-2">
+            <GanttToolbarDateFilter
+              handleTodayClick={handleTodayClick}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              scaleInput={scaleInput}
+              setScaleInput={setScaleInput}
+              dayWidth={dayWidth}
+              setDayWidth={setDayWidth}
+              isWidthChanged={isWidthChanged}
+              setIsWidthChanged={setIsWidthChanged}
+              saveDayWidth={saveDayWidth}
+              tempStartDate={tempStartDate}
+              setTempStartDate={setTempStartDate}
+              tempEndDate={tempEndDate}
+              setTempEndDate={setTempEndDate}
+              setFilterStartDate={setFilterStartDate}
+              setFilterEndDate={setFilterEndDate}
+            />
+
+            <ColumnAdder
+              availableColumns={GANTT_AVAILABLE_COLUMNS}
+              visibleColumns={visibleColumns}
+              onAddColumn={handleToggleColumn}
+            />
+          </div>
+
+          {/* Task loading spinner - Only on cold start when no cached tasks exist */}
+          {isTasksLoading && (!tasks || tasks.length === 0) && (
+            <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{t('Syncing...')}</span>
+            </div>
+          )}
+
+
+        </div>
+      </div>
+
+      {/* Row 3: Full-width Search Bar */}
+      <div className="relative w-full">
+        <DebouncedSearchInput
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder="Search or ... ( + AND, , OR )"
+        />
+      </div>
+    </div>
+  );
+}
+
+================================================================================
+FILE: src/components/DetailTabParts/useDetailFlatRows.ts
+================================================================================
+import React, { useMemo } from 'react';
+import { Project, DelegationGroup } from '../../types';
+import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
+import { DetailTableRow, SortConfig } from './detailTypes';
+import { ProjectInfo } from './useDetailProjectInfo';
+import { useAppStore } from '../../store/useAppStore';
+import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+
+interface UseDetailFlatRowsParams {
+  filteredProjects: Project[];
+  visibleCount: number;
+  projectInfoMap: Map<string, ProjectInfo>;
+  getProjectInfo: (p: Project) => ProjectInfo;
+  sortConfig: SortConfig | null;
+  expandedCodes: string[];
+  delegationGroups: DelegationGroup[];
+  lowerSearchTerm: string;
+  taskCodeMap: Map<string, string>;
+}
+
+export function useDetailFlatRows({
+  filteredProjects,
+  visibleCount,
+  projectInfoMap,
+  getProjectInfo,
+  sortConfig,
+  expandedCodes,
+  delegationGroups,
+  lowerSearchTerm,
+  taskCodeMap,
+}: UseDetailFlatRowsParams) {
+  const flatTableRows = useMemo<DetailTableRow[]>(() => {
+    const rows: DetailTableRow[] = [];
+    const visibleProjects = filteredProjects.slice(0, visibleCount);
+
+    visibleProjects.forEach((p, pIdx) => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const sortedTasks = pInfo.sortedTasks || [];
+
+      const groupTasks = sortConfig ? [...sortedTasks].sort((a, b) => {
+        let valA = '';
+        let valB = '';
+        let direction = 'asc';
+        
+        if (sortConfig.key === 'start') {
+          valA = a.start || '9999-12-31';
+          valB = b.start || '9999-12-31';
+        } else if (sortConfig.key === 'finish') {
+          valA = a.finish || '9999-12-31';
+          valB = b.finish || '9999-12-31';
+        } else if (sortConfig.key === 'taskName') {
+          valA = a.name || '';
+          valB = b.name || '';
+        } else if (sortConfig.key === 'code') {
+          const codeA = a.taskCodePhu || '';
+          const codeB = b.taskCodePhu || '';
+          direction = sortConfig.direction;
+          const comp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+          return direction === 'asc' ? comp : -comp;
+        } else if (sortConfig.key === 'no') {
+          const ordA = a.orderIndex !== undefined ? a.orderIndex : 0;
+          const ordB = b.orderIndex !== undefined ? b.orderIndex : 0;
+          direction = sortConfig.direction;
+          return direction === 'asc' ? ordA - ordB : ordB - ordA;
+        } else if (sortConfig.key === 'duration') {
+          valA = a.duration || '0';
+          valB = b.duration || '0';
+          direction = sortConfig.direction;
+          const numA = Number(valA);
+          const numB = Number(valB);
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return direction === 'asc' ? numA - numB : numB - numA;
+          }
+        } else if (sortConfig.key === 'party') {
+          valA = a.party || '';
+          valB = b.party || '';
+        } else if (sortConfig.key === 'predecessor') {
+          valA = a.predecessor || '';
+          valB = b.predecessor || '';
+        }
+
+        direction = sortConfig.direction;
+        return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }) : sortedTasks;
+
+      const isExpanded =
+        expandedCodes.includes(String(p.id || '')) ||
+        (p.code ? expandedCodes.includes(p.code) : false) ||
+        (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
+      const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
+
+      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
+      const validGroupTasks = rolledUpGroupTasks.map(t => ({
+        ...t,
+        name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
+      }));
+
+      const isProjectMatch = lowerSearchTerm
+        ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
+        : true;
+
+      const tasksToRender = isProjectMatch
+        ? validGroupTasks
+        : lowerSearchTerm 
+          ? validGroupTasks.filter(t => {
+              const code = taskCodeMap.get(t.id) || '';
+              const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
+              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
+              return (
+                String(t.name || '').toLowerCase().includes(lowerSearchTerm) ||
+                code.toLowerCase().includes(lowerSearchTerm) ||
+                String(t.party || '').toLowerCase().includes(lowerSearchTerm) ||
+                commentsMatch ||
+                notesMatch
+              );
+            })
+          : validGroupTasks;
+
+      const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+        ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+        : [];
+      const summaryCount = activeSummaries.length;
+      const loadedTaskCount = validGroupTasks.length;
+      const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : (Array.isArray(p.taskSummaries) ? summaryCount : (p.taskCount ?? 0));
+      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
+        ? tasksToRender.length
+        : authoritativeCount;
+
+      let planProgressPercent = 0;
+      let actProgressPercent = 0;
+
+      if (validGroupTasks.length > 0) {
+        planProgressPercent = computePlanProgressPercent(validGroupTasks);
+        actProgressPercent = computeActProgressPercent(validGroupTasks, delegationGroups);
+      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+        planProgressPercent = computePlanProgressFromSummaries(p.taskSummaries);
+        actProgressPercent = computeActProgressFromSummaries(p.taskSummaries);
+      } else {
+        planProgressPercent = p.computedPlanProgress ?? 0;
+        actProgressPercent = p.computedActProgress ?? 0;
+      }
+
+      rows.push({
+        type: 'project',
+        key: `proj-${p.id || p.no}`,
+        project: p,
+        projectIndex: pIdx,
+        effectiveTaskCount,
+        isExpanded,
+        groupTasks,
+        isProjDelegationOn,
+        planProgressPercent,
+        actProgressPercent,
+      });
+
+      if (isExpanded) {
+        const groupTaskIndexMap = new Map<string, number>();
+        groupTasks.forEach((gt, idx) => {
+          if (gt.id) groupTaskIndexMap.set(gt.id, idx);
+        });
+
+        const seenRenderTaskIds = new Set<string>();
+        tasksToRender.forEach((t, tIdx) => {
+          if (t.id && seenRenderTaskIds.has(t.id)) return;
+          if (t.id) seenRenderTaskIds.add(t.id);
+          const originalIndex = groupTaskIndexMap.get(t.id);
+          const i = originalIndex !== undefined ? originalIndex : tIdx;
+          rows.push({
+            type: 'task',
+            key: `task-${p.id || p.code || p.no}-${t.id || tIdx}`,
+            task: t,
+            taskIndex: i,
+            project: p,
+            projectIndex: pIdx,
+            groupTasks,
+            isProjDelegationOn,
+          });
+        });
+      }
+    });
+
+    return rows;
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, delegationGroups, lowerSearchTerm, taskCodeMap]);
+
+  return flatTableRows;
+}
+
+================================================================================
+FILE: src/components/Gantt/GanttProjectRow.tsx
+================================================================================
+import React, { Dispatch, FC, SetStateAction, memo, useMemo } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { Project, Task } from '../../types';
+import { getStatus, computeActProgressPercent, computeActProgressFromSummaries } from '../../lib/utils';
+import { formatGanttDate, renderGanttDateCell } from './GanttUtils';
+import { GanttBar } from './GanttBar';
+import { GanttBaseline } from './GanttBaseline';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+
+export interface GanttProjectRowProps {
+  p: Project;
+  pIdx: number;
+  projectTasks?: Task[];
+  isExpanded: boolean;
+  expandedModularTasks?: string[];
+  setExpandedModularTasks?: React.Dispatch<React.SetStateAction<string[]>>;
+  isEditMode?: boolean;
+  canWrite?: boolean;
+  selectedProjectSet?: Set<string>;
+  selectedProjectIds?: string[];
+  selectedTaskIds?: string[];
+  selectedTaskSet?: Set<string>;
+  setSelectedProjectIds?: (ids: string[]) => void;
+  setSelectedTaskIds?: React.Dispatch<React.SetStateAction<string[]>>;
+  toggleProject?: (id: string) => void;
+  toggleProjectExpansion?: (id: string) => void;
+  isResizingSide?: boolean;
+  startResizingSide?: (e: React.MouseEvent) => void;
+  sideWidth: number;
+  showStart?: boolean;
+  startColWidth?: number;
+  showFinish?: boolean;
+  finishColWidth?: number;
+  showParty?: boolean;
+  partyColWidth?: number;
+  showDuration?: boolean;
+  durationColWidth?: number;
+  showPredecessor?: boolean;
+  predecessorColWidth?: number;
+  timeUnits?: any[];
+  delegationGroups?: any[];
+  getRowVisibilityClass?: (id: string) => string;
+  startDate: Date;
+  dayWidth: number;
+  activeTooltip: string | null;
+  setActiveTooltip: (id: string | null) => void;
+  getBarColor?: (status: string, duration?: string | number) => string;
+  isHideMode?: boolean;
+  toggleHideRow?: (id: string, e: React.MouseEvent) => void;
+  handleTogglePin?: (p: any) => void | Promise<void>;
+  onNavigateToLayout?: (
+    store: string,
+    location: string,
+    projectCode?: string,
+    sourceTaskId?: string,
+  ) => void;
+}
+
+export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
+  p, pIdx, projectTasks = [], isExpanded, expandedModularTasks = [], setExpandedModularTasks, isEditMode = false, canWrite = false,
+  selectedProjectSet = new Set(), selectedProjectIds = [], selectedTaskIds = [], selectedTaskSet = new Set(), setSelectedProjectIds, setSelectedTaskIds,
+  toggleProject, toggleProjectExpansion, isResizingSide = false, startResizingSide,
+  sideWidth, showStart = false, startColWidth = 80, showFinish = false, finishColWidth = 80, showParty = false, partyColWidth = 70, showDuration = false, durationColWidth = 50, showPredecessor = false, predecessorColWidth = 90,
+  timeUnits = [], delegationGroups = [], getRowVisibilityClass = () => '', startDate, dayWidth, activeTooltip, setActiveTooltip, getBarColor = () => 'bg-blue-500',
+  isHideMode = false, toggleHideRow, handleTogglePin, onNavigateToLayout
+}) => {
+  const setQuickNavTarget = useAppStore(state => state.setQuickNavTarget);
+  const handleToggle = toggleProjectExpansion || toggleProject;
+  const pStart = p.computedTakStart || p.start;
+  const pEnd = p.computedTakCompl || p.handover;
+
+  let projectDuration = "-";
+  if (pStart && pEnd) {
+    const sD = new Date(pStart);
+    const eD = new Date(pEnd);
+    if (!isNaN(sD.getTime()) && !isNaN(eD.getTime())) {
+      const days = Math.round((eD.getTime() - sD.getTime()) / (1000 * 60 * 60 * 24));
+      projectDuration = String(days);
     }
+  }
 
-    // Đưa bản server vào store trước để phép so sánh "dirty check" trong syncProjectDatesToFirestore
-    // so với dữ liệu server chứ không phải bản cục bộ cũ.
-    const st = useAppStore.getState();
-    if (st.projects.some((p) => p.id === row.projectId)) {
-      st.setProjects(
-        st.projects.map((p) => (p.id === row.projectId ? ({ ...p, ...serverProject } as Project) : p))
+  const baseStatus = p.computedStatus || getStatus(pStart, pEnd, p.computedOpening || p.opening, p.code);
+  const pActPrg = projectTasks && projectTasks.length > 0
+    ? computeActProgressPercent(projectTasks, delegationGroups)
+    : (p.computedActProgress && p.computedActProgress > 0 
+        ? p.computedActProgress 
+        : (p.taskSummaries && p.taskSummaries.length > 0 ? computeActProgressFromSummaries(p.taskSummaries) : (p.computedActProgress ?? 0)));
+  const effectiveProjectStatus = pActPrg >= 100 
+    ? 'Completed' 
+    : (p.computedActStatus && p.computedActStatus !== 'Planned' ? p.computedActStatus : baseStatus);
+  const pStatus = effectiveProjectStatus;
+  const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+    ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+    : [];
+  const summaryCount = activeSummaries.length;
+  const loadedCount = projectTasks?.length || 0;
+  const effectiveTaskCount = loadedCount > 0 ? loadedCount : (Array.isArray(p.taskSummaries) ? summaryCount : (p.taskCount ?? 0));
+  const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
+
+  const rowId = `project-${p.no}`;
+
+  // Find modular parent tasks belonging to this project
+  const projectModularParentIds = React.useMemo(() => {
+    const childParentIds = new Set<string>();
+    (projectTasks || []).forEach((t) => {
+      if (t.parentTaskId) {
+        childParentIds.add(String(t.parentTaskId));
+      }
+    });
+    return (projectTasks || [])
+      .filter((t) => childParentIds.has(String(t.id)))
+      .map((t) => String(t.id));
+  }, [projectTasks]);
+
+  const hasModularTasks = projectModularParentIds.length > 0;
+  const isProjectModularExpanded =
+    hasModularTasks &&
+    projectModularParentIds.some((id) => expandedModularTasks.includes(id));
+
+  const handleToggleProjectModular = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasModularTasks) return;
+    if (isProjectModularExpanded) {
+      setExpandedModularTasks((prev) =>
+        prev.filter((id) => !projectModularParentIds.includes(id))
+      );
+    } else {
+      setExpandedModularTasks((prev) =>
+        Array.from(new Set([...prev, ...projectModularParentIds]))
       );
     }
+  };
 
-    const owned = report.internal.ownerTasks.get(row.projectId) || [];
-    const computed = calculateProjectComputedDates(
-      { ...serverProject, taskSummaries: [] } as Project,
-      owned,
-      useAppStore.getState().delegationGroups || []
-    );
-    await syncProjectDatesToFirestore(row.projectId, computed);
-    fixed++;
-  }
-  return { fixed, skippedEmpty };
-}
+  return (
+    <div
+      id={`gantt-project-row-${p.no}`}
+      className={cn(
+        "flex h-12 min-h-[48px] border-b border-slate-200 dark:border-[#444446] transition-colors relative group project-row",
+        "bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a]",
+        getRowVisibilityClass(rowId)
+      )}
+    >
+      <div
+        className={cn(
+          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] flex items-center shrink-0 overflow-hidden",
+          "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:group-hover:bg-[#28282a]"
+        )}
+        style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
+      >
+        {/* Project Name Column */}
+        <div className="flex-1 min-w-0 p-1.5 flex items-center overflow-hidden">
+          <div className="flex items-center gap-1 w-full relative min-w-0">
+            {isEditMode && (() => {
+              const pKey = String(p.id || p.no);
+              const pCodeNorm = String(p.code || '').trim().toLowerCase();
+              const pYearNorm = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+              const pStoreNorm = p.store ? String(p.store).trim().toLowerCase() : '';
+              const allStoreTasks = useAppStore.getState().tasks || [];
 
-/**
- * Sửa dữ liệu trên thiết bị này theo Firestore:
- *  - thêm task còn thiếu, xóa task thừa (không động đến task sửa trong 10 phút gần đây)
- *  - thay bản dự án cũ bằng bản server (Zustand + Dexie)
- */
-export async function repairLocalDevice(
-  report: AuditReport
-): Promise<{ added: number; removed: number; projectsRefreshed: number }> {
-  if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
-    throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi sửa.');
-  }
-  const st = useAppStore.getState();
-  const toDelete = new Set<string>();
-  const toAddMap = new Map<string, Task>();
-  const staleProjectIds = new Set<string>();
+              // 1. Gather all tasks directly associated with this project
+              const taskMap = new Map<string, Task>();
+              (projectTasks || []).forEach(t => { if (t && t.id && !t.isDeleted) taskMap.set(t.id, t); });
 
-  report.issues
-    .filter((r) => r.deviceIssue)
-    .forEach((r) => {
-      r.ghostLocal.forEach((id) => toDelete.add(id));
-      r.missingLocal.forEach((id) => {
-        const t = report.internal.serverTasksById.get(id);
-        if (t) toAddMap.set(id, t);
-      });
-      if (r.localProjectStale) staleProjectIds.add(r.projectId);
-    });
+              allStoreTasks.forEach(t => {
+                if (!t || !t.id || t.isDeleted) return;
+                if (p.id && String(t.projectId) === String(p.id)) {
+                  taskMap.set(t.id, t);
+                  return;
+                }
+                if (t.projectCode) {
+                  const codes = String(t.projectCode).trim().toLowerCase().split(/[,;/]+/).map(s => s.trim());
+                  if (codes.includes(pCodeNorm)) {
+                    if (pYearNorm && t.projectYear && String(t.projectYear).trim() !== pYearNorm) return;
+                    if (pStoreNorm && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStoreNorm) return;
+                    taskMap.set(t.id, t);
+                  }
+                }
+              });
 
-  const currentTasks = st.tasks || [];
-  const kept = currentTasks.filter((t) => !toDelete.has(t.id));
-  const existingIds = new Set(kept.map((t) => t.id));
-  const added = [...toAddMap.values()].filter((t) => !existingIds.has(t.id));
-  st.setTasks([...kept, ...added]);
+              // 2. Also include any subtasks whose parent belongs to this project
+              const parentIdSet = new Set(Array.from(taskMap.keys()));
+              const parentCodeSet = new Set(
+                Array.from(taskMap.values())
+                  .map(t => t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '')
+                  .filter(Boolean)
+              );
 
-  if (added.length > 0) await bulkPersistTasks(added);
-  for (const id of toDelete) {
-    await deleteLocalRecord('taka_tasks', id).catch(() => {});
-  }
+              allStoreTasks.forEach(t => {
+                if (!t || !t.id || t.isDeleted || taskMap.has(String(t.id))) return;
+                const rawParent = t.parentTaskId || (t as any).parentId;
+                if (rawParent) {
+                  const rawStr = String(rawParent).trim().toLowerCase();
+                  if (parentIdSet.has(String(rawParent)) || parentCodeSet.has(rawStr)) {
+                    taskMap.set(String(t.id), t);
+                  }
+                }
+              });
 
-  let projectsRefreshed = 0;
-  if (staleProjectIds.size > 0) {
-    const refreshed: Project[] = [];
-    const nextProjects = (st.projects || []).map((p) => {
-      if (p.id && staleProjectIds.has(String(p.id))) {
-        const sp = report.internal.projects.get(String(p.id));
-        if (sp) {
-          const merged = { ...p, ...sp } as Project;
-          refreshed.push(merged);
-          projectsRefreshed++;
-          return merged;
-        }
-      }
-      return p;
-    });
-    useAppStore.getState().setProjects(nextProjects);
-    if (refreshed.length > 0) await bulkPersistProjects(refreshed);
-  }
+              const allProjectTasks = Array.from(taskMap.values());
+              const pTaskIds = allProjectTasks.map(t => String(t.id)).filter(Boolean);
+              const sTaskSet = selectedTaskSet || new Set((selectedTaskIds || []).map(String));
+              const isAllTasksSelected = pTaskIds.length > 0 && pTaskIds.every(id => sTaskSet.has(id));
+              const isSomeTasksSelected = !isAllTasksSelected && pTaskIds.some(id => sTaskSet.has(id));
+              const isChecked = pTaskIds.length > 0 ? isAllTasksSelected : Boolean(selectedProjectSet?.has(pKey) || selectedProjectSet?.has(String(p.no)) || (p.id && selectedProjectSet?.has(String(p.id))));
 
-  return { added: added.length, removed: toDelete.size, projectsRefreshed };
-}
+              return (
+                <label
+                  className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeTasksSelected;
+                    }}
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) => {
+                      // If not all tasks are selected, clicking toggles ON to select all.
+                      // If all tasks were already selected, clicking toggles OFF to deselect all.
+                      const willCheck = !isAllTasksSelected;
+                      const currentProjectIds = (selectedProjectIds || []).map(String);
+                      const projectKeys = [pKey, String(p.id), String(p.no)].filter(Boolean).map(String);
+
+                      if (willCheck) {
+                        if (setSelectedProjectIds) {
+                          setSelectedProjectIds(Array.from(new Set([...currentProjectIds, ...projectKeys])));
+                        }
+                        if (setSelectedTaskIds) {
+                          setSelectedTaskIds((prev: any) => Array.from(new Set([...(prev || []).map(String), ...pTaskIds])));
+                        }
+                      } else {
+                        if (setSelectedProjectIds) {
+                          const removeSet = new Set(projectKeys);
+                          setSelectedProjectIds(currentProjectIds.filter(id => !removeSet.has(id)));
+                        }
+                        if (setSelectedTaskIds) {
+                          const pTaskSet = new Set(pTaskIds);
+                          setSelectedTaskIds((prev: any) => (prev || []).map(String).filter((id: string) => !pTaskSet.has(id)));
+                        }
+                      }
+                    }}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
+                  />
+                </label>
+              );
+            })()}
+            <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (canToggle && handleToggle) {
+                    handleToggle(p.id!);
+                  }
+                }}
+                disabled={!canToggle}
+                className={cn(
+                  "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
+                  !canToggle
+                    ? "opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600"
+                    : isExpanded
+                    ? "text-slate-600 dark:text-[#c3c3c3] bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] cursor-pointer"
+                    : "text-slate-500 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] cursor-pointer"
+                )}
+                title={
+                  !canToggle
+                    ? "Project has no tasks"
+                    : isExpanded
+                    ? "Collapse this project"
+                    : `Expand this project (${effectiveTaskCount} tasks)`
+                }
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleProjectModular}
+                disabled={!hasModularTasks}
+                className={cn(
+                  "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
+                  !hasModularTasks
+                    ? "opacity-25 cursor-not-allowed bg-slate-100 dark:bg-[#28282a] text-slate-400 dark:text-slate-600"
+                    : isProjectModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 shadow-xs ring-1 ring-purple-400/50 cursor-pointer"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/60 dark:hover:bg-purple-900/90 dark:text-purple-200 border border-purple-300 dark:border-purple-600/70 cursor-pointer"
+                )}
+                title={
+                  !hasModularTasks
+                    ? "Project has no modular tasks"
+                    : isProjectModularExpanded
+                    ? "Collapse modular tasks of this project"
+                    : "Expand modular tasks of this project"
+                }
+              >
+                {isProjectModularExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+                )}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                if (isEditMode) return;
+                e.stopPropagation();
+                // Open Quick Nav when clicking project row
+                setQuickNavTarget({
+                  project: p,
+                  task: undefined,
+                  taskCode: p.code,
+                });
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (handleToggle) handleToggle(p.id!);
+              }}
+              className={cn(
+                "flex items-center gap-1 flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-[#333336] p-1 rounded transition-colors group/pname overflow-hidden",
+                !isEditMode ? "cursor-pointer" : ""
+              )}
+              title={
+                !isEditMode
+                  ? `Quick Navigator - Project: ${p.name} (${p.code})`
+                  : p.name
+              }
+            >
+              <div className="flex flex-col min-w-0 flex-1 justify-center gap-0.5 overflow-hidden">
+                <span 
+                  className={cn(
+                    "font-bold text-xs sm:text-sm truncate text-slate-900 dark:text-white leading-tight",
+                    !isEditMode && "group-hover/pname:text-blue-500 dark:group-hover/pname:text-blue-400 transition-colors"
+                  )} 
+                  title={p.name}
+                >
+                  {p.name}
+                </span>
+                <span className="text-[10px] text-slate-400 truncate font-mono flex items-center gap-1 flex-wrap leading-none">
+                  <span className="px-1 py-0.5 text-[9px] font-bold font-mono rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] shrink-0 leading-none">
+                    {p.code}
+                  </span>
+                  <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-[#142340] text-[#60a5fa] border border-[#1d4ed8] uppercase shrink-0 leading-none">
+                    {p.store}
+                  </span>
+                  {p.location && (
+                    <span className="text-slate-400 text-[10px] font-medium leading-none">
+                      • {p.location}
+                    </span>
+                  )}
+                  <span className="text-amber-400 text-[9px] font-bold leading-none">●</span>
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Extra Columns inside Side Container */}
+        {showStart && (
+          <div
+            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
+            style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
+          >
+            {renderGanttDateCell(pStart, "text-blue-700 dark:text-[#8ab4f8]")}
+          </div>
+        )}
+
+        {showFinish && (
+          <div
+            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
+            style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
+          >
+            {renderGanttDateCell(pEnd, "text-pink-700 dark:text-pink-400")}
+          </div>
+        )}
+
+        {showParty && (
+          <div
+            className="text-xs text-slate-500 dark:text-[#838383] border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
+          >
+            {p.party || "-"}
+          </div>
+        )}
+
+        {showDuration && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-slate-500 dark:text-[#838383] border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center font-bold shrink-0 h-full"
+            style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
+          >
+            {projectDuration}
+          </div>
+        )}
+
+        {showPredecessor && (
+          <div
+            className="font-mono text-[10px] sm:text-xs text-indigo-700 dark:text-indigo-400 font-bold border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
+            style={{ width: predecessorColWidth, minWidth: predecessorColWidth, maxWidth: predecessorColWidth }}
+          >
+            -
+          </div>
+        )}
+
+        {startResizingSide && (
+          <div
+            className={cn(
+              "absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 z-40 transition-colors pointer-events-auto",
+              isResizingSide ? "bg-blue-500" : "bg-transparent group-hover/header:bg-slate-200 dark:group-hover/header:bg-slate-600"
+            )}
+            onMouseDown={startResizingSide}
+          />
+        )}
+      </div>
+
+      {/* Right Timeline Area */}
+      <div className="flex-1 relative h-full flex items-center">
+        <GanttBar
+          startStr={pStart}
+          endStr={pEnd}
+          status={pStatus}
+          label={p.name}
+          id={rowId}
+          extraVars={{ actPrg: pActPrg, duration: projectDuration }}
+          startDate={startDate}
+          dayWidth={dayWidth}
+          activeTooltip={activeTooltip}
+          setActiveTooltip={setActiveTooltip}
+          isEditMode={isEditMode}
+          getBarColor={getBarColor}
+        />
+        <GanttBaseline
+          baselineStart={p.baselineStart || (p as any).baseStart}
+          baselineFinish={p.baselineFinish || (p as any).baseFinish}
+          startStr={p.computedTakStart || p.start}
+          endStr={p.computedTakCompl || p.opening || p.handover}
+          type="project"
+          startDate={startDate}
+          dayWidth={dayWidth}
+        />
+      </div>
+    </div>
+  );
+}, (prev, next) => {
+  const prevModularExpanded = prev.projectTasks?.some(t => prev.expandedModularTasks?.includes(String(t.id)));
+  const nextModularExpanded = next.projectTasks?.some(t => next.expandedModularTasks?.includes(String(t.id)));
+  if (prevModularExpanded !== nextModularExpanded) return false;
+
+  const prevSelected = prev.selectedProjectSet ? prev.selectedProjectSet.has(String(prev.p.no)) : false;
+  const nextSelected = next.selectedProjectSet ? next.selectedProjectSet.has(String(next.p.no)) : false;
+
+  return prev.isExpanded === next.isExpanded &&
+         prev.isEditMode === next.isEditMode &&
+         prev.canWrite === next.canWrite &&
+         prevSelected === nextSelected &&
+         prev.sideWidth === next.sideWidth &&
+         prev.startColWidth === next.startColWidth &&
+         prev.finishColWidth === next.finishColWidth &&
+         prev.partyColWidth === next.partyColWidth &&
+         prev.durationColWidth === next.durationColWidth &&
+         prev.showStart === next.showStart &&
+         prev.showFinish === next.showFinish &&
+         prev.showParty === next.showParty &&
+         prev.showDuration === next.showDuration &&
+         prev.showPredecessor === next.showPredecessor &&
+         prev.predecessorColWidth === next.predecessorColWidth &&
+         prev.timeUnits?.length === next.timeUnits?.length &&
+         prev.p === next.p &&
+         prev.projectTasks === next.projectTasks &&
+         prev.startDate?.getTime() === next.startDate?.getTime() &&
+         prev.dayWidth === next.dayWidth &&
+         (prev.activeTooltip === `project-${prev.p.no}` || next.activeTooltip === `project-${next.p.no}` ? prev.activeTooltip === next.activeTooltip : true);
+});

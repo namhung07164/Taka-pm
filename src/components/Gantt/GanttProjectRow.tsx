@@ -96,7 +96,7 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     : [];
   const summaryCount = activeSummaries.length;
   const loadedCount = projectTasks?.length || 0;
-  const effectiveTaskCount = loadedCount > 0 ? loadedCount : Math.max(p.taskCount ?? 0, summaryCount);
+  const effectiveTaskCount = loadedCount > 0 ? loadedCount : (Array.isArray(p.taskSummaries) ? summaryCount : (p.taskCount ?? 0));
   const canToggle = effectiveTaskCount > 0 || Boolean(p.id);
 
   const rowId = `project-${p.no}`;

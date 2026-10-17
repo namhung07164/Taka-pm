@@ -224,9 +224,9 @@ export function GanttToolbar({
           </select>
         </div>
 
-      {/* Floating Sticky Edit Mode Button & Floating Edit Mode Panel (Matches Task Detail) */}
+      {/* Floating Sticky Edit Mode Button - Moved to bottom-16 right-4 */}
       {canWrite && !isEditMode && !isTaskModularModalOpen && (
-        <div className="fixed top-[154px] sm:top-[160px] right-4 md:right-8 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
           <button
             type="button"
             onClick={() => setIsEditMode(true)}
@@ -341,15 +341,10 @@ export function GanttToolbar({
 
       {/* Row 3: Full-width Search Bar */}
       <div className="relative w-full">
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 z-10">
-          <Search className="w-3.5 h-3.5" />
-        </div>
         <DebouncedSearchInput
           value={searchTerm}
           onChange={setSearchTerm}
-          debounceMs={500}
           placeholder="Search or ... ( + AND, , OR )"
-          className="w-full bg-white dark:bg-[#161618] border border-slate-300 dark:border-slate-700/80 text-slate-900 dark:text-white placeholder-slate-400 text-xs rounded-lg pl-8 pr-8 py-1.5 outline-none shadow-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 h-8 font-medium"
         />
       </div>
     </div>

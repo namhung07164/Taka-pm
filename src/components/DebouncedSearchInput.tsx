@@ -1,120 +1,75 @@
-import React, { useEffect, useRef, useState, useTransition } from 'react';
-import { useLanguage } from "../lib/LanguageContext";
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, X } from 'lucide-react';
+import { cn } from '../lib/utils';
 
-interface DebouncedSearchInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
+interface DebouncedSearchInputProps {
   value: string;
   onChange: (value: string) => void;
-  debounceMs?: number;
-  triggerOnEnter?: boolean;
+  placeholder?: string;
+  className?: string;
+  inputClassName?: string;
+  delay?: number;
 }
 
-export function DebouncedSearchInput({ 
-  value, 
-  onChange, 
-  debounceMs = 300, 
-  triggerOnEnter = false, 
-  ...props
-}: DebouncedSearchInputProps) {
-  const { t } = useLanguage();
-  const [innerValue, setInnerValue] = useState(value || "");
-  const lastReportedValue = useRef(value || "");
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const [, startTransition] = useTransition();
+export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
+  value,
+  onChange,
+  placeholder = 'Search...',
+  className,
+  inputClassName,
+  delay = 250,
+}) => {
+  const [localValue, setLocalValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isFocusedRef = useRef(false);
-
-  // Sync external value changes into local state (only when not actively typing/focused)
   useEffect(() => {
-    if (!isFocusedRef.current && value !== lastReportedValue.current) {
-      setInnerValue(value || "");
-      lastReportedValue.current = value || "";
-    }
+    setLocalValue(value);
   }, [value]);
 
-  const commitSearch = (valToCommit: string) => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    if (valToCommit !== lastReportedValue.current) {
-      lastReportedValue.current = valToCommit;
-      startTransition(() => {
-        onChange(valToCommit);
-      });
-    }
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.value;
+    setLocalValue(nextVal);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onChange(nextVal);
+    }, delay);
   };
 
-  // Debounce mechanism: triggers filtering after user has finished typing (300ms pause)
-  useEffect(() => {
-    if (triggerOnEnter) return;
-
-    if (innerValue === lastReportedValue.current) return;
-
-    timerRef.current = setTimeout(() => {
-      if (innerValue !== lastReportedValue.current) {
-        lastReportedValue.current = innerValue;
-        startTransition(() => {
-          onChange(innerValue);
-        });
-      }
-    }, debounceMs);
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [innerValue, onChange, debounceMs, triggerOnEnter]);
+  const handleClear = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setLocalValue('');
+    onChange('');
+    inputRef.current?.focus();
+  };
 
   return (
-    <div className="relative w-full">
+    <div className={cn('relative flex items-center w-full min-w-0', className)}>
+      <Search className="w-4 h-4 text-slate-400 dark:text-[#838383] absolute left-3 pointer-events-none shrink-0"/>
       <input
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        autoComplete="off"
-        enterKeyHint="search"
-        {...props}
-        className={props.className ? (props.className.includes('pr-') ? props.className.replace(/pr-\d+/, 'pr-10') : props.className + ' pr-10') : 'pr-10'}
-        value={innerValue}
-        onChange={(e) => setInnerValue(e.target.value)}
-        onFocus={(e) => {
-          isFocusedRef.current = true;
-          if (props.onFocus) props.onFocus(e);
-        }}
-        onKeyDown={(e) => {
-          if (props.onKeyDown) props.onKeyDown(e);
-          if (e.key === 'Escape' && innerValue) {
-            e.preventDefault();
-            e.stopPropagation();
-            setInnerValue("");
-            commitSearch("");
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            commitSearch(innerValue);
-          }
-        }}
-        onBlur={(e) => {
-          isFocusedRef.current = false;
-          if (props.onBlur) props.onBlur(e);
-          commitSearch(innerValue);
-        }}
+        ref={inputRef}
+        type="text"
+        value={localValue}
+        onChange={handleInputChange}
+        placeholder={placeholder}
+        className={cn(
+          'w-full pl-9 pr-10 py-2 text-xs sm:text-sm bg-white dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-xl text-slate-800 dark:text-[#e3e3e3] placeholder:text-slate-400 dark:placeholder:text-[#737373] focus:outline-none focus:ring-2 focus:ring-blue-500/60 transition-all',
+          inputClassName
+        )}
       />
-      {innerValue && (
+      {localValue && (
         <button
           type="button"
-          onClick={() => {
-            setInnerValue("");
-            commitSearch("");
-          }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors z-10"
-          title={t("Clear") || "Clear"}
+          onClick={handleClear}
+          title="Clear search"
+          aria-label="Clear search"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-[#a3a3a3] dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-[#333336] active:scale-90 transition-all touch-manipulation cursor-pointer z-10"
         >
-          <X className="w-4 h-4" />
+          <X className="w-4 h-4 stroke-[2.2]"/>
         </button>
       )}
     </div>
   );
-}
+};

@@ -136,13 +136,9 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
           </select>
         </div>
         <div className="relative w-full">
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-[#838383] z-10">
-            <Search className="w-4 h-4" />
-          </div>
           <DebouncedSearchInput 
             value={searchTerm}
             onChange={onSearchTermChange}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block w-full pl-9 pr-3 p-2 outline-none shadow-sm" 
             placeholder="Search in detail..."
           />
         </div>
@@ -157,9 +153,9 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
         />
       </div>
 
-      {/* Floating Edit Mode Button - z-40 cleanly below header bar and behind modals */}
+      {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
       {hasWritePermission && !isEditMode && (
-        <div className="fixed top-[154px] sm:top-[160px] right-4 md:right-8 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
           <button
             onClick={() => setIsEditMode(true)}
             className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
