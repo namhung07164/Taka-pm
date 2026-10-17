@@ -4,6 +4,7 @@ import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { getStatus } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { buildTaskByIdMap, isForeignSummaryEntry } from '../../lib/summaryGhostFilter';
 
 export interface ProjectInfo {
   status: string;
@@ -56,6 +57,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     }
     return { tasksByProjectId: idMap, tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };
   }, [tasks]);
+
+  const taskById = useMemo(() => buildTaskByIdMap(tasks), [tasks]);
 
   const projectInfoMap = useMemo(() => {
     const map = new Map<string, ProjectInfo>();
@@ -130,6 +133,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
           if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
             return;
           }
+          if (isForeignSummaryEntry(ts.id, p, taskById)) return;
 
           const tsId = ts.id ? String(ts.id).toLowerCase() : '';
           const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
@@ -230,7 +234,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       });
     });
     return map;
-  }, [projects, tasksByProjectId, tasksByProjectKey, tasksByCodeMap]);
+  }, [projects, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
   const getProjectInfo = useCallback((p: Project): ProjectInfo => {
     const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -277,6 +281,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
       p.taskSummaries.forEach((ts, idx) => {
         if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) return;
+        if (isForeignSummaryEntry(ts.id, p, taskById)) return;
         const tsId = ts.id ? String(ts.id).toLowerCase() : '';
         const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
@@ -368,7 +373,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
     return { status, start: computedTakStart || '9999-12-31', finish, sortedTasks, computedTakStart, computedTakCompl, computedOpening };
-  }, [projectInfoMap, tasksByProjectKey, tasksByCodeMap]);
+  }, [projectInfoMap, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
   return {
     tasksByProjectKey,

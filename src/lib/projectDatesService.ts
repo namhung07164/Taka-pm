@@ -6,6 +6,7 @@ import { useAppStore } from "../store/useAppStore";
 import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
+import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
 
 export interface ComputedProjectDates {
   computedTakStart?: string;
@@ -112,7 +113,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
       });
 
       const mergedList = [...matchedList];
+      const taskByIdForGuard = buildTaskByIdMap(safeAllTasks);
       project.taskSummaries.forEach((ts, idx) => {
+        if (isForeignSummaryEntry(ts.id, project, taskByIdForGuard)) return;
         const tsId = ts.id ? String(ts.id).toLowerCase() : '';
         const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
         const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
@@ -151,8 +154,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
+    const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
     return project.taskSummaries
-      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined))
+      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined) && !isForeignSummaryEntry(ts.id, project, taskByIdFallback))
       .map((ts, idx) => ({
       id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
       name: ts.name || `Task ${idx + 1}`,

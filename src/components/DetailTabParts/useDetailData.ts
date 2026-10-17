@@ -197,6 +197,20 @@ export function useDetailData({
 
   useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
 
+  // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
+  // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
+  const effectiveLocationFilter = useMemo(() => {
+    if (globalLocationFilter.length === 0) return globalLocationFilter;
+    const available = new Set<string>();
+    projects.forEach((p) => {
+      const pYear = p.year ? String(p.year).trim() : '';
+      if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter).trim()) return;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return;
+      if (p.location) available.add(p.location);
+    });
+    return globalLocationFilter.filter((loc) => available.has(loc));
+  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
+
   const filteredProjects = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -208,7 +222,7 @@ export function useDetailData({
       const pYear = p.year ? String(p.year).trim() : (info.computedTakStart ? String(info.computedTakStart).substring(0, 4) : (p.start ? String(p.start).substring(0, 4) : null));
       if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
       if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
-      if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
+      if (effectiveLocationFilter.length > 0 && (!p.location || !effectiveLocationFilter.includes(p.location))) return false;
 
       let matchesStatus = true;
       if (statusFilter === 'On process + Upcoming 3 days') {
@@ -268,7 +282,22 @@ export function useDetailData({
 
       return true;
     });
-  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
+  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
+
+  // Chẩn đoán: bảng trống dù store có dự án
+  useEffect(() => {
+    if (filteredProjects.length === 0 && projects.length > 0) {
+      console.warn('[Detail] 0 dự án sau khi lọc', {
+        totalProjects: projects.length,
+        year: globalYearFilter,
+        store: effectiveStore,
+        locationSelected: globalLocationFilter,
+        locationEffective: effectiveLocationFilter,
+        status: statusFilter,
+        search: deferredSearchTerm,
+      });
+    }
+  }, [filteredProjects.length, projects.length, globalYearFilter, effectiveStore, globalLocationFilter, effectiveLocationFilter, statusFilter, deferredSearchTerm]);
 
   // Ensure visibleCount is large enough to render target project row
   useEffect(() => {
