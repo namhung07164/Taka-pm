@@ -50,3 +50,7 @@ export async function clearLoadedMarkers(): Promise<void> {
     await localDb.syncMeta.where('key').startsWith(PREFIX).delete();
   } catch {}
 }
+
+export async function clearAllLoadedMarkers(): Promise<void> {
+  return clearLoadedMarkers();
+}

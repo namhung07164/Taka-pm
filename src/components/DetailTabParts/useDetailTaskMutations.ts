@@ -155,38 +155,16 @@ export function useDetailTaskMutations({
         );
         if (!realTask && t.projectCode) {
           try {
-            const { getLocalTasksForProjects, bulkPersistTasks } = await import('../../lib/localDb');
-            let loaded: Task[] = (await getLocalTasksForProjects([t.projectCode])).filter(dt => !dt.isDeleted);
-            if (!loaded.some(sameProjectIdentity)) {
-              const { collection, query, where, getDocs } = await import('firebase/firestore');
-              const q = query(
-                collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-                where('projectCode', '==', t.projectCode)
-              );
-              const snap = await getDocs(q);
-              loaded = [];
-              snap.forEach(d => {
-                const dt = { id: d.id, ...d.data() } as Task;
-                if (!dt.isDeleted) loaded.push(dt);
-              });
-              if (loaded.length > 0) bulkPersistTasks(loaded).catch(() => {});
-            }
-            // Chỉ nhận task đúng store + year của dự án đang sửa, và không thêm trùng id vào store
+            const loaded = await ensureProjectTasksLoaded(t.projectCode);
             const loadedSame = loaded.filter(sameProjectIdentity);
             if (loadedSame.length > 0) {
-              const latestTasks = useAppStore.getState().tasks || tasks;
-              const existingIds = new Set(latestTasks.map(tsk => tsk.id));
-              useAppStore.getState().setTasks([
-                ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
-                ...loadedSame.filter(x => !existingIds.has(x.id)),
-              ]);
               realTask = loadedSame.find(tsk =>
                 (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
                 (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
               );
             }
           } catch (err) {
-            console.warn("Failed to fetch real task for ts_ in Firestore:", err);
+            console.warn("Failed to resolve ts_ task from local/cache:", err);
           }
         }
         if (realTask) {

@@ -13,7 +13,7 @@ import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 
 interface UseCostsHydrationProps {
@@ -187,11 +187,11 @@ export function useCostsHydration({
 
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||
-          (DELTA_FIRST.costs && hasMarker(await getLoadedMarkers(), 'costs_year', year));
+          (DELTA_FIRST.costs && hasLocalCosts && hasMarker(await getLoadedMarkers(), 'costs_year', year));
         if (deltaManaged) {
           costsPool.current.set(year, () => {});
           setIsCostsLoading(false);
-          pullAndApplyDeltas(year)
+          pullAndApplyDeltas(year, true)
             .then(() => setCloudStatus("online"))
             .catch(() => {});
           usePerformanceStore

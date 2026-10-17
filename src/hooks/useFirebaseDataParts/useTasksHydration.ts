@@ -28,7 +28,7 @@ import { markTasksDeleted } from "../../lib/taskDeletedTracker";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 
 interface UseTasksHydrationProps {
@@ -393,7 +393,7 @@ export function useTasksHydration({
 
             const deltaManaged =
               (hasLocalYearTasks && isClosedOrPastYear) ||
-              (DELTA_FIRST.tasks && hasMarker(markers, 'tasks_year', year));
+              (DELTA_FIRST.tasks && hasLocalYearTasks && hasMarker(markers, 'tasks_year', year));
             if (deltaManaged) {
               tasksPool.current.set(yearKey, () => {});
               setIsTasksLoading(false);
@@ -495,7 +495,7 @@ export function useTasksHydration({
               const deltaManaged =
                 isZeroTaskProject ||
                 (hasLocalProjTasks && isClosedOrPastYear) ||
-                (DELTA_FIRST.tasks && (hasMarker(markers, 'tasks_proj', p.id) || hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
+                (DELTA_FIRST.tasks && hasLocalProjTasks && (hasMarker(markers, 'tasks_proj', p.id) || hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
               if (deltaManaged) {
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
@@ -580,7 +580,7 @@ export function useTasksHydration({
       });
 
       if (needTasksDeltaSync) {
-        pullAndApplyDeltas()
+        pullAndApplyDeltas(undefined, true)
           .then(() => setCloudStatus("online"))
           .catch(() => {});
       }

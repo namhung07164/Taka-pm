@@ -61,7 +61,21 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       let secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
       let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
 
-      // If r2Config is not yet populated in store on fresh account boot, fetch directly from Firestore
+      // If r2Config is not yet populated in store on fresh account boot, check local cache or fetch once from Firestore
+      const cachedR2 = localStorage.getItem('taka_r2_config_cache_v1');
+      if (cachedR2) {
+        try {
+          const parsed = JSON.parse(cachedR2);
+          if (parsed?.accountId && parsed?.accessKeyId && parsed?.secretAccessKey && parsed?.bucketName) {
+            accountId = parsed.accountId;
+            accessKeyId = parsed.accessKeyId;
+            secretAccessKey = parsed.secretAccessKey;
+            bucketName = parsed.bucketName;
+            useAppStore.getState().setR2Config(parsed);
+          }
+        } catch {}
+      }
+
       if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
         try {
           const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
@@ -72,6 +86,7 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
               accessKeyId = r2Data.accessKeyId;
               secretAccessKey = r2Data.secretAccessKey;
               bucketName = r2Data.bucketName;
+              localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(r2Data));
               useAppStore.getState().setR2Config(r2Data);
             }
           }
@@ -261,13 +276,14 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     localStorage.setItem('r2_secret_key', sec);
     localStorage.setItem('r2_secret_access_key', sec);
 
-    // Save to global config
+    // Save to global config & local cache
     const configData = {
       accountId: acc,
       bucketName: bkt,
       accessKeyId: key,
       secretAccessKey: sec
     };
+    localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(configData));
     setR2Config(configData);
 
     try {
