@@ -285,8 +285,6 @@ export async function deleteTaskStateUnified(
   const updatedProjects = currentProjects.map(p => {
     const pIdStr = p.id ? String(p.id) : '';
 
-    // BẢO VỆ TUYỆT ĐỐI DỰ ÁN KHÔNG LIÊN QUAN:
-    // Nếu dự án p không thuộc danh sách dự án bị ảnh hưởng, TUYỆT ĐỐI KHÔNG sửa taskSummaries hay taskCount của nó!
     if (affectedProjectIds.size > 0 && !affectedProjectIds.has(pIdStr)) {
       return p;
     }
@@ -296,17 +294,12 @@ export async function deleteTaskStateUnified(
 
     if (p.taskSummaries && p.taskSummaries.length > 0) {
       newSummaries = p.taskSummaries.filter((ts, idx) => {
-        const tsId = ts.id ? String(ts.id).toLowerCase() : `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`.toLowerCase();
-
-        // Chỉ xóa summary item nếu task bị xóa thuộc đúng dự án p này
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
         const matchedDeleted = tasksToDelete.some(dt => {
           if (dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
           if (!dt.projectId && !isTaskBelongsToProject(dt, p)) return false;
-
           const dtId = dt.id ? String(dt.id).trim().toLowerCase() : '';
-          if (dtId && tsId && dtId === tsId) return true;
-          if (dt.id && ts.id && String(dt.id).trim().toLowerCase() === String(ts.id).trim().toLowerCase()) return true;
-          return false;
+          return (dtId && tsId && dtId === tsId);
         });
 
         if (matchedDeleted) {
@@ -320,16 +313,13 @@ export async function deleteTaskStateUnified(
     const isProjectAffected = summaryModified || affectedProjectIds.has(pIdStr);
 
     if (isProjectAffected) {
-      // Dùng bản tóm tắt đã loại các mục bị xóa, rồi gộp với task thật đang có trong bộ nhớ.
-      // Như vậy task chưa nạp (chỉ nằm trong taskSummaries) không bị mất khỏi số liệu dự án.
       const pForCalc = { ...p, taskSummaries: newSummaries };
       const remainingProjTasks = getTasksForProject(pForCalc, cleanedTasks);
       const computed = calculateProjectComputedDates(pForCalc, remainingProjTasks);
-      const effectiveTaskCount = remainingProjTasks.length;
       return { 
         ...p, 
         ...computed,
-        taskCount: effectiveTaskCount,
+        taskCount: remainingProjTasks.length,
         taskSummaries: computed.taskSummaries || newSummaries,
         updatedAt: now,
       };
@@ -339,66 +329,10 @@ export async function deleteTaskStateUnified(
 
   useAppStore.getState().setProjects(updatedProjects);
 
-    setTimeout(async () => {
-      try {
-        const { doc } = await import('firebase/firestore');
-        const { writeBatch } = await import('./firestoreWrites');
-        const { db, APP_ID } = await import('./firebase');
-        const { localDb } = await import('./localDb');
-        const batch = writeBatch(db);
-
-        updatedProjects.forEach(up => {
-          const orig = currentProjects.find(op => op.id === up.id);
-          if (orig && orig !== up) {
-            const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', up.id);
-            batch.set(pRef, {
-              taskSummaries: up.taskSummaries || [],
-              taskCount: up.taskCount || 0,
-              computedTakStart: up.computedTakStart || '',
-              computedTakCompl: up.computedTakCompl || '',
-              computedOpening: up.computedOpening || '',
-              updatedAt: up.updatedAt || now
-            }, { merge: true });
-
-            localDb.projects.put(up as any).catch(() => {});
-          }
-        });
-        await batch.commit();
-
-        const { recordBatchDeltas } = await import('./deltaSyncService');
-        const projectDeltaItems = updatedProjects
-          .filter(up => {
-            const orig = currentProjects.find(op => op.id === up.id);
-            return orig && orig !== up;
-          })
-          .map(up => ({
-            docId: up.id,
-            collectionName: 'taka_projects' as const,
-            action: 'update' as const,
-            data: {
-              taskSummaries: up.taskSummaries || [],
-              taskCount: up.taskCount || 0,
-              computedTakStart: up.computedTakStart || '',
-              computedTakCompl: up.computedTakCompl || '',
-              computedOpening: up.computedOpening || '',
-              updatedAt: up.updatedAt || now
-            },
-            year: String(up.year || '')
-          }));
-        if (projectDeltaItems.length > 0) {
-          recordBatchDeltas(projectDeltaItems).catch(() => {});
-        }
-      } catch (err) {
-        console.warn('[deleteTaskStateUnified] Failed to persist taskSummaries deletion:', err);
-      }
-    }, 50);
-
   // 3. Xóa tức thì khỏi Dexie (IndexedDB)
   try {
     const { localDb } = await import('./localDb');
     await localDb.tasks.bulkDelete(Array.from(idSet));
-    await localDb.tasks.bulkDelete(rawIds as any);
-
     if (unlinkedChildTasks.length > 0) {
       await Promise.all(unlinkedChildTasks.map(c => 
         (localDb.tasks.update as any)(c.id, { parentTaskId: null, parentId: null, updatedAt: now })
@@ -421,48 +355,77 @@ export async function deleteTaskStateUnified(
     }
   } catch (e) {}
 
-  // 5. Đồng bộ đánh dấu isDeleted = true & Delta Sync lên Firestore cho các task bị xóa
-  setTimeout(async () => {
-    try {
-      const { doc, deleteField } = await import('firebase/firestore');
-      const { writeBatch } = await import('./firestoreWrites');
-      const { db, APP_ID } = await import('./firebase');
-      const { recordBatchDeltas } = await import('./deltaSyncService');
-      const { markExplicitDelta } = await import('./autoDeltaQueue');
-      const batch = writeBatch(db);
+  // 5. Đồng bộ đánh dấu isDeleted = true & Delta Sync lên Firestore cho các task bị xóa + Project Summaries
+  try {
+    const { doc, deleteField } = await import('firebase/firestore');
+    const { writeBatch } = await import('./firestoreWrites');
+    const { db, APP_ID } = await import('./firebase');
+    const { recordBatchDeltas } = await import('./deltaSyncService');
+    const { markExplicitDelta } = await import('./autoDeltaQueue');
+    const batch = writeBatch(db);
 
-      const allIdsToDelete = new Set<string>();
-      rawIds.forEach(id => { if (id) allIdsToDelete.add(String(id)); });
-      tasksToDelete.forEach(t => { if (t?.id) allIdsToDelete.add(String(t.id)); });
+    const allIdsToDelete = new Set<string>();
+    rawIds.forEach(id => { if (id) allIdsToDelete.add(String(id)); });
+    tasksToDelete.forEach(t => { if (t?.id) allIdsToDelete.add(String(t.id)); });
 
-      allIdsToDelete.forEach(id => {
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-        batch.delete(docRef);
-      });
+    allIdsToDelete.forEach(id => {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+      batch.delete(docRef);
+    });
 
-      unlinkedChildTasks.forEach(c => {
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', c.id);
-        batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
-      });
+    unlinkedChildTasks.forEach(c => {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', c.id);
+      batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+    });
 
-      const currentUser = useAppStore.getState().currentUser;
-      const deltaItems: any[] = [
-        ...Array.from(allIdsToDelete).map(id => ({
-          docId: id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
-        })),
-        ...unlinkedChildTasks.map(c => ({
-          docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
-          data: { parentTaskId: null, parentId: null, updatedAt: now }
-        }))
-      ];
+    // Cập nhật Project Summaries ngay trong cùng Batch này
+    updatedProjects.forEach(up => {
+      const orig = currentProjects.find(op => op.id === up.id);
+      if (orig && orig !== up) {
+        const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', up.id);
+        batch.update(pRef, {
+          taskSummaries: up.taskSummaries || [],
+          taskCount: up.taskCount || 0,
+          computedTakStart: up.computedTakStart || '',
+          computedTakCompl: up.computedTakCompl || '',
+          computedOpening: up.computedOpening || '',
+          updatedAt: up.updatedAt || now
+        });
+      }
+    });
 
-      markExplicitDelta(deltaItems);
-      await batch.commit();
-      recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
-    } catch (e) {
-      console.warn('[taskStateService] Failed to persist task deletion to Firestore:', e);
-    }
-  }, 50);
+    const currentUser = useAppStore.getState().currentUser;
+    const deltaItems: any[] = [
+      ...Array.from(allIdsToDelete).map(id => ({
+        docId: id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
+      })),
+      ...unlinkedChildTasks.map(c => ({
+        docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
+        data: { parentTaskId: null, parentId: null, updatedAt: now }
+      })),
+      ...updatedProjects.filter(up => {
+        const orig = currentProjects.find(op => op.id === up.id);
+        return orig && orig !== up;
+      }).map(up => ({
+        docId: up.id, collectionName: 'taka_projects', action: 'update',
+        data: {
+          taskSummaries: up.taskSummaries || [],
+          taskCount: up.taskCount || 0,
+          computedTakStart: up.computedTakStart || '',
+          computedTakCompl: up.computedTakCompl || '',
+          computedOpening: up.computedOpening || '',
+          updatedAt: up.updatedAt || now
+        },
+        year: String(up.year || '')
+      }))
+    ];
+
+    markExplicitDelta(deltaItems);
+    await batch.commit();
+    recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+  } catch (e) {
+    console.warn('[taskStateService] Failed to persist task deletion to Firestore:', e);
+  }
 
   if (options?.syncProjects === false) return;
 

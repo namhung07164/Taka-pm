@@ -50,56 +50,26 @@ export function useDetailTaskMutations({
       message: 'Delete this Task?',
       onConfirm: async () => {
         try {
-          const nowIso = new Date().toISOString();
-          const batch = writeBatch(db);
-          const storeTasks = useAppStore.getState().tasks || tasks || [];
-          const existingDbTask = storeTasks.find(tsk => tsk.id === t.id);
-          const isSameProjectDbTask = !existingDbTask || (
-            (!existingDbTask.projectId || !t.projectId || String(existingDbTask.projectId) === String(t.projectId)) &&
-            (!existingDbTask.projectStore || !t.projectStore || String(existingDbTask.projectStore).trim().toLowerCase() === String(t.projectStore).trim().toLowerCase()) &&
-            (existingDbTask.projectYear === undefined || t.projectYear === undefined || String(existingDbTask.projectYear).trim() === String(t.projectYear).trim())
-          );
-
-          if (isSameProjectDbTask && !t.id.startsWith('ts_')) {
-            batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id));
-          }
-          
-          const urlsToDelete = extractStorageUrls(t);
-          if (urlsToDelete.length > 0) { 
-             deleteStorageFiles(urlsToDelete).catch(console.error);
-          }
-          
-          // Delete related delegations for this task from memory store (Zero-read optimization)
-          const storeDelegations = useAppStore.getState().delegationGroups || [];
-          const relatedDelGroups = storeDelegations.filter(d => d.parentTaskId === t.id || d.id === `del_${t.id}`);
-          const delegationsToDelete = relatedDelGroups.map(d => ({ id: d.id, data: d }));
-          relatedDelGroups.forEach(d => {
-            batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id));
-          });
-
-          try {
-            if (isSameProjectDbTask && !t.id.startsWith('ts_')) {
-              const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
-              markExplicitDelta([{ docId: t.id, collectionName: 'taka_tasks' }]);
-            }
-            await batch.commit();
-          } catch (error: any) {
-            console.error("Batch commit failed", error);
-            useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-            return;
-          }
-
-          // Xóa tức thì khỏi Zustand store & đồng bộ lại tiến độ/mốc ngày của Project
+          // Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
+          // Hàm này đã bao gồm: Xóa task, Cập nhật Project Summary, Xóa Dexie, Ghi Delta Batch.
           await deleteTaskStateUnified([t]);
           
           undoManager.push({
             description: `Delete Task: ${t.name}`,
             revert: async () => {
+              const { doc } = await import('firebase/firestore');
+              const { writeBatch } = await import('../../lib/firestoreWrites');
+              const { db, APP_ID } = await import('../../lib/firebase');
               const revertBatch = writeBatch(db);
               revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
-              delegationsToDelete.forEach(d => {
-                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d.data);
+              
+              // Restore related delegations if any
+              const storeDelegations = useAppStore.getState().delegationGroups || [];
+              const relatedDelGroups = storeDelegations.filter(d => d.parentTaskId === t.id || d.id === `del_${t.id}`);
+              relatedDelGroups.forEach(d => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d);
               });
+
               revertBatch.commit().catch(console.error);
             }
           });

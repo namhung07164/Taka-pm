@@ -243,22 +243,21 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   });
 
   // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
-  if (tasksChanged && !projectsChanged) {
+  if ((tasksChanged || projectsChanged) && (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)) {
     const delegationGroups = store.delegationGroups || [];
     const isTasksRequested = store.isTasksRequested;
-    const hasTouchedInfo = touchedProjectIds.size + touchedProjectCodes.size > 0;
     updatedProjects = updatedProjects.map(p => {
-      if (hasTouchedInfo) {
-        // Dự án khớp theo id, hoặc theo mã chính / mã liên kết (linkCodes)
-        const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
-          .toLowerCase()
-          .split(/[,;/]+/)
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const isTouched =
-          touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
-        if (!isTouched) return p;
-      }
+      // Dự án khớp theo id, hoặc theo mã chính / mã liên kết (linkCodes)
+      const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
+        .toLowerCase()
+        .split(/[,;/]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const isTouched =
+        touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
+      
+      if (!isTouched) return p;
+
       const pTasks = getTasksForProject(p, updatedTasks);
       if (isTasksRequested || pTasks.length > 0) {
         const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);

@@ -1,434 +1,26 @@
 === TAKASHIMAYA LATEST UPDATED CODE (AUTOMATICALLY OVERWRITTEN ON EACH UPDATE) ===
-Updated at: 2026-10-16T23:15:00-07:00
+Updated at: 2026-10-16T23:20:00-07:00
 
-Summary: 
-- Fixed critical cross-device sync bottlenecks:
-    - Added 'force' parameter to pullAndApplyDeltas to bypass throttle on wake-up and network recovery.
-    - Updated deltaOrchestratorService to force sync on visibility change, online, focus, and network recovery.
-    - Implemented immediate listener refresh and delta pull on wake-up in deltaRealtimeListener.
-    - Fixed ghost task re-synthesis by pruning deleted tasks from project summaries immediately in deltaApplyService.
-    - Added immediate delta sync trigger when app becomes visible after >30s of inactivity in useStaticAndAuthHydration.
-- UI/UX refinements (from previous update):
-    - Moved floating "Edit Mode" button to bottom-16 right-4.
-    - Refined search row layout and DebouncedSearchInput.
-    - Fixed task count display logic to prioritize active summaries.
+Summary of Fixes:
+1. Synchronization & Data Consistency:
+   - Refactored deleteTaskStateUnified (taskStateService.ts) to use a single writeBatch for atomic updates of tasks and project summaries.
+   - Fixed project re-calculation logic in deltaApplyService.ts to ensure project dates are updated when summaries are pruned.
+   - Enhanced sleep/wake sync in deltaRealtimeListener.ts and useStaticAndAuthHydration.ts to force refresh on long inactivity.
+   - Bypassed throttles in deltaPullService.ts when force parameter is used (on wake/focus/network recovery).
+   - Simplified handleDeleteTask in useDetailTaskMutations.ts to offload atomic logic to the service.
 
-================================================================================
-FILE: src/lib/deltaPullService.ts
-================================================================================
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
-  getDocsFromServer,
-  Timestamp,
-} from 'firebase/firestore';
-import { db, APP_ID } from './firebase';
-import { TakaDelta } from '../types';
-import { resyncIfStale } from './syncResilience';
-import { 
-  deltaTime, 
-  getLastDeltaSyncTime, 
-  getRestoreCutoffTimestamp, 
-  appliedDeltaIds,
-} from './deltaSyncService';
-import { DELTA_COLLECTION, CLOCK_SKEW_OVERLAP_MS, MAX_APPLIED_IDS, LAST_SYNC_KEY } from './deltaConstants';
-import { applyIncomingDeltas } from './deltaApplyService';
-import { safeSetItemLocal } from './storage';
+2. UI/UX & Layout:
+   - Moved floating "Edit Mode" button to bottom-16 right-4 in Detail and Gantt tabs to prevent overlapping search bars.
+   - Updated DebouncedSearchInput.tsx to be backward compatible with all props (debounceMs, onFocus, onKeyDown, etc.) to fix linting errors.
+   - Optimized search layout in DetailFilterToolbar.tsx for better mobile/iPad responsiveness.
 
-let inFlightPullPromise: Promise<number> | null = null;
-let lastPullCompletedAt = 0;
+3. Logic Optimizations:
+   - Fixed task count display in Detail and Gantt tabs to prioritize active summaries over stale counts when tasks are not yet loaded.
+   - Ensured authoritative counts are used consistently across project rows.
 
-/**
- * Kéo các delta thay đổi từ server về client kể từ lastSyncTime và áp dụng vào Zustand
- * Tiết kiệm hơn 80% Read so với việc onSnapshot cả collection
- * B4: In-flight deduplication prevents concurrent identical queries across tabs/effects
- */
-export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = false): Promise<number> {
-  if (inFlightPullPromise) {
-    return inFlightPullPromise;
-  }
-  const now = Date.now();
-  if (!force && now - lastPullCompletedAt < 2000) {
-    return 0;
-  }
-
-  let pullSucceeded = false;
-  inFlightPullPromise = (async () => {
-    const lastSyncTime = getLastDeltaSyncTime();
-    const restoreCutoff = getRestoreCutoffTimestamp();
-
-    // Device offline longer than delta retention -> deltas are gone, do a full resync.
-    if (await resyncIfStale(lastSyncTime, LAST_SYNC_KEY)) return 0;
-
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
-
-    try {
-      const deltas: TakaDelta[] = [];
-      let currentSince = Math.max(lastSyncTime - CLOCK_SKEW_OVERLAP_MS, restoreCutoff);
-      let iteration = 0;
-      const MAX_PAGES = 5;
-
-      while (iteration < MAX_PAGES) {
-        iteration++;
-        const q = query(
-          colRef,
-          where('serverTime', '>', Timestamp.fromMillis(currentSince)),
-          orderBy('serverTime', 'asc'),
-          limit(500)
-        );
-
-        let snapshot: any;
-        try {
-          snapshot = await getDocsFromServer(q);
-        } catch (serverErr) {
-          // Nếu mạng đang reconnect lúc iOS mới thức dậy, KHÔNG đánh dấu pullSucceeded để lần gọi ngay sau đó chạy được ngay
-          console.warn('[deltaSync] getDocsFromServer not reachable yet (device offline or reconnecting):', serverErr);
-          return 0;
-        }
-
-        if (!snapshot || snapshot.empty) {
-          break;
-        }
-
-        let pageMaxTime = currentSince;
-        snapshot.forEach((d: any) => {
-          const item = d.data() as TakaDelta;
-          const itemId = item.id || d.id;
-          if (appliedDeltaIds.has(itemId)) {
-            if (deltaTime(item) > pageMaxTime) pageMaxTime = deltaTime(item);
-            return;
-          }
-          appliedDeltaIds.add(itemId);
-          if (appliedDeltaIds.size > MAX_APPLIED_IDS) {
-            const oldest = appliedDeltaIds.values().next().value;
-            if (oldest !== undefined) appliedDeltaIds.delete(oldest);
-          }
-          deltas.push(item);
-          if (deltaTime(item) > pageMaxTime) {
-            pageMaxTime = deltaTime(item);
-          }
-        });
-
-        currentSince = pageMaxTime;
-        if (snapshot.size < 500) {
-          break;
-        }
-      }
-
-      pullSucceeded = true;
-
-      if (deltas.length === 0) {
-        // Server confirmed 0 new deltas: advance sync cursor safely
-        const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
-        safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
-        return 0;
-      }
-
-      return applyIncomingDeltas(deltas);
-    } catch (err) {
-      console.warn('[deltaSync] Error pulling deltas:', err);
-      return 0;
-    } finally {
-      if (pullSucceeded) {
-        lastPullCompletedAt = Date.now();
-      }
-      inFlightPullPromise = null;
-    }
-  })();
-
-  return inFlightPullPromise;
-}
-
-================================================================================
-FILE: src/lib/deltaOrchestratorService.ts
-================================================================================
-import { useAppStore } from '../store/useAppStore';
-import { pullAndApplyDeltas } from './deltaPullService';
-import { initNetworkRecovery } from './syncResilience';
-import { startDeltaRealtimeListener } from './deltaRealtimeListener';
-import { purgeOldDeltas } from './deltaPurgeService';
-
-let syncIntervalTimer: any = null;
-let isHibernating = false;
-let lastActivityTime = Date.now();
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity threshold
-
-/**
- * Tự động Dọn dẹp Delta cũ (Delta Retention TTL & Pruning)
- */
-export async function pruneExpiredDeltas(retentionDays: number = 7): Promise<number> {
-  return purgeOldDeltas(retentionDays * 24);
-}
-
-/**
- * Khởi động Background Delta Sync Poller với Adaptive Tab Hibernation & Inactivity Sleep
- * - Khi ẩn tab hoặc người dùng không hoạt động > 5 phút: Tạm dừng định thời hoàn toàn (0 Idle Read).
- * - Khi quay lại tab hoặc tương tác: Lập tức sync tức thì (0ms) và kích hoạt lại interval.
- */
-export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () => void {
-  if (typeof window === 'undefined') return () => {};
-
-  const stopRealtime = startDeltaRealtimeListener();
-
-  let lastTriggerAt = 0;
-  const triggerSync = (force: boolean = false) => {
-    const now = Date.now();
-    if (!force && now - lastTriggerAt < 10000) return;
-    lastTriggerAt = now;
-    const year = useAppStore.getState().globalYearFilter;
-    pullAndApplyDeltas(year, force).catch(() => {});
-  };
-
-  const stopPolling = () => {
-    if (syncIntervalTimer) {
-      clearInterval(syncIntervalTimer);
-      syncIntervalTimer = null;
-    }
-  };
-
-  const startPolling = () => {
-    stopPolling();
-    syncIntervalTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        hibernate();
-        return;
-      }
-      if (Date.now() - lastActivityTime > IDLE_TIMEOUT_MS) {
-        hibernate();
-        return;
-      }
-      triggerSync(false);
-    }, intervalMs);
-  };
-
-  const hibernate = () => {
-    if (isHibernating) return;
-    isHibernating = true;
-    stopPolling();
-  };
-
-  const wakeAndSync = () => {
-    lastActivityTime = Date.now();
-    isHibernating = false;
-    triggerSync(true); // Ép đồng bộ ngay khi thức giấc (bỏ qua throttle)
-    startPolling();
-  };
-
-  // 1. Initial boot sync & start timer
-  triggerSync(true);
-  startPolling();
-  // Khi syncResilience khôi phục xong mạng (sau disableNetwork -> enableNetwork), ép pull delta ngay lập tức với force=true!
-  const stopNetworkRecovery = initNetworkRecovery(() => {
-    triggerSync(true);
-    // Phát sự kiện để deltaRealtimeListener gắn lại (re-attach) trên socket mới
-    window.dispatchEvent(new CustomEvent('taka_network_recovered'));
-  });
-
-  // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-      wakeAndSync();
-    } else {
-      hibernate();
-    }
-  };
-
-  // 3. Online network reconnection & Window Focus (iPad Split-View / App Switcher)
-  const handleOnline = () => {
-    wakeAndSync();
-  };
-  const handleFocus = () => {
-    if (document.visibilityState === 'visible') {
-      wakeAndSync();
-    }
-  };
-
-  document.addEventListener('visibilitychange', handleVisibilityChange);
-  window.addEventListener('online', handleOnline);
-  window.addEventListener('focus', handleFocus);
-
-  return () => {
-    stopPolling();
-    stopNetworkRecovery();
-    stopRealtime();
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    window.removeEventListener('online', handleOnline);
-    window.removeEventListener('focus', handleFocus);
-  };
-}
-
-export async function triggerImmediateDeltaSync(year?: string): Promise<number> {
-  lastActivityTime = Date.now();
-  isHibernating = false;
-  return pullAndApplyDeltas(year || useAppStore.getState().globalYearFilter, true);
-}
-
-================================================================================
-FILE: src/lib/deltaRealtimeListener.ts
-================================================================================
-import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db, APP_ID } from './firebase';
-import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime, pullAndApplyDeltas } from './deltaSyncService';
-import type { TakaDelta } from '../types';
-
-/**
- * Real-time delta channel.
- *
- * One onSnapshot listener on taka_deltas replaces 25s polling:
- *  - idle cost = 0 reads (previously >= 1 read per poll, ~1100+/user/day)
- *  - changes arrive in ~1s instead of 25s - 3 min
- *  - billed once per delta doc; cached deltas (persistent cache) are free
- * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
- */
-
-const OVERLAP_MS = 3 * 60 * 1000; // clock-skew window, duplicates filtered by delta id
-const DETACH_AFTER_HIDDEN_MS = 2 * 60 * 1000;
-const RETRY_MS = 30 * 1000;
-
-export function startDeltaRealtimeListener(): () => void {
-  if (typeof window === 'undefined') return () => {};
-
-  let unsub: (() => void) | null = null;
-  let buffer: TakaDelta[] = [];
-  let flushTimer: ReturnType<typeof setTimeout> | null = null;
-  let detachTimer: ReturnType<typeof setTimeout> | null = null;
-  let retryTimer: ReturnType<typeof setTimeout> | null = null;
-  let signedIn = !!auth.currentUser;
-  let stopped = false;
-
-  const flush = () => {
-    flushTimer = null;
-    const batch = filterUnappliedDeltas(buffer);
-    buffer = [];
-    if (batch.length === 0) return;
-    batch.sort((a, b) => deltaTime(a) - deltaTime(b));
-    try {
-      applyIncomingDeltas(batch);
-    } catch (err) {
-      console.warn('[deltaRealtime] apply failed:', err);
-    }
-  };
-
-  const detach = () => {
-    if (unsub) {
-      try { unsub(); } catch {}
-      unsub = null;
-    }
-  };
-
-  const attach = () => {
-    if (stopped || unsub || !signedIn) return;
-    const since = getLastDeltaSyncTime() - OVERLAP_MS;
-    const q = query(
-      collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_deltas'),
-      where('serverTime', '>', Timestamp.fromMillis(since)),
-      orderBy('serverTime', 'asc')
-    );
-    unsub = onSnapshot(
-      q,
-      (snap) => {
-        snap.docChanges().forEach((c) => {
-          if (c.type === 'added') buffer.push(c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta);
-        });
-        if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
-      },
-      (err) => {
-        console.warn('[deltaRealtime] listener error, retrying:', err);
-        detach();
-        if (!stopped && !retryTimer) {
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
-            attach();
-          }, RETRY_MS);
-        }
-      }
-    );
-  };
-
-  if (signedIn) attach();
-
-  let hiddenAt = 0;
-  const onVisibility = () => {
-    if (document.visibilityState === 'hidden') {
-      hiddenAt = Date.now();
-      if (detachTimer) clearTimeout(detachTimer);
-      detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
-    } else {
-      if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      const hiddenFor = hiddenAt ? Date.now() - hiddenAt : Infinity;
-      hiddenAt = 0;
-      // Ẩn ngắn (dưới 15 giây, ví dụ chuyển tab): kết nối vẫn sống và listener vẫn nhận delta realtime,
-      // không cần tạo lại listener hay kéo delta (tránh đọc lại cửa sổ 3 phút).
-      if (unsub && hiddenFor < 15000) return;
-      // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari treo
-      detach();
-      attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
-    }
-  };
-
-  const onNetworkRecovered = () => {
-    if (document.visibilityState === 'visible') {
-      detach();
-      attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
-    }
-  };
-
-  const handlePageShow = (e: PageTransitionEvent) => {
-    if (e.persisted) {
-      detach();
-      attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
-    }
-  };
-
-  const handleOnline = () => {
-    detach();
-    attach();
-    pullAndApplyDeltas(undefined, true).catch(() => {});
-  };
-
-  const handleFocus = () => {
-    // Listener còn sống thì đã nhận delta realtime (Firestore SDK tự nối lại và bù delta bị lỡ)
-    if (unsub) return;
-    pullAndApplyDeltas(undefined, true).catch(() => {});
-  };
-
-  const unsubAuth = onAuthStateChanged(auth, (user) => {
-    signedIn = !!user;
-    if (user) attach();
-    else detach();
-  });
-
-  document.addEventListener('visibilitychange', onVisibility);
-  window.addEventListener('taka_network_recovered', onNetworkRecovered);
-  window.addEventListener('pageshow', handlePageShow as any);
-  window.addEventListener('online', handleOnline);
-  window.addEventListener('focus', handleFocus);
-
-  return () => {
-    stopped = true;
-    unsubAuth();
-    document.removeEventListener('visibilitychange', onVisibility);
-    window.removeEventListener('taka_network_recovered', onNetworkRecovered);
-    window.removeEventListener('pageshow', handlePageShow as any);
-    window.removeEventListener('online', handleOnline);
-    window.removeEventListener('focus', handleFocus);
-    if (flushTimer) clearTimeout(flushTimer);
-    if (detachTimer) clearTimeout(detachTimer);
-    if (retryTimer) clearTimeout(retryTimer);
-    detach();
-  };
-}
-
-================================================================================
+=========================================
 FILE: src/lib/deltaApplyService.ts
-================================================================================
+=========================================
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { TakaDelta, TakaDeltaItem, Project, Task, Cost, DelegationGroup } from '../types';
@@ -449,14 +41,9 @@ import { CLIENT_SESSION_ID, DELTA_COLLECTION, LAST_SYNC_KEY } from './deltaConst
 import { safeSetItemLocal } from './storage';
 import { markTasksDeleted } from './taskDeletedTracker';
 
-/**
- * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
- * safety poll. Returns the number of deltas processed.
- */
 export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (!deltas || deltas.length === 0) return 0;
 
-  // Ghi nhận vào Performance Store để giám sát
   usePerformanceStore
     .getState()
     .trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
@@ -465,7 +52,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   let maxTime = lastSyncTime;
   const store = useAppStore.getState();
 
-  // Map chứa các thay đổi gộp để cập nhật nguyên tử vào Zustand
   let updatedProjects = [...(store.projects || [])];
   let updatedTasks = [...(store.tasks || [])];
   let updatedCosts = [...(store.costs || [])];
@@ -478,7 +64,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   const invalidations: TakaDeltaItem[] = [];
 
-  // Các dự án có task thay đổi trong lô delta này (để chỉ tính lại đúng các dự án đó)
   const touchedProjectIds = new Set<string>();
   const touchedProjectCodes = new Set<string>();
   const noteTouchedProject = (t: any) => {
@@ -494,7 +79,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     data: any,
     year?: string
   ) => {
-    // Một số nơi ghi delta với tên đường dẫn thật `taka_delegation_groups`
     const collectionName =
       collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
     if (
@@ -505,7 +89,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       return;
     }
 
-    // [Safety Guard] Prevent old deltas (e.g. synthetic or out-of-order) from clobbering newer state
     const tsOf = (v: any): number => {
       if (!v) return 0;
       const n = typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
@@ -514,9 +97,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
     const isDelete = action === 'delete' || data?.isDeleted === true;
 
-    // Chỉ bỏ qua khi delta CÓ updatedAt hợp lệ và CŨ HƠN bản đang giữ.
-    // Delta xóa, delta không có data, và delta vá không mang updatedAt luôn được áp dụng
-    // (thứ tự đã do serverTime quyết định). Tuyệt đối không đọc data.updatedAt khi data có thể null.
     const isStaleVsLocal = (existing: any): boolean => {
       if (isDelete || !data) return false;
       const incoming = tsOf(data.updatedAt);
@@ -540,7 +120,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1) {
           updatedProjects[idx] = applyFieldPatch(updatedProjects[idx], data) as Project;
         } else if (action === 'create') {
-          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedProjects.push({ id: docId, ...data } as Project);
         }
         break;
@@ -556,11 +135,11 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             tasksChanged = true;
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
           }
-          // Cắt đứt ngay lập tức task đã xóa khỏi project.taskSummaries trên máy nhận (chống hiện tượng bóng ma hồi sinh task trên iPad)
           updatedProjects = updatedProjects.map((p) => {
             if (Array.isArray(p.taskSummaries) && p.taskSummaries.some((s: any) => s.id === docId)) {
               projectsChanged = true;
               const filteredSummaries = p.taskSummaries.filter((s: any) => s.id !== docId);
+              if (p.id) touchedProjectIds.add(String(p.id));
               return {
                 ...p,
                 taskSummaries: filteredSummaries,
@@ -577,7 +156,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1) {
           updatedTasks[idx] = applyFieldPatch(updatedTasks[idx], data) as Task;
         } else if (action === 'create') {
-          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedTasks.push({ id: docId, ...data } as Task);
         }
         break;
@@ -598,7 +176,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1) {
           updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
         } else if (action === 'create') {
-          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedCosts.push({ id: docId, ...data } as Cost);
         }
         break;
@@ -619,7 +196,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1) {
           updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
         } else if (action === 'create') {
-          // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
           updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
         }
         break;
@@ -644,7 +220,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       return;
     }
 
-    // 1. Skip self-mutations on this same tab/session to prevent typing jitter (Rule 2)
     if (
       delta.sessionId &&
       delta.sessionId === CLIENT_SESSION_ID
@@ -673,23 +248,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
   });
 
-  // Cập nhật nguyên tử 1 lần duy nhất vào Zustand (0ms UI re-render)
-  if (tasksChanged && !projectsChanged) {
+  if ((tasksChanged || projectsChanged) && (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)) {
     const delegationGroups = store.delegationGroups || [];
     const isTasksRequested = store.isTasksRequested;
-    const hasTouchedInfo = touchedProjectIds.size + touchedProjectCodes.size > 0;
     updatedProjects = updatedProjects.map(p => {
-      if (hasTouchedInfo) {
-        // Dự án khớp theo id, hoặc theo mã chính / mã liên kết (linkCodes)
-        const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
-          .toLowerCase()
-          .split(/[,;/]+/)
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const isTouched =
-          touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
-        if (!isTouched) return p;
-      }
+      const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
+        .toLowerCase()
+        .split(/[,;/]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const isTouched =
+        touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
+      
+      if (!isTouched) return p;
+
       const pTasks = getTasksForProject(p, updatedTasks);
       if (isTasksRequested || pTasks.length > 0) {
         const computedDates = calculateProjectComputedDates(p, pTasks, delegationGroups);
@@ -710,7 +282,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (costsChanged) store.setCosts(updatedCosts);
   if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
 
-  // Trụ cột 3: Kích hoạt Smart Change Flash cho các dòng vừa nhận thay đổi từ đồng nghiệp (Google Sheets standard)
   const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];
   deltas.forEach((d) => {
     if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
@@ -727,16 +298,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     triggerBatchChangeFlash(flashEntries);
   }
 
-  // Lưu các delta vào Dexie Local-First Database ngầm
   applyDeltasToLocalDatabase(deltas).catch(() => {});
-
-  // Phát tín hiệu delta đã nạp sang các tab khác (giúp các tab phụ không cần gửi request lên Firestore)
   broadcastAppliedDeltas(deltas);
-
-  // Cập nhật mốc đồng bộ mới nhất
   safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
 
-  // Resolve signal-only (invalidate) items: re-read just those docs, then apply them like normal deltas
   if (invalidations.length > 0) {
     resolveInvalidations(invalidations)
       .then((synthetic) => {
@@ -748,391 +313,1157 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   return deltas.length;
 }
 
-================================================================================
-FILE: src/hooks/useFirebaseDataParts/useStaticAndAuthHydration.ts
-================================================================================
-import { useEffect, useRef } from "react";
-import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { doc } from "firebase/firestore";
-import { writeBatch } from "../../lib/firestoreWrites";
-import { useAppStore } from "../../store/useAppStore";
-import { usePerformanceStore } from "../../store/usePerformanceStore";
-import { auth, db } from "../../lib/firebase";
-import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
-import { getPendingUpdates, clearPendingUpdates, processPendingSync } from "../../lib/syncQueue";
-import { recordBatchDeltas } from "../../lib/deltaSyncService";
-import { setupStaticConfigSync } from "../../lib/configCacheService";
-import { enforceStorageBudget } from "../../lib/storageBudgetService";
-import {
-  hydrateProjectsFromLocal,
-  hydrateTasksFromLocal,
-  hydrateCostsFromLocal,
-  hydrateDelegationsFromLocal,
-  hydrateDelegationsForProjects,
-} from "../../lib/backgroundSyncWorker";
-import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
-import { AppUser, TabId } from "../../types";
+=========================================
+FILE: src/lib/taskStateService.ts
+=========================================
+import { Task, Project } from "../types";
+import { useAppStore } from "../store/useAppStore";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db, APP_ID } from "./firebase";
+import { 
+  getTasksForProject, 
+  calculateProjectComputedDates, 
+  syncProjectDatesToFirestore,
+  matchProjectCode 
+} from "./projectDatesService";
+import { markTasksDeleted } from "./taskDeletedTracker";
 
-let isArchiveLoaded = false;
-const FIREBASE_HOOK_BOOT_TIME = Date.now();
+const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 
-export function useStaticAndAuthHydration() {
-  const setCurrentUser = useAppStore((state) => state.setCurrentUser);
-  const setUser = useAppStore((state) => state.setUser);
-  const setCloudStatus = useAppStore((state) => state.setCloudStatus);
-  const setToast = useAppStore((state) => state.setToast);
+export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
+  if (!t || !p) return false;
+  if (t.isDeleted) return false;
 
-  const activeTab = useAppStore((state) => state.activeTab);
-  const isTaskModalOpen = useAppStore((state) => state.isTaskModalOpen);
-  const isProjectModalOpen = useAppStore((state) => state.isProjectModalOpen);
-  const modalInitialTab = useAppStore((state) => state.modalInitialTab);
-  const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
-  const setIsCostsRequested = useAppStore((state) => state.setIsCostsRequested);
-  const setIsDelegationsRequested = useAppStore((state) => state.setIsDelegationsRequested);
+  const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  const pCode = String(p.code || '').trim().toLowerCase();
 
-  const user = useAppStore((state) => state.user);
-  const appUsers = useAppStore((state) => state.appUsers);
-  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : '';
 
-  const lastActiveTimestampRef = useRef<number>(Date.now());
+  if (pStore && tStore && pStore !== tStore) return false;
+  if (pYear && tYear && pYear !== tYear) return false;
 
-  // 1. Sleep / Wake Guard
-  useEffect(() => {
-    const handleSleepWake = () => {
-      const isVisible = typeof document !== "undefined" && document.visibilityState === "visible";
-      if (!isVisible) {
-        lastActiveTimestampRef.current = Date.now();
-        return;
+  if (t.projectId && p.id && String(t.projectId) === String(p.id)) return true;
+  if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return false;
+
+  if (tCode && pCode && (tCode === pCode || matchProjectCode(tCode, pCode))) return true;
+
+  return false;
+}
+
+export async function ensureProjectTasksLoaded(projectCode: string): Promise<Task[]> {
+  if (!projectCode) return [];
+  const cleanCode = projectCode.trim();
+  const currentTasks = useAppStore.getState().tasks || [];
+  
+  const existing = currentTasks.filter(t => 
+    t.projectCode && t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase()
+  );
+  if (existing.length > 0) return existing;
+
+  if (pendingProjectFetches.has(cleanCode.toLowerCase())) {
+    return pendingProjectFetches.get(cleanCode.toLowerCase())!;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const q = query(
+        collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+        where("projectCode", "==", cleanCode)
+      );
+      const snap = await getDocs(q);
+      const loaded: Task[] = [];
+      snap.forEach(docSnap => {
+        const d = { id: docSnap.id, ...docSnap.data() } as Task;
+        if (!d.isDeleted) loaded.push(d);
+      });
+
+      if (loaded.length > 0) {
+        const latestTasks = useAppStore.getState().tasks || [];
+        const currentIds = new Set(latestTasks.map(t => t.id));
+        const toAdd = loaded.filter(t => !currentIds.has(t.id));
+        if (toAdd.length > 0) {
+          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
+        }
+      }
+      return loaded;
+    } catch (err) {
+      console.warn("Failed to fetch tasks for external project:", cleanCode, err);
+      return [];
+    } finally {
+      pendingProjectFetches.delete(cleanCode.toLowerCase());
+    }
+  })();
+
+  pendingProjectFetches.set(cleanCode.toLowerCase(), fetchPromise);
+  return fetchPromise;
+}
+
+export function findAffectedProjects(
+  tasksToCheck: (Partial<Task>)[],
+  allProjects?: Project[]
+): Project[] {
+  const projects = allProjects || useAppStore.getState().projects;
+  if (!tasksToCheck.length || !projects.length) return [];
+
+  const affectedMap = new Map<string, Project>();
+
+  for (const t of tasksToCheck) {
+    if (!t) continue;
+    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : "";
+    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
+    const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : "";
+    const tProjId = t.projectId ? String(t.projectId) : "";
+
+    for (const p of projects) {
+      if (!p.id || !p.code) continue;
+
+      const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
+      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
+
+      if (tProjId && String(p.id) === tProjId) {
+        if (pStore && tStore && pStore !== tStore) continue;
+        if (pYear && tYear && pYear !== tYear) continue;
+        affectedMap.set(p.id, p);
+        continue;
       }
 
-      const now = Date.now();
-      const elapsedSleepMs = now - lastActiveTimestampRef.current;
-      lastActiveTimestampRef.current = now;
+      if (tProjId && String(p.id) !== tProjId) continue;
 
-      if (elapsedSleepMs > 30 * 1000) {
-        import("../../lib/deltaOrchestratorService").then(m => {
-          m.triggerImmediateDeltaSync().catch(() => {});
+      if (!tCode) continue;
+      const matchesCode =
+        String(p.code).trim().toLowerCase() === tCode ||
+        matchProjectCode(p.code, tCode);
+
+      if (!matchesCode) continue;
+      if (pStore && tStore && pStore !== tStore) continue;
+      if (pYear && tYear && pYear !== tYear) continue;
+
+      affectedMap.set(p.id, p);
+    }
+  }
+
+  return Array.from(affectedMap.values());
+}
+
+export async function syncAffectedProjects(
+  affectedProjects: Project[],
+  allTasks?: Task[]
+): Promise<void> {
+  if (!affectedProjects.length) return;
+
+  const currentTasks = allTasks || useAppStore.getState().tasks;
+  const delegationGroups = useAppStore.getState().delegationGroups;
+
+  for (const project of affectedProjects) {
+    if (!project.id) continue;
+    const projectTasks = getTasksForProject(project, currentTasks);
+    const computedDates = calculateProjectComputedDates(project, projectTasks, delegationGroups);
+    await syncProjectDatesToFirestore(project.id, computedDates);
+  }
+}
+
+export async function saveTaskStateUnified(
+  taskUpdates: (Partial<Task> & { id: string })[],
+  options?: { syncProjects?: boolean; allTasksOverride?: Task[] }
+): Promise<void> {
+  if (!taskUpdates || taskUpdates.length === 0) return;
+
+  useAppStore.getState().optimisticUpdateTasks(taskUpdates);
+
+  if (options?.syncProjects === false) return;
+
+  const updatedTasks = options?.allTasksOverride || useAppStore.getState().tasks;
+  const affectedProjects = findAffectedProjects(taskUpdates);
+
+  await syncAffectedProjects(affectedProjects, updatedTasks);
+}
+
+export async function deleteTaskStateUnified(
+  taskIdsOrTasks: (string | Task)[],
+  options?: { syncProjects?: boolean }
+): Promise<void> {
+  if (!taskIdsOrTasks || taskIdsOrTasks.length === 0) return;
+
+  const rawIds: string[] = [];
+  const passedTaskObjs: Task[] = [];
+
+  taskIdsOrTasks.forEach(item => {
+    if (typeof item === 'string') {
+      rawIds.push(item);
+    } else if (item && typeof item === 'object') {
+      if (item.id) rawIds.push(String(item.id));
+      passedTaskObjs.push(item);
+    }
+  });
+
+  const idSet = new Set(rawIds.map(String));
+  const currentTasks = useAppStore.getState().tasks || [];
+  const currentProjects = useAppStore.getState().projects || [];
+
+  const foundInStore = currentTasks.filter(t => idSet.has(String(t.id)));
+  const tasksToDelete = [...foundInStore];
+  passedTaskObjs.forEach(pt => {
+    if (!tasksToDelete.some(t => String(t.id) === String(pt.id))) {
+      tasksToDelete.push(pt);
+    }
+  });
+
+  const affectedProjects = findAffectedProjects(tasksToDelete, currentProjects);
+  const affectedProjectIds = new Set<string>();
+  affectedProjects.forEach(ap => {
+    if (ap.id) affectedProjectIds.add(String(ap.id));
+  });
+  tasksToDelete.forEach(dt => {
+    if (dt.projectId) affectedProjectIds.add(String(dt.projectId));
+  });
+
+  const deletedTaskIds = new Set<string>();
+  tasksToDelete.forEach(t => {
+    if (t.id) {
+      const cleanId = String(t.id).trim().toLowerCase();
+      deletedTaskIds.add(cleanId);
+      markTasksDeleted([cleanId], t.projectId ? String(t.projectId) : undefined);
+    }
+  });
+  rawIds.forEach(id => {
+    const cleanId = String(id).trim().toLowerCase();
+    deletedTaskIds.add(cleanId);
+    markTasksDeleted([cleanId]);
+  });
+
+  const now = new Date().toISOString();
+  const tasksAfterDeletion = currentTasks.filter(t => !idSet.has(String(t.id)));
+  
+  const unlinkedChildTasks: Task[] = [];
+  const cleanedTasks = tasksAfterDeletion.map(t => {
+    let updated = t;
+
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (rawParent && deletedTaskIds.has(String(rawParent).trim().toLowerCase())) {
+      updated = { ...updated, parentTaskId: undefined, updatedAt: now };
+      delete (updated as any).parentId;
+      unlinkedChildTasks.push(updated);
+    }
+
+    if (updated.predecessor && typeof updated.predecessor === 'string') {
+      const predParts = updated.predecessor.split(',').map(p => p.trim()).filter(Boolean);
+      const filteredParts = predParts.filter(part => {
+        const codeOnly = part.replace(/(?:SS|FF|SF|FS)?\s*(?:[+-]\d+[dwmy]?)?$/i, '').trim().toLowerCase();
+        const isDeletedPred = tasksToDelete.some(dt => {
+          if (!isTaskBelongsToProject(t, { id: dt.projectId, code: dt.projectCode, store: dt.projectStore, year: dt.projectYear })) return false;
+          return (dt.taskCodePhu && String(dt.taskCodePhu).trim().toLowerCase() === codeOnly) ||
+                 (dt.id && String(dt.id).trim().toLowerCase() === codeOnly);
         });
-      }
-
-      const IS_LONG_SLEEP = elapsedSleepMs > 10 * 60 * 1000; // > 10 min
-      if (IS_LONG_SLEEP) {
-        // Dispatch recovery event to sub-hooks
-        window.dispatchEvent(
-          new CustomEvent("taka_sleep_wake_recovery", { detail: { elapsedSleepMs } })
-        );
-
-        // Check iOS 40MB storage budget and log audit
-        enforceStorageBudget().catch(() => {});
-        const sleepMinutes = Math.round(elapsedSleepMs / 60000);
-        usePerformanceStore
-          .getState()
-          .trackGetDoc(
-            "sleep_wake_recovery",
-            true,
-            0,
-            `Awoke after ${sleepMinutes}m sleep - Zero Read Delta Sync bypass`
-          );
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleSleepWake);
-    window.addEventListener("pageshow", handleSleepWake);
-    window.addEventListener("focus", handleSleepWake);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleSleepWake);
-      window.removeEventListener("pageshow", handleSleepWake);
-      window.removeEventListener("focus", handleSleepWake);
-    };
-  }, []);
-
-  // 2. Tri-Gate Lazy trigger & Visibility Tracker
-  useEffect(() => {
-    const evaluate = () => {
-      const tabsRequiringTasks: TabId[] = [
-        "gantt",
-        "detail",
-        "calendar",
-        "taskDelegation",
-        "taskDelegationCalendar",
-      ];
-      const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
-      const isLayoutTab = activeTab === "layout";
-      const needsTasks =
-        tabsRequiringTasks.includes(activeTab) ||
-        isTaskModalOpen ||
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab);
-
-      const tabsRequiringCosts: TabId[] = ["cost", "budget"];
-      const needsCosts =
-        tabsRequiringCosts.includes(activeTab) ||
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab);
-
-      const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
-      const needsDelegations = tabsRequiringDelegations.includes(activeTab);
-
-      if (needsTasks) {
-        setIsTasksRequested(true);
-        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      }
-      if (needsCosts) {
-        setIsCostsRequested(true);
-        hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      }
-      if (needsDelegations) {
-        setIsDelegationsRequested(true);
-        hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      } else {
-        const store = useAppStore.getState();
-        const openProjectKeys: string[] = [];
-        if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
-        if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
-        if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
-        if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
-        if (openProjectKeys.length > 0) {
-          hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
-        }
-      }
-    };
-
-    evaluate();
-    document.addEventListener("visibilitychange", evaluate);
-    window.addEventListener("pageshow", evaluate);
-    window.addEventListener("focus", evaluate);
-    return () => {
-      document.removeEventListener("visibilitychange", evaluate);
-      window.removeEventListener("pageshow", evaluate);
-      window.removeEventListener("focus", evaluate);
-    };
-  }, [
-    activeTab,
-    isTaskModalOpen,
-    isProjectModalOpen,
-    modalInitialTab,
-    setIsTasksRequested,
-    setIsCostsRequested,
-    setIsDelegationsRequested,
-  ]);
-
-  // 3. Auth Effect
-  useEffect(() => {
-    const savedAuth = safeGetItemLocal("taka_auth_v1");
-    if (savedAuth) {
-      try {
-        const parsedUser = JSON.parse(savedAuth);
-        const localReadNotifsStr = safeGetItemLocal(`taka_read_notifs_${parsedUser.id}`);
-        if (localReadNotifsStr) {
-          const localReadNotifs = JSON.parse(localReadNotifsStr);
-          if (Array.isArray(localReadNotifs)) {
-            parsedUser.readNotifs = Array.from(
-              new Set([...(parsedUser.readNotifs || []), ...localReadNotifs])
-            );
-          }
-        }
-        setCurrentUser(parsedUser);
-      } catch (e) {
-        console.error("Error parsing savedAuth", e);
-      }
-    } else {
-      const guestReadNotifsStr = safeGetItemLocal("taka_read_notifs_guest");
-      if (guestReadNotifsStr) {
-        try {
-          const guestRead = JSON.parse(guestReadNotifsStr);
-          const cur = useAppStore.getState().currentUser;
-          if (cur && cur.id === "guest" && Array.isArray(guestRead)) {
-            setCurrentUser({ ...cur, readNotifs: guestRead });
-          }
-        } catch (e) {}
+        return !isDeletedPred;
+      });
+      const newPred = filteredParts.join(', ');
+      if (newPred !== updated.predecessor) {
+        updated = { ...updated, predecessor: newPred, updatedAt: now };
       }
     }
 
-    let isMounted = true;
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
-      if (!isMounted) return;
-      setUser(u);
+    return updated;
+  });
+
+  useAppStore.getState().setTasks(cleanedTasks);
+
+  const updatedProjects = currentProjects.map(p => {
+    const pIdStr = p.id ? String(p.id) : '';
+
+    if (affectedProjectIds.size > 0 && !affectedProjectIds.has(pIdStr)) {
+      return p;
+    }
+
+    let summaryModified = false;
+    let newSummaries = p.taskSummaries ? [...p.taskSummaries] : [];
+
+    if (p.taskSummaries && p.taskSummaries.length > 0) {
+      newSummaries = p.taskSummaries.filter((ts, idx) => {
+        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
+        const matchedDeleted = tasksToDelete.some(dt => {
+          if (dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
+          if (!dt.projectId && !isTaskBelongsToProject(dt, p)) return false;
+          const dtId = dt.id ? String(dt.id).trim().toLowerCase() : '';
+          return (dtId && tsId && dtId === tsId);
+        });
+
+        if (matchedDeleted) {
+          summaryModified = true;
+          return false;
+        }
+        return true;
+      });
+    }
+
+    const isProjectAffected = summaryModified || affectedProjectIds.has(pIdStr);
+
+    if (isProjectAffected) {
+      const pForCalc = { ...p, taskSummaries: newSummaries };
+      const remainingProjTasks = getTasksForProject(pForCalc, cleanedTasks);
+      const computed = calculateProjectComputedDates(pForCalc, remainingProjTasks);
+      return { 
+        ...p, 
+        ...computed,
+        taskCount: remainingProjTasks.length,
+        taskSummaries: computed.taskSummaries || newSummaries,
+        updatedAt: now,
+      };
+    }
+    return p;
+  });
+
+  useAppStore.getState().setProjects(updatedProjects);
+
+  try {
+    const { localDb } = await import('./localDb');
+    await localDb.tasks.bulkDelete(Array.from(idSet));
+    if (unlinkedChildTasks.length > 0) {
+      await Promise.all(unlinkedChildTasks.map(c => 
+        (localDb.tasks.update as any)(c.id, { parentTaskId: null, parentId: null, updatedAt: now })
+      ));
+    }
+  } catch (e) {
+    console.warn('[taskStateService] Dexie bulkDelete tasks error:', e);
+  }
+
+  try {
+    const { extractStorageUrls, deleteStorageFiles } = await import('./storageUtils');
+    const urls: string[] = [];
+    tasksToDelete.forEach(t => {
+      const extracted = extractStorageUrls(t);
+      if (extracted.length > 0) urls.push(...extracted);
+    });
+    if (urls.length > 0) {
+      deleteStorageFiles(urls).catch(() => {});
+    }
+  } catch (e) {}
+
+  try {
+    const { doc, deleteField } = await import('firebase/firestore');
+    const { writeBatch } = await import('./firestoreWrites');
+    const { db, APP_ID } = await import('./firebase');
+    const { recordBatchDeltas } = await import('./deltaSyncService');
+    const { markExplicitDelta } = await import('./autoDeltaQueue');
+    const batch = writeBatch(db);
+
+    const allIdsToDelete = new Set<string>();
+    rawIds.forEach(id => { if (id) allIdsToDelete.add(String(id)); });
+    tasksToDelete.forEach(t => { if (t?.id) allIdsToDelete.add(String(t.id)); });
+
+    allIdsToDelete.forEach(id => {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+      batch.delete(docRef);
     });
 
-    if (!auth.currentUser) {
-      signInAnonymously(auth).catch(console.error);
-    }
+    unlinkedChildTasks.forEach(c => {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', c.id);
+      batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+    });
 
-    return () => {
-      isMounted = false;
-      unsubAuth();
-    };
-  }, [setCurrentUser, setUser]);
-
-  // 4. Static / Global Config Data Fetch Effect & Offline Draft Sync
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const testConnection = async () => {
-      try {
-        const timeSinceBoot = Date.now() - FIREBASE_HOOK_BOOT_TIME;
-        if (timeSinceBoot < 15000) {
-          setTimeout(testConnection, 15000 - timeSinceBoot);
-          return;
-        }
-
-        // Chỉ dùng MỘT bộ phát lại duy nhất (đối chiếu với bản trên server, bỏ lệnh cũ/không hợp lệ).
-        const { synced, failed } = await processPendingSync();
-        if (synced > 0) {
-          setToast({
-            title: "Sync Complete",
-            message: `Đã đồng bộ ${synced} thay đổi offline lên server.`,
-          });
-        }
-        if (failed > 0) setCloudStatus("offline");
-      } catch (error) {
-        setCloudStatus("offline");
-        if (error instanceof Error && error.message.includes("permission")) {
-          setToast({
-            title: "Authentication / Database Error",
-            message: "Missing or insufficient permissions.",
-          });
-        }
+    updatedProjects.forEach(up => {
+      const orig = currentProjects.find(op => op.id === up.id);
+      if (orig && orig !== up) {
+        const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', up.id);
+        batch.update(pRef, {
+          taskSummaries: up.taskSummaries || [],
+          taskCount: up.taskCount || 0,
+          computedTakStart: up.computedTakStart || '',
+          computedTakCompl: up.computedTakCompl || '',
+          computedOpening: up.computedOpening || '',
+          updatedAt: up.updatedAt || now
+        });
       }
-    };
-    testConnection();
-    window.addEventListener("online", testConnection);
+    });
 
-    const unsubStaticConfig = setupStaticConfigSync();
+    const currentUser = useAppStore.getState().currentUser;
+    const deltaItems: any[] = [
+      ...Array.from(allIdsToDelete).map(id => ({
+        docId: id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
+      })),
+      ...unlinkedChildTasks.map(c => ({
+        docId: c.id, collectionName: 'taka_tasks', action: 'update', isPatch: true,
+        data: { parentTaskId: null, parentId: null, updatedAt: now }
+      })),
+      ...updatedProjects.filter(up => {
+        const orig = currentProjects.find(op => op.id === up.id);
+        return orig && orig !== up;
+      }).map(up => ({
+        docId: up.id, collectionName: 'taka_projects', action: 'update',
+        data: {
+          taskSummaries: up.taskSummaries || [],
+          taskCount: up.taskCount || 0,
+          computedTakStart: up.computedTakStart || '',
+          computedTakCompl: up.computedTakCompl || '',
+          computedOpening: up.computedOpening || '',
+          updatedAt: up.updatedAt || now
+        },
+        year: String(up.year || '')
+      }))
+    ];
 
-    return () => {
-      window.removeEventListener("online", testConnection);
-      unsubStaticConfig();
-    };
-  }, [user?.uid, setCloudStatus, setToast]);
+    markExplicitDelta(deltaItems);
+    await batch.commit();
+    recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+  } catch (e) {
+    console.warn('[taskStateService] Failed to persist task deletion to Firestore:', e);
+  }
 
-  // 5. Sync Profile Effect
-  useEffect(() => {
-    if (!appUsers || appUsers.length === 0) return;
-    const cur = useAppStore.getState().currentUser;
-    if (cur && cur.id !== "guest") {
-      const found = appUsers.find((u) => u.id === cur.id);
-      if (found) {
-        const localReadNotifsStr = safeGetItemLocal(`taka_read_notifs_${cur.id}`);
-        let localReadNotifs: string[] = [];
-        if (localReadNotifsStr) {
-          try {
-            localReadNotifs = JSON.parse(localReadNotifsStr);
-          } catch (e) {}
-        }
-        const mergedReadNotifs = Array.from(
-          new Set([...(found.readNotifs || []), ...(cur.readNotifs || []), ...localReadNotifs])
-        );
+  if (options?.syncProjects === false) return;
 
-        const hasChanged =
-          cur.role !== found.role ||
-          cur.username !== found.username ||
-          cur.canSee !== found.canSee ||
-          cur.canWrite !== found.canWrite ||
-          cur.byPartyAccess !== found.byPartyAccess ||
-          JSON.stringify(cur.storePermissions) !== JSON.stringify(found.storePermissions) ||
-          JSON.stringify(cur.locationPermissions) !== JSON.stringify(found.locationPermissions) ||
-          JSON.stringify(cur.partyPermissions) !== JSON.stringify(found.partyPermissions) ||
-          JSON.stringify(cur.preferences) !== JSON.stringify(found.preferences);
-
-        if (hasChanged) {
-          const updated: AppUser = {
-            ...cur,
-            ...found,
-            readNotifs: mergedReadNotifs,
-          };
-          setCurrentUser(updated);
-          safeSetItemLocal("taka_auth_v1", JSON.stringify(updated));
-
-          if (
-            found.preferences?.defaultStore &&
-            cur.preferences?.defaultStore !== found.preferences.defaultStore
-          ) {
-            useAppStore.getState().setGlobalStoreFilter(found.preferences.defaultStore);
-          }
-          if (
-            found.preferences?.defaultYear &&
-            cur.preferences?.defaultYear !== found.preferences.defaultYear
-          ) {
-            useAppStore.getState().setGlobalYearFilter(String(found.preferences.defaultYear));
-          }
-          if (
-            found.preferences?.currency &&
-            cur.preferences?.currency !== found.preferences.currency
-          ) {
-            useAppStore.getState().setCurrency(found.preferences.currency);
-          }
-        }
-      }
-    }
-  }, [appUsers, setCurrentUser]);
-
-  // 6. Cold Storage Archive Fetcher
-  useEffect(() => {
-    if ((globalYearFilter !== "all" && globalYearFilter !== "ALL") || isArchiveLoaded) return;
-
-    let isCancelled = false;
-
-    const fetchArchive = async () => {
-      try {
-        const { getDownloadURL, ref } = await import("firebase/storage");
-        const { storage } = await import("../../lib/firebase");
-
-        const archiveRef = ref(storage, "archives/taka_archive.json");
-        const url = await getDownloadURL(archiveRef);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Network response was not ok");
-        const data = await res.json();
-
-        if (isCancelled) return;
-
-        const currentProjects = useAppStore.getState().projects || [];
-        const newProjects = [...currentProjects];
-        const pMap = new Map(newProjects.map((p) => [p.id, p]));
-        (data.taka_projects || []).filter((p: any) => !p.isDeleted && p.year && Number(p.year) < 2024).forEach((p: any) => {
-          if (!pMap.has(p.id)) pMap.set(p.id, p);
-        });
-        useAppStore.getState().setProjects(Array.from(pMap.values()));
-
-        const currentTasks = useAppStore.getState().tasks || [];
-        const newTasks = [...currentTasks];
-        const tMap = new Map(newTasks.map((t) => [t.id, t]));
-        (data.taka_tasks || []).filter((t: any) => !t.isDeleted && t.projectYear && Number(t.projectYear) < 2024).forEach((t: any) => {
-          if (!tMap.has(t.id)) tMap.set(t.id, t);
-        });
-        const rawLoadedTasks = Array.from(tMap.values());
-        const { dedupedTasks } = deduplicateTasksInMemory(
-          rawLoadedTasks,
-          useAppStore.getState().projects
-        );
-        useAppStore.getState().setTasks(dedupedTasks);
-
-        const currentCosts = useAppStore.getState().costs || [];
-        const newCosts = [...currentCosts];
-        const cMap = new Map(newCosts.map((c) => [c.id, c]));
-        (data.taka_costs || []).filter((c: any) => !c.isDeleted && c.projectYear && Number(c.projectYear) < 2024).forEach((c: any) => {
-          if (!cMap.has(c.id)) cMap.set(c.id, c);
-        });
-        useAppStore.getState().setCosts(Array.from(cMap.values()));
-
-        const currentDelegations = useAppStore.getState().delegationGroups || [];
-        const newDelegations = [...currentDelegations];
-        const dMap = new Map(newDelegations.map((d) => [d.id!, d]));
-        (data.taka_delegation_groups || []).filter((d: any) => !d.isDeleted && d.projectYear && Number(d.projectYear) < 2024).forEach((d: any) => {
-          if (!dMap.has(d.id)) dMap.set(d.id, d);
-        });
-        useAppStore.getState().setDelegationGroups(Array.from(dMap.values()));
-
-        isArchiveLoaded = true;
-        console.log("Archive data successfully loaded into memory");
-      } catch (err) {
-        console.warn("No archive data found or error fetching archive", err);
-      }
-    };
-
-    fetchArchive();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [globalYearFilter]);
+  const remainingTasks = useAppStore.getState().tasks;
+  const latestProjects = useAppStore.getState().projects;
+  const recheckAffected = findAffectedProjects(tasksToDelete, latestProjects);
+  await syncAffectedProjects(recheckAffected, remainingTasks);
 }
+
+export async function deleteProjectStateUnified(
+  projectIdOrCode: string,
+  projectObj?: Project
+): Promise<void> {
+  if (!projectIdOrCode) return;
+
+  const store = useAppStore.getState();
+  const currentProjects = store.projects;
+  const currentTasks = store.tasks;
+  const currentCosts = store.costs || [];
+  const currentDelegations = store.delegationGroups || [];
+
+  const targetKey = String(projectIdOrCode).trim().toLowerCase();
+
+  const targetProject = projectObj || currentProjects.find(p => 
+    (p.id && String(p.id).trim().toLowerCase() === targetKey) ||
+    (p.code && String(p.code).trim().toLowerCase() === targetKey) ||
+    (p.no !== undefined && String(p.no).trim().toLowerCase() === targetKey)
+  );
+
+  const pCode = targetProject?.code ? String(targetProject.code).trim().toLowerCase() : targetKey;
+  const pId = targetProject?.id ? String(targetProject.id) : (targetProject?.no !== undefined ? String(targetProject.no) : projectIdOrCode);
+
+  const pStore = targetProject?.store ? String(targetProject.store).trim().toLowerCase() : '';
+  const pYear = targetProject?.year !== undefined && targetProject?.year !== null ? String(targetProject.year).trim() : '';
+
+  const relatedTasks = currentTasks.filter(t => {
+    if (!targetProject) return false;
+    return isTaskBelongsToProject(t, targetProject);
+  });
+  const relatedTaskIds = new Set(relatedTasks.map(t => String(t.id)));
+
+  const relatedCosts = currentCosts.filter(c => {
+    const cStore = (c as any).projectStore ? String((c as any).projectStore).trim().toLowerCase() : '';
+    const cYear = (c as any).projectYear !== undefined && (c as any).projectYear !== null ? String((c as any).projectYear).trim() : '';
+    const cCode = c.projectCode ? String(c.projectCode).trim().toLowerCase() : '';
+
+    if (pStore && cStore && pStore !== cStore) return false;
+    if (pYear && cYear && pYear !== cYear) return false;
+
+    if ((c as any).projectId && String((c as any).projectId) === pId) return true;
+    if (cCode && pCode && (cCode === pCode || matchProjectCode(cCode, pCode))) return true;
+    return false;
+  });
+  const relatedCostIds = new Set(relatedCosts.map(c => String(c.id)));
+
+  const relatedDelegations = currentDelegations.filter(d => {
+    const dStore = (d as any).projectStore ? String((d as any).projectStore).trim().toLowerCase() : '';
+    const dYear = (d as any).projectYear !== undefined && (d as any).projectYear !== null ? String((d as any).projectYear).trim() : '';
+    const dCode = d.projectCode ? String(d.projectCode).trim().toLowerCase() : '';
+
+    if (pStore && dStore && pStore !== dStore) return false;
+    if (pYear && dYear && pYear !== dYear) return false;
+
+    if ((d as any).projectId && String((d as any).projectId) === pId) return true;
+    if (dCode && pCode && (dCode === pCode || matchProjectCode(dCode, pCode))) return true;
+    if (d.parentTaskId && relatedTaskIds.has(String(d.parentTaskId))) return true;
+    return false;
+  });
+  const relatedDelegationIds = new Set(relatedDelegations.map(d => String(d.id)));
+
+  const nowIso = new Date().toISOString();
+
+  const updatedProjects = currentProjects.filter(p => {
+    if (pId && String(p.id) === pId) return false;
+    const pStrCode = String(p.code || '').trim().toLowerCase();
+    const pStrStore = p.store ? String(p.store).trim().toLowerCase() : '';
+    const pStrYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+    if (pStrCode === pCode) {
+      if ((!pStore || !pStrStore || pStore === pStrStore) && (!pYear || !pStrYear || pYear === pStrYear)) {
+        return false;
+      }
+    }
+    return true;
+  });
+  const updatedTasks = currentTasks.filter(t => !relatedTaskIds.has(String(t.id)));
+  const updatedCosts = currentCosts.filter(c => !relatedCostIds.has(String(c.id)));
+  const updatedDelegations = currentDelegations.filter(d => !relatedDelegationIds.has(String(d.id)));
+
+  store.setProjects(updatedProjects);
+  store.setTasks(updatedTasks);
+  store.setCosts(updatedCosts);
+  store.setDelegationGroups(updatedDelegations);
+
+  try {
+    const { localDb } = await import('./localDb');
+    await localDb.projects.delete(pId);
+    if (targetProject?.id) await localDb.projects.delete(targetProject.id);
+    if (pCode) {
+      await localDb.projects.where('code').equalsIgnoreCase(pCode).delete().catch(() => {});
+    }
+    if (relatedTaskIds.size > 0) {
+      await localDb.tasks.bulkDelete(Array.from(relatedTaskIds));
+    }
+    if (relatedCostIds.size > 0) {
+      await localDb.costs.bulkDelete(Array.from(relatedCostIds));
+    }
+    if (relatedDelegationIds.size > 0) {
+      await localDb.delegations.bulkDelete(Array.from(relatedDelegationIds));
+    }
+  } catch (e) {
+    console.warn('[taskStateService] Dexie project delete error:', e);
+  }
+
+  try {
+    const { extractStorageUrls, deleteStorageFiles } = await import('./storageUtils');
+    const urls: string[] = [];
+    if (targetProject) urls.push(...extractStorageUrls(targetProject));
+    relatedTasks.forEach(t => urls.push(...extractStorageUrls(t)));
+    relatedCosts.forEach(c => urls.push(...extractStorageUrls(c)));
+    if (urls.length > 0) {
+      deleteStorageFiles(urls).catch(() => {});
+    }
+  } catch (e) {}
+
+  try {
+    const { doc } = await import('firebase/firestore');
+    const { writeBatch } = await import('./firestoreWrites');
+    const { db, APP_ID } = await import('./firebase');
+    const { recordBatchDeltas } = await import('./deltaSyncService');
+
+    const batch = writeBatch(db);
+
+    const projectDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', pId);
+    batch.set(projectDocRef, { id: pId, isDeleted: true, updatedAt: nowIso }, { merge: true });
+
+    relatedTasks.forEach(t => {
+      const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      batch.set(taskRef, { id: t.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+    });
+
+    relatedCosts.forEach(c => {
+      const costRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
+      batch.set(costRef, { id: c.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+    });
+
+    relatedDelegations.forEach(d => {
+      const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id);
+      batch.delete(delRef);
+    });
+
+    await batch.commit();
+
+    const currentUser = store.currentUser;
+    const deltaItems: any[] = [
+      { docId: pId, collectionName: 'taka_projects', action: 'delete', isPatch: false, data: null },
+      ...relatedTasks.map(t => ({
+        docId: t.id, collectionName: 'taka_tasks', action: 'delete', isPatch: false, data: null
+      })),
+      ...relatedCosts.map(c => ({
+        docId: c.id, collectionName: 'taka_costs', action: 'delete', isPatch: false, data: null
+      })),
+      ...relatedDelegations.map(d => ({
+        docId: d.id, collectionName: 'taka_delegation_groups', action: 'delete', isPatch: false, data: null
+      }))
+    ];
+    recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+  } catch (err) {
+    console.error('[taskStateService] deleteProjectStateUnified Firestore batch commit failed:', err);
+  }
+}
+
+export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
+  if (!tasks || tasks.length === 0) return { cleaned: tasks, fixedCount: 0 };
+
+  const taskMap = new Map<string, Task>();
+  const taskCodeMap = new Map<string, Task>();
+
+  tasks.forEach(t => {
+    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
+    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  });
+
+  const now = new Date().toISOString();
+  let fixedCount = 0;
+  const orphanTaskUpdates: (Partial<Task> & { id: string })[] = [];
+
+  const cleaned = tasks.map(t => {
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return t;
+
+    const parentStr = String(rawParent).trim().toLowerCase();
+    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+
+    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+      fixedCount++;
+      const updated = { ...t, parentTaskId: undefined, updatedAt: now };
+      delete (updated as any).parentId;
+      orphanTaskUpdates.push({ id: t.id, parentTaskId: undefined, updatedAt: now });
+      return updated;
+    }
+
+    return t;
+  });
+
+  return { cleaned, fixedCount };
+}
+
+export async function reorderTasksStateUnified(
+  allUpdatedTasks: Task[],
+  options?: { affectedProjectIds?: string[]; syncProjects?: boolean }
+): Promise<void> {
+  if (!allUpdatedTasks) return;
+
+  useAppStore.getState().setTasks(allUpdatedTasks);
+
+  if (options?.syncProjects === false) return;
+
+  const allProjects = useAppStore.getState().projects;
+  let targetProjects: Project[] = [];
+
+  if (options?.affectedProjectIds && options.affectedProjectIds.length > 0) {
+    const idSet = new Set(options.affectedProjectIds);
+    targetProjects = allProjects.filter(p => p.id && idSet.has(p.id));
+  } else {
+    targetProjects = findAffectedProjects(allUpdatedTasks, allProjects);
+  }
+
+  await syncAffectedProjects(targetProjects, allUpdatedTasks);
+}
+
+=========================================
+FILE: src/components/DetailTabParts/useDetailTaskMutations.ts
+=========================================
+import React, { Dispatch, SetStateAction } from 'react';
+import { Project, Task, DelegationGroup, AppUser, TaskNote } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { undoManager } from '../../lib/undoManager';
+import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
+import { 
+  buildTaskNoMap, 
+  splitPredecessors, 
+  parsePredecessors, 
+  computeTaskCode, 
+  updatePredecessorsStrings, 
+  calculateTaskDatesFromPredecessors, 
+  scheduleDependentTasks 
+} from '../../lib/ganttUtils';
+import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/utils';
+import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
+import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../../lib/deltaPatchService';
+import { TakaDeltaItem } from '../../types';
+
+interface UseDetailTaskMutationsParams {
+  tasks: Task[];
+  projects: Project[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  setConfirmModal: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => Promise<void>;
+  }>>;
+}
+
+export function useDetailTaskMutations({
+  tasks,
+  projects,
+  delegationGroups,
+  currentUser,
+  setConfirmModal,
+}: UseDetailTaskMutationsParams) {
+  const handleDeleteTask = async (t: Task) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Task',
+      message: 'Delete this Task?',
+      onConfirm: async () => {
+        try {
+          await deleteTaskStateUnified([t]);
+          
+          undoManager.push({
+            description: `Delete Task: ${t.name}`,
+            revert: async () => {
+              const { doc } = await import('firebase/firestore');
+              const { writeBatch } = await import('../../lib/firestoreWrites');
+              const { db, APP_ID } = await import('../../lib/firebase');
+              const revertBatch = writeBatch(db);
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+              
+              const storeDelegations = useAppStore.getState().delegationGroups || [];
+              const relatedDelGroups = storeDelegations.filter(d => d.parentTaskId === t.id || d.id === `del_${t.id}`);
+              relatedDelGroups.forEach(d => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d);
+              });
+
+              revertBatch.commit().catch(console.error);
+            }
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+  };
+
+  const handleUpdateTask = async (
+    t: Task, 
+    updates: Partial<Task>, 
+    _options?: { skipPredecessorRecalc?: boolean; skipProjectRollup?: boolean }
+  ) => {
+    try {
+      if (updates.name && updates.name !== t.name) {
+        const currentProject = projects.find(p => 
+          p.code === t.projectCode &&
+          (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
+          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore))
+        );
+        if (currentProject) {
+          const normUpdateName = normalizeTaskNameForComparison(updates.name, currentProject.code);
+          const isDuplicate = tasks.some(tsk => {
+            if (tsk.id === t.id || tsk.isDeleted) return false;
+            const sameProject = tsk.projectCode === currentProject.code &&
+                   (String(tsk.projectYear || '') === String(currentProject.year || '') || (!tsk.projectYear && !currentProject.year)) &&
+                   (String(tsk.projectStore || '') === String(currentProject.store || '') || (!tsk.projectStore && !currentProject.store));
+            if (!sameProject) return false;
+
+            if (tsk.name.trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+            const tNorm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+            return !!(normUpdateName && tNorm && normUpdateName === tNorm);
+          });
+          if (isDuplicate) {
+            useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
+            return;
+          }
+        }
+      }
+
+      if (updates.predecessor !== undefined && updates.predecessor !== t.predecessor) {
+        let val = updates.predecessor;
+        const taskNoMap = buildTaskNoMap(projects, tasks);
+        let parts = splitPredecessors(val, taskNoMap);
+        if (parts.length > 2) parts = parts.slice(0, 2);
+        
+        if (parts.length >= 2) {
+          updates.durationManual = false;
+          if (!/FF|SF/i.test(parts[1])) {
+            if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
+            else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
+          }
+          updates.predecessor = parts.join(', ');
+        }
+        parsePredecessors(updates.predecessor, taskNoMap, t);
+      }
+
+      let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];
+      if (updates.taskCodePhu !== undefined && updates.taskCodePhu !== t.taskCodePhu) {
+        const oldCode = (t.taskCodePhu || computeTaskCode(projects, tasks, t)).trim();
+        const newCode = (updates.taskCodePhu || computeTaskCode(projects, tasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
+        if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+          const map = new Map<string, string>();
+          map.set(oldCode.toLowerCase(), newCode);
+          predecessorUpdates = updatePredecessorsStrings(map, tasks, projects);
+        }
+      }
+
+      let targetTaskId = t.id;
+      if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        const sameProjectIdentity = (x: any) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
+        let realTask = tasks.find(tsk => 
+          !tsk.id.startsWith('ts_') &&
+          tsk.projectCode === t.projectCode &&
+          sameProjectIdentity(tsk) &&
+          ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+           (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
+        );
+        if (!realTask && t.projectCode) {
+          try {
+            const { collection, query, where, getDocs } = await import('firebase/firestore');
+            const q = query(
+              collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+              where('projectCode', '==', t.projectCode)
+            );
+            const snap = await getDocs(q);
+            const loaded: Task[] = [];
+            snap.forEach(d => {
+              const dt = { id: d.id, ...d.data() } as Task;
+              if (!dt.isDeleted) loaded.push(dt);
+            });
+            const loadedSame = loaded.filter(sameProjectIdentity);
+            if (loadedSame.length > 0) {
+              const latestTasks = useAppStore.getState().tasks || tasks;
+              const existingIds = new Set(latestTasks.map(tsk => tsk.id));
+              useAppStore.getState().setTasks([
+                ...latestTasks.filter(tsk => !tsk.id.startsWith('ts_')),
+                ...loadedSame.filter(x => !existingIds.has(x.id)),
+              ]);
+              realTask = loadedSame.find(tsk =>
+                (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+                (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
+              );
+            }
+          } catch (err) {
+            console.warn("Failed to fetch real task for ts_ in Firestore:", err);
+          }
+        }
+        if (realTask) {
+          targetTaskId = realTask.id;
+        } else {
+          targetTaskId = `t_${Date.now()}_${generateId().substring(0, 8)}`;
+        }
+      }
+      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
+      
+      let newT = { ...t, id: targetTaskId, ...updates, updatedAt: new Date().toISOString() };
+      if (updates.predecessor !== undefined) {
+        let currentTasks = useAppStore.getState().tasks || tasks;
+        let taskNoMap = buildTaskNoMap(projects, currentTasks);
+        let parts = splitPredecessors(updates.predecessor, taskNoMap);
+        if (parts.length >= 2) {
+          newT.durationManual = false;
+        }
+        newT.realtimeUpdate = Boolean(updates.predecessor.trim());
+        let parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+        
+        if (updates.predecessor.trim() && (!parsed.length || parsed.some(p => !p.task))) {
+          for (const token of parts) {
+            const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+            const matchedProj = projects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            if (matchedProj && matchedProj.code !== t.projectCode) {
+              const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+              if (loaded.length > 0) {
+                currentTasks = useAppStore.getState().tasks || currentTasks;
+                taskNoMap = buildTaskNoMap(projects, currentTasks);
+                parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+              }
+            }
+          }
+        }
+        const calcResult = calculateTaskDatesFromPredecessors(newT, parsed);
+        if (calcResult) {
+          newT.start = calcResult.start;
+          newT.finish = calcResult.finish;
+          newT.duration = calcResult.duration;
+          newT.durationManual = calcResult.durationManual;
+        }
+      } else if (newT.predecessor) {
+        newT.realtimeUpdate = Boolean(newT.predecessor.trim());
+      }
+      
+      if (updates.finish !== undefined) {
+        if (newT.start && newT.finish) {
+          const s = parseDateTime(newT.start);
+          const f = parseDateTime(newT.finish);
+          if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+            const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+            newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+          }
+        }
+      } else if (updates.start !== undefined) {
+        if (newT.durationManual) {
+          if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+            const s = parseDateTime(newT.start);
+            if (s && !isNaN(s.getTime())) {
+              const days = parseFloat(String(newT.duration));
+              if (!isNaN(days) && days >= 0) {
+                const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+                newT.finish = formatToDatetimeLocal(f);
+              }
+            }
+          }
+        } else {
+          if (newT.start && newT.finish) {
+            const s = parseDateTime(newT.start);
+            const f = parseDateTime(newT.finish);
+            if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+              const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+              newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+            }
+          }
+        }
+      } else if (updates.duration !== undefined) {
+        newT.duration = cleanDurationString(updates.duration);
+        newT.durationManual = true;
+        if (newT.start && newT.duration !== '') {
+          const s = parseDateTime(newT.start);
+          if (s && !isNaN(s.getTime())) {
+            const days = parseFloat(newT.duration);
+            if (!isNaN(days) && days >= 0) {
+              const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+              newT.finish = formatToDatetimeLocal(f);
+            }
+          }
+        }
+      } else if (updates.predecessor === undefined) {
+        if (newT.durationManual) {
+          if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+            const s = parseDateTime(newT.start);
+            if (s && !isNaN(s.getTime())) {
+              const days = parseFloat(String(newT.duration));
+              if (!isNaN(days) && days >= 0) {
+                const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+                newT.finish = formatToDatetimeLocal(f);
+              }
+            }
+          }
+        } else {
+          if (newT.start && newT.finish) {
+            const s = parseDateTime(newT.start);
+            const f = parseDateTime(newT.finish);
+            if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+              const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+              newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+            }
+          }
+        }
+      }
+
+      const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
+      const batch = writeBatch(db);
+
+      const scheduledUpdatedTask = updatesToDependents.find(d => d.id === newT.id);
+      if (scheduledUpdatedTask) {
+        newT = scheduledUpdatedTask as any;
+      }
+
+      const allCurrentTasksWithScheduled = tasks.map(tsk => {
+        if (tsk.id === newT.id) return newT;
+        const dep = updatesToDependents.find(d => d.id === tsk.id);
+        return dep || tsk;
+      });
+      if (!allCurrentTasksWithScheduled.some(tsk => tsk.id === newT.id)) {
+        allCurrentTasksWithScheduled.push(newT);
+      }
+      const { updatedParents } = rollupParentTaskDates(allCurrentTasksWithScheduled);
+
+      batch.set(tRef, newT, { merge: true });
+
+      if (updates.delegation === true) {
+         const deterministicGroupId = `del_${t.id}`;
+         const existingGroup = delegationGroups.find(g => g.parentTaskId === t.id || g.id === deterministicGroupId);
+         if (!existingGroup) {
+            const dateStr = new Date().toISOString().substring(0, 10);
+            const rawParty = (t.party && t.party.trim()) ? t.party.trim() : (currentUser.username || '');
+            const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+            const newGroup: DelegationGroup = {
+              id: deterministicGroupId,
+              parentTaskId: t.id,
+              name: t.name || 'Delegated Task',
+              projectCode: t.projectCode,
+              projectStore: t.projectStore,
+              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(projects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
+              subTasks: [{ 
+                 id: generateId(), 
+                 name: '', 
+                 comments: '', 
+                 status: 'Assigned', 
+                 delegationStatus: 'Assigned', 
+                 priority: 'Mid', 
+                 party: parsedParty, 
+                 startAct: dateStr, 
+                 finishAct: dateStr, 
+                 updatedAt: new Date().toISOString() 
+              }],
+              updatedAt: new Date().toISOString(),
+              createdBy: currentUser.id
+            };
+            const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+            batch.set(delRef, newGroup, { merge: true });
+         }
+      }
+
+      const depUpdates = updatesToDependents.filter(d => d.id !== newT.id);
+      depUpdates.forEach(depTask => {
+        const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
+        batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() }, { merge: true });
+      });
+
+      predecessorUpdates.forEach(pu => {
+        if (pu.id !== t.id && !updatesToDependents.some(d => d.id === pu.id)) {
+          const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
+          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        }
+      });
+      
+      const allUpdatesToSave = [
+        newT,
+        ...depUpdates,
+        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
+        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
+      ];
+      saveTaskStateUnified(allUpdatesToSave);
+
+      try {
+        await batch.commit();
+
+        const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+          const prev = tasks.find((tsk) => tsk.id === item.id);
+          return createPatchDeltaItem({
+            docId: item.id,
+            collectionName: 'taka_tasks',
+            previous: prev,
+            updated: item,
+            action: 'update',
+            year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+          });
+        });
+        recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
+      } catch (error: any) {
+        console.error("Batch commit failed", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+        saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
+        return;
+      }
+      
+      undoManager.push({
+        description: `Update Task Schedule: ${t.name}`,
+        revert: async () => {
+          const revertBatch = writeBatch(db);
+          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+          updatesToDependents.forEach(depTask => {
+            const originalDep = tasks.find(tsk => tsk.id === depTask.id);
+            if (originalDep) {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
+            }
+          });
+          revertBatch.commit().catch(console.error);
+        }
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveNotes = async (taskId: string, notes: TaskNote[]) => {
+    const t = tasks.find(item => item.id === taskId);
+    if (t) {
+      await handleUpdateTask(t, { notes });
+    }
+  };
+
+  return {
+    handleDeleteTask,
+    handleUpdateTask,
+    handleSaveNotes,
+  };
+}
+
+=========================================
+FILE: src/components/DebouncedSearchInput.tsx
+=========================================
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, X } from 'lucide-react';
+import { cn } from '../lib/utils';
+
+interface DebouncedSearchInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  inputClassName?: string;
+  delay?: number;
+  debounceMs?: number; // Alias for delay
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  autoFocus?: boolean;
+  disabled?: boolean;
+  id?: string;
+}
+
+export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
+  value,
+  onChange,
+  placeholder = 'Search...',
+  className,
+  inputClassName,
+  delay = 250,
+  debounceMs,
+  onFocus,
+  onBlur,
+  onKeyDown,
+  autoFocus,
+  disabled,
+  id,
+}) => {
+  const effectiveDelay = debounceMs !== undefined ? debounceMs : delay;
+  const [localValue, setLocalValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.value;
+    setLocalValue(nextVal);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onChange(nextVal);
+    }, effectiveDelay);
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setLocalValue('');
+    onChange('');
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className={cn('relative flex items-center w-full min-w-0', className)}>
+      <Search className="w-4 h-4 text-slate-400 dark:text-[#838383] absolute left-3 pointer-events-none shrink-0"/>
+      <input
+        ref={inputRef}
+        id={id}
+        type="text"
+        value={localValue}
+        onChange={handleInputChange}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
+        autoFocus={autoFocus}
+        disabled={disabled}
+        placeholder={placeholder}
+        className={cn(
+          'w-full pl-9 pr-10 py-2 text-xs sm:text-sm bg-white dark:bg-[#131314] border border-slate-200 dark:border-[#444446] rounded-xl text-slate-800 dark:text-[#e3e3e3] placeholder:text-slate-400 dark:placeholder:text-[#737373] focus:outline-none focus:ring-2 focus:ring-blue-500/60 transition-all',
+          disabled && 'opacity-50 cursor-not-allowed',
+          inputClassName
+        )}
+      />
+      {localValue && (
+        <button
+          type="button"
+          onClick={handleClear}
+          title="Clear search"
+          aria-label="Clear search"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-[#a3a3a3] dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-[#333336] active:scale-90 transition-all touch-manipulation cursor-pointer z-10"
+        >
+          <X className="w-4 h-4 stroke-[2.2]"/>
+        </button>
+      )}
+    </div>
+  );
+};
