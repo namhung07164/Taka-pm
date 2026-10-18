@@ -1,4 +1,4 @@
-// === FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts ===
+================ FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts ================
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
@@ -152,9 +152,11 @@ export function useTasksHydration({
           // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
           // (hoặc khớp vắt qua 2 năm nếu mã dự án p.code là duy nhất trong p.store)
           const belongsToProject = (t: Task, p: any, isUniqueCodeInStore: boolean): boolean => {
-            if (t.projectId) return String(t.projectId) === String(p.id);
-            const codeMatches = String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase();
-            if (!codeMatches) return false;
+            if (t.projectId && p.id) return String(t.projectId) === String(p.id);
+            const rawCodeCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+            const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
+            const tCode = String(t.projectCode || "").trim().toLowerCase();
+            if (!tCode || !pCodeParts.includes(tCode)) return false;
             const storeMatches = !p.store || !t.projectStore || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
             if (!storeMatches) return false;
             if (isUniqueCodeInStore) return true;
@@ -593,8 +595,9 @@ export function useTasksHydration({
   ]);
 }
 
+================ END FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts ================
 
-// === FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts ===
+================ FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts ================
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
@@ -985,8 +988,9 @@ export function useProjectsHydration({
   }, [querySignature, userRole, allowedStores, globalYearFilter, globalStoreFilter, batchProjectsUpdate, setCloudStatus]);
 }
 
+================ END FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts ================
 
-// === FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ===
+================ FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ================
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
@@ -1284,8 +1288,9 @@ export function useCostsHydration({
   ]);
 }
 
+================ END FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ================
 
-// === FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts ===
+================ FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts ================
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
@@ -1595,8 +1600,9 @@ export function useDelegationsHydration({
   ]);
 }
 
+================ END FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts ================
 
-// === FILE: src/lib/projectDatesService.ts ===
+================ FILE: src/lib/projectDatesService.ts ================
 import { setDoc, updateDoc, writeBatch } from "./firestoreWrites";
 import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
@@ -1677,9 +1683,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
       return;
     }
 
-    // Strict Store & Year Isolation
+    // Strict Store & Year Isolation (allowing unique project code in store to span across years)
     if (pStore && tStore && pStore !== tStore) return;
-    if (pYear && tYear && pYear !== tYear) return;
+    if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear) return;
 
     if (t.projectCode && project.code) {
       const tCode = String(t.projectCode).trim().toLowerCase();
@@ -2143,8 +2149,9 @@ export async function syncAllProjectsTaskCountFromFirestore(): Promise<{ updated
 
 
 
+================ END FILE: src/lib/projectDatesService.ts ================
 
-// === FILE: src/lib/projectDatesBackfill.ts ===
+================ FILE: src/lib/projectDatesBackfill.ts ================
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { calculateProjectComputedDates, syncProjectDatesToFirestore, getTasksForProject } from "./projectDatesService";
@@ -2188,8 +2195,9 @@ export async function backfillMissingProjectDates(
   }
 }
 
+================ END FILE: src/lib/projectDatesBackfill.ts ================
 
-// === FILE: src/lib/backgroundSyncWorker.ts ===
+================ FILE: src/lib/backgroundSyncWorker.ts ================
 import {
   localDb,
   bulkPersistProjects,
@@ -2780,8 +2788,9 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () =
   };
 }
 
+================ END FILE: src/lib/backgroundSyncWorker.ts ================
 
-// === FILE: src/lib/notificationTaskService.ts ===
+================ FILE: src/lib/notificationTaskService.ts ================
 import { collection, query, where, limit, getDocsFromCache, getDocsFromServer, setDoc, doc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { getLocalTasks, bulkPersistTasks } from './localDb';
@@ -2976,8 +2985,9 @@ export async function loadNotificationTasks(options?: {
   }
 }
 
+================ END FILE: src/lib/notificationTaskService.ts ================
 
-// === FILE: src/types.ts ===
+================ FILE: src/types.ts ================
 export interface FinancialMetric {
   totalBudget: number;
   totalApproved: number;
@@ -3344,8 +3354,9 @@ export interface TakaDelta {
 }
 
 
+================ END FILE: src/types.ts ================
 
-// === FILE: src/lib/deltaWriteService.ts ===
+================ FILE: src/lib/deltaWriteService.ts ================
 import {
   serverTimestamp,
   Timestamp,
@@ -3472,8 +3483,9 @@ export async function recordBatchDeltas(
   }
 }
 
+================ END FILE: src/lib/deltaWriteService.ts ================
 
-// === FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ===
+================ FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ================
 import React, { Dispatch, SetStateAction } from 'react';
 import { Project, Task, DelegationGroup, AppUser, TaskNote } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -3912,8 +3924,9 @@ export function useDetailTaskMutations({
   };
 }
 
+================ END FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ================
 
-// === FILE: src/components/SettingTabParts/SettingDataMaintenance.tsx ===
+================ FILE: src/components/SettingTabParts/SettingDataMaintenance.tsx ================
 import React, { FC, useState } from 'react';
 import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers, CheckCheck } from "lucide-react";
 import { clearAllIDB } from "../../lib/idb";
@@ -4364,4 +4377,5 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
   );
 };
 
+================ END FILE: src/components/SettingTabParts/SettingDataMaintenance.tsx ================
 

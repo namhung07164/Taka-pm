@@ -78,9 +78,9 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
       return;
     }
 
-    // Strict Store & Year Isolation
+    // Strict Store & Year Isolation (allowing unique project code in store to span across years)
     if (pStore && tStore && pStore !== tStore) return;
-    if (pYear && tYear && pYear !== tYear) return;
+    if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear) return;
 
     if (t.projectCode && project.code) {
       const tCode = String(t.projectCode).trim().toLowerCase();

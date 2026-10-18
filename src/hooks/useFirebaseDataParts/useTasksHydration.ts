@@ -151,9 +151,11 @@ export function useTasksHydration({
           // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
           // (hoặc khớp vắt qua 2 năm nếu mã dự án p.code là duy nhất trong p.store)
           const belongsToProject = (t: Task, p: any, isUniqueCodeInStore: boolean): boolean => {
-            if (t.projectId) return String(t.projectId) === String(p.id);
-            const codeMatches = String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase();
-            if (!codeMatches) return false;
+            if (t.projectId && p.id) return String(t.projectId) === String(p.id);
+            const rawCodeCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+            const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
+            const tCode = String(t.projectCode || "").trim().toLowerCase();
+            if (!tCode || !pCodeParts.includes(tCode)) return false;
             const storeMatches = !p.store || !t.projectStore || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
             if (!storeMatches) return false;
             if (isUniqueCodeInStore) return true;
