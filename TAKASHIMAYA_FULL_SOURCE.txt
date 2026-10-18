@@ -20673,6 +20673,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   onSortSubTasks,
   initialFocusTaskId,
 }: DetailMobileProjectCardProps) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
   const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
   const rawSorted = pInfo.sortedTasks || [];
@@ -20749,7 +20750,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
 
   const isExpanded = p.id
     ? expandedCodes.includes(String(p.id)) ||
-      (p.code && (!p.year || String(p.year) === String(useAppStore.getState().globalYearFilter))
+      (p.code && (!p.year || String(p.year) === String(globalYearFilter))
         ? expandedCodes.includes(p.code)
         : false)
     : (p.code ? expandedCodes.includes(p.code) : false);
@@ -21034,9 +21035,6 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     </div>
   );
 });
-
-================ END FILE: src/components/DetailTabParts/DetailMobileProjectCard.tsx ================
-
 ================ FILE: src/components/DetailTabParts/DetailMobileTaskItem.tsx ================
 import React, { memo } from 'react';
 import { ChevronUp, ChevronDown, Maximize2, Trash2 } from 'lucide-react';
@@ -23082,13 +23080,13 @@ export async function executeImportTasks({
     if (tsk.name) {
       const nameKey = `${prjKey}:::${String(tsk.name).trim().toLowerCase()}`;
       existingTasksByName.set(nameKey, tsk);
-      const norm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+      const norm = normalizeTaskNameForComparison(tsk.name);
       if (norm) {
-        existingTasksByNorm.set(`${pCode}:::norm:::${norm}`, tsk);
+        existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
       }
     }
     if (tsk.taskCodePhu) {
-      const codeKey = `${pCode}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
+      const codeKey = `${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
       existingTasksByCode.set(codeKey, tsk);
     }
   });
@@ -23138,10 +23136,10 @@ export async function executeImportTasks({
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
       const pCode = exactProjectCode.toLowerCase();
       const rawName = String(t.name || '').trim().toLowerCase();
-      const normName = normalizeTaskNameForComparison(t.name, t.projectCode);
+      const normName = normalizeTaskNameForComparison(t.name);
       const nameKey = `${canonicalPrjKey}:::${rawName}`;
-      const normKey = `${pCode}:::norm:::${normName}`;
-      const codeKey = `${pCode}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
+      const normKey = `${canonicalPrjKey}:::norm:::${normName}`;
+      const codeKey = `${canonicalPrjKey}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
 
       // Match against existing tasks in priority:
       // 1. Matched in current import batch (by exact name, norm name, or code)
@@ -23261,6 +23259,24 @@ export async function executeImportTasks({
             startManual: false,
             updatedAt: new Date().toISOString()
           };
+
+      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
+      if (!finalTask.projectId && projects && projects.length > 0) {
+        const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
+        const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
+        const pYear = String(finalTask.projectYear ?? '').trim();
+        const matched = projects.find(p => {
+          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
+          const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
+          return matchCode && matchStore && matchYear;
+        });
+        if (matched) {
+          finalTask.projectId = matched.id;
+          if (!finalTask.projectStore && matched.store) finalTask.projectStore = matched.store;
+          if (finalTask.projectYear === undefined && matched.year !== undefined) finalTask.projectYear = matched.year;
+        }
+      }
 
       if (finalTask.start && finalTask.duration !== undefined && finalTask.duration !== '') {
         const s = new Date(finalTask.start);
@@ -23428,8 +23444,6 @@ export async function executeImportTasks({
 
   return { count: tasksToImport.length };
 }
-================ END FILE: src/components/DetailTabParts/detailTaskImportExecutor.ts ================
-
 ================ FILE: src/components/DetailTabParts/detailTaskImportParser.ts ================
 import { Project } from '../../types';
 import { parseCSV } from '../../lib/csvUtils';
@@ -24603,6 +24617,7 @@ export function useDetailFlatRows({
   lowerSearchTerm,
   taskCodeMap,
 }: UseDetailFlatRowsParams) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const flatTableRows = useMemo<DetailTableRow[]>(() => {
     const rows: DetailTableRow[] = [];
     const visibleProjects = filteredProjects.slice(0, visibleCount);
@@ -24658,10 +24673,12 @@ export function useDetailFlatRows({
         return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }) : sortedTasks;
 
-      const isExpanded =
-        expandedCodes.includes(String(p.id || '')) ||
-        (p.code ? expandedCodes.includes(p.code) : false) ||
-        (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
+      const isExpanded = p.id
+        ? expandedCodes.includes(String(p.id)) ||
+          (p.code && (!p.year || String(p.year) === String(globalYearFilter))
+            ? expandedCodes.includes(p.code)
+            : false)
+        : (p.code ? expandedCodes.includes(p.code) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
       const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
@@ -24755,12 +24772,10 @@ export function useDetailFlatRows({
     });
 
     return rows;
-  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, delegationGroups, lowerSearchTerm, taskCodeMap]);
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
 
   return flatTableRows;
 }
-================ END FILE: src/components/DetailTabParts/useDetailFlatRows.ts ================
-
 ================ FILE: src/components/DetailTabParts/useDetailFocusTracking.ts ================
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
@@ -26189,7 +26204,7 @@ import {
   calculateTaskDatesFromPredecessors, 
   scheduleDependentTasks 
 } from '../../lib/ganttUtils';
-import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/utils';
+import { parseDateTime, formatToDatetimeLocal, generateId, isTaskBelongsToProject } from '../../lib/utils';
 import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
 import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
@@ -26274,21 +26289,20 @@ export function useDetailTaskMutations({
     try {
       if (updates.name && updates.name !== t.name) {
         const currentProject = projects.find(p => 
-          p.code === t.projectCode &&
+          (t.projectId && p.id === t.projectId) ||
+          (p.code === t.projectCode &&
           (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
-          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore))
+          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
         );
         if (currentProject) {
-          const normUpdateName = normalizeTaskNameForComparison(updates.name, currentProject.code);
+          const normUpdateName = normalizeTaskNameForComparison(updates.name);
           const isDuplicate = tasks.some(tsk => {
             if (tsk.id === t.id || tsk.isDeleted) return false;
-            const sameProject = tsk.projectCode === currentProject.code &&
-                   (String(tsk.projectYear || '') === String(currentProject.year || '') || (!tsk.projectYear && !currentProject.year)) &&
-                   (String(tsk.projectStore || '') === String(currentProject.store || '') || (!tsk.projectStore && !currentProject.store));
+            const sameProject = isTaskBelongsToProject(tsk, currentProject, projects);
             if (!sameProject) return false;
 
-            if (tsk.name.trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
-            const tNorm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+            if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+            const tNorm = normalizeTaskNameForComparison(tsk.name);
             return !!(normUpdateName && tNorm && normUpdateName === tNorm);
           });
           if (isDuplicate) {
@@ -26609,8 +26623,6 @@ export function useDetailTaskMutations({
     handleSaveNotes,
   };
 }
-================ END FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ================
-
 ================ FILE: src/components/DetailTabParts/useDetailVirtualization.ts ================
 import React, { Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DetailTableRow } from './detailTypes';
@@ -85084,7 +85096,7 @@ import {
   splitPredecessors
 } from '../../lib/ganttUtils';
 import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
-import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
+import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject } from '../../lib/utils';
 import { syncProjectDatesByCode } from '../../lib/projectDatesService';
 import { saveTaskStateUnified } from '../../lib/taskStateService';
 import { useAppStore } from '../../store/useAppStore';
@@ -85147,8 +85159,7 @@ export async function executeTaskSave({
   const isDuplicate = tasks.some(t => {
     if (t.id === task?.id || t.isDeleted) return false;
     
-    const tPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
-    const sameProject = (tPrjKey === targetPrjKey);
+    const sameProject = isTaskBelongsToProject(t, currentProject, projects);
     if (!sameProject) return false;
 
     // Check exact name
@@ -85156,7 +85167,7 @@ export async function executeTaskSave({
       return true;
     }
     // Check normalized name
-    const tNorm = normalizeTaskNameForComparison(t.name, t.projectCode);
+    const tNorm = normalizeTaskNameForComparison(t.name);
     if (normFormName && tNorm && normFormName === tNorm) {
       return true;
     }
@@ -85496,8 +85507,6 @@ export async function executeTaskSave({
     return false;
   }
 }
-================ END FILE: src/hooks/taskModal/taskModalSaveService.ts ================
-
 ================ FILE: src/hooks/taskModal/useTaskModalFormState.ts ================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
@@ -107724,17 +107733,13 @@ describe('taskDeduplicationService', () => {
     expect(normalizeStoreCode('Hồ Chí Minh')).toBe('HCM');
   });
 
-  it('normalizes task names stripping project code and number prefixes', () => {
-    expect(normalizeTaskNameForComparison('Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('B1-B110-1#1 Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('#1 Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('1. Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('  B1-B110-1:  Request to make design guideline  ', 'B1-B110-1'))
-      .toBe('request to make design guideline');
+  it('treats task names as absolute values and keeps FFD, FFD-1, 1 distinct', () => {
+    expect(normalizeTaskNameForComparison('FFD', 'FFD')).toBe('ffd');
+    expect(normalizeTaskNameForComparison('FFD-1', 'FFD')).toBe('ffd-1');
+    expect(normalizeTaskNameForComparison('1', 'FFD')).toBe('1');
+    expect(normalizeTaskNameForComparison('FFD')).not.toBe(normalizeTaskNameForComparison('FFD-1'));
+    expect(normalizeTaskNameForComparison('FFD-1')).not.toBe(normalizeTaskNameForComparison('1'));
+    expect(normalizeTaskNameForComparison('  FFD-1  ')).toBe('ffd-1');
   });
 
   it('builds matching canonical project key for code, no, or id', () => {
@@ -107747,34 +107752,34 @@ describe('taskDeduplicationService', () => {
     expect(key3).toBe('b1-b110-1__2027__HN');
   });
 
-  it('detects and merges duplicate tasks with prefixed name vs raw name in same project', () => {
+  it('detects and merges true duplicate tasks with identical signature in same project', () => {
     const duplicateTasks: Task[] = [
       {
-        id: 't_raw',
+        id: 't_first',
         name: 'Request to make design guideline',
         taskCodePhu: 'B1-B110-1#1',
         projectCode: 'B1-B110-1',
-        projectYear: 2026,
+        projectYear: 2027,
         projectStore: 'HN',
         start: '2026-05-05T09:00',
         finish: '2026-05-06T18:00',
         updatedAt: '2026-05-05T10:00:00.000Z'
       } as any,
       {
-        id: 't_prefixed',
-        name: 'B1-B110-1#1 Request to make design guideline',
+        id: 't_second',
+        name: 'Request to make design guideline',
         taskCodePhu: 'B1-B110-1#1',
         projectCode: 'B1-B110-1',
         projectYear: 2027,
         projectStore: 'HN',
-        start: '2026-10-02T09:00',
-        finish: '2026-10-03T18:00',
+        start: '2026-05-05T09:00',
+        finish: '2026-05-06T18:00',
         updatedAt: '2026-10-02T10:00:00.000Z',
         comments: [{ id: 'c1', text: 'Important note', userId: 'u1', createdAt: '2026-10-02T10:00:00.000Z' }]
       } as any,
       {
         id: 't_other',
-        name: 'FFD consulting (1st)',
+        name: 'FFD-1',
         projectCode: 'B1-B110-1',
         projectYear: 2027,
         projectStore: 'HN',
@@ -107787,16 +107792,14 @@ describe('taskDeduplicationService', () => {
     const { dedupedTasks, duplicateCount, removedTaskIds } = deduplicateTasksInMemory(duplicateTasks, mockProjects);
 
     expect(duplicateCount).toBe(1);
-    expect(removedTaskIds).toContain('t_raw');
+    expect(removedTaskIds).toContain('t_first');
     expect(dedupedTasks.length).toBe(2);
     // Verifies the latest task with comments was kept
-    const keptGuideline = dedupedTasks.find(t => t.id === 't_prefixed');
+    const keptGuideline = dedupedTasks.find(t => t.id === 't_second');
     expect(keptGuideline).toBeDefined();
     expect(keptGuideline?.comments?.length).toBe(1);
   });
 });
-================ END FILE: src/lib/taskDeduplicationService.test.ts ================
-
 ================ FILE: src/lib/taskDeduplicationService.ts ================
 import { Task, Project } from '../types';
 import { doc, collection, getDocs } from 'firebase/firestore';
@@ -107823,30 +107826,17 @@ export function normalizeYearString(year?: string | number | null): string {
 }
 
 /**
- * Normalizes a task name for reliable duplicate comparison by:
- * 1. Lowercasing and trimming
- * 2. Collapsing multiple spaces into a single space
- * 3. Stripping project code and task numbering prefixes (e.g. "B1-B110-1#1 ", "#1 ", "1. ", "1 - ")
+ * Normalizes a task name for reliable duplicate comparison.
+ * Treats task name as an absolute value:
+ * 1. Trims leading and trailing whitespace
+ * 2. Lowercases
+ * 3. Collapses multiple consecutive spaces to a single space
+ * NEVER strips projectCode, numbers, or dashes ("-") so that
+ * tasks like "FFD", "FFD-1", and "1" are recognized as distinct absolute names.
  */
-export function normalizeTaskNameForComparison(name?: string | null, projectCode?: string | null): string {
+export function normalizeTaskNameForComparison(name?: string | null, _projectCode?: string | null): string {
   if (!name) return '';
-  let str = String(name).trim().toLowerCase();
-  
-  // Collapse whitespace
-  str = str.replace(/\s+/g, ' ');
-  
-  if (projectCode) {
-    const pCode = String(projectCode).trim().toLowerCase();
-    // Strip projectCode prefix if present, e.g. "b1-b110-1#1 ", "b1-b110-1-1 ", "b1-b110-1: "
-    const escapedCode = pCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pCodeRegex = new RegExp(`^${escapedCode}[#\\-\\:\\/\\s\\.]*(\\d+)?([\\s\\:\\-\\.\\)]+)?`, 'i');
-    str = str.replace(pCodeRegex, '').trim();
-  }
-  
-  // Strip leading task index patterns like "#1 ", "1. ", "1) ", "1 - ", "1: "
-  str = str.replace(/^#?\d+[\s\.\-\)\:]+/, '').trim();
-  
-  return str;
+  return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**
@@ -107892,8 +107882,8 @@ export function buildCanonicalProjectKey(
   } else if (projects && projects.length > 0) {
     matchedProj = projects.find(p => {
       const pCodeMatch = String(p.code || '').trim().toLowerCase() === pCode ||
-                         String(p.no || '').trim().toLowerCase() === pCode ||
-                         String(p.id || '').trim().toLowerCase() === pCode;
+                         String(p.id || '').trim().toLowerCase() === pCode ||
+                         String(p.no || '').trim().toLowerCase() === pCode;
       if (!pCodeMatch) return false;
       const pStore = normalizeStoreCode(p.store);
       const pYear = normalizeYearString(p.year);
@@ -107938,6 +107928,13 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
       if (pStore) projectLookupMap.set(`${pCode}____${pStore}`, p);
       if (pYear) projectLookupMap.set(`${pCode}__${pYear}__`, p);
       if (!projectLookupMap.has(pCode)) projectLookupMap.set(pCode, p);
+    }
+    const pNo = String(p.no || '').trim().toLowerCase();
+    if (pNo) {
+      if (pYear && pStore) projectLookupMap.set(`${pNo}__${pYear}__${pStore}`, p);
+      if (pStore) projectLookupMap.set(`${pNo}____${pStore}`, p);
+      if (pYear) projectLookupMap.set(`${pNo}__${pYear}__`, p);
+      if (!projectLookupMap.has(pNo)) projectLookupMap.set(pNo, p);
     }
     if (p.id) projectLookupMap.set(String(p.id).trim().toLowerCase(), p);
   });
@@ -108150,8 +108147,6 @@ export async function scanAndRemoveDuplicateTasksOnFirestore(projects: Project[]
     return { removedCount: 0, mergedCount: 0 };
   }
 }
-================ END FILE: src/lib/taskDeduplicationService.ts ================
-
 ================ FILE: src/lib/taskDefaults.test.ts ================
 import { describe, it, expect } from 'vitest';
 import { getDefaultDatetimeLocal } from './utils';

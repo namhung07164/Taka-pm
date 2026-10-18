@@ -23,30 +23,17 @@ export function normalizeYearString(year?: string | number | null): string {
 }
 
 /**
- * Normalizes a task name for reliable duplicate comparison by:
- * 1. Lowercasing and trimming
- * 2. Collapsing multiple spaces into a single space
- * 3. Stripping project code and task numbering prefixes (e.g. "B1-B110-1#1 ", "#1 ", "1. ", "1 - ")
+ * Normalizes a task name for reliable duplicate comparison.
+ * Treats task name as an absolute value:
+ * 1. Trims leading and trailing whitespace
+ * 2. Lowercases
+ * 3. Collapses multiple consecutive spaces to a single space
+ * NEVER strips projectCode, numbers, or dashes ("-") so that
+ * tasks like "FFD", "FFD-1", and "1" are recognized as distinct absolute names.
  */
-export function normalizeTaskNameForComparison(name?: string | null, projectCode?: string | null): string {
+export function normalizeTaskNameForComparison(name?: string | null, _projectCode?: string | null): string {
   if (!name) return '';
-  let str = String(name).trim().toLowerCase();
-  
-  // Collapse whitespace
-  str = str.replace(/\s+/g, ' ');
-  
-  if (projectCode) {
-    const pCode = String(projectCode).trim().toLowerCase();
-    // Strip projectCode prefix if present, e.g. "b1-b110-1#1 ", "b1-b110-1-1 ", "b1-b110-1: "
-    const escapedCode = pCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pCodeRegex = new RegExp(`^${escapedCode}[#\\-\\:\\/\\s\\.]*(\\d+)?([\\s\\:\\-\\.\\)]+)?`, 'i');
-    str = str.replace(pCodeRegex, '').trim();
-  }
-  
-  // Strip leading task index patterns like "#1 ", "1. ", "1) ", "1 - ", "1: "
-  str = str.replace(/^#?\d+[\s\.\-\)\:]+/, '').trim();
-  
-  return str;
+  return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**
@@ -92,7 +79,8 @@ export function buildCanonicalProjectKey(
   } else if (projects && projects.length > 0) {
     matchedProj = projects.find(p => {
       const pCodeMatch = String(p.code || '').trim().toLowerCase() === pCode ||
-                         String(p.id || '').trim().toLowerCase() === pCode;
+                         String(p.id || '').trim().toLowerCase() === pCode ||
+                         String(p.no || '').trim().toLowerCase() === pCode;
       if (!pCodeMatch) return false;
       const pStore = normalizeStoreCode(p.store);
       const pYear = normalizeYearString(p.year);
@@ -137,6 +125,13 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
       if (pStore) projectLookupMap.set(`${pCode}____${pStore}`, p);
       if (pYear) projectLookupMap.set(`${pCode}__${pYear}__`, p);
       if (!projectLookupMap.has(pCode)) projectLookupMap.set(pCode, p);
+    }
+    const pNo = String(p.no || '').trim().toLowerCase();
+    if (pNo) {
+      if (pYear && pStore) projectLookupMap.set(`${pNo}__${pYear}__${pStore}`, p);
+      if (pStore) projectLookupMap.set(`${pNo}____${pStore}`, p);
+      if (pYear) projectLookupMap.set(`${pNo}__${pYear}__`, p);
+      if (!projectLookupMap.has(pNo)) projectLookupMap.set(pNo, p);
     }
     if (p.id) projectLookupMap.set(String(p.id).trim().toLowerCase(), p);
   });

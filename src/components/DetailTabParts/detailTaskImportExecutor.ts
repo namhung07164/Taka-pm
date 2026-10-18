@@ -43,13 +43,13 @@ export async function executeImportTasks({
     if (tsk.name) {
       const nameKey = `${prjKey}:::${String(tsk.name).trim().toLowerCase()}`;
       existingTasksByName.set(nameKey, tsk);
-      const norm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+      const norm = normalizeTaskNameForComparison(tsk.name);
       if (norm) {
-        existingTasksByNorm.set(`${pCode}:::norm:::${norm}`, tsk);
+        existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
       }
     }
     if (tsk.taskCodePhu) {
-      const codeKey = `${pCode}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
+      const codeKey = `${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
       existingTasksByCode.set(codeKey, tsk);
     }
   });
@@ -99,10 +99,10 @@ export async function executeImportTasks({
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
       const pCode = exactProjectCode.toLowerCase();
       const rawName = String(t.name || '').trim().toLowerCase();
-      const normName = normalizeTaskNameForComparison(t.name, t.projectCode);
+      const normName = normalizeTaskNameForComparison(t.name);
       const nameKey = `${canonicalPrjKey}:::${rawName}`;
-      const normKey = `${pCode}:::norm:::${normName}`;
-      const codeKey = `${pCode}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
+      const normKey = `${canonicalPrjKey}:::norm:::${normName}`;
+      const codeKey = `${canonicalPrjKey}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
 
       // Match against existing tasks in priority:
       // 1. Matched in current import batch (by exact name, norm name, or code)

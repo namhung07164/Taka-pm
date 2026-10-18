@@ -12,7 +12,7 @@ import {
   splitPredecessors
 } from '../../lib/ganttUtils';
 import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
-import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
+import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject } from '../../lib/utils';
 import { syncProjectDatesByCode } from '../../lib/projectDatesService';
 import { saveTaskStateUnified } from '../../lib/taskStateService';
 import { useAppStore } from '../../store/useAppStore';
@@ -75,8 +75,7 @@ export async function executeTaskSave({
   const isDuplicate = tasks.some(t => {
     if (t.id === task?.id || t.isDeleted) return false;
     
-    const tPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
-    const sameProject = (tPrjKey === targetPrjKey);
+    const sameProject = isTaskBelongsToProject(t, currentProject, projects);
     if (!sameProject) return false;
 
     // Check exact name
@@ -84,7 +83,7 @@ export async function executeTaskSave({
       return true;
     }
     // Check normalized name
-    const tNorm = normalizeTaskNameForComparison(t.name, t.projectCode);
+    const tNorm = normalizeTaskNameForComparison(t.name);
     if (normFormName && tNorm && normFormName === tNorm) {
       return true;
     }

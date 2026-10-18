@@ -78,6 +78,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   onSortSubTasks,
   initialFocusTaskId,
 }: DetailMobileProjectCardProps) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
   const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
   const rawSorted = pInfo.sortedTasks || [];
@@ -154,7 +155,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
 
   const isExpanded = p.id
     ? expandedCodes.includes(String(p.id)) ||
-      (p.code && (!p.year || String(p.year) === String(useAppStore.getState().globalYearFilter))
+      (p.code && (!p.year || String(p.year) === String(globalYearFilter))
         ? expandedCodes.includes(p.code)
         : false)
     : (p.code ? expandedCodes.includes(p.code) : false);

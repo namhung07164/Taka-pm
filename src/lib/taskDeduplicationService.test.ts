@@ -27,17 +27,13 @@ describe('taskDeduplicationService', () => {
     expect(normalizeStoreCode('Hồ Chí Minh')).toBe('HCM');
   });
 
-  it('normalizes task names stripping project code and number prefixes', () => {
-    expect(normalizeTaskNameForComparison('Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('B1-B110-1#1 Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('#1 Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('1. Request to make design guideline', 'B1-B110-1'))
-      .toBe('request to make design guideline');
-    expect(normalizeTaskNameForComparison('  B1-B110-1:  Request to make design guideline  ', 'B1-B110-1'))
-      .toBe('request to make design guideline');
+  it('treats task names as absolute values and keeps FFD, FFD-1, 1 distinct', () => {
+    expect(normalizeTaskNameForComparison('FFD', 'FFD')).toBe('ffd');
+    expect(normalizeTaskNameForComparison('FFD-1', 'FFD')).toBe('ffd-1');
+    expect(normalizeTaskNameForComparison('1', 'FFD')).toBe('1');
+    expect(normalizeTaskNameForComparison('FFD')).not.toBe(normalizeTaskNameForComparison('FFD-1'));
+    expect(normalizeTaskNameForComparison('FFD-1')).not.toBe(normalizeTaskNameForComparison('1'));
+    expect(normalizeTaskNameForComparison('  FFD-1  ')).toBe('ffd-1');
   });
 
   it('builds matching canonical project key for code, no, or id', () => {
@@ -50,34 +46,34 @@ describe('taskDeduplicationService', () => {
     expect(key3).toBe('b1-b110-1__2027__HN');
   });
 
-  it('detects and merges duplicate tasks with prefixed name vs raw name in same project', () => {
+  it('detects and merges true duplicate tasks with identical signature in same project', () => {
     const duplicateTasks: Task[] = [
       {
-        id: 't_raw',
+        id: 't_first',
         name: 'Request to make design guideline',
         taskCodePhu: 'B1-B110-1#1',
         projectCode: 'B1-B110-1',
-        projectYear: 2026,
+        projectYear: 2027,
         projectStore: 'HN',
         start: '2026-05-05T09:00',
         finish: '2026-05-06T18:00',
         updatedAt: '2026-05-05T10:00:00.000Z'
       } as any,
       {
-        id: 't_prefixed',
-        name: 'B1-B110-1#1 Request to make design guideline',
+        id: 't_second',
+        name: 'Request to make design guideline',
         taskCodePhu: 'B1-B110-1#1',
         projectCode: 'B1-B110-1',
         projectYear: 2027,
         projectStore: 'HN',
-        start: '2026-10-02T09:00',
-        finish: '2026-10-03T18:00',
+        start: '2026-05-05T09:00',
+        finish: '2026-05-06T18:00',
         updatedAt: '2026-10-02T10:00:00.000Z',
         comments: [{ id: 'c1', text: 'Important note', userId: 'u1', createdAt: '2026-10-02T10:00:00.000Z' }]
       } as any,
       {
         id: 't_other',
-        name: 'FFD consulting (1st)',
+        name: 'FFD-1',
         projectCode: 'B1-B110-1',
         projectYear: 2027,
         projectStore: 'HN',
@@ -90,10 +86,10 @@ describe('taskDeduplicationService', () => {
     const { dedupedTasks, duplicateCount, removedTaskIds } = deduplicateTasksInMemory(duplicateTasks, mockProjects);
 
     expect(duplicateCount).toBe(1);
-    expect(removedTaskIds).toContain('t_raw');
+    expect(removedTaskIds).toContain('t_first');
     expect(dedupedTasks.length).toBe(2);
     // Verifies the latest task with comments was kept
-    const keptGuideline = dedupedTasks.find(t => t.id === 't_prefixed');
+    const keptGuideline = dedupedTasks.find(t => t.id === 't_second');
     expect(keptGuideline).toBeDefined();
     expect(keptGuideline?.comments?.length).toBe(1);
   });

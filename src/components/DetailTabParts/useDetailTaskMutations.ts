@@ -15,7 +15,7 @@ import {
   calculateTaskDatesFromPredecessors, 
   scheduleDependentTasks 
 } from '../../lib/ganttUtils';
-import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/utils';
+import { parseDateTime, formatToDatetimeLocal, generateId, isTaskBelongsToProject } from '../../lib/utils';
 import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
 import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
@@ -100,21 +100,20 @@ export function useDetailTaskMutations({
     try {
       if (updates.name && updates.name !== t.name) {
         const currentProject = projects.find(p => 
-          p.code === t.projectCode &&
+          (t.projectId && p.id === t.projectId) ||
+          (p.code === t.projectCode &&
           (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
-          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore))
+          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
         );
         if (currentProject) {
-          const normUpdateName = normalizeTaskNameForComparison(updates.name, currentProject.code);
+          const normUpdateName = normalizeTaskNameForComparison(updates.name);
           const isDuplicate = tasks.some(tsk => {
             if (tsk.id === t.id || tsk.isDeleted) return false;
-            const sameProject = tsk.projectCode === currentProject.code &&
-                   (String(tsk.projectYear || '') === String(currentProject.year || '') || (!tsk.projectYear && !currentProject.year)) &&
-                   (String(tsk.projectStore || '') === String(currentProject.store || '') || (!tsk.projectStore && !currentProject.store));
+            const sameProject = isTaskBelongsToProject(tsk, currentProject, projects);
             if (!sameProject) return false;
 
-            if (tsk.name.trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
-            const tNorm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+            if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+            const tNorm = normalizeTaskNameForComparison(tsk.name);
             return !!(normUpdateName && tNorm && normUpdateName === tNorm);
           });
           if (isDuplicate) {
