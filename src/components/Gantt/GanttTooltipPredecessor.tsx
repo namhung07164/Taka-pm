@@ -188,7 +188,7 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
         ref={containerRef} 
         onClick={(e) => e.stopPropagation()} 
         onMouseDown={(e) => e.stopPropagation()}
-        className="flex flex-col gap-1.5 p-2 rounded-xl bg-slate-900/95 dark:bg-slate-950/95 border border-blue-500/50 shadow-md my-1 w-full min-w-[240px] max-w-[320px] max-h-[360px] overflow-y-auto overscroll-contain"
+        className="flex flex-col gap-2 p-3 rounded-xl bg-slate-900/95 dark:bg-slate-950/95 border border-blue-500/50 shadow-md my-1 w-full min-w-[280px] sm:min-w-[380px] max-w-full max-h-[580px] overflow-visible"
       >
         <div className="flex items-center justify-between text-[11px] font-bold text-blue-300">
           <span className="flex items-center gap-1">

@@ -114692,3 +114692,2700 @@ export default defineConfig({
   }
 });
 ================ END FILE: vite.config.ts ================
+
+// File: src/components/Portal.tsx
+import React, { useState, useEffect } from "react";
+import { useLanguage } from "../lib/LanguageContext";
+import { createPortal } from 'react-dom';
+
+export function Portal({ children }: { children: React.ReactNode }) {
+  const { t } = useLanguage();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  if (typeof document === 'undefined') return null;
+  const target = document.getElementById('portal-root') || document.body;
+  if (!target) return null;
+  return createPortal(children, target);
+}
+
+
+// File: src/components/Toast.tsx
+import React, { useEffect } from 'react';
+import { useLanguage } from "../lib/LanguageContext";
+import { Portal } from './Portal';
+import { X, Bell, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
+
+interface ToastProps {
+  title: string;
+  message: string;
+  type?: 'success' | 'error' | 'info' | 'warning';
+  onClose: () => void;
+}
+
+export function Toast({ title, message, type = 'info', onClose }: ToastProps) {
+  const { t } = useLanguage();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const typeConfig = {
+    error: {
+      border: 'border-red-500/80 dark:border-red-500',
+      iconBg: 'bg-red-50 dark:bg-red-950/80',
+      iconColor: 'text-red-600 dark:text-red-400',
+      titleColor: 'text-red-700 dark:text-red-300',
+      icon: AlertCircle,
+    },
+    warning: {
+      border: 'border-amber-500/80 dark:border-amber-500',
+      iconBg: 'bg-amber-50 dark:bg-amber-950/80',
+      iconColor: 'text-amber-600 dark:text-amber-400',
+      titleColor: 'text-amber-700 dark:text-amber-300',
+      icon: AlertTriangle,
+    },
+    success: {
+      border: 'border-emerald-500/80 dark:border-emerald-500',
+      iconBg: 'bg-emerald-50 dark:bg-emerald-950/80',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      titleColor: 'text-emerald-700 dark:text-emerald-300',
+      icon: CheckCircle2,
+    },
+    info: {
+      border: 'border-blue-500/80 dark:border-blue-500',
+      iconBg: 'bg-blue-50 dark:bg-[#28282a]',
+      iconColor: 'text-blue-600 dark:text-[#8ab4f8]',
+      titleColor: 'text-slate-800 dark:text-[#e3e3e3]',
+      icon: Bell,
+    },
+  }[type] || {
+    border: 'border-blue-500/80 dark:border-blue-500',
+    iconBg: 'bg-blue-50 dark:bg-[#28282a]',
+    iconColor: 'text-blue-600 dark:text-[#8ab4f8]',
+    titleColor: 'text-slate-800 dark:text-[#e3e3e3]',
+    icon: Bell,
+  };
+
+  const IconComponent = typeConfig.icon;
+
+  return (
+    <Portal>
+      <div
+        style={{ zIndex: 99999999 }}
+        className={`fixed top-4 right-4 z-[99999999] max-w-sm w-[calc(100vw-2rem)] sm:w-full bg-white dark:bg-[#1e1e20] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.7)] border-2 ${typeConfig.border} p-4 animate-in slide-in-from-top-5 fade-in duration-300 pointer-events-auto`}
+      >
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-full ${typeConfig.iconBg} flex items-center justify-center shrink-0 shadow-xs`}>
+            <IconComponent className={`w-5 h-5 ${typeConfig.iconColor}`} />
+          </div>
+          <div className="flex-grow min-w-0 pt-0.5">
+            <h4 className={`text-sm font-bold ${typeConfig.titleColor} truncate`}>{title}</h4>
+            <p className="text-xs text-slate-600 dark:text-[#c3c3c3] mt-1 line-clamp-3 leading-relaxed">{message}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1 text-slate-400 dark:text-[#838383] hover:text-slate-600 dark:hover:text-[#a3a3a3] rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] transition-colors cursor-pointer"
+            title="Dismiss notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+
+// File: src/components/GeneralTab.tsx
+import React, { useRef } from 'react';
+import { useAppStore } from '../store/useAppStore';
+import { useEnrichedData } from '../hooks/useEnrichedData';
+import { useLanguage } from '../lib/LanguageContext';
+import { GeneralTabProps } from './GeneralTabParts/generalTypes';
+import { useGeneralData } from './GeneralTabParts/useGeneralData';
+import { useGeneralDragDrop } from './GeneralTabParts/useGeneralDragDrop';
+import { useGeneralGoogleSync } from './GeneralTabParts/useGeneralGoogleSync';
+import { GeneralFilterToolbar } from './GeneralTabParts/GeneralFilterToolbar';
+import { GeneralCanvasView } from './GeneralTabParts/GeneralCanvasView';
+import { GeneralMobileView } from './GeneralTabParts/GeneralMobileView';
+import { CheckCircle2 } from 'lucide-react';
+import { Portal } from './Portal';
+
+export function GeneralTab({ onProjectClick }: GeneralTabProps) {
+  const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
+  const currentUser = useAppStore(state => state.currentUser)!;
+  const { t } = useLanguage();
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const {
+    globalYearFilter,
+    setGlobalYearFilter,
+    effectiveStore,
+    setGlobalStoreFilter,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    pinnedProjects,
+    setPinnedProjects,
+    theme,
+    searchTerm,
+    setSearchTerm,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    flashToggle,
+    sortConfig,
+    setSortConfig,
+    visibleCount,
+    setVisibleCount,
+    years,
+    stores,
+    locationOptions,
+    filteredProjects,
+    paginatedProjects
+  } = useGeneralData({
+    projects,
+    tasks,
+    currentUser
+  });
+
+  const {
+    draggedPinnedId,
+    dragOverTarget,
+    justDroppedId,
+    successToast,
+    handlePinToggle,
+    handleMovePinned,
+    handleDragStart,
+    handleRowDragOver,
+    handleRowDrop,
+    handleDragEnd,
+    handleCanvasDragOver,
+    handleCanvasDrop
+  } = useGeneralDragDrop({
+    projects,
+    paginatedProjects,
+    pinnedProjects,
+    setPinnedProjects,
+    canvasRef,
+    t
+  });
+
+  const { isSyncing, handleGoogleSync } = useGeneralGoogleSync({
+    currentUser,
+    projects,
+    delegationGroups
+  });
+
+  return (
+    <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm min-h-0">
+      {/* Top Controls & Filter Toolbar */}
+      <GeneralFilterToolbar
+        currentUser={currentUser}
+        isSyncing={isSyncing}
+        handleGoogleSync={handleGoogleSync}
+        globalYearFilter={globalYearFilter}
+        setGlobalYearFilter={setGlobalYearFilter}
+        years={years}
+        effectiveStore={effectiveStore}
+        setGlobalStoreFilter={setGlobalStoreFilter}
+        stores={stores}
+        globalLocationFilter={globalLocationFilter}
+        setGlobalLocationFilter={setGlobalLocationFilter}
+        locationOptions={locationOptions}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        lastSelectedStatusFilterRef={lastSelectedStatusFilterRef}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+      />
+
+      {/* Desktop Canvas View */}
+      <GeneralCanvasView
+        wrapperRef={wrapperRef}
+        canvasRef={canvasRef}
+        paginatedProjects={paginatedProjects}
+        pinnedProjects={pinnedProjects}
+        sortConfig={sortConfig}
+        setSortConfig={setSortConfig}
+        theme={theme}
+        flashToggle={flashToggle}
+        searchTerm={searchTerm}
+        globalYearFilter={globalYearFilter}
+        globalStoreFilter={effectiveStore}
+        globalLocationFilter={globalLocationFilter}
+        statusFilter={statusFilter}
+        draggedPinnedId={draggedPinnedId}
+        dragOverTarget={dragOverTarget}
+        justDroppedId={justDroppedId}
+        onProjectClick={onProjectClick}
+        handlePinToggle={handlePinToggle}
+        handleMovePinned={handleMovePinned}
+        handleRowDragOver={handleRowDragOver}
+        handleRowDrop={handleRowDrop}
+        handleCanvasDragOver={handleCanvasDragOver}
+        handleCanvasDrop={handleCanvasDrop}
+      />
+
+      {/* Mobile Card List View */}
+      <GeneralMobileView
+        paginatedProjects={paginatedProjects}
+        filteredProjects={filteredProjects}
+        visibleCount={visibleCount}
+        setVisibleCount={setVisibleCount}
+        pinnedProjects={pinnedProjects}
+        draggedPinnedId={draggedPinnedId}
+        dragOverTarget={dragOverTarget}
+        justDroppedId={justDroppedId}
+        onProjectClick={onProjectClick}
+        handlePinToggle={handlePinToggle}
+        handleMovePinned={handleMovePinned}
+        handleDragStart={handleDragStart}
+        handleRowDragOver={handleRowDragOver}
+        handleRowDrop={handleRowDrop}
+        handleDragEnd={handleDragEnd}
+      />
+
+      {/* Floating visual feedback toast */}
+      {successToast && (
+        <Portal>
+          <div
+            style={{ zIndex: 99999999 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999999] flex items-center gap-2 px-5 py-2.5 bg-emerald-600 dark:bg-emerald-700 text-white font-medium text-sm rounded-full shadow-2xl border border-emerald-400/50 animate-bounce pointer-events-auto"
+          >
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-white" />
+            <span>{successToast}</span>
+          </div>
+        </Portal>
+      )}
+
+      {/* Footer Info */}
+      <div className="mt-4 text-xs text-slate-500 dark:text-[#a3a3a3] text-right flex justify-between items-center px-1 shrink-0">
+        <span>* Data is synced to Cloud. Header is sticky.</span>
+        <span>{t('Total')}: <span className="font-bold text-slate-700 dark:text-[#c3c3c3]">{filteredProjects.length}</span> {t('')}</span>
+      </div>
+    </div>
+  );
+}
+
+export default GeneralTab;
+
+
+// File: src/components/Gantt/GanttBarTooltip.tsx
+import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { createPortal } from 'react-dom';
+import { X, GripHorizontal, Pin, ExternalLink, ChevronDown, Target } from 'lucide-react';
+import { Task, Project } from '../../types';
+import { formatGanttDate, ensureTooltipInViewport } from './GanttUtils';
+import { GanttTooltipPredecessor } from './GanttTooltipPredecessor';
+import { useAppStore } from '../../store/useAppStore';
+
+interface GanttBarTooltipProps {
+  id: string;
+  label: string;
+  startStr?: string;
+  endStr?: string;
+  status: string;
+  extraVars?: {
+    actStatus?: string;
+    actStatusColor?: string;
+    party?: string;
+    actPrg?: number;
+    duration?: string | number;
+    taskCode?: string;
+    predecessors?: string;
+    highlight?: 'assignee' | 'creator' | null;
+    isSimulation?: boolean;
+    hasChildren?: boolean;
+    childCount?: number;
+    task?: Task;
+    tasks?: Task[];
+    projects?: Project[];
+    canWrite?: boolean;
+    onNavigateToTaskDetail?: (taskId: string) => void;
+    onProcessChildTasks?: Array<{
+      id: string;
+      name: string;
+      taskCode?: string;
+      actPrg?: number;
+      start?: string;
+      finish?: string;
+      duration?: string | number;
+    }>;
+  };
+  isPinned: boolean;
+  isEditingPredecessor: boolean;
+  setIsEditingPredecessor: (val: boolean) => void;
+  setActiveTooltip: (id: string | null) => void;
+  tooltipRef: React.RefObject<HTMLDivElement | null>;
+  handlePointerDown: (e: React.PointerEvent) => void;
+  handlePointerMove: (e: React.PointerEvent) => void;
+  handlePointerUp: (e: React.PointerEvent) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onClose?: () => void;
+}
+
+export function GanttBarTooltip({
+  id,
+  label,
+  startStr,
+  endStr,
+  status,
+  extraVars,
+  isPinned,
+  isEditingPredecessor,
+  setIsEditingPredecessor,
+  setActiveTooltip,
+  tooltipRef,
+  handlePointerDown,
+  handlePointerMove,
+  handlePointerUp,
+  onMouseEnter,
+  onMouseLeave,
+  onClose
+}: GanttBarTooltipProps) {
+  const [isSubtasksOpen, setIsSubtasksOpen] = useState(true);
+
+  const handleContainerPointerDown = (e: React.PointerEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a, [role="button"]')) {
+      return;
+    }
+    handlePointerDown(e);
+  };
+
+  const rawTaskId = extraVars?.task?.id || (id.startsWith('task-') ? id.replace('task-', '') : id);
+
+  // Tự động căn chỉnh vị trí Tooltip trên màn hình bất cứ khi nào kích thước tooltip thay đổi (vd: khi bật/tắt Edit Predecessor)
+  useLayoutEffect(() => {
+    if (!tooltipRef.current) return;
+    const el = tooltipRef.current;
+
+    // Khi click vào predecessor, nâng ô tooltip lên cao hơn trên viewport để dễ nhìn và chọn task
+    if (isEditingPredecessor) {
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const idealTop = Math.max(16, Math.min(rect.top, vh - 580, rect.top - 180));
+      if (rect.top > idealTop) {
+        el.style.top = `${idealTop}px`;
+      }
+    }
+
+    ensureTooltipInViewport(el);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          ensureTooltipInViewport(el);
+        });
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+  }, [tooltipRef, isEditingPredecessor]);
+
+  return createPortal(
+    <div
+      ref={tooltipRef}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onPointerDown={handleContainerPointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!isPinned) setActiveTooltip(id);
+      }}
+      className={`fixed z-[180000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-[11px] rounded-xl shadow-2xl p-3 border backdrop-blur-md transition-all duration-150 flex flex-col gap-2 max-h-[calc(100vh-24px)] overflow-y-auto overscroll-contain ${
+        isEditingPredecessor
+          ? 'w-[360px] sm:w-[440px] md:w-[480px] max-w-[96vw] min-h-[420px]'
+          : 'w-64 sm:w-72 md:w-[340px] max-w-sm'
+      } ${
+        isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
+      }`}
+      style={{
+        left: 0,
+        top: 0,
+        transform: 'none',
+        pointerEvents: 'auto',
+        touchAction: 'none'
+      }}
+    >
+      {/* Header with Title and Pin / Focus / Close Controls */}
+      <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-2.5 mb-2.5">
+        <div className="flex items-center gap-2 font-bold text-slate-100 text-xs min-w-0 flex-1">
+          <GripHorizontal className="w-4 h-4 text-slate-400 cursor-grab active:cursor-grabbing shrink-0" />
+          {extraVars?.taskCode && (
+            <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 font-mono text-[10px] rounded border border-blue-500/30 font-bold shrink-0">
+              {extraVars.taskCode}
+            </span>
+          )}
+          <span className="truncate text-xs font-bold text-white" title={label}>{label}</span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {extraVars?.task?.id && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (extraVars?.onNavigateToTaskDetail) {
+                  extraVars.onNavigateToTaskDetail(extraVars.task.id);
+                }
+              }}
+              className="p-1.5 text-slate-400 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Open in Task Detail"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveTooltip(isPinned ? null : id);
+            }}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              isPinned ? 'text-blue-400 bg-blue-500/20 border border-blue-500/30' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+            title={isPinned ? 'Unpin' : 'Pin tooltip'}
+          >
+            <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onClose) {
+                onClose();
+              } else {
+                setActiveTooltip(null);
+                setIsEditingPredecessor(false);
+              }
+            }}
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            title="Close tooltip"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Info Desktop Multi-Column Grid */}
+      <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
+        {/* Start Date Card */}
+        <div className="flex flex-col gap-0.5 bg-sky-950/40 border border-sky-800/50 p-2 rounded-xl">
+          <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider">Start Date</span>
+          <span className="font-mono text-xs font-semibold text-sky-100 truncate">
+            {formatGanttDate(startStr)}
+          </span>
+        </div>
+
+        {/* Finish Date Card */}
+        <div className="flex flex-col gap-0.5 bg-pink-950/40 border border-pink-800/50 p-2 rounded-xl">
+          <span className="text-[10px] font-bold text-pink-400 uppercase tracking-wider">Finish Date</span>
+          <span className="font-mono text-xs font-semibold text-pink-100 truncate">
+            {formatGanttDate(endStr)}
+          </span>
+        </div>
+
+        {/* Progress & Duration Card */}
+        <div className="flex items-center justify-between gap-1 bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60">
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400 font-medium text-[10px] uppercase">Prog:</span>
+            <span className="font-mono font-bold text-emerald-400">{extraVars?.actPrg ?? 0}%</span>
+          </div>
+          {extraVars?.duration !== undefined && (
+            <div className="flex items-center gap-1">
+              <span className="text-slate-400 font-medium text-[10px] uppercase">Dur:</span>
+              <span className="font-mono font-bold text-amber-300">{extraVars.duration}d</span>
+            </div>
+          )}
+        </div>
+
+        {/* Status & Party Card */}
+        <div className="flex items-center justify-between gap-1 bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60 overflow-hidden">
+          {extraVars?.party ? (
+            <div className="flex items-center gap-1 truncate">
+              <span className="text-slate-400 font-medium text-[10px] uppercase shrink-0">Party:</span>
+              <span className="text-slate-100 font-bold truncate">{extraVars.party}</span>
+            </div>
+          ) : (
+            <span className="text-slate-400 text-[10px] uppercase font-medium">Status</span>
+          )}
+          <span className="font-bold text-amber-400 shrink-0 text-[11px]">
+            {extraVars?.actStatus || status}
+          </span>
+        </div>
+      </div>
+
+      {/* Predecessors Section & Editor */}
+      {extraVars?.task && extraVars?.tasks && (
+        <div className="mt-2.5 pt-2 border-t border-slate-700/60 pointer-events-auto">
+          <GanttTooltipPredecessor
+            task={extraVars.task}
+            tasks={extraVars.tasks}
+            projects={extraVars.projects || []}
+            canWrite={Boolean(extraVars.canWrite ?? true)}
+            isEditing={isEditingPredecessor}
+            setIsEditing={(val) => {
+              if (val) setActiveTooltip(id);
+              setIsEditingPredecessor(val);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Active On-process Child Tasks in Group/Parent Task */}
+      {extraVars?.hasChildren && (
+        <div className="mt-2.5 pt-2 border-t border-slate-700/60 pointer-events-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isPinned) setActiveTooltip(id);
+              setIsSubtasksOpen((prev) => !prev);
+            }}
+            className="w-full flex items-center justify-between p-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-semibold text-[11px] cursor-pointer transition-colors"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span>On Process Subtasks ({extraVars.onProcessChildTasks?.length || 0})</span>
+            </div>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isSubtasksOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isSubtasksOpen && (
+            <div className="mt-1.5 max-h-40 overflow-y-auto space-y-1.5 pr-1">
+              {extraVars.onProcessChildTasks && extraVars.onProcessChildTasks.length > 0 ? (
+                extraVars.onProcessChildTasks.map((ct) => (
+                  <div
+                    key={ct.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (extraVars?.onNavigateToTaskDetail) {
+                        setActiveTooltip(null);
+                        extraVars.onNavigateToTaskDetail(ct.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg bg-slate-800/90 border border-slate-700 hover:border-blue-400/80 hover:bg-slate-700/80 transition-all cursor-pointer group/ct"
+                    title={`Click to view ${ct.name} in Task Detail`}
+                  >
+                    <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-200">
+                      <div className="flex items-center gap-1 min-w-0">
+                        {ct.taskCode && (
+                          <span className="px-1 py-0.2 bg-purple-500/25 text-purple-300 border border-purple-500/40 rounded text-[9px] font-mono shrink-0 font-bold">
+                            {ct.taskCode}
+                          </span>
+                        )}
+                        <span className="truncate group-hover/ct:text-blue-300">{ct.name}</span>
+                      </div>
+                      <span className="font-mono text-emerald-400 text-[10px] shrink-0 font-bold">{ct.actPrg || 0}%</span>
+                    </div>
+
+                    {(ct.start || ct.finish) && (
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5 font-mono">
+                        <span>{formatGanttDate(ct.start)} ➔ {formatGanttDate(ct.finish)}</span>
+                        {ct.duration && <span>{ct.duration}d</span>}
+                      </div>
+                    )}
+
+                    <div className="w-full bg-slate-700 h-1 rounded-full overflow-hidden mt-1">
+                      <div className="bg-emerald-500 h-1 rounded-full transition-all" style={{ width: `${ct.actPrg || 0}%` }} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-[10px] text-slate-400 italic text-center py-1.5 bg-slate-800/40 rounded border border-slate-700/40">
+                  No active on-process subtasks ({extraVars.childCount || 0} subtasks completed or upcoming)
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
+
+// File: src/components/Gantt/GanttTooltipPredecessor.tsx
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { Task, Project } from '../../types';
+import { PredecessorSearchSuggest } from '../TaskModalParts/PredecessorSearchSuggest';
+import { resolvePredecessorString } from '../../lib/predecessorMatchUtils';
+import { 
+  buildTaskNoMap, 
+  parsePredecessors, 
+  calculateTaskDatesFromPredecessors, 
+  scheduleDependentTasks, 
+  splitPredecessors 
+} from '../../lib/ganttUtils';
+import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
+import { useAppStore } from '../../store/useAppStore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { Edit2, Check, X, Link, Plus } from 'lucide-react';
+import { cn } from '../../lib/utils';
+
+interface GanttTooltipPredecessorProps {
+  task: Task;
+  tasks: Task[];
+  projects: Project[];
+  canWrite: boolean;
+  isEditing?: boolean;
+  setIsEditing?: (val: boolean) => void;
+  onEditingChange?: (isEditing: boolean) => void;
+  compact?: boolean;
+}
+
+export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecessor({
+  task,
+  tasks,
+  projects,
+  canWrite,
+  isEditing: controlledIsEditing,
+  setIsEditing: controlledSetIsEditing,
+  onEditingChange,
+  compact = false,
+}: GanttTooltipPredecessorProps) {
+  const [internalIsEditing, setInternalIsEditing] = useState(false);
+  const isEditing = controlledIsEditing !== undefined ? controlledIsEditing : internalIsEditing;
+  const setIsEditing = (val: boolean) => {
+    if (controlledSetIsEditing) controlledSetIsEditing(val);
+    else setInternalIsEditing(val);
+    if (onEditingChange) onEditingChange(val);
+  };
+
+  const [val, setVal] = useState(task.predecessor || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setVal(task.predecessor || '');
+    }
+  }, [task.predecessor, isEditing]);
+
+  const handleStartEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!canWrite) return;
+    setIsEditing(true);
+    onEditingChange?.(true);
+  };
+
+  const handleCancel = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setIsEditing(false);
+    setVal(task.predecessor || '');
+    onEditingChange?.(false);
+  };
+
+  const handleSave = async (rawVal: string) => {
+    setIsSaving(true);
+    try {
+      const context = {
+        projectId: task?.projectId,
+        projectCode: task?.projectCode,
+        projectYear: task?.projectYear,
+        projectStore: task?.projectStore,
+        projectLocation: task?.location,
+      };
+
+      const resolved = resolvePredecessorString(rawVal, tasks, projects, task?.projectCode, context);
+      setVal(resolved);
+
+      if (resolved === (task.predecessor || '')) {
+        setIsEditing(false);
+        onEditingChange?.(false);
+        setIsSaving(false);
+        return;
+      }
+
+      let currentTasks = useAppStore.getState().tasks || tasks;
+      const updatedTask: Task = {
+        ...task,
+        predecessor: resolved,
+        realtimeUpdate: Boolean(resolved.trim()),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 1. Build map and parse predecessors
+      let taskNoMap = buildTaskNoMap(projects, currentTasks);
+      let parsed = parsePredecessors(resolved, taskNoMap, updatedTask);
+
+      // 2. Load external project tasks if not resolved
+      if (resolved.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
+        const parts = splitPredecessors(resolved, Array.from(taskNoMap.keys()));
+        for (const token of parts) {
+          const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+          const matchedProj = projects.find((p) => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+          if (matchedProj && matchedProj.code !== task.projectCode) {
+            const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+            if (loaded.length > 0) {
+              currentTasks = useAppStore.getState().tasks || currentTasks;
+              taskNoMap = buildTaskNoMap(projects, currentTasks);
+              parsed = parsePredecessors(resolved, taskNoMap, updatedTask);
+            }
+          }
+        }
+      }
+
+      // 3. Recalculate dates for updatedTask
+      const calcResult = calculateTaskDatesFromPredecessors(updatedTask, parsed);
+      if (calcResult) {
+        updatedTask.start = calcResult.start;
+        updatedTask.finish = calcResult.finish;
+        updatedTask.duration = calcResult.duration;
+        updatedTask.durationManual = calcResult.durationManual;
+      }
+
+      // 4. Schedule dependent tasks cascading
+      const updatesToDependents = scheduleDependentTasks(updatedTask, currentTasks, projects);
+
+      // 5. Update Zustand store (0ms optimistic)
+      const allTasksMap = new Map(currentTasks.map((t) => [t.id, t]));
+      allTasksMap.set(updatedTask.id, updatedTask);
+      updatesToDependents.forEach((u) => {
+        const t = allTasksMap.get(u.id);
+        if (t) {
+          allTasksMap.set(u.id, {
+            ...t,
+            start: u.start,
+            finish: u.finish,
+            duration: u.duration,
+            updatedAt: u.updatedAt,
+          });
+        }
+      });
+      useAppStore.getState().setTasks(Array.from(allTasksMap.values()));
+
+      // 6. Persist to Firestore
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask, { merge: true });
+      updatesToDependents.forEach((u) => {
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
+      });
+      batch.commit().catch((err) => {
+        console.error('Failed to persist task predecessor update:', err);
+      });
+
+      useAppStore.getState().setToast({
+        title: 'Predecessor Updated',
+        message: resolved ? `Linked to ${resolved}` : 'Predecessor removed',
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('Error saving predecessor:', err);
+      useAppStore.getState().setToast({
+        title: 'Update Failed',
+        message: err.message || 'Could not update predecessor',
+        type: 'error',
+      });
+    } finally {
+      setIsSaving(false);
+      setIsEditing(false);
+      onEditingChange?.(false);
+    }
+  };
+
+  if (!canWrite && !task.predecessor) {
+    return null;
+  }
+
+  if (isEditing) {
+    return (
+      <div 
+        ref={containerRef} 
+        onClick={(e) => e.stopPropagation()} 
+        onMouseDown={(e) => e.stopPropagation()}
+        className="flex flex-col gap-2 p-3 rounded-xl bg-slate-900/95 dark:bg-slate-950/95 border border-blue-500/50 shadow-md my-1 w-full min-w-[280px] sm:min-w-[380px] max-w-full max-h-[580px] overflow-visible"
+      >
+        <div className="flex items-center justify-between text-[11px] font-bold text-blue-300">
+          <span className="flex items-center gap-1">
+            <Link className="w-3 h-3 text-blue-400" />
+            Edit Predecessor
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={handleCancel}
+              className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="w-full relative" onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            handleCancel();
+          }
+        }}>
+        <PredecessorSearchSuggest 
+          task={task}
+          canWrite={canWrite}
+        />
+        </div>
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-slate-400">Pred:</span>
+        {task.predecessor ? (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span 
+              className="font-mono text-[11px] font-bold text-blue-300 bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-700/50 max-w-[180px] truncate"
+              title={task.predecessor}
+            >
+              {task.predecessor}
+            </span>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={handleStartEdit}
+                className="p-0.5 text-slate-400 hover:text-blue-300 hover:bg-slate-700/80 rounded transition-colors cursor-pointer"
+                title="Edit Predecessor"
+              >
+                <Edit2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        ) : canWrite ? (
+          <button
+            type="button"
+            onClick={handleStartEdit}
+            className="flex items-center gap-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 hover:underline cursor-pointer"
+          >
+            <Plus className="w-3 h-3" />
+            Add Predecessor
+          </button>
+        ) : (
+          <span className="text-slate-400">N/A</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
+      <div className="flex items-center justify-between">
+        <span className="text-slate-400 dark:text-[#838383] text-[10px] uppercase tracking-wider font-semibold">
+          Predecessors
+        </span>
+        {canWrite && (
+          <button
+            type="button"
+            onClick={handleStartEdit}
+            className="text-[10px] text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-0.5 cursor-pointer"
+            title={task.predecessor ? "Edit Predecessor" : "Add Predecessor"}
+          >
+            {task.predecessor ? (
+              <>
+                <Edit2 className="w-2.5 h-2.5" />
+                Edit
+              </>
+            ) : (
+              <>
+                <Plus className="w-2.5 h-2.5" />
+                Add
+              </>
+            )}
+          </button>
+        )}
+      </div>
+      {task.predecessor ? (
+        <div 
+          onClick={canWrite ? handleStartEdit : undefined}
+          className={cn(
+            "font-medium font-mono text-[11px] text-blue-300 bg-blue-950/50 px-2 py-1 rounded-lg border border-blue-800/60 whitespace-normal break-words shadow-xs",
+            canWrite ? "cursor-pointer hover:border-blue-400 hover:bg-blue-900/50 transition-colors" : ""
+          )}
+          title={task.predecessor}
+        >
+          {task.predecessor}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={canWrite ? handleStartEdit : undefined}
+          className="text-left text-xs text-slate-400 hover:text-blue-300 italic px-2 py-1 rounded-lg border border-dashed border-slate-700 hover:border-blue-500/70 transition-colors flex items-center gap-1 cursor-pointer"
+        >
+          <Plus className="w-3 h-3 text-blue-400" />
+          <span>Add Predecessor...</span>
+        </button>
+      )}
+    </div>
+  );
+});
+
+
+// File: src/components/TaskModalParts/PredecessorSearchSuggest.tsx
+import React, { Component, FC, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Task, Project, PredecessorType } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import {
+  buildTaskNoMap,
+  computeTaskCode,
+  parsePredecessors,
+  splitPredecessors,
+  calculateTaskDatesFromPredecessors,
+  scheduleDependentTasks,
+  addDays,
+} from '../../lib/ganttUtils';
+import {
+  rankCandidateTasks,
+  getTaskProjectDiffDetails,
+  parsePredecessorToken,
+  PredecessorContext,
+  ProjectDiffDetails,
+  RankedPredecessorMatch,
+} from '../../lib/predecessorMatchUtils';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import {
+  Search,
+  X,
+  Plus,
+  Minus,
+  AlertTriangle,
+  ExternalLink,
+  Sparkles,
+  Loader2,
+  ArrowRight,
+  Link2,
+} from 'lucide-react';
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface PredecessorChange {
+  /** Chuỗi predecessor chuẩn của hệ thống, ví dụ: "A01#2SS+1, A01#3FF" */
+  predecessor: string;
+  /** ID task tương ứng theo đúng thứ tự trong chuỗi (hard-link, tránh nhầm task trùng mã) */
+  predecessorTaskIds: string[];
+  /** Mảng object (giữ tương thích với dữ liệu cũ) */
+  predecessors: { taskId: string; type: PredecessorType }[];
+}
+
+interface PredecessorSearchSuggestProps {
+  /** Task đang sửa (hoặc bản nháp của task mới – id có thể rỗng) */
+  task: Task;
+  canWrite: boolean;
+  /**
+   * Nếu truyền vào: component KHÔNG tự lưu, mà trả kết quả cho nơi gọi xử lý
+   * (dùng cho Task Modal – lưu khi bấm Save, và cho bảng Detail – đi qua onUpdateTask).
+   * Nếu không truyền: tự tính lại ngày, kéo theo task phụ thuộc và lưu Firestore.
+   */
+  onChange?: (change: PredecessorChange) => void | Promise<void>;
+}
+
+interface LinkItem {
+  key: string;
+  resolved: boolean;
+  taskId: string;
+  task?: Task;
+  code: string;
+  type: PredecessorType;
+  lagSign: '+' | '-';
+  lagValue: number;
+  raw: string;
+  isExternal: boolean;
+  externalLabel: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Constants & helpers                                                */
+/* ------------------------------------------------------------------ */
+
+const REL_INFO: Record<PredecessorType, { hint: string }> = {
+  FS: { hint: 'Finish → Start' },
+  SS: { hint: 'Start → Start' },
+  FF: { hint: 'Finish → Finish' },
+  SF: { hint: 'Start → Finish' },
+};
+
+const SLOT_STYLE = [
+  {
+    tag: '①',
+    title: 'Primary Predecessor',
+    border: 'border-l-blue-500',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+    active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
+    caption: 'text-blue-700 dark:text-blue-300',
+  },
+  {
+    tag: '②',
+    title: 'Secondary Predecessor · FF / SF only',
+    border: 'border-l-rose-500',
+    badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
+    active: 'bg-rose-600 text-white border-rose-600 shadow-sm',
+    caption: 'text-rose-700 dark:text-rose-300',
+  },
+];
+
+const FACTOR_LABEL: Record<string, string> = {
+  year: 'Different year',
+  store: 'Different store',
+  location: 'Different floor/location',
+  code: 'Different project',
+};
+
+function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string {
+  const factors = (diff as any)?.diffFactors as string[] | undefined;
+  if (factors && factors.length > 0) {
+    return factors.map((f) => FACTOR_LABEL[f] || f).join(' · ');
+  }
+  return fallbackCode ? `Project ${fallbackCode}` : 'Cross-Project';
+}
+
+function shortDate(s?: string): string {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : String(s);
+}
+
+function lagToText(sign: string, v: number): string {
+  return v ? `${sign}${v}` : '';
+}
+
+function tokenOf(it: LinkItem): string {
+  if (!it.resolved) return it.raw;
+  const lag = lagToText(it.lagSign, it.lagValue);
+  const rel = it.type === 'FS' && !lag ? '' : it.type;
+  return `${it.code}${rel}${lag}`;
+}
+
+/** Secondary predecessor must be FF or SF */
+function normalize(list: LinkItem[]): LinkItem[] {
+  return list.slice(0, 2).map((it, i) =>
+    i === 1 && it.resolved && it.type !== 'FF' && it.type !== 'SF' ? { ...it, type: 'FF' as PredecessorType } : it
+  );
+}
+
+function describe(it: LinkItem): string {
+  if (!it.task) return '';
+  const name = `«${it.task.name}»`;
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  const lag = signed === 0 ? '' : signed > 0 ? `, +${signed} days` : `, -${Math.abs(signed)} days`;
+  switch (it.type) {
+    case 'FS':
+      return `Start after ${name} finishes${lag}`;
+    case 'SS':
+      return `Start when ${name} starts${lag}`;
+    case 'FF':
+      return `Finish when ${name} finishes${lag}`;
+    case 'SF':
+      return `Finish when ${name} starts${lag}`;
+  }
+  return '';
+}
+
+function milestoneDate(it: LinkItem): string {
+  if (!it.task) return '';
+  const ref = it.type === 'FS' || it.type === 'FF' ? it.task.finish : it.task.start;
+  if (!ref) return '';
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  try {
+    return shortDate(addDays(ref, signed));
+  } catch {
+    return shortDate(ref);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Persist default predecessor changes                                 */
+/* ------------------------------------------------------------------ */
+
+async function persistDefault(
+  source: Task,
+  change: PredecessorChange,
+  projects: Project[]
+): Promise<void> {
+  if (!source?.id) {
+    throw new Error('Please save the task before linking a predecessor.');
+  }
+  const store = useAppStore.getState() as any;
+  const currentTasks: Task[] = store.tasks || [];
+  const now = new Date().toISOString();
+
+  const updatedTask: Task = {
+    ...source,
+    predecessor: change.predecessor,
+    predecessorTaskIds: change.predecessorTaskIds,
+    predecessors: change.predecessors,
+    realtimeUpdate: Boolean(change.predecessor.trim()),
+    updatedAt: now,
+  } as Task;
+
+  const taskNoMap = buildTaskNoMap(projects, currentTasks);
+  const parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+  if (parsed.length >= 2) updatedTask.durationManual = false;
+
+  const calc = calculateTaskDatesFromPredecessors(updatedTask, parsed as any);
+  if (calc) {
+    updatedTask.start = calc.start;
+    updatedTask.finish = calc.finish;
+    updatedTask.duration = calc.duration;
+    updatedTask.durationManual = calc.durationManual;
+  }
+
+  const dependents = scheduleDependentTasks(updatedTask, currentTasks, projects);
+
+  const map = new Map<string, Task>(currentTasks.map((t) => [t.id, t]));
+  map.set(updatedTask.id, updatedTask);
+  dependents.forEach((u: any) => {
+    const t = map.get(u.id);
+    if (t) {
+      map.set(u.id, { ...t, start: u.start, finish: u.finish, duration: u.duration, updatedAt: u.updatedAt });
+    }
+  });
+  store.setTasks(Array.from(map.values()));
+
+  const editing = store.editingTask;
+  if (editing && editing.id === updatedTask.id && typeof store.setEditingTask === 'function') {
+    store.setEditingTask({ ...editing, ...updatedTask });
+  }
+
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask as any, { merge: true });
+  dependents.forEach((u: any) => {
+    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
+  });
+  batch.commit().catch((err: any) => {
+    console.error('Failed to persist predecessor update:', err);
+    store.setToast?.({ title: 'Save failed', message: err?.message || 'Could not save predecessor', type: 'error' });
+  });
+
+  store.setToast?.({
+    title: 'Predecessor Updated',
+    message: change.predecessor ? `Link: ${change.predecessor}` : 'Predecessor removed',
+    type: 'success',
+  });
+}
+
+function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boolean; onCommit: (n: number) => void }) {
+  const fmt = (n: number) => (n > 0 ? `+${n}` : String(n));
+  const [txt, setTxt] = useState(fmt(value));
+  const isTypingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isTypingRef.current) {
+      setTxt(fmt(value));
+    }
+  }, [value]);
+
+  const commit = () => {
+    isTypingRef.current = false;
+    const n = parseFloat(txt.replace(',', '.').replace('−', '-'));
+    if (isNaN(n)) {
+      setTxt(fmt(value));
+      return;
+    }
+    const r = Math.round(n * 100) / 100;
+    if (r !== value) onCommit(r);
+    else setTxt(fmt(value));
+  };
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={txt}
+      disabled={disabled}
+      onFocus={(e: any) => {
+        isTypingRef.current = true;
+        e.target.select?.();
+      }}
+      onChange={(e: any) => setTxt(e.target.value.replace(/[^0-9+\-−.,]/g, ''))}
+      onBlur={commit}
+      onKeyDown={(e: any) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          commit();
+          e.target.blur?.();
+        }
+      }}
+      title="Enter lag days, e.g. +2 or -1"
+      className={cn(
+        'h-6 w-12 rounded-md border border-slate-200/80 bg-white dark:border-[#38383a] dark:bg-[#18181a] text-center font-mono text-xs font-bold outline-none focus:border-blue-500 transition-colors shadow-2xs',
+        value === 0 ? 'text-slate-500 dark:text-slate-400' : value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
+      )}
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> = memo(
+  ({ task, canWrite, onChange }) => {
+    const storeTasks = useAppStore((s: any) => s.tasks) as Task[];
+    const projects = (useAppStore((s: any) => s.projects) || []) as Project[];
+    const liveTask = useAppStore((s: any) =>
+      task?.id ? (s.tasks as Task[]).find((t) => t.id === task.id) : undefined
+    ) as Task | undefined;
+
+    const source: Task = onChange ? task : liveTask || task;
+
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLUListElement>(null);
+
+    const [query, setQuery] = useState('');
+    const deferredQuery = useDeferredValue(query);
+    const [open, setOpen] = useState(false);
+    const [hi, setHi] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+
+    useEffect(() => {
+      if (open && listRef.current && listRef.current.children[hi]) {
+        const activeEl = listRef.current.children[hi] as HTMLElement;
+        if (activeEl) {
+          activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    }, [hi, open]);
+
+    const ctx: PredecessorContext = useMemo(
+      () => ({
+        projectId: source?.projectId,
+        projectCode: source?.projectCode,
+        projectYear: source?.projectYear,
+        projectStore: source?.projectStore,
+        projectLocation: source?.location,
+      }),
+      [source?.projectId, source?.projectCode, source?.projectYear, source?.projectStore, source?.location]
+    );
+
+    const pool = useMemo(() => (storeTasks || []).filter((t) => t && !t.isDeleted), [storeTasks]);
+    const taskNoMap = useMemo(() => buildTaskNoMap(projects, storeTasks || []), [projects, storeTasks]);
+
+    const items = useMemo<LinkItem[]>(() => {
+      const str = String(source?.predecessor || '').trim();
+      if (!str) return [];
+      const ids = source?.predecessorTaskIds || [];
+      const tokens = splitPredecessors(str, taskNoMap).slice(0, 2);
+
+      return tokens.map((tok, i) => {
+        let p: any;
+        try {
+          p = parsePredecessors(tok, taskNoMap, { ...source, predecessorTaskIds: [ids[i] || ''] } as Task)[0];
+        } catch {
+          p = undefined;
+        }
+        if (p && p.task) {
+          const diff = getTaskProjectDiffDetails(ctx, p.task, projects);
+          const code = computeTaskCode(projects, storeTasks || [], p.task) || p.task.taskCodePhu || p.no || tok;
+          return {
+            key: `${p.task.id}-${i}`,
+            resolved: true,
+            taskId: p.task.id,
+            task: p.task as Task,
+            code,
+            type: (p.type || 'FS') as PredecessorType,
+            lagSign: (p.lagSign === '-' ? '-' : '+') as '+' | '-',
+            lagValue: Number(p.lagValue) || 0,
+            raw: tok,
+            isExternal: !!diff.isDifferent,
+            externalLabel: externalLabel(diff, p.task.projectCode),
+          };
+        }
+        const { query: q } = parsePredecessorToken(tok);
+        return {
+          key: `raw-${i}-${tok}`,
+          resolved: false,
+          taskId: '',
+          code: q || tok,
+          type: 'FS' as PredecessorType,
+          lagSign: '+' as const,
+          lagValue: 0,
+          raw: tok,
+          isExternal: false,
+          externalLabel: '',
+        };
+      });
+    }, [
+      source?.predecessor,
+      source?.predecessorTaskIds,
+      source?.projectId,
+      source?.projectCode,
+      source?.projectYear,
+      source?.projectStore,
+      source?.location,
+      taskNoMap,
+      ctx,
+      projects,
+      storeTasks,
+    ]);
+
+    useEffect(() => {
+      const handler = (e: MouseEvent | TouchEvent) => {
+        if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+          setOpen(false);
+        }
+      };
+      document.addEventListener('mousedown', handler);
+      document.addEventListener('touchstart', handler, { passive: true });
+      return () => {
+        document.removeEventListener('mousedown', handler);
+        document.removeEventListener('touchstart', handler);
+      };
+    }, []);
+
+    useEffect(() => setHi(0), [deferredQuery]);
+
+    const excluded = useMemo(() => {
+      const s = new Set<string>();
+      if (source?.id) s.add(source.id);
+      items.forEach((i) => i.taskId && s.add(i.taskId));
+      return s;
+    }, [source?.id, items]);
+
+    const candidates = useMemo<RankedPredecessorMatch[]>(() => {
+      if (!open) return [];
+      const q = deferredQuery.trim();
+
+      if (q) {
+        return rankCandidateTasks(q, pool, projects, pool, source?.projectCode, ctx)
+          .filter((m) => !excluded.has(m.task.id))
+          .slice(0, 20);
+      }
+
+      let base = pool.filter((t) => !excluded.has(t.id));
+      const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
+      if (sameCode.length > 0) base = sameCode;
+      base = base
+        .filter((t) => !getTaskProjectDiffDetails(ctx, t, projects).isDifferent)
+        .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+        .slice(0, 25);
+
+      return base.map((t) => {
+        const diff = getTaskProjectDiffDetails(ctx, t, projects);
+        return {
+          task: t,
+          score: 0,
+          exactTaskCode: computeTaskCode(projects, pool, t) || t.taskCodePhu || t.id,
+          isExternal: !!diff.isDifferent,
+          diffDetails: diff,
+        } as RankedPredecessorMatch;
+      });
+    }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx]);
+
+    const commit = async (list: LinkItem[]) => {
+      const finalList = normalize(list);
+      const change: PredecessorChange = {
+        predecessor: finalList.map(tokenOf).filter(Boolean).join(', '),
+        predecessorTaskIds: finalList.map((i) => i.taskId || ''),
+        predecessors: finalList.filter((i) => i.resolved).map((i) => ({ taskId: i.taskId, type: i.type })),
+      };
+      setSaving(true);
+      setError(null);
+      try {
+        if (onChange) await onChange(change);
+        else await persistDefault(source, change, projects);
+      } catch (e: any) {
+        setError(e?.message || 'Could not save predecessor link');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const wouldCreateCycle = (candidate: Task): boolean => {
+      if (!source?.id) return false;
+      const visited = new Set<string>();
+      const stack: Task[] = [candidate];
+      while (stack.length > 0 && visited.size < 500) {
+        const cur = stack.pop() as Task;
+        if (cur.id === source.id) return true;
+        if (visited.has(cur.id)) continue;
+        visited.add(cur.id);
+        if (!cur.predecessor) continue;
+        try {
+          parsePredecessors(cur.predecessor, taskNoMap, cur).forEach((p: any) => {
+            if (p?.task) stack.push(p.task as Task);
+          });
+        } catch {}
+      }
+      return false;
+    };
+
+    const addTask = (m: RankedPredecessorMatch, confirmed = false) => {
+      const t = m.task;
+      if (items.length >= 2) return;
+      if (wouldCreateCycle(t)) {
+        setError(
+          `Cannot link: «${t.name}» depends on this task (directly or indirectly), causing a circular dependency.`
+        );
+        setPendingExternal(null);
+        return;
+      }
+      if (m.isExternal && !confirmed) {
+        setPendingExternal(m);
+        setOpen(false);
+        return;
+      }
+      const idx = items.length;
+      const next: LinkItem = {
+        key: `${t.id}-${idx}`,
+        resolved: true,
+        taskId: t.id,
+        task: t,
+        code: m.exactTaskCode || computeTaskCode(projects, pool, t) || t.taskCodePhu || t.id,
+        type: idx === 0 ? 'FS' : 'FF',
+        lagSign: '+',
+        lagValue: 0,
+        raw: '',
+        isExternal: !!m.isExternal,
+        externalLabel: externalLabel(m.diffDetails, t.projectCode),
+      };
+      setPendingExternal(null);
+      setQuery('');
+      setOpen(false);
+      inputRef.current?.blur();
+      commit([...items, next]);
+    };
+
+    const patchItem = (idx: number, patch: Partial<LinkItem>) => {
+      commit(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+    };
+
+    const removeItem = (idx: number) => {
+      commit(items.filter((_, i) => i !== idx));
+    };
+
+    const stepLag = (idx: number, delta: number) => {
+      const it = items[idx];
+      const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+      const n = Math.round((signed + delta) * 100) / 100;
+      patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) });
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!open) setOpen(true);
+        else setHi((h) => Math.min(h + 1, Math.max(candidates.length - 1, 0)));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHi((h) => Math.max(h - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const m = candidates[hi] || candidates[0];
+        if (m) addTask(m);
+      } else if (e.key === 'Escape') {
+        if (open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }
+    };
+
+    const canAdd = canWrite && items.length < 2;
+    const hasQuery = deferredQuery.trim().length > 0;
+
+    return (
+      <div className="flex flex-col gap-2.5 w-full" ref={wrapperRef} onClick={(e) => e.stopPropagation()}>
+        {saving && (
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating...
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[12px] font-medium text-red-700 dark:text-red-300">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError(null)} className="shrink-0 p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {items.map((it, idx) => {
+          const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
+          const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+
+          return (
+            <div
+              key={it.key}
+              className={cn(
+                'group flex flex-col gap-1.5 rounded-xl border bg-white dark:bg-[#1c1c1f] p-2 shadow-2xs transition-all hover:border-blue-300 dark:hover:border-blue-700',
+                it.resolved ? 'border-slate-200 dark:border-[#38383a]' : 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20'
+              )}
+            >
+              <div className="flex items-start justify-between gap-2 min-w-0">
+                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      'inline-flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded px-1 text-[11px] font-black mt-0.5',
+                      idx === 0
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300'
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                    )}
+                  >
+                    {idx === 0 ? '①' : '②'}
+                  </span>
+
+                  {it.resolved && it.task ? (
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-xs font-black text-blue-600 dark:text-[#8ab4f8] shrink-0">
+                          {it.code}
+                        </span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-[#f3f3f3] leading-snug break-words">
+                          {it.task.name}
+                        </span>
+                      </div>
+                      {it.isExternal && (
+                        <span className="mt-1 inline-flex shrink-0 items-center gap-1 w-fit rounded border border-amber-300 bg-amber-100/70 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                          <ExternalLink className="h-3 w-3" />
+                          {it.externalLabel}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                      Not found «{it.raw}»
+                    </span>
+                  )}
+                </div>
+
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(idx)}
+                    disabled={saving}
+                    title="Remove link"
+                    className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-all touch-manipulation disabled:opacity-50 cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Row 2: Type Segmented Pills + Lag Controls placed on the SAME ROW */}
+              {it.resolved && canWrite && (
+                <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-100 dark:border-[#2a2a2d] text-xs flex-nowrap overflow-x-auto">
+                  {/* Type Segmented Control */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
+                    <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      {allowed.map((rel) => {
+                        const active = it.type === rel;
+                        return (
+                          <button
+                            key={rel}
+                            type="button"
+                            disabled={saving}
+                            onClick={() => !active && patchItem(idx, { type: rel })}
+                            className={cn(
+                              'px-2 py-0.5 text-[11px] font-black rounded-md transition-all active:scale-95 touch-manipulation disabled:opacity-60 cursor-pointer',
+                              active
+                                ? 'bg-blue-600 text-white shadow-2xs dark:bg-blue-600'
+                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                            )}
+                          >
+                            {rel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Lag Control Inline */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
+                    <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => stepLag(idx, -1)}
+                        className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                      <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => stepLag(idx, 1)}
+                        className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Confirm cross project link */}
+        {pendingExternal && (
+          <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs dark:border-amber-700 dark:bg-amber-950/60">
+            <div className="flex items-start gap-1.5 font-medium text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                «<b>{pendingExternal.task.name}</b>» belongs to another project (
+                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Confirm cross-project link?
+              </p>
+            </div>
+            <div className="flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPendingExternal(null)}
+                className="rounded-lg px-3 py-1 text-xs font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => addTask(pendingExternal, true)}
+                className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 active:scale-95 touch-manipulation cursor-pointer"
+              >
+                Link
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Search input */}
+        {canAdd && !pendingExternal && (
+          <div className="relative w-full">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                disabled={saving}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={handleKeyDown}
+                placeholder="Type task name or code..."
+                autoComplete="off"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-7 text-xs font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:border-[#38383a] dark:bg-[#1a1a1c] dark:text-white dark:focus:bg-[#202023] transition-all shadow-2xs"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('');
+                    inputRef.current?.focus();
+                  }}
+                  className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation cursor-pointer"
+                  tabIndex={-1}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {open && (
+              <ul
+                ref={listRef}
+                role="listbox"
+                className="absolute left-0 right-0 top-full z-[300000] mt-1 max-h-72 sm:max-h-80 md:max-h-96 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white dark:border-[#444446] dark:bg-[#252528] p-1 shadow-2xl backdrop-blur-md transition-all"
+              >
+                {!hasQuery && candidates.length > 0 && (
+                  <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Suggestions (Same Project)
+                  </li>
+                )}
+                {candidates.length === 0 ? (
+                  <li className="px-3 py-2.5 text-center text-xs italic text-slate-400">
+                    {hasQuery ? 'No tasks found' : 'No matching tasks'}
+                  </li>
+                ) : (
+                  candidates.map((m, i) => {
+                    const t = m.task;
+                    const best = hasQuery && i === 0 && m.score >= 450;
+                    return (
+                      <li
+                        key={t.id}
+                        role="option"
+                        aria-selected={i === hi}
+                        onMouseEnter={() => setHi(i)}
+                        onClick={() => addTask(m)}
+                        className={cn(
+                          'flex min-h-[38px] cursor-pointer flex-col gap-0.5 rounded-lg border-b border-slate-100/60 dark:border-slate-800/60 px-2.5 py-1.5 last:border-0 transition-colors',
+                          i === hi ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-[#2e2e32]'
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-1.5 min-w-0">
+                          <span className="truncate text-xs font-bold text-slate-800 dark:text-[#f3f3f3]">{t.name}</span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {best && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.2 text-[9px] font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                                <Sparkles className="h-2.5 w-2.5" /> Best Match
+                              </span>
+                            )}
+                            {m.isExternal && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.2 text-[9px] font-extrabold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                <ExternalLink className="h-2.5 w-2.5" /> {externalLabel(m.diffDetails, t.projectCode)}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="font-mono font-black text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-500">
+                            {shortDate(t.start)} → {shortDate(t.finish)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+PredecessorSearchSuggest.displayName = 'PredecessorSearchSuggest';
+
+
+// File: src/components/DetailTabParts/PredecessorEditableCell.tsx
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, X } from 'lucide-react';
+import { PredecessorSearchSuggest, PredecessorChange } from '../TaskModalParts/PredecessorSearchSuggest';
+import { Task, Project } from '../../types';
+import { splitPredecessors } from '../../lib/ganttUtils';
+import { parsePredecessorToken } from '../../lib/predecessorMatchUtils';
+import { cn } from '../../lib/utils';
+
+type PanelLayout =
+  | { mode: 'sheet' }
+  | { mode: 'pop'; left: number; width: number; maxH: number; top?: number; bottom?: number };
+
+const CHIP_STYLE = [
+  'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800/60 dark:bg-blue-950/40 dark:text-[#8ab4f8]',
+  'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300',
+];
+
+export const PredecessorEditableCell = React.memo(function PredecessorEditableCell({
+  value,
+  onSave,
+  canWrite,
+  task,
+}: {
+  value: any;
+  onSave: (updates: Partial<Task>) => void | Promise<void>;
+  canWrite: boolean;
+  task: Task;
+  // giữ nguyên chữ ký cũ để không phải sửa nơi gọi
+  tasks?: Task[];
+  projects?: Project[];
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [layout, setLayout] = useState<PanelLayout | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const text = value !== undefined && value !== null ? String(value) : '';
+  const tokens = useMemo(() => splitPredecessors(text), [text]);
+
+  /* ----- Vị trí khung chỉnh sửa (popover trên máy tính / bottom-sheet trên điện thoại) ----- */
+  const computeLayout = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (vw < 640) {
+      setLayout({ mode: 'sheet' });
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    const width = Math.min(440, vw - 16);
+    const left = Math.max(8, Math.min(r.left, vw - width - 8));
+    const spaceBelow = vh - r.bottom - 8;
+    const spaceAbove = r.top - 8;
+    if (spaceBelow >= 400 || spaceBelow >= spaceAbove) {
+      setLayout({ mode: 'pop', left, width, top: r.bottom + 4, maxH: Math.max(380, Math.min(560, spaceBelow - 4)) });
+    } else {
+      setLayout({ mode: 'pop', left, width, bottom: vh - r.top + 4, maxH: Math.max(380, Math.min(560, spaceAbove - 4)) });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isEditing) return;
+    computeLayout();
+    window.addEventListener('resize', computeLayout);
+    window.addEventListener('scroll', computeLayout, true);
+    return () => {
+      window.removeEventListener('resize', computeLayout);
+      window.removeEventListener('scroll', computeLayout, true);
+    };
+  }, [isEditing, computeLayout]);
+
+  /* ----- Đóng khi bấm ra ngoài / nhấn Escape ----- */
+  useEffect(() => {
+    if (!isEditing) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      setIsEditing(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsEditing(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isEditing]);
+
+  const handleChange = async (c: PredecessorChange) => {
+    await onSave({
+      predecessor: c.predecessor,
+      predecessorTaskIds: c.predecessorTaskIds,
+      predecessors: c.predecessors,
+    } as Partial<Task>);
+  };
+
+  /* ----- Hiển thị dạng thẻ dễ đọc ----- */
+  const chips =
+    tokens.length > 0 ? (
+      <div className="flex flex-wrap items-center gap-1">
+        {tokens.slice(0, 2).map((tok, i) => {
+          const { query, suffix } = parsePredecessorToken(tok);
+          return (
+            <span
+              key={`${tok}-${i}`}
+              title={tok}
+              className={cn(
+                'inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]',
+                CHIP_STYLE[i] || CHIP_STYLE[1]
+              )}
+            >
+              <b className="truncate font-mono">{query || tok}</b>
+              {suffix && (
+                <span className="shrink-0 rounded bg-white/70 px-1 font-mono text-[10px] font-extrabold dark:bg-black/30">
+                  {suffix.replace(/^(FS|SS|FF|SF)?([+-])(\d.*)$/i, (_m, r, sg, n) => `${r || ''} ${sg === '-' ? '−' : '+'}${n}d`).trim()}
+                </span>
+              )}
+            </span>
+          );
+        })}
+      </div>
+    ) : null;
+
+  if (!canWrite) {
+    return chips ? <div className="w-full">{chips}</div> : <span className="text-slate-400">-</span>;
+  }
+
+  const panelContent = (
+    <>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-400">Predecessor</div>
+          <div className="truncate text-[13px] font-bold text-slate-800 dark:text-[#f3f3f3]">{task?.name}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsEditing(false)}
+          className="inline-flex min-h-[40px] shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3.5 text-[12px] font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 touch-manipulation"
+        >
+          <X className="h-3.5 w-3.5" /> Xong
+        </button>
+      </div>
+      <PredecessorSearchSuggest task={task} canWrite={canWrite} onChange={handleChange} />
+    </>
+  );
+
+  return (
+    <>
+      <div
+        ref={anchorRef}
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsEditing(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsEditing(true);
+          }
+        }}
+        className={cn(
+          'group flex min-h-[32px] w-full cursor-pointer items-center rounded-md px-0.5 transition-colors hover:bg-slate-50 dark:hover:bg-[#202023]',
+          isEditing && 'bg-blue-50/60 ring-1 ring-blue-300 dark:bg-blue-950/20 dark:ring-blue-700'
+        )}
+      >
+        {chips || (
+          <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 group-hover:border-blue-400 group-hover:text-blue-500 dark:border-slate-600 dark:text-slate-500">
+            <Plus className="h-3 w-3" /> Thêm
+          </span>
+        )}
+      </div>
+
+      {isEditing &&
+        layout &&
+        createPortal(
+          layout.mode === 'sheet' ? (
+            <>
+              <div className="fixed inset-0 z-[189000] bg-black/40" onClick={() => setIsEditing(false)} />
+              <div
+                ref={panelRef}
+                role="dialog"
+                className="fixed inset-x-2 bottom-2 z-[190000] max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
+              >
+                {panelContent}
+              </div>
+            </>
+          ) : (
+            <div
+              ref={panelRef}
+              role="dialog"
+              className="fixed z-[190000] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
+              style={{
+                left: layout.left,
+                width: layout.width,
+                maxHeight: layout.maxH,
+                ...(layout.top !== undefined ? { top: layout.top } : {}),
+                ...(layout.bottom !== undefined ? { bottom: layout.bottom } : {}),
+              }}
+            >
+              {panelContent}
+            </div>
+          ),
+          document.body
+        )}
+    </>
+  );
+});
+
+
+// File: src/components/PredecessorDropdownList.tsx
+import React from 'react';
+import { Task } from '../types';
+import { RankedPredecessorMatch } from '../lib/predecessorMatchUtils';
+import { useLanguage } from '../lib/LanguageContext';
+import { Sparkles, ExternalLink } from 'lucide-react';
+import { cn } from '../lib/utils';
+
+interface PredecessorDropdownListProps {
+  isOpen: boolean;
+  activeSegment: string;
+  rankedCandidateList: RankedPredecessorMatch[];
+  disabled?: boolean;
+  highlightedIndex: number;
+  setHighlightedIndex: (idx: number) => void;
+  segments: string[];
+  isTrailingDelimiter: boolean;
+  activeQuery: string;
+  activeSuffix?: string;
+  handleSelect: (task: Task, relationship?: string, forceConfirmed?: boolean, triggerCommit?: boolean) => void;
+  getBadgeLabel: (item: RankedPredecessorMatch) => string;
+}
+
+export const PredecessorDropdownList: React.FC<PredecessorDropdownListProps> = React.memo(({
+  isOpen,
+  activeSegment,
+  rankedCandidateList,
+  disabled,
+  highlightedIndex,
+  setHighlightedIndex,
+  segments,
+  isTrailingDelimiter,
+  activeQuery,
+  activeSuffix,
+  handleSelect,
+  getBadgeLabel,
+}) => {
+  const { t: translate } = useLanguage();
+
+  if (!isOpen || !activeSegment || rankedCandidateList.length === 0 || disabled) {
+    return null;
+  }
+
+  return (
+    <div className="absolute z-[300000] w-full mt-1 bg-white dark:bg-[#1c1c1f] border border-slate-200 dark:border-[#333336] rounded-lg shadow-xl overflow-hidden max-h-80 overflow-y-auto">
+      {rankedCandidateList.map((item, idx) => {
+        const t = item.task;
+        const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);
+        const isExternal = item.isExternal;
+        const taskCode = item.exactTaskCode;
+        const isHighlighted = idx === highlightedIndex;
+        const isBestMatch = activeQuery && idx === 0 && item.score >= 450;
+
+        return (
+          <div
+            key={t.id}
+            onClick={() => !isSecondPredecessor && handleSelect(t, activeSuffix || undefined)}
+            onMouseEnter={() => setHighlightedIndex(idx)}
+            className={cn(
+              "p-2.5 border-b border-slate-100 dark:border-[#28282a] last:border-0 transition-colors",
+              isHighlighted ? "bg-purple-50/80 dark:bg-purple-900/30" : "",
+              !isSecondPredecessor ? "hover:bg-purple-50 dark:hover:bg-purple-900/20 cursor-pointer flex flex-col" : "flex flex-col bg-slate-50/50 dark:bg-[#18181a]/50"
+            )}
+          >
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate flex-1">
+                  {t.name}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {isBestMatch && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 inline-flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                      {translate("Best Match") || "Best Match"}
+                    </span>
+                  )}
+                  {isExternal && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 inline-flex items-center gap-1">
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      {getBadgeLabel(item)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-blue-600 dark:text-[#8ab4f8] font-mono font-bold">
+                  {taskCode}
+                </span>
+                {(t.start || t.finish) && (
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                    {t.start ? t.start.substring(5, 10) : ''} {t.start && t.finish ? '→' : ''} {t.finish ? t.finish.substring(5, 10) : ''}
+                  </span>
+                )}
+              </div>
+            </div>
+            
+            {isSecondPredecessor && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200 dark:border-[#333336]">
+                <button 
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleSelect(t, 'FF'); }}
+                  className="flex-1 py-1.5 px-2 text-[10px] font-bold bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 rounded transition-colors border border-blue-200 dark:border-blue-800/50"
+                >
+                  + FF (Finish-to-Finish)
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleSelect(t, 'SF'); }}
+                  className="flex-1 py-1.5 px-2 text-[10px] font-bold bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-400 rounded transition-colors border border-rose-200 dark:border-rose-800/50"
+                >
+                  + SF (Start-to-Finish)
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+PredecessorDropdownList.displayName = 'PredecessorDropdownList';
+
+
+// File: src/components/PredecessorMultiInput.tsx
+import React, { Component, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Task, Project } from '../types';
+import { Search, X, Check, ExternalLink, Sparkles, ArrowRight, Link2, AlertTriangle, Loader2, Plus, Minus } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { computeTaskCode, splitPredecessors, buildTaskNoMap, parsePredecessors } from '../lib/ganttUtils';
+import { useAppStore } from '../store/useAppStore';
+import { 
+  parsePredecessorToken, 
+  rankCandidateTasks, 
+  RankedPredecessorMatch, 
+  PredecessorContext, 
+  getTaskProjectDiffDetails 
+} from '../lib/predecessorMatchUtils';
+function shortDate(s?: string): string {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : String(s);
+}
+
+/* ------------------------------------------------------------------ */
+/* Types & Helpers                                                    */
+/* ------------------------------------------------------------------ */
+
+type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface PredecessorChange {
+  predecessor: string;
+  predecessorTaskIds: string[];
+  predecessors: { taskId: string; type: PredecessorType }[];
+}
+
+interface PredecessorMultiInputProps {
+  task?: Task;
+  value?: string;
+  canWrite?: boolean;
+  disabled?: boolean;
+  onChange?: ((change: PredecessorChange) => void | Promise<void>) | ((val: string) => void);
+  onCommit?: (val: string) => void;
+  storeTasks?: Task[];
+  tasks?: Task[];
+  projects?: Project[];
+  currentProjectId?: string;
+  currentProjectCode?: string;
+  currentProjectYear?: number | string;
+  currentProjectStore?: string;
+  currentProjectLocation?: string;
+  predecessorTaskIds?: string[];
+  onPredecessorTaskIdsChange?: (ids: string[]) => void;
+}
+
+const REL_INFO: Record<PredecessorType, { hint: string }> = {
+  FS: { hint: 'Finish → Start' },
+  SS: { hint: 'Start → Start' },
+  FF: { hint: 'Finish → Finish' },
+  SF: { hint: 'Start → Finish' },
+};
+
+const SLOT_STYLE = [
+  {
+    tag: '1',
+    border: 'border-l-blue-500',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-[#8ab4f8]',
+    active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
+    caption: 'text-blue-700 dark:text-[#8ab4f8]',
+  },
+  {
+    tag: '2',
+    border: 'border-l-amber-500',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
+    active: 'bg-amber-600 text-white border-amber-600 shadow-sm',
+    caption: 'text-amber-700 dark:text-amber-300',
+  },
+];
+
+function externalLabel(diffDetails: any, fallbackCode?: string) {
+  if (!diffDetails || !diffDetails.diffFactors || diffDetails.diffFactors.length === 0) {
+    return fallbackCode || "Cross-Project";
+  }
+  const factors = diffDetails.diffFactors;
+  const factorLabels = factors.map((f: string) => {
+    if (f === 'year') return 'Year';
+    if (f === 'store') return 'Store';
+    if (f === 'location') return 'Location';
+    return 'Project';
+  });
+  return `Cross-Project (${factorLabels.join(', ')})`;
+}
+
+function lagToText(sign: string, v: number): string {
+  return v ? `${sign}${v}` : '';
+}
+
+function tokenOf(it: LinkItem): string {
+  if (!it.resolved) return it.raw;
+  const lag = lagToText(it.lagSign, it.lagValue);
+  const rel = it.type === 'FS' && !lag ? '' : it.type;
+  return `${it.code}${rel}${lag}`;
+}
+
+function normalize(list: LinkItem[]): LinkItem[] {
+  return list.slice(0, 2).map((it, i) =>
+    i === 1 && it.resolved && it.type !== 'FF' && it.type !== 'SF' ? { ...it, type: 'FF' as PredecessorType } : it
+  );
+}
+
+function milestoneDate(it: LinkItem): string {
+  if (!it.resolved || !it.task) return '';
+  const base = it.type === 'FS' || it.type === 'FF' ? it.task.finish : it.task.start;
+  if (!base) return '';
+  const d = new Date(base);
+  if (isNaN(d.getTime())) return '';
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  if (signed !== 0) d.setDate(d.getDate() + signed);
+  return d.toISOString().split('T')[0];
+}
+
+function describe(it: LinkItem): string {
+  if (!it.resolved || !it.task) return '';
+  const n = it.task.name;
+  const s = it.lagValue > 0 ? ` (lag ${it.lagSign}${it.lagValue} days)` : '';
+  switch (it.type) {
+    case 'FS': return `Start after «${n}» finishes${s}`;
+    case 'SS': return `Start when «${n}» starts${s}`;
+    case 'FF': return `Finish when «${n}» finishes${s}`;
+    case 'SF': return `Finish when «${n}» starts${s}`;
+  }
+}
+
+interface LinkItem {
+  key: string;
+  resolved: boolean;
+  taskId: string;
+  task?: Task;
+  code: string;
+  type: PredecessorType;
+  lagSign: '+' | '-';
+  lagValue: number;
+  raw: string;
+  isExternal: boolean;
+  externalLabel: string;
+}
+
+async function persistDefault(source: Task, change: PredecessorChange, projects: Project[]): Promise<void> {
+  if (!source?.id) throw new Error('Please save the task before linking a predecessor.');
+  const now = new Date().toISOString();
+  
+  const updatedTask = {
+    ...source,
+    predecessor: change.predecessor,
+    predecessorTaskIds: change.predecessorTaskIds,
+    predecessors: change.predecessors,
+    updatedAt: now,
+  } as Task;
+
+  const { writeBatch } = await import('../lib/firestoreWrites');
+  const { db, APP_ID } = await import('../lib/firebase');
+  const { doc, serverTimestamp } = await import('firebase/firestore');
+
+  const cleanData = Object.fromEntries(Object.entries(updatedTask).filter(([_, v]) => v !== undefined));
+  if (!cleanData.parentTaskId) cleanData.parentTaskId = null;
+
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', source.id), {
+    ...cleanData,
+    _serverTimestamp: serverTimestamp()
+  });
+
+  await batch.commit();
+}
+
+/** Lag input */
+function LagInput({ value, disabled, onCommit }: { value: number; disabled?: boolean; onCommit: (n: number) => void }) {
+  const fmt = (n: number) => (n > 0 ? `+${n}` : String(n));
+  const [txt, setTxt] = useState(fmt(value));
+  const isTypingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isTypingRef.current) setTxt(fmt(value));
+  }, [value]);
+
+  const commit = () => {
+    isTypingRef.current = false;
+    const n = parseFloat(txt.replace(',', '.').replace('−', '-'));
+    if (isNaN(n)) {
+      setTxt(fmt(value));
+      return;
+    }
+    const r = Math.round(n * 100) / 100;
+    if (r !== value) onCommit(r);
+    else setTxt(fmt(value));
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={txt}
+      disabled={disabled}
+      onFocus={(e: any) => { isTypingRef.current = true; e.target.select?.(); }}
+      onChange={(e: any) => setTxt(e.target.value.replace(/[^0-9+-−.,]/g, ''))}
+      onBlur={commit}
+      onKeyDown={(e: any) => {
+        if (e.key === 'Enter') {
+          e.preventDefault(); e.stopPropagation(); commit(); e.target.blur?.();
+        }
+      }}
+      title="Enter lag days, e.g. +2 or -1"
+      className={cn(
+        'h-6 w-12 rounded bg-slate-100 dark:bg-[#18181a] border border-slate-200 dark:border-[#333] text-center font-mono text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-colors',
+        value === 0 ? 'text-slate-500 dark:text-slate-400' : value > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-orange-600 dark:text-orange-400'
+      )}
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Component Main                                                     */
+/* ------------------------------------------------------------------ */
+export function PredecessorMultiInput({
+  task,
+  value,
+  canWrite: canWriteProp,
+  disabled,
+  onChange,
+  onCommit,
+  storeTasks,
+  tasks: tasksProp,
+  projects: projectsProp,
+  currentProjectId,
+  currentProjectCode,
+  currentProjectYear,
+  currentProjectStore,
+  currentProjectLocation,
+  predecessorTaskIds: legacyIds,
+  onPredecessorTaskIdsChange
+}: PredecessorMultiInputProps) {
+  const canWrite = canWriteProp !== undefined ? canWriteProp : !disabled;
+  const liveTask = useAppStore((s) => s.tasks.find((t) => t.id === task?.id));
+  
+  const source: Task = useMemo(() => {
+    if (task) return liveTask || task;
+    return {
+      id: '',
+      name: '',
+      predecessor: value || '',
+      predecessorTaskIds: legacyIds || [],
+      projectId: currentProjectId,
+      projectCode: currentProjectCode,
+      projectYear: currentProjectYear ? String(currentProjectYear) : undefined,
+      projectStore: currentProjectStore,
+      location: currentProjectLocation,
+    } as Task;
+  }, [task, liveTask, value, legacyIds, currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation]);
+  
+  const stateProjects = useAppStore(s => s.projects);
+  const activeProjects = projectsProp || stateProjects;
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+
+  const ctx: PredecessorContext = useMemo(() => ({
+    projectId: source?.projectId || currentProjectId,
+    projectCode: source?.projectCode || currentProjectCode,
+    projectYear: source?.projectYear || currentProjectYear,
+    projectStore: source?.projectStore || currentProjectStore,
+    projectLocation: source?.location || currentProjectLocation,
+  }), [source, currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation]);
+
+  const pool = useMemo(() => (storeTasks || tasksProp || useAppStore.getState().tasks || []).filter((t) => t && !t.isDeleted), [storeTasks, tasksProp]);
+  const taskNoMap = useMemo(() => buildTaskNoMap(activeProjects, pool), [activeProjects, pool]);
+
+  const items = useMemo<LinkItem[]>(() => {
+    const str = String(source?.predecessor || '').trim();
+    if (!str) return [];
+    const ids = source?.predecessorTaskIds || [];
+    const tokens = splitPredecessors(str, taskNoMap).slice(0, 2);
+
+    return tokens.map((tok, i) => {
+      let p: any;
+      try { p = parsePredecessors(tok, taskNoMap, { ...source, predecessorTaskIds: [ids[i] || ''] } as Task)[0]; } catch {}
+      if (p && p.task) {
+        const diff = getTaskProjectDiffDetails(ctx, p.task, activeProjects);
+        const code = computeTaskCode(activeProjects, pool, p.task) || p.task.taskCodePhu || p.no || tok;
+        return {
+          key: `${p.task.id}-${i}`,
+          resolved: true,
+          taskId: p.task.id,
+          task: p.task as Task,
+          code,
+          type: (p.type || 'FS') as PredecessorType,
+          lagSign: (p.lagSign === '-' ? '-' : '+') as '+' | '-',
+          lagValue: Number(p.lagValue) || 0,
+          raw: tok,
+          isExternal: !!diff.isDifferent,
+          externalLabel: externalLabel(diff, p.task.projectCode),
+        };
+      }
+      const { query: q } = parsePredecessorToken(tok);
+      return {
+        key: `raw-${i}-${tok}`, resolved: false, taskId: '', code: q || tok, type: 'FS', lagSign: '+', lagValue: 0, raw: tok, isExternal: false, externalLabel: '',
+      };
+    });
+  }, [source, taskNoMap, ctx, activeProjects, pool]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent | TouchEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('touchstart', handler); };
+  }, []);
+
+  useEffect(() => setHi(0), [deferredQuery]);
+
+  const excluded = useMemo(() => {
+    const s = new Set<string>();
+    if (source?.id) s.add(source.id);
+    items.forEach((i) => i.taskId && s.add(i.taskId));
+    return s;
+  }, [source?.id, items]);
+
+  const candidates = useMemo<RankedPredecessorMatch[]>(() => {
+    if (!open) return [];
+    const q = deferredQuery.trim();
+    if (q) {
+      return rankCandidateTasks(q, pool, activeProjects, pool, source?.projectCode, ctx).filter((m) => !excluded.has(m.task.id)).slice(0, 20);
+    }
+    let base = pool.filter((t) => !excluded.has(t.id));
+    const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
+    if (sameCode.length > 0) base = sameCode;
+    base = base.filter((t) => !getTaskProjectDiffDetails(ctx, t, activeProjects).isDifferent).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)).slice(0, 25);
+    return base.map((t) => ({
+      task: t, score: 0, exactTaskCode: computeTaskCode(activeProjects, pool, t) || t.taskCodePhu || t.id, isExternal: !!getTaskProjectDiffDetails(ctx, t, activeProjects).isDifferent, diffDetails: getTaskProjectDiffDetails(ctx, t, activeProjects),
+    } as RankedPredecessorMatch));
+  }, [open, deferredQuery, pool, activeProjects, excluded, source?.projectCode, ctx]);
+
+  const commit = async (list: LinkItem[]) => {
+    const finalList = normalize(list);
+    const change: PredecessorChange = {
+      predecessor: finalList.map(tokenOf).filter(Boolean).join(', '),
+      predecessorTaskIds: finalList.map((i) => i.taskId || ''),
+      predecessors: finalList.filter((i) => i.resolved).map((i) => ({ taskId: i.taskId, type: i.type })),
+    };
+    setSaving(true); setError(null);
+    try {
+      if (onChange) {
+        await (onChange as any)(change);
+        if (typeof onChange === 'function') (onChange as any)(change.predecessor);
+      }
+      if (onCommit) onCommit(change.predecessor);
+      if (onPredecessorTaskIdsChange) onPredecessorTaskIdsChange(change.predecessorTaskIds);
+      if (!onChange && !onCommit && source.id) {
+        await persistDefault(source, change, activeProjects);
+      }
+    } catch (e: any) { setError(e?.message || 'Không thể lưu liên kết'); } 
+    finally { setSaving(false); }
+  };
+
+  const wouldCreateCycle = (candidate: Task): boolean => {
+    if (!source?.id) return false;
+    const visited = new Set<string>();
+    const stack: Task[] = [candidate];
+    while (stack.length > 0 && visited.size < 500) {
+      const cur = stack.pop() as Task;
+      if (cur.id === source.id) return true;
+      if (visited.has(cur.id)) continue;
+      visited.add(cur.id);
+      if (!cur.predecessor) continue;
+      try { parsePredecessors(cur.predecessor, taskNoMap, cur).forEach((p: any) => { if (p?.task) stack.push(p.task as Task); }); } catch {}
+    }
+    return false;
+  };
+
+  const addTask = (m: RankedPredecessorMatch, confirmed = false) => {
+    const t = m.task;
+    if (items.length >= 2) return;
+    if (wouldCreateCycle(t)) { setError(`Lỗi: «${t.name}» sẽ tạo vòng lặp phụ thuộc.`); setPendingExternal(null); return; }
+    if (m.isExternal && !confirmed) { setPendingExternal(m); setOpen(false); return; }
+    const idx = items.length;
+    const next: LinkItem = {
+      key: `${t.id}-${idx}`, resolved: true, taskId: t.id, task: t, code: m.exactTaskCode || computeTaskCode(activeProjects, pool, t) || t.taskCodePhu || t.id,
+      type: idx === 0 ? 'FS' : 'FF', lagSign: '+', lagValue: 0, raw: '', isExternal: !!m.isExternal, externalLabel: externalLabel(m.diffDetails, t.projectCode),
+    };
+    setPendingExternal(null); setQuery(''); setOpen(false); inputRef.current?.blur();
+    commit([...items, next]);
+  };
+
+  const patchItem = (idx: number, patch: Partial<LinkItem>) => commit(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const removeItem = (idx: number) => commit(items.filter((_, i) => i !== idx));
+
+  const stepLag = (idx: number, delta: number) => {
+    const it = items[idx];
+    const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+    const n = Math.round((signed + delta) * 100) / 100;
+    patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else setHi((h) => Math.min(h + 1, Math.max(candidates.length - 1, 0))); } 
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); } 
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); const m = candidates[hi] || candidates[0]; if (m) addTask(m); } 
+    else if (e.key === 'Escape') { if (open) { e.stopPropagation(); setOpen(false); } }
+  };
+
+  const canAdd = canWrite && items.length < 2;
+  const hasQuery = deferredQuery.trim().length > 0;
+
+  return (
+    <div className="flex flex-col gap-2 w-full" ref={wrapperRef}>
+      {/* Cảnh báo lỗi */}
+      {error && (
+        <div className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 p-2 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1 font-semibold">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="p-0.5 hover:bg-red-100 rounded dark:hover:bg-red-900/50"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
+
+      {/* Danh sách thẻ đã chọn */}
+      <div className="flex flex-col gap-1.5">
+        {items.map((it, idx) => {
+          const style = SLOT_STYLE[idx] || SLOT_STYLE[1];
+          const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
+          const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+
+          return (
+            <div key={it.key} className={cn("flex flex-col p-1.5 rounded-lg border bg-white dark:bg-[#1a1a1c] shadow-xs", style.border, it.resolved ? 'border-slate-200 dark:border-[#333]' : 'border-amber-300 dark:border-amber-700/60')}>
+              <div className="flex items-center justify-between gap-2 pl-1">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black shrink-0", style.badge)}>#{style.tag}</span>
+                  {it.resolved && it.task ? (
+                    <div className="flex items-center gap-1.5 min-w-0 truncate text-xs">
+                      <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8] shrink-0">{it.code}</span>
+                      <span className="text-slate-800 dark:text-[#f3f3f3] font-semibold truncate" title={it.task.name}>{it.task.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-amber-600 italic">Not found: {it.raw}</span>
+                  )}
+                </div>
+                {canWrite && (
+                  <button type="button" onClick={() => removeItem(idx)} disabled={saving} className="text-slate-400 hover:text-red-500 p-1 shrink-0"><X className="w-3.5 h-3.5" /></button>
+                )}
+              </div>
+
+              {/* Link Options (TYPE & LAG placed on the SAME ROW) */}
+              {it.resolved && canWrite && (
+                <div className="flex items-center justify-between gap-1.5 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-[#2e2e32] pl-1 text-xs flex-nowrap overflow-x-auto">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
+                    <div className="inline-flex rounded bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      {allowed.map((rel) => {
+                        const active = it.type === rel;
+                        return (
+                          <button
+                            key={rel}
+                            type="button"
+                            disabled={saving}
+                            onClick={() => !active && patchItem(idx, { type: rel })}
+                            title={REL_INFO[rel].hint}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-extrabold transition-colors cursor-pointer active:scale-95",
+                              active ? style.active : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-[#e3e3e3]"
+                            )}
+                          >
+                            {rel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
+                    <div className="inline-flex items-center gap-0.5 rounded bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      <button type="button" disabled={saving} onClick={() => stepLag(idx, -1)} className="p-0.5 rounded bg-white dark:bg-[#1a1a1c] text-slate-500 hover:text-slate-800 dark:text-slate-400 active:scale-95 transition-all"><Minus className="w-3 h-3" /></button>
+                      <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                      <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
+                      <button type="button" disabled={saving} onClick={() => stepLag(idx, 1)} className="p-0.5 rounded bg-white dark:bg-[#1a1a1c] text-slate-500 hover:text-slate-800 dark:text-slate-400 active:scale-95 transition-all"><Plus className="w-3 h-3" /></button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Cross-Project Confirm Dialog */}
+      {pendingExternal && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] dark:border-amber-700/60 dark:bg-amber-950/40">
+          <div className="flex items-start gap-1.5 text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span className="font-medium leading-tight">
+              «{pendingExternal.task.name}» belongs to another project. This may adjust current task dates. Confirm link?
+            </span>
+          </div>
+          <div className="flex justify-end gap-1.5 mt-1">
+            <button type="button" onClick={() => setPendingExternal(null)} className="px-3 py-1 rounded text-slate-600 hover:bg-amber-100 dark:text-slate-300 font-bold">Cancel</button>
+            <button type="button" onClick={() => addTask(pendingExternal, true)} className="px-3 py-1 rounded bg-amber-600 text-white font-bold hover:bg-amber-700 shadow-sm">Link</button>
+          </div>
+        </div>
+      )}
+
+      {/* Search Input & Suggestions */}
+      {canAdd && !pendingExternal && (
+        <div className="relative mt-0.5">
+          <div className="relative">
+            <Link2 className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-blue-500" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              disabled={saving}
+              onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+              onFocus={() => setOpen(true)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type task name or code..."
+              autoComplete="off"
+              className="h-8 w-full rounded-lg border border-blue-200 bg-blue-50/50 pl-8 pr-7 text-xs font-semibold text-slate-800 outline-none placeholder:text-slate-400 placeholder:font-normal focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-blue-900/40 dark:bg-[#1a1c23] dark:text-white dark:focus:bg-[#1e1e20]"
+            />
+            {query && (
+              <button type="button" onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700" tabIndex={-1}>
+                <X className="w-3 h-3" />
+              </button>
+            )}
+            {saving && <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-blue-500" />}
+          </div>
+
+          {open && (
+            <ul className="absolute left-0 right-0 top-full z-[300000] mt-1 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528] overscroll-contain">
+              {!hasQuery && candidates.length > 0 && <li className="px-2.5 pb-1 pt-1.5 text-[9px] font-extrabold uppercase text-slate-400">Suggestions (Same Project)</li>}
+              {candidates.length === 0 ? (
+                <li className="px-3 py-3 text-center text-[11px] italic text-slate-500">No tasks found</li>
+              ) : (
+                candidates.map((m, i) => {
+                  const t = m.task;
+                  return (
+                    <li
+                      key={t.id}
+                      onMouseEnter={() => setHi(i)}
+                      onClick={() => addTask(m)}
+                      className={cn("flex cursor-pointer flex-col gap-0.5 px-2.5 py-1.5 border-b border-slate-100 dark:border-[#333] last:border-0", i === hi ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-slate-50 dark:hover:bg-[#2a2a2e]')}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-[11px] font-bold text-slate-800 dark:text-[#f3f3f3] line-clamp-1">{t.name}</span>
+                        {m.isExternal && <span className="shrink-0 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 text-[8px] font-bold text-amber-800 dark:text-amber-300">Cross-Project</span>}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
+                        <span className="text-slate-400 dark:text-slate-500">{shortDate(t.start)} → {shortDate(t.finish)}</span>
+                      </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+

@@ -10,6 +10,7 @@ import { GeneralFilterToolbar } from './GeneralTabParts/GeneralFilterToolbar';
 import { GeneralCanvasView } from './GeneralTabParts/GeneralCanvasView';
 import { GeneralMobileView } from './GeneralTabParts/GeneralMobileView';
 import { CheckCircle2 } from 'lucide-react';
+import { Portal } from './Portal';
 
 export function GeneralTab({ onProjectClick }: GeneralTabProps) {
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
@@ -149,13 +150,15 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
 
       {/* Floating visual feedback toast */}
       {successToast && (
-        <div
-          style={{ zIndex: 99999999 }}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999999] flex items-center gap-2 px-5 py-2.5 bg-emerald-600 dark:bg-emerald-700 text-white font-medium text-sm rounded-full shadow-2xl border border-emerald-400/50 animate-bounce pointer-events-auto"
-        >
-          <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-white" />
-          <span>{successToast}</span>
-        </div>
+        <Portal>
+          <div
+            style={{ zIndex: 99999999 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999999] flex items-center gap-2 px-5 py-2.5 bg-emerald-600 dark:bg-emerald-700 text-white font-medium text-sm rounded-full shadow-2xl border border-emerald-400/50 animate-bounce pointer-events-auto"
+          >
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-white" />
+            <span>{successToast}</span>
+          </div>
+        </Portal>
       )}
 
       {/* Footer Info */}

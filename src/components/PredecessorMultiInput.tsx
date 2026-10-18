@@ -536,7 +536,7 @@ export function PredecessorMultiInput({
           </div>
 
           {open && (
-            <ul className="absolute left-0 right-0 top-full z-[9999] mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528] overscroll-contain">
+            <ul className="absolute left-0 right-0 top-full z-[300000] mt-1 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528] overscroll-contain">
               {!hasQuery && candidates.length > 0 && <li className="px-2.5 pb-1 pt-1.5 text-[9px] font-extrabold uppercase text-slate-400">Suggestions (Same Project)</li>}
               {candidates.length === 0 ? (
                 <li className="px-3 py-3 text-center text-[11px] italic text-slate-500">No tasks found</li>

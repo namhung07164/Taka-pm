@@ -49,14 +49,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
       return;
     }
     const r = el.getBoundingClientRect();
-    const width = Math.min(400, vw - 16);
+    const width = Math.min(440, vw - 16);
     const left = Math.max(8, Math.min(r.left, vw - width - 8));
     const spaceBelow = vh - r.bottom - 8;
     const spaceAbove = r.top - 8;
-    if (spaceBelow >= 360 || spaceBelow >= spaceAbove) {
-      setLayout({ mode: 'pop', left, width, top: r.bottom + 4, maxH: Math.max(240, spaceBelow - 4) });
+    if (spaceBelow >= 400 || spaceBelow >= spaceAbove) {
+      setLayout({ mode: 'pop', left, width, top: r.bottom + 4, maxH: Math.max(380, Math.min(560, spaceBelow - 4)) });
     } else {
-      setLayout({ mode: 'pop', left, width, bottom: vh - r.top + 4, maxH: Math.max(240, spaceAbove - 4) });
+      setLayout({ mode: 'pop', left, width, bottom: vh - r.top + 4, maxH: Math.max(380, Math.min(560, spaceAbove - 4)) });
     }
   }, []);
 
@@ -178,11 +178,11 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
         createPortal(
           layout.mode === 'sheet' ? (
             <>
-              <div className="fixed inset-0 z-[190] bg-black/40" onClick={() => setIsEditing(false)} />
+              <div className="fixed inset-0 z-[189000] bg-black/40" onClick={() => setIsEditing(false)} />
               <div
                 ref={panelRef}
                 role="dialog"
-                className="fixed inset-x-2 bottom-2 z-[200] max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
+                className="fixed inset-x-2 bottom-2 z-[190000] max-h-[85vh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
               >
                 {panelContent}
               </div>
@@ -191,7 +191,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
             <div
               ref={panelRef}
               role="dialog"
-              className="fixed z-[200] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
+              className="fixed z-[190000] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-[#444446] dark:bg-[#1c1c1f]"
               style={{
                 left: layout.left,
                 width: layout.width,

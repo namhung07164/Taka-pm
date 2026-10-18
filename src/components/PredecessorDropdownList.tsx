@@ -41,7 +41,7 @@ export const PredecessorDropdownList: React.FC<PredecessorDropdownListProps> = R
   }
 
   return (
-    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#1c1c1f] border border-slate-200 dark:border-[#333336] rounded-lg shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+    <div className="absolute z-[300000] w-full mt-1 bg-white dark:bg-[#1c1c1f] border border-slate-200 dark:border-[#333336] rounded-lg shadow-xl overflow-hidden max-h-80 overflow-y-auto">
       {rankedCandidateList.map((item, idx) => {
         const t = item.task;
         const isSecondPredecessor = segments.length >= 2 || (segments.length === 1 && isTrailingDelimiter);

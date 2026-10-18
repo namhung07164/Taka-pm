@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
+import { Portal } from './Portal';
 import { X, Bell, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface ToastProps {
@@ -58,26 +59,28 @@ export function Toast({ title, message, type = 'info', onClose }: ToastProps) {
   const IconComponent = typeConfig.icon;
 
   return (
-    <div
-      style={{ zIndex: 99999999 }}
-      className={`fixed top-4 right-4 z-[99999999] max-w-sm w-[calc(100vw-2rem)] sm:w-full bg-white dark:bg-[#1e1e20] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.7)] border-2 ${typeConfig.border} p-4 animate-in slide-in-from-top-5 fade-in duration-300 pointer-events-auto`}
-    >
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-full ${typeConfig.iconBg} flex items-center justify-center shrink-0 shadow-xs`}>
-          <IconComponent className={`w-5 h-5 ${typeConfig.iconColor}`} />
+    <Portal>
+      <div
+        style={{ zIndex: 99999999 }}
+        className={`fixed top-4 right-4 z-[99999999] max-w-sm w-[calc(100vw-2rem)] sm:w-full bg-white dark:bg-[#1e1e20] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.7)] border-2 ${typeConfig.border} p-4 animate-in slide-in-from-top-5 fade-in duration-300 pointer-events-auto`}
+      >
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-full ${typeConfig.iconBg} flex items-center justify-center shrink-0 shadow-xs`}>
+            <IconComponent className={`w-5 h-5 ${typeConfig.iconColor}`} />
+          </div>
+          <div className="flex-grow min-w-0 pt-0.5">
+            <h4 className={`text-sm font-bold ${typeConfig.titleColor} truncate`}>{title}</h4>
+            <p className="text-xs text-slate-600 dark:text-[#c3c3c3] mt-1 line-clamp-3 leading-relaxed">{message}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1 text-slate-400 dark:text-[#838383] hover:text-slate-600 dark:hover:text-[#a3a3a3] rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] transition-colors cursor-pointer"
+            title="Dismiss notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="flex-grow min-w-0 pt-0.5">
-          <h4 className={`text-sm font-bold ${typeConfig.titleColor} truncate`}>{title}</h4>
-          <p className="text-xs text-slate-600 dark:text-[#c3c3c3] mt-1 line-clamp-3 leading-relaxed">{message}</p>
-        </div>
-        <button
-          onClick={onClose}
-          className="shrink-0 p-1 text-slate-400 dark:text-[#838383] hover:text-slate-600 dark:hover:text-[#a3a3a3] rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] transition-colors cursor-pointer"
-          title="Dismiss notification"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
-    </div>
+    </Portal>
   );
 }

@@ -87,6 +87,17 @@ export function GanttBarTooltip({
   useLayoutEffect(() => {
     if (!tooltipRef.current) return;
     const el = tooltipRef.current;
+
+    // Khi click vào predecessor, nâng ô tooltip lên cao hơn trên viewport để dễ nhìn và chọn task
+    if (isEditingPredecessor) {
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const idealTop = Math.max(16, Math.min(rect.top, vh - 580, rect.top - 180));
+      if (rect.top > idealTop) {
+        el.style.top = `${idealTop}px`;
+      }
+    }
+
     ensureTooltipInViewport(el);
 
     if (typeof ResizeObserver !== 'undefined') {
@@ -113,7 +124,11 @@ export function GanttBarTooltip({
         e.stopPropagation();
         if (!isPinned) setActiveTooltip(id);
       }}
-      className={`fixed z-[100000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-[11px] rounded-xl shadow-2xl p-2.5 w-64 sm:w-72 md:w-[340px] max-w-sm border backdrop-blur-md transition-all duration-150 flex flex-col gap-1.5 max-h-[calc(100vh-20px)] overflow-y-auto overscroll-contain ${
+      className={`fixed z-[180000] bg-slate-900/95 dark:bg-slate-900/95 text-white text-[11px] rounded-xl shadow-2xl p-3 border backdrop-blur-md transition-all duration-150 flex flex-col gap-2 max-h-[calc(100vh-24px)] overflow-y-auto overscroll-contain ${
+        isEditingPredecessor
+          ? 'w-[360px] sm:w-[440px] md:w-[480px] max-w-[96vw] min-h-[420px]'
+          : 'w-64 sm:w-72 md:w-[340px] max-w-sm'
+      } ${
         isPinned ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-700/80'
       }`}
       style={{
