@@ -141,10 +141,14 @@ export function useProjectsHydration({
             data.taskSummaries.map((s: any) => String(s?.id || "").trim().toLowerCase()).filter(Boolean)
           );
           const isZeroTaskServer = data.taskSummaries.length === 0 && (data.taskCount ?? 0) === 0;
+          const allSummariesHaveIds =
+            isZeroTaskServer ||
+            (data.taskSummaries.length > 0 &&
+              data.taskSummaries.every((s: any) => Boolean(s?.id && !String(s.id).startsWith("ts_"))));
 
           if (serverSummaryIds.size > 0 || isZeroTaskServer) {
             // 1. Any task ID that was in existing.taskSummaries but is no longer in server data.taskSummaries was deleted on another device
-            if (existing && Array.isArray(existing.taskSummaries)) {
+            if (allSummariesHaveIds && existing && Array.isArray(existing.taskSummaries)) {
               existing.taskSummaries.forEach((oldS: any) => {
                 const oldId = String(oldS?.id || "").trim();
                 if (oldId && !serverSummaryIds.has(oldId.toLowerCase())) {
@@ -154,14 +158,14 @@ export function useProjectsHydration({
               });
             }
 
-            // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s) is a zombie task
+            // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s) is a zombie task (only when all summaries have IDs)
             const localProjTasks = currentTasks.filter(t => isTaskBelongsToProject(t, resolvedData));
             const localProjTasksById = new Map<string, any>();
             localProjTasks.forEach((t) => {
               if (!t?.id || String(t.id).startsWith("ts_")) return;
               const tIdLower = String(t.id).trim().toLowerCase();
               localProjTasksById.set(tIdLower, t);
-              if (!serverSummaryIds.has(tIdLower)) {
+              if (allSummariesHaveIds && !serverSummaryIds.has(tIdLower)) {
                 const updatedMs = tsOf(t.updatedAt);
                 if (!updatedMs || nowMs - updatedMs > 30000) {
                   markTasksDeleted([t.id], id);

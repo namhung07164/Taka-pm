@@ -1,10 +1,12 @@
-import React, { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { getStatus } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { buildTaskByIdMap, isForeignSummaryEntry } from '../../lib/summaryGhostFilter';
+import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
+import { cleanOrphanTasks } from '../../lib/taskStateService';
 
 export interface ProjectInfo {
   status: string;
@@ -19,6 +21,163 @@ export interface ProjectInfo {
 interface UseDetailProjectInfoParams {
   projects: Project[];
   tasks: Task[];
+}
+
+function hasValidTaskContent(t: Partial<Task> | any): boolean {
+  if (!t) return false;
+  return Boolean(
+    (t.name && String(t.name).trim()) ||
+    (t.start && String(t.start).trim()) ||
+    (t.finish && String(t.finish).trim()) ||
+    t.taskCodePhu
+  );
+}
+
+function computeSingleProjectInfo(
+  p: Project,
+  tasksByProjectId: Map<string, Task[]>,
+  tasksByProjectKey: Map<string, Task[]>,
+  tasksByCodeMap: Map<string, Task[]>,
+  taskById: Map<string, Task>
+): ProjectInfo {
+  const realTasksMap = new Map<string, Task>();
+  const virtualTasksMap = new Map<string, Task>();
+
+  const pIdStr = p.id ? String(p.id).trim() : '';
+  const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  const pCodeLower = String(p.code || '').trim().toLowerCase();
+
+  const tryAddTask = (t: Task) => {
+    if (!t || (!t.id && !t.name) || t.isDeleted) return;
+    const tIdStr = String(t.id || '').trim();
+    if (tIdStr && isTaskDeletedInTracker(tIdStr, pIdStr || undefined)) return;
+    if (!hasValidTaskContent(t)) return;
+
+    const tProjId = t.projectId ? String(t.projectId).trim() : '';
+    if (tProjId && pIdStr && tProjId !== pIdStr) return;
+
+    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+
+    // Strict Rule 16.1 Store & Year isolation
+    if (pStore && tStore && pStore !== tStore) return;
+    if (pYear && tYear && pYear !== tYear) return;
+
+    const mapKey = (tIdStr || String(t.name)).toLowerCase();
+    const isVirtual = tIdStr.startsWith('ts_') || Boolean((t as any)._isVirtualSummary);
+    if (isVirtual) {
+      if (!virtualTasksMap.has(mapKey)) {
+        virtualTasksMap.set(mapKey, t);
+      }
+    } else {
+      realTasksMap.set(mapKey, t);
+    }
+  };
+
+  if (pIdStr && tasksByProjectId.has(pIdStr)) {
+    tasksByProjectId.get(pIdStr)!.forEach(tryAddTask);
+  }
+
+  const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+  const foundByKey = tasksByProjectKey.get(key);
+  if (foundByKey && foundByKey.length > 0) {
+    foundByKey.forEach(tryAddTask);
+  }
+
+  const allCodes = new Set<string>();
+  if (pCodeLower) allCodes.add(pCodeLower);
+  if (p.linkCodes) {
+    String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
+  }
+  allCodes.forEach(code => {
+    const candidateTasks = tasksByCodeMap.get(code) || [];
+    candidateTasks.forEach(tryAddTask);
+  });
+
+  // Fallback to p.taskSummaries ONLY when no real tasks for this project are loaded in memory
+  if (realTasksMap.size === 0 && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+    p.taskSummaries.forEach((ts, idx) => {
+      if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
+      if (isForeignSummaryEntry(ts.id, p, taskById)) return;
+      if (!hasValidTaskContent(ts)) return;
+
+      const rawTsId = ts.id ? String(ts.id).trim() : '';
+      const tsId = rawTsId || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+      const tsIdLower = tsId.toLowerCase();
+
+      if (!virtualTasksMap.has(tsIdLower)) {
+        virtualTasksMap.set(tsIdLower, {
+          id: tsId,
+          name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+          start: ts.start || p.computedTakStart || p.start || '',
+          finish: ts.finish || p.computedTakCompl || p.handover || '',
+          projectCode: p.code || '',
+          projectStore: p.store || 'HCM',
+          projectYear: p.year ? String(p.year) : '',
+          party: ts.party || p.party || '',
+          runningStatus: ts.runningStatus || 'On process',
+          duration: ts.duration || '',
+          parentTaskId: ts.parentTaskId,
+          taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+          projectId: p.id,
+          ...ts,
+          _isVirtualSummary: true,
+        } as unknown as Task);
+      }
+    });
+  }
+
+  const rawGroupTasks: Task[] = realTasksMap.size > 0
+    ? Array.from(realTasksMap.values())
+    : Array.from(virtualTasksMap.values());
+  const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
+  const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
+  const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(unrolledTasks || []);
+  const sortedTasks = sortGroupTasks(rolledUpGroupTasks).map(t => ({
+    ...t,
+    name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
+  }));
+
+  let computedTakStart = p.computedTakStart || p.start;
+  let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
+  let computedOpening = p.computedOpening || p.opening;
+
+  if (sortedTasks.length > 0) {
+    let minStart: string | undefined = undefined;
+    let maxFinish: string | undefined = undefined;
+    for (let i = 0; i < sortedTasks.length; i++) {
+      const t = sortedTasks[i];
+      if (t.start && (!minStart || t.start < minStart)) {
+        minStart = t.start;
+      }
+      if (t.finish && (!maxFinish || t.finish > maxFinish)) {
+        maxFinish = t.finish;
+      }
+      const name = String(t.name || '').toLowerCase();
+      if (name.includes('opening') || name.includes('open')) {
+        if (t.finish && (!computedOpening || t.finish > computedOpening)) {
+          computedOpening = t.finish;
+        }
+      }
+    }
+    if (minStart) computedTakStart = minStart;
+    if (maxFinish) computedTakCompl = maxFinish;
+  }
+
+  const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+  const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
+
+  return {
+    status,
+    start: computedTakStart || '9999-12-31',
+    finish,
+    computedTakStart,
+    computedTakCompl,
+    computedOpening,
+    sortedTasks,
+  };
 }
 
 export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoParams) {
@@ -62,169 +221,12 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
   const projectInfoMap = useMemo(() => {
     const map = new Map<string, ProjectInfo>();
-
-    const codeStoreProjectCount = new Map<string, number>();
-    projects.forEach(proj => {
-      if ((proj as any).isDeleted) return;
-      const c = String(proj.code || '').trim().toLowerCase();
-      const s = proj.store ? String(proj.store).trim().toLowerCase() : '';
-      if (c) {
-        const k = `${c}__${s}`;
-        codeStoreProjectCount.set(k, (codeStoreProjectCount.get(k) || 0) + 1);
-      }
-    });
-
     projects.forEach(p => {
-      const mergedTasksMap = new Map<string, Task>();
-
-      const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-      const pCodeLower = String(p.code || '').trim().toLowerCase();
-      const isUniqueCodeInStore = pCodeLower ? (codeStoreProjectCount.get(`${pCodeLower}__${pStore}`) || 0) <= 1 : false;
-
-      if (p.id && tasksByProjectId.has(String(p.id))) {
-        tasksByProjectId.get(String(p.id))!.forEach(t => {
-          if (t && (t.id || t.name)) {
-            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-            if (pStore && tStore && pStore !== tStore) return;
-            if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear && String(t.projectId) !== String(p.id)) return;
-            mergedTasksMap.set(String(t.id || t.name), t);
-          }
-        });
-      }
-
-      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-      const foundByKey = tasksByProjectKey.get(key);
-      if (foundByKey && foundByKey.length > 0) {
-        foundByKey.forEach(t => {
-          if (t && (t.id || t.name)) {
-            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
-            mergedTasksMap.set(String(t.id || t.name), t);
-          }
-        });
-      }
-
-      const allCodes = new Set<string>();
-      if (p.code) allCodes.add(pCodeLower);
-      if (p.linkCodes) {
-        String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
-      }
-      allCodes.forEach(code => {
-        const isPartUniqueInStore = (codeStoreProjectCount.get(`${code}__${pStore}`) || 0) <= 1;
-        const candidateTasks = tasksByCodeMap.get(code) || [];
-        candidateTasks.forEach(t => {
-          if (!t || (!t.id && !t.name)) return;
-          if (t.projectId && p.id && String(t.projectId) !== String(p.id)) return;
-
-          const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-
-          if (pStore && tStore && pStore !== tStore) return;
-          if (!isUniqueCodeInStore && !isPartUniqueInStore && pYear && tYear && pYear !== tYear) return;
-
-          mergedTasksMap.set(String(t.id || t.name), t);
-        });
-      });
-
-      let rawGroupTasks: Task[] = Array.from(mergedTasksMap.values());
-
-      // Fallback to p.taskSummaries ONLY when real tasks for this project have not been loaded yet
-      if (rawGroupTasks.length === 0 && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        p.taskSummaries.forEach((ts, idx) => {
-          if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
-            return;
-          }
-          if (isForeignSummaryEntry(ts.id, p, taskById)) return;
-
-          rawGroupTasks.push({
-            id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-            name: ts.name || `Task ${idx + 1}`,
-            start: ts.start || p.computedTakStart || p.start || '',
-            finish: ts.finish || p.computedTakCompl || p.handover || '',
-            projectCode: p.code || '',
-            projectStore: p.store || 'HCM',
-            projectYear: p.year ? String(p.year) : '',
-            party: ts.party || p.party || '',
-            runningStatus: ts.runningStatus || 'On process',
-            duration: ts.duration || '',
-            parentTaskId: ts.parentTaskId,
-            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-            projectId: p.id,
-            ...ts
-          } as Task);
-        });
-      }
-
-      // Ensure unique tasks by id to eliminate any duplicate key collision
-      const uniqueTaskMap = new Map<string, Task>();
-      rawGroupTasks.forEach(t => {
-        if (t && t.id && !uniqueTaskMap.has(t.id)) {
-          uniqueTaskMap.set(t.id, t);
-        }
-      });
-      rawGroupTasks = Array.from(uniqueTaskMap.values());
-      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(rawGroupTasks || []);
-      const sortedTasks = sortGroupTasks(rolledUpGroupTasks);
-      let computedTakStart = p.computedTakStart || p.start;
-      let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
-      let computedOpening = p.computedOpening || p.opening;
-
-      if (sortedTasks.length > 0) {
-        let minStart: string | undefined = undefined;
-        let maxFinish: string | undefined = undefined;
-        for (let i = 0; i < sortedTasks.length; i++) {
-          const t = sortedTasks[i];
-          if (t.start && (!minStart || t.start < minStart)) {
-            minStart = t.start;
-          }
-          if (t.finish && (!maxFinish || t.finish > maxFinish)) {
-            maxFinish = t.finish;
-          }
-          const name = String(t.name || '').toLowerCase();
-          if (name.includes('opening') || name.includes('open')) {
-            if (t.finish && (!computedOpening || t.finish > computedOpening)) {
-              computedOpening = t.finish;
-            }
-          }
-        }
-        if (minStart) computedTakStart = minStart;
-        if (maxFinish) computedTakCompl = maxFinish;
-      } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-        let minStart: string | undefined = undefined;
-        let maxFinish: string | undefined = undefined;
-        for (let i = 0; i < p.taskSummaries.length; i++) {
-          const ts = p.taskSummaries[i];
-          if (ts.start && (!minStart || ts.start < minStart)) {
-            minStart = ts.start;
-          }
-          if (ts.finish && (!maxFinish || ts.finish > maxFinish)) {
-            maxFinish = ts.finish;
-          }
-          const name = String(ts.name || '').toLowerCase();
-          if (name.includes('opening') || name.includes('open')) {
-            if (ts.finish && (!computedOpening || ts.finish > computedOpening)) {
-              computedOpening = ts.finish;
-            }
-          }
-        }
-        if (minStart) computedTakStart = minStart;
-        if (maxFinish) computedTakCompl = maxFinish;
-      }
-
-      const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
-      const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
       const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-      map.set(pUniqueKey, {
-        status,
-        start: computedTakStart || '9999-12-31',
-        finish,
-        computedTakStart,
-        computedTakCompl,
-        computedOpening,
-        sortedTasks
-      });
+      map.set(
+        pUniqueKey,
+        computeSingleProjectInfo(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById)
+      );
     });
     return map;
   }, [projects, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
@@ -233,139 +235,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
     const cached = projectInfoMap.get(pUniqueKey);
     if (cached) return cached;
-    
-    let rawGroupTasks = p.id ? tasksByProjectId.get(String(p.id)) : undefined;
-    if (!rawGroupTasks || rawGroupTasks.length === 0) {
-      const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-      rawGroupTasks = tasksByProjectKey.get(key);
-    }
-    if (!rawGroupTasks || rawGroupTasks.length === 0) {
-      const allCodes = new Set<string>();
-      if (p.code) allCodes.add(String(p.code).trim().toLowerCase());
-      if (p.linkCodes) {
-        String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
-      }
-      const matchedMap = new Map<string, Task>();
-      allCodes.forEach(code => {
-        const candidateTasks = tasksByCodeMap.get(code) || [];
-        candidateTasks.forEach(t => {
-          const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-          const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-          if (matchesStore && matchesYear && t && (t.id || t.name)) {
-            matchedMap.set(String(t.id || t.name), t);
-          }
-        });
-      });
-      rawGroupTasks = Array.from(matchedMap.values());
-    }
-    if (!rawGroupTasks) rawGroupTasks = [];
-    if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > rawGroupTasks.length) {
-      const existingIdSet = new Set<string>();
-      const existingCodeNameSet = new Set<string>();
-      const existingNameSet = new Set<string>();
-
-      rawGroupTasks.forEach(t => {
-        if (t.id) existingIdSet.add(String(t.id).toLowerCase());
-        const tName = t.name ? String(t.name).trim().toLowerCase() : '';
-        const tCode = t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '';
-        if (tName) existingNameSet.add(tName);
-        if (tCode && tName) existingCodeNameSet.add(`${tCode}:::${tName}`);
-      });
-
-      p.taskSummaries.forEach((ts, idx) => {
-        if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) return;
-        if (isForeignSummaryEntry(ts.id, p, taskById)) return;
-        const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-        const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-        const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-
-        const hasMatch = (tsId && existingIdSet.has(tsId)) ||
-                         (tsCode && tsName && existingCodeNameSet.has(`${tsCode}:::${tsName}`)) ||
-                         (!tsCode && tsName && existingNameSet.has(tsName));
-        if (!hasMatch) {
-          rawGroupTasks!.push({
-            id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-            name: ts.name || `Task ${idx + 1}`,
-            start: ts.start || p.computedTakStart || p.start || '',
-            finish: ts.finish || p.computedTakCompl || p.handover || '',
-            projectCode: p.code || '',
-            projectStore: p.store || 'HCM',
-            projectYear: p.year ? String(p.year) : '',
-            party: ts.party || p.party || '',
-            runningStatus: ts.runningStatus || 'On process',
-            duration: ts.duration || '',
-            parentTaskId: ts.parentTaskId,
-            taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-            orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-            projectId: p.id,
-            ...ts
-          } as Task);
-        }
-      });
-    }
-    // Ensure unique tasks by id to eliminate any duplicate key collision
-    if (rawGroupTasks && rawGroupTasks.length > 0) {
-      const uniqueTaskMap = new Map<string, Task>();
-      rawGroupTasks.forEach(t => {
-        if (t && t.id && !uniqueTaskMap.has(t.id)) {
-          uniqueTaskMap.set(t.id, t);
-        }
-      });
-      rawGroupTasks = Array.from(uniqueTaskMap.values());
-    }
-    const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(rawGroupTasks || []);
-    const sortedTasks = sortGroupTasks(rolledUpGroupTasks);
-    let computedTakStart = p.computedTakStart || p.start;
-    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
-    let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
-
-    if (sortedTasks.length > 0) {
-      let minStart: string | undefined = undefined;
-      let maxFinish: string | undefined = undefined;
-      let hasOpeningTask = false;
-      for (let i = 0; i < sortedTasks.length; i++) {
-        const t = sortedTasks[i];
-        if (t.start && (!minStart || t.start < minStart)) minStart = t.start;
-        if (t.finish && (!maxFinish || t.finish > maxFinish)) maxFinish = t.finish;
-        const name = String(t.name || '').toLowerCase();
-        if (name.includes('opening') || name.includes('open')) {
-          if (t.finish && (!hasOpeningTask || t.finish > computedOpening)) {
-            computedOpening = t.finish;
-            hasOpeningTask = true;
-          }
-        }
-      }
-      if (minStart) computedTakStart = minStart;
-      if (maxFinish) computedTakCompl = maxFinish;
-      if (!hasOpeningTask && p.openingMode !== 'manual') {
-        computedOpening = '';
-      }
-    } else if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-      let minStart: string | undefined = undefined;
-      let maxFinish: string | undefined = undefined;
-      let hasOpeningTask = false;
-      for (let i = 0; i < p.taskSummaries.length; i++) {
-        const ts = p.taskSummaries[i];
-        if (ts.start && (!minStart || ts.start < minStart)) minStart = ts.start;
-        if (ts.finish && (!maxFinish || ts.finish > maxFinish)) maxFinish = ts.finish;
-        const name = String(ts.name || '').toLowerCase();
-        if (name.includes('opening') || name.includes('open')) {
-          if (ts.finish && (!hasOpeningTask || ts.finish > computedOpening)) {
-            computedOpening = ts.finish;
-            hasOpeningTask = true;
-          }
-        }
-      }
-      if (minStart) computedTakStart = minStart;
-      if (maxFinish) computedTakCompl = maxFinish;
-      if (!hasOpeningTask && p.openingMode !== 'manual') {
-        computedOpening = '';
-      }
-    }
-
-    const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
-    const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
-    return { status, start: computedTakStart || '9999-12-31', finish, sortedTasks, computedTakStart, computedTakCompl, computedOpening };
+    return computeSingleProjectInfo(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById);
   }, [projectInfoMap, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
   return {
@@ -375,3 +245,4 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     getProjectInfo,
   };
 }
+

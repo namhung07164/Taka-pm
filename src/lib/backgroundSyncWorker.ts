@@ -65,6 +65,11 @@ function isZombieTaskAgainstProjects(t: Task, projects: Project[]): boolean {
     return (ownerProj.taskCount ?? 0) === 0;
   }
 
+  const allSummariesHaveIds = ownerProj.taskSummaries.every(
+    (s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_'))
+  );
+  if (!allSummariesHaveIds) return false;
+
   const summaryIds = new Set(
     ownerProj.taskSummaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
   );

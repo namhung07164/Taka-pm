@@ -249,7 +249,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             if (!matchesProj) return p;
 
             const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
-            const sIdx = currentSummaries.findIndex((s: any) => String(s?.id || '').trim().toLowerCase() === docIdLower);
+            const mCodeLower = String(mergedTask.taskCodePhu || '').trim().toLowerCase();
+            const mNameLower = String(mergedTask.name || '').trim().toLowerCase();
+            const mStartStr = String(mergedTask.start || '').trim();
+            const sIdx = currentSummaries.findIndex((s: any) => {
+              const sId = String(s?.id || '').trim().toLowerCase();
+              if (sId && !sId.startsWith('ts_')) return sId === docIdLower;
+              const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
+              if (sCode && mCodeLower && sCode === mCodeLower) return true;
+              return (
+                Boolean(mNameLower) &&
+                String(s?.name || '').trim().toLowerCase() === mNameLower &&
+                String(s?.start || '').trim() === mStartStr
+              );
+            });
             const summaryItem = {
               ...(sIdx !== -1 ? currentSummaries[sIdx] : {}),
               id: docId,
@@ -458,12 +471,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       const nextProj: Project = {
         ...p,
         ...computedDates,
-        taskCount: useInMemoryTasks
-          ? (computedDates.taskCount !== undefined ? computedDates.taskCount : pTasks.length)
-          : existingSummaries.length,
-        taskSummaries: useInMemoryTasks
-          ? (computedDates.taskSummaries || [])
-          : existingSummaries,
+        taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : existingSummaries.length,
+        taskSummaries: computedDates.taskSummaries !== undefined ? computedDates.taskSummaries : existingSummaries,
       };
       touchedProjectsToPersist.push(nextProj);
       return nextProj;

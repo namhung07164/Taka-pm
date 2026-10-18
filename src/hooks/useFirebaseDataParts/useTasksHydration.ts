@@ -389,8 +389,11 @@ export function useTasksHydration({
             if (!tasksPool.current.has(projKey)) {
               const currentTasks = useAppStore.getState().tasks || [];
               const localProjTasks = currentTasks.filter((t) => doesTaskBelongToProject(t, p));
+              const expectedSummaryCount = Array.isArray(p.taskSummaries)
+                ? p.taskSummaries.length
+                : (p.taskCount || 0);
               const hasLocalProjTasks =
-                localProjTasks.length > 0 ||
+                (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount) ||
                 knownHydratedProjectCodes.current.has(String(p.id));
               const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
               const isZeroTaskProject =
@@ -408,9 +411,25 @@ export function useTasksHydration({
                     hasMarker(markers, "tasks_proj", p.code) ||
                     hasMarker(markers, "tasks_year", year)));
               if (deltaManaged) {
+                knownHydratedProjectCodes.current.add(String(p.id));
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
-                if (!isZeroTaskProject) needTasksDeltaSync = true;
+                if (!isZeroTaskProject) {
+                  needTasksDeltaSync = true;
+                  const healed = healProjectsAfterTasksBatch({
+                    currentProjects: useAppStore.getState().projects || [],
+                    finalTasks: currentTasks,
+                    delegationGroups: useAppStore.getState().delegationGroups || [],
+                    changedTasks: new Map(),
+                    removedTasks: new Map(),
+                    fromCache: false,
+                    knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+                    tasksPool: tasksPool.current,
+                  });
+                  if (healed) {
+                    useAppStore.getState().setProjects(healed);
+                  }
+                }
                 usePerformanceStore
                   .getState()
                   .trackGetDoc(

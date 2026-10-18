@@ -50,6 +50,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   safeAllTasks.forEach(t => {
     if (!t || !t.id || t.isDeleted) return;
+    if (String(t.id).startsWith('ts_') || (t as any)._isVirtualSummary) return;
     if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
 
     const tProjId = t.projectId ? String(t.projectId).trim() : '';
@@ -89,7 +90,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   while (addedChild) {
     addedChild = false;
     safeAllTasks.forEach(t => {
-      if (!t || !t.id || t.isDeleted || matchedMap.has(String(t.id))) return;
+      if (!t || !t.id || t.isDeleted || String(t.id).startsWith('ts_') || (t as any)._isVirtualSummary || matchedMap.has(String(t.id))) return;
       if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
       const rawParent = t.parentTaskId || (t as any).parentId;
       if (rawParent && matchedMap.has(String(rawParent))) {
@@ -99,14 +100,22 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     });
   }
 
-  // Fallback or supplement with taskSummaries when tasks for this project are not loaded (or only partially cached) in memory
+  if (matchedMap.size > 0) {
+    return Array.from(matchedMap.values());
+  }
+
+  // Fallback to taskSummaries ONLY when no real tasks for this project are loaded in memory
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
     const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
     const validSummaries = project.taskSummaries
-      .filter(ts => !isTaskDeletedInTracker(ts.id, pIdStr || undefined) && !isForeignSummaryEntry(ts.id, project, taskByIdFallback))
+      .filter(ts =>
+        !isTaskDeletedInTracker(ts.id, pIdStr || undefined) &&
+        !isForeignSummaryEntry(ts.id, project, taskByIdFallback) &&
+        Boolean((ts.name && String(ts.name).trim()) || (ts.start && String(ts.start).trim()) || (ts.finish && String(ts.finish).trim()) || ts.taskCodePhu)
+      )
       .map((ts, idx) => ({
         id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
-        name: ts.name || `Task ${idx + 1}`,
+        name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
         start: ts.start || project.computedTakStart || project.start || '',
         finish: ts.finish || project.computedTakCompl || project.handover || '',
         projectCode: project.code || '',
@@ -119,27 +128,18 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
         taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
         orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
         projectId: project.id,
-        ...ts
-      } as Task));
+        ...ts,
+        _isVirtualSummary: true,
+      } as unknown as Task));
 
-    if (matchedMap.size === 0) {
-      return validSummaries;
-    }
-
-    // If project is collapsed/partially hydrated and project.taskSummaries from server has newly added tasks not yet in matchedMap, include them
-    if (validSummaries.length > matchedMap.size) {
-      validSummaries.forEach((st) => {
-        if (st.id && !matchedMap.has(String(st.id))) {
-          matchedMap.set(String(st.id), st);
-        }
-      });
-    }
+    return validSummaries;
   }
 
-  return Array.from(matchedMap.values());
+  return [];
 }
 
-import { rollupParentTaskDatesAndStatus, rollupTaskSummaries } from "./taskRollupService";
+import { rollupParentTaskDatesAndStatus, rollupTaskSummaries, filterNonOrphanTasks } from "./taskRollupService";
+import { deduplicateTasksInMemory } from "./taskDeduplicationService";
 
 /**
  * Thuật toán tính toán mốc thời gian tĩnh (Pre-computed Dates) cho Dự án từ danh sách Tasks con:
@@ -156,14 +156,32 @@ export function calculateProjectComputedDates(
   let computedTakCompl = project.computedTakCompl || project.handover || (project as any).takCompl || "";
   let computedOpening = project.computedOpening || project.opening || "";
 
+  const pIdStr = project.id ? String(project.id) : undefined;
   const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
   const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
 
-  const rolledUpProjTasks = rollupParentTaskDatesAndStatus(projectTasks || [], delegationGroups);
+  const rawTasks = (projectTasks || []).filter(t =>
+    t &&
+    !t.isDeleted &&
+    !isTaskDeletedInTracker(t.id, pIdStr) &&
+    Boolean((t.name && String(t.name).trim()) || (t.start && String(t.start).trim()) || (t.finish && String(t.finish).trim()) || t.taskCodePhu)
+  );
+  const hasRealTasks = rawTasks.some(t => !String(t.id || '').startsWith('ts_') && !(t as any)._isVirtualSummary);
+  const filteredInputTasks = hasRealTasks
+    ? rawTasks.filter(t => !String(t.id || '').startsWith('ts_') && !(t as any)._isVirtualSummary)
+    : rawTasks;
+
+  const { dedupedTasks } = deduplicateTasksInMemory(filteredInputTasks, project.code || project.id ? [project as Project] : []);
+  const { cleaned: nonOrphanTasks } = filterNonOrphanTasks(dedupedTasks);
+  const normalizedTasks = nonOrphanTasks.map(t => ({
+    ...t,
+    name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
+  }));
+
+  const rolledUpProjTasks = rollupParentTaskDatesAndStatus(normalizedTasks, delegationGroups);
   const sortedProjTasks = sortGroupTasks(rolledUpProjTasks);
 
   const taskSummariesRaw = sortedProjTasks
-    .filter(t => Boolean(t.name))
     .map((t, idx) => {
       const summary: {
         name: string;
@@ -171,12 +189,13 @@ export function calculateProjectComputedDates(
         finish: string;
         [key: string]: any;
       } = {
-        name: t.name || '',
+        name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
         start: t.start || '',
         finish: t.finish || '',
         orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
       };
-      if (t.id) summary.id = t.id;
+      if (t.id && !String(t.id).startsWith('ts_')) summary.id = t.id;
+      else if (t.id) summary.id = t.id;
       if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
       if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
       if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
@@ -189,17 +208,18 @@ export function calculateProjectComputedDates(
 
   const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
 
-  const activeExistingSummaries = existingSummaries.filter((es: any) => 
-    !isTaskDeletedInTracker(es.id, project.id ? String(project.id) : undefined)
+  const activeExistingSummaries = existingSummaries.filter((es: any) =>
+    !isTaskDeletedInTracker(es.id, pIdStr) &&
+    Boolean((es.name && String(es.name).trim()) || (es.start && String(es.start).trim()) || (es.finish && String(es.finish).trim()) || es.taskCodePhu)
   );
 
   const finalSummaries: any[] = sortedProjTasks.length > 0
     ? taskSummaries
     : rollupTaskSummaries(activeExistingSummaries);
 
-  const finalTaskCount = projectTasks && projectTasks.length > 0
-    ? projectTasks.length
-    : (finalSummaries.length > 0 ? finalSummaries.length : existingCount);
+  const finalTaskCount = sortedProjTasks.length > 0
+    ? finalSummaries.length
+    : (Array.isArray(project.taskSummaries) ? finalSummaries.length : existingCount);
 
   // Compute start / compl / opening across the unified summaries and tasks
   const allKnownForDates = finalSummaries.length > 0 ? finalSummaries : sortedProjTasks;
@@ -426,119 +446,13 @@ export async function syncProjectDatesByCode(
   await syncProjectDatesToFirestore(project.id, dates);
 }
 
-/**
- * Tính toán trạng thái thực tế (Actual Status) của Dự án dựa trên các Delegation Groups và Tasks.
- * Ưu tiên: Rejected > Completed > Pending Completed > In Progress > Planned.
- */
-export function computeProjectActStatus(
-  p: Project,
-  delegationGroups: DelegationGroup[] = [],
-  matchedTasks: Task[] = []
-): string {
-  // Nếu có manual override actStatus hoặc actualStatus trong DB, dùng nó.
-  const pAny = p as any;
-  if (pAny.actStatus) return String(pAny.actStatus);
-  if (pAny.actualStatus) return String(pAny.actualStatus);
-
-  if (delegationGroups && delegationGroups.length > 0) {
-    const matchedTaskIds = new Set(matchedTasks.map(t => t.id).filter(Boolean));
-    const pGroups = delegationGroups.filter(g => isDelegationGroupBelongsToProject(g, p, matchedTaskIds));
-
-    if (pGroups.length > 0) {
-      const statuses = pGroups.map(g => {
-        if (g.actStatus) return g.actStatus;
-        return resolveActualStatus(p.computedStatus || 'On process', g.subTasks || []).label;
-      });
-      if (statuses.some(s => s === 'Rejected' || s === 'Correction Needed')) return 'Rejected';
-      if (statuses.every(s => s === 'Completed')) return 'Completed';
-      if (statuses.some(s => s === 'Pending Completed' || s === 'Pending Approval' || s === 'Review Late')) return 'Pending Completed';
-      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Delayed' || s === 'Accepted')) return 'In Progress';
-      return statuses[0] || 'Planned';
-    }
-  }
-
-  if (p.computedActProgress === 100) return 'Completed';
-  const plStatus = p.computedStatus || getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
-  if (plStatus === 'Completed') return 'Completed';
-  if (plStatus === 'Canceled') return 'Cancel';
-  if (p.computedActProgress && p.computedActProgress > 0) return 'In Progress';
-  if (plStatus === 'On process' || plStatus === 'Handover') return 'In Progress';
-  return 'Planned';
-}
-
-export function isDelegationGroupBelongsToProject(
-  g: DelegationGroup | undefined | null,
-  p: Partial<Project> | undefined | null,
-  matchedTaskIds?: Set<string>
-): boolean {
-  if (!g || !p || g.isDeleted || (p as any).isDeleted) return false;
-
-  if (g.parentTaskId && matchedTaskIds && matchedTaskIds.has(g.parentTaskId)) {
-    return true;
-  }
-
-  const gProjId = g.projectId ? String(g.projectId).trim() : '';
-  const pId = p.id ? String(p.id).trim() : '';
-  if (gProjId && pId && gProjId !== pId) return false;
-
-  const gStore = g.projectStore ? String(g.projectStore).trim().toUpperCase() : '';
-  const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
-  if (gStore && pStore && gStore !== pStore) return false;
-
-  const gYear = g.projectYear !== undefined && g.projectYear !== null ? String(g.projectYear).trim() : '';
-  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  if (gYear && pYear && gYear !== pYear) return false;
-
-  if (gProjId && pId && gProjId === pId) return true;
-
-  if (!g.projectCode || !p.code) return false;
-  const gCode = String(g.projectCode).trim().toLowerCase();
-  return gCode === String(p.code).trim().toLowerCase() || matchProjectCode(g.projectCode, p.code);
-}
-
 export {
   getAppBootAgeMs,
   BOOT_SYNC_GUARD_MS,
   backfillMissingProjectDates,
+  isDelegationGroupBelongsToProject,
+  computeProjectActStatus,
+  syncAllProjectsTaskCountFromFirestore,
 } from "./projectDatesBackfill";
-
-/**
- * Lệnh cưỡng bức đồng bộ lại Task Count từ Firestore cho toàn bộ dự án
- * (Dùng để sửa lỗi iPad/iPhone lệch count khi snapshot cache bị cũ)
- */
-export async function syncAllProjectsTaskCountFromFirestore(): Promise<{ updatedCount: number; totalProjects: number }> {
-  try {
-    const { projects, tasks, delegationGroups } = useAppStore.getState();
-    const totalProjects = projects.length;
-    let updatedCount = 0;
-
-    // Chỉ thực hiện trên 200 dự án gần nhất hoặc đang hiển thị để tránh quá tải
-    for (const p of projects) {
-      if (!p.id || p.isDeleted) continue;
-
-      // 1. Lấy task thật đang có trong RAM (đã được onSnapshot nạp đầy đủ)
-      const pTasks = getTasksForProject(p, tasks);
-      
-      // 2. Tính toán lại bộ chỉ số
-      const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
-
-      // 3. So khớp: nếu lệch count hoặc lệch summaries thì ghi đè Firestore
-      const hasDiscrepancy = 
-        p.taskCount !== computed.taskCount || 
-        (p.taskSummaries?.length || 0) !== (computed.taskSummaries?.length || 0);
-
-      if (hasDiscrepancy) {
-        await syncProjectDatesToFirestore(p.id, computed);
-        updatedCount++;
-      }
-    }
-
-    return { updatedCount, totalProjects };
-  } catch (err: any) {
-    console.error("[syncAllProjectsTaskCountFromFirestore] Sync Failed", err);
-    useAppStore.getState().setToast({ title: "Sync Failed", message: err.message || "Error syncing task counts", type: "error" });
-    return { updatedCount: 0, totalProjects: 0 };
-  }
-}
 
 

@@ -1,6 +1,43 @@
 import { Task, DelegationGroup } from '../types';
 
 /**
+ * Promotes orphan subtasks (whose parentTaskId is missing or deleted) to root tasks in memory
+ * so parent rollup dates and task counts remain 100% consistent before and after project expansion.
+ */
+export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
+  if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
+
+  const taskMap = new Map<string, Task>();
+  const taskCodeMap = new Map<string, Task>();
+
+  tasks.forEach(t => {
+    if (!t || t.isDeleted) return;
+    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
+    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  });
+
+  let fixedCount = 0;
+  const cleaned = tasks.map(t => {
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return t;
+
+    const parentStr = String(rawParent).trim().toLowerCase();
+    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+
+    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+      fixedCount++;
+      const updated = { ...t, parentTaskId: undefined };
+      delete (updated as any).parentId;
+      return updated;
+    }
+
+    return t;
+  });
+
+  return { cleaned, fixedCount };
+}
+
+/**
  * Computes rolled up start date, finish date, duration, and status for parent tasks
  * based on their child tasks (recursive with circular loop detection).
  */
@@ -159,3 +196,4 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
 
   return result;
 }
+

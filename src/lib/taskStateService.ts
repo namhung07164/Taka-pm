@@ -32,20 +32,7 @@ export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): b
 
   if (tProjId && pId && tProjId !== pId) return false;
   if (pStore && tStore && pStore !== tStore) return false;
-
-  if (pYear && tYear && pYear !== tYear) {
-    const allProjects = useAppStore.getState().projects || [];
-    const hasOtherProjectInStoreWithCode = pCode
-      ? allProjects.some(
-          (other) =>
-            !(other as any).isDeleted &&
-            String(other.id) !== pId &&
-            String(other.code || '').trim().toLowerCase() === pCode &&
-            (!pStore || !other.store || String(other.store).trim().toLowerCase() === pStore)
-        )
-      : false;
-    if (hasOtherProjectInStoreWithCode) return false;
-  }
+  if (pYear && tYear && pYear !== tYear) return false;
 
   if (tProjId && pId && tProjId === pId) {
     return true;

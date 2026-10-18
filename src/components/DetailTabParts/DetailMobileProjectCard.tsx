@@ -15,6 +15,7 @@ import {
   parseDateTime,
   getStatus
 } from '../../lib/utils';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 
 export function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
   if (!dateStr) return null;
@@ -173,10 +174,14 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     return taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
   });
 
-  const summaryCount = (p.taskSummaries && Array.isArray(p.taskSummaries)) ? p.taskSummaries.length : (p.taskCount ?? 0);
-  const projectDocCount = Math.max(p.taskCount ?? 0, summaryCount);
+  const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
+    ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
+    : [];
+  const summaryCount = activeSummaries.length;
   const loadedTaskCount = groupTasks.length;
-  const authoritativeCount = Math.max(loadedTaskCount, projectDocCount);
+  const authoritativeCount = loadedTaskCount > 0
+    ? loadedTaskCount
+    : (Array.isArray(p.taskSummaries) ? summaryCount : (p.taskCount ?? 0));
   const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
     ? tasksToRender.length
     : authoritativeCount;

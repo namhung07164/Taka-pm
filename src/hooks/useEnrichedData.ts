@@ -5,6 +5,7 @@ import { Task, DelegationGroup } from '../types';
 import { deduplicateTasks } from '../lib/taskDeduplicationService';
 import { rollupParentTaskDatesAndStatus } from '../lib/taskRollupService';
 import { isTaskDeletedInTracker } from '../lib/taskDeletedTracker';
+import { buildTaskByIdMap, isForeignSummaryEntry } from '../lib/summaryGhostFilter';
 
 let _lastProjectsRef: any = null;
 let _lastRawTasksRef: any = null;
@@ -206,74 +207,78 @@ export function useEnrichedData() {
       });
     }
 
-    // Consolidate virtual tasks from p.taskSummaries ONLY when a project has NO real tasks in memory yet (lazy loading placeholder)
-    const allExistingIds = new Set(filteredTasks.map(t => t.id));
+    // Consolidate virtual tasks from p.taskSummaries ONLY when no real tasks are in memory for this project (lazy loading placeholder)
+    const taskByIdFallback = buildTaskByIdMap(tasks);
+    const allExistingIds = new Set(filteredTasks.map(t => String(t.id || '').toLowerCase()));
     enrichedProjects.forEach(p => {
       if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
         const pCode = String(p.code || '').trim().toLowerCase();
+        const rawCodeStr = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+        const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
         const pYear = String(p.year || '').trim().toLowerCase();
         const pStore = String(p.store || '').trim().toLowerCase();
+        const pIdStr = p.id ? String(p.id).trim() : '';
 
-        // Check if real tasks exist in memory for this project
-        const projectTasks = filteredTasks.filter(ft => {
-          if (!ft || ft.isDeleted) return false;
-          const ftCode = String(ft.projectCode || '').trim().toLowerCase();
+        // Check if real tasks already exist in memory for this project
+        const hasRealProjectTasks = filteredTasks.some(ft => {
+          if (!ft || ft.isDeleted || String(ft.id || '').startsWith('ts_') || (ft as any)._isVirtualSummary) return false;
+          const ftProjId = ft.projectId ? String(ft.projectId).trim() : '';
+          if (ftProjId && pIdStr && ftProjId !== pIdStr) return false;
+
           const ftStore = ft.projectStore ? String(ft.projectStore).trim().toLowerCase() : '';
           const ftYear = ft.projectYear !== undefined && ft.projectYear !== null ? String(ft.projectYear).trim().toLowerCase() : '';
 
           if (pStore && ftStore && pStore !== ftStore) return false;
           if (pYear && ftYear && pYear !== ftYear) return false;
 
-          if (ft.projectId && p.id && String(ft.projectId) === String(p.id)) return true;
-          if (ft.projectId && p.id && String(ft.projectId) !== String(p.id)) return false;
-          return Boolean(ftCode && pCode && ftCode === pCode);
+          if (ftProjId && pIdStr && ftProjId === pIdStr) return true;
+          const ftCode = String(ft.projectCode || '').trim().toLowerCase();
+          return Boolean(ftCode && (ftCode === pCode || pCodeParts.includes(ftCode)));
         });
 
-        // Consolidate virtual tasks from p.taskSummaries when in-memory tasks are missing or partial
-        if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > projectTasks.length) {
-          const existingSet = new Set<string>();
-          projectTasks.forEach(ft => {
-            if (ft.id) existingSet.add(String(ft.id).toLowerCase());
-            if (ft.taskCodePhu) existingSet.add(String(ft.taskCodePhu).trim().toLowerCase());
-            if (ft.name) existingSet.add(String(ft.name).trim().toLowerCase());
-          });
+        // When real tasks for this project are loaded in memory, they are authoritative — do not mix in stale summary placeholders
+        if (hasRealProjectTasks) return;
 
-          p.taskSummaries.forEach((ts, idx) => {
-            const tsId = ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
-            const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-            const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
+        const isPartyRestricted = currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true;
+        const pPartyMatch = isPartyRestricted ? hasUserPartyMatch(String(p.party || '')) : true;
 
-            if (isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined)) {
-              return;
-            }
+        p.taskSummaries.forEach((ts, idx) => {
+          if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
+          if (isForeignSummaryEntry(ts.id, p, taskByIdFallback)) return;
+          if (!Boolean((ts.name && String(ts.name).trim()) || (ts.start && String(ts.start).trim()) || (ts.finish && String(ts.finish).trim()) || ts.taskCodePhu)) {
+            return;
+          }
+          if (isPartyRestricted && !pPartyMatch && !hasUserPartyMatch(ts.party)) {
+            return;
+          }
 
-            const hasMatch = (ts.id && existingSet.has(String(ts.id).toLowerCase())) ||
-                             (tsCode && existingSet.has(tsCode)) ||
-                             (tsName && existingSet.has(tsName));
+          const rawTsId = ts.id ? String(ts.id).trim() : '';
+          const tsId = rawTsId || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+          const tsIdLower = tsId.toLowerCase();
 
-            if (!hasMatch && !allExistingIds.has(tsId)) {
-              allExistingIds.add(tsId);
-              const vTask = {
-                id: tsId,
-                name: ts.name || `Task ${idx + 1}`,
-                start: ts.start || p.computedTakStart || p.start || '',
-                finish: ts.finish || p.computedTakCompl || p.handover || '',
-                projectCode: p.code || '',
-                projectStore: p.store || 'HCM',
-                projectYear: p.year ? String(p.year) : '',
-                party: ts.party || p.party || '',
-                runningStatus: ts.runningStatus || 'On process',
-                duration: ts.duration || '',
-                parentTaskId: ts.parentTaskId,
-                taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
-                orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-                projectId: p.id,
-                ...ts
-              } as Task;
-              filteredTasks.push(vTask);
-            }
-          });
-        }
+          if (!allExistingIds.has(tsIdLower)) {
+            allExistingIds.add(tsIdLower);
+            const vTask = {
+              id: tsId,
+              name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts,
+              _isVirtualSummary: true,
+            } as unknown as Task;
+            filteredTasks.push(vTask);
+          }
+        });
       }
     });
 
