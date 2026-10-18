@@ -113916,3 +113916,3379 @@ export function isForeignSummaryEntry(
 }
 
 
+
+// === FILE: src/lib/deltaInvalidateService.ts ===
+import { doc, getDocFromServer, getDoc } from 'firebase/firestore';
+import { db, APP_ID } from './firebase';
+import { useAppStore } from '../store/useAppStore';
+import { usePerformanceStore } from '../store/usePerformanceStore';
+import type { TakaDelta, TakaDeltaItem } from '../types';
+
+const PHYSICAL_COLLECTION: Record<TakaDeltaItem['collectionName'], string> = {
+  taka_projects: 'taka_projects',
+  taka_tasks: 'taka_tasks',
+  taka_costs: 'taka_costs',
+  taka_delegations: 'taka_delegation_groups',
+};
+
+/**
+ * Với chế độ DELTA_FIRST: Mọi tín hiệu invalidate gửi qua taka_deltas đều là thay đổi thực tế
+ * từ thiết bị khác (chỉ 1 doc/lần sửa). Luôn cho phép resolve để cập nhật ngay vào Dexie + Zustand,
+ * đảm bảo khi người dùng chuyển sang bất kỳ tab nào thì dữ liệu ở tab đó cũng đã mới nhất 100%.
+ */
+function isRelevant(item: TakaDeltaItem): boolean {
+  if (!item || !item.docId || !item.collectionName) return false;
+  return true;
+}
+
+/**
+ * Đọc lại đúng các document vừa nhận tín hiệu invalidate từ thiết bị khác (1 Read / 1 Doc sửa đổi)
+ * và chuyển thành synthetic delta để applyIncomingDeltas cập nhật nguyên tử vào Zustand + Dexie.
+ */
+export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<TakaDelta[]> {
+  // Khử trùng lặp theo collectionName + docId
+  const unique = new Map<string, TakaDeltaItem>();
+  for (const it of items) {
+    if (!isRelevant(it)) continue;
+    unique.set(`${it.collectionName}:${it.docId}`, it);
+  }
+  if (unique.size === 0) return [];
+
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+
+  const results = await Promise.all(
+    Array.from(unique.values()).map(async (it): Promise<TakaDeltaItem | null> => {
+      const physical = PHYSICAL_COLLECTION[it.collectionName];
+      if (!physical) return null;
+      try {
+        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', physical, it.docId);
+        let snap;
+        try {
+          snap = await getDocFromServer(ref);
+        } catch {
+          snap = await getDoc(ref);
+        }
+        usePerformanceStore
+          .getState()
+          .trackGetDoc(physical, false, 1, `Delta invalidate re-read: ${it.docId}`);
+
+        if (!snap.exists()) {
+          return {
+            docId: it.docId,
+            collectionName: it.collectionName,
+            action: 'delete',
+            isPatch: false,
+            data: { id: it.docId, isDeleted: true },
+          };
+        }
+        const data = snap.data() as Record<string, any>;
+        if (data?.isDeleted) {
+          return {
+            docId: it.docId,
+            collectionName: it.collectionName,
+            action: 'delete',
+            isPatch: false,
+            data: { id: it.docId, isDeleted: true, ...data },
+          };
+        }
+        return {
+          docId: it.docId,
+          collectionName: it.collectionName,
+          action: 'create',
+          isPatch: false,
+          data: { id: it.docId, ...data },
+          year: String(data.year || data.projectYear || it.year || ''),
+        };
+      } catch (err) {
+        console.warn('[deltaSync] Failed to re-read invalidated doc:', it.collectionName, it.docId, err);
+        return null;
+      }
+    })
+  );
+
+  const resolved = results.filter((x): x is TakaDeltaItem => x !== null);
+  if (resolved.length === 0) return [];
+
+  return [
+    {
+      id: `delta_resolved_${now}`,
+      action: 'batch_update',
+      batchItems: resolved,
+      updatedBy: 'delta-invalidate',
+      sessionId: '__resolved__',
+      timestamp: nowIso,
+      numericTime: now,
+    },
+  ];
+}
+
+
+// === FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ===
+import React, { Dispatch, SetStateAction } from 'react';
+import { Project, Task, DelegationGroup, AppUser, TaskNote } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { undoManager } from '../../lib/undoManager';
+import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
+import { 
+  buildTaskNoMap, 
+  splitPredecessors, 
+  parsePredecessors, 
+  computeTaskCode, 
+  updatePredecessorsStrings, 
+  calculateTaskDatesFromPredecessors, 
+  scheduleDependentTasks 
+} from '../../lib/ganttUtils';
+import { parseDateTime, formatToDatetimeLocal, generateId } from '../../lib/utils';
+import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
+import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../../lib/deltaPatchService';
+import { TakaDeltaItem } from '../../types';
+
+interface UseDetailTaskMutationsParams {
+  tasks: Task[];
+  projects: Project[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  setConfirmModal: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => Promise<void>;
+  }>>;
+}
+
+export function useDetailTaskMutations({
+  tasks,
+  projects,
+  delegationGroups,
+  currentUser,
+  setConfirmModal,
+}: UseDetailTaskMutationsParams) {
+  const handleDeleteTask = async (t: Task) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Task',
+      message: 'Delete this Task?',
+      onConfirm: async () => {
+        try {
+          // Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
+          // Hàm này đã bao gồm: Xóa task, Cập nhật Project Summary, Xóa Dexie, Ghi Delta Batch.
+          await deleteTaskStateUnified([t]);
+          
+          undoManager.push({
+            description: `Delete Task: ${t.name}`,
+            revert: async () => {
+              const { doc } = await import('firebase/firestore');
+              const { writeBatch } = await import('../../lib/firestoreWrites');
+              const { db, APP_ID } = await import('../../lib/firebase');
+              const revertBatch = writeBatch(db);
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+              
+              // Restore related delegations if any
+              const storeDelegations = useAppStore.getState().delegationGroups || [];
+              const relatedDelGroups = storeDelegations.filter(d => d.parentTaskId === t.id || d.id === `del_${t.id}`);
+              relatedDelGroups.forEach(d => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d);
+              });
+
+              revertBatch.commit().catch(console.error);
+            }
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+  };
+
+  const handleUpdateTask = async (
+    t: Task, 
+    updates: Partial<Task>, 
+    _options?: { skipPredecessorRecalc?: boolean; skipProjectRollup?: boolean }
+  ) => {
+    try {
+      if (updates.name && updates.name !== t.name) {
+        const currentProject = projects.find(p => 
+          p.code === t.projectCode &&
+          (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
+          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore))
+        );
+        if (currentProject) {
+          const normUpdateName = normalizeTaskNameForComparison(updates.name, currentProject.code);
+          const isDuplicate = tasks.some(tsk => {
+            if (tsk.id === t.id || tsk.isDeleted) return false;
+            const sameProject = tsk.projectCode === currentProject.code &&
+                   (String(tsk.projectYear || '') === String(currentProject.year || '') || (!tsk.projectYear && !currentProject.year)) &&
+                   (String(tsk.projectStore || '') === String(currentProject.store || '') || (!tsk.projectStore && !currentProject.store));
+            if (!sameProject) return false;
+
+            if (tsk.name.trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+            const tNorm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+            return !!(normUpdateName && tNorm && normUpdateName === tNorm);
+          });
+          if (isDuplicate) {
+            useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
+            return;
+          }
+        }
+      }
+
+      if (updates.predecessor !== undefined && updates.predecessor !== t.predecessor) {
+        let val = updates.predecessor;
+        const taskNoMap = buildTaskNoMap(projects, tasks);
+        let parts = splitPredecessors(val, taskNoMap);
+        if (parts.length > 2) parts = parts.slice(0, 2);
+        
+        if (parts.length >= 2) {
+          updates.durationManual = false;
+          if (!/FF|SF/i.test(parts[1])) {
+            if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
+            else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
+          }
+          updates.predecessor = parts.join(', ');
+        }
+        parsePredecessors(updates.predecessor, taskNoMap, t);
+      }
+
+      let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];
+      if (updates.taskCodePhu !== undefined && updates.taskCodePhu !== t.taskCodePhu) {
+        const oldCode = (t.taskCodePhu || computeTaskCode(projects, tasks, t)).trim();
+        const newCode = (updates.taskCodePhu || computeTaskCode(projects, tasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
+        if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+          const map = new Map<string, string>();
+          map.set(oldCode.toLowerCase(), newCode);
+          predecessorUpdates = updatePredecessorsStrings(map, tasks, projects);
+        }
+      }
+
+      let targetTaskId = t.id;
+      if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
+        const sameProjectIdentity = (x: any) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
+        let realTask = tasks.find(tsk => 
+          !tsk.id.startsWith('ts_') &&
+          tsk.projectCode === t.projectCode &&
+          sameProjectIdentity(tsk) &&
+          ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+           (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
+        );
+        if (!realTask && t.projectCode) {
+          try {
+            const loaded = await ensureProjectTasksLoaded(t.projectCode);
+            const loadedSame = loaded.filter(sameProjectIdentity);
+            if (loadedSame.length > 0) {
+              realTask = loadedSame.find(tsk =>
+                (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+                (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
+              );
+            }
+          } catch (err) {
+            console.warn("Failed to resolve ts_ task from local/cache:", err);
+          }
+        }
+        if (realTask) {
+          targetTaskId = realTask.id;
+        } else {
+          targetTaskId = `t_${Date.now()}_${generateId().substring(0, 8)}`;
+        }
+      }
+      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
+      
+      let newT = { ...t, id: targetTaskId, ...updates, updatedAt: new Date().toISOString() };
+      if (updates.predecessor !== undefined) {
+        let currentTasks = useAppStore.getState().tasks || tasks;
+        let taskNoMap = buildTaskNoMap(projects, currentTasks);
+        let parts = splitPredecessors(updates.predecessor, taskNoMap);
+        if (parts.length >= 2) {
+          newT.durationManual = false;
+        }
+        newT.realtimeUpdate = Boolean(updates.predecessor.trim());
+        let parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+        
+        if (updates.predecessor.trim() && (!parsed.length || parsed.some(p => !p.task))) {
+          for (const token of parts) {
+            const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+            const matchedProj = projects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            if (matchedProj && matchedProj.code !== t.projectCode) {
+              const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+              if (loaded.length > 0) {
+                currentTasks = useAppStore.getState().tasks || currentTasks;
+                taskNoMap = buildTaskNoMap(projects, currentTasks);
+                parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+              }
+            }
+          }
+        }
+        const calcResult = calculateTaskDatesFromPredecessors(newT, parsed);
+        if (calcResult) {
+          newT.start = calcResult.start;
+          newT.finish = calcResult.finish;
+          newT.duration = calcResult.duration;
+          newT.durationManual = calcResult.durationManual;
+        }
+      } else if (newT.predecessor) {
+        newT.realtimeUpdate = Boolean(newT.predecessor.trim());
+      }
+      
+      if (updates.finish !== undefined) {
+        if (newT.start && newT.finish) {
+          const s = parseDateTime(newT.start);
+          const f = parseDateTime(newT.finish);
+          if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+            const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+            newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+          }
+        }
+      } else if (updates.start !== undefined) {
+        if (newT.durationManual) {
+          if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+            const s = parseDateTime(newT.start);
+            if (s && !isNaN(s.getTime())) {
+              const days = parseFloat(String(newT.duration));
+              if (!isNaN(days) && days >= 0) {
+                const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+                newT.finish = formatToDatetimeLocal(f);
+              }
+            }
+          }
+        } else {
+          if (newT.start && newT.finish) {
+            const s = parseDateTime(newT.start);
+            const f = parseDateTime(newT.finish);
+            if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+              const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+              newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+            }
+          }
+        }
+      } else if (updates.duration !== undefined) {
+        newT.duration = cleanDurationString(updates.duration);
+        newT.durationManual = true;
+        if (newT.start && newT.duration !== '') {
+          const s = parseDateTime(newT.start);
+          if (s && !isNaN(s.getTime())) {
+            const days = parseFloat(newT.duration);
+            if (!isNaN(days) && days >= 0) {
+              const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+              newT.finish = formatToDatetimeLocal(f);
+            }
+          }
+        }
+      } else if (updates.predecessor === undefined) {
+        if (newT.durationManual) {
+          if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+            const s = parseDateTime(newT.start);
+            if (s && !isNaN(s.getTime())) {
+              const days = parseFloat(String(newT.duration));
+              if (!isNaN(days) && days >= 0) {
+                const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+                newT.finish = formatToDatetimeLocal(f);
+              }
+            }
+          }
+        } else {
+          if (newT.start && newT.finish) {
+            const s = parseDateTime(newT.start);
+            const f = parseDateTime(newT.finish);
+            if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+              const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+              newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+            }
+          }
+        }
+      }
+
+      const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
+      const batch = writeBatch(db);
+
+      const scheduledUpdatedTask = updatesToDependents.find(d => d.id === newT.id);
+      if (scheduledUpdatedTask) {
+        newT = scheduledUpdatedTask as any;
+      }
+
+      const allCurrentTasksWithScheduled = tasks.map(tsk => {
+        if (tsk.id === newT.id) return newT;
+        const dep = updatesToDependents.find(d => d.id === tsk.id);
+        return dep || tsk;
+      });
+      if (!allCurrentTasksWithScheduled.some(tsk => tsk.id === newT.id)) {
+        allCurrentTasksWithScheduled.push(newT);
+      }
+      const { updatedParents } = rollupParentTaskDates(allCurrentTasksWithScheduled);
+
+      batch.set(tRef, newT, { merge: true });
+
+      // Rule 9 Mandate: Parent task rollups are computed 100% in-memory on client.
+      // We keep updatedParents in memory via saveTaskStateUnified below, but do NOT issue Firestore writeBatch for parent tasks.
+
+      if (updates.delegation === true) {
+         const deterministicGroupId = `del_${t.id}`;
+         const existingGroup = delegationGroups.find(g => g.parentTaskId === t.id || g.id === deterministicGroupId);
+         if (!existingGroup) {
+            const dateStr = new Date().toISOString().substring(0, 10);
+            const rawParty = (t.party && t.party.trim()) ? t.party.trim() : (currentUser.username || '');
+            const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+            const newGroup: DelegationGroup = {
+              id: deterministicGroupId,
+              parentTaskId: t.id,
+              name: t.name || 'Delegated Task',
+              projectCode: t.projectCode,
+              projectStore: t.projectStore,
+              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(projects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
+              subTasks: [{ 
+                 id: generateId(), 
+                 name: '', 
+                 comments: '', 
+                 status: 'Assigned', 
+                 delegationStatus: 'Assigned', 
+                 priority: 'Mid', 
+                 party: parsedParty, 
+                 startAct: dateStr, 
+                 finishAct: dateStr, 
+                 updatedAt: new Date().toISOString() 
+              }],
+              updatedAt: new Date().toISOString(),
+              createdBy: currentUser.id
+            };
+            const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+            batch.set(delRef, newGroup, { merge: true });
+         }
+      }
+
+      const depUpdates = updatesToDependents.filter(d => d.id !== newT.id);
+      depUpdates.forEach(depTask => {
+        const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
+        batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() }, { merge: true });
+      });
+
+      predecessorUpdates.forEach(pu => {
+        if (pu.id !== t.id && !updatesToDependents.some(d => d.id === pu.id)) {
+          const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
+          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        }
+      });
+      
+      const allUpdatesToSave = [
+        newT,
+        ...depUpdates,
+        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
+        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
+      ];
+      const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+        const prev = tasks.find((tsk) => tsk.id === item.id);
+        return createPatchDeltaItem({
+          docId: item.id,
+          collectionName: 'taka_tasks',
+          previous: prev,
+          updated: item,
+          action: 'update',
+          year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+        });
+      });
+
+      saveTaskStateUnified(allUpdatesToSave);
+
+      try {
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
+        await batch.commit();
+        recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
+      } catch (error: any) {
+        console.error("Batch commit failed", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+        saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
+        return;
+      }
+      
+      undoManager.push({
+        description: `Update Task Schedule: ${t.name}`,
+        revert: async () => {
+          const revertBatch = writeBatch(db);
+          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+          updatesToDependents.forEach(depTask => {
+            const originalDep = tasks.find(tsk => tsk.id === depTask.id);
+            if (originalDep) {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
+            }
+          });
+          revertBatch.commit().catch(console.error);
+        }
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveNotes = async (taskId: string, notes: TaskNote[]) => {
+    const t = tasks.find(item => item.id === taskId);
+    if (t) {
+      await handleUpdateTask(t, { notes });
+    }
+  };
+
+  return {
+    handleDeleteTask,
+    handleUpdateTask,
+    handleSaveNotes,
+  };
+}
+
+
+// === FILE: src/hooks/taskModal/taskModalSaveService.ts ===
+import { doc, deleteField } from 'firebase/firestore';
+import { db, APP_ID, writeBatch } from '../../lib/firebase';
+import { addPendingUpdate } from '../../lib/syncQueue';
+import { undoManager } from '../../lib/undoManager';
+import {
+  getPredecessorCodeUpdates,
+  updatePredecessorsStrings,
+  parsePredecessors,
+  computeTaskCode,
+  buildTaskNoMap,
+  scheduleDependentTasks,
+  splitPredecessors
+} from '../../lib/ganttUtils';
+import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
+import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
+import { syncProjectDatesByCode } from '../../lib/projectDatesService';
+import { saveTaskStateUnified } from '../../lib/taskStateService';
+import { useAppStore } from '../../store/useAppStore';
+import { Project, Task, AppUser } from '../../types';
+import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../../lib/deltaPatchService';
+
+export interface TaskSaveParams {
+  formData: Partial<Task>;
+  task: Task | null;
+  projects: Project[];
+  tasks: Task[];
+  cloudStatus: string;
+  currentUser: AppUser;
+  t: (key: string) => string;
+  setToast: (toast: any) => void;
+  onClose: () => void;
+  setIsSubmitting: (submitting: boolean) => void;
+}
+
+export async function executeTaskSave({
+  formData,
+  task,
+  projects,
+  tasks,
+  cloudStatus,
+  currentUser,
+  setToast,
+  onClose,
+  setIsSubmitting
+}: TaskSaveParams): Promise<boolean> {
+  const currentProject = projects.find(p => 
+    p.code === formData.projectCode &&
+    (String(p.year || '') === String(formData.projectYear || '') || (!p.year && !formData.projectYear)) &&
+    (String(p.store || '') === String(formData.projectStore || '') || (!p.store && !formData.projectStore))
+  );
+
+  if (!currentProject) {
+    useAppStore.getState().setToast({ title: "Notice", message: "Please select a valid project." });
+    setIsSubmitting(false);
+    return false;
+  }
+
+  const currentYear = (!isNaN(Number(currentProject?.year)) && currentProject?.year !== null && currentProject?.year !== '') 
+    ? Number(currentProject.year) 
+    : (formData.projectYear && !isNaN(Number(formData.projectYear)) ? Number(formData.projectYear) : new Date().getFullYear());
+
+  const targetPrjKey = buildCanonicalProjectKey(
+    currentProject.code || formData.projectCode,
+    currentProject.year || formData.projectYear,
+    currentProject.store || formData.projectStore,
+    projects
+  );
+
+  // Check for duplicate task name or code in the same project
+  const normFormName = normalizeTaskNameForComparison(formData.name, formData.projectCode || currentProject?.code);
+  const formTaskCode = formData.taskCodePhu ? String(formData.taskCodePhu).trim().toLowerCase() : '';
+
+  const isDuplicate = tasks.some(t => {
+    if (t.id === task?.id || t.isDeleted) return false;
+    
+    const tPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
+    const sameProject = (tPrjKey === targetPrjKey);
+    if (!sameProject) return false;
+
+    // Check exact name
+    if (t.name && String(t.name).trim().toLowerCase() === String(formData.name || '').trim().toLowerCase()) {
+      return true;
+    }
+    // Check normalized name
+    const tNorm = normalizeTaskNameForComparison(t.name, t.projectCode);
+    if (normFormName && tNorm && normFormName === tNorm) {
+      return true;
+    }
+    // Check taskCodePhu
+    if (formTaskCode && t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === formTaskCode) {
+      return true;
+    }
+    return false;
+  });
+
+  if (isDuplicate) {
+    setToast({ title: "Duplicate Task", message: `Task "${formData.name}" already exists in this project. Duplicate sub-tasks are not allowed.` });
+    setIsSubmitting(false);
+    return false;
+  }
+
+  let id = task ? task.id : `t_${Date.now()}_${generateId().substring(0, 8)}`;
+  if (id && id.startsWith('ts_')) {
+    let realTask = tasks.find(t => 
+      !t.id.startsWith('ts_') &&
+      t.projectCode === currentProject.code &&
+      (String(t.projectStore || '') === String(currentProject.store || '')) &&
+      (String(t.projectYear || '') === String(currentProject.year || '')) &&
+      ((task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
+       (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase()))
+    );
+    if (!realTask && currentProject?.code) {
+      try {
+        const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
+        const sameIdentity = (x: Task) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim();
+        const loaded: Task[] = await ensureProjectTasksLoaded(currentProject.code);
+        const loadedSame = loaded.filter(sameIdentity);
+        if (loadedSame.length > 0) {
+          realTask = loadedSame.find(t =>
+            (task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
+            (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase())
+          );
+        }
+      } catch (err) {
+        console.warn("Failed to find real task for ts_ in local/cache:", err);
+      }
+    }
+    if (realTask) {
+      id = realTask.id;
+    } else {
+      id = `t_${Date.now()}_${generateId().substring(0, 8)}`;
+    }
+  }
+  let newOrderIndex = task?.orderIndex;
+  
+  if (!task) {
+    const existingProjectTasks = tasks.filter(t => 
+      t.projectCode === currentProject.code && 
+      (String(t.projectYear || '') === String(currentProject.year || '') || (!t.projectYear && !currentProject.year)) &&
+      (String(t.projectStore || '') === String(currentProject.store || '') || (!t.projectStore && !currentProject.store))
+    );
+    let maxOrder = 0;
+    existingProjectTasks.forEach(t => {
+      const order = t.orderIndex !== undefined ? t.orderIndex : 0;
+      if (order > maxOrder) maxOrder = order;
+    });
+    newOrderIndex = maxOrder + 1;
+  }
+
+  if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
+    if (formData.predecessor) {
+      const predContext: PredecessorContext = {
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        projectLocation: formData.location || task?.location || currentProject?.location
+      };
+      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
+      const taskNoMap = buildTaskNoMap(projects, tasks);
+      let parts = splitPredecessors(formData.predecessor, taskNoMap);
+      if (parts.length >= 2) {
+        if (!/FF|SF/i.test(parts[1])) {
+          if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
+          else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
+        }
+        formData.predecessor = parts.join(", ");
+      }
+    }
+    const taskNoMap = buildTaskNoMap(projects, tasks);
+    const dummyTask: any = {
+      projectId: formData.projectId || task?.projectId || currentProject?.id,
+      projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+      projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+      projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+      location: formData.location || task?.location || currentProject?.location
+    };
+    parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+  }
+
+  try {
+    const todayDate = getDefaultDatetimeLocal();
+    let finalFormData = { ...formData };
+    if (!finalFormData.start) finalFormData.start = todayDate;
+    if (!finalFormData.finish) finalFormData.finish = finalFormData.start || todayDate;
+    if (!finalFormData.baselineStart) finalFormData.baselineStart = finalFormData.start || todayDate;
+    if (!finalFormData.baselineFinish) finalFormData.baselineFinish = finalFormData.finish || todayDate;
+    if (finalFormData.duration === undefined || finalFormData.duration === null || String(finalFormData.duration).trim() === '') {
+      finalFormData.duration = "0";
+    }
+    let durationVal = parseFloat(String(finalFormData.duration || "0"));
+    if (durationVal < 0) {
+      finalFormData.duration = "0";
+      finalFormData.finish = finalFormData.start;
+    }
+    if (finalFormData.durationManual ?? true) {
+      finalFormData.durationManual = true;
+      if (finalFormData.start && finalFormData.duration !== undefined && finalFormData.duration !== '') {
+        const s = parseDateTime(finalFormData.start);
+        const days = parseFloat(String(finalFormData.duration));
+        if (s && !isNaN(s.getTime()) && !isNaN(days)) {
+          const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+          finalFormData.finish = formatToDatetimeLocal(f);
+        }
+      }
+    }
+    if (!finalFormData.party) {
+      finalFormData.party = currentProject?.party || 'Takashimaya';
+    }
+
+    if (cloudStatus === 'offline') {
+      let payload = {
+        ...finalFormData,
+        id,
+        projectYear: Number(currentYear) || new Date().getFullYear(),
+        comments: task?.comments || finalFormData.comments || [],
+        updatedAt: new Date().toISOString(),
+        orderIndex: newOrderIndex
+      };
+      addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`, action: 'set', docId: id, data: payload } as any);
+      setToast({ title: 'Draft Saved', message: 'Task saved offline. Will sync when connection returns.' });
+      onClose();
+      setIsSubmitting(false);
+      return true;
+    }
+    
+    let dataToSave: any = {
+      ...finalFormData,
+      id,
+      projectYear: Number(currentYear) || new Date().getFullYear(),
+      comments: task?.comments || finalFormData.comments || [],
+      updatedAt: new Date().toISOString(),
+      orderIndex: newOrderIndex
+    };
+
+    if (dataToSave.predecessor && dataToSave.predecessor.trim()) {
+      dataToSave.realtimeUpdate = true;
+    } else {
+      dataToSave.realtimeUpdate = false;
+    }
+
+    // Explicitly delete fields from Firestore if unlinked or cleared
+    if (task?.parentTaskId && !finalFormData.parentTaskId) {
+      dataToSave.parentTaskId = deleteField();
+      dataToSave.parentId = null;
+    }
+    if (task?.taskCodePhu && (!finalFormData.taskCodePhu || !finalFormData.taskCodePhu.trim())) {
+      dataToSave.taskCodePhu = deleteField();
+    }
+
+    Object.keys(dataToSave).forEach(key => {
+      if ((dataToSave as any)[key] === undefined) {
+        delete (dataToSave as any)[key];
+      }
+    });
+
+    const oldTaskNoMap = buildTaskNoMap(projects, tasks);
+    const newTasksForMap = task 
+       ? tasks.map(t => t.id === id ? dataToSave as Task : t) 
+       : [...tasks, dataToSave as Task];
+    const newTaskNoMap = buildTaskNoMap(projects, newTasksForMap);
+    const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, newTasksForMap);
+
+    if (task) {
+      const oldCode = (task.taskCodePhu || computeTaskCode(projects, tasks, task)).trim();
+      const newCode = (dataToSave.taskCodePhu || computeTaskCode(projects, newTasksForMap, dataToSave as Task)).trim();
+      if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+        oldCodeToNewCode.set(oldCode.toLowerCase(), newCode);
+      }
+    }
+
+    const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects, oldTaskNoMap);
+    const predecessorUpdates = predecessorUpdatesOrig.filter(pu => pu.id !== id);
+    const predecessorUpdatesMap = new Map(predecessorUpdates.map(pu => [pu.id, pu]));
+
+    const updatesToDependents = scheduleDependentTasks(dataToSave as Task, tasks, projects);
+    
+    const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
+    if (scheduledUpdatedTask) {
+      dataToSave = scheduledUpdatedTask as any;
+    }
+
+    const batch = writeBatch(db);
+    if (task) {
+      batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
+    } else {
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
+    }
+
+    const depUpdates = updatesToDependents.filter(d => d.id !== id);
+    const mappedDepUpdates = new Set<string>();
+
+    depUpdates.forEach(depTask => {
+      const depProj = projects.find(p => p.code === depTask.projectCode);
+      const depYear = (depTask.projectYear !== undefined && depTask.projectYear !== null && !isNaN(Number(depTask.projectYear)))
+        ? Number(depTask.projectYear)
+        : (depProj?.year && !isNaN(Number(depProj.year)) ? Number(depProj.year) : new Date().getFullYear());
+      const pu = predecessorUpdatesMap.get(depTask.id);
+      const data = pu 
+        ? { ...depTask, projectYear: depYear, predecessor: pu.predecessor, updatedAt: new Date().toISOString() } 
+        : { ...depTask, projectYear: depYear, updatedAt: new Date().toISOString() };
+      Object.keys(data).forEach(key => {
+        if ((data as any)[key] === undefined) {
+          delete (data as any)[key];
+        }
+      });
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data, { merge: true });
+      mappedDepUpdates.add(depTask.id);
+    });
+
+    predecessorUpdates.forEach(pu => {
+      if (!mappedDepUpdates.has(pu.id)) {
+         batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
+      }
+    });
+
+    const optimisticList: any[] = [dataToSave];
+    depUpdates.forEach(depTask => {
+      const pu = predecessorUpdatesMap.get(depTask.id);
+      if (pu) {
+        optimisticList.push({ ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+      } else {
+        optimisticList.push(depTask);
+      }
+    });
+    predecessorUpdates.forEach(pu => {
+      if (!mappedDepUpdates.has(pu.id)) {
+        optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+      }
+    });
+    
+    saveTaskStateUnified(optimisticList);
+
+    const isNewTask = !task;
+    const oldAny = (task || {}) as any;
+    const newAny = dataToSave as any;
+    const datesOrStatusChanged =
+      isNewTask ||
+      task?.start !== dataToSave.start ||
+      task?.finish !== dataToSave.finish ||
+      task?.runningStatus !== dataToSave.runningStatus ||
+      task?.approval !== dataToSave.approval ||
+      Boolean(oldAny.isCompleted) !== Boolean(newAny.isCompleted) ||
+      (oldAny.status || '') !== (newAny.status || '') ||
+      task?.projectCode !== dataToSave.projectCode ||
+      task?.projectStore !== dataToSave.projectStore ||
+      task?.projectYear !== dataToSave.projectYear ||
+      depUpdates.length > 0;
+
+    // Close modal INSTANTLY (0ms UI lag)
+    onClose();
+    setIsSubmitting(false);
+
+    // Offload network commit, delta emission, and project date rollups to non-blocking background microtask
+    setTimeout(async () => {
+      try {
+        const deltaItems = optimisticList.map(item => {
+          const prev = tasks.find(t => t.id === item.id);
+          return createPatchDeltaItem({
+            docId: item.id,
+            collectionName: 'taka_tasks',
+            previous: prev,
+            updated: item,
+            action: prev ? 'update' : 'create',
+            year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
+          });
+        });
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
+        await batch.commit();
+        recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
+        if (datesOrStatusChanged) {
+          const allTasksCurrent = useAppStore.getState().tasks;
+          const targetProjId = dataToSave.projectId ? String(dataToSave.projectId) : (currentProject?.id ? String(currentProject.id) : undefined);
+          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent, targetProjId);
+          if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
+            const oldProjId = task.projectId ? String(task.projectId) : targetProjId;
+            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
+          }
+        }
+      } catch (error: any) {
+        console.error("Background task save failed:", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+      }
+    }, 0);
+
+    undoManager.push({
+      description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,
+      revert: async () => {
+        const revertBatch = writeBatch(db);
+        if (task) {
+          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { ...task, updatedAt: new Date().toISOString() });
+        } else {
+          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { isDeleted: true, updatedAt: new Date().toISOString() }, { merge: true });
+        }
+        updatesToDependents.forEach(depTask => {
+          const originalDep = tasks.find(tsk => tsk.id === depTask.id);
+          if (originalDep) {
+            revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
+          }
+        });
+        predecessorUpdates.forEach(pu => {
+          if (!mappedDepUpdates.has(pu.id)) {
+             const originalTask = tasks.find(tk => tk.id === pu.id);
+             if (originalTask) {
+               revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', originalTask.id), { predecessor: originalTask.predecessor || '' });
+             }
+          }
+        });
+        revertBatch.commit().catch(console.error);
+      }
+    });
+
+    return true;
+  } catch (e: any) { 
+    console.error(e); 
+    useAppStore.getState().setToast({ title: "Notice", message: String(e.message || "An error occurred while saving the task.") });
+    setIsSubmitting(false);
+    return false;
+  }
+}
+
+
+// === FILE: src/components/ProjectModalParts/projectModalIdentityService.ts ===
+import { Project, Task } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { removeCodeFromLinkCodesString, extractAllProjectCodes } from '../../lib/utils';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { undoManager } from '../../lib/undoManager';
+import { getProjectCodeChangePredecessorUpdates } from '../../lib/ganttUtils';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+
+interface HandleProjectIdentityChangeParams {
+  project: Project;
+  formData: Partial<Project>;
+  dataToSave: any;
+  docId: string;
+  yearNum: number;
+  projects: Project[];
+  setToast: (toast: any) => void;
+}
+
+export async function handleProjectIdentityChange({
+  project,
+  formData,
+  dataToSave,
+  docId,
+  yearNum,
+  projects,
+  setToast
+}: HandleProjectIdentityChangeParams) {
+  const batch = writeBatch(db);
+  const projectRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
+  batch.set(projectRef, {
+    ...dataToSave,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+
+  let rawTasks = useAppStore.getState().tasks || [];
+  const oldPCode = String(project.code || '').trim().toLowerCase();
+  const oldPYear = String(project.year || '');
+  const oldPStore = String(project.store || '').trim().toLowerCase();
+
+  let relatedTasks = rawTasks.filter(t => {
+    const matchesCode = String(t.projectCode || '').trim().toLowerCase() === oldPCode;
+    const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
+    const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
+    return matchesCode && matchesYear && matchesStore;
+  });
+
+  // If memory does not have tasks for this project (e.g. mobile lazy load), check Dexie first, then Firestore only if needed
+  if (relatedTasks.length === 0 && project.code && (project.taskCount || (project.taskSummaries && project.taskSummaries.length > 0))) {
+    try {
+      const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
+      const loaded: Task[] = await ensureProjectTasksLoaded(project.code);
+      if (loaded.length > 0) {
+        relatedTasks = loaded.filter(t => {
+          const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
+          const matchesStore = !t.projectStore || !oldPStore || String(t.projectStore).trim().toLowerCase() === oldPStore;
+          return matchesYear && matchesStore;
+        });
+        const existingIds = new Set(rawTasks.map(t => t.id));
+        rawTasks = [...rawTasks, ...loaded.filter(t => !existingIds.has(t.id))];
+        useAppStore.getState().setTasks(rawTasks);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch tasks for project identity change from local/cache:", err);
+    }
+  }
+
+  const { taskUpdates, predecessorUpdates } = getProjectCodeChangePredecessorUpdates(
+    project,
+    String(formData.code).trim(),
+    formData.year,
+    formData.store,
+    rawTasks,
+    projects
+  );
+
+  const relatedTaskIds = new Set(relatedTasks.map(t => t.id));
+
+  relatedTasks.forEach(t => {
+    const tUpdate = taskUpdates.get(t.id) || {
+      projectCode: String(formData.code).trim(),
+      projectYear: yearNum,
+      projectStore: formData.store
+    };
+    const pu = predecessorUpdates.find(p => p.id === t.id);
+    const payload: any = {
+      ...tUpdate,
+      updatedAt: new Date().toISOString()
+    };
+    if (pu && pu.predecessor !== undefined) {
+      payload.predecessor = pu.predecessor;
+    }
+    Object.keys(payload).forEach(k => {
+      if (payload[k] === undefined) delete payload[k];
+    });
+    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), payload, { merge: true });
+  });
+
+  predecessorUpdates.forEach(pu => {
+    if (!relatedTaskIds.has(pu.id)) {
+      const payload: any = {
+        predecessor: pu.predecessor,
+        updatedAt: pu.updatedAt || new Date().toISOString()
+      };
+      Object.keys(payload).forEach(k => {
+        if (payload[k] === undefined) delete payload[k];
+      });
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), payload, { merge: true });
+    }
+  });
+
+  const storeCosts = useAppStore.getState().costs || [];
+  const relatedCosts = storeCosts.filter(c => {
+    const matchesCode = String(c.projectCode || '').trim().toLowerCase() === oldPCode;
+    const matchesYear = !c.projectYear || !oldPYear || String(c.projectYear) === oldPYear;
+    const matchesStore = !c.projectStore || !oldPStore || String(c.projectStore).trim().toLowerCase() === oldPStore;
+    return matchesCode && matchesYear && matchesStore;
+  });
+
+  relatedCosts.forEach(c => {
+    const payload: any = {
+      projectCode: String(formData.code).trim(),
+      projectYear: yearNum,
+      projectStore: formData.store,
+      updatedAt: new Date().toISOString()
+    };
+    Object.keys(payload).forEach(k => {
+      if (payload[k] === undefined) delete payload[k];
+    });
+    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), payload, { merge: true });
+  });
+
+  const predMap = new Map(predecessorUpdates.map(pu => [pu.id, pu.predecessor]));
+  const updatedTasks = rawTasks.map(t => {
+    const tUpdate = taskUpdates.get(t.id);
+    const newPred = predMap.get(t.id);
+    if (tUpdate || newPred !== undefined) {
+      return {
+        ...t,
+        ...(tUpdate || {}),
+        ...(newPred !== undefined ? { predecessor: newPred, updatedAt: new Date().toISOString() } : {})
+      };
+    }
+    return t;
+  });
+  useAppStore.getState().setTasks(updatedTasks);
+
+  const rawProjects = useAppStore.getState().projects || [];
+  const savedCode = String(formData.code).trim().toLowerCase();
+  const savedYearStr = String(formData.year || '').trim();
+  const savedStoreStr = String(formData.store || '').trim().toUpperCase();
+
+  const updatedProjects = rawProjects.map(p => {
+    if ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no)) {
+      return { ...p, ...dataToSave, id: project.id || docId, updatedAt: new Date().toISOString() };
+    }
+    const pStore = String(p.store || '').trim().toUpperCase();
+    const pYear = String(p.year || '').trim();
+    if ((!savedStoreStr || !pStore || pStore === savedStoreStr) && (!savedYearStr || !pYear || pYear === savedYearStr)) {
+      if (p.linkCodes) {
+        const allCodes = extractAllProjectCodes(p);
+        if (allCodes.includes(savedCode) && String(p.code || '').trim().toLowerCase() !== savedCode) {
+          const cleaned = removeCodeFromLinkCodesString(p.linkCodes, formData.code);
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', p.id || String(p.no)), {
+            linkCodes: cleaned,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          return { ...p, linkCodes: cleaned, updatedAt: new Date().toISOString() };
+        }
+      }
+    }
+    return p;
+  });
+  useAppStore.getState().setProjects(updatedProjects);
+
+  const identityDeltaItems = [
+    { docId, collectionName: 'taka_projects' as const, action: 'update' as const, data: dataToSave, year: String(yearNum) },
+    ...relatedTasks.map(t => ({
+      docId: t.id,
+      collectionName: 'taka_tasks' as const,
+      action: 'update' as const,
+      data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
+      year: String(yearNum)
+    })),
+    ...relatedCosts.map(c => ({
+      docId: c.id,
+      collectionName: 'taka_costs' as const,
+      action: 'update' as const,
+      data: { projectCode: String(formData.code).trim(), projectYear: yearNum, projectStore: formData.store },
+      year: String(yearNum)
+    }))
+  ];
+  import('../../lib/autoDeltaQueue')
+    .then(({ markExplicitDelta }) => markExplicitDelta(identityDeltaItems))
+    .catch(() => {});
+
+  batch.commit().then(() => {
+    recordBatchDeltas(identityDeltaItems).catch(console.error);
+  }).catch(e => {
+    console.error("Batch commit failed", e);
+    setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+  });
+
+  undoManager.push({
+    description: `Update Identity: ${project.code}(${project.year}) -> ${formData.code}(${formData.year})`,
+    revert: async () => {
+      const revertBatch = writeBatch(db);
+      revertBatch.set(projectRef, project, { merge: true });
+      relatedTasks.forEach(t => {
+        const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+        revertBatch.set(tRef, {
+          projectCode: project.code,
+          projectYear: project.year,
+          projectStore: project.store,
+          ...(t.taskCodePhu !== undefined ? { taskCodePhu: t.taskCodePhu } : {}),
+          ...(t.predecessor !== undefined ? { predecessor: t.predecessor } : {})
+        }, { merge: true });
+      });
+      predecessorUpdates.forEach(pu => {
+        if (!relatedTaskIds.has(pu.id)) {
+          const originalTask = rawTasks.find(st => st.id === pu.id);
+          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
+            predecessor: originalTask?.predecessor || ''
+          }, { merge: true });
+        }
+      });
+      relatedCosts.forEach(c => {
+        const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
+        revertBatch.set(cRef, {
+          projectCode: project.code,
+          projectYear: project.year,
+          projectStore: project.store
+        }, { merge: true });
+      });
+      revertBatch.commit().catch(console.error);
+    }
+  });
+}
+
+
+// === FILE: src/components/LiveLayoutParts/useLiveLayoutR2Config.ts ===
+import React, { useCallback, useEffect, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
+import { preloadFloorImages } from '../../lib/imageDBCache';
+import { db, APP_ID } from '../../lib/firebase';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+
+export interface LiveLayoutR2ConfigState {
+  config: any;
+  setConfig: (config: any) => void;
+  loading: boolean;
+  setLoading: (loading: boolean) => void;
+  error: string | null;
+  setError: (error: string | null) => void;
+  showConfigModal: boolean;
+  setShowConfigModal: (show: boolean) => void;
+  cfgAccountId: string;
+  setCfgAccountId: (id: string) => void;
+  cfgBucketName: string;
+  setCfgBucketName: (bucket: string) => void;
+  cfgAccessKey: string;
+  setCfgAccessKey: (key: string) => void;
+  cfgSecretKey: string;
+  setCfgSecretKey: (sec: string) => void;
+  initFormFromStorage: () => void;
+  loadConfig: () => Promise<void>;
+  handleSaveR2Config: () => Promise<void>;
+}
+
+export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
+  const r2Config = useAppStore(state => state.r2Config);
+  const setR2Config = useAppStore(state => state.setR2Config);
+
+  const [config, setConfig] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Form states for in-place R2 configuration
+  const [cfgAccountId, setCfgAccountId] = useState('');
+  const [cfgBucketName, setCfgBucketName] = useState('');
+  const [cfgAccessKey, setCfgAccessKey] = useState('');
+  const [cfgSecretKey, setCfgSecretKey] = useState('');
+
+  // Load initial form values from localStorage
+  const initFormFromStorage = useCallback(() => {
+    setCfgAccountId(r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim());
+    setCfgBucketName(r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim());
+    setCfgAccessKey(r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim());
+    setCfgSecretKey(r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim());
+  }, [r2Config]);
+
+  // Load config from R2
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
+      let accessKeyId = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+      let secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+      let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
+
+      // If r2Config is not yet populated in store on fresh account boot, check local cache or fetch once from Firestore
+      const cachedR2 = localStorage.getItem('taka_r2_config_cache_v1');
+      if (cachedR2) {
+        try {
+          const parsed = JSON.parse(cachedR2);
+          if (parsed?.accountId && parsed?.accessKeyId && parsed?.secretAccessKey && parsed?.bucketName) {
+            accountId = parsed.accountId;
+            accessKeyId = parsed.accessKeyId;
+            secretAccessKey = parsed.secretAccessKey;
+            bucketName = parsed.bucketName;
+            useAppStore.getState().setR2Config(parsed);
+          }
+        } catch {}
+      }
+
+      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+        try {
+          const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
+          if (r2Doc.exists()) {
+            const r2Data = r2Doc.data() as any;
+            if (r2Data?.accountId && r2Data?.accessKeyId) {
+              accountId = r2Data.accountId;
+              accessKeyId = r2Data.accessKeyId;
+              secretAccessKey = r2Data.secretAccessKey;
+              bucketName = r2Data.bucketName;
+              localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(r2Data));
+              useAppStore.getState().setR2Config(r2Data);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn("Could not fetch r2_credentials from Firestore:", fetchErr);
+        }
+      }
+
+      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+        initFormFromStorage();
+        throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
+      }
+
+      const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId, secretAccessKey },
+      });
+
+      const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
+      let data: any = (downloadRes.success && downloadRes.data) ? downloadRes.data : null;
+
+      // Parallel check with Firestore backup to ensure newest timestamp is used
+      try {
+        const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+        if (snap.exists()) {
+          const fsData = snap.data() as any;
+          if (fsData?.storeLocationData) {
+            const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
+            const r2Timestamp = data?.timestamp || 0;
+            if (fsTimestamp > r2Timestamp || !data) {
+              data = {
+                ...(data || {}),
+                ...fsData,
+                storeLocationData: {
+                  ...(data?.storeLocationData || {}),
+                  ...fsData.storeLocationData,
+                }
+              };
+            }
+          }
+        }
+      } catch (fsErr) {
+        console.warn('Could not check Firestore backup:', fsErr);
+      }
+
+      if (!data) {
+        throw new Error(downloadRes.error || 'Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
+      }
+      
+      // Resolve R2 URLs in storeLocationData if it exists (New Format)
+      if (data.storeLocationData) {
+        const resolvePromises: Promise<void>[] = [];
+        
+        for (const pKey in data.storeLocationData) {
+          const partition = data.storeLocationData[pKey];
+          if (!partition.mapVersions) continue;
+          
+          for (const v of partition.mapVersions) {
+            const imgKey = extractR2Key(v.backgroundUrl);
+            if (imgKey) {
+              const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+              resolvePromises.push(
+                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
+                  v.backgroundUrl = url;
+                }).catch(err => {
+                  console.warn('Could not resolve signed URL for', imgKey, err);
+                })
+              );
+            }
+          }
+        }
+
+        // Also resolve signed URLs for legacy data.versions array and data.version at root
+        if (Array.isArray(data.versions)) {
+          for (const v of data.versions) {
+            const imgKey = extractR2Key(v.backgroundUrl);
+            if (imgKey) {
+              const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+              resolvePromises.push(
+                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
+                  v.backgroundUrl = url;
+                }).catch(err => {
+                  console.warn('Could not resolve signed URL for', imgKey, err);
+                })
+              );
+            }
+          }
+        }
+        if (data.version) {
+          const imgKey = extractR2Key(data.version.backgroundUrl);
+          if (imgKey) {
+            const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+            resolvePromises.push(
+              getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
+                data.version.backgroundUrl = url;
+              }).catch(err => {
+                console.warn('Could not resolve signed URL for', imgKey, err);
+              })
+            );
+          }
+        }
+
+        await Promise.all(resolvePromises);
+        setConfig(data);
+        try {
+          useDataStore.getState().setLoadedCloudData(data);
+        } catch (e) {
+          console.warn('Could not sync loaded cloud data to store', e);
+        }
+
+        // Background Pre-cache all floor maps into IndexedDB for 0ms floor switching
+        try {
+          const bgUrlsToPreload: string[] = [];
+          if (data?.storeLocationData) {
+            Object.values(data.storeLocationData).forEach((part: any) => {
+              if (Array.isArray(part?.mapVersions)) {
+                part.mapVersions.forEach((v: any) => {
+                  if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
+                    bgUrlsToPreload.push(v.backgroundUrl);
+                  }
+                });
+              }
+            });
+          }
+          if (Array.isArray(data?.versions)) {
+            data.versions.forEach((v: any) => {
+              if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
+                bgUrlsToPreload.push(v.backgroundUrl);
+              }
+            });
+          }
+          if (bgUrlsToPreload.length > 0) {
+            preloadFloorImages(bgUrlsToPreload);
+          }
+        } catch (_preloadErr) {}
+      } else if (data.versions && data.versions.length > 0) {
+        // Legacy format fallback
+        const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
+        const imgKey = extractR2Key(activeVersion?.backgroundUrl);
+        if (activeVersion && imgKey) {
+          const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
+          activeVersion.backgroundUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
+        }
+        
+        setConfig({
+          ...data,
+          version: activeVersion,
+          units: data.mapUnits || data.units || []
+        });
+        try {
+          useDataStore.getState().setLoadedCloudData(data);
+        } catch (e) {
+          console.warn('Could not sync loaded cloud data to store', e);
+        }
+      } else {
+        setConfig(data);
+        try {
+          useDataStore.getState().setLoadedCloudData(data);
+        } catch (e) {
+          console.warn('Could not sync loaded cloud data to store', e);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Lỗi tải dữ liệu');
+    } finally {
+      setLoading(false);
+    }
+  }, [r2Config, initFormFromStorage]);
+
+  const handleSaveR2Config = useCallback(async () => {
+    const acc = cfgAccountId.trim();
+    const bkt = cfgBucketName.trim();
+    const key = cfgAccessKey.trim();
+    const sec = cfgSecretKey.trim();
+
+    if (!acc || !bkt || !key || !sec) {
+      alert('Vui lòng điền đủ 4 trường: Account ID, Bucket Name, Access Key và Secret Key.');
+      return;
+    }
+
+    localStorage.setItem('r2_account_id', acc);
+    localStorage.setItem('r2_bucket_name', bkt);
+    localStorage.setItem('r2_access_key', key);
+    localStorage.setItem('r2_access_key_id', key);
+    localStorage.setItem('r2_secret_key', sec);
+    localStorage.setItem('r2_secret_access_key', sec);
+
+    // Save to global config & local cache
+    const configData = {
+      accountId: acc,
+      bucketName: bkt,
+      accessKeyId: key,
+      secretAccessKey: sec
+    };
+    localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(configData));
+    setR2Config(configData);
+
+    try {
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"), configData);
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+        r2Version: Date.now(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.error("Lỗi khi lưu cấu hình R2 lên server:", e);
+    }
+
+    setShowConfigModal(false);
+    loadConfig();
+  }, [cfgAccountId, cfgBucketName, cfgAccessKey, cfgSecretKey, setR2Config, loadConfig]);
+
+  useEffect(() => {
+    loadConfig();
+
+    const handleSyncUpdate = () => {
+      loadConfig();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('taka_cloud_sync_updated', handleSyncUpdate);
+    }
+
+    let lastVersion = -1;
+    // Realtime snapshot listener on taka_config/versions (version-guarded to eliminate duplicate read on mount)
+    const unsubSnapshot = onSnapshot(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), (snap) => {
+      if (snap.exists()) {
+        const remoteVersion = (snap.data() as any)?.pictureMappingVersion ?? 0;
+        if (lastVersion !== -1 && remoteVersion !== lastVersion) {
+          loadConfig();
+        }
+        lastVersion = remoteVersion;
+      }
+    });
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('taka_cloud_sync_updated', handleSyncUpdate);
+      }
+      unsubSnapshot();
+    };
+  }, [loadConfig]);
+
+  return {
+    config,
+    setConfig,
+    loading,
+    setLoading,
+    error,
+    setError,
+    showConfigModal,
+    setShowConfigModal,
+    cfgAccountId,
+    setCfgAccountId,
+    cfgBucketName,
+    setCfgBucketName,
+    cfgAccessKey,
+    setCfgAccessKey,
+    cfgSecretKey,
+    setCfgSecretKey,
+    initFormFromStorage,
+    loadConfig,
+    handleSaveR2Config,
+  };
+}
+
+export default useLiveLayoutR2Config;
+
+
+// === FILE: src/lib/notificationTaskService.ts ===
+import { collection, query, where, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
+import { db, APP_ID } from './firebase';
+import { getLocalTasks, bulkPersistTasks } from './localDb';
+import { usePerformanceStore } from '../store/usePerformanceStore';
+import { Task } from '../types';
+
+/**
+ * Returns the standard notification date window:
+ * - Past 7 days (to detect overdue/recent tasks)
+ * - Future 14 days (to detect upcoming deadlines)
+ */
+export function getNotificationDateRange(referenceDate: Date = new Date()): { past7: string; future14: string } {
+  const past7 = new Date(referenceDate.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+  const future14 = new Date(referenceDate.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+  return { past7, future14 };
+}
+
+/**
+ * Filters a list of tasks for deadline notifications within the target window.
+ */
+export function filterTasksForNotificationWindow(
+  tasks: Task[],
+  past7: string,
+  future14: string,
+  maxCount: number = 50
+): Task[] {
+  if (!tasks || tasks.length === 0) return [];
+
+  const matched = tasks.filter((t) => {
+    if (t.isDeleted) return false;
+    if (!t.finish) return false;
+    const finishDate = t.finish.substring(0, 10);
+    return finishDate >= past7 && finishDate <= future14;
+  });
+
+  matched.sort((a, b) => (a.finish || '').localeCompare(b.finish || ''));
+  return matched.slice(0, maxCount);
+}
+
+/**
+ * Loads tasks for notification bell / deadline monitoring.
+ *
+ * Tối ưu hóa Firestore Read (Phương pháp 1):
+ * - Ưu tiên 1 (Cache-First): Đọc 100% từ Dexie Local-First DB (0ms, 0 Firestore Read).
+ * - Ưu tiên 2 (Cold-Boot Fallback): Chỉ khi Dexie hoàn toàn rỗng (lần đầu vào app trên máy mới/Incognito),
+ *   mới kích hoạt truy vấn 50 tasks từ Firestore, sau đó lưu ngay vào Dexie để lần sau tiếp tục đạt 0 Read.
+ */
+export async function loadNotificationTasks(options?: {
+  referenceDate?: Date;
+  maxCount?: number;
+  skipFirestoreFallback?: boolean;
+}): Promise<Task[]> {
+  const { past7, future14 } = getNotificationDateRange(options?.referenceDate);
+  const maxCount = options?.maxCount || 50;
+
+  try {
+    // 1. Kiểm tra dữ liệu trong Zustand RAM, Dexie Local DB và Project taskSummaries (0 Read Firestore)
+    const { useAppStore } = await import('../store/useAppStore');
+    const store = useAppStore.getState();
+    const storeTasks = store.tasks || [];
+
+    const summaryTasks: Task[] = [];
+    if (store.projects) {
+      store.projects.forEach((p) => {
+        if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+          p.taskSummaries.forEach((ts) => {
+            if (ts && ts.id) {
+              summaryTasks.push({
+                id: ts.id,
+                name: ts.name || '',
+                start: ts.start || '',
+                finish: ts.finish || '',
+                status: ts.status || 'On process',
+                projectCode: p.code,
+                projectStore: p.store,
+                projectYear: p.year,
+                party: ts.party,
+              } as unknown as Task);
+            }
+          });
+        }
+      });
+    }
+
+    const localTasks = await getLocalTasks();
+    const combinedMap = new Map<string, Task>();
+
+    summaryTasks.forEach((t) => combinedMap.set(t.id, t));
+    localTasks.forEach((t) => combinedMap.set(t.id, t));
+    storeTasks.forEach((t) => combinedMap.set(t.id, t));
+
+    const combinedPool = Array.from(combinedMap.values());
+
+    if (combinedPool.length > 0) {
+      const filtered = filterTasksForNotificationWindow(combinedPool, past7, future14, maxCount);
+
+      usePerformanceStore
+        .getState()
+        .trackGetDoc(
+          'local_notif_tasks',
+          true,
+          filtered.length,
+          `Notification tasks from RAM/Dexie/Summaries (0 Firestore Read, pool: ${combinedPool.length})`
+        );
+
+      return filtered;
+    }
+
+    // 2. Fallback: Nếu hoàn toàn rỗng (Cold Boot / Incognito) và chưa bị vô hiệu hóa
+    if (options?.skipFirestoreFallback) {
+      return [];
+    }
+
+    const qNotifTasks = query(
+      collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
+      where('finish', '>=', past7),
+      where('finish', '<=', future14),
+      limit(maxCount)
+    );
+
+    let snapshot;
+    try {
+      snapshot = await getDocsFromCache(qNotifTasks);
+      if (snapshot.empty) {
+        snapshot = await getDocsFromServer(qNotifTasks);
+      }
+    } catch {
+      snapshot = await getDocsFromServer(qNotifTasks);
+    }
+
+    const loadedNotifTasks: Task[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = { id: docSnap.id, ...docSnap.data() } as Task;
+      if (!data.isDeleted) {
+        loadedNotifTasks.push(data);
+      }
+    });
+
+    // Lưu vào Dexie để các lần kiểm tra tiếp theo không phải đọc Firestore nữa
+    if (loadedNotifTasks.length > 0) {
+      bulkPersistTasks(loadedNotifTasks).catch((e) => {
+        console.warn('[notificationTaskService] Error caching notif tasks to Dexie:', e);
+      });
+    }
+
+    usePerformanceStore
+      .getState()
+      .trackGetDoc(
+        'firestore_notif_tasks_fallback',
+        false,
+        loadedNotifTasks.length,
+        'Cold-boot notification tasks loaded from Firestore and cached to Dexie'
+      );
+
+    return loadedNotifTasks;
+  } catch (err) {
+    console.warn('[notificationTaskService] Failed to load notification tasks:', err);
+    return [];
+  }
+}
+
+
+// === FILE: src/lib/loadedMarkers.ts ===
+import { localDb } from './localDb';
+
+const PREFIX = 'loaded:';
+export type MarkerKind =
+  | 'projects_year'
+  | 'tasks_proj'
+  | 'tasks_year'
+  | 'costs_year'
+  | 'delegations_year';
+
+let cache: Set<string> | null = null;
+let loading: Promise<Set<string>> | null = null;
+
+export const markerKey = (kind: MarkerKind, id: string | number) =>
+  `${PREFIX}${kind}:${String(id).trim().toLowerCase()}`;
+
+export async function getLoadedMarkers(): Promise<Set<string>> {
+  if (cache) return cache;
+  if (!loading) {
+    loading = (async () => {
+      try {
+        const rows = await localDb.syncMeta.where('key').startsWith(PREFIX).toArray();
+        cache = new Set(rows.map((r) => r.key));
+      } catch {
+        cache = new Set();
+      }
+      return cache as Set<string>;
+    })();
+  }
+  return loading;
+}
+
+export function hasMarker(set: Set<string>, kind: MarkerKind, id: string | number): boolean {
+  return set.has(markerKey(kind, id));
+}
+
+export async function markLoaded(kind: MarkerKind, id: string | number): Promise<void> {
+  const key = markerKey(kind, id);
+  const currentCache = await getLoadedMarkers();
+  currentCache.add(key);
+  try {
+    await localDb.syncMeta.put({ key, value: String(Date.now()), updatedAt: Date.now() });
+  } catch {}
+}
+
+export async function clearLoadedMarkers(): Promise<void> {
+  cache = new Set();
+  loading = null;
+  try {
+    await localDb.syncMeta.where('key').startsWith(PREFIX).delete();
+  } catch {}
+}
+
+export async function clearAllLoadedMarkers(): Promise<void> {
+  return clearLoadedMarkers();
+}
+
+
+// === FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts ===
+import { useEffect, useRef, useCallback } from "react";
+import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
+import { useAppStore } from "../../store/useAppStore";
+import { usePerformanceStore } from "../../store/usePerformanceStore";
+import { db, APP_ID } from "../../lib/firebase";
+import { Project } from "../../types";
+import { PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../../lib/utils";
+import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
+import {
+  bootstrapLocalStore,
+  offloadPersistSnapshot,
+  hydrateProjectsFromLocal,
+} from "../../lib/backgroundSyncWorker";
+import { deleteLocalRecord } from "../../lib/localDb";
+import {
+  fetchYearsMeta,
+  setMemoryYearsMeta,
+  isYearCacheValid,
+  loadYearDataFromLocal,
+  YearsMetaMap,
+} from "../../lib/yearsFingerprintService";
+import { startDeltaSyncService, pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { markTasksDeleted } from "../../lib/taskDeletedTracker";
+import { isTaskBelongsToProject } from "../../lib/taskStateService";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
+
+
+interface UseProjectsHydrationProps {
+  querySignature: string | null;
+  userRole?: string;
+  allowedStores: string[];
+}
+
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
+
+// Các (người dùng, bộ lọc store, năm) thuộc nhóm năm phụ đã được nạp trong phiên này: không truy vấn server lặp lại
+const secondaryYearsFetched = new Set<string>();
+
+export function useProjectsHydration({
+  querySignature,
+  userRole,
+  allowedStores,
+}: UseProjectsHydrationProps) {
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
+  const setCloudStatus = useAppStore((state) => state.setCloudStatus);
+
+  const projectsPool = useRef<Map<string, () => void>>(new Map());
+  const prevSigProjects = useRef<string>("");
+  const remoteYearsMetaRef = useRef<YearsMetaMap>({});
+
+  // Atomic batching buffers for Projects and Tasks updates to prevent JS main thread freezing
+  const pendingProjectsMap = useRef<Map<string, Project> | null>(null);
+  const pendingProjectsChanged = useRef<Map<string, Project>>(new Map());
+  const pendingProjectsRemoved = useRef<Set<string>>(new Set());
+  const pendingDeletedTaskIds = useRef<Set<string>>(new Set());
+  const projectsBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchProjectsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+    if (!pendingProjectsMap.current) {
+      const currentProjects = useAppStore.getState().projects || [];
+      const map = new Map<string, Project>();
+      currentProjects.forEach(p => map.set(p.id, p));
+      pendingProjectsMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const id = change.doc.id;
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as Project;
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
+
+      if (isTrueDelete) {
+        pendingProjectsMap.current!.delete(id);
+        pendingProjectsChanged.current.delete(id);
+        pendingProjectsRemoved.current.add(id);
+      } else {
+        if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
+        const existing = pendingProjectsMap.current!.get(id);
+
+        let resolvedData = existing ? {
+          ...data,
+          taskCount: data.taskCount !== undefined ? data.taskCount : (existing.taskCount ?? 0),
+          taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
+        } : data;
+
+        // RAM-truth Protection: Nếu RAM đang có nhiều task thật hơn summary từ server, giữ nguyên truth
+        if (!fromCache && existing && Array.isArray(resolvedData.taskSummaries)) {
+          const currentTasks = useAppStore.getState().tasks || [];
+          const realProjTasks = currentTasks.filter(t => 
+            t.projectId === id || 
+            (t.projectCode === resolvedData.code && String(t.projectYear) === String(resolvedData.year) && String(t.projectStore).toLowerCase() === String(resolvedData.store).toLowerCase())
+          );
+          if (realProjTasks.length > resolvedData.taskSummaries.length) {
+            // Keep existing summary if it was better or would be updated by self-healing later
+            resolvedData.taskSummaries = existing.taskSummaries || resolvedData.taskSummaries;
+            resolvedData.taskCount = Math.max(resolvedData.taskCount || 0, existing.taskCount || 0);
+          }
+        }
+
+        pendingProjectsMap.current!.set(id, resolvedData);
+        pendingProjectsChanged.current.set(id, resolvedData);
+        pendingProjectsRemoved.current.delete(id);
+      }
+    });
+
+    if (projectsBatchTimer.current) {
+      clearTimeout(projectsBatchTimer.current);
+    }
+
+    projectsBatchTimer.current = setTimeout(() => {
+      if (pendingProjectsMap.current) {
+        const updatedList = Array.from(pendingProjectsMap.current.values());
+        updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
+        useAppStore.getState().setProjects(updatedList);
+
+        if (pendingDeletedTaskIds.current.size > 0) {
+          const delIdsLower = new Set(
+            Array.from(pendingDeletedTaskIds.current).map((tid) => String(tid).trim().toLowerCase())
+          );
+          const delRawIds = Array.from(pendingDeletedTaskIds.current);
+          pendingDeletedTaskIds.current.clear();
+
+          const currentTasks = useAppStore.getState().tasks || [];
+          const filteredTasks = currentTasks.filter(
+            (t) => !t?.id || !delIdsLower.has(String(t.id).trim().toLowerCase())
+          );
+          if (filteredTasks.length !== currentTasks.length) {
+            useAppStore.getState().setTasks(filteredTasks);
+          }
+          delRawIds.forEach((tid) => {
+            deleteLocalRecord('taka_tasks', tid).catch(() => {});
+          });
+        }
+
+        // Chỉ ghi Dexie phần thay đổi; xóa khỏi Dexie phần đã bị xóa (chống "sống lại")
+        const changed = Array.from(pendingProjectsChanged.current.values());
+        const removed = Array.from(pendingProjectsRemoved.current);
+        pendingProjectsChanged.current.clear();
+        pendingProjectsRemoved.current.clear();
+        if (changed.length > 0) offloadPersistSnapshot('taka_projects', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_projects', id).catch(() => {}); });
+        const setNotifs = useAppStore.getState().setAllProjectsForNotifs;
+        if (setNotifs) setNotifs(updatedList);
+        pendingProjectsMap.current = null;
+      }
+    }, 40);
+  }, []);
+
+  // Stage 3 & Delta Pipeline Startup
+  useEffect(() => {
+    bootstrapLocalStore().catch(() => {});
+
+    fetchYearsMeta().then((meta) => {
+      remoteYearsMetaRef.current = meta;
+      setMemoryYearsMeta(meta);
+    });
+
+    const stopDeltaSync = startDeltaSyncService();
+    return () => {
+      stopDeltaSync();
+    };
+  }, []);
+
+  // Sleep/Wake Recovery Listener
+  useEffect(() => {
+    const handleSleepWakeRecovery = () => {
+      // KHÔNG hủy listener khi thức giấc.
+      // Hủy xong mà không effect nào tạo lại => mất realtime Projects, và bộ đếm activeListeners
+      // không giảm => deltaInvalidateService tưởng doc đã có listener phủ rồi bỏ qua việc đọc lại.
+      // Socket chết do iOS treo đã có initNetworkRecovery (syncResilience) xử lý.
+      hydrateProjectsFromLocal(
+        useAppStore.getState().globalYearFilter,
+        useAppStore.getState().globalStoreFilter
+      ).catch(() => {});
+    };
+
+    window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    return () => {
+      window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    };
+  }, []);
+
+  // Unmount cleanup
+  useEffect(() => {
+    return () => {
+      projectsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
+      });
+      projectsPool.current.clear();
+      if (projectsBatchTimer.current) clearTimeout(projectsBatchTimer.current);
+    };
+  }, []);
+
+  // Main Unified Global Delta Sync for Projects
+  useEffect(() => {
+    if (!querySignature) return;
+
+    if (prevSigProjects.current !== querySignature) {
+      projectsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
+      });
+      projectsPool.current.clear();
+      prevSigProjects.current = querySignature;
+    }
+
+    const isAllYears = globalYearFilter === "all" || globalYearFilter === "ALL";
+    const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
+
+    liveTargetYears.forEach(async (year) => {
+      // LUÔN đảm bảo nạp lại dữ liệu từ Dexie Local-First khi người dùng đổi bộ lọc Year hoặc Store,
+      // kể cả khi listener của năm đó đã nằm trong projectsPool!
+      const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
+
+      if (!projectsPool.current.has(year)) {
+        const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+        const hasLocalData =
+          localCount > 0 ||
+          (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
+
+        const deltaManaged =
+          (hasLocalData && isClosedOrPastYear) ||
+          (DELTA_FIRST.projects && hasLocalData && hasMarker(await getLoadedMarkers(), 'projects_year', year));
+        if (deltaManaged) {
+          projectsPool.current.set(year, () => {});
+          pullAndApplyDeltas(year, true)
+            .then(() => setCloudStatus("online"))
+            .catch(() => {});
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(
+              `taka_projects_${year}`,
+              true,
+              localCount,
+              "Dexie Local-First Projects Hydration (0 Read full collection)"
+            );
+          return;
+        }
+
+        if (false && isClosedOrPastYear && isYearCacheValid(year, remoteYearsMetaRef.current)) {
+          const cached = loadYearDataFromLocal(year);
+          if (cached && cached.projects && cached.projects.length > 0) {
+            batchProjectsUpdate(
+              cached.projects.map((p) => ({
+                type: "added",
+                doc: { id: p.id, data: () => p },
+              }))
+            );
+            usePerformanceStore
+              .getState()
+              .trackGetDoc(
+                `taka_projects_${year}`,
+                true,
+                cached.projects.length,
+                "Metadata Fingerprint Cache Hit"
+              );
+            projectsPool.current.set(year, () => {});
+            return;
+          }
+        }
+
+        const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
+        const qProjects = buildStoreAndYearQuery(colRef, "store", "year", year, userRole, allowedStores);
+
+        usePerformanceStore.getState().registerListener(`taka_projects_${year}`);
+        const unsub = onSnapshot(
+          qProjects,
+          (snapshot) => {
+            usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
+            const fromCache = snapshot.metadata.fromCache;
+            let changesToApply: any[] = snapshot.docChanges();
+
+            // Server snapshot reconciliation: purge any zombie project in Dexie/Zustand for this year that no longer exists on server
+            if (!fromCache) {
+              const serverIds = new Set<string>();
+              snapshot.docs.forEach((d) => serverIds.add(d.id));
+              const currentProjectsNow = useAppStore.getState().projects || [];
+              const nowMs = Date.now();
+              const allowedLower = allowedStores.map((s) => s.toLowerCase());
+              const isStoreRestricted = userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+              const zombieRemovals: any[] = [];
+              currentProjectsNow.forEach((p) => {
+                if (
+                  p?.id &&
+                  String(p.year ?? "").trim() === String(year).trim() &&
+                  !serverIds.has(p.id)
+                ) {
+                  if (isStoreRestricted && p.store && !allowedLower.includes(String(p.store).trim().toLowerCase())) {
+                    return;
+                  }
+                  const updatedMs = tsOf(p.updatedAt);
+                  if (!updatedMs || nowMs - updatedMs > 30000) {
+                    zombieRemovals.push({
+                      type: "removed",
+                      doc: { id: p.id, data: () => ({ ...p, isDeleted: true }) },
+                    });
+                  }
+                }
+              });
+              if (zombieRemovals.length > 0) {
+                changesToApply = [...changesToApply, ...zombieRemovals];
+              }
+            }
+
+            batchProjectsUpdate(changesToApply, fromCache);
+            setCloudStatus("online");
+
+            if (DELTA_FIRST.projects && !fromCache) {
+              markLoaded('projects_year', year).catch(() => {});
+              const u = projectsPool.current.get(year);
+              projectsPool.current.set(year, () => {});
+              u?.();
+              usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
+            }
+          },
+          (e) => {
+            console.error("Projects listener error:", e);
+            setCloudStatus("offline");
+          }
+        );
+        projectsPool.current.set(year, unsub);
+      }
+    });
+
+    if (isAllYears) {
+      SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
+        if (projectsPool.current.has(year)) return;
+        const secKey = `${querySignature}_${globalStoreFilter}_${year}`;
+        if (secondaryYearsFetched.has(secKey)) return;
+        secondaryYearsFetched.add(secKey);
+        try {
+          const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
+          const qProjects = buildStoreAndYearQuery(colRef, "store", "year", year, userRole, allowedStores);
+          let snapshot;
+          try {
+            snapshot = await getDocsFromCache(qProjects);
+            if (snapshot.empty) {
+              snapshot = await getDocsFromServer(qProjects);
+            }
+          } catch {
+            snapshot = await getDocsFromServer(qProjects);
+          }
+
+          if (snapshot && !snapshot.empty) {
+            const currentProjects = useAppStore.getState().projects || [];
+            const projectMap = new Map<string, Project>();
+            currentProjects.forEach((p) => projectMap.set(p.id, p));
+
+            snapshot.forEach((docSnap) => {
+              const data = { id: docSnap.id, ...docSnap.data() } as Project;
+              if (!data.isDeleted) {
+                projectMap.set(docSnap.id, data);
+              }
+            });
+
+            const updatedList = Array.from(projectMap.values());
+            updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
+            useAppStore.getState().setProjects(updatedList);
+          }
+        } catch {
+          // Lỗi mạng hoặc cache: cho phép thử lại ở lần chạy sau
+          secondaryYearsFetched.delete(secKey);
+        }
+      });
+    }
+  }, [querySignature, userRole, allowedStores, globalYearFilter, globalStoreFilter, batchProjectsUpdate, setCloudStatus]);
+}
+
+
+// === FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts ===
+import { useEffect, useRef, useCallback } from "react";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { useAppStore } from "../../store/useAppStore";
+import { usePerformanceStore } from "../../store/usePerformanceStore";
+import { db, APP_ID } from "../../lib/firebase";
+import { Task } from "../../types";
+import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
+import {
+  offloadPersistSnapshot,
+  hydrateTasksFromLocal,
+  hydrateTasksForProjects,
+  hydrateDelegationsForProjects,
+} from "../../lib/backgroundSyncWorker";
+import { loadNotificationTasks } from "../../lib/notificationTaskService";
+import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
+import { cleanOrphanTasks } from "../../lib/taskStateService";
+import { rollupParentTaskDatesAndStatus } from "../../lib/taskRollupService";
+import { deleteLocalRecord } from "../../lib/localDb";
+import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import {
+  getAppBootAgeMs,
+  BOOT_SYNC_GUARD_MS,
+  calculateProjectComputedDates,
+  syncProjectDatesToFirestore,
+} from "../../lib/projectDatesService";
+import { markTasksDeleted } from "../../lib/taskDeletedTracker";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
+
+
+interface UseTasksHydrationProps {
+  querySignature: string | null;
+  userRole?: string;
+  allowedStores: string[];
+}
+
+const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+import {
+  isStaleCacheDoc,
+  extractKeysToHydrate,
+  groupActiveProjectsByYear,
+  doesTaskBelongToProject,
+  filterCompatibleProjectChanges,
+  buildZombieTaskRemovalsForYear,
+  buildZombieTaskRemovalsForProject,
+} from "./tasksHydrationHelpers";
+
+export function useTasksHydration({
+  querySignature,
+  userRole,
+  allowedStores,
+}: UseTasksHydrationProps) {
+  const isTasksRequested = useAppStore((state) => state.isTasksRequested);
+  const expandedProjectIds = useAppStore((state) => state.expandedProjectIds);
+  const searchActiveProjectIds = useAppStore((state) => state.searchActiveProjectIds);
+  const visibleActiveProjectIds = useAppStore((state) => state.visibleActiveProjectIds);
+  const visibleActiveProjectIdsRef = useRef(visibleActiveProjectIds);
+  visibleActiveProjectIdsRef.current = visibleActiveProjectIds;
+
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const setIsTasksLoading = useAppStore((state) => state.setIsTasksLoading);
+  const setAllTasksForNotifs = useAppStore((state) => state.setAllTasksForNotifs);
+  const setCloudStatus = useAppStore((state) => state.setCloudStatus);
+
+  const tasksPool = useRef<Map<string, () => void>>(new Map());
+  const tasksTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const knownHydratedProjectCodes = useRef<Set<string>>(new Set());
+
+  const prevQuerySigTasks = useRef<string>("");
+  const prevSigTasks = useRef<string>("");
+
+  // Atomic batching buffers for Tasks updates
+  const pendingTasksMap = useRef<Map<string, Task> | null>(null);
+  const pendingTasksChanged = useRef<Map<string, Task>>(new Map());
+  const pendingTasksRemoved = useRef<Set<string>>(new Set());
+  const tasksBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchTasksUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+    if (!pendingTasksMap.current) {
+      const currentTasks = useAppStore.getState().tasks || [];
+      const map = new Map<string, Task>();
+      currentTasks.forEach((t) => map.set(t.id, t));
+      pendingTasksMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const id = change.doc.id;
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as Task;
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
+
+      if (isTrueDelete) {
+        markTasksDeleted([id], data.projectId ? String(data.projectId) : undefined);
+        pendingTasksMap.current!.delete(id);
+        pendingTasksChanged.current.delete(id);
+        pendingTasksRemoved.current.add(id);
+      } else {
+        if (fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
+        if (!data.isDeleted) {
+          const { unmarkTaskDeleted } = require("../../lib/taskDeletedTracker");
+          unmarkTaskDeleted(id);
+        }
+        pendingTasksMap.current!.set(id, data);
+        pendingTasksChanged.current.set(id, data);
+        pendingTasksRemoved.current.delete(id);
+      }
+    });
+
+    if (tasksBatchTimer.current) {
+      clearTimeout(tasksBatchTimer.current);
+    }
+
+    tasksBatchTimer.current = setTimeout(() => {
+      if (pendingTasksMap.current) {
+        const rawList = Array.from(pendingTasksMap.current.values());
+        const projects = useAppStore.getState().projects || [];
+        const { dedupedTasks } = deduplicateTasksInMemory(rawList, projects);
+        const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
+        const rolledUpTasks = rollupParentTaskDatesAndStatus(unrolledTasks, useAppStore.getState().delegationGroups);
+        rolledUpTasks.sort((a, b) => {
+          if (a.projectCode !== b.projectCode) {
+            return (a.projectCode || "").localeCompare(b.projectCode || "");
+          }
+          return (a.orderIndex || 0) - (b.orderIndex || 0);
+        });
+        const finalTasks = rolledUpTasks;
+        useAppStore.getState().setTasks(finalTasks);
+
+        // Purging logic from taskSummaries removed to prevent data loss (User Requirement)
+        if (pendingTasksRemoved.current.size > 0) {
+           pendingTasksRemoved.current.clear();
+        }
+        
+        // Self-healing an toàn:
+        // - chỉ xét các dự án có task thay đổi trong lô này (không quét toàn bộ P x T)
+        // - bỏ qua snapshot từ cache và 15 giây đầu sau khi mở app (dữ liệu cục bộ có thể cũ/thiếu)
+        // - KHÔNG chữa theo hướng giảm: ít task hơn taskCount đã lưu nghĩa là có thể mới tải một phần
+        if (!fromCache && (getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS || knownHydratedProjectCodes.current.size > 0) && pendingTasksChanged.current.size > 0) {
+          const touchedIds = new Set<string>();
+          const touchedCodes = new Set<string>();
+          pendingTasksChanged.current.forEach((t) => {
+            if (t.projectId) touchedIds.add(String(t.projectId));
+            if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
+          });
+
+          const currentProjects = useAppStore.getState().projects || [];
+
+          // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
+          // (hoặc khớp vắt qua 2 năm nếu mã dự án p.code là duy nhất trong p.store)
+          const belongsToProject = (t: Task, p: any, isUniqueCodeInStore: boolean): boolean => {
+            if (t.projectId) return String(t.projectId) === String(p.id);
+            const codeMatches = String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase();
+            if (!codeMatches) return false;
+            const storeMatches = !p.store || !t.projectStore || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
+            if (!storeMatches) return false;
+            if (isUniqueCodeInStore) return true;
+            return String(t.projectYear ?? "").trim() === String(p.year ?? "").trim();
+          };
+
+          let projectsNeedUpdate = false;
+          const healedProjects = currentProjects.map((p) => {
+            const codeKey = String(p.code || "").trim().toLowerCase();
+            if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
+            if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS && !knownHydratedProjectCodes.current.has(String(p.id))) return p;
+
+            const sameCodeStoreProjects = currentProjects.filter(
+              (proj) =>
+                !proj.isDeleted &&
+                String(proj.code || "").trim().toLowerCase() === codeKey &&
+                (!p.store || !proj.store || String(proj.store).trim().toLowerCase() === String(p.store).trim().toLowerCase())
+            );
+            const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
+
+            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p, isUniqueCodeInStore));
+            if (pTasks.length === 0) return p;
+
+            const existingMaxCount = Math.max(p.taskCount || 0, Array.isArray(p.taskSummaries) ? p.taskSummaries.length : 0);
+            if (pTasks.length < existingMaxCount) return p;
+
+            const isFullyHydratedProject =
+              knownHydratedProjectCodes.current.has(String(p.id)) ||
+              tasksPool.current.has(`proj_${p.id}`) ||
+              tasksPool.current.has(`year_${p.year}`);
+
+            if (!isFullyHydratedProject) return p;
+
+            const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
+            const hasDiscrepancy =
+              p.taskCount !== computed.taskCount ||
+              !p.taskSummaries ||
+              p.taskSummaries.length !== (computed.taskSummaries?.length || 0) ||
+              (p.computedTakStart || '') !== (computed.computedTakStart || '') ||
+              (p.computedTakCompl || '') !== (computed.computedTakCompl || '') ||
+              (p.computedPlanProgress ?? 0) !== (computed.computedPlanProgress ?? 0) ||
+              (p.computedActProgress ?? 0) !== (computed.computedActProgress ?? 0);
+            if (!hasDiscrepancy) return p;
+
+            projectsNeedUpdate = true;
+            syncProjectDatesToFirestore(p.id, computed).catch(() => {});
+
+            return {
+              ...p,
+              ...computed,
+            };
+          });
+          if (projectsNeedUpdate) {
+            useAppStore.getState().setProjects(healedProjects);
+          }
+        }
+        
+        const finalIds = new Set(finalTasks.map(t => t.id));
+        const changed = Array.from(pendingTasksChanged.current.values()).filter(t => finalIds.has(t.id));
+        const removed = Array.from(pendingTasksRemoved.current);
+        pendingTasksChanged.current.clear();
+        pendingTasksRemoved.current.clear();
+        if (changed.length > 0) offloadPersistSnapshot('taka_tasks', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_tasks', id).catch(() => {}); });
+
+        const setNotifs = useAppStore.getState().setAllTasksForNotifs;
+        if (setNotifs) setNotifs(finalTasks);
+        pendingTasksMap.current = null;
+      }
+    }, 200);
+  }, []);
+
+  // Sleep/Wake Recovery Listener
+  useEffect(() => {
+    const handleSleepWakeRecovery = () => {
+      // 1. KHÔNG hủy listener khi thức giấc.
+      // Hủy xong mà không effect nào tạo lại => mất realtime tasks/costs/delegations
+      // Socket chết do iOS treo đã có initNetworkRecovery (syncResilience) xử lý bằng deltaResync
+      
+      if (useAppStore.getState().isTasksRequested) {
+        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      }
+    };
+
+    window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    return () => {
+      window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      tasksPool.current.forEach((u) => u());
+      tasksPool.current.clear();
+      tasksTTLTimeouts.current.forEach((t) => clearTimeout(t));
+      tasksTTLTimeouts.current.clear();
+      if (tasksBatchTimer.current) clearTimeout(tasksBatchTimer.current);
+    };
+  }, []);
+
+  // Lightweight Notification Query for Tasks (0 Read from Dexie with Safe Fallback)
+  useEffect(() => {
+    let isCancelled = false;
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (!querySignature || isTasksRequested) {
+      return;
+    }
+
+    const fetchNotifs = async () => {
+      if (isCancelled) return;
+      try {
+        const loadedNotifTasks = await loadNotificationTasks();
+        if (isCancelled) return;
+        setAllTasksForNotifs(loadedNotifTasks);
+      } catch (e) {
+        console.warn("[useTasksHydration] Notification lightweight tasks query error:", e);
+      }
+    };
+
+    fetchNotifs();
+
+    const POLL_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+    intervalId = setInterval(fetchNotifs, POLL_INTERVAL_MS);
+
+    return () => {
+      isCancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [querySignature, isTasksRequested, setAllTasksForNotifs]);
+
+  // Main Tasks Sync Logic
+  useEffect(() => {
+    if (!querySignature) return;
+
+    const activeProjectIds = isTasksRequested
+      ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])]
+      : [];
+    const currentSig = `${querySignature}_${activeProjectIds.join(",")}_${isTasksRequested}`;
+
+    if (prevQuerySigTasks.current !== querySignature) {
+      if (prevQuerySigTasks.current !== "") {
+        tasksPool.current.forEach((u) => u());
+        tasksPool.current.clear();
+        tasksTTLTimeouts.current.forEach((t) => clearTimeout(t));
+        tasksTTLTimeouts.current.clear();
+      }
+      prevQuerySigTasks.current = querySignature;
+    }
+    prevSigTasks.current = currentSig;
+
+    if (activeProjectIds.length === 0) {
+      Array.from(tasksPool.current.keys()).forEach((key) => {
+        if (!tasksTTLTimeouts.current.has(key)) {
+          const timeoutId = setTimeout(() => {
+            const unsub = tasksPool.current.get(key);
+            if (unsub) unsub();
+            tasksPool.current.delete(key);
+            tasksTTLTimeouts.current.delete(key);
+            usePerformanceStore.getState().unregisterListener(`taka_tasks_${key}`);
+          }, TTL_DURATION_MS);
+          tasksTTLTimeouts.current.set(key, timeoutId);
+        }
+      });
+      setIsTasksLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const runTasksSync = async () => {
+      const currentProjects = useAppStore.getState().projects || [];
+      const keysToHydrate = extractKeysToHydrate(activeProjectIds, currentProjects);
+
+      await Promise.all([
+        hydrateTasksForProjects(Array.from(keysToHydrate)),
+        hydrateDelegationsForProjects(activeProjectIds),
+      ]);
+      if (isCancelled) return;
+      const markers = await getLoadedMarkers();
+
+      setIsTasksLoading(true);
+
+      const projectsByYear = groupActiveProjectsByYear(activeProjectIds, currentProjects, globalYearFilter);
+
+      const neededKeys = new Set<string>();
+      let needTasksDeltaSync = false;
+
+      projectsByYear.forEach((projs, year) => {
+        if (projs.length > 10) {
+          const yearKey = `year_${year}`;
+          neededKeys.add(yearKey);
+
+          if (tasksTTLTimeouts.current.has(yearKey)) {
+            clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
+            tasksTTLTimeouts.current.delete(yearKey);
+          }
+
+          projs.forEach((p) => {
+            const pKey = `proj_${p.id}`;
+            if (tasksPool.current.has(pKey)) {
+              const u = tasksPool.current.get(pKey);
+              if (u) u();
+              tasksPool.current.delete(pKey);
+              usePerformanceStore.getState().unregisterListener(`taka_tasks_${pKey}`);
+            }
+          });
+
+          if (!tasksPool.current.has(yearKey)) {
+            const currentTasks = useAppStore.getState().tasks || [];
+            const hasLocalYearTasks = currentTasks.some(
+              (t) => String(t.projectYear || "") === String(year)
+            );
+            const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+
+            const deltaManaged =
+              (hasLocalYearTasks && isClosedOrPastYear) ||
+              (DELTA_FIRST.tasks && hasLocalYearTasks && hasMarker(markers, 'tasks_year', year));
+            if (deltaManaged) {
+              tasksPool.current.set(yearKey, () => {});
+              setIsTasksLoading(false);
+              needTasksDeltaSync = true;
+              usePerformanceStore
+                .getState()
+                .trackGetDoc(
+                  `taka_tasks_${yearKey}`,
+                  true,
+                  currentTasks.length,
+                  "Dexie Local-First Tasks (0 Read full collection)"
+                );
+            } else {
+              const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks");
+              const qTasks = buildStoreAndYearQuery(
+                colRef,
+                "projectStore",
+                "projectYear",
+                year,
+                userRole,
+                allowedStores
+              );
+
+              usePerformanceStore.getState().registerListener(`taka_tasks_${yearKey}`);
+              const unsub = onSnapshot(
+                qTasks,
+                (snapshot) => {
+                  usePerformanceStore.getState().trackSnapshot(`taka_tasks_${yearKey}`, snapshot);
+                  setIsTasksLoading(false);
+                  const fromCache = snapshot.metadata.fromCache;
+                  let changesToApply: any[] = snapshot.docChanges();
+                  batchTasksUpdate(changesToApply, fromCache);
+                  setCloudStatus("online");
+
+                  if (DELTA_FIRST.tasks && !fromCache) {
+                    markLoaded('tasks_year', year).catch(() => {});
+                    const u = tasksPool.current.get(yearKey);
+                    tasksPool.current.set(yearKey, () => {});
+                    u?.();
+                    usePerformanceStore.getState().unregisterListener(`taka_tasks_${yearKey}`);
+                  }
+                },
+                (e) => {
+                  setIsTasksLoading(false);
+                  console.error("Tasks consolidated listener error:", e);
+                  setCloudStatus("offline");
+                }
+              );
+              tasksPool.current.set(yearKey, unsub);
+            }
+          }
+        } else {
+          const visibleSet = new Set((visibleActiveProjectIdsRef.current || []).map((id) => String(id)));
+          const sortedProjs = [...projs].sort((a, b) => {
+            const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
+            const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
+            return bVis - aVis;
+          });
+
+          sortedProjs.forEach((p) => {
+            const projKey = `proj_${p.id}`;
+            const yearKey = `year_${year}`;
+
+            if (tasksPool.current.has(yearKey)) {
+              neededKeys.add(yearKey);
+              return;
+            }
+
+            neededKeys.add(projKey);
+
+            if (tasksTTLTimeouts.current.has(projKey)) {
+              clearTimeout(tasksTTLTimeouts.current.get(projKey)!);
+              tasksTTLTimeouts.current.delete(projKey);
+            }
+
+            if (!tasksPool.current.has(projKey)) {
+              const currentTasks = useAppStore.getState().tasks || [];
+              const localProjTasks = currentTasks.filter((t) => doesTaskBelongToProject(t, p));
+              const hasLocalProjTasks =
+                localProjTasks.length > 0 ||
+                knownHydratedProjectCodes.current.has(String(p.id));
+              const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+              const isZeroTaskProject =
+                (p.taskCount || 0) === 0 &&
+                Array.isArray(p.taskSummaries) &&
+                p.taskSummaries.length === 0 &&
+                localProjTasks.length === 0;
+
+              const deltaManaged =
+                isZeroTaskProject ||
+                (hasLocalProjTasks && isClosedOrPastYear) ||
+                (DELTA_FIRST.tasks && hasLocalProjTasks && (hasMarker(markers, 'tasks_proj', p.id) || hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
+              if (deltaManaged) {
+                tasksPool.current.set(projKey, () => {});
+                setIsTasksLoading(false);
+                if (!isZeroTaskProject) needTasksDeltaSync = true;
+                usePerformanceStore
+                  .getState()
+                  .trackGetDoc(
+                    `taka_tasks_${projKey}`,
+                    true,
+                    localProjTasks.length,
+                    "Dexie Local-First Project Tasks (0 Read)"
+                  );
+              } else {
+                const codeList = [p.code];
+                if (p.linkCodes) {
+                  const extra = String(p.linkCodes).split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+                  extra.forEach(c => { if (!codeList.includes(c)) codeList.push(c); });
+                }
+                const qTasks = codeList.length > 1
+                  ? query(
+                      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                      where("projectCode", "in", codeList.slice(0, 10))
+                    )
+                  : query(
+                      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                      where("projectCode", "==", p.code)
+                    );
+
+                usePerformanceStore.getState().registerListener(`taka_tasks_${projKey}`);
+                const unsub = onSnapshot(
+                  qTasks,
+                  (snapshot) => {
+                    knownHydratedProjectCodes.current.add(String(p.id));
+                    usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
+                    setIsTasksLoading(false);
+                    const fromCache = snapshot.metadata.fromCache;
+                    const allProjectsNow = useAppStore.getState().projects || [];
+                    const sameCodeStoreProjects = allProjectsNow.filter(
+                      (proj) =>
+                        !proj.isDeleted &&
+                        String(proj.code || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
+                        (!p.store || !proj.store || String(proj.store).trim().toLowerCase() === String(p.store).trim().toLowerCase())
+                    );
+                    const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
+
+                    let compatibleChanges = snapshot.docChanges().filter((ch) => {
+                      const dt: any = ch.doc.data();
+                      if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                      if (dt && dt.projectStore && p.store &&
+                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
+                      if (ch.type === "removed") return true;
+                      if (dt && dt.projectId && String(dt.projectId) === String(p.id)) return true;
+                      if (!isUniqueCodeInStore) {
+                        const dy = dt.projectYear;
+                        if (dy !== undefined && dy !== null && dy !== "" && p.year &&
+                            String(dy).trim() !== String(p.year).trim()) return false;
+                      }
+                      return true;
+                    });
+
+                    batchTasksUpdate(compatibleChanges, fromCache);
+                    setCloudStatus("online");
+
+                    if (DELTA_FIRST.tasks && !fromCache) {
+                      markLoaded('tasks_proj', p.id).catch(() => {});
+                      const u = tasksPool.current.get(projKey);
+                      tasksPool.current.set(projKey, () => {});
+                      u?.();
+                      usePerformanceStore.getState().unregisterListener(`taka_tasks_${projKey}`);
+                    }
+                  },
+                  (e) => {
+                    setIsTasksLoading(false);
+                    console.error("Tasks listener error:", e);
+                    setCloudStatus("offline");
+                  }
+                );
+                tasksPool.current.set(projKey, unsub);
+              }
+            }
+          });
+        }
+      });
+
+      if (needTasksDeltaSync) {
+        pullAndApplyDeltas(undefined, true)
+          .then(() => setCloudStatus("online"))
+          .catch(() => {});
+      }
+
+      Array.from(tasksPool.current.keys()).forEach((key) => {
+        if (!neededKeys.has(key)) {
+          if (!tasksTTLTimeouts.current.has(key)) {
+            const timeoutId = setTimeout(() => {
+              const unsub = tasksPool.current.get(key);
+              if (unsub) unsub();
+              tasksPool.current.delete(key);
+              tasksTTLTimeouts.current.delete(key);
+              usePerformanceStore.getState().unregisterListener(`taka_tasks_${key}`);
+            }, TTL_DURATION_MS);
+            tasksTTLTimeouts.current.set(key, timeoutId);
+          }
+        }
+      });
+    };
+
+    runTasksSync().catch((err) => {
+      console.warn("[useTasksHydration] runTasksSync error:", err);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    querySignature,
+    userRole,
+    allowedStores,
+    isTasksRequested,
+    expandedProjectIds,
+    searchActiveProjectIds,
+    globalYearFilter,
+    batchTasksUpdate,
+    setIsTasksLoading,
+    setCloudStatus,
+  ]);
+}
+
+
+// === FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ===
+import { useEffect, useRef, useCallback } from "react";
+import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
+import { useAppStore } from "../../store/useAppStore";
+import { usePerformanceStore } from "../../store/usePerformanceStore";
+import { db, APP_ID } from "../../lib/firebase";
+import { Cost } from "../../types";
+import { PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../../lib/utils";
+import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
+import { hydrateCostsFromLocal, offloadPersistSnapshot } from "../../lib/backgroundSyncWorker";
+import { deleteLocalRecord } from "../../lib/localDb";
+import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
+
+
+interface UseCostsHydrationProps {
+  querySignature: string | null;
+  userRole?: string;
+  allowedStores: string[];
+}
+
+const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
+
+export function useCostsHydration({
+  querySignature,
+  userRole,
+  allowedStores,
+}: UseCostsHydrationProps) {
+  const isCostsRequested = useAppStore((state) => state.isCostsRequested);
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const setIsCostsLoading = useAppStore((state) => state.setIsCostsLoading);
+  const setCloudStatus = useAppStore((state) => state.setCloudStatus);
+
+  const costsPool = useRef<Map<string, () => void>>(new Map());
+  const costsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const prevSigCosts = useRef<string>("");
+
+  // Atomic batching buffers for Costs updates
+  const pendingCostsMap = useRef<Map<string, Cost> | null>(null);
+  const pendingCostsChanged = useRef<Map<string, Cost>>(new Map());
+  const pendingCostsRemoved = useRef<Set<string>>(new Set());
+  const costsBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchCostsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+    if (!pendingCostsMap.current) {
+      const currentCosts = useAppStore.getState().costs || [];
+      const map = new Map<string, Cost>();
+      currentCosts.forEach((c) => map.set(c.id, c));
+      pendingCostsMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const id = change.doc.id;
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as Cost;
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
+
+      if (isTrueDelete) {
+        pendingCostsMap.current!.delete(id);
+        pendingCostsChanged.current.delete(id);
+        pendingCostsRemoved.current.add(id);
+      } else {
+        if (fromCache && isStaleCacheDoc(pendingCostsMap.current!.get(id), data)) return;
+        pendingCostsMap.current!.set(id, data);
+        pendingCostsChanged.current.set(id, data);
+        pendingCostsRemoved.current.delete(id);
+      }
+    });
+
+    if (costsBatchTimer.current) {
+      clearTimeout(costsBatchTimer.current);
+    }
+
+    costsBatchTimer.current = setTimeout(() => {
+      if (pendingCostsMap.current) {
+        const updatedList = Array.from(pendingCostsMap.current.values());
+        useAppStore.getState().setCosts(updatedList);
+        
+        const changed = Array.from(pendingCostsChanged.current.values());
+        const removed = Array.from(pendingCostsRemoved.current);
+        pendingCostsChanged.current.clear();
+        pendingCostsRemoved.current.clear();
+        
+        if (changed.length > 0) offloadPersistSnapshot('taka_costs', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_costs', id).catch(() => {}); });
+        
+        pendingCostsMap.current = null;
+      }
+    }, 80);
+  }, []);
+
+  // Sleep/Wake Recovery Listener
+  useEffect(() => {
+    const handleSleepWakeRecovery = () => {
+      // 1. KHÔNG hủy listener khi thức giấc.
+      
+      if (useAppStore.getState().isCostsRequested) {
+        hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      }
+    };
+
+    window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    return () => {
+      window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      costsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+      });
+      costsPool.current.clear();
+      costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
+      costsTTLTimeouts.current.clear();
+      if (costsBatchTimer.current) clearTimeout(costsBatchTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!querySignature || !isCostsRequested) {
+      if (!isCostsRequested) {
+        setIsCostsLoading(false);
+        Array.from(costsPool.current.keys()).forEach((key) => {
+          if (!costsTTLTimeouts.current.has(key)) {
+            const timeoutId = setTimeout(() => {
+              const unsub = costsPool.current.get(key);
+              if (unsub) unsub();
+              costsPool.current.delete(key);
+              costsTTLTimeouts.current.delete(key);
+              usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+            }, TTL_DURATION_MS);
+            costsTTLTimeouts.current.set(key, timeoutId);
+          }
+        });
+      }
+      return;
+    }
+
+    costsTTLTimeouts.current.forEach((t) => clearTimeout(t));
+    costsTTLTimeouts.current.clear();
+
+    if (prevSigCosts.current !== querySignature) {
+      costsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_costs_${key}`);
+      });
+      costsPool.current.clear();
+      prevSigCosts.current = querySignature;
+    }
+
+    const isAllYears = globalYearFilter === "all" || globalYearFilter === "ALL";
+    const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
+
+    setIsCostsLoading(true);
+
+    liveTargetYears.forEach(async (year) => {
+      if (!costsPool.current.has(year)) {
+        const localCount = await hydrateCostsFromLocal(year);
+        const currentCosts = useAppStore.getState().costs || [];
+        const hasLocalCosts =
+          localCount > 0 || currentCosts.some((c) => String(c.projectYear || "") === String(year));
+        const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+
+        const deltaManaged =
+          (hasLocalCosts && isClosedOrPastYear) ||
+          (DELTA_FIRST.costs && hasLocalCosts && hasMarker(await getLoadedMarkers(), 'costs_year', year));
+        if (deltaManaged) {
+          costsPool.current.set(year, () => {});
+          setIsCostsLoading(false);
+          pullAndApplyDeltas(year, true)
+            .then(() => setCloudStatus("online"))
+            .catch(() => {});
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(
+              `taka_costs_${year}`,
+              true,
+              localCount,
+              "Dexie Local-First Costs (0 Read full collection)"
+            );
+          return;
+        } else {
+          const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
+          const qCosts = buildStoreAndYearQuery(
+            colRef,
+            "projectStore",
+            "projectYear",
+            year,
+            userRole,
+            allowedStores
+          );
+
+          usePerformanceStore.getState().registerListener(`taka_costs_${year}`);
+          const unsub = onSnapshot(
+            qCosts,
+            (snapshot) => {
+              usePerformanceStore.getState().trackSnapshot(`taka_costs_${year}`, snapshot);
+              setIsCostsLoading(false);
+              const fromCache = snapshot.metadata.fromCache;
+              batchCostsUpdate(snapshot.docChanges(), fromCache);
+
+              if (DELTA_FIRST.costs && !fromCache) {
+                markLoaded('costs_year', year).catch(() => {});
+                const u = costsPool.current.get(year);
+                costsPool.current.set(year, () => {});
+                u?.();
+                usePerformanceStore.getState().unregisterListener(`taka_costs_${year}`);
+              }
+            },
+            (e) => {
+              setIsCostsLoading(false);
+              console.error("Costs listener error:", e);
+            }
+          );
+          costsPool.current.set(year, unsub);
+        }
+      } else {
+        setIsCostsLoading(false);
+      }
+    });
+
+    if (isAllYears) {
+      SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
+        if (costsPool.current.has(year)) return;
+        try {
+          const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
+          const qCosts = buildStoreAndYearQuery(
+            colRef,
+            "projectStore",
+            "projectYear",
+            year,
+            userRole,
+            allowedStores
+          );
+          let snapshot;
+          try {
+            snapshot = await getDocsFromCache(qCosts);
+            if (snapshot.empty) {
+              snapshot = await getDocsFromServer(qCosts);
+            }
+          } catch {
+            snapshot = await getDocsFromServer(qCosts);
+          }
+
+          if (snapshot && !snapshot.empty) {
+            const liveCosts = useAppStore.getState().costs || [];
+            const costMap = new Map<string, Cost>();
+            liveCosts.forEach((c) => costMap.set(c.id, c));
+
+            snapshot.forEach((docSnap) => {
+              const data = { id: docSnap.id, ...docSnap.data() } as Cost;
+              if (!data.isDeleted) {
+                costMap.set(docSnap.id, data);
+              }
+            });
+
+            const updatedList = Array.from(costMap.values());
+            useAppStore.getState().setCosts(updatedList);
+          }
+        } catch {}
+      });
+    }
+  }, [
+    querySignature,
+    userRole,
+    allowedStores,
+    isCostsRequested,
+    globalYearFilter,
+    setIsCostsLoading,
+    setCloudStatus,
+  ]);
+}
+
+
+// === FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts ===
+import { useEffect, useRef, useCallback } from "react";
+import { collection, onSnapshot } from "firebase/firestore";
+import { useAppStore } from "../../store/useAppStore";
+import { usePerformanceStore } from "../../store/usePerformanceStore";
+import { db, APP_ID } from "../../lib/firebase";
+import { DelegationGroup } from "../../types";
+import { PRIMARY_ACTIVE_YEARS } from "../../lib/utils";
+import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
+import {
+  hydrateDelegationsFromLocal,
+  offloadPersistSnapshot,
+} from "../../lib/backgroundSyncWorker";
+import { getLocalDelegations, deleteLocalRecord } from "../../lib/localDb";
+import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
+import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+
+// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
+// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
+
+
+interface UseDelegationsHydrationProps {
+  querySignature: string | null;
+  userRole?: string;
+  allowedStores: string[];
+}
+
+const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  const n =
+    typeof v === "string" ? Date.parse(v)
+    : typeof v?.toMillis === "function" ? v.toMillis()
+    : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
+// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
+const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
+  if (!existing) return false;
+  const e = tsOf(existing.updatedAt);
+  const i = tsOf(incoming?.updatedAt);
+  return e > 0 && i > 0 && i < e;
+};
+
+export function useDelegationsHydration({
+  querySignature,
+  userRole,
+  allowedStores,
+}: UseDelegationsHydrationProps) {
+  const isDelegationsRequested = useAppStore((state) => state.isDelegationsRequested);
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const setIsDelegationsLoading = useAppStore((state) => state.setIsDelegationsLoading);
+  const setCloudStatus = useAppStore((state) => state.setCloudStatus);
+
+  const delegationsPool = useRef<Map<string, () => void>>(new Map());
+  const delegationsTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const yearDelegationsCache = useRef<Map<string, Map<string, DelegationGroup>>>(new Map());
+
+  const prevQuerySigDelegations = useRef<string>("");
+  const prevSigDelegations = useRef<string>("");
+
+  // Atomic batching buffers for Delegations updates
+  const pendingDelegationsMap = useRef<Map<string, DelegationGroup> | null>(null);
+  const pendingDelegationsChanged = useRef<Map<string, DelegationGroup>>(new Map());
+  const pendingDelegationsRemoved = useRef<Set<string>>(new Set());
+  const delegationsBatchTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const batchDelegationsUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+    if (!pendingDelegationsMap.current) {
+      const currentDelegations = useAppStore.getState().delegationGroups || [];
+      const map = new Map<string, DelegationGroup>();
+      currentDelegations.forEach((g) => map.set(g.id, g));
+      pendingDelegationsMap.current = map;
+    }
+
+    docChanges.forEach((change) => {
+      const id = change.doc.id;
+      const rawDocData = change.doc.data();
+      const data = { id, ...rawDocData } as DelegationGroup;
+      const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
+
+      if (isTrueDelete) {
+        pendingDelegationsMap.current!.delete(id);
+        pendingDelegationsChanged.current.delete(id);
+        pendingDelegationsRemoved.current.add(id);
+      } else {
+        if (fromCache && isStaleCacheDoc(pendingDelegationsMap.current!.get(id), data)) return;
+        pendingDelegationsMap.current!.set(id, data);
+        pendingDelegationsChanged.current.set(id, data);
+        pendingDelegationsRemoved.current.delete(id);
+      }
+    });
+
+    if (delegationsBatchTimer.current) {
+      clearTimeout(delegationsBatchTimer.current);
+    }
+
+    delegationsBatchTimer.current = setTimeout(() => {
+      if (pendingDelegationsMap.current) {
+        const updatedList = Array.from(pendingDelegationsMap.current.values());
+        useAppStore.getState().setDelegationGroups(updatedList);
+        
+        const changed = Array.from(pendingDelegationsChanged.current.values());
+        const removed = Array.from(pendingDelegationsRemoved.current);
+        pendingDelegationsChanged.current.clear();
+        pendingDelegationsRemoved.current.clear();
+        
+        if (changed.length > 0) offloadPersistSnapshot('taka_delegations', changed);
+        removed.forEach((id) => { deleteLocalRecord('taka_delegations', id).catch(() => {}); });
+        
+        pendingDelegationsMap.current = null;
+      }
+    }, 100);
+  }, []);
+
+  // Sleep/Wake Recovery Listener
+  useEffect(() => {
+    const handleSleepWakeRecovery = () => {
+      // KHÔNG hủy listener và KHÔNG xóa cache năm khi thức giấc (xem giải thích ở B1).
+      if (useAppStore.getState().isDelegationsRequested) {
+        hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      }
+    };
+
+    window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    return () => {
+      window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      delegationsPool.current.forEach((u, key) => {
+        u();
+        usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${key}`);
+      });
+      delegationsPool.current.clear();
+      delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
+      delegationsTTLTimeouts.current.clear();
+      yearDelegationsCache.current.clear();
+      if (delegationsBatchTimer.current) clearTimeout(delegationsBatchTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!querySignature) return;
+
+    const isAllYears = globalYearFilter === "all" || globalYearFilter === "ALL";
+    const targetYears = isDelegationsRequested
+      ? isAllYears
+        ? PRIMARY_ACTIVE_YEARS
+        : [globalYearFilter]
+      : [];
+    const currentSig = `${querySignature}_${targetYears.join(",")}_${isDelegationsRequested}`;
+
+    if (prevQuerySigDelegations.current !== querySignature) {
+      if (prevQuerySigDelegations.current !== "") {
+        delegationsPool.current.forEach((u, key) => {
+          u();
+          usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${key}`);
+        });
+        delegationsPool.current.clear();
+        delegationsTTLTimeouts.current.forEach((t) => clearTimeout(t));
+        delegationsTTLTimeouts.current.clear();
+        yearDelegationsCache.current.clear();
+      }
+      prevQuerySigDelegations.current = querySignature;
+    }
+    prevSigDelegations.current = currentSig;
+
+    const activeYearsSet = new Set(targetYears);
+    Array.from(delegationsPool.current.keys()).forEach((year) => {
+      if (!activeYearsSet.has(year)) {
+        if (!delegationsTTLTimeouts.current.has(year)) {
+          const timeoutId = setTimeout(() => {
+            const unsub = delegationsPool.current.get(year);
+            if (unsub) unsub();
+            delegationsPool.current.delete(year);
+            delegationsTTLTimeouts.current.delete(year);
+            yearDelegationsCache.current.delete(year);
+            usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
+            if (
+              delegationsPool.current.size === 0 &&
+              !useAppStore.getState().isDelegationsRequested
+            ) {
+              useAppStore.getState().setDelegationGroups([]);
+            }
+          }, TTL_DURATION_MS);
+          delegationsTTLTimeouts.current.set(year, timeoutId);
+        }
+      } else {
+        if (delegationsTTLTimeouts.current.has(year)) {
+          clearTimeout(delegationsTTLTimeouts.current.get(year)!);
+          delegationsTTLTimeouts.current.delete(year);
+        }
+      }
+    });
+
+    if (targetYears.length === 0) {
+      return;
+    }
+
+    setIsDelegationsLoading(true);
+
+    targetYears.forEach(async (year) => {
+      if (!delegationsPool.current.has(year)) {
+        const localCount = await hydrateDelegationsFromLocal(year);
+        const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+        const currentDelegations = useAppStore.getState().delegationGroups || [];
+        const hasLocalDelegations =
+          localCount > 0 ||
+          currentDelegations.some((d) => String(d.projectYear || "") === String(year));
+
+        const deltaManaged =
+          (hasLocalDelegations && isClosedOrPastYear) ||
+          (DELTA_FIRST.delegations && hasLocalDelegations && hasMarker(await getLoadedMarkers(), 'delegations_year', year));
+        if (deltaManaged) {
+          delegationsPool.current.set(year, () => {});
+          setIsDelegationsLoading(false);
+          pullAndApplyDeltas(year, true)
+            .then(() => setCloudStatus("online"))
+            .catch(() => {});
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(
+              `taka_delegation_groups_${year}`,
+              true,
+              localCount,
+              "Dexie Local-First Delegations (0 Read full collection)"
+            );
+          return;
+        }
+
+        delegationsPool.current.set(year, () => {});
+        setIsDelegationsLoading(false);
+
+        if (!yearDelegationsCache.current.has(year)) {
+          yearDelegationsCache.current.set(year, new Map());
+        }
+        const yearMap = yearDelegationsCache.current.get(year)!;
+        if (localCount > 0) {
+          const localItems = await getLocalDelegations(year);
+          localItems.forEach((d) => {
+            if (d.id) yearMap.set(d.id, d);
+          });
+          pullAndApplyDeltas(year)
+            .then(() => setCloudStatus("online"))
+            .catch(() => {});
+        }
+
+        const colRef = collection(
+          db,
+          "artifacts",
+          APP_ID,
+          "public",
+          "data",
+          "taka_delegation_groups"
+        );
+        const qDelegations = buildStoreAndYearQuery(
+          colRef,
+          "projectStore",
+          "projectYear",
+          year,
+          userRole,
+          allowedStores
+        );
+
+        usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
+        const unsub = onSnapshot(
+          qDelegations,
+          (snapshot) => {
+            usePerformanceStore
+              .getState()
+              .trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
+            setIsDelegationsLoading(false);
+            batchDelegationsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+
+            if (DELTA_FIRST.delegations && !snapshot.metadata.fromCache) {
+              markLoaded('delegations_year', year).catch(() => {});
+              const u = delegationsPool.current.get(year);
+              delegationsPool.current.set(year, () => {});
+              u?.();
+              usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
+            }
+          },
+          (e) => {
+            delegationsPool.current.delete(year);
+            setIsDelegationsLoading(false);
+            console.error("Delegation groups listener error:", e);
+          }
+        );
+        delegationsPool.current.set(year, unsub);
+      }
+    });
+  }, [
+    querySignature,
+    userRole,
+    allowedStores,
+    isDelegationsRequested,
+    globalYearFilter,
+    setIsDelegationsLoading,
+    setCloudStatus,
+  ]);
+}
+

@@ -1,51 +1,47 @@
-/**
- * Centralized Deleted Task Tracker
- * Prevents deleted tasks from being re-synthesized as virtual tasks or restored by stale project summaries.
- */
+const DELETED_TTL_MS = 45 * 1000; // 45 seconds optimistic delete guard
 
-const deletedTaskKeys = new Set<string>();
+const deletedTasksTimeMap = new Map<string, number>();
 
-export function markTasksDeleted(keys: (string | undefined | null)[], projectId?: string): void {
-  if (!keys || !Array.isArray(keys)) return;
-  const pKey = projectId ? String(projectId).trim().toLowerCase() : '';
-  keys.forEach(k => {
-    if (k && typeof k === 'string') {
-      const clean = k.trim().toLowerCase();
-      if (clean) {
-        deletedTaskKeys.add(clean);
-        if (pKey) {
-          deletedTaskKeys.add(`${pKey}:::${clean}`);
-        }
-      }
-    }
-  });
+// Xóa bỏ bộ nhớ đen vĩnh viễn cũ trong localStorage từng gây ẩn nhầm task thật
+if (typeof window !== 'undefined') {
+  try {
+    window.localStorage.removeItem('taka_deleted_task_ids_v1');
+    window.localStorage.removeItem('taka_deleted_tasks_v1');
+  } catch {}
 }
 
-// Các nơi gọi truyền thêm (code, name) nhưng hiện chỉ kiểm tra theo id/khóa chính.
-// Không kiểm tra theo tên vì tên task có thể trùng giữa các dự án.
-export function isTaskDeletedInTracker(
-  taskOrKey: string | { id?: string; projectId?: string; taskCodePhu?: string; name?: string } | undefined | null,
-  contextProjectIdOrCode?: string,
-  _name?: string
-): boolean {
-  if (!taskOrKey) return false;
-  const taskId = typeof taskOrKey === 'string'
-    ? taskOrKey.trim().toLowerCase()
-    : (taskOrKey.id ? String(taskOrKey.id).trim().toLowerCase() : '');
-  if (!taskId) return false;
-
-  const projId = typeof taskOrKey === 'object' && (taskOrKey as any).projectId
-    ? String((taskOrKey as any).projectId).trim().toLowerCase()
-    : (contextProjectIdOrCode ? String(contextProjectIdOrCode).trim().toLowerCase() : '');
-
-  if (projId && deletedTaskKeys.has(`${projId}:::${taskId}`)) {
-    return true;
+export function markTasksDeleted(taskIds: (string | undefined | null)[], _projectId?: string): void {
+  const now = Date.now();
+  for (const id of taskIds) {
+    if (!id) continue;
+    const clean = String(id).trim().toLowerCase();
+    if (clean) {
+      deletedTasksTimeMap.set(clean, now);
+    }
   }
+}
 
-  return deletedTaskKeys.has(taskId);
+export function unmarkTaskDeleted(taskId: string | undefined | null): void {
+  if (!taskId) return;
+  deletedTasksTimeMap.delete(String(taskId).trim().toLowerCase());
+}
+
+export function isTaskDeletedInTracker(taskId: string | undefined | null, _projectId?: string): boolean {
+  if (!taskId) return false;
+  const clean = String(taskId).trim().toLowerCase();
+  const deletedAt = deletedTasksTimeMap.get(clean);
+  if (!deletedAt) return false;
+  if (Date.now() - deletedAt > DELETED_TTL_MS) {
+    deletedTasksTimeMap.delete(clean);
+    return false;
+  }
+  return true;
+}
+
+export function clearDeletedTasksTracker(): void {
+  deletedTasksTimeMap.clear();
 }
 
 export function getDeletedTaskKeysSet(): Set<string> {
-  return deletedTaskKeys;
+  return new Set(deletedTasksTimeMap.keys());
 }
-

@@ -100,6 +100,10 @@ export function useTasksHydration({
         pendingTasksRemoved.current.add(id);
       } else {
         if (fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
+        if (!data.isDeleted) {
+          const { unmarkTaskDeleted } = require("../../lib/taskDeletedTracker");
+          unmarkTaskDeleted(id);
+        }
         pendingTasksMap.current!.set(id, data);
         pendingTasksChanged.current.set(id, data);
         pendingTasksRemoved.current.delete(id);
@@ -126,37 +130,9 @@ export function useTasksHydration({
         const finalTasks = rolledUpTasks;
         useAppStore.getState().setTasks(finalTasks);
 
-        // Immediately prune any removed task IDs from project.taskSummaries in store.projects
+        // Purging logic from taskSummaries removed to prevent data loss (User Requirement)
         if (pendingTasksRemoved.current.size > 0) {
-          const removedSet = new Set(Array.from(pendingTasksRemoved.current).map(id => String(id).trim().toLowerCase()));
-          const currentProjects = useAppStore.getState().projects || [];
-          const modifiedProjects: any[] = [];
-          const prunedProjects = currentProjects.map((p) => {
-            if (Array.isArray(p.taskSummaries) && p.taskSummaries.some((s: any) => s?.id && removedSet.has(String(s.id).trim().toLowerCase()))) {
-              const filteredSummaries = p.taskSummaries.filter((s: any) => !s?.id || !removedSet.has(String(s.id).trim().toLowerCase()));
-              const pForCalc = { ...p, taskSummaries: filteredSummaries, taskCount: filteredSummaries.length };
-              const pTasks = finalTasks.filter((t) => !t.isDeleted && (
-                (t.projectId && String(t.projectId) === String(p.id)) ||
-                (!t.projectId && String(t.projectCode || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
-                  String(t.projectStore || "").trim().toLowerCase() === String(p.store || "").trim().toLowerCase() &&
-                  String(t.projectYear ?? "").trim() === String(p.year ?? "").trim())
-              ));
-              const computed = calculateProjectComputedDates(pForCalc, pTasks, useAppStore.getState().delegationGroups);
-              const nextProj = {
-                ...p,
-                ...computed,
-                taskSummaries: computed.taskSummaries || filteredSummaries,
-                taskCount: computed.taskCount !== undefined ? computed.taskCount : filteredSummaries.length,
-              };
-              modifiedProjects.push(nextProj);
-              return nextProj;
-            }
-            return p;
-          });
-          if (modifiedProjects.length > 0) {
-            useAppStore.getState().setProjects(prunedProjects);
-            offloadPersistSnapshot('taka_projects', modifiedProjects);
-          }
+           pendingTasksRemoved.current.clear();
         }
         
         // Self-healing an toàn:
@@ -202,12 +178,15 @@ export function useTasksHydration({
             const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p, isUniqueCodeInStore));
             if (pTasks.length === 0) return p;
 
+            const existingMaxCount = Math.max(p.taskCount || 0, Array.isArray(p.taskSummaries) ? p.taskSummaries.length : 0);
+            if (pTasks.length < existingMaxCount) return p;
+
             const isFullyHydratedProject =
               knownHydratedProjectCodes.current.has(String(p.id)) ||
               tasksPool.current.has(`proj_${p.id}`) ||
               tasksPool.current.has(`year_${p.year}`);
 
-            if (!isFullyHydratedProject && pTasks.length < (p.taskCount || 0)) return p;
+            if (!isFullyHydratedProject) return p;
 
             const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
             const hasDiscrepancy =
@@ -425,16 +404,6 @@ export function useTasksHydration({
                   setIsTasksLoading(false);
                   const fromCache = snapshot.metadata.fromCache;
                   let changesToApply: any[] = snapshot.docChanges();
-                  if (!fromCache) {
-                    const zombieRemovals = buildZombieTaskRemovalsForYear(
-                      snapshot.docs,
-                      useAppStore.getState().tasks || [],
-                      year,
-                      userRole,
-                      allowedStores
-                    );
-                    if (zombieRemovals.length > 0) changesToApply = [...changesToApply, ...zombieRemovals];
-                  }
                   batchTasksUpdate(changesToApply, fromCache);
                   setCloudStatus("online");
 
@@ -509,10 +478,20 @@ export function useTasksHydration({
                     "Dexie Local-First Project Tasks (0 Read)"
                   );
               } else {
-                const qTasks = query(
-                  collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-                  where("projectCode", "==", p.code)
-                );
+                const codeList = [p.code];
+                if (p.linkCodes) {
+                  const extra = String(p.linkCodes).split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+                  extra.forEach(c => { if (!codeList.includes(c)) codeList.push(c); });
+                }
+                const qTasks = codeList.length > 1
+                  ? query(
+                      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                      where("projectCode", "in", codeList.slice(0, 10))
+                    )
+                  : query(
+                      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                      where("projectCode", "==", p.code)
+                    );
 
                 usePerformanceStore.getState().registerListener(`taka_tasks_${projKey}`);
                 const unsub = onSnapshot(
@@ -545,15 +524,6 @@ export function useTasksHydration({
                       }
                       return true;
                     });
-
-                    if (!fromCache) {
-                      const zombieRemovals = buildZombieTaskRemovalsForProject(
-                        snapshot.docs,
-                        useAppStore.getState().tasks || [],
-                        p
-                      );
-                      if (zombieRemovals.length > 0) compatibleChanges = [...compatibleChanges, ...zombieRemovals];
-                    }
 
                     batchTasksUpdate(compatibleChanges, fromCache);
                     setCloudStatus("online");

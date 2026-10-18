@@ -97,33 +97,25 @@ export function useProjectsHydration({
       } else {
         if (fromCache && isStaleCacheDoc(pendingProjectsMap.current!.get(id), data)) return;
         const existing = pendingProjectsMap.current!.get(id);
-        const resolvedData = existing ? {
+
+        let resolvedData = existing ? {
           ...data,
           taskCount: data.taskCount !== undefined ? data.taskCount : (existing.taskCount ?? 0),
           taskSummaries: data.taskSummaries !== undefined ? data.taskSummaries : (existing.taskSummaries || []),
         } : data;
 
-        // If this is a live server update and taskSummaries has shrunk compared to existing project state
-        // (a task was deleted on another device), immediately detect the removed task IDs and purge them!
-        if (
-          !fromCache &&
-          existing &&
-          Array.isArray(existing.taskSummaries) &&
-          Array.isArray(data.taskSummaries) &&
-          data.taskSummaries.length < existing.taskSummaries.length
-        ) {
-          const incomingIds = new Set(
-            data.taskSummaries
-              .map((s: any) => (s?.id ? String(s.id).trim().toLowerCase() : ""))
-              .filter(Boolean)
+        // RAM-truth Protection: Nếu RAM đang có nhiều task thật hơn summary từ server, giữ nguyên truth
+        if (!fromCache && existing && Array.isArray(resolvedData.taskSummaries)) {
+          const currentTasks = useAppStore.getState().tasks || [];
+          const realProjTasks = currentTasks.filter(t => 
+            t.projectId === id || 
+            (t.projectCode === resolvedData.code && String(t.projectYear) === String(resolvedData.year) && String(t.projectStore).toLowerCase() === String(resolvedData.store).toLowerCase())
           );
-          existing.taskSummaries.forEach((oldS: any) => {
-            const oldId = oldS?.id ? String(oldS.id).trim() : "";
-            if (oldId && !incomingIds.has(oldId.toLowerCase())) {
-              markTasksDeleted([oldId], id);
-              pendingDeletedTaskIds.current.add(oldId);
-            }
-          });
+          if (realProjTasks.length > resolvedData.taskSummaries.length) {
+            // Keep existing summary if it was better or would be updated by self-healing later
+            resolvedData.taskSummaries = existing.taskSummaries || resolvedData.taskSummaries;
+            resolvedData.taskCount = Math.max(resolvedData.taskCount || 0, existing.taskCount || 0);
+          }
         }
 
         pendingProjectsMap.current!.set(id, resolvedData);

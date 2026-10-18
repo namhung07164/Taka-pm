@@ -108,30 +108,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         projectsChanged = true;
         if (idx !== -1) {
           const prevProj = updatedProjects[idx];
-          // If incoming project update has pruned taskSummaries, also remove those deleted task IDs from updatedTasks
-          if (Array.isArray(data?.taskSummaries) && Array.isArray(prevProj.taskSummaries)) {
-            const incomingSummaryIds = new Set(
-              data.taskSummaries
-                .map((s: any) => (s?.id ? String(s.id).trim().toLowerCase() : ''))
-                .filter(Boolean)
-            );
-            const removedIdsLower = new Set<string>();
-            prevProj.taskSummaries.forEach((oldS: any) => {
-              const oldId = oldS?.id ? String(oldS.id).trim() : '';
-              if (oldId && !incomingSummaryIds.has(oldId.toLowerCase())) {
-                markTasksDeleted([oldId], docId);
-                removedIdsLower.add(oldId.toLowerCase());
-                localDb.tasks.delete(oldId).catch(() => {});
-              }
-            });
-            if (removedIdsLower.size > 0) {
-              const beforeLen = updatedTasks.length;
-              updatedTasks = updatedTasks.filter((t) => !t?.id || !removedIdsLower.has(String(t.id).trim().toLowerCase()));
-              if (updatedTasks.length !== beforeLen) {
-                tasksChanged = true;
-              }
-            }
-          }
           updatedProjects[idx] = applyFieldPatch(prevProj, data) as Project;
         } else if (action === 'create') {
           // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
