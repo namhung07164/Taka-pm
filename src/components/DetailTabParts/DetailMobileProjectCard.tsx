@@ -16,6 +16,7 @@ import {
   getStatus
 } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { useAppStore } from '../../store/useAppStore';
 
 export function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
   if (!dateStr) return null;
