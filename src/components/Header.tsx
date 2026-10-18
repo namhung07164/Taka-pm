@@ -434,29 +434,6 @@ export function Header({
               </span>
             )}
 
-            {/* Theme Toggle */}
-            {onToggleTheme && (
-              <button
-                onClick={onToggleTheme}
-                className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-500 dark:text-[#a3a3a3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs active:scale-95 touch-manipulation"
-                title="Toggle Theme"
-              >
-                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            )}
-
-            {/* Language Switcher */}
-            <button onClick={() => setLanguage(language === 'en' ? 'ja' : 'en')}
-              className="h-8 px-2 bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs active:scale-95 touch-manipulation flex items-center justify-center"
-              title="Toggle Language"
-            >
-              {language === 'en' ? (
-                <span className="text-sm leading-none" role="img" aria-label="English">🇬🇧</span>
-              ) : (
-                <span className="text-sm leading-none" role="img" aria-label="Japanese">🇯🇵</span>
-              )}
-            </button>
-
             {/* Realtime Clock Widget */}
             <div 
               title={`Today: ${formatFullTime(currentTime)}`}
