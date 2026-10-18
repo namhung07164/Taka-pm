@@ -3111,6 +3111,7 @@ export default function App() {
         <Toast
           title={toast.title}
           message={toast.message}
+          type={toast.type}
           onClose={() => setToast(null)}
         />
       )}
@@ -3137,7 +3138,7 @@ export default function App() {
     </div>
   );
 }
-================ END FILE: src/App.tsx ================
+
 
 ================ FILE: src/components/AccControlTab.tsx ================
 import React, { Suspense, useMemo, useState } from 'react';
@@ -36514,7 +36515,10 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
 
       {/* Floating visual feedback toast */}
       {successToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-2.5 bg-emerald-600 dark:bg-emerald-700 text-white font-medium text-sm rounded-full shadow-2xl border border-emerald-400/50 animate-bounce">
+        <div
+          style={{ zIndex: 99999999 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999999] flex items-center gap-2 px-5 py-2.5 bg-emerald-600 dark:bg-emerald-700 text-white font-medium text-sm rounded-full shadow-2xl border border-emerald-400/50 animate-bounce pointer-events-auto"
+        >
           <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-white" />
           <span>{successToast}</span>
         </div>
@@ -36530,7 +36534,7 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
 }
 
 export default GeneralTab;
-================ END FILE: src/components/GeneralTab.tsx ================
+
 
 ================ FILE: src/components/GeneralTabParts/GeneralCanvasView.tsx ================
 import React, { Dispatch, SetStateAction, useEffect } from 'react';
@@ -84421,17 +84425,18 @@ export function TaskNoteModal({ isOpen, onClose, task, onSave, canWrite}: TaskNo
 ================ END FILE: src/components/TaskNoteModal.tsx ================
 
 ================ FILE: src/components/Toast.tsx ================
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
-import { X, Bell } from 'lucide-react';
+import { X, Bell, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface ToastProps {
   title: string;
   message: string;
+  type?: 'success' | 'error' | 'info' | 'warning';
   onClose: () => void;
 }
 
-export function Toast({ title, message, onClose}: ToastProps) {
+export function Toast({ title, message, type = 'info', onClose }: ToastProps) {
   const { t } = useLanguage();
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -84440,24 +84445,70 @@ export function Toast({ title, message, onClose}: ToastProps) {
     return () => clearTimeout(timer);
   }, [onClose]);
 
+  const typeConfig = {
+    error: {
+      border: 'border-red-500/80 dark:border-red-500',
+      iconBg: 'bg-red-50 dark:bg-red-950/80',
+      iconColor: 'text-red-600 dark:text-red-400',
+      titleColor: 'text-red-700 dark:text-red-300',
+      icon: AlertCircle,
+    },
+    warning: {
+      border: 'border-amber-500/80 dark:border-amber-500',
+      iconBg: 'bg-amber-50 dark:bg-amber-950/80',
+      iconColor: 'text-amber-600 dark:text-amber-400',
+      titleColor: 'text-amber-700 dark:text-amber-300',
+      icon: AlertTriangle,
+    },
+    success: {
+      border: 'border-emerald-500/80 dark:border-emerald-500',
+      iconBg: 'bg-emerald-50 dark:bg-emerald-950/80',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      titleColor: 'text-emerald-700 dark:text-emerald-300',
+      icon: CheckCircle2,
+    },
+    info: {
+      border: 'border-blue-500/80 dark:border-blue-500',
+      iconBg: 'bg-blue-50 dark:bg-[#28282a]',
+      iconColor: 'text-blue-600 dark:text-[#8ab4f8]',
+      titleColor: 'text-slate-800 dark:text-[#e3e3e3]',
+      icon: Bell,
+    },
+  }[type] || {
+    border: 'border-blue-500/80 dark:border-blue-500',
+    iconBg: 'bg-blue-50 dark:bg-[#28282a]',
+    iconColor: 'text-blue-600 dark:text-[#8ab4f8]',
+    titleColor: 'text-slate-800 dark:text-[#e3e3e3]',
+    icon: Bell,
+  };
+
+  const IconComponent = typeConfig.icon;
+
   return (
-    <div className="fixed top-4 right-4 z-[200] max-w-sm w-full bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-100 dark:border-[#444446] p-4 animate-in slide-in-from-top-5 fade-in duration-300">
+    <div
+      style={{ zIndex: 99999999 }}
+      className={`fixed top-4 right-4 z-[99999999] max-w-sm w-[calc(100vw-2rem)] sm:w-full bg-white dark:bg-[#1e1e20] rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.7)] border-2 ${typeConfig.border} p-4 animate-in slide-in-from-top-5 fade-in duration-300 pointer-events-auto`}
+    >
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-[#28282a] flex items-center justify-center shrink-0">
-          <Bell className="w-5 h-5 text-blue-600 dark:text-[#8ab4f8]" />
+        <div className={`w-10 h-10 rounded-full ${typeConfig.iconBg} flex items-center justify-center shrink-0 shadow-xs`}>
+          <IconComponent className={`w-5 h-5 ${typeConfig.iconColor}`} />
         </div>
-        <div className="flex-grow min-w-0">
-          <h4 className="text-sm font-bold text-slate-800 dark:text-[#e3e3e3] truncate">{title}</h4>
-          <p className="text-xs text-slate-500 dark:text-[#a3a3a3] mt-1 line-clamp-2">{message}</p>
+        <div className="flex-grow min-w-0 pt-0.5">
+          <h4 className={`text-sm font-bold ${typeConfig.titleColor} truncate`}>{title}</h4>
+          <p className="text-xs text-slate-600 dark:text-[#c3c3c3] mt-1 line-clamp-3 leading-relaxed">{message}</p>
         </div>
-        <button onClick={onClose} className="shrink-0 p-1 text-slate-400 dark:text-[#838383] hover:text-slate-600 dark:hover:text-[#a3a3a3] rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] transition-colors">
+        <button
+          onClick={onClose}
+          className="shrink-0 p-1 text-slate-400 dark:text-[#838383] hover:text-slate-600 dark:hover:text-[#a3a3a3] rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] transition-colors cursor-pointer"
+          title="Dismiss notification"
+        >
           <X className="w-4 h-4" />
         </button>
       </div>
     </div>
   );
 }
-================ END FILE: src/components/Toast.tsx ================
+
 
 ================ FILE: src/components/UserModal.tsx ================
 import React, { useEffect, useRef, useState } from 'react';
@@ -112555,8 +112606,8 @@ export const Z_INDEX_VALUES = {
   COMMAND_PALETTE: 170000,
   LIGHTBOX: 180000,
   MODAL_MODULAR: 185000,
-  TOAST: 200000,
-  MAX: 999999
+  TOAST: 99999999,
+  MAX: 999999999
 } as const;
 
 export type ZIndexLayer = keyof typeof Z_INDEX_VALUES;
@@ -112699,7 +112750,7 @@ export function useOverlayStack(options: {
     zClass: getZIndexClass(layer)
   };
 }
-================ END FILE: src/lib/zIndexManager.ts ================
+
 
 ================ FILE: src/main.tsx ================
 import React, { Component, ReactNode, StrictMode } from 'react';

@@ -22,8 +22,8 @@ export const Z_INDEX_VALUES = {
   COMMAND_PALETTE: 170000,
   LIGHTBOX: 180000,
   MODAL_MODULAR: 185000,
-  TOAST: 200000,
-  MAX: 999999
+  TOAST: 99999999,
+  MAX: 999999999
 } as const;
 
 export type ZIndexLayer = keyof typeof Z_INDEX_VALUES;
