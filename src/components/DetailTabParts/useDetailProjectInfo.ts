@@ -55,17 +55,19 @@ function computeSingleProjectInfo(
     if (!hasValidTaskContent(t)) return;
 
     const tProjId = t.projectId ? String(t.projectId).trim() : '';
-    if (tProjId && pIdStr && tProjId !== pIdStr) return;
+    if (tProjId && pIdStr) {
+      if (tProjId !== pIdStr) return;
+    } else {
+      const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
 
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-
-    // Strict Rule 16.1 Store & Year isolation
-    if (pStore && tStore && pStore !== tStore) return;
-    if (pYear && tYear && pYear !== tYear) return;
+      // Strict Rule 16.1 Store & Year isolation
+      if (pStore && tStore && pStore !== tStore) return;
+      if (pYear && tYear && pYear !== tYear) return;
+    }
 
     const mapKey = (tIdStr || String(t.name)).toLowerCase();
-    const isVirtual = tIdStr.startsWith('ts_') || Boolean((t as any)._isVirtualSummary);
+    const isVirtual = Boolean((t as any)._isVirtualSummary);
     if (isVirtual) {
       if (!virtualTasksMap.has(mapKey)) {
         virtualTasksMap.set(mapKey, t);
@@ -129,9 +131,12 @@ function computeSingleProjectInfo(
     });
   }
 
-  const rawGroupTasks: Task[] = realTasksMap.size > 0
-    ? Array.from(realTasksMap.values())
-    : Array.from(virtualTasksMap.values());
+  const rawGroupTasks: Task[] = Array.from(realTasksMap.values());
+  virtualTasksMap.forEach((vt, key) => {
+    if (!realTasksMap.has(key)) {
+      rawGroupTasks.push(vt);
+    }
+  });
   const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
   const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
   const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(unrolledTasks || []);

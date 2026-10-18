@@ -125,7 +125,12 @@ export function doesTaskBelongToProject(t: Task, p: Project): boolean {
 export function filterCompatibleProjectChanges(docChanges: any[], p: Project): any[] {
   return docChanges.filter((ch) => {
     const dt: any = ch.doc.data();
-    if (dt && dt.projectId && p.id && String(dt.projectId).trim() !== String(p.id).trim()) return false;
+    if (!dt) return false;
+    const pIdStr = p.id ? String(p.id).trim() : '';
+    const dtProjId = dt.projectId ? String(dt.projectId).trim() : '';
+    if (dtProjId && pIdStr) {
+      return dtProjId === pIdStr;
+    }
     if (
       dt &&
       dt.projectStore &&
@@ -169,7 +174,7 @@ export function buildZombieTaskRemovalsForYear(
   currentTasks.forEach((t) => {
     if (
       t?.id &&
-      !t.id.startsWith("ts_") &&
+      !(t as any)._isVirtualSummary &&
       String(t.projectYear ?? "").trim() === String(year).trim() &&
       !serverIds.has(t.id)
     ) {
@@ -197,23 +202,37 @@ export function buildZombieTaskRemovalsForProject(
   currentTasks: Task[],
   p: Project
 ): any[] {
+  if (!snapshotDocs || snapshotDocs.length === 0) {
+    return [];
+  }
   const serverIds = new Set<string>();
   const serverIdsLower = new Set<string>();
   snapshotDocs.forEach((d) => {
     serverIds.add(d.id);
     serverIdsLower.add(String(d.id).trim().toLowerCase());
   });
+
+  const summaryIdsLower = new Set<string>();
+  if (Array.isArray(p.taskSummaries)) {
+    p.taskSummaries.forEach((s: any) => {
+      const sId = s?.id ? String(s.id).trim().toLowerCase() : "";
+      if (sId) summaryIdsLower.add(sId);
+    });
+  }
+
   const nowMs = Date.now();
   const zombieRemovals: any[] = [];
-  const addedRemovalIdsLower = new Set<string>();
-  const localByIdLower = new Map<string, Task>();
 
   currentTasks.forEach((t) => {
-    if (t?.id) localByIdLower.set(String(t.id).trim().toLowerCase(), t);
-    if (t?.id && !t.id.startsWith("ts_") && doesTaskBelongToProject(t, p) && !serverIds.has(t.id)) {
+    if (
+      t?.id &&
+      !(t as any)._isVirtualSummary &&
+      doesTaskBelongToProject(t, p) &&
+      !serverIds.has(t.id) &&
+      !summaryIdsLower.has(String(t.id).trim().toLowerCase())
+    ) {
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 30000) {
-        addedRemovalIdsLower.add(String(t.id).trim().toLowerCase());
         zombieRemovals.push({
           type: "removed",
           doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
@@ -221,36 +240,6 @@ export function buildZombieTaskRemovalsForProject(
       }
     }
   });
-
-  if (Array.isArray(p.taskSummaries)) {
-    p.taskSummaries.forEach((s: any) => {
-      const sId = s?.id ? String(s.id).trim() : "";
-      if (!sId || sId.startsWith("ts_")) return;
-      const sIdLower = sId.toLowerCase();
-      if (!serverIdsLower.has(sIdLower) && !addedRemovalIdsLower.has(sIdLower)) {
-        const localT = localByIdLower.get(sIdLower);
-        const updatedMs = localT ? tsOf(localT.updatedAt) : 0;
-        if (!updatedMs || nowMs - updatedMs > 30000) {
-          addedRemovalIdsLower.add(sIdLower);
-          zombieRemovals.push({
-            type: "removed",
-            doc: {
-              id: sId,
-              data: () => ({
-                ...(localT || {}),
-                id: sId,
-                projectId: p.id,
-                projectCode: p.code,
-                projectYear: p.year,
-                projectStore: p.store,
-                isDeleted: true,
-              }),
-            },
-          });
-        }
-      }
-    });
-  }
 
   return zombieRemovals;
 }
@@ -357,7 +346,7 @@ export function healProjectsAfterTasksBatch(params: {
       if (pTasks.length === 0 || pTasks.length < existingMaxCount) return workingProj;
     }
 
-    const baseProjForCalc = isFullyHydratedProject && pTasks.length === 0
+    const baseProjForCalc = (isFullyHydratedProject && pTasks.length === 0 && removedIdsLower.size > 0)
       ? { ...workingProj, taskSummaries: [], taskCount: 0 }
       : workingProj;
 

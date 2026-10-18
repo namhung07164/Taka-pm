@@ -151,10 +151,12 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     storeBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800 font-bold';
   }
 
-  const isExpanded =
-    expandedCodes.includes(String(p.id || '')) ||
-    (p.code ? expandedCodes.includes(p.code) : false) ||
-    (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
+  const isExpanded = p.id
+    ? expandedCodes.includes(String(p.id)) ||
+      (p.code && (!p.year || String(p.year) === String(useAppStore.getState().globalYearFilter))
+        ? expandedCodes.includes(p.code)
+        : false)
+    : (p.code ? expandedCodes.includes(p.code) : false);
 
   const isProjectMatch = lowerSearchTerm
     ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])

@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus, isTaskBelongsToProject, isProjectTasksHydrated } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
 import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
@@ -33,55 +33,24 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
 }
 
 /**
- * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác multi-code, store và year).
+ * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác projectId, multi-code, store và year).
  */
-export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
+export function getTasksForProject(
+  project: Partial<Project>,
+  allTasks: Task[],
+  options?: { realTasksOnly?: boolean }
+): Task[] {
   if (!project) return [];
   const safeAllTasks = Array.isArray(allTasks) ? allTasks : [];
-
-  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim().toLowerCase() : '';
-  const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
-  const pCodeLower = String(project.code || '').trim().toLowerCase();
-  const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
-  const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
   const pIdStr = project.id ? String(project.id).trim() : '';
 
   const matchedMap = new Map<string, Task>();
 
   safeAllTasks.forEach(t => {
     if (!t || !t.id || t.isDeleted) return;
-    if (String(t.id).startsWith('ts_') || (t as any)._isVirtualSummary) return;
-    if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
-
-    const tProjId = t.projectId ? String(t.projectId).trim() : '';
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim().toLowerCase() : '';
-
-    // 1. Absolute Guard: If both have IDs and they differ, they are NOT the same project (Rule 16.2).
-    if (pIdStr && tProjId && tProjId !== pIdStr) {
-      return;
-    }
-
-    // 2. Strict Store & Year Factor Isolation (Rule 16.3 & 16.4)
-    if (pStore && tStore && pStore !== tStore) return;
-    if (pYear && tYear && pYear !== tYear) return;
-
-    // 3. Direct Project ID match after passing Store & Year factors
-    if (pIdStr && tProjId && tProjId === pIdStr) {
+    if ((t as any)._isVirtualSummary) return;
+    if (isTaskBelongsToProject(t, project)) {
       matchedMap.set(String(t.id), t);
-      return;
-    }
-
-    // 4. Fallback to Code + linkCodes when ID is missing on one side
-    if (t.projectCode && project.code) {
-      const tCode = String(t.projectCode).trim().toLowerCase();
-      const matchesCode = tCode === pCodeLower ||
-                          pCodeParts.includes(tCode) ||
-                          matchProjectCode(t.projectCode, project.code) ||
-                          matchProjectCode(t.projectCode, project.linkCodes);
-      if (matchesCode) {
-        matchedMap.set(String(t.id), t);
-      }
     }
   });
 
@@ -90,7 +59,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   while (addedChild) {
     addedChild = false;
     safeAllTasks.forEach(t => {
-      if (!t || !t.id || t.isDeleted || String(t.id).startsWith('ts_') || (t as any)._isVirtualSummary || matchedMap.has(String(t.id))) return;
+      if (!t || !t.id || t.isDeleted || (t as any)._isVirtualSummary || matchedMap.has(String(t.id))) return;
       if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
       const rawParent = t.parentTaskId || (t as any).parentId;
       if (rawParent && matchedMap.has(String(rawParent))) {
@@ -100,42 +69,57 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     });
   }
 
-  if (matchedMap.size > 0) {
+  if (options?.realTasksOnly) {
     return Array.from(matchedMap.values());
   }
 
-  // Fallback to taskSummaries ONLY when no real tasks for this project are loaded in memory
-  if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
-    const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
-    const validSummaries = project.taskSummaries
-      .filter(ts =>
-        !isTaskDeletedInTracker(ts.id, pIdStr || undefined) &&
-        !isForeignSummaryEntry(ts.id, project, taskByIdFallback) &&
-        Boolean((ts.name && String(ts.name).trim()) || (ts.start && String(ts.start).trim()) || (ts.finish && String(ts.finish).trim()) || ts.taskCodePhu)
-      )
-      .map((ts, idx) => ({
-        id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
-        name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
-        start: ts.start || project.computedTakStart || project.start || '',
-        finish: ts.finish || project.computedTakCompl || project.handover || '',
-        projectCode: project.code || '',
-        projectStore: project.store || 'HCM',
-        projectYear: project.year ? String(project.year) : '',
-        party: ts.party || project.party || '',
-        runningStatus: ts.runningStatus || 'On process',
-        duration: ts.duration || '',
-        parentTaskId: ts.parentTaskId,
-        taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
-        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-        projectId: project.id,
-        ...ts,
-        _isVirtualSummary: true,
-      } as unknown as Task));
+  const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
+  const validSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries))
+    ? project.taskSummaries
+        .filter(ts =>
+          !isTaskDeletedInTracker(ts.id, pIdStr || undefined) &&
+          !isForeignSummaryEntry(ts.id, project, taskByIdFallback) &&
+          Boolean((ts.name && String(ts.name).trim()) || (ts.start && String(ts.start).trim()) || (ts.finish && String(ts.finish).trim()) || ts.taskCodePhu)
+        )
+        .map((ts, idx) => ({
+          id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+          name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+          start: ts.start || project.computedTakStart || project.start || '',
+          finish: ts.finish || project.computedTakCompl || project.handover || '',
+          projectCode: project.code || '',
+          projectStore: project.store || 'HCM',
+          projectYear: project.year ? String(project.year) : '',
+          party: ts.party || project.party || '',
+          runningStatus: ts.runningStatus || 'On process',
+          duration: ts.duration || '',
+          parentTaskId: ts.parentTaskId,
+          taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+          projectId: project.id,
+          ...ts,
+          _isVirtualSummary: true,
+        } as unknown as Task))
+    : [];
 
-    return validSummaries;
+  if (matchedMap.size > 0) {
+    if (isProjectTasksHydrated(pIdStr) || matchedMap.size >= validSummaries.length) {
+      return Array.from(matchedMap.values());
+    }
+    // Partial in-memory tasks before project hydration: merge with remaining validSummaries
+    const realList = Array.from(matchedMap.values());
+    const realIdSet = new Set(realList.map(t => String(t.id).trim().toLowerCase()));
+    const realNameSet = new Set(realList.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
+    validSummaries.forEach(vs => {
+      const vsId = String(vs.id || '').trim().toLowerCase();
+      const vsName = String(vs.name || '').trim().toLowerCase();
+      if (!realIdSet.has(vsId) && (!vsName || !realNameSet.has(vsName))) {
+        realList.push(vs);
+      }
+    });
+    return realList;
   }
 
-  return [];
+  return validSummaries;
 }
 
 import { rollupParentTaskDatesAndStatus, rollupTaskSummaries, filterNonOrphanTasks } from "./taskRollupService";
@@ -166,9 +150,9 @@ export function calculateProjectComputedDates(
     !isTaskDeletedInTracker(t.id, pIdStr) &&
     Boolean((t.name && String(t.name).trim()) || (t.start && String(t.start).trim()) || (t.finish && String(t.finish).trim()) || t.taskCodePhu)
   );
-  const hasRealTasks = rawTasks.some(t => !String(t.id || '').startsWith('ts_') && !(t as any)._isVirtualSummary);
+  const hasRealTasks = rawTasks.some(t => !(t as any)._isVirtualSummary);
   const filteredInputTasks = hasRealTasks
-    ? rawTasks.filter(t => !String(t.id || '').startsWith('ts_') && !(t as any)._isVirtualSummary)
+    ? rawTasks.filter(t => !(t as any)._isVirtualSummary)
     : rawTasks;
 
   const { dedupedTasks } = deduplicateTasksInMemory(filteredInputTasks, project.code || project.id ? [project as Project] : []);
@@ -194,7 +178,7 @@ export function calculateProjectComputedDates(
         finish: t.finish || '',
         orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
       };
-      if (t.id && !String(t.id).startsWith('ts_')) summary.id = t.id;
+      if (t.id) summary.id = t.id;
       else if (t.id) summary.id = t.id;
       if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
       if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;

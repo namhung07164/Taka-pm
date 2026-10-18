@@ -225,8 +225,7 @@ export function useDetailFocusTracking({
           }
           const newCodes = new Set(expandedCodes);
           if (p.id) newCodes.add(String(p.id));
-          if (p.code) newCodes.add(p.code);
-          if (p.no !== undefined && p.no !== null) newCodes.add(String(p.no));
+          else if (p.code) newCodes.add(p.code);
           if (newCodes.size !== expandedCodes.length) {
             setExpandedCodes(Array.from(newCodes));
           }

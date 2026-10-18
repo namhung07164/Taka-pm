@@ -94,22 +94,26 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
 
   expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
-    const strId = String(projectId).trim();
-    const proj = state.projects?.find(p => 
-      String(p.id || '') === strId ||
-      String(p.code || '').trim().toLowerCase() === strId.toLowerCase() ||
-      (p.no !== undefined && String(p.no) === strId)
-    );
-    const idAliases = new Set<string>([strId]);
-    if (proj) {
-      if (proj.id) idAliases.add(String(proj.id));
-      if (proj.code) idAliases.add(String(proj.code));
-      if (proj.no !== undefined) idAliases.add(String(proj.no));
+    const strId = String(projectId || '').trim();
+    if (!strId) return state;
+    const projectsList = state.projects || [];
+    const proj =
+      projectsList.find((p) => String(p.id || '').trim() === strId) ||
+      projectsList.find(
+        (p) =>
+          String(p.code || '').trim().toLowerCase() === strId.toLowerCase() &&
+          (state.globalYearFilter === 'all' || String(p.year || '').trim() === String(state.globalYearFilter).trim())
+      ) ||
+      projectsList.find((p) => String(p.code || '').trim().toLowerCase() === strId.toLowerCase());
+    const canonicalId = proj?.id ? String(proj.id).trim() : strId;
+    const idAliases = new Set<string>([strId, canonicalId]);
+    if (proj && !proj.id && proj.code) {
+      idAliases.add(String(proj.code).trim());
     }
-    const isCurrentlyExpanded = state.expandedProjectIds.some(id => idAliases.has(id));
+    const isCurrentlyExpanded = state.expandedProjectIds.some((id) => idAliases.has(String(id).trim()));
     const next = isCurrentlyExpanded
-      ? state.expandedProjectIds.filter(id => !idAliases.has(id))
-      : [...state.expandedProjectIds, proj?.id ? String(proj.id) : strId];
+      ? state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()))
+      : [...state.expandedProjectIds, canonicalId];
     return { expandedProjectIds: next };
   }),
   setExpandedProjectIds: (ids) => {

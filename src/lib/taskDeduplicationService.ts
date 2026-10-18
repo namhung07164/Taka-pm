@@ -92,7 +92,6 @@ export function buildCanonicalProjectKey(
   } else if (projects && projects.length > 0) {
     matchedProj = projects.find(p => {
       const pCodeMatch = String(p.code || '').trim().toLowerCase() === pCode ||
-                         String(p.no || '').trim().toLowerCase() === pCode ||
                          String(p.id || '').trim().toLowerCase() === pCode;
       if (!pCodeMatch) return false;
       const pStore = normalizeStoreCode(p.store);

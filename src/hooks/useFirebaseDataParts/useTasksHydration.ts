@@ -439,16 +439,31 @@ export function useTasksHydration({
                     "Dexie Local-First Project Tasks (0 Read)"
                   );
               } else {
-                const codeList = [p.code];
+                const codeSet = new Set<string>();
+                if (p.code) {
+                  const raw = String(p.code).trim();
+                  if (raw) {
+                    codeSet.add(raw);
+                    codeSet.add(raw.toUpperCase());
+                    codeSet.add(raw.toLowerCase());
+                  }
+                }
                 if (p.linkCodes) {
                   const extra = String(p.linkCodes)
                     .split(/[,;/]+/)
                     .map((s) => s.trim())
                     .filter(Boolean);
                   extra.forEach((c) => {
-                    if (!codeList.includes(c)) codeList.push(c);
+                    codeSet.add(c);
+                    codeSet.add(c.toUpperCase());
+                    codeSet.add(c.toLowerCase());
                   });
                 }
+                if (p.id) {
+                  const idStr = String(p.id).trim();
+                  if (idStr) codeSet.add(idStr);
+                }
+                const codeList = Array.from(codeSet);
                 const qTasks =
                   codeList.length > 1
                     ? query(
@@ -457,7 +472,7 @@ export function useTasksHydration({
                       )
                     : query(
                         collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-                        where("projectCode", "==", p.code)
+                        where("projectCode", "==", p.code || "")
                       );
 
                 usePerformanceStore.getState().registerListener(`taka_tasks_${projKey}`);
@@ -481,7 +496,11 @@ export function useTasksHydration({
                       const compatibleServerDocs = snapshot.docs.filter((docSnap) => {
                         const dt: any = docSnap.data();
                         if (dt?.isDeleted) return false;
-                        if (dt && dt.projectId && p.id && String(dt.projectId).trim() !== String(p.id).trim()) return false;
+                        const pIdStr = p.id ? String(p.id).trim() : '';
+                        const dtProjId = dt?.projectId ? String(dt.projectId).trim() : '';
+                        if (dtProjId && pIdStr) {
+                          return dtProjId === pIdStr;
+                        }
                         if (
                           dt &&
                           dt.projectStore &&

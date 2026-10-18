@@ -127,6 +127,11 @@ export async function syncAllProjectsTaskCountFromFirestore(): Promise<{ updated
       const pTasks = getTasksForProject(p, tasks);
       const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
 
+      // Do not wipe out projects whose tasks have not been loaded into memory yet
+      if (pTasks.length === 0 && ((p.taskCount || 0) > 0 || (p.taskSummaries?.length || 0) > 0)) {
+        continue;
+      }
+
       const hasDiscrepancy =
         p.taskCount !== computed.taskCount ||
         (p.taskSummaries?.length || 0) !== (computed.taskSummaries?.length || 0);

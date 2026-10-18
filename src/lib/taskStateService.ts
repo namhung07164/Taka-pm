@@ -13,47 +13,13 @@ import { markTasksDeleted, isTaskDeletedInTracker } from "./taskDeletedTracker";
 // Cache in-flight requests to avoid duplicate fetches
 const pendingProjectFetches = new Map<string, Promise<Task[]>>();
 
+import { isTaskBelongsToProject as isTaskBelongsToProjectCore } from "./utils";
+
 /**
- * Validates whether a task belongs to a specific project by verifying store and year.
+ * Validates whether a task belongs to a specific project by verifying projectId, store, code, and year.
  */
 export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
-  if (!t || !p || t.isDeleted || (p as any).isDeleted) return false;
-  if (t.id && isTaskDeletedInTracker(t.id, p.id ? String(p.id) : undefined)) return false;
-
-  const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  const pCode = String(p.code || '').trim().toLowerCase();
-  const pId = p.id ? String(p.id).trim() : '';
-
-  const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-  const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : '';
-  const tProjId = t.projectId ? String(t.projectId).trim() : '';
-
-  if (tProjId && pId && tProjId !== pId) return false;
-  if (pStore && tStore && pStore !== tStore) return false;
-  if (pYear && tYear && pYear !== tYear) return false;
-
-  if (tProjId && pId && tProjId === pId) {
-    return true;
-  }
-
-  const rawCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
-  const pCodeParts = rawCombined.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-  if (
-    !tCode ||
-    !pCode ||
-    !(
-      tCode === pCode ||
-      pCodeParts.includes(tCode) ||
-      matchProjectCode(t.projectCode, p.code) ||
-      matchProjectCode(t.projectCode, p.linkCodes)
-    )
-  ) {
-    return false;
-  }
-
-  return true;
+  return isTaskBelongsToProjectCore(t, p);
 }
 
 /**
@@ -152,36 +118,11 @@ export function findAffectedProjects(
 
   for (const t of tasksToCheck) {
     if (!t) continue;
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : "";
-    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : "";
-    const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : "";
-    const tProjId = t.projectId ? String(t.projectId) : "";
-
     for (const p of projects) {
-      if (!p.id || !p.code) continue;
-
-      const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
-      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
-
-      if (tProjId && String(p.id) === tProjId) {
-        if (pStore && tStore && pStore !== tStore) continue;
-        if (pYear && tYear && pYear !== tYear) continue;
-        affectedMap.set(p.id, p);
-        continue;
+      if (!p.id && !p.code) continue;
+      if (isTaskBelongsToProjectCore({ ...t, isDeleted: false }, p, projects)) {
+        affectedMap.set(p.id || p.code, p);
       }
-
-      if (tProjId && String(p.id) !== tProjId) continue;
-
-      if (!tCode) continue;
-      const matchesCode =
-        String(p.code).trim().toLowerCase() === tCode ||
-        matchProjectCode(p.code, tCode);
-
-      if (!matchesCode) continue;
-      if (pStore && tStore && pStore !== tStore) continue;
-      if (pYear && tYear && pYear !== tYear) continue;
-
-      affectedMap.set(p.id, p);
     }
   }
 
@@ -544,12 +485,12 @@ export async function deleteProjectStateUnified(
 
   const targetKey = String(projectIdOrCode).trim().toLowerCase();
 
-  // Tìm dự án trong store
-  const targetProject = projectObj || currentProjects.find(p => 
-    (p.id && String(p.id).trim().toLowerCase() === targetKey) ||
-    (p.code && String(p.code).trim().toLowerCase() === targetKey) ||
-    (p.no !== undefined && String(p.no).trim().toLowerCase() === targetKey)
-  );
+  // Tìm dự án trong store (ưu tiên khớp p.id trước để tránh p.no trùng với p.id của dự án khác)
+  const targetProject =
+    projectObj ||
+    currentProjects.find(p => p.id && String(p.id).trim().toLowerCase() === targetKey) ||
+    currentProjects.find(p => p.code && String(p.code).trim().toLowerCase() === targetKey) ||
+    currentProjects.find(p => p.no !== undefined && String(p.no).trim().toLowerCase() === targetKey);
 
   const pCode = targetProject?.code ? String(targetProject.code).trim().toLowerCase() : targetKey;
   const pId = targetProject?.id ? String(targetProject.id) : (targetProject?.no !== undefined ? String(targetProject.no) : projectIdOrCode);

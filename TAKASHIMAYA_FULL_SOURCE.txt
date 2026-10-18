@@ -20746,10 +20746,12 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     storeBadgeClass = 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200/80 dark:border-rose-800 font-bold';
   }
 
-  const isExpanded =
-    expandedCodes.includes(String(p.id || '')) ||
-    (p.code ? expandedCodes.includes(p.code) : false) ||
-    (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
+  const isExpanded = p.id
+    ? expandedCodes.includes(String(p.id)) ||
+      (p.code && (!p.year || String(p.year) === String(useAppStore.getState().globalYearFilter))
+        ? expandedCodes.includes(p.code)
+        : false)
+    : (p.code ? expandedCodes.includes(p.code) : false);
 
   const isProjectMatch = lowerSearchTerm
     ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
@@ -21031,6 +21033,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     </div>
   );
 });
+
 ================ END FILE: src/components/DetailTabParts/DetailMobileProjectCard.tsx ================
 
 ================ FILE: src/components/DetailTabParts/DetailMobileTaskItem.tsx ================
@@ -24654,10 +24657,12 @@ export function useDetailFlatRows({
         return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }) : sortedTasks;
 
-      const isExpanded =
-        expandedCodes.includes(String(p.id || '')) ||
-        (p.code ? expandedCodes.includes(p.code) : false) ||
-        (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
+      const isExpanded = p.id
+        ? expandedCodes.includes(String(p.id)) ||
+          (p.code && (!p.year || String(p.year) === String(useAppStore.getState().globalYearFilter))
+            ? expandedCodes.includes(p.code)
+            : false)
+        : (p.code ? expandedCodes.includes(p.code) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
       const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
@@ -24755,6 +24760,7 @@ export function useDetailFlatRows({
 
   return flatTableRows;
 }
+
 ================ END FILE: src/components/DetailTabParts/useDetailFlatRows.ts ================
 
 ================ FILE: src/components/DetailTabParts/useDetailFocusTracking.ts ================
@@ -24985,8 +24991,7 @@ export function useDetailFocusTracking({
           }
           const newCodes = new Set(expandedCodes);
           if (p.id) newCodes.add(String(p.id));
-          if (p.code) newCodes.add(p.code);
-          if (p.no !== undefined && p.no !== null) newCodes.add(String(p.no));
+          else if (p.code) newCodes.add(p.code);
           if (newCodes.size !== expandedCodes.length) {
             setExpandedCodes(Array.from(newCodes));
           }
@@ -25016,6 +25021,7 @@ export function useDetailFocusTracking({
     handleBackToGantt,
   };
 }
+
 ================ END FILE: src/components/DetailTabParts/useDetailFocusTracking.ts ================
 
 ================ FILE: src/components/DetailTabParts/useDetailInitialScroll.ts ================
@@ -25673,6 +25679,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     getProjectInfo,
   };
 }
+
+
 ================ END FILE: src/components/DetailTabParts/useDetailProjectInfo.ts ================
 
 ================ FILE: src/components/DetailTabParts/useDetailProjectMutations.ts ================
@@ -87149,6 +87157,7 @@ export function useEnrichedData() {
     return res;
   }, [projects, rawTasks, delegationGroups, currentUser]);
 }
+
 ================ END FILE: src/hooks/useEnrichedData.ts ================
 
 ================ FILE: src/hooks/useFirebaseData.ts ================
@@ -87622,6 +87631,7 @@ export function healProjectsAfterTasksBatch(params: {
 
   return projectsNeedUpdate ? healedProjects : null;
 }
+
 ================ END FILE: src/hooks/useFirebaseDataParts/tasksHydrationHelpers.ts ================
 
 ================ FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts ================
@@ -89812,6 +89822,8 @@ export function useTasksHydration({
     setCloudStatus,
   ]);
 }
+
+
 ================ END FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts ================
 
 ================ FILE: src/hooks/useGanttDragDrop.ts ================
@@ -93622,6 +93634,7 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () =
     cleanupBroadcast();
   };
 }
+
 ================ END FILE: src/lib/backgroundSyncWorker.ts ================
 
 ================ FILE: src/lib/broadcastSyncService.test.ts ================
@@ -105366,7 +105379,8 @@ export const drawPdfFilterHeader = (
 ================ FILE: src/lib/projectDatesBackfill.ts ================
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { calculateProjectComputedDates, syncProjectDatesToFirestore, getTasksForProject } from "./projectDatesService";
+import { getStatus, resolveActualStatus } from "./utils";
+import { calculateProjectComputedDates, syncProjectDatesToFirestore, getTasksForProject, matchProjectCode } from "./projectDatesService";
 
 export const BOOT_SYNC_GUARD_MS = 15000; // 15 seconds boot sync guard
 
@@ -105406,6 +105420,111 @@ export async function backfillMissingProjectDates(
     isBackfilling = false;
   }
 }
+
+export function isDelegationGroupBelongsToProject(
+  g: DelegationGroup | undefined | null,
+  p: Partial<Project> | undefined | null,
+  matchedTaskIds?: Set<string>
+): boolean {
+  if (!g || !p || g.isDeleted || (p as any).isDeleted) return false;
+
+  if (g.parentTaskId && matchedTaskIds && matchedTaskIds.has(g.parentTaskId)) {
+    return true;
+  }
+
+  const gProjId = g.projectId ? String(g.projectId).trim() : '';
+  const pId = p.id ? String(p.id).trim() : '';
+  if (gProjId && pId && gProjId !== pId) return false;
+
+  const gStore = g.projectStore ? String(g.projectStore).trim().toUpperCase() : '';
+  const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+  if (gStore && pStore && gStore !== pStore) return false;
+
+  const gYear = g.projectYear !== undefined && g.projectYear !== null ? String(g.projectYear).trim() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  if (gYear && pYear && gYear !== pYear) return false;
+
+  if (gProjId && pId && gProjId === pId) return true;
+
+  if (!g.projectCode || !p.code) return false;
+  const gCode = String(g.projectCode).trim().toLowerCase();
+  return gCode === String(p.code).trim().toLowerCase() || matchProjectCode(g.projectCode, p.code);
+}
+
+/**
+ * Tính toán trạng thái thực tế (Actual Status) của Dự án dựa trên các Delegation Groups và Tasks.
+ * Ưu tiên: Rejected > Completed > Pending Completed > In Progress > Planned.
+ */
+export function computeProjectActStatus(
+  p: Project,
+  delegationGroups: DelegationGroup[] = [],
+  matchedTasks: Task[] = []
+): string {
+  const pAny = p as any;
+  if (pAny.actStatus) return String(pAny.actStatus);
+  if (pAny.actualStatus) return String(pAny.actualStatus);
+
+  if (delegationGroups && delegationGroups.length > 0) {
+    const matchedTaskIds = new Set(matchedTasks.map(t => t.id).filter(Boolean));
+    const pGroups = delegationGroups.filter(g => isDelegationGroupBelongsToProject(g, p, matchedTaskIds));
+
+    if (pGroups.length > 0) {
+      const statuses = pGroups.map(g => {
+        if (g.actStatus) return g.actStatus;
+        return resolveActualStatus(p.computedStatus || 'On process', g.subTasks || []).label;
+      });
+      if (statuses.some(s => s === 'Rejected' || s === 'Correction Needed')) return 'Rejected';
+      if (statuses.every(s => s === 'Completed')) return 'Completed';
+      if (statuses.some(s => s === 'Pending Completed' || s === 'Pending Approval' || s === 'Review Late')) return 'Pending Completed';
+      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Delayed' || s === 'Accepted')) return 'In Progress';
+      return statuses[0] || 'Planned';
+    }
+  }
+
+  if (p.computedActProgress === 100) return 'Completed';
+  const plStatus = p.computedStatus || getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+  if (plStatus === 'Completed') return 'Completed';
+  if (plStatus === 'Canceled') return 'Cancel';
+  if (p.computedActProgress && p.computedActProgress > 0) return 'In Progress';
+  if (plStatus === 'On process' || plStatus === 'Handover') return 'In Progress';
+  return 'Planned';
+}
+
+/**
+ * Lệnh cưỡng bức đồng bộ lại Task Count từ Firestore cho toàn bộ dự án
+ * (Dùng để sửa lỗi iPad/iPhone lệch count khi snapshot cache bị cũ)
+ */
+export async function syncAllProjectsTaskCountFromFirestore(): Promise<{ updatedCount: number; totalProjects: number }> {
+  try {
+    const { projects, tasks, delegationGroups } = useAppStore.getState();
+    const totalProjects = projects.length;
+    let updatedCount = 0;
+
+    for (const p of projects) {
+      if (!p.id || p.isDeleted) continue;
+
+      const pTasks = getTasksForProject(p, tasks);
+      const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
+
+      const hasDiscrepancy =
+        p.taskCount !== computed.taskCount ||
+        (p.taskSummaries?.length || 0) !== (computed.taskSummaries?.length || 0);
+
+      if (hasDiscrepancy) {
+        await syncProjectDatesToFirestore(p.id, computed);
+        updatedCount++;
+      }
+    }
+
+    return { updatedCount, totalProjects };
+  } catch (err: any) {
+    console.error("[syncAllProjectsTaskCountFromFirestore] Sync Failed", err);
+    useAppStore.getState().setToast({ title: "Sync Failed", message: err.message || "Error syncing task counts", type: "error" });
+    return { updatedCount: 0, totalProjects: 0 };
+  }
+}
+
+
 ================ END FILE: src/lib/projectDatesBackfill.ts ================
 
 ================ FILE: src/lib/projectDatesService.test.ts ================
@@ -105570,7 +105689,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus, isTaskBelongsToProject, isProjectTasksHydrated } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
 import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
@@ -105600,17 +105719,15 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
 }
 
 /**
- * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác multi-code, store và year).
+ * Trích xuất danh sách Task thuộc về một Dự án cụ thể (xử lý chính xác projectId, multi-code, store và year).
  */
-export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {
+export function getTasksForProject(
+  project: Partial<Project>,
+  allTasks: Task[],
+  options?: { realTasksOnly?: boolean }
+): Task[] {
   if (!project) return [];
   const safeAllTasks = Array.isArray(allTasks) ? allTasks : [];
-
-  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim().toLowerCase() : '';
-  const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
-  const pCodeLower = String(project.code || '').trim().toLowerCase();
-  const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
-  const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
   const pIdStr = project.id ? String(project.id).trim() : '';
 
   const matchedMap = new Map<string, Task>();
@@ -105618,37 +105735,8 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   safeAllTasks.forEach(t => {
     if (!t || !t.id || t.isDeleted) return;
     if (String(t.id).startsWith('ts_') || (t as any)._isVirtualSummary) return;
-    if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
-
-    const tProjId = t.projectId ? String(t.projectId).trim() : '';
-    const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-    const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim().toLowerCase() : '';
-
-    // 1. Absolute Guard: If both have IDs and they differ, they are NOT the same project (Rule 16.2).
-    if (pIdStr && tProjId && tProjId !== pIdStr) {
-      return;
-    }
-
-    // 2. Strict Store & Year Factor Isolation (Rule 16.3 & 16.4)
-    if (pStore && tStore && pStore !== tStore) return;
-    if (pYear && tYear && pYear !== tYear) return;
-
-    // 3. Direct Project ID match after passing Store & Year factors
-    if (pIdStr && tProjId && tProjId === pIdStr) {
+    if (isTaskBelongsToProject(t, project)) {
       matchedMap.set(String(t.id), t);
-      return;
-    }
-
-    // 4. Fallback to Code + linkCodes when ID is missing on one side
-    if (t.projectCode && project.code) {
-      const tCode = String(t.projectCode).trim().toLowerCase();
-      const matchesCode = tCode === pCodeLower ||
-                          pCodeParts.includes(tCode) ||
-                          matchProjectCode(t.projectCode, project.code) ||
-                          matchProjectCode(t.projectCode, project.linkCodes);
-      if (matchesCode) {
-        matchedMap.set(String(t.id), t);
-      }
     }
   });
 
@@ -105667,42 +105755,57 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     });
   }
 
-  if (matchedMap.size > 0) {
+  if (options?.realTasksOnly) {
     return Array.from(matchedMap.values());
   }
 
-  // Fallback to taskSummaries ONLY when no real tasks for this project are loaded in memory
-  if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
-    const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
-    const validSummaries = project.taskSummaries
-      .filter(ts =>
-        !isTaskDeletedInTracker(ts.id, pIdStr || undefined) &&
-        !isForeignSummaryEntry(ts.id, project, taskByIdFallback) &&
-        Boolean((ts.name && String(ts.name).trim()) || (ts.start && String(ts.start).trim()) || (ts.finish && String(ts.finish).trim()) || ts.taskCodePhu)
-      )
-      .map((ts, idx) => ({
-        id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
-        name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
-        start: ts.start || project.computedTakStart || project.start || '',
-        finish: ts.finish || project.computedTakCompl || project.handover || '',
-        projectCode: project.code || '',
-        projectStore: project.store || 'HCM',
-        projectYear: project.year ? String(project.year) : '',
-        party: ts.party || project.party || '',
-        runningStatus: ts.runningStatus || 'On process',
-        duration: ts.duration || '',
-        parentTaskId: ts.parentTaskId,
-        taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
-        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-        projectId: project.id,
-        ...ts,
-        _isVirtualSummary: true,
-      } as unknown as Task));
+  const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
+  const validSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries))
+    ? project.taskSummaries
+        .filter(ts =>
+          !isTaskDeletedInTracker(ts.id, pIdStr || undefined) &&
+          !isForeignSummaryEntry(ts.id, project, taskByIdFallback) &&
+          Boolean((ts.name && String(ts.name).trim()) || (ts.start && String(ts.start).trim()) || (ts.finish && String(ts.finish).trim()) || ts.taskCodePhu)
+        )
+        .map((ts, idx) => ({
+          id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+          name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+          start: ts.start || project.computedTakStart || project.start || '',
+          finish: ts.finish || project.computedTakCompl || project.handover || '',
+          projectCode: project.code || '',
+          projectStore: project.store || 'HCM',
+          projectYear: project.year ? String(project.year) : '',
+          party: ts.party || project.party || '',
+          runningStatus: ts.runningStatus || 'On process',
+          duration: ts.duration || '',
+          parentTaskId: ts.parentTaskId,
+          taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+          orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+          projectId: project.id,
+          ...ts,
+          _isVirtualSummary: true,
+        } as unknown as Task))
+    : [];
 
-    return validSummaries;
+  if (matchedMap.size > 0) {
+    if (isProjectTasksHydrated(pIdStr) || matchedMap.size >= validSummaries.length) {
+      return Array.from(matchedMap.values());
+    }
+    // Partial in-memory tasks before project hydration: merge with remaining validSummaries
+    const realList = Array.from(matchedMap.values());
+    const realIdSet = new Set(realList.map(t => String(t.id).trim().toLowerCase()));
+    const realNameSet = new Set(realList.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
+    validSummaries.forEach(vs => {
+      const vsId = String(vs.id || '').trim().toLowerCase();
+      const vsName = String(vs.name || '').trim().toLowerCase();
+      if (!realIdSet.has(vsId) && (!vsName || !realNameSet.has(vsName))) {
+        realList.push(vs);
+      }
+    });
+    return realList;
   }
 
-  return [];
+  return validSummaries;
 }
 
 import { rollupParentTaskDatesAndStatus, rollupTaskSummaries, filterNonOrphanTasks } from "./taskRollupService";
@@ -106021,6 +106124,9 @@ export {
   computeProjectActStatus,
   syncAllProjectsTaskCountFromFirestore,
 } from "./projectDatesBackfill";
+
+
+
 ================ END FILE: src/lib/projectDatesService.ts ================
 
 ================ FILE: src/lib/r2StorageUtils.ts ================
@@ -107126,16 +107232,16 @@ export async function repairLocalDevice(
 
 ================ FILE: src/lib/summaryGhostFilter.ts ================
 import type { Project, Task } from '../types';
-import { useAppStore } from '../store/useAppStore';
-
-const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+import { isTaskBelongsToProject } from './utils';
 
 /** Bản đồ id -> task cho các task thật đang nạp trong bộ nhớ */
 export function buildTaskByIdMap(tasks: Task[]): Map<string, Task> {
   const m = new Map<string, Task>();
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
-    if (t && t.id && !t.isDeleted) m.set(String(t.id), t);
+    if (!t || !t.id || t.isDeleted) continue;
+    if (String(t.id).startsWith('ts_') || (t as any)._isVirtualSummary) continue;
+    m.set(String(t.id), t);
   }
   return m;
 }
@@ -107145,30 +107251,12 @@ export function isForeignSummaryEntry(
   project: Partial<Project>,
   taskById: Map<string, Task>
 ): boolean {
-  if (!tsId) return false;
+  if (!tsId || String(tsId).startsWith('ts_')) return false;
   const t = taskById.get(String(tsId));
   if (!t) return false;
-
-  if (t.projectId && project.id) return String(t.projectId).trim() !== String(project.id).trim();
-
-  const ps = norm(project.store);
-  const ts = norm(t.projectStore);
-  if (ps && ts && ps !== ts) return true;
-
-  const py = String(project.year ?? '').trim();
-  const ty = String(t.projectYear ?? '').trim();
-  if (py && ty && py !== ty) return true;
-
-  const pCode = norm(project.code);
-  const tCode = norm(t.projectCode);
-  if (pCode && tCode && pCode !== tCode) {
-    const rawCodeCombined = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
-    const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-    if (!pCodeParts.includes(tCode)) return true;
-  }
-
-  return false;
+  return !isTaskBelongsToProject(t, project);
 }
+
 ================ END FILE: src/lib/summaryGhostFilter.ts ================
 
 ================ FILE: src/lib/syncQueue.ts ================
@@ -113263,22 +113351,26 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
 
   expandedProjectIds: [],
   toggleProjectExpansion: (projectId) => set((state) => {
-    const strId = String(projectId).trim();
-    const proj = state.projects?.find(p => 
-      String(p.id || '') === strId ||
-      String(p.code || '').trim().toLowerCase() === strId.toLowerCase() ||
-      (p.no !== undefined && String(p.no) === strId)
-    );
-    const idAliases = new Set<string>([strId]);
-    if (proj) {
-      if (proj.id) idAliases.add(String(proj.id));
-      if (proj.code) idAliases.add(String(proj.code));
-      if (proj.no !== undefined) idAliases.add(String(proj.no));
+    const strId = String(projectId || '').trim();
+    if (!strId) return state;
+    const projectsList = state.projects || [];
+    const proj =
+      projectsList.find((p) => String(p.id || '').trim() === strId) ||
+      projectsList.find(
+        (p) =>
+          String(p.code || '').trim().toLowerCase() === strId.toLowerCase() &&
+          (state.globalYearFilter === 'all' || String(p.year || '').trim() === String(state.globalYearFilter).trim())
+      ) ||
+      projectsList.find((p) => String(p.code || '').trim().toLowerCase() === strId.toLowerCase());
+    const canonicalId = proj?.id ? String(proj.id).trim() : strId;
+    const idAliases = new Set<string>([strId, canonicalId]);
+    if (proj && !proj.id && proj.code) {
+      idAliases.add(String(proj.code).trim());
     }
-    const isCurrentlyExpanded = state.expandedProjectIds.some(id => idAliases.has(id));
+    const isCurrentlyExpanded = state.expandedProjectIds.some((id) => idAliases.has(String(id).trim()));
     const next = isCurrentlyExpanded
-      ? state.expandedProjectIds.filter(id => !idAliases.has(id))
-      : [...state.expandedProjectIds, proj?.id ? String(proj.id) : strId];
+      ? state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()))
+      : [...state.expandedProjectIds, canonicalId];
     return { expandedProjectIds: next };
   }),
   setExpandedProjectIds: (ids) => {
@@ -113596,6 +113688,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   zoomableImageSrc: null,
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
 });
+
 ================ END FILE: src/store/slices/createUISlice.ts ================
 
 ================ FILE: src/store/storeSelectors.ts ================

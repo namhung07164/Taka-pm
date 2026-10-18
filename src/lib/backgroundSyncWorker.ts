@@ -51,7 +51,7 @@ const tsOf = (v: any): number => {
 function isZombieTaskAgainstProjects(t: Task, projects: Project[]): boolean {
   if (!t || !t.id || t.isDeleted) return true;
   if (isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) return true;
-  if (String(t.id).startsWith('ts_')) return false;
+  if ((t as any)._isVirtualSummary) return false;
 
   const updatedMs = tsOf(t.updatedAt);
   if (updatedMs > 0 && Date.now() - updatedMs <= 30000) return false;
@@ -62,11 +62,11 @@ function isZombieTaskAgainstProjects(t: Task, projects: Project[]): boolean {
 
   if (!Array.isArray(ownerProj.taskSummaries)) return false;
   if (ownerProj.taskSummaries.length === 0) {
-    return (ownerProj.taskCount ?? 0) === 0;
+    return false;
   }
 
   const allSummariesHaveIds = ownerProj.taskSummaries.every(
-    (s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_'))
+    (s: any) => Boolean(s?.id)
   );
   if (!allSummariesHaveIds) return false;
 

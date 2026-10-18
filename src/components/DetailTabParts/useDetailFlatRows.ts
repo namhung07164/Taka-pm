@@ -85,10 +85,12 @@ export function useDetailFlatRows({
         return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }) : sortedTasks;
 
-      const isExpanded =
-        expandedCodes.includes(String(p.id || '')) ||
-        (p.code ? expandedCodes.includes(p.code) : false) ||
-        (p.no !== undefined && p.no !== null ? expandedCodes.includes(String(p.no)) : false);
+      const isExpanded = p.id
+        ? expandedCodes.includes(String(p.id)) ||
+          (p.code && (!p.year || String(p.year) === String(useAppStore.getState().globalYearFilter))
+            ? expandedCodes.includes(p.code)
+            : false)
+        : (p.code ? expandedCodes.includes(p.code) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
       const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
