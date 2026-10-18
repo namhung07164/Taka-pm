@@ -39352,11 +39352,11 @@ export function Header({
             redoDescription={redoDescription}
           />
 
-          {/* Currency Selector (Visible on Main Header) */}
+          {/* Currency Selector (Always visible on iPhone, iPad & Desktop) */}
           <button 
             onClick={handleCurrencyClick}
             onContextMenu={handleCurrencyContextMenu}
-            className="h-8 px-2 sm:px-2.5 min-w-[50px] sm:min-w-[64px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-[10px] sm:text-xs font-bold font-mono flex items-center justify-center active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            className="h-7 sm:h-8 px-1.5 sm:px-2.5 min-w-[42px] sm:min-w-[60px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-[9.5px] sm:text-xs font-bold font-mono flex items-center justify-center active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             title={
               currency === 'VND'
                 ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
@@ -39369,24 +39369,24 @@ export function Header({
             {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
           </button>
 
-          {/* QR Scanner Button */}
+          {/* QR Scanner Button (Always visible on iPhone, iPad & Desktop) */}
           <button
             onClick={() => setIsQRScannerOpen(true)}
-            className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            className="h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             title="Scan QR Code"
           >
-            <ScanQrCode className="w-4 h-4" />
+            <ScanQrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
-          {/* Notification Bell */}
+          {/* Notification Bell (Always visible, right-aligned, shrink-0) */}
           <button
             onClick={() => onTabChange("notification")}
-            className="relative h-8 w-8 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors focus:outline-none shrink-0"
+            className="relative h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition-colors focus:outline-none shrink-0"
             title="Notifications"
           >
-            <Bell className="w-4.5 h-4.5" />
+            <Bell className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             {notificationCount > 0 && (
-              <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8px] font-bold text-white flex items-center justify-center">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-3.5 px-0.5 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8px] font-bold text-white flex items-center justify-center shadow-xs">
                 {notificationCount > 9 ? "9+" : notificationCount}
               </span>
             )}
@@ -118464,11 +118464,11 @@ export function Header({
             redoDescription={redoDescription}
           />
 
-          {/* Currency Selector (Visible on Main Header) */}
+          {/* Currency Selector (Visible on sm+ screens to preserve iPhone header space) */}
           <button 
             onClick={handleCurrencyClick}
             onContextMenu={handleCurrencyContextMenu}
-            className="h-8 px-2 sm:px-2.5 min-w-[50px] sm:min-w-[64px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-[10px] sm:text-xs font-bold font-mono flex items-center justify-center active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            className="h-8 px-2 sm:px-2.5 min-w-[50px] sm:min-w-[64px] bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] text-slate-700 dark:text-[#c3c3c3] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-[10px] sm:text-xs font-bold font-mono hidden sm:flex items-center justify-center active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             title={
               currency === 'VND'
                 ? (currentUser.role === 'admin' ? "Currency: '000 VND (Right-click to set exchange rates)" : "Currency: '000 VND")
@@ -118481,16 +118481,16 @@ export function Header({
             {currency === 'VND' ? "'000 VND" : currency === 'JPY' ? '万円' : 'USD'}
           </button>
 
-          {/* QR Scanner Button */}
+          {/* QR Scanner Button (Visible on sm+ screens) */}
           <button
             onClick={() => setIsQRScannerOpen(true)}
-            className="h-8 w-8 flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+            className="h-8 w-8 hidden sm:flex items-center justify-center bg-slate-50 hover:bg-slate-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs text-slate-600 dark:text-[#a3a3a3] hover:text-blue-600 dark:hover:text-blue-400 active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             title="Scan QR Code"
           >
             <ScanQrCode className="w-4 h-4" />
           </button>
 
-          {/* Notification Bell */}
+          {/* Notification Bell (Always visible, right-aligned) */}
           <button
             onClick={() => onTabChange("notification")}
             className="relative h-8 w-8 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-[#28282a] hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors focus:outline-none shrink-0"
@@ -118498,7 +118498,7 @@ export function Header({
           >
             <Bell className="w-4.5 h-4.5" />
             {notificationCount > 0 && (
-              <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8px] font-bold text-white flex items-center justify-center">
+              <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 bg-red-500 rounded-full border border-white dark:border-[#1e1e20] text-[8.5px] font-bold text-white flex items-center justify-center shadow-xs">
                 {notificationCount > 9 ? "9+" : notificationCount}
               </span>
             )}
