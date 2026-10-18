@@ -449,19 +449,10 @@ export function useTasksHydration({
                     usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
                     setIsTasksLoading(false);
                     const fromCache = snapshot.metadata.fromCache;
-                    const allProjectsNow = useAppStore.getState().projects || [];
-                    const sameCodeStoreProjects = allProjectsNow.filter(
-                      (proj) =>
-                        !proj.isDeleted &&
-                        String(proj.code || "").trim().toLowerCase() === String(p.code || "").trim().toLowerCase() &&
-                        (!p.store || !proj.store || String(proj.store).trim().toLowerCase() === String(p.store).trim().toLowerCase())
-                    );
-                    const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
 
                     let compatibleChanges = filterCompatibleProjectChanges(
                       snapshot.docChanges(),
-                      p,
-                      isUniqueCodeInStore
+                      p
                     );
 
                     if (!fromCache && !snapshot.metadata.hasPendingWrites) {
@@ -471,7 +462,7 @@ export function useTasksHydration({
                       const compatibleServerDocs = snapshot.docs.filter((docSnap) => {
                         const dt: any = docSnap.data();
                         if (dt?.isDeleted) return false;
-                        if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                        if (dt && dt.projectId && p.id && String(dt.projectId).trim() !== String(p.id).trim()) return false;
                         if (
                           dt &&
                           dt.projectStore &&
@@ -480,18 +471,16 @@ export function useTasksHydration({
                         ) {
                           return false;
                         }
-                        if (dt && dt.projectId && String(dt.projectId) === String(p.id)) return true;
-                        if (!isUniqueCodeInStore) {
-                          const dy = dt?.projectYear;
-                          if (
-                            dy !== undefined &&
-                            dy !== null &&
-                            dy !== "" &&
-                            p.year &&
-                            String(dy).trim() !== String(p.year).trim()
-                          ) {
-                            return false;
-                          }
+                        const dy = dt?.projectYear;
+                        if (
+                          dy !== undefined &&
+                          dy !== null &&
+                          dy !== "" &&
+                          p.year !== undefined &&
+                          p.year !== null &&
+                          String(dy).trim() !== String(p.year).trim()
+                        ) {
+                          return false;
                         }
                         return true;
                       });

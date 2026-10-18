@@ -1,4 +1,5 @@
-import { collection, query, where, limit, getDocsFromCache, getDocsFromServer, setDoc, doc } from 'firebase/firestore';
+import { collection, query, where, limit, getDocsFromCache, getDocsFromServer, doc } from 'firebase/firestore';
+import { setDoc } from './firestoreWrites';
 import { db, APP_ID } from './firebase';
 import { getLocalTasks, bulkPersistTasks } from './localDb';
 import { usePerformanceStore } from '../store/usePerformanceStore';

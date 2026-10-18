@@ -957,6 +957,8 @@ export function matchProjectCode(codeA?: string, codeB?: string): boolean {
   return partsA.some(pa => partsB.includes(pa));
 }
 
+import { isTaskDeletedInTracker } from './taskDeletedTracker';
+
 export function isTaskBelongsToProject(
   t: Task | undefined | null,
   p: Partial<Project> | undefined | null
@@ -965,49 +967,37 @@ export function isTaskBelongsToProject(
 
   const tProjId = t.projectId ? String(t.projectId).trim() : '';
   const pId = p.id ? String(p.id).trim() : '';
-  
-  // Absolute Guard: If both have IDs and they differ, they are NOT the same project (Rule 16.2).
+
+  if (t.id && isTaskDeletedInTracker(t.id, pId || undefined)) return false;
+
+  // 1. Priority 1: Project ID match/isolation (Rule 16.2)
   if (tProjId && pId && tProjId !== pId) return false;
 
+  // 2. Strict Store Factor Isolation (Rule 16.3)
   const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
   const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
-  // Strict Store Isolation (Rule 16.3)
   if (tStore && pStore && tStore !== pStore) return false;
 
+  // 3. Strict Year Factor Isolation (Rule 16.4)
   const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  const rawPCode = String(p.code || '').trim().toLowerCase();
+  if (tYear && pYear && tYear !== pYear) return false;
 
-  // Check if another project with the same code exists in this store (for cross-year disambiguation)
-  const isCrossYear = Boolean(tYear && pYear && tYear !== pYear);
-  if (isCrossYear) {
-    const allProjects = useAppStore.getState().projects || [];
-    const hasOtherProjectInStoreWithCode = rawPCode
-      ? allProjects.some(
-          (other) =>
-            !(other as any).isDeleted &&
-            String(other.id) !== pId &&
-            String(other.code || '').trim().toLowerCase() === rawPCode &&
-            (!pStore || !other.store || String(other.store).trim().toUpperCase() === pStore)
-        )
-      : false;
-    if (hasOtherProjectInStoreWithCode) return false;
-  }
-
+  // 4. Exact Project ID match after passing Store & Year factors
   if (tProjId && pId && tProjId === pId) return true;
 
-  // Fallback to Code + linkCodes only if ID is missing on one side
+  // 5. Fallback to Code + linkCodes only if ID is missing on one side
   if (!t.projectCode || !p.code) return false;
+  const rawPCode = String(p.code || '').trim().toLowerCase();
   const tCode = String(t.projectCode).trim().toLowerCase();
   const rawCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
   const pCodeParts = rawCombined.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-  const matchesCode =
+  return (
     tCode === rawPCode ||
     pCodeParts.includes(tCode) ||
     matchProjectCode(t.projectCode, p.code) ||
-    matchProjectCode(t.projectCode, p.linkCodes);
-
-  return matchesCode;
+    matchProjectCode(t.projectCode, p.linkCodes)
+  );
 }
 
 export function isDelegationGroupBelongsToProject(
@@ -1101,12 +1091,12 @@ export function enrichProjects(
 
   const tasksByProjectId = new Map<string, Task[]>();
   const tasksByFullKey = new Map<string, Task[]>();
-  const tasksByCodeOnly = new Map<string, Task[]>();
 
   tasks.forEach(t => {
-    if (t.isDeleted) return;
+    if (!t || t.isDeleted) return;
+    if (t.id && isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) return;
     if (t.projectId) {
-      const pid = String(t.projectId);
+      const pid = String(t.projectId).trim();
       let pList = tasksByProjectId.get(pid);
       if (!pList) {
         pList = [];
@@ -1123,7 +1113,6 @@ export function enrichProjects(
     const codesToIndex = tCodeParts.length > 0 ? tCodeParts : [tCode];
 
     codesToIndex.forEach(code => {
-      // 1. Full key
       const fullKey = `${code}-${tYear}-${tStore}`;
       let fullList = tasksByFullKey.get(fullKey);
       if (!fullList) {
@@ -1131,60 +1120,43 @@ export function enrichProjects(
         tasksByFullKey.set(fullKey, fullList);
       }
       fullList.push(t);
-
-      // 2. Code only fallback
-      let codeList = tasksByCodeOnly.get(code);
-      if (!codeList) {
-        codeList = [];
-        tasksByCodeOnly.set(code, codeList);
-      }
-      codeList.push(t);
     });
   });
 
-  const codeStoreProjectCount = new Map<string, number>();
-  projects.forEach(proj => {
-    if ((proj as any).isDeleted) return;
-    const c = String(proj.code || "").trim().toLowerCase();
-    const s = proj.store ? String(proj.store).trim().toLowerCase() : "";
-    if (c) {
-      const k = `${c}__${s}`;
-      codeStoreProjectCount.set(k, (codeStoreProjectCount.get(k) || 0) + 1);
-    }
-  });
-
   const enrichedProjects = projects.map((p) => {
+    const pId = p.id ? String(p.id).trim() : "";
     const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : "";
     const pStore = p.store ? String(p.store).trim().toLowerCase() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
     const rawCodeCombined = (p.linkCodes && p.linkCodes.trim()) ? `${pCode}, ${p.linkCodes.toLowerCase()}` : pCode;
     const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-    const isUniqueCodeInStore = pCode ? (codeStoreProjectCount.get(`${pCode}__${pStore}`) || 0) <= 1 : false;
 
     const matchedTaskMap = new Map<string, Task>();
 
-    // Check direct ID match first
-    if (p.id) {
-      const idTasks = tasksByProjectId.get(String(p.id));
+    // 1. Check direct Project ID match first (strictly enforcing store and year factors)
+    if (pId) {
+      const idTasks = tasksByProjectId.get(pId);
       if (idTasks) {
         for (let i = 0; i < idTasks.length; i++) {
           const t = idTasks[i];
+          if (isTaskDeletedInTracker(t.id, pId)) continue;
           const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
           const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
           if (pStore && tStore && pStore !== tStore) continue;
-          if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear && String(t.projectId) !== String(p.id)) continue;
+          if (pYear && tYear && pYear !== tYear) continue;
           matchedTaskMap.set(t.id, t);
         }
       }
     }
 
-    // Check direct key and part keys
+    // 2. Check composite key (code + year + store) for tasks without conflicting projectId
     const directKey = `${pCode}-${pYear}-${pStore}`;
     const directTasks = tasksByFullKey.get(directKey);
     if (directTasks) {
       for (let i = 0; i < directTasks.length; i++) {
         const t = directTasks[i];
-        if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
+        if (isTaskDeletedInTracker(t.id, pId || undefined)) continue;
+        if (t.projectId && pId && String(t.projectId).trim() !== pId) continue;
         matchedTaskMap.set(t.id, t);
       }
     }
@@ -1195,29 +1167,9 @@ export function enrichProjects(
       if (subTasks) {
         for (let j = 0; j < subTasks.length; j++) {
           const t = subTasks[j];
-          if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
+          if (isTaskDeletedInTracker(t.id, pId || undefined)) continue;
+          if (t.projectId && pId && String(t.projectId).trim() !== pId) continue;
           matchedTaskMap.set(t.id, t);
-        }
-      }
-    }
-
-    // Fast fallback to code-only if no exact store/year match or if project code is unique in store (spanning 2 years)
-    if ((matchedTaskMap.size === 0 || isUniqueCodeInStore) && tasks.length > 0) {
-      for (let i = 0; i < pCodeParts.length; i++) {
-        const partCode = pCodeParts[i];
-        const isPartUniqueInStore = (codeStoreProjectCount.get(`${partCode}__${pStore}`) || 0) <= 1;
-        if (matchedTaskMap.size > 0 && !isUniqueCodeInStore && !isPartUniqueInStore) continue;
-        const fallbackTasks = tasksByCodeOnly.get(partCode);
-        if (fallbackTasks) {
-          for (let j = 0; j < fallbackTasks.length; j++) {
-            const t = fallbackTasks[j];
-            if (t.projectId && p.id && String(t.projectId) !== String(p.id)) continue;
-            const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-            if (pStore && tStore && pStore !== tStore) continue;
-            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-            if (!isUniqueCodeInStore && !isPartUniqueInStore && pYear && tYear && pYear !== tYear) continue;
-            matchedTaskMap.set(t.id, t);
-          }
         }
       }
     }
@@ -1247,6 +1199,10 @@ export function enrichProjects(
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
 
+    const filteredExistingSummaries = Array.isArray(p.taskSummaries)
+      ? p.taskSummaries.filter((ts: any) => !isTaskDeletedInTracker(ts?.id, pId || undefined))
+      : [];
+
     const taskSummaries = sortedProjTasks.length > 0
       ? sortedProjTasks.filter(t => Boolean(t.name)).map((t, idx) => ({
           id: t.id,
@@ -1261,7 +1217,7 @@ export function enrichProjects(
           approval: t.approval,
           party: t.party
         }))
-      : (p.taskSummaries || []);
+      : filteredExistingSummaries;
 
     let computedTakStart = p.computedTakStart || p.start;
     let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl || undefined;

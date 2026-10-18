@@ -39,23 +39,12 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
   if (!project) return [];
   const safeAllTasks = Array.isArray(allTasks) ? allTasks : [];
 
-  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim() : '';
+  const pYear = project.year !== undefined && project.year !== null ? String(project.year).trim().toLowerCase() : '';
   const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
   const pCodeLower = String(project.code || '').trim().toLowerCase();
   const rawCodeStr = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
   const pCodeParts = rawCodeStr.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-  const pIdStr = project.id ? String(project.id) : '';
-
-  const allProjects = useAppStore.getState().projects || [];
-  const sameCodeStoreProjects = pCodeLower
-    ? allProjects.filter(
-        proj =>
-          !(proj as any).isDeleted &&
-          String(proj.code || '').trim().toLowerCase() === pCodeLower &&
-          (!pStore || !proj.store || String(proj.store).trim().toLowerCase() === pStore)
-      )
-    : [];
-  const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
+  const pIdStr = project.id ? String(project.id).trim() : '';
 
   const matchedMap = new Map<string, Task>();
 
@@ -63,26 +52,26 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     if (!t || !t.id || t.isDeleted) return;
     if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
 
+    const tProjId = t.projectId ? String(t.projectId).trim() : '';
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
     const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim().toLowerCase() : '';
 
-    if (pIdStr && t.projectId && String(t.projectId) === pIdStr) {
-      if (pStore && tStore && pStore !== tStore) return;
-      if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear) return;
+    // 1. Absolute Guard: If both have IDs and they differ, they are NOT the same project (Rule 16.2).
+    if (pIdStr && tProjId && tProjId !== pIdStr) {
+      return;
+    }
 
+    // 2. Strict Store & Year Factor Isolation (Rule 16.3 & 16.4)
+    if (pStore && tStore && pStore !== tStore) return;
+    if (pYear && tYear && pYear !== tYear) return;
+
+    // 3. Direct Project ID match after passing Store & Year factors
+    if (pIdStr && tProjId && tProjId === pIdStr) {
       matchedMap.set(String(t.id), t);
       return;
     }
 
-    // Absolute Guard: If both have IDs and they differ, they are NOT the same project.
-    if (pIdStr && t.projectId && String(t.projectId) !== pIdStr) {
-      return;
-    }
-
-    // Strict Store & Year Isolation (allowing unique project code in store to span across years)
-    if (pStore && tStore && pStore !== tStore) return;
-    if (!isUniqueCodeInStore && pYear && tYear && pYear !== tYear) return;
-
+    // 4. Fallback to Code + linkCodes when ID is missing on one side
     if (t.projectCode && project.code) {
       const tCode = String(t.projectCode).trim().toLowerCase();
       const matchesCode = tCode === pCodeLower ||

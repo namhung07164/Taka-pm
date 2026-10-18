@@ -122,10 +122,10 @@ export function doesTaskBelongToProject(t: Task, p: Project): boolean {
 /**
  * Filters snapshot.docChanges() from a projectCode query so only tasks belonging to project `p` are applied.
  */
-export function filterCompatibleProjectChanges(docChanges: any[], p: Project, isUniqueCodeInStore: boolean = false): any[] {
+export function filterCompatibleProjectChanges(docChanges: any[], p: Project): any[] {
   return docChanges.filter((ch) => {
     const dt: any = ch.doc.data();
-    if (dt && dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
+    if (dt && dt.projectId && p.id && String(dt.projectId).trim() !== String(p.id).trim()) return false;
     if (
       dt &&
       dt.projectStore &&
@@ -134,19 +134,16 @@ export function filterCompatibleProjectChanges(docChanges: any[], p: Project, is
     ) {
       return false;
     }
-    if (ch.type === "removed") return true;
-    if (dt && dt.projectId && String(dt.projectId) === String(p.id)) return true;
-    if (!isUniqueCodeInStore) {
-      const dy = dt?.projectYear;
-      if (
-        dy !== undefined &&
-        dy !== null &&
-        dy !== "" &&
-        p.year &&
-        String(dy).trim() !== String(p.year).trim()
-      ) {
-        return false;
-      }
+    const dy = dt?.projectYear;
+    if (
+      dy !== undefined &&
+      dy !== null &&
+      dy !== "" &&
+      p.year !== undefined &&
+      p.year !== null &&
+      String(dy).trim() !== String(p.year).trim()
+    ) {
+      return false;
     }
     return true;
   });
@@ -266,18 +263,6 @@ export function healProjectsAfterTasksBatch(params: {
     return null;
   }
 
-  const belongsToProject = (t: Task, p: Project, isUniqueCodeInStore: boolean): boolean => {
-    if (t.projectId && p.id) return String(t.projectId) === String(p.id);
-    const rawCodeCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
-    const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
-    const tCode = String(t.projectCode || "").trim().toLowerCase();
-    if (!tCode || !pCodeParts.includes(tCode) && !matchProjectCode(t.projectCode, p.code) && !matchProjectCode(t.projectCode, p.linkCodes)) return false;
-    const storeMatches = !p.store || !t.projectStore || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-    if (!storeMatches) return false;
-    if (isUniqueCodeInStore) return true;
-    return String(t.projectYear ?? "").trim() === String(p.year ?? "").trim();
-  };
-
   let projectsNeedUpdate = false;
   const canRunServerSelfHeal = !fromCache && (getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS || knownHydratedProjectCodes.size > 0);
 
@@ -314,16 +299,7 @@ export function healProjectsAfterTasksBatch(params: {
     if (!isProjectTouched) return workingProj;
     if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS && !knownHydratedProjectCodes.has(String(workingProj.id))) return workingProj;
 
-    const codeKey = String(workingProj.code || "").trim().toLowerCase();
-    const sameCodeStoreProjects = currentProjects.filter(
-      (proj) =>
-        !proj.isDeleted &&
-        String(proj.code || "").trim().toLowerCase() === codeKey &&
-        (!workingProj.store || !proj.store || String(proj.store).trim().toLowerCase() === String(workingProj.store).trim().toLowerCase())
-    );
-    const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
-
-    const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, workingProj, isUniqueCodeInStore));
+    const pTasks = finalTasks.filter((t) => !t.isDeleted && isTaskBelongsToProject(t, workingProj));
     const isFullyHydratedProject =
       knownHydratedProjectCodes.has(String(workingProj.id)) ||
       tasksPool.has(`proj_${workingProj.id}`) ||

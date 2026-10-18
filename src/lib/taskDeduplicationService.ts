@@ -72,14 +72,22 @@ export function buildCanonicalProjectKey(
 
   let matchedProj: Project | undefined = undefined;
   if (projectLookupMap) {
+    let candidate: Project | undefined;
     if (normYear && normStore && projectLookupMap.has(`${pCode}__${normYear}__${normStore}`)) {
-      matchedProj = projectLookupMap.get(`${pCode}__${normYear}__${normStore}`);
-    } else if (normStore && projectLookupMap.has(`${pCode}____${normStore}`)) {
-      matchedProj = projectLookupMap.get(`${pCode}____${normStore}`);
-    } else if (normYear && projectLookupMap.has(`${pCode}__${normYear}__`)) {
-      matchedProj = projectLookupMap.get(`${pCode}__${normYear}__`);
-    } else {
-      matchedProj = projectLookupMap.get(pCode);
+      candidate = projectLookupMap.get(`${pCode}__${normYear}__${normStore}`);
+    } else if (!normYear && normStore && projectLookupMap.has(`${pCode}____${normStore}`)) {
+      candidate = projectLookupMap.get(`${pCode}____${normStore}`);
+    } else if (normYear && !normStore && projectLookupMap.has(`${pCode}__${normYear}__`)) {
+      candidate = projectLookupMap.get(`${pCode}__${normYear}__`);
+    } else if (!normYear && !normStore) {
+      candidate = projectLookupMap.get(pCode);
+    }
+    if (candidate) {
+      const cStore = normalizeStoreCode(candidate.store);
+      const cYear = normalizeYearString(candidate.year);
+      if ((!normStore || !cStore || normStore === cStore) && (!normYear || !cYear || normYear === cYear)) {
+        matchedProj = candidate;
+      }
     }
   } else if (projects && projects.length > 0) {
     matchedProj = projects.find(p => {
@@ -96,8 +104,8 @@ export function buildCanonicalProjectKey(
   }
 
   const canonicalCode = matchedProj ? String(matchedProj.code || pCode).trim().toLowerCase() : pCode;
-  const canonicalYear = normalizeYearString(matchedProj?.year || normYear);
-  const canonicalStore = normalizeStoreCode(matchedProj?.store || normStore);
+  const canonicalYear = normYear || normalizeYearString(matchedProj?.year);
+  const canonicalStore = normStore || normalizeStoreCode(matchedProj?.store);
 
   return `${canonicalCode}__${canonicalYear}__${canonicalStore}`;
 }
