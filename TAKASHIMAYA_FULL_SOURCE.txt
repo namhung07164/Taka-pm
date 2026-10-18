@@ -19815,19 +19815,13 @@ export function DetailTab({
     setConfirmModal,
   });
 
-  // Project & Task CSV Operations
-  const {
-    handleExportProjects,
-    handleImportProjects,
-  } = useDetailProjectCsv({
-    filteredProjects,
-    projects,
-  });
+  const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({ filteredProjects, projects });
 
   const {
     handleExportTasks,
     handleImportTasks,
     parseCSVDate,
+    importErrorModal,
   } = useDetailTaskCsv({
     filteredProjects,
     projects,
@@ -19884,6 +19878,8 @@ export function DetailTab({
             canWrite={canWrite}
           />
         )}
+        {importErrorModal}
+        {projectImportErrorModal}
       </React.Suspense>
 
       <DetailFilterToolbar
@@ -20049,8 +20045,6 @@ export function DetailTab({
 
 export type { DetailTableRow } from './DetailTabParts/detailTypes';
 export default DetailTab;
-================ END FILE: src/components/DetailTab.tsx ================
-
 ================ FILE: src/components/DetailTabParts/DetailFilterToolbar.tsx ================
 import React, { memo } from 'react';
 import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
@@ -23449,11 +23443,20 @@ import { Project } from '../../types';
 import { parseCSV } from '../../lib/csvUtils';
 import { cleanDurationString } from '../../lib/taskImportService';
 import { parseCSVDate } from './detailCsvUtils';
+import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+
+export interface ParsedTasksFileResult {
+  rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
+  headers: string[];
+  dataRows: string[][];
+  validation: ImportValidationResult;
+  errorReportCSV: string;
+}
 
 export async function parseTasksFile(
   file: File,
   projects: Project[]
-): Promise<Map<string, Array<{ rowData: any; originalCsvIndex: number }>>> {
+): Promise<ParsedTasksFileResult> {
   let rows: string[][] = [];
   const fileName = file.name.toLowerCase();
 
@@ -23471,34 +23474,28 @@ export async function parseTasksFile(
   }
 
   if (!rows || rows.length < 2) {
-    throw new Error('CSV file is empty or format is invalid.');
+    throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
   }
 
   const headers = rows[0].map(h => h.trim().toLowerCase());
   const dataRows = rows.slice(1);
 
-  // Field validation
-  for (let idx = 0; idx < dataRows.length; idx++) {
-    const row = dataRows[idx];
-    if (row.every(c => !String(c).trim())) continue;
-
-    let hasYear = false;
-    let hasStore = false;
-    let hasCode = false;
-
-    headers.forEach((h, i) => {
-      const val = String(row[i] || '').trim();
-      if ((h === 'year' || h === 'projectyear') && val) hasYear = true;
-      if ((h === 'store' || h === 'projectstore') && val) hasStore = true;
-      if ((h === 'code' || h === 'projectcode') && val) hasCode = true;
-    });
-
-    if (!hasYear || !hasStore || !hasCode) {
-      throw new Error(`Row ${idx + 2} is missing Year, Store, or Project Code. All imported data must include these three fields.`);
-    }
-  }
+  // 1. Run Comprehensive Validation
+  const validation = validateTasksImportData(headers, dataRows, projects);
+  const errorReportCSV = validation.isValid ? '' : generateTaskErrorReportCSV(headers, dataRows, validation);
 
   const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();
+
+  // If validation failed, return immediately without parsing into project maps to ensure 0 writes
+  if (!validation.isValid) {
+    return {
+      rawParsedRowsByProject,
+      headers,
+      dataRows,
+      validation,
+      errorReportCSV
+    };
+  }
 
   dataRows.forEach((row, rowIndex) => {
     if (row.length < headers.length) return;
@@ -23507,6 +23504,7 @@ export async function parseTasksFile(
     headers.forEach((h, i) => {
       let key = h;
       if (h === 'task name') key = 'name';
+      if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
       if (h === 'projectcode') key = 'projectCode';
       if (h === 'year' || h === 'projectyear') key = 'projectYear';
       if (h === 'store' || h === 'projectstore') key = 'projectStore';
@@ -23539,7 +23537,7 @@ export async function parseTasksFile(
         key = 'level';
       }
 
-      if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
+      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
         let val: any = row[i];
         if (key === 'start' || key === 'finish') {
           val = parseCSVDate(val);
@@ -23586,10 +23584,14 @@ export async function parseTasksFile(
     }
   });
 
-  return rawParsedRowsByProject;
+  return {
+    rawParsedRowsByProject,
+    headers,
+    dataRows,
+    validation,
+    errorReportCSV
+  };
 }
-================ END FILE: src/components/DetailTabParts/detailTaskImportParser.ts ================
-
 ================ FILE: src/components/DetailTabParts/detailTypes.ts ================
 import { Project, Task } from '../../types';
 
@@ -25238,15 +25240,17 @@ export function useDetailOptions({
 ================ END FILE: src/components/DetailTabParts/useDetailOptions.ts ================
 
 ================ FILE: src/components/DetailTabParts/useDetailProjectCsv.ts ================
-import React from 'react';
+import React, { useState } from 'react';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadCSV, parseCSV, generateCSV } from '../../lib/csvUtils';
 import { doc } from 'firebase/firestore';
-import { writeBatch, setDoc } from '../../lib/firestoreWrites';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { recordDelta } from '../../lib/deltaSyncService';
+import { validateProjectsImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+import { ImportErrorModal } from './ImportErrorModal';
 
 interface UseDetailProjectCsvParams {
   filteredProjects: Project[];
@@ -25254,6 +25258,12 @@ interface UseDetailProjectCsvParams {
 }
 
 export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailProjectCsvParams) {
+  const [projectImportErrorData, setProjectImportErrorData] = useState<{
+    validationResult: ImportValidationResult;
+    errorReportCSV: string;
+    fileName: string;
+  } | null>(null);
+
   const handleExportProjects = () => {
     const headers = ['store', 'location', 'year', 'code', 'name'];
     const data = filteredProjects.map(p => [
@@ -25281,30 +25291,20 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
         const headers = rows[0].map(h => h.trim().toLowerCase());
         const dataRows = rows.slice(1);
 
-        // Required Field Validation
-        let hasError = false;
-        let errorMsg = '';
-        for (let idx = 0; idx < dataRows.length; idx++) {
-          const row = dataRows[idx];
-          if (row.every(c => !String(c).trim())) continue;
-          
-          let hasYear = false, hasStore = false, hasCode = false;
-          headers.forEach((h, i) => {
-            const val = String(row[i] || '').trim();
-            if ((h === 'year' || h === 'projectyear') && val) hasYear = true;
-            if ((h === 'store' || h === 'projectstore') && val) hasStore = true;
-            if ((h === 'code' || h === 'projectcode') && val) hasCode = true;
+        // Required Field & Duplicate Validation
+        const validation = validateProjectsImportData(headers, dataRows);
+        if (!validation.isValid) {
+          const errorReportCSV = generateTaskErrorReportCSV(headers, dataRows, validation);
+          setProjectImportErrorData({
+            validationResult: validation,
+            errorReportCSV,
+            fileName: `${file.name.replace(/\.[^/.]+$/, '')}_project_errors.csv`
           });
-          
-          if (!hasYear || !hasStore || !hasCode) {
-            hasError = true;
-            errorMsg = `Row ${idx + 2} is missing Year, Store, or Code. All imported data must include these three fields.`;
-            break;
-          }
-        }
-        
-        if (hasError) {
-          useAppStore.getState().setToast({ title: "Notice", message: 'Import failed: ' + errorMsg });
+          useAppStore.getState().setToast({
+            title: "Import Blocked",
+            message: `Found ${validation.errorCount} error(s) in ${validation.errorRowNumbers.size} row(s). Import was blocked.`,
+            type: "error"
+          });
           return;
         }
 
@@ -25324,6 +25324,7 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
         let importCount = 0;
 
         for (const row of dataRows) {
+          if (row.every(c => !String(c).trim())) continue;
           if (row.length < headers.length) continue;
           const p: any = {};
           headers.forEach((h, i) => {
@@ -25379,26 +25380,30 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
             delete (toSave as any).computedTakStart;
             delete (toSave as any).computedTakCompl;
             delete (toSave as any).computedOpening;
-            
-            Object.keys(toSave).forEach(key => {
-              if ((toSave as any)[key] === undefined) {
-                delete (toSave as any)[key];
-              }
-            });
+            delete (toSave as any).taskSummaries;
+            delete (toSave as any).taskCount;
 
-            processedProjects.set(key, finalProject);
-            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId!), toSave);
-            recordDelta({
-              docId: docId!,
-              collectionName: 'taka_projects',
-              action: existing ? 'update' : 'create',
-              data: toSave,
-              year: String(toSave.year || '')
-            }).catch(console.error);
-            importCount++;
+            const projDocId = docId || String(finalProject.no);
+            try {
+              const projRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', projDocId);
+              const batch = writeBatch(db);
+              batch.set(projRef, toSave, { merge: true });
+              await batch.commit();
+
+              recordDelta({
+                docId: projDocId,
+                collectionName: 'taka_projects',
+                action: existing ? 'update' : 'create',
+                data: toSave
+              });
+
+              importCount++;
+            } catch (err) {
+              console.error('Error saving project:', err);
+            }
           }
         }
-        
+
         if (importCount > 0) {
           undoManager.push({
             description: 'Import Projects',
@@ -25437,13 +25442,20 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
     reader.readAsText(file);
   };
 
+  const projectImportErrorModal = projectImportErrorData ? React.createElement(ImportErrorModal, {
+    isOpen: Boolean(projectImportErrorData),
+    onClose: () => setProjectImportErrorData(null),
+    validationResult: projectImportErrorData.validationResult,
+    errorReportCSV: projectImportErrorData.errorReportCSV,
+    fileName: projectImportErrorData.fileName
+  }) : null;
+
   return {
     handleExportProjects,
     handleImportProjects,
+    projectImportErrorModal
   };
 }
-================ END FILE: src/components/DetailTabParts/useDetailProjectCsv.ts ================
-
 ================ FILE: src/components/DetailTabParts/useDetailProjectInfo.ts ================
 import { useCallback, useMemo } from 'react';
 import { Project, Task } from '../../types';
@@ -26051,7 +26063,7 @@ export function useDetailSubTaskSort({
 ================ END FILE: src/components/DetailTabParts/useDetailSubTaskSort.ts ================
 
 ================ FILE: src/components/DetailTabParts/useDetailTaskCsv.ts ================
-import React from 'react';
+import React, { useState } from 'react';
 import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadCSV, generateCSV } from '../../lib/csvUtils';
@@ -26059,6 +26071,8 @@ import { sortGroupTasks } from '../../lib/ganttUtils';
 import { formatToCSVDate, parseCSVDate } from './detailCsvUtils';
 import { parseTasksFile } from './detailTaskImportParser';
 import { executeImportTasks } from './detailTaskImportExecutor';
+import { ImportErrorModal } from './ImportErrorModal';
+import { ImportValidationResult } from './importValidator';
 
 interface UseDetailTaskCsvParams {
   filteredProjects: Project[];
@@ -26075,6 +26089,12 @@ export function useDetailTaskCsv({
   appUsers,
   currentUser,
 }: UseDetailTaskCsvParams) {
+  const [importErrorData, setImportErrorData] = useState<{
+    validationResult: ImportValidationResult;
+    errorReportCSV: string;
+    fileName: string;
+  } | null>(null);
+
   const handleExportTasks = () => {
     const headers = [
       'store',
@@ -26152,9 +26172,26 @@ export function useDetailTaskCsv({
     if (!file) return;
 
     try {
-      const rawParsedRowsByProject = await parseTasksFile(file, projects);
+      const parsed = await parseTasksFile(file, projects);
+
+      // If errors, duplicates, or data bugs are detected, BLOCK the import completely
+      if (!parsed.validation.isValid) {
+        setImportErrorData({
+          validationResult: parsed.validation,
+          errorReportCSV: parsed.errorReportCSV,
+          fileName: `${file.name.replace(/\.[^/.]+$/, '')}_import_errors.csv`
+        });
+        useAppStore.getState().setToast({
+          title: "Import Blocked",
+          message: `Found ${parsed.validation.errorCount} error(s) in ${parsed.validation.errorRowNumbers.size} row(s). Import was blocked.`,
+          type: "error"
+        });
+        return;
+      }
+
+      // Safe to execute import
       const { count } = await executeImportTasks({
-        rawParsedRowsByProject,
+        rawParsedRowsByProject: parsed.rawParsedRowsByProject,
         projects,
         tasks,
         appUsers,
@@ -26163,7 +26200,7 @@ export function useDetailTaskCsv({
 
       useAppStore.getState().setToast({
         title: "Success",
-        message: `Import Tasks completed! Processed ${count} tasks without duplicates.`
+        message: `Import Tasks completed! Successfully processed ${count} tasks.`
       });
     } catch (err: any) {
       console.error("Import error:", err);
@@ -26177,15 +26214,22 @@ export function useDetailTaskCsv({
     }
   };
 
+  const importErrorModal = importErrorData ? React.createElement(ImportErrorModal, {
+    isOpen: Boolean(importErrorData),
+    onClose: () => setImportErrorData(null),
+    validationResult: importErrorData.validationResult,
+    errorReportCSV: importErrorData.errorReportCSV,
+    fileName: importErrorData.fileName
+  }) : null;
+
   return {
     handleExportTasks,
     handleImportTasks,
     parseCSVDate,
     formatToCSVDate,
+    importErrorModal
   };
 }
-================ END FILE: src/components/DetailTabParts/useDetailTaskCsv.ts ================
-
 ================ FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ================
 import React, { Dispatch, SetStateAction } from 'react';
 import { Project, Task, DelegationGroup, AppUser, TaskNote } from '../../types';
@@ -118560,3 +118604,922 @@ export const HeaderUndoRedoControls: React.FC<HeaderUndoRedoControlsProps> = ({
 
 export default HeaderUndoRedoControls;
 
+
+================ FILE: src/components/DetailTabParts/importValidator.ts ================
+import { Project } from '../../types';
+import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
+import { parseCSVDate } from './detailCsvUtils';
+import { generateCSV } from '../../lib/csvUtils';
+
+export interface ImportErrorDetail {
+  rowNumber: number; // 1-indexed row number in the file (header is row 1, data starts at 2)
+  projectCode: string;
+  projectYear: string;
+  projectStore: string;
+  taskName: string;
+  subTaskCode?: string;
+  errorType: 'DUPLICATE' | 'MISSING_FIELD' | 'INVALID_DATE' | 'DATE_LOGIC' | 'PROJECT_NOT_FOUND' | 'PREDECESSOR_ERROR' | 'INVALID_DATA';
+  field: string;
+  message: string;
+}
+
+export interface ImportValidationResult {
+  isValid: boolean;
+  totalRows: number;
+  validRowsCount: number;
+  errorCount: number;
+  errors: ImportErrorDetail[];
+  errorRowNumbers: Set<number>;
+  errorSummaryByType: Record<string, number>;
+}
+
+/**
+ * Deeply validates all rows in a task CSV / Excel file before import.
+ * If any invalid, duplicate, or buggy data is found, returns isValid: false
+ * with a full list of errors.
+ */
+export function validateTasksImportData(
+  headers: string[],
+  dataRows: string[][],
+  existingProjects: Project[] = []
+): ImportValidationResult {
+  const errors: ImportErrorDetail[] = [];
+  const errorRowNumbers = new Set<number>();
+  const errorSummaryByType: Record<string, number> = {};
+
+  const addError = (err: ImportErrorDetail) => {
+    errors.push(err);
+    errorRowNumbers.add(err.rowNumber);
+    errorSummaryByType[err.errorType] = (errorSummaryByType[err.errorType] || 0) + 1;
+  };
+
+  const headerIndexMap = new Map<string, number>();
+  headers.forEach((h, i) => headerIndexMap.set(h.trim().toLowerCase(), i));
+
+  const getCol = (row: string[], ...names: string[]): string => {
+    for (const name of names) {
+      const idx = headerIndexMap.get(name.toLowerCase());
+      if (idx !== undefined && idx < row.length) {
+        return String(row[idx] || '').trim();
+      }
+    }
+    return '';
+  };
+
+  // Map to track duplicates within the file itself:
+  // Key: ${projectKey}:::name:::${normalizedTaskName} -> { rowNumber, rawName }
+  const seenTaskNamesWithinFile = new Map<string, { rowNumber: number; rawName: string }>();
+  // Key: ${projectKey}:::code:::${subTaskCode} -> { rowNumber }
+  const seenSubTaskCodesWithinFile = new Map<string, { rowNumber: number }>();
+
+  // Pre-index existing projects for O(1) project matching
+  const projectLookup = new Map<string, Project>();
+  existingProjects.forEach(p => {
+    const pCode = String(p.code || '').trim().toLowerCase();
+    const pYear = normalizeYearString(p.year);
+    const pStore = normalizeStoreCode(p.store);
+    if (pCode) {
+      if (pYear && pStore) projectLookup.set(`${pCode}__${pYear}__${pStore}`, p);
+      if (pStore) projectLookup.set(`${pCode}____${pStore}`, p);
+      if (pYear) projectLookup.set(`${pCode}__${pYear}__`, p);
+      if (!projectLookup.has(pCode)) projectLookup.set(pCode, p);
+    }
+    if (p.id) projectLookup.set(String(p.id).trim().toLowerCase(), p);
+  });
+
+  let totalDataRows = 0;
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2; // Line in CSV/Excel (header is line 1)
+
+    // Skip completely blank rows
+    if (row.every(c => !String(c).trim())) continue;
+    totalDataRows++;
+
+    const projectCode = getCol(row, 'projectcode', 'project code', 'code');
+    const projectYear = getCol(row, 'projectyear', 'project year', 'year');
+    const projectStore = getCol(row, 'projectstore', 'project store', 'store');
+    const taskName = getCol(row, 'task name', 'taskname', 'name');
+    const subTaskCode = getCol(row, 'sub-task code', 'sub task code', 'subtask code', 'sub_task_code', 'taskcodephu', 'task code phu');
+    const startDateRaw = getCol(row, 'start', 'start date', 'startdate');
+    const finishDateRaw = getCol(row, 'finish', 'finish date', 'finishdate', 'end');
+    const predecessor = getCol(row, 'predecessor', 'predecessors');
+
+    // 1. Check Missing Required Fields
+    if (!projectCode) {
+      addError({
+        rowNumber,
+        projectCode: '(empty)',
+        projectYear,
+        projectStore,
+        taskName: taskName || '(empty)',
+        errorType: 'MISSING_FIELD',
+        field: 'Project Code',
+        message: 'Missing required field: Project Code.'
+      });
+    }
+
+    if (!taskName) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear,
+        projectStore,
+        taskName: '(empty)',
+        errorType: 'MISSING_FIELD',
+        field: 'Task Name',
+        message: 'Missing required field: Task Name. Every task must have a name.'
+      });
+    }
+
+    if (!projectYear) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear: '(empty)',
+        projectStore,
+        taskName,
+        errorType: 'MISSING_FIELD',
+        field: 'Year',
+        message: 'Missing required field: Year.'
+      });
+    } else {
+      const yearNum = Number(projectYear);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATA',
+          field: 'Year',
+          message: `Invalid Year '${projectYear}'. Must be a valid 4-digit year between 2000 and 2100.`
+        });
+      }
+    }
+
+    if (!projectStore) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear,
+        projectStore: '(empty)',
+        taskName,
+        errorType: 'MISSING_FIELD',
+        field: 'Store',
+        message: 'Missing required field: Store (must be HN or HCM).'
+      });
+    } else {
+      const normStore = normalizeStoreCode(projectStore);
+      if (normStore !== 'HN' && normStore !== 'HCM') {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATA',
+          field: 'Store',
+          message: `Unrecognized Store '${projectStore}'. Store must be 'HN' or 'HCM'.`
+        });
+      }
+    }
+
+    // 2. Check Project Existence in Database
+    if (projectCode && existingProjects.length > 0) {
+      const pCodeLower = projectCode.toLowerCase();
+      const pYearNorm = normalizeYearString(projectYear);
+      const pStoreNorm = normalizeStoreCode(projectStore);
+      const foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
+                           (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
+                           projectLookup.get(pCodeLower);
+      if (!foundProject) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'PROJECT_NOT_FOUND',
+          field: 'Project Code',
+          message: `Project '${projectCode}' (${projectYear || 'no year'} - ${projectStore || 'no store'}) was not found in the project list. Please create the project first or check project code.`
+        });
+      }
+    }
+
+    // 3. Check Duplicate Task Within This File
+    if (projectCode && taskName) {
+      const pYearNorm = normalizeYearString(projectYear);
+      const pStoreNorm = normalizeStoreCode(projectStore);
+      const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
+      
+      // Treat task name as absolute value (trim + lowercase, NO stripping prefixes or dashes)
+      const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
+      const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+
+      if (seenTaskNamesWithinFile.has(taskNameKey)) {
+        const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'DUPLICATE',
+          field: 'Task Name',
+          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}). In the same project, each task name must be unique.`
+        });
+      } else {
+        seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+      }
+
+      // Check Sub-task Code duplicates within file
+      if (subTaskCode) {
+        const subTaskCodeKey = `${projKey}:::code:::${subTaskCode.toLowerCase()}`;
+        if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
+          const firstCodeOccurrence = seenSubTaskCodesWithinFile.get(subTaskCodeKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            subTaskCode,
+            errorType: 'DUPLICATE',
+            field: 'Sub-task code',
+            message: `Duplicate Sub-task Code '${subTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
+          });
+        } else {
+          seenSubTaskCodesWithinFile.set(subTaskCodeKey, { rowNumber });
+        }
+      }
+    }
+
+    // 4. Check Date Formats and Chronological Date Logic
+    let parsedStart: string | null = null;
+    let parsedFinish: string | null = null;
+
+    if (startDateRaw) {
+      parsedStart = parseCSVDate(startDateRaw);
+      if (!parsedStart || isNaN(new Date(parsedStart).getTime())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATE',
+          field: 'Start Date',
+          message: `Invalid Start Date format '${startDateRaw}'. Expected format YYYY-MM-DD or DD/MM/YYYY.`
+        });
+      }
+    }
+
+    if (finishDateRaw) {
+      parsedFinish = parseCSVDate(finishDateRaw);
+      if (!parsedFinish || isNaN(new Date(parsedFinish).getTime())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATE',
+          field: 'Finish Date',
+          message: `Invalid Finish Date format '${finishDateRaw}'. Expected format YYYY-MM-DD or DD/MM/YYYY.`
+        });
+      }
+    }
+
+    // Check Start date <= Finish date
+    if (parsedStart && parsedFinish) {
+      const startTime = new Date(parsedStart).getTime();
+      const finishTime = new Date(parsedFinish).getTime();
+      if (startTime > finishTime) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'DATE_LOGIC',
+          field: 'Start/Finish Dates',
+          message: `Date Logic Error: Start date (${parsedStart}) is later than Finish date (${parsedFinish}). Start date must be earlier than or equal to Finish date.`
+        });
+      }
+    }
+
+    // 5. Predecessor Self-Reference Check
+    if (predecessor) {
+      const predUpper = predecessor.toUpperCase();
+      if (subTaskCode && predUpper.includes(subTaskCode.toUpperCase())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          subTaskCode,
+          errorType: 'PREDECESSOR_ERROR',
+          field: 'Predecessor',
+          message: `Invalid Predecessor: Task cannot reference itself ('${subTaskCode}') as a predecessor.`
+        });
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    totalRows: totalDataRows,
+    validRowsCount: totalDataRows - errorRowNumbers.size,
+    errorCount: errors.length,
+    errors,
+    errorRowNumbers,
+    errorSummaryByType
+  };
+}
+
+/**
+ * Generates an enriched Error Report CSV pointing out exact row issues.
+ */
+export function generateTaskErrorReportCSV(
+  originalHeaders: string[],
+  dataRows: string[][],
+  validationResult: ImportValidationResult
+): string {
+  const errorMap = new Map<number, ImportErrorDetail[]>();
+  validationResult.errors.forEach(err => {
+    if (!errorMap.has(err.rowNumber)) {
+      errorMap.set(err.rowNumber, []);
+    }
+    errorMap.get(err.rowNumber)!.push(err);
+  });
+
+  const reportHeaders = [
+    'Row In File',
+    'Status',
+    'Error Count',
+    'Error Types',
+    'Error Details (What To Fix)',
+    ...originalHeaders
+  ];
+
+  const reportRows: string[][] = [];
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2;
+    if (row.every(c => !String(c).trim())) continue;
+
+    const rowErrors = errorMap.get(rowNumber);
+    const hasError = Boolean(rowErrors && rowErrors.length > 0);
+
+    const status = hasError ? 'FAILED / ERROR' : 'PASSED';
+    const errCount = hasError ? String(rowErrors!.length) : '0';
+    const errorTypes = hasError ? Array.from(new Set(rowErrors!.map(e => e.errorType))).join(' | ') : 'None';
+    const errorDetails = hasError
+      ? rowErrors!.map((e, i) => `[Issue ${i + 1}] (${e.field}): ${e.message}`).join('; ')
+      : 'No errors found';
+
+    reportRows.push([
+      `Row ${rowNumber}`,
+      status,
+      errCount,
+      errorTypes,
+      errorDetails,
+      ...row
+    ]);
+  }
+
+  return generateCSV(reportHeaders, reportRows);
+}
+
+/**
+ * Validates project CSV data rows.
+ */
+export function validateProjectsImportData(
+  headers: string[],
+  dataRows: string[][]
+): ImportValidationResult {
+  const errors: ImportErrorDetail[] = [];
+  const errorRowNumbers = new Set<number>();
+  const errorSummaryByType: Record<string, number> = {};
+
+  const addError = (err: ImportErrorDetail) => {
+    errors.push(err);
+    errorRowNumbers.add(err.rowNumber);
+    errorSummaryByType[err.errorType] = (errorSummaryByType[err.errorType] || 0) + 1;
+  };
+
+  const headerIndexMap = new Map<string, number>();
+  headers.forEach((h, i) => headerIndexMap.set(h.trim().toLowerCase(), i));
+
+  const getCol = (row: string[], ...names: string[]): string => {
+    for (const name of names) {
+      const idx = headerIndexMap.get(name.toLowerCase());
+      if (idx !== undefined && idx < row.length) {
+        return String(row[idx] || '').trim();
+      }
+    }
+    return '';
+  };
+
+  const seenProjectCodes = new Map<string, number>();
+  let totalDataRows = 0;
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2;
+
+    if (row.every(c => !String(c).trim())) continue;
+    totalDataRows++;
+
+    const code = getCol(row, 'code', 'projectcode', 'project code');
+    const year = getCol(row, 'year', 'projectyear', 'project year');
+    const store = getCol(row, 'store', 'projectstore', 'project store');
+    const name = getCol(row, 'name', 'project name', 'projectname');
+
+    if (!code) {
+      addError({
+        rowNumber,
+        projectCode: '(empty)',
+        projectYear: year,
+        projectStore: store,
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Project Code',
+        message: 'Missing required field: Project Code.'
+      });
+    }
+
+    if (!year) {
+      addError({
+        rowNumber,
+        projectCode: code,
+        projectYear: '(empty)',
+        projectStore: store,
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Year',
+        message: 'Missing required field: Year.'
+      });
+    } else {
+      const yearNum = Number(year);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'INVALID_DATA',
+          field: 'Year',
+          message: `Invalid Year '${year}'. Year must be a 4-digit number between 2000 and 2100.`
+        });
+      }
+    }
+
+    if (!store) {
+      addError({
+        rowNumber,
+        projectCode: code,
+        projectYear: year,
+        projectStore: '(empty)',
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Store',
+        message: 'Missing required field: Store (must be HN or HCM).'
+      });
+    } else {
+      const normStore = normalizeStoreCode(store);
+      if (normStore !== 'HN' && normStore !== 'HCM') {
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'INVALID_DATA',
+          field: 'Store',
+          message: `Unrecognized Store '${store}'. Must be 'HN' or 'HCM'.`
+        });
+      }
+    }
+
+    if (code && year && store) {
+      const pKey = `${code.toLowerCase()}__${normalizeYearString(year)}__${normalizeStoreCode(store)}`;
+      if (seenProjectCodes.has(pKey)) {
+        const firstRow = seenProjectCodes.get(pKey)!;
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'DUPLICATE',
+          field: 'Project Code',
+          message: `Duplicate Project Code '${code}' for Year ${year} - Store ${store} (conflicts with Row ${firstRow}).`
+        });
+      } else {
+        seenProjectCodes.set(pKey, rowNumber);
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    totalRows: totalDataRows,
+    validRowsCount: totalDataRows - errorRowNumbers.size,
+    errorCount: errors.length,
+    errors,
+    errorRowNumbers,
+    errorSummaryByType
+  };
+}
+
+================ FILE: src/components/DetailTabParts/importValidator.test.ts ================
+import { describe, it, expect } from 'vitest';
+import { validateTasksImportData, generateTaskErrorReportCSV } from './importValidator';
+import { Project } from '../../types';
+
+describe('importValidator', () => {
+  const mockProjects: Project[] = [
+    {
+      id: 'p1',
+      code: 'B1-B110-1',
+      name: 'Test Project',
+      year: 2027,
+      store: 'HN'
+    } as any,
+    {
+      id: 'p2',
+      code: 'A-01',
+      name: 'Project A',
+      year: 2026,
+      store: 'HCM'
+    } as any
+  ];
+
+  const headers = [
+    'store',
+    'location',
+    'projectYear',
+    'projectCode',
+    'Sub-task code',
+    'Task name',
+    'start',
+    'finish',
+    'duration',
+    'party',
+    'predecessor'
+  ];
+
+  it('validates correct rows successfully', () => {
+    const dataRows = [
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#1', 'Hoarding up', '2027-01-10', '2027-01-12', '2', 'Contractor A', ''],
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#2', 'Fit-out works', '2027-01-13', '2027-01-20', '7', 'Contractor B', 'B1-B110-1#1']
+    ];
+
+    const result = validateTasksImportData(headers, dataRows, mockProjects);
+    expect(result.isValid).toBe(true);
+    expect(result.errorCount).toBe(0);
+    expect(result.validRowsCount).toBe(2);
+  });
+
+  it('treats FFD, FFD-1, 1 as distinct tasks and does NOT flag them as duplicate', () => {
+    const dataRows = [
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#1', 'FFD', '2027-02-01', '2027-02-02', '1', 'Team', ''],
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#2', 'FFD-1', '2027-02-03', '2027-02-04', '1', 'Team', ''],
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#3', '1', '2027-02-05', '2027-02-06', '1', 'Team', '']
+    ];
+
+    const result = validateTasksImportData(headers, dataRows, mockProjects);
+    expect(result.isValid).toBe(true);
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('blocks import and flags true duplicate task names in the same project', () => {
+    const dataRows = [
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#1', 'Hoarding up', '2027-01-10', '2027-01-12', '2', 'Team', ''],
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#2', 'Hoarding up', '2027-01-15', '2027-01-18', '3', 'Team', '']
+    ];
+
+    const result = validateTasksImportData(headers, dataRows, mockProjects);
+    expect(result.isValid).toBe(false);
+    expect(result.errorCount).toBeGreaterThanOrEqual(1);
+    expect(result.errors.some(e => e.errorType === 'DUPLICATE')).toBe(true);
+    expect(result.errorRowNumbers.has(3)).toBe(true); // Row 3 conflicts with Row 2
+  });
+
+  it('blocks import when required fields are missing', () => {
+    const dataRows = [
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#1', '', '2027-01-10', '2027-01-12', '2', '', ''], // Missing task name
+      ['HN', 'B1', '2027', '', 'B1-B110-1#2', 'Testing', '2027-01-13', '2027-01-15', '2', '', ''], // Missing project code
+      ['HN', 'B1', '', 'B1-B110-1', 'B1-B110-1#3', 'Testing 2', '2027-01-13', '2027-01-15', '2', '', ''], // Missing year
+      ['', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#4', 'Testing 3', '2027-01-13', '2027-01-15', '2', '', ''] // Missing store
+    ];
+
+    const result = validateTasksImportData(headers, dataRows, mockProjects);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some(e => e.field === 'Task Name')).toBe(true);
+    expect(result.errors.some(e => e.field === 'Project Code')).toBe(true);
+    expect(result.errors.some(e => e.field === 'Year')).toBe(true);
+    expect(result.errors.some(e => e.field === 'Store')).toBe(true);
+  });
+
+  it('detects date logic errors where start date is after finish date', () => {
+    const dataRows = [
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#1', 'Demolition', '2027-05-15', '2027-05-10', '5', 'Team', '']
+    ];
+
+    const result = validateTasksImportData(headers, dataRows, mockProjects);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some(e => e.errorType === 'DATE_LOGIC')).toBe(true);
+  });
+
+  it('generates an enriched error report CSV with error details', () => {
+    const dataRows = [
+      ['HN', 'B1', '2027', 'B1-B110-1', 'B1-B110-1#1', '', '2027-05-15', '2027-05-10', '5', 'Team', '']
+    ];
+
+    const result = validateTasksImportData(headers, dataRows, mockProjects);
+    const csv = generateTaskErrorReportCSV(headers, dataRows, result);
+    expect(csv).toContain('Row In File');
+    expect(csv).toContain('Status');
+    expect(csv).toContain('FAILED / ERROR');
+    expect(csv).toContain('Error Details (What To Fix)');
+    expect(csv).toContain('Missing required field: Task Name');
+    expect(csv).toContain('Date Logic Error');
+  });
+});
+================ FILE: src/components/DetailTabParts/ImportErrorModal.tsx ================
+import React, { useRef, useState, useMemo } from 'react';
+import Draggable from 'react-draggable';
+import { AlertOctagon, Download, X, Search, ShieldAlert, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { ImportValidationResult } from './importValidator';
+import { downloadCSV } from '../../lib/csvUtils';
+
+interface ImportErrorModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  validationResult: ImportValidationResult;
+  errorReportCSV: string;
+  fileName?: string;
+}
+
+export function ImportErrorModal({
+  isOpen,
+  onClose,
+  validationResult,
+  errorReportCSV,
+  fileName = 'taka_tasks_import_errors.csv'
+}: ImportErrorModalProps) {
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<string>('ALL');
+
+  const filteredErrors = useMemo(() => {
+    return validationResult.errors.filter(err => {
+      if (filterType !== 'ALL' && err.errorType !== filterType) {
+        return false;
+      }
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        String(err.rowNumber).includes(term) ||
+        err.projectCode.toLowerCase().includes(term) ||
+        err.taskName.toLowerCase().includes(term) ||
+        err.message.toLowerCase().includes(term) ||
+        err.field.toLowerCase().includes(term)
+      );
+    });
+  }, [validationResult.errors, filterType, searchTerm]);
+
+  const handleDownload = () => {
+    if (!errorReportCSV) return;
+    downloadCSV(errorReportCSV, fileName);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto">
+      <Draggable
+        disabled={typeof window !== 'undefined' && window.innerWidth < 768}
+        handle=".modal-handle"
+        bounds="parent"
+        nodeRef={nodeRef}
+        cancel="button, input, select"
+      >
+        <div
+          ref={nodeRef}
+          className="relative w-full max-w-4xl max-h-[90vh] bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl border border-rose-300 dark:border-rose-900/60 flex flex-col overflow-hidden text-slate-800 dark:text-slate-100 animate-in fade-in zoom-in-95 duration-200"
+        >
+          {/* Draggable Header */}
+          <div className="modal-handle cursor-grab active:cursor-grabbing px-5 py-4 bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent dark:from-rose-950/40 dark:via-rose-950/20 border-b border-rose-200 dark:border-rose-900/50 flex items-center justify-between gap-3 shrink-0 select-none">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 shadow-xs">
+                <AlertOctagon className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-extrabold text-base sm:text-lg text-rose-600 dark:text-rose-400 tracking-tight leading-tight">
+                    CSV Import Validation Failed
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                    Import Blocked ({validationResult.errorCount} {validationResult.errorCount === 1 ? 'issue' : 'issues'})
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  Database protected • No records were changed or saved
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Stats Bar */}
+          <div className="px-5 py-3 bg-slate-50/80 dark:bg-[#252528]/80 border-b border-slate-200/80 dark:border-[#38383a] grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+            <div className="p-2.5 rounded-xl bg-white dark:bg-[#1a1a1c] border border-slate-200 dark:border-[#333336] flex flex-col">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Total Rows Checked</span>
+              <span className="font-mono font-extrabold text-base sm:text-lg text-slate-700 dark:text-slate-200">{validationResult.totalRows}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-rose-50/80 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 flex flex-col">
+              <span className="text-[11px] font-medium text-rose-600 dark:text-rose-400">Rows With Errors</span>
+              <span className="font-mono font-extrabold text-base sm:text-lg text-rose-600 dark:text-rose-400">{validationResult.errorRowNumbers.size}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 flex flex-col">
+              <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Valid Rows</span>
+              <span className="font-mono font-extrabold text-base sm:text-lg text-emerald-600 dark:text-emerald-400">{validationResult.validRowsCount}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 flex flex-col">
+              <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">Total Violations</span>
+              <span className="font-mono font-extrabold text-base sm:text-lg text-amber-600 dark:text-amber-400">{validationResult.errorCount}</span>
+            </div>
+          </div>
+
+          {/* Search & Filter Toolbar */}
+          <div className="px-5 py-2.5 border-b border-slate-200 dark:border-[#38383a] flex flex-wrap items-center justify-between gap-2.5 bg-white dark:bg-[#1e1e20]">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search row, task, project, message..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#252528] focus:outline-hidden focus:ring-1 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto text-xs font-semibold">
+              <button
+                onClick={() => setFilterType('ALL')}
+                className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                  filterType === 'ALL'
+                    ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 border-slate-800 dark:border-slate-200'
+                    : 'bg-white dark:bg-[#28282a] text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                All ({validationResult.errors.length})
+              </button>
+              {validationResult.errorSummaryByType['DUPLICATE'] ? (
+                <button
+                  onClick={() => setFilterType('DUPLICATE')}
+                  className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                    filterType === 'DUPLICATE'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900'
+                  }`}
+                >
+                  Duplicates ({validationResult.errorSummaryByType['DUPLICATE']})
+                </button>
+              ) : null}
+              {validationResult.errorSummaryByType['MISSING_FIELD'] ? (
+                <button
+                  onClick={() => setFilterType('MISSING_FIELD')}
+                  className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                    filterType === 'MISSING_FIELD'
+                      ? 'bg-amber-600 text-white border-amber-600'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900'
+                  }`}
+                >
+                  Missing Fields ({validationResult.errorSummaryByType['MISSING_FIELD']})
+                </button>
+              ) : null}
+              {validationResult.errorSummaryByType['DATE_LOGIC'] || validationResult.errorSummaryByType['INVALID_DATE'] ? (
+                <button
+                  onClick={() => setFilterType('DATE_LOGIC')}
+                  className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                    filterType === 'DATE_LOGIC'
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-900'
+                  }`}
+                >
+                  Date Bugs
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Error Table Scroll Container */}
+          <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[460px] p-4">
+            {filteredErrors.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 text-xs">
+                No errors matching your filter.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-[#2e2e32] border border-slate-200 dark:border-[#38383a] rounded-xl overflow-hidden bg-white dark:bg-[#1a1a1c]">
+                {filteredErrors.map((err, i) => {
+                  let badgeColor = 'bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800';
+                  if (err.errorType === 'DUPLICATE') {
+                    badgeColor = 'bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800';
+                  } else if (err.errorType === 'DATE_LOGIC' || err.errorType === 'INVALID_DATE') {
+                    badgeColor = 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/80 dark:text-purple-300 dark:border-purple-800';
+                  } else if (err.errorType === 'MISSING_FIELD') {
+                    badgeColor = 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800';
+                  } else if (err.errorType === 'PROJECT_NOT_FOUND') {
+                    badgeColor = 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-800';
+                  }
+
+                  return (
+                    <div
+                      key={`err-${err.rowNumber}-${err.field}-${i}`}
+                      className="p-3.5 hover:bg-slate-50 dark:hover:bg-[#222225] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                    >
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <span className="px-2 py-1 rounded-md font-mono font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
+                          Row {err.rowNumber}
+                        </span>
+
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {err.taskName && err.taskName !== '(empty)' ? err.taskName : 'Task without name'}
+                            </span>
+                            {err.projectCode && (
+                              <span className="font-mono px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px]">
+                                {err.projectCode} {err.projectYear ? `(${err.projectYear})` : ''}
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border tracking-wide uppercase ${badgeColor}`}>
+                              {err.errorType.replace('_', ' ')}
+                            </span>
+                          </div>
+
+                          <p className="text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+                            {err.message}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0 font-medium text-[11px] text-slate-400">
+                        Field: <span className="font-bold text-slate-600 dark:text-slate-300">{err.field}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Modal Footer Actions */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-[#18181a] border-t border-slate-200 dark:border-[#333336] flex flex-wrap items-center justify-between gap-3 shrink-0">
+            <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>Correct the issues in your file, then try importing again.</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm active:scale-95 transition-all cursor-pointer"
+                title="Download full Error Report as CSV file"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Export Error Report (CSV)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs active:scale-95 transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </Draggable>
+    </div>
+  );
+}

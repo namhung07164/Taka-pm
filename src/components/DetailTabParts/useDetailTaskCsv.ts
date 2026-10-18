@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadCSV, generateCSV } from '../../lib/csvUtils';
@@ -6,6 +6,8 @@ import { sortGroupTasks } from '../../lib/ganttUtils';
 import { formatToCSVDate, parseCSVDate } from './detailCsvUtils';
 import { parseTasksFile } from './detailTaskImportParser';
 import { executeImportTasks } from './detailTaskImportExecutor';
+import { ImportErrorModal } from './ImportErrorModal';
+import { ImportValidationResult } from './importValidator';
 
 interface UseDetailTaskCsvParams {
   filteredProjects: Project[];
@@ -22,6 +24,12 @@ export function useDetailTaskCsv({
   appUsers,
   currentUser,
 }: UseDetailTaskCsvParams) {
+  const [importErrorData, setImportErrorData] = useState<{
+    validationResult: ImportValidationResult;
+    errorReportCSV: string;
+    fileName: string;
+  } | null>(null);
+
   const handleExportTasks = () => {
     const headers = [
       'store',
@@ -99,9 +107,26 @@ export function useDetailTaskCsv({
     if (!file) return;
 
     try {
-      const rawParsedRowsByProject = await parseTasksFile(file, projects);
+      const parsed = await parseTasksFile(file, projects);
+
+      // If errors, duplicates, or data bugs are detected, BLOCK the import completely
+      if (!parsed.validation.isValid) {
+        setImportErrorData({
+          validationResult: parsed.validation,
+          errorReportCSV: parsed.errorReportCSV,
+          fileName: `${file.name.replace(/\.[^/.]+$/, '')}_import_errors.csv`
+        });
+        useAppStore.getState().setToast({
+          title: "Import Blocked",
+          message: `Found ${parsed.validation.errorCount} error(s) in ${parsed.validation.errorRowNumbers.size} row(s). Import was blocked.`,
+          type: "error"
+        });
+        return;
+      }
+
+      // Safe to execute import
       const { count } = await executeImportTasks({
-        rawParsedRowsByProject,
+        rawParsedRowsByProject: parsed.rawParsedRowsByProject,
         projects,
         tasks,
         appUsers,
@@ -110,7 +135,7 @@ export function useDetailTaskCsv({
 
       useAppStore.getState().setToast({
         title: "Success",
-        message: `Import Tasks completed! Processed ${count} tasks without duplicates.`
+        message: `Import Tasks completed! Successfully processed ${count} tasks.`
       });
     } catch (err: any) {
       console.error("Import error:", err);
@@ -124,10 +149,19 @@ export function useDetailTaskCsv({
     }
   };
 
+  const importErrorModal = importErrorData ? React.createElement(ImportErrorModal, {
+    isOpen: Boolean(importErrorData),
+    onClose: () => setImportErrorData(null),
+    validationResult: importErrorData.validationResult,
+    errorReportCSV: importErrorData.errorReportCSV,
+    fileName: importErrorData.fileName
+  }) : null;
+
   return {
     handleExportTasks,
     handleImportTasks,
     parseCSVDate,
     formatToCSVDate,
+    importErrorModal
   };
 }

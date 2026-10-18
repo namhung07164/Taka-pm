@@ -2,11 +2,20 @@ import { Project } from '../../types';
 import { parseCSV } from '../../lib/csvUtils';
 import { cleanDurationString } from '../../lib/taskImportService';
 import { parseCSVDate } from './detailCsvUtils';
+import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+
+export interface ParsedTasksFileResult {
+  rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
+  headers: string[];
+  dataRows: string[][];
+  validation: ImportValidationResult;
+  errorReportCSV: string;
+}
 
 export async function parseTasksFile(
   file: File,
   projects: Project[]
-): Promise<Map<string, Array<{ rowData: any; originalCsvIndex: number }>>> {
+): Promise<ParsedTasksFileResult> {
   let rows: string[][] = [];
   const fileName = file.name.toLowerCase();
 
@@ -24,34 +33,28 @@ export async function parseTasksFile(
   }
 
   if (!rows || rows.length < 2) {
-    throw new Error('CSV file is empty or format is invalid.');
+    throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
   }
 
   const headers = rows[0].map(h => h.trim().toLowerCase());
   const dataRows = rows.slice(1);
 
-  // Field validation
-  for (let idx = 0; idx < dataRows.length; idx++) {
-    const row = dataRows[idx];
-    if (row.every(c => !String(c).trim())) continue;
-
-    let hasYear = false;
-    let hasStore = false;
-    let hasCode = false;
-
-    headers.forEach((h, i) => {
-      const val = String(row[i] || '').trim();
-      if ((h === 'year' || h === 'projectyear') && val) hasYear = true;
-      if ((h === 'store' || h === 'projectstore') && val) hasStore = true;
-      if ((h === 'code' || h === 'projectcode') && val) hasCode = true;
-    });
-
-    if (!hasYear || !hasStore || !hasCode) {
-      throw new Error(`Row ${idx + 2} is missing Year, Store, or Project Code. All imported data must include these three fields.`);
-    }
-  }
+  // 1. Run Comprehensive Validation
+  const validation = validateTasksImportData(headers, dataRows, projects);
+  const errorReportCSV = validation.isValid ? '' : generateTaskErrorReportCSV(headers, dataRows, validation);
 
   const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();
+
+  // If validation failed, return immediately without parsing into project maps to ensure 0 writes
+  if (!validation.isValid) {
+    return {
+      rawParsedRowsByProject,
+      headers,
+      dataRows,
+      validation,
+      errorReportCSV
+    };
+  }
 
   dataRows.forEach((row, rowIndex) => {
     if (row.length < headers.length) return;
@@ -140,5 +143,11 @@ export async function parseTasksFile(
     }
   });
 
-  return rawParsedRowsByProject;
+  return {
+    rawParsedRowsByProject,
+    headers,
+    dataRows,
+    validation,
+    errorReportCSV
+  };
 }

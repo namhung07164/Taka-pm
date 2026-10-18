@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadCSV, parseCSV, generateCSV } from '../../lib/csvUtils';
 import { doc } from 'firebase/firestore';
-import { writeBatch, setDoc } from '../../lib/firestoreWrites';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { recordDelta } from '../../lib/deltaSyncService';
+import { validateProjectsImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+import { ImportErrorModal } from './ImportErrorModal';
 
 interface UseDetailProjectCsvParams {
   filteredProjects: Project[];
@@ -14,6 +16,12 @@ interface UseDetailProjectCsvParams {
 }
 
 export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailProjectCsvParams) {
+  const [projectImportErrorData, setProjectImportErrorData] = useState<{
+    validationResult: ImportValidationResult;
+    errorReportCSV: string;
+    fileName: string;
+  } | null>(null);
+
   const handleExportProjects = () => {
     const headers = ['store', 'location', 'year', 'code', 'name'];
     const data = filteredProjects.map(p => [
@@ -41,30 +49,20 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
         const headers = rows[0].map(h => h.trim().toLowerCase());
         const dataRows = rows.slice(1);
 
-        // Required Field Validation
-        let hasError = false;
-        let errorMsg = '';
-        for (let idx = 0; idx < dataRows.length; idx++) {
-          const row = dataRows[idx];
-          if (row.every(c => !String(c).trim())) continue;
-          
-          let hasYear = false, hasStore = false, hasCode = false;
-          headers.forEach((h, i) => {
-            const val = String(row[i] || '').trim();
-            if ((h === 'year' || h === 'projectyear') && val) hasYear = true;
-            if ((h === 'store' || h === 'projectstore') && val) hasStore = true;
-            if ((h === 'code' || h === 'projectcode') && val) hasCode = true;
+        // Required Field & Duplicate Validation
+        const validation = validateProjectsImportData(headers, dataRows);
+        if (!validation.isValid) {
+          const errorReportCSV = generateTaskErrorReportCSV(headers, dataRows, validation);
+          setProjectImportErrorData({
+            validationResult: validation,
+            errorReportCSV,
+            fileName: `${file.name.replace(/\.[^/.]+$/, '')}_project_errors.csv`
           });
-          
-          if (!hasYear || !hasStore || !hasCode) {
-            hasError = true;
-            errorMsg = `Row ${idx + 2} is missing Year, Store, or Code. All imported data must include these three fields.`;
-            break;
-          }
-        }
-        
-        if (hasError) {
-          useAppStore.getState().setToast({ title: "Notice", message: 'Import failed: ' + errorMsg });
+          useAppStore.getState().setToast({
+            title: "Import Blocked",
+            message: `Found ${validation.errorCount} error(s) in ${validation.errorRowNumbers.size} row(s). Import was blocked.`,
+            type: "error"
+          });
           return;
         }
 
@@ -84,6 +82,7 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
         let importCount = 0;
 
         for (const row of dataRows) {
+          if (row.every(c => !String(c).trim())) continue;
           if (row.length < headers.length) continue;
           const p: any = {};
           headers.forEach((h, i) => {
@@ -139,26 +138,30 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
             delete (toSave as any).computedTakStart;
             delete (toSave as any).computedTakCompl;
             delete (toSave as any).computedOpening;
-            
-            Object.keys(toSave).forEach(key => {
-              if ((toSave as any)[key] === undefined) {
-                delete (toSave as any)[key];
-              }
-            });
+            delete (toSave as any).taskSummaries;
+            delete (toSave as any).taskCount;
 
-            processedProjects.set(key, finalProject);
-            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId!), toSave);
-            recordDelta({
-              docId: docId!,
-              collectionName: 'taka_projects',
-              action: existing ? 'update' : 'create',
-              data: toSave,
-              year: String(toSave.year || '')
-            }).catch(console.error);
-            importCount++;
+            const projDocId = docId || String(finalProject.no);
+            try {
+              const projRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', projDocId);
+              const batch = writeBatch(db);
+              batch.set(projRef, toSave, { merge: true });
+              await batch.commit();
+
+              recordDelta({
+                docId: projDocId,
+                collectionName: 'taka_projects',
+                action: existing ? 'update' : 'create',
+                data: toSave
+              });
+
+              importCount++;
+            } catch (err) {
+              console.error('Error saving project:', err);
+            }
           }
         }
-        
+
         if (importCount > 0) {
           undoManager.push({
             description: 'Import Projects',
@@ -197,8 +200,17 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
     reader.readAsText(file);
   };
 
+  const projectImportErrorModal = projectImportErrorData ? React.createElement(ImportErrorModal, {
+    isOpen: Boolean(projectImportErrorData),
+    onClose: () => setProjectImportErrorData(null),
+    validationResult: projectImportErrorData.validationResult,
+    errorReportCSV: projectImportErrorData.errorReportCSV,
+    fileName: projectImportErrorData.fileName
+  }) : null;
+
   return {
     handleExportProjects,
     handleImportProjects,
+    projectImportErrorModal
   };
 }

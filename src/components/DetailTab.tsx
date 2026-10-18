@@ -261,19 +261,13 @@ export function DetailTab({
     setConfirmModal,
   });
 
-  // Project & Task CSV Operations
-  const {
-    handleExportProjects,
-    handleImportProjects,
-  } = useDetailProjectCsv({
-    filteredProjects,
-    projects,
-  });
+  const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({ filteredProjects, projects });
 
   const {
     handleExportTasks,
     handleImportTasks,
     parseCSVDate,
+    importErrorModal,
   } = useDetailTaskCsv({
     filteredProjects,
     projects,
@@ -330,6 +324,8 @@ export function DetailTab({
             canWrite={canWrite}
           />
         )}
+        {importErrorModal}
+        {projectImportErrorModal}
       </React.Suspense>
 
       <DetailFilterToolbar
