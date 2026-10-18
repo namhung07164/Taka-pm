@@ -26,6 +26,52 @@ import { enforceStorageBudget } from './storageBudgetService';
 import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from './utils';
 import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
 
+import { isTaskDeletedInTracker } from './taskDeletedTracker';
+
+const tsOf = (v: any): number => {
+  if (!v) return 0;
+  if (typeof v === 'string') {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === 'function') {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === 'number') {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Checks if a cached Dexie task `t` is a zombie that was deleted on the server according to its parent project's `taskSummaries`.
+ */
+function isZombieTaskAgainstProjects(t: Task, projects: Project[]): boolean {
+  if (!t || !t.id || t.isDeleted) return true;
+  if (isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) return true;
+  if (String(t.id).startsWith('ts_')) return false;
+
+  const updatedMs = tsOf(t.updatedAt);
+  if (updatedMs > 0 && Date.now() - updatedMs <= 30000) return false;
+
+  if (!projects || projects.length === 0) return false;
+  const ownerProj = projects.find(p => !p.isDeleted && isTaskBelongsToProject(t, p));
+  if (!ownerProj) return false;
+
+  if (!Array.isArray(ownerProj.taskSummaries)) return false;
+  if (ownerProj.taskSummaries.length === 0) {
+    return (ownerProj.taskCount ?? 0) === 0;
+  }
+
+  const summaryIds = new Set(
+    ownerProj.taskSummaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
+  );
+  if (summaryIds.size === 0) return false;
+  return !summaryIds.has(String(t.id).trim().toLowerCase());
+}
+
 /**
  * Làm tươi (refresh) Task của một dự án cụ thể khi có biến động (0ms lag)
  */
@@ -68,12 +114,15 @@ export async function bootstrapLocalStore(): Promise<{
     if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
       const normalizedProjects = projects.map(p => ({
         ...p,
-        taskCount: Math.max(p.taskCount ?? 0, p.taskSummaries?.length ?? 0),
+        taskCount: Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+          ? p.taskSummaries.length
+          : (p.taskCount ?? 0),
       }));
       store.setProjects(normalizedProjects);
     }
     if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-      store.setTasks(deduplicateTasks(tasks, projects));
+      const cleanTasks = tasks.filter(t => !isZombieTaskAgainstProjects(t, projects));
+      store.setTasks(deduplicateTasks(cleanTasks, projects));
     }
     if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
       store.setCosts(costs);
@@ -124,7 +173,7 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
       }
     });
 
-    // 2. Gộp dự án từ Dexie thuộc năm/store target vào RAM
+    // 2. Gộp dự án từ Dexie thuộc năm/store target vào RAM (KHÔNG ghi đè nếu bản trong RAM mới hơn hoặc đã có mặt)
     if (localProjects && localProjects.length > 0) {
       localProjects.forEach((p) => {
         if (p && p.id && !p.isDeleted) {
@@ -132,15 +181,23 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
           if (!existing) {
             mergedMap.set(String(p.id), {
               ...p,
-              taskCount: p.taskCount !== undefined ? p.taskCount : (p.taskSummaries?.length ?? 0),
+              taskCount: Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                ? p.taskSummaries.length
+                : (p.taskCount ?? 0),
             });
           } else {
-            mergedMap.set(String(p.id), {
-              ...existing,
-              ...p,
-              taskCount: p.taskCount !== undefined ? p.taskCount : (p.taskSummaries?.length ?? existing.taskCount),
-              taskSummaries: p.taskSummaries || existing.taskSummaries,
-            });
+            const existingTs = tsOf(existing.updatedAt);
+            const localTs = tsOf(p.updatedAt);
+            if (localTs > 0 && existingTs > 0 && localTs > existingTs) {
+              mergedMap.set(String(p.id), {
+                ...existing,
+                ...p,
+                taskCount: Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                  ? p.taskSummaries.length
+                  : (p.taskCount ?? existing.taskCount ?? 0),
+                taskSummaries: p.taskSummaries || existing.taskSummaries,
+              });
+            }
           }
         }
       });
@@ -178,42 +235,34 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
     const localTasks = await getLocalTasks(targetYear);
     if (localTasks && localTasks.length > 0) {
       const currentStore = useAppStore.getState();
+      const projectsNow = currentStore.projects || [];
       const existing = currentStore.tasks || [];
-      const tMap = new Map<string, Task>(localTasks.map(t => [t.id, t]));
-      // Keep fresher in-memory tasks on top of Dexie tasks
-      existing.forEach(t => tMap.set(t.id, t));
-      const deduped = deduplicateTasks(Array.from(tMap.values()), currentStore.projects);
-      currentStore.setTasks(deduped);
+      const zombieIdsToDelete: string[] = [];
 
-      // Instant local reconciliation: sync taskCount & taskSummaries for projects from cached tasks
-      if (currentStore.projects && currentStore.projects.length > 0) {
-        const updatedProjects = currentStore.projects.map(p => {
-          const pTasks = deduped.filter(t => isTaskBelongsToProject(t, p));
-          // KHÔNG BAO GIỜ chữa theo hướng giảm (ít task hơn taskCount đã lưu nghĩa là cache cục bộ chưa nạp đủ)
-          if (pTasks.length > (p.taskCount || 0)) {
-            const summaryItems = pTasks.map(t => ({
-              id: t.id,
-              name: t.name || '',
-              start: t.start || '',
-              finish: t.finish || '',
-              taskCodePhu: t.taskCodePhu,
-              duration: t.duration,
-              runningStatus: t.runningStatus,
-            }));
-            const validStarts = pTasks.map(t => t.start).filter(Boolean).sort();
-            const validFinishes = pTasks.map(t => t.finish).filter(Boolean).sort((a, b) => b.localeCompare(a));
-            return {
-              ...p,
-              taskCount: pTasks.length,
-              taskSummaries: summaryItems,
-              computedTakStart: validStarts[0] || p.start || '',
-              computedTakCompl: validFinishes[0] || p.handover || (p as any).takCompl || '',
-            };
-          }
-          return p;
+      const tMap = new Map<string, Task>();
+      localTasks.forEach(t => {
+        if (isZombieTaskAgainstProjects(t, projectsNow)) {
+          if (t?.id) zombieIdsToDelete.push(t.id);
+          return;
+        }
+        tMap.set(t.id, t);
+      });
+
+      // Keep fresher in-memory tasks on top of Dexie tasks (excluding any zombies)
+      existing.forEach(t => {
+        if (!isZombieTaskAgainstProjects(t, projectsNow)) {
+          tMap.set(t.id, t);
+        }
+      });
+
+      if (zombieIdsToDelete.length > 0) {
+        zombieIdsToDelete.forEach(id => {
+          deleteLocalRecord('taka_tasks', id).catch(() => {});
         });
-        currentStore.setProjects(updatedProjects);
       }
+
+      const deduped = deduplicateTasks(Array.from(tMap.values()), projectsNow);
+      currentStore.setTasks(deduped);
 
       usePerformanceStore
         .getState()
@@ -270,6 +319,10 @@ export async function hydrateTasksForProjects(
 
     for (const t of localTasks) {
       if (existingIds.has(t.id)) continue;
+      if (isZombieTaskAgainstProjects(t, currentProjects)) {
+        if (t?.id) deleteLocalRecord('taka_tasks', t.id).catch(() => {});
+        continue;
+      }
       if (targetProjects.length > 0 && !targetProjects.some(p => isTaskBelongsToProject(t, p))) {
         continue;
       }
@@ -498,6 +551,7 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
         for (const delta of deltas) {
           if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
             for (const item of delta.batchItems) {
+              if (item.invalidate) continue;
               await processDeltaItem(item.docId, item.collectionName, item.action, item.data, item.isPatch);
             }
           } else if (delta.docId && delta.collectionName) {

@@ -61,6 +61,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
 
   safeAllTasks.forEach(t => {
     if (!t || !t.id || t.isDeleted) return;
+    if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
 
     const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
     const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim().toLowerCase() : '';
@@ -100,6 +101,7 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     addedChild = false;
     safeAllTasks.forEach(t => {
       if (!t || !t.id || t.isDeleted || matchedMap.has(String(t.id))) return;
+      if (isTaskDeletedInTracker(t.id, pIdStr || undefined)) return;
       const rawParent = t.parentTaskId || (t as any).parentId;
       if (rawParent && matchedMap.has(String(rawParent))) {
         matchedMap.set(String(t.id), t);
@@ -108,36 +110,44 @@ export function getTasksForProject(project: Partial<Project>, allTasks: Task[]):
     });
   }
 
-  const matchedList = Array.from(matchedMap.values());
-  if (matchedList.length > 0) {
-    return matchedList;
-  }
-
-  // Fallback to taskSummaries when tasks for this project are not loaded in memory yet
+  // Fallback or supplement with taskSummaries when tasks for this project are not loaded (or only partially cached) in memory
   if (project.taskSummaries && Array.isArray(project.taskSummaries) && project.taskSummaries.length > 0) {
     const taskByIdFallback = buildTaskByIdMap(safeAllTasks);
-    return project.taskSummaries
-      .filter(ts => !isTaskDeletedInTracker(ts.id, project.id ? String(project.id) : undefined) && !isForeignSummaryEntry(ts.id, project, taskByIdFallback))
+    const validSummaries = project.taskSummaries
+      .filter(ts => !isTaskDeletedInTracker(ts.id, pIdStr || undefined) && !isForeignSummaryEntry(ts.id, project, taskByIdFallback))
       .map((ts, idx) => ({
-      id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
-      name: ts.name || `Task ${idx + 1}`,
-      start: ts.start || project.computedTakStart || project.start || '',
-      finish: ts.finish || project.computedTakCompl || project.handover || '',
-      projectCode: project.code || '',
-      projectStore: project.store || 'HCM',
-      projectYear: project.year ? String(project.year) : '',
-      party: ts.party || project.party || '',
-      runningStatus: ts.runningStatus || 'On process',
-      duration: ts.duration || '',
-      parentTaskId: ts.parentTaskId,
-      taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
-      orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
-      projectId: project.id,
-      ...ts
-    } as Task));
+        id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+        name: ts.name || `Task ${idx + 1}`,
+        start: ts.start || project.computedTakStart || project.start || '',
+        finish: ts.finish || project.computedTakCompl || project.handover || '',
+        projectCode: project.code || '',
+        projectStore: project.store || 'HCM',
+        projectYear: project.year ? String(project.year) : '',
+        party: ts.party || project.party || '',
+        runningStatus: ts.runningStatus || 'On process',
+        duration: ts.duration || '',
+        parentTaskId: ts.parentTaskId,
+        taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+        projectId: project.id,
+        ...ts
+      } as Task));
+
+    if (matchedMap.size === 0) {
+      return validSummaries;
+    }
+
+    // If project is collapsed/partially hydrated and project.taskSummaries from server has newly added tasks not yet in matchedMap, include them
+    if (validSummaries.length > matchedMap.size) {
+      validSummaries.forEach((st) => {
+        if (st.id && !matchedMap.has(String(st.id))) {
+          matchedMap.set(String(st.id), st);
+        }
+      });
+    }
   }
 
-  return [];
+  return Array.from(matchedMap.values());
 }
 
 import { rollupParentTaskDatesAndStatus, rollupTaskSummaries } from "./taskRollupService";

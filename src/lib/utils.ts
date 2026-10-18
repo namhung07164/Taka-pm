@@ -966,48 +966,48 @@ export function isTaskBelongsToProject(
   const tProjId = t.projectId ? String(t.projectId).trim() : '';
   const pId = p.id ? String(p.id).trim() : '';
   
-  // Absolute Guard: If both have IDs and they differ, they are NOT the same project.
+  // Absolute Guard: If both have IDs and they differ, they are NOT the same project (Rule 16.2).
   if (tProjId && pId && tProjId !== pId) return false;
 
   const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
   const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
-  // Strict Store Isolation
+  // Strict Store Isolation (Rule 16.3)
   if (tStore && pStore && tStore !== pStore) return false;
 
   const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  // Strict Year Isolation
-  if (tYear && pYear && tYear !== pYear) return false;
+  const rawPCode = String(p.code || '').trim().toLowerCase();
+
+  // Check if another project with the same code exists in this store (for cross-year disambiguation)
+  const isCrossYear = Boolean(tYear && pYear && tYear !== pYear);
+  if (isCrossYear) {
+    const allProjects = useAppStore.getState().projects || [];
+    const hasOtherProjectInStoreWithCode = rawPCode
+      ? allProjects.some(
+          (other) =>
+            !(other as any).isDeleted &&
+            String(other.id) !== pId &&
+            String(other.code || '').trim().toLowerCase() === rawPCode &&
+            (!pStore || !other.store || String(other.store).trim().toUpperCase() === pStore)
+        )
+      : false;
+    if (hasOtherProjectInStoreWithCode) return false;
+  }
 
   if (tProjId && pId && tProjId === pId) return true;
 
-  // Fallback to Code only if ID is missing on one side
+  // Fallback to Code + linkCodes only if ID is missing on one side
   if (!t.projectCode || !p.code) return false;
   const tCode = String(t.projectCode).trim().toLowerCase();
-  const rawPCode = String(p.code).trim().toLowerCase();
+  const rawCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+  const pCodeParts = rawCombined.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  const matchesCode =
+    tCode === rawPCode ||
+    pCodeParts.includes(tCode) ||
+    matchProjectCode(t.projectCode, p.code) ||
+    matchProjectCode(t.projectCode, p.linkCodes);
 
-  const pCodeParts = rawPCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-  const matchesCode = tCode === rawPCode || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, p.code);
-  
-  if (!matchesCode) return false;
-
-  // Extra check for code-only fallback: Ensure no other project with same code exists for the task's specific year/store
-  if (tYear && pYear && tYear === pYear) {
-     const allProjects = useAppStore.getState().projects || [];
-     const otherMatchingProj = allProjects.find(other => 
-       !(other as any).isDeleted &&
-       other.id !== p.id &&
-       String(other.code || '').trim().toLowerCase() === rawPCode &&
-       (!pStore || !other.store || String(other.store).trim().toUpperCase() === pStore) &&
-       String(other.year ?? '').trim() === tYear
-     );
-     if (otherMatchingProj && p.id && otherMatchingProj.id !== p.id) {
-       // If there's another project that matches the year/store better by ID, this one shouldn't claim it by code
-       return false;
-     }
-  }
-
-  return true;
+  return matchesCode;
 }
 
 export function isDelegationGroupBelongsToProject(

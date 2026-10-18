@@ -84,6 +84,9 @@ export function startDeltaRealtimeListener(): () => void {
   if (signedIn) attach();
 
   let hiddenAt = 0;
+  let lastActiveAt = Date.now();
+  const IDLE_REATTACH_MS = 3 * 60 * 1000;
+
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
@@ -91,12 +94,14 @@ export function startDeltaRealtimeListener(): () => void {
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      const hiddenFor = hiddenAt ? Date.now() - hiddenAt : Infinity;
+      const now = Date.now();
+      const hiddenFor = hiddenAt ? now - hiddenAt : Infinity;
       hiddenAt = 0;
+      lastActiveAt = now;
       // Ẩn ngắn (dưới 15 giây, ví dụ chuyển tab): kết nối vẫn sống và listener vẫn nhận delta realtime,
       // không cần tạo lại listener hay kéo delta (tránh đọc lại cửa sổ 3 phút).
       if (unsub && hiddenFor < 15000) return;
-      // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari treo
+      // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari/Desktop treo
       detach();
       attach();
       pullAndApplyDeltas(undefined, true).catch(() => {});
@@ -104,6 +109,7 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const onNetworkRecovered = () => {
+    lastActiveAt = Date.now();
     if (document.visibilityState === 'visible') {
       detach();
       attach();
@@ -113,6 +119,7 @@ export function startDeltaRealtimeListener(): () => void {
 
   const handlePageShow = (e: PageTransitionEvent) => {
     if (e.persisted) {
+      lastActiveAt = Date.now();
       detach();
       attach();
       pullAndApplyDeltas(undefined, true).catch(() => {});
@@ -120,15 +127,34 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const handleOnline = () => {
+    lastActiveAt = Date.now();
     detach();
     attach();
     pullAndApplyDeltas(undefined, true).catch(() => {});
   };
 
   const handleFocus = () => {
-    // Listener còn sống thì đã nhận delta realtime (Firestore SDK tự nối lại và bù delta bị lỡ)
-    if (unsub) return;
-    pullAndApplyDeltas(undefined, true).catch(() => {});
+    const now = Date.now();
+    const idleFor = now - lastActiveAt;
+    lastActiveAt = now;
+    // Nếu Desktop để qua đêm (tab vẫn visible nhưng không tương tác > 3 phút), socket có thể bị treo: ép gắn lại
+    if (idleFor > IDLE_REATTACH_MS || !unsub) {
+      detach();
+      attach();
+      pullAndApplyDeltas(undefined, true).catch(() => {});
+    }
+  };
+
+  const handleActivity = () => {
+    const now = Date.now();
+    if (now - lastActiveAt > IDLE_REATTACH_MS) {
+      lastActiveAt = now;
+      detach();
+      attach();
+      pullAndApplyDeltas(undefined, true).catch(() => {});
+    } else {
+      lastActiveAt = now;
+    }
   };
 
   const unsubAuth = onAuthStateChanged(auth, (user) => {
@@ -139,18 +165,24 @@ export function startDeltaRealtimeListener(): () => void {
 
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('taka_network_recovered', onNetworkRecovered);
+  window.addEventListener('taka_sleep_wake_recovery', onNetworkRecovered);
   window.addEventListener('pageshow', handlePageShow as any);
   window.addEventListener('online', handleOnline);
   window.addEventListener('focus', handleFocus);
+  window.addEventListener('pointerdown', handleActivity, { passive: true });
+  window.addEventListener('keydown', handleActivity, { passive: true });
 
   return () => {
     stopped = true;
     unsubAuth();
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('taka_network_recovered', onNetworkRecovered);
+    window.removeEventListener('taka_sleep_wake_recovery', onNetworkRecovered);
     window.removeEventListener('pageshow', handlePageShow as any);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('focus', handleFocus);
+    window.removeEventListener('pointerdown', handleActivity);
+    window.removeEventListener('keydown', handleActivity);
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);

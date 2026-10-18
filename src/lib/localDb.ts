@@ -40,9 +40,22 @@ export class TakaLocalDB extends Dexie {
   }
 }
 
+import { isTaskDeletedInTracker } from './taskDeletedTracker';
+
 const tsOf = (v: any): number => {
   if (!v) return 0;
-  const n = typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
+  if (typeof v === 'string') {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === 'function') {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === 'number') {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -254,6 +267,7 @@ export async function getLocalTasksForProjects(
 
     const matchesScope = (t: Task, matchedById: boolean): boolean => {
       if (!t || !t.id || t.isDeleted) return false;
+      if (isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) return false;
       const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
       const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
       if (normYear && tYear && tYear !== normYear) return false;
@@ -292,7 +306,7 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
       const all = await localDb.tasks.toArray();
-      return all.filter(t => !t.isDeleted);
+      return all.filter(t => !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined));
     }
     const strYear = String(year);
     const [byYear, byProjYear] = await Promise.all([
@@ -300,8 +314,16 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
       localDb.tasks.where('projectYear').anyOf(Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear]).toArray().catch(() => []),
     ]);
     const merged = new Map<string, Task>();
-    for (const t of byYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
-    for (const t of byProjYear) if (t && t.id && !t.isDeleted) merged.set(t.id, t);
+    for (const t of byYear) {
+      if (t && t.id && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) {
+        merged.set(t.id, t);
+      }
+    }
+    for (const t of byProjYear) {
+      if (t && t.id && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) {
+        merged.set(t.id, t);
+      }
+    }
     return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalTasks error:', err);

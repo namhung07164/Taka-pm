@@ -9,7 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { TakaDelta } from '../types';
-import { resyncIfStale } from './syncResilience';
+import { resyncIfStale, waitForNetworkRecovery } from './syncResilience';
 import { 
   deltaTime, 
   getLastDeltaSyncTime, 
@@ -22,6 +22,7 @@ import { safeSetItemLocal } from './storage';
 
 let inFlightPullPromise: Promise<number> | null = null;
 let lastPullCompletedAt = 0;
+let pendingForcedFollowUp = false;
 
 /**
  * Kéo các delta thay đổi từ server về client kể từ lastSyncTime và áp dụng vào Zustand
@@ -30,6 +31,7 @@ let lastPullCompletedAt = 0;
  */
 export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = false): Promise<number> {
   if (inFlightPullPromise) {
+    if (force) pendingForcedFollowUp = true;
     return inFlightPullPromise;
   }
   const now = Date.now();
@@ -39,6 +41,8 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
 
   let pullSucceeded = false;
   inFlightPullPromise = (async () => {
+    await waitForNetworkRecovery();
+
     const lastSyncTime = getLastDeltaSyncTime();
     const restoreCutoff = getRestoreCutoffTimestamp();
 
@@ -55,6 +59,7 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
 
       while (iteration < MAX_PAGES) {
         iteration++;
+        await waitForNetworkRecovery();
         const q = query(
           colRef,
           where('serverTime', '>', Timestamp.fromMillis(currentSince)),
@@ -66,7 +71,7 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
         try {
           snapshot = await getDocsFromServer(q);
         } catch (serverErr) {
-          // Nếu mạng đang reconnect lúc iOS mới thức dậy, KHÔNG đánh dấu pullSucceeded để lần gọi ngay sau đó chạy được ngay
+          // Nếu mạng đang reconnect lúc iOS/Desktop mới thức dậy, KHÔNG đánh dấu pullSucceeded để lần gọi ngay sau đó chạy được ngay
           console.warn('[deltaSync] getDocsFromServer not reachable yet (device offline or reconnecting):', serverErr);
           return 0;
         }
@@ -118,6 +123,12 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
         lastPullCompletedAt = Date.now();
       }
       inFlightPullPromise = null;
+      if (pendingForcedFollowUp) {
+        pendingForcedFollowUp = false;
+        setTimeout(() => {
+          pullAndApplyDeltas(yearFilter, true).catch(() => {});
+        }, 150);
+      }
     }
   })();
 

@@ -14,28 +14,57 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
  */
 
 const HIDDEN_THRESHOLD_MS = 45 * 1000;
+const WALL_CLOCK_CHECK_INTERVAL_MS = 15 * 1000;
+const WALL_CLOCK_JUMP_THRESHOLD_MS = 45 * 1000;
+const IDLE_FOCUS_THRESHOLD_MS = 3 * 60 * 1000;
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
 const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
+
+let activeRecoveryPromise: Promise<void> | null = null;
+
+/**
+ * If Firestore network is currently cycling (disableNetwork -> enableNetwork),
+ * wait for it to finish before issuing getDocsFromServer queries.
+ */
+export async function waitForNetworkRecovery(): Promise<void> {
+  if (activeRecoveryPromise) {
+    try {
+      await activeRecoveryPromise;
+    } catch {}
+  }
+}
 
 export function initNetworkRecovery(onRecovered?: () => void): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
 
   let hiddenAt = 0;
+  let lastActiveAt = Date.now();
+  let lastWallClockTick = Date.now();
+  let lastRecoveredAt = 0;
   let busy = false;
 
   const recover = async () => {
-    if (busy) return;
+    const now = Date.now();
+    if (busy || now - lastRecoveredAt < 5000) return;
     busy = true;
-    try {
-      await disableNetwork(db);
-      await enableNetwork(db);
-      await processPendingSync();
-    } catch (err) {
-      console.warn('[syncResilience] Network recovery failed:', err);
-    } finally {
-      busy = false;
-      try { onRecovered?.(); } catch {}
-    }
+    lastRecoveredAt = now;
+    const p = (async () => {
+      try {
+        await disableNetwork(db);
+        await enableNetwork(db);
+        await processPendingSync();
+      } catch (err) {
+        console.warn('[syncResilience] Network recovery failed:', err);
+      } finally {
+        busy = false;
+        activeRecoveryPromise = null;
+        lastActiveAt = Date.now();
+        lastWallClockTick = Date.now();
+        try { onRecovered?.(); } catch {}
+      }
+    })();
+    activeRecoveryPromise = p;
+    return p;
   };
 
   const handleVisibility = () => {
@@ -43,11 +72,13 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
       hiddenAt = Date.now();
       return;
     }
-    if (hiddenAt && Date.now() - hiddenAt > HIDDEN_THRESHOLD_MS) {
-      hiddenAt = 0;
+    const now = Date.now();
+    const hiddenDuration = hiddenAt ? now - hiddenAt : 0;
+    const idleDuration = now - lastActiveAt;
+    hiddenAt = 0;
+    lastActiveAt = now;
+    if (hiddenDuration > HIDDEN_THRESHOLD_MS || idleDuration > IDLE_FOCUS_THRESHOLD_MS) {
       recover();
-    } else {
-      hiddenAt = 0;
     }
   };
 
@@ -56,17 +87,55 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     if ((e as PageTransitionEvent).persisted) recover();
   };
 
-  // Network came back (e.g. iPhone was offline): force a clean reconnect so queued offline writes flush now
+  // Network came back (e.g. iPhone/Desktop was offline): force a clean reconnect so queued offline writes flush now
   const handleOnline = () => { recover(); };
+
+  // Desktop overnight wake: tab may have stayed "visible" all night while monitor/OS slept or sat idle
+  const handleFocusOrSleepWake = () => {
+    const now = Date.now();
+    if (now - lastActiveAt > IDLE_FOCUS_THRESHOLD_MS) {
+      lastActiveAt = now;
+      recover();
+    }
+  };
+
+  const handleUserActivity = () => {
+    const now = Date.now();
+    if (now - lastActiveAt > IDLE_FOCUS_THRESHOLD_MS) {
+      lastActiveAt = now;
+      recover();
+    } else {
+      lastActiveAt = now;
+    }
+  };
+
+  // Wall-clock sleep detector: catches OS sleep/wake even when tab stayed visible and focused
+  const wallClockTimer = setInterval(() => {
+    const now = Date.now();
+    const elapsed = now - lastWallClockTick;
+    lastWallClockTick = now;
+    if (elapsed > WALL_CLOCK_JUMP_THRESHOLD_MS && document.visibilityState === 'visible') {
+      recover();
+    }
+  }, WALL_CLOCK_CHECK_INTERVAL_MS);
 
   document.addEventListener('visibilitychange', handleVisibility);
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handleOnline);
+  window.addEventListener('focus', handleFocusOrSleepWake);
+  window.addEventListener('taka_sleep_wake_recovery', recover);
+  window.addEventListener('pointerdown', handleUserActivity, { passive: true });
+  window.addEventListener('keydown', handleUserActivity, { passive: true });
 
   return () => {
+    clearInterval(wallClockTimer);
     document.removeEventListener('visibilitychange', handleVisibility);
     window.removeEventListener('pageshow', handlePageShow);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('focus', handleFocusOrSleepWake);
+    window.removeEventListener('taka_sleep_wake_recovery', recover);
+    window.removeEventListener('pointerdown', handleUserActivity);
+    window.removeEventListener('keydown', handleUserActivity);
   };
 }
 

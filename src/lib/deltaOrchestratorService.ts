@@ -98,14 +98,22 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     }
   };
 
-  // 3. Online network reconnection & Window Focus (iPad Split-View / App Switcher)
+  // 3. Online network reconnection, Window Focus & User Activity (Desktop overnight idle / iPad Split-View)
   const handleOnline = () => {
     wakeAndSync();
   };
   const handleFocus = () => {
     lastActivityTime = Date.now();
-    // Only force a server pull on focus if the poller had entered hibernation (>5 min idle)
+    // Force a server pull on focus if the poller had entered hibernation (>5 min idle)
     if (document.visibilityState === 'visible' && isHibernating) {
+      wakeAndSync();
+    }
+  };
+  const handleUserInteraction = () => {
+    const now = Date.now();
+    const wasIdleLong = now - lastActivityTime > IDLE_TIMEOUT_MS;
+    lastActivityTime = now;
+    if (document.visibilityState === 'visible' && (isHibernating || wasIdleLong)) {
       wakeAndSync();
     }
   };
@@ -113,6 +121,8 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('online', handleOnline);
   window.addEventListener('focus', handleFocus);
+  window.addEventListener('pointerdown', handleUserInteraction, { passive: true });
+  window.addEventListener('keydown', handleUserInteraction, { passive: true });
 
   return () => {
     stopPolling();
@@ -121,6 +131,8 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('focus', handleFocus);
+    window.removeEventListener('pointerdown', handleUserInteraction);
+    window.removeEventListener('keydown', handleUserInteraction);
   };
 }
 

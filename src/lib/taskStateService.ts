@@ -18,36 +18,52 @@ const pendingProjectFetches = new Map<string, Promise<Task[]>>();
  */
 export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
   if (!t || !p || t.isDeleted || (p as any).isDeleted) return false;
+  if (t.id && isTaskDeletedInTracker(t.id, p.id ? String(p.id) : undefined)) return false;
 
   const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
   const pCode = String(p.code || '').trim().toLowerCase();
+  const pId = p.id ? String(p.id).trim() : '';
 
   const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
   const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
   const tCode = t.projectCode ? String(t.projectCode).trim().toLowerCase() : '';
+  const tProjId = t.projectId ? String(t.projectId).trim() : '';
 
+  if (tProjId && pId && tProjId !== pId) return false;
   if (pStore && tStore && pStore !== tStore) return false;
-
-  if (t.projectId && p.id) {
-    return String(t.projectId) === String(p.id);
-  }
-
-  if (!tCode || !pCode || !(tCode === pCode || matchProjectCode(tCode, pCode))) {
-    return false;
-  }
 
   if (pYear && tYear && pYear !== tYear) {
     const allProjects = useAppStore.getState().projects || [];
-    const hasOtherProjectForTaskYear = allProjects.some(
-      (other) =>
-        !(other as any).isDeleted &&
-        String(other.id) !== String(p.id) &&
-        String(other.code || '').trim().toLowerCase() === pCode &&
-        (!pStore || !other.store || String(other.store).trim().toLowerCase() === pStore) &&
-        String(other.year ?? '').trim() === tYear
-    );
-    if (hasOtherProjectForTaskYear) return false;
+    const hasOtherProjectInStoreWithCode = pCode
+      ? allProjects.some(
+          (other) =>
+            !(other as any).isDeleted &&
+            String(other.id) !== pId &&
+            String(other.code || '').trim().toLowerCase() === pCode &&
+            (!pStore || !other.store || String(other.store).trim().toLowerCase() === pStore)
+        )
+      : false;
+    if (hasOtherProjectInStoreWithCode) return false;
+  }
+
+  if (tProjId && pId && tProjId === pId) {
+    return true;
+  }
+
+  const rawCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+  const pCodeParts = rawCombined.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  if (
+    !tCode ||
+    !pCode ||
+    !(
+      tCode === pCode ||
+      pCodeParts.includes(tCode) ||
+      matchProjectCode(t.projectCode, p.code) ||
+      matchProjectCode(t.projectCode, p.linkCodes)
+    )
+  ) {
+    return false;
   }
 
   return true;

@@ -77,7 +77,18 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     // [Safety Guard] Prevent old deltas (e.g. synthetic or out-of-order) from clobbering newer state
     const tsOf = (v: any): number => {
       if (!v) return 0;
-      const n = typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
+      if (typeof v === 'string') {
+        const n = Date.parse(v);
+        return Number.isFinite(n) ? n : 0;
+      }
+      if (typeof v?.toMillis === 'function') {
+        const n = v.toMillis();
+        return Number.isFinite(n) ? n : 0;
+      }
+      if (typeof v?.seconds === 'number') {
+        return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+      }
+      const n = Number(v);
       return Number.isFinite(n) ? n : 0;
     };
 
@@ -104,14 +115,67 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           break;
         }
         if (idx !== -1 && isStaleVsLocal(updatedProjects[idx])) return;
-        
+
         projectsChanged = true;
+        let nextProj: Project | null = null;
         if (idx !== -1) {
           const prevProj = updatedProjects[idx];
-          updatedProjects[idx] = applyFieldPatch(prevProj, data) as Project;
+          nextProj = applyFieldPatch(prevProj, data) as Project;
+          if (Array.isArray(data?.taskSummaries)) {
+            nextProj.taskCount = data.taskSummaries.length;
+          }
+          updatedProjects[idx] = nextProj;
         } else if (action === 'create') {
           // Ghost record guard: only add if action is 'create', never resurrect from an 'update' patch
-          updatedProjects.push({ id: docId, ...data } as Project);
+          nextProj = { id: docId, ...data } as Project;
+          updatedProjects.push(nextProj);
+        }
+
+        // Reconcile local tasks against authoritative incoming project.taskSummaries
+        if (nextProj && Array.isArray(data?.taskSummaries)) {
+          const hasReliableIds =
+            data.taskSummaries.length === 0 ||
+            data.taskSummaries.every((s: any) => Boolean(s?.id));
+          if (hasReliableIds) {
+            const validIdsLower = new Set(
+              data.taskSummaries.map((s: any) => String(s.id).trim().toLowerCase())
+            );
+            const nowMs = Date.now();
+            const pIdStr = String(nextProj.id);
+            const pCodeLower = String(nextProj.code || '').trim().toLowerCase();
+            const pStoreLower = String(nextProj.store || '').trim().toLowerCase();
+            const pYearStr = nextProj.year !== undefined && nextProj.year !== null ? String(nextProj.year).trim() : '';
+            const rawCodes = (nextProj as any).linkCodes
+              ? `${nextProj.code || ''}, ${(nextProj as any).linkCodes}`
+              : String(nextProj.code || '');
+            const pCodeParts = rawCodes.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
+
+            const zombieIds: string[] = [];
+            updatedTasks = updatedTasks.filter((t) => {
+              if (!t || !t.id || t.id.startsWith('ts_')) return true;
+              const matchesProj =
+                (t.projectId && String(t.projectId) === pIdStr) ||
+                (!t.projectId &&
+                  t.projectCode &&
+                  (String(t.projectCode).trim().toLowerCase() === pCodeLower ||
+                    pCodeParts.includes(String(t.projectCode).trim().toLowerCase())) &&
+                  (!pStoreLower || !t.projectStore || String(t.projectStore).trim().toLowerCase() === pStoreLower) &&
+                  (!pYearStr || !t.projectYear || String(t.projectYear).trim() === pYearStr));
+              if (!matchesProj) return true;
+              if (validIdsLower.has(String(t.id).trim().toLowerCase())) return true;
+              const updatedMs = tsOf(t.updatedAt);
+              if (updatedMs && nowMs - updatedMs <= 30000) return true;
+              zombieIds.push(t.id);
+              return false;
+            });
+            if (zombieIds.length > 0) {
+              tasksChanged = true;
+              markTasksDeleted(zombieIds, pIdStr);
+              zombieIds.forEach((zId) => {
+                localDb.tasks.delete(zId).catch(() => {});
+              });
+            }
+          }
         }
         break;
       }
@@ -147,6 +211,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               });
               if (filteredSummaries.length !== p.taskSummaries.length) {
                 projectsChanged = true;
+                markTasksDeleted([docId], p.id ? String(p.id) : undefined);
                 noteTouchedProject({ projectId: p.id, projectCode: p.code });
                 return {
                   ...p,
@@ -172,11 +237,13 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           const tYearStr = mergedTask.projectYear !== undefined && mergedTask.projectYear !== null ? String(mergedTask.projectYear).trim() : '';
 
           updatedProjects = updatedProjects.map((p) => {
+            const rawCodes = (p as any).linkCodes ? `${p.code || ''}, ${(p as any).linkCodes}` : String(p.code || '');
+            const pCodeParts = rawCodes.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
             const matchesProj =
               (tProjId && String(p.id) === tProjId) ||
               (!tProjId &&
                 tCodeLower &&
-                String(p.code || '').trim().toLowerCase() === tCodeLower &&
+                (String(p.code || '').trim().toLowerCase() === tCodeLower || pCodeParts.includes(tCodeLower)) &&
                 (!tStoreLower || !p.store || String(p.store).trim().toLowerCase() === tStoreLower) &&
                 (!tYearStr || !p.year || String(p.year).trim() === tYearStr));
             if (!matchesProj) return p;

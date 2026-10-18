@@ -47,6 +47,7 @@ import {
   filterCompatibleProjectChanges,
   buildZombieTaskRemovalsForYear,
   buildZombieTaskRemovalsForProject,
+  healProjectsAfterTasksBatch,
 } from "./tasksHydrationHelpers";
 
 export function useTasksHydration({
@@ -69,6 +70,7 @@ export function useTasksHydration({
   const tasksPool = useRef<Map<string, () => void>>(new Map());
   const tasksTTLTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const knownHydratedProjectCodes = useRef<Set<string>>(new Set());
+  const wakeRefreshCounter = useRef<number>(0);
 
   const prevQuerySigTasks = useRef<string>("");
   const prevSigTasks = useRef<string>("");
@@ -76,7 +78,7 @@ export function useTasksHydration({
   // Atomic batching buffers for Tasks updates
   const pendingTasksMap = useRef<Map<string, Task> | null>(null);
   const pendingTasksChanged = useRef<Map<string, Task>>(new Map());
-  const pendingTasksRemoved = useRef<Set<string>>(new Set());
+  const pendingTasksRemoved = useRef<Map<string, Task>>(new Map());
   const tasksBatchTimer = useRef<NodeJS.Timeout | null>(null);
 
   const batchTasksUpdate = useCallback((docChanges: any[], fromCache: boolean = false, isForceSnapshot: boolean = false) => {
@@ -94,10 +96,12 @@ export function useTasksHydration({
       const isTrueDelete = Boolean(data.isDeleted || change.type === "removed");
 
       if (isTrueDelete) {
-        markTasksDeleted([id], data.projectId ? String(data.projectId) : undefined);
+        const existing = pendingTasksMap.current!.get(id);
+        const pIdHint = data.projectId || existing?.projectId;
+        markTasksDeleted([id], pIdHint ? String(pIdHint) : undefined);
         pendingTasksMap.current!.delete(id);
         pendingTasksChanged.current.delete(id);
-        pendingTasksRemoved.current.add(id);
+        pendingTasksRemoved.current.set(id, { ...(existing || {}), ...data, id });
       } else {
         if (!isForceSnapshot && fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
         if (!data.isDeleted) {
@@ -129,121 +133,36 @@ export function useTasksHydration({
         const finalTasks = rolledUpTasks;
         useAppStore.getState().setTasks(finalTasks);
 
-        // Purging logic from taskSummaries removed to prevent data loss (User Requirement)
-        if (pendingTasksRemoved.current.size > 0) {
-           pendingTasksRemoved.current.clear();
+        const healedProjects = healProjectsAfterTasksBatch({
+          currentProjects: useAppStore.getState().projects || [],
+          finalTasks,
+          delegationGroups: useAppStore.getState().delegationGroups || [],
+          changedTasks: pendingTasksChanged.current,
+          removedTasks: pendingTasksRemoved.current,
+          fromCache,
+          knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+          tasksPool: tasksPool.current,
+        });
+
+        if (healedProjects) {
+          useAppStore.getState().setProjects(healedProjects);
         }
-        
-        // Self-healing an toàn:
-        // - chỉ xét các dự án có task thay đổi trong lô này (không quét toàn bộ P x T)
-        // - bỏ qua snapshot từ cache và 15 giây đầu sau khi mở app (dữ liệu cục bộ có thể cũ/thiếu)
-        // - KHÔNG chữa theo hướng giảm: ít task hơn taskCount đã lưu nghĩa là có thể mới tải một phần
-        if (!fromCache && (getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS || knownHydratedProjectCodes.current.size > 0) && pendingTasksChanged.current.size > 0) {
-          const touchedIds = new Set<string>();
-          const touchedCodes = new Set<string>();
-          pendingTasksChanged.current.forEach((t) => {
-            if (t.projectId) touchedIds.add(String(t.projectId));
-            if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
-          });
 
-          const currentProjects = useAppStore.getState().projects || [];
-
-          // Task thuộc dự án khi: đúng projectId; hoặc (task cũ không có projectId) khớp đủ ba trường store, year, code
-          // (hoặc khớp vắt qua 2 năm nếu mã dự án p.code là duy nhất trong p.store)
-          const belongsToProject = (t: Task, p: any, isUniqueCodeInStore: boolean): boolean => {
-            if (t.projectId && p.id) return String(t.projectId) === String(p.id);
-            const rawCodeCombined = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
-            const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
-            const tCode = String(t.projectCode || "").trim().toLowerCase();
-            if (!tCode || !pCodeParts.includes(tCode)) return false;
-            const storeMatches = !p.store || !t.projectStore || String(t.projectStore).trim().toLowerCase() === String(p.store).trim().toLowerCase();
-            if (!storeMatches) return false;
-            if (isUniqueCodeInStore) return true;
-            return String(t.projectYear ?? "").trim() === String(p.year ?? "").trim();
-          };
-
-          let projectsNeedUpdate = false;
-          const healedProjects = currentProjects.map((p) => {
-            const codeKey = String(p.code || "").trim().toLowerCase();
-            if (!touchedIds.has(String(p.id)) && !(codeKey && touchedCodes.has(codeKey))) return p;
-            if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS && !knownHydratedProjectCodes.current.has(String(p.id))) return p;
-
-            const sameCodeStoreProjects = currentProjects.filter(
-              (proj) =>
-                !proj.isDeleted &&
-                String(proj.code || "").trim().toLowerCase() === codeKey &&
-                (!p.store || !proj.store || String(proj.store).trim().toLowerCase() === String(p.store).trim().toLowerCase())
-            );
-            const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
-
-            const pTasks = finalTasks.filter((t) => !t.isDeleted && belongsToProject(t, p, isUniqueCodeInStore));
-            if (pTasks.length === 0) return p;
-
-            const existingMaxCount = Math.max(p.taskCount || 0, Array.isArray(p.taskSummaries) ? p.taskSummaries.length : 0);
-            if (pTasks.length < existingMaxCount) return p;
-
-            const isFullyHydratedProject =
-              knownHydratedProjectCodes.current.has(String(p.id)) ||
-              tasksPool.current.has(`proj_${p.id}`) ||
-              tasksPool.current.has(`year_${p.year}`);
-
-            if (!isFullyHydratedProject) return p;
-
-            const computed = calculateProjectComputedDates(p, pTasks, useAppStore.getState().delegationGroups);
-            const hasDiscrepancy =
-              p.taskCount !== computed.taskCount ||
-              !p.taskSummaries ||
-              p.taskSummaries.length !== (computed.taskSummaries?.length || 0) ||
-              (p.computedTakStart || '') !== (computed.computedTakStart || '') ||
-              (p.computedTakCompl || '') !== (computed.computedTakCompl || '') ||
-              (p.computedPlanProgress ?? 0) !== (computed.computedPlanProgress ?? 0) ||
-              (p.computedActProgress ?? 0) !== (computed.computedActProgress ?? 0);
-            if (!hasDiscrepancy) return p;
-
-            projectsNeedUpdate = true;
-            syncProjectDatesToFirestore(p.id, computed).catch(() => {});
-
-            return {
-              ...p,
-              ...computed,
-            };
-          });
-          if (projectsNeedUpdate) {
-            useAppStore.getState().setProjects(healedProjects);
-          }
-        }
-        
-        const finalIds = new Set(finalTasks.map(t => t.id));
-        const changed = Array.from(pendingTasksChanged.current.values()).filter(t => finalIds.has(t.id));
-        const removed = Array.from(pendingTasksRemoved.current);
+        const finalIds = new Set(finalTasks.map((t) => t.id));
+        const changed = Array.from(pendingTasksChanged.current.values()).filter((t) => finalIds.has(t.id));
+        const removedIds = Array.from(pendingTasksRemoved.current.keys());
         pendingTasksChanged.current.clear();
         pendingTasksRemoved.current.clear();
-        if (changed.length > 0) offloadPersistSnapshot('taka_tasks', changed);
-        removed.forEach((id) => { deleteLocalRecord('taka_tasks', id).catch(() => {}); });
+        if (changed.length > 0) offloadPersistSnapshot("taka_tasks", changed);
+        removedIds.forEach((id) => {
+          deleteLocalRecord("taka_tasks", id).catch(() => {});
+        });
 
         const setNotifs = useAppStore.getState().setAllTasksForNotifs;
         if (setNotifs) setNotifs(finalTasks);
         pendingTasksMap.current = null;
       }
     }, 200);
-  }, []);
-
-  // Sleep/Wake Recovery Listener
-  useEffect(() => {
-    const handleSleepWakeRecovery = () => {
-      // 1. KHÔNG hủy listener khi thức giấc.
-      // Hủy xong mà không effect nào tạo lại => mất realtime tasks/costs/delegations
-      // Socket chết do iOS treo đã có initNetworkRecovery (syncResilience) xử lý bằng deltaResync
-      
-      if (useAppStore.getState().isTasksRequested) {
-        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      }
-    };
-
-    window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
-    return () => {
-      window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
-    };
   }, []);
 
   // Cleanup on unmount
@@ -295,7 +214,7 @@ export function useTasksHydration({
     const activeProjectIds = isTasksRequested
       ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])]
       : [];
-    const currentSig = `${querySignature}_${activeProjectIds.join(",")}_${isTasksRequested}`;
+    const currentSig = `${querySignature}_${activeProjectIds.join(",")}_${isTasksRequested}_${wakeRefreshCounter.current}`;
 
     if (prevQuerySigTasks.current !== querySignature) {
       if (prevQuerySigTasks.current !== "") {
@@ -370,11 +289,11 @@ export function useTasksHydration({
             const hasLocalYearTasks = currentTasks.some(
               (t) => String(t.projectYear || "") === String(year)
             );
-            const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+            const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
 
             const deltaManaged =
-              (hasLocalYearTasks && isClosedOrPastYear) ||
-              (DELTA_FIRST.tasks && hasLocalYearTasks && hasMarker(markers, 'tasks_year', year));
+              (hasLocalYearTasks && isArchivedPastYear) ||
+              (DELTA_FIRST.tasks && hasLocalYearTasks && hasMarker(markers, "tasks_year", year));
             if (deltaManaged) {
               tasksPool.current.set(yearKey, () => {});
               setIsTasksLoading(false);
@@ -406,11 +325,26 @@ export function useTasksHydration({
                   setIsTasksLoading(false);
                   const fromCache = snapshot.metadata.fromCache;
                   let changesToApply: any[] = snapshot.docChanges();
+                  if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+                    const currentTasksNow = pendingTasksMap.current
+                      ? Array.from(pendingTasksMap.current.values())
+                      : useAppStore.getState().tasks || [];
+                    const zombieRemovals = buildZombieTaskRemovalsForYear(
+                      snapshot.docs,
+                      currentTasksNow,
+                      year,
+                      userRole,
+                      allowedStores
+                    );
+                    if (zombieRemovals.length > 0) {
+                      changesToApply = [...changesToApply, ...zombieRemovals];
+                    }
+                  }
                   batchTasksUpdate(changesToApply, fromCache);
                   setCloudStatus("online");
 
                   if (DELTA_FIRST.tasks && !fromCache) {
-                    markLoaded('tasks_year', year).catch(() => {});
+                    markLoaded("tasks_year", year).catch(() => {});
                     const u = tasksPool.current.get(yearKey);
                     tasksPool.current.set(yearKey, () => {});
                     u?.();
@@ -420,6 +354,8 @@ export function useTasksHydration({
                 (e) => {
                   setIsTasksLoading(false);
                   console.error("Tasks consolidated listener error:", e);
+                  tasksPool.current.delete(yearKey);
+                  usePerformanceStore.getState().unregisterListener(`taka_tasks_${yearKey}`);
                   setCloudStatus("offline");
                 }
               );
@@ -456,7 +392,7 @@ export function useTasksHydration({
               const hasLocalProjTasks =
                 localProjTasks.length > 0 ||
                 knownHydratedProjectCodes.current.has(String(p.id));
-              const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+              const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
               const isZeroTaskProject =
                 (p.taskCount || 0) === 0 &&
                 Array.isArray(p.taskSummaries) &&
@@ -465,8 +401,12 @@ export function useTasksHydration({
 
               const deltaManaged =
                 isZeroTaskProject ||
-                (hasLocalProjTasks && isClosedOrPastYear) ||
-                (DELTA_FIRST.tasks && hasLocalProjTasks && (hasMarker(markers, 'tasks_proj', p.id) || hasMarker(markers, 'tasks_proj', p.code) || hasMarker(markers, 'tasks_year', year)));
+                (hasLocalProjTasks && isArchivedPastYear) ||
+                (DELTA_FIRST.tasks &&
+                  hasLocalProjTasks &&
+                  (hasMarker(markers, "tasks_proj", p.id) ||
+                    hasMarker(markers, "tasks_proj", p.code) ||
+                    hasMarker(markers, "tasks_year", year)));
               if (deltaManaged) {
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
@@ -482,18 +422,24 @@ export function useTasksHydration({
               } else {
                 const codeList = [p.code];
                 if (p.linkCodes) {
-                  const extra = String(p.linkCodes).split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
-                  extra.forEach(c => { if (!codeList.includes(c)) codeList.push(c); });
+                  const extra = String(p.linkCodes)
+                    .split(/[,;/]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  extra.forEach((c) => {
+                    if (!codeList.includes(c)) codeList.push(c);
+                  });
                 }
-                const qTasks = codeList.length > 1
-                  ? query(
-                      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-                      where("projectCode", "in", codeList.slice(0, 10))
-                    )
-                  : query(
-                      collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
-                      where("projectCode", "==", p.code)
-                    );
+                const qTasks =
+                  codeList.length > 1
+                    ? query(
+                        collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                        where("projectCode", "in", codeList.slice(0, 10))
+                      )
+                    : query(
+                        collection(db, "artifacts", APP_ID, "public", "data", "taka_tasks"),
+                        where("projectCode", "==", p.code)
+                      );
 
                 usePerformanceStore.getState().registerListener(`taka_tasks_${projKey}`);
                 const unsub = onSnapshot(
@@ -512,26 +458,58 @@ export function useTasksHydration({
                     );
                     const isUniqueCodeInStore = sameCodeStoreProjects.length <= 1;
 
-                    let compatibleChanges = snapshot.docChanges().filter((ch) => {
-                      const dt: any = ch.doc.data();
-                      if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
-                      if (dt && dt.projectStore && p.store &&
-                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
-                      if (ch.type === "removed") return true;
-                      if (dt && dt.projectId && String(dt.projectId) === String(p.id)) return true;
-                      if (!isUniqueCodeInStore) {
-                        const dy = dt.projectYear;
-                        if (dy !== undefined && dy !== null && dy !== "" && p.year &&
-                            String(dy).trim() !== String(p.year).trim()) return false;
+                    let compatibleChanges = filterCompatibleProjectChanges(
+                      snapshot.docChanges(),
+                      p,
+                      isUniqueCodeInStore
+                    );
+
+                    if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+                      const currentTasksNow = pendingTasksMap.current
+                        ? Array.from(pendingTasksMap.current.values())
+                        : useAppStore.getState().tasks || [];
+                      const compatibleServerDocs = snapshot.docs.filter((docSnap) => {
+                        const dt: any = docSnap.data();
+                        if (dt?.isDeleted) return false;
+                        if (dt && dt.projectId && String(dt.projectId) !== String(p.id)) return false;
+                        if (
+                          dt &&
+                          dt.projectStore &&
+                          p.store &&
+                          String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
+                        ) {
+                          return false;
+                        }
+                        if (dt && dt.projectId && String(dt.projectId) === String(p.id)) return true;
+                        if (!isUniqueCodeInStore) {
+                          const dy = dt?.projectYear;
+                          if (
+                            dy !== undefined &&
+                            dy !== null &&
+                            dy !== "" &&
+                            p.year &&
+                            String(dy).trim() !== String(p.year).trim()
+                          ) {
+                            return false;
+                          }
+                        }
+                        return true;
+                      });
+                      const zombieRemovals = buildZombieTaskRemovalsForProject(
+                        compatibleServerDocs,
+                        currentTasksNow,
+                        p
+                      );
+                      if (zombieRemovals.length > 0) {
+                        compatibleChanges = [...compatibleChanges, ...zombieRemovals];
                       }
-                      return true;
-                    });
+                    }
 
                     batchTasksUpdate(compatibleChanges, fromCache);
                     setCloudStatus("online");
 
                     if (DELTA_FIRST.tasks && !fromCache) {
-                      markLoaded('tasks_proj', p.id).catch(() => {});
+                      markLoaded("tasks_proj", p.id).catch(() => {});
                       const u = tasksPool.current.get(projKey);
                       tasksPool.current.set(projKey, () => {});
                       u?.();
@@ -541,6 +519,8 @@ export function useTasksHydration({
                   (e) => {
                     setIsTasksLoading(false);
                     console.error("Tasks listener error:", e);
+                    tasksPool.current.delete(projKey);
+                    usePerformanceStore.getState().unregisterListener(`taka_tasks_${projKey}`);
                     setCloudStatus("offline");
                   }
                 );
@@ -577,8 +557,28 @@ export function useTasksHydration({
       console.warn("[useTasksHydration] runTasksSync error:", err);
     });
 
+    const handleSleepWakeRecovery = () => {
+      if (useAppStore.getState().isTasksRequested) {
+        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      }
+      if (tasksPool.current.size > 0) {
+        tasksPool.current.forEach((u, key) => {
+          u();
+          usePerformanceStore.getState().unregisterListener(`taka_tasks_${key}`);
+        });
+        tasksPool.current.clear();
+        wakeRefreshCounter.current += 1;
+        runTasksSync().catch(() => {});
+      }
+    };
+
+    window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    window.addEventListener("taka_network_recovered", handleSleepWakeRecovery);
+
     return () => {
       isCancelled = true;
+      window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+      window.removeEventListener("taka_network_recovered", handleSleepWakeRecovery);
     };
   }, [
     querySignature,
@@ -593,3 +593,4 @@ export function useTasksHydration({
     setCloudStatus,
   ]);
 }
+

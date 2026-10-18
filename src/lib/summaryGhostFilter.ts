@@ -30,7 +30,11 @@ export function isForeignSummaryEntry(
 
   const pCode = norm(project.code);
   const tCode = norm(t.projectCode);
-  if (pCode && tCode && pCode !== tCode) return true;
+  if (pCode && tCode && pCode !== tCode) {
+    const rawCodeCombined = project.linkCodes ? `${project.code || ''}, ${project.linkCodes}` : String(project.code || '');
+    const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+    if (!pCodeParts.includes(tCode)) return true;
+  }
 
   const py = String(project.year ?? '').trim();
   const ty = String(t.projectYear ?? '').trim();
