@@ -219,6 +219,21 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
         return;
       }
 
+      // Absolute guard 2: Strict 4-key isolation if IDs are missing but other keys differ
+      const tYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
+      const eYear = existing.projectYear !== undefined && existing.projectYear !== null ? String(existing.projectYear).trim() : '';
+      const tStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
+      const eStore = existing.projectStore ? String(existing.projectStore).trim().toUpperCase() : '';
+      
+      if (tYear && eYear && tYear !== eYear) {
+        seenMap.set(task.id, task);
+        return;
+      }
+      if (tStore && eStore && tStore !== eStore) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
       // Absolute guard 2: If both tasks have explicit parentTaskIds that do NOT match, they are NEVER duplicates!
       if (task.parentTaskId && existing.parentTaskId && String(task.parentTaskId) !== String(existing.parentTaskId)) {
         seenMap.set(task.id, task);

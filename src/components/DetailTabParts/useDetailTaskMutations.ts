@@ -50,10 +50,22 @@ export function useDetailTaskMutations({
       message: 'Delete this Task?',
       onConfirm: async () => {
         try {
-          // Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
-          // Hàm này đã bao gồm: Xóa task, Cập nhật Project Summary, Xóa Dexie, Ghi Delta Batch.
+          // 1. Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
           await deleteTaskStateUnified([t]);
           
+          // 2. Phát tín hiệu Delta XÓA với đầy đủ 4 khóa định danh (CỰC KỲ QUAN TRỌNG)
+          const { recordDelta } = await import('../../lib/deltaSyncService');
+          recordDelta({
+            docId: t.id,
+            collectionName: 'taka_tasks',
+            action: 'delete',
+            data: { id: t.id, isDeleted: true },
+            projectId: t.projectId,
+            projectCode: t.projectCode,
+            year: t.projectYear ? String(t.projectYear) : undefined,
+            store: t.projectStore
+          }).catch(console.error);
+
           undoManager.push({
             description: `Delete Task: ${t.name}`,
             revert: async () => {
@@ -365,6 +377,16 @@ export function useDetailTaskMutations({
           action: 'update',
           year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
         });
+      });
+
+      // Ensure all delta items have the 4-key identity from the original task context
+      deltaItems.forEach(di => {
+        if (di.action === 'update' && di.data) {
+           if (!di.data.projectId && t.projectId) di.data.projectId = t.projectId;
+           if (!di.data.projectCode && t.projectCode) di.data.projectCode = t.projectCode;
+           if (!di.data.projectStore && t.projectStore) di.data.projectStore = t.projectStore;
+           if (!di.data.projectYear && t.projectYear) di.data.projectYear = t.projectYear;
+        }
       });
 
       saveTaskStateUnified(allUpdatesToSave);

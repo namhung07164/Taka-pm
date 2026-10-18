@@ -10,6 +10,7 @@ export interface UseTaskModalFormStateProps {
   prefillProjectCode: string | null;
   prefillProjectYear?: string | number | null;
   prefillProjectStore?: string | null;
+  prefillProjectId?: string | null;
   projects: Project[];
   tasks: Task[];
   t: (key: string) => string;
@@ -21,6 +22,7 @@ export function useTaskModalFormState({
   prefillProjectCode,
   prefillProjectYear,
   prefillProjectStore,
+  prefillProjectId,
   projects,
   tasks,
   t
@@ -38,7 +40,7 @@ export function useTaskModalFormState({
     ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
 
     return {
-      projectId: targetProj?.id || undefined,
+      projectId: prefillProjectId || targetProj?.id || undefined,
       projectCode: prefillProjectCode || targetProj?.code || '',
       projectYear: prefillProjectYear || targetProj?.year || undefined,
       projectStore: prefillProjectStore || targetProj?.store || undefined,
@@ -72,7 +74,7 @@ export function useTaskModalFormState({
       ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
 
       setFormData({
-        projectId: targetProj?.id || undefined,
+        projectId: prefillProjectId || targetProj?.id || undefined,
         projectCode: prefillProjectCode || targetProj?.code || '',
         projectYear: prefillProjectYear || targetProj?.year || undefined,
         projectStore: prefillProjectStore || targetProj?.store || undefined,

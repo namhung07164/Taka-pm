@@ -15,6 +15,7 @@ export interface UseTaskModalLogicProps {
   prefillProjectCode: string | null;
   prefillProjectYear?: string | number | null;
   prefillProjectStore?: string | null;
+  prefillProjectId?: string | null;
   isReadOnly?: boolean;
   onNavigateToDelegation?: (groupId: string, taskId?: string) => void;
   initialTab?: 'details' | 'chat';
@@ -27,6 +28,7 @@ export function useTaskModalLogic({
   prefillProjectCode,
   prefillProjectYear,
   prefillProjectStore,
+  prefillProjectId,
   isReadOnly = false,
   onNavigateToDelegation: _onNavigateToDelegation,
   initialTab = 'details'
@@ -76,6 +78,7 @@ export function useTaskModalLogic({
     prefillProjectCode,
     prefillProjectYear,
     prefillProjectStore,
+    prefillProjectId,
     projects,
     tasks,
     t

@@ -820,13 +820,12 @@ export default function App() {
     }
   }, [globalEnrichedProjectsForNotifs, globalFilteredTasksForNotifs, notificationRules, visibleDelegationGroups, currentUser]);
 
-  const readNotifs = currentUser?.readNotifs || [];
-  const unreadCount = currentUser?.notification === false ? 0 : activeNotifications.filter(
+  const readNotifs = currentUser.readNotifs || [];
+  const unreadCount = currentUser.notification === false ? 0 : activeNotifications.filter(
     (n) => !readNotifs.includes(n.id),
   ).length;
 
   const visibleTabs = useMemo(() => {
-    if (!currentUser) return [];
     const isAdmin = currentUser.role === "admin";
     const uRole = (
       currentUser.role === "admin"
@@ -2233,6 +2232,7 @@ export default function App() {
             setPrefillProjectCode={setPrefillProjectCode}
             setPrefillProjectYear={setPrefillProjectYear}
             setPrefillProjectStore={setPrefillProjectStore}
+            setPrefillProjectId={useAppStore.getState().setPrefillProjectId}
             isAppReadyRef={isAppReadyRef}
             executeDeepLinkRef={executeDeepLinkRef}
             onRenderCallback={onRenderCallback}

@@ -12,6 +12,8 @@ import {
   AppUser,
 } from "../types";
 
+export const DELAY_AFTER_WRITE_MS = 2500; // Delay for Firestore consistency guard
+
 export function matchesAdvancedSearch(
   searchTerm: string,
   mainFields: (string | number | boolean | undefined | null)[],
@@ -728,29 +730,26 @@ export function extractProjectMetadata(p: any): { year: string; store: string; l
   // 1. Year
   let year = String(p.year || (p as any).projectYear || '').trim();
   if (!year || year === 'undefined' || year === 'null') {
-    const rawSearch = `${p.code || ''} ${p.linkCodes || ''} ${p.name || ''}`;
-    // Match 2024-2035 with optional y/Y prefix, e.g. y2026, Y2026, 2026
+    // Only infer year from code or linkCodes, NOT from project name or dates
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''}`;
+    // Match 2024-2035 with optional y/Y prefix
     const yrMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)?(202\d|203\d)(?:[^0-9a-zA-Z]|$)/i) 
       || rawSearch.match(/y(202\d|203\d)\b/i)
       || rawSearch.match(/\b(202\d|203\d)\b/);
     if (yrMatch) {
       year = yrMatch[1];
     } else {
-      const yrShortMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)(2[4-9]|3[0-5])(?:[^0-9a-zA-Z]|$)/i);
-      if (yrShortMatch) {
-        year = `20${yrShortMatch[1]}`;
-      } else if (p.start || p.opening || p.handover || p.computedTakStart || p.computedTakCompl || p.takStart || p.takCompl) {
-        const dStr = p.start || p.opening || p.handover || p.computedTakStart || p.computedTakCompl || p.takStart || p.takCompl;
-        const dMatch = String(dStr).match(/\b(202\d|203\d)\b/);
-        if (dMatch) year = dMatch[1];
+        const yrShortMatch = rawSearch.match(/(?:^|[^0-9a-zA-Z])(?:y|Y)(2[4-9]|3[0-5])(?:[^0-9a-zA-Z]|$)/i);
+        if (yrShortMatch) {
+          year = `20${yrShortMatch[1]}`;
+        }
       }
     }
-  }
 
   // 2. Store
   let store = String(p.store || (p as any).projectStore || '').trim().toUpperCase();
   if (!store || store === 'UNDEFINED' || store === 'NULL') {
-    const rawSearch = `${p.code || ''} ${p.linkCodes || ''} ${p.name || ''}`;
+    const rawSearch = `${p.code || ''} ${p.linkCodes || ''}`;
     if (/(?:^|[^a-zA-Z])HCM(?:[^a-zA-Z]|$)/i.test(rawSearch)) {
       store = 'HCM';
     } else if (/(?:^|[^a-zA-Z])HN(?:[^a-zA-Z]|$)/i.test(rawSearch)) {
@@ -964,38 +963,48 @@ export function isTaskBelongsToProject(
 ): boolean {
   if (!t || !p || t.isDeleted || (p as any).isDeleted) return false;
 
-  const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
-  const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
-  if (tStore && pStore && tStore !== pStore) return false;
-
   const tProjId = t.projectId ? String(t.projectId).trim() : '';
   const pId = p.id ? String(p.id).trim() : '';
-  if (tProjId && pId) {
-    return tProjId === pId;
-  }
+  
+  // Absolute Guard: If both have IDs and they differ, they are NOT the same project.
+  if (tProjId && pId && tProjId !== pId) return false;
 
+  const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+  const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+  // Strict Store Isolation
+  if (tStore && pStore && tStore !== pStore) return false;
+
+  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+  // Strict Year Isolation
+  if (tYear && pYear && tYear !== pYear) return false;
+
+  if (tProjId && pId && tProjId === pId) return true;
+
+  // Fallback to Code only if ID is missing on one side
   if (!t.projectCode || !p.code) return false;
   const tCode = String(t.projectCode).trim().toLowerCase();
   const rawPCode = String(p.code).trim().toLowerCase();
 
   const pCodeParts = rawPCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
   const matchesCode = tCode === rawPCode || pCodeParts.includes(tCode) || matchProjectCode(t.projectCode, p.code);
+  
   if (!matchesCode) return false;
 
-  const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-  const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-
-  if (tYear && pYear && tYear !== pYear) {
-    const allProjects = useAppStore.getState().projects || [];
-    const hasOtherProjectForTaskYear = allProjects.some(
-      (other) =>
-        !(other as any).isDeleted &&
-        String(other.id) !== String(p.id) &&
-        String(other.code || '').trim().toLowerCase() === rawPCode &&
-        (!pStore || !other.store || String(other.store).trim().toUpperCase() === pStore) &&
-        String(other.year ?? '').trim() === tYear
-    );
-    if (hasOtherProjectForTaskYear) return false;
+  // Extra check for code-only fallback: Ensure no other project with same code exists for the task's specific year/store
+  if (tYear && pYear && tYear === pYear) {
+     const allProjects = useAppStore.getState().projects || [];
+     const otherMatchingProj = allProjects.find(other => 
+       !(other as any).isDeleted &&
+       other.id !== p.id &&
+       String(other.code || '').trim().toLowerCase() === rawPCode &&
+       (!pStore || !other.store || String(other.store).trim().toUpperCase() === pStore) &&
+       String(other.year ?? '').trim() === tYear
+     );
+     if (otherMatchingProj && p.id && otherMatchingProj.id !== p.id) {
+       // If there's another project that matches the year/store better by ID, this one shouldn't claim it by code
+       return false;
+     }
   }
 
   return true;
@@ -1012,6 +1021,10 @@ export function isDelegationGroupBelongsToProject(
     return true;
   }
 
+  const gProjId = g.projectId ? String(g.projectId).trim() : '';
+  const pId = p.id ? String(p.id).trim() : '';
+  if (gProjId && pId && gProjId !== pId) return false;
+
   const gStore = g.projectStore ? String(g.projectStore).trim().toUpperCase() : '';
   const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
   if (gStore && pStore && gStore !== pStore) return false;
@@ -1020,19 +1033,11 @@ export function isDelegationGroupBelongsToProject(
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
   if (gYear && pYear && gYear !== pYear) return false;
 
-  const gProjId = g.projectId ? String(g.projectId).trim() : '';
-  const pId = p.id ? String(p.id).trim() : '';
-  if (gProjId && pId) {
-    if (gProjId === pId) return true;
-    if (!gYear || !pYear || gYear !== pYear || !gStore || !pStore || gStore !== pStore) {
-      return false;
-    }
-  }
+  if (gProjId && pId && gProjId === pId) return true;
 
   if (!g.projectCode || !p.code) return false;
   const gCode = String(g.projectCode).trim().toLowerCase();
-  const pCode = String(p.code).trim().toLowerCase();
-  return gCode === pCode || matchProjectCode(g.projectCode, p.code);
+  return gCode === String(p.code).trim().toLowerCase() || matchProjectCode(g.projectCode, p.code);
 }
 
 export function getTasksForProject(project: Partial<Project>, allTasks: Task[]): Task[] {

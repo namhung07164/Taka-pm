@@ -119,6 +119,8 @@ export interface UISlice {
   setPrefillProjectYear: (year: number | string | null) => void;
   prefillProjectStore: string | null;
   setPrefillProjectStore: (store: string | null) => void;
+  prefillProjectId: string | null;
+  setPrefillProjectId: (id: string | null) => void;
 
   // Filters & Navigation
   costTabSearchTerm: string;

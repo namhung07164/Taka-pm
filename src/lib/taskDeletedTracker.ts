@@ -42,6 +42,15 @@ export function clearDeletedTasksTracker(): void {
   deletedTasksTimeMap.clear();
 }
 
-export function getDeletedTaskKeysSet(): Set<string> {
-  return new Set(deletedTasksTimeMap.keys());
+export function getDeletedTaskIds(): string[] {
+  const now = Date.now();
+  const ids: string[] = [];
+  for (const [id, time] of deletedTasksTimeMap.entries()) {
+    if (now - time <= DELETED_TTL_MS) {
+      ids.push(id);
+    } else {
+      deletedTasksTimeMap.delete(id);
+    }
+  }
+  return ids;
 }

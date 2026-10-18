@@ -237,6 +237,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setPrefillProjectYear: (prefillProjectYear) => set({ prefillProjectYear }),
   prefillProjectStore: null,
   setPrefillProjectStore: (prefillProjectStore) => set({ prefillProjectStore }),
+  prefillProjectId: null,
+  setPrefillProjectId: (prefillProjectId) => set({ prefillProjectId }),
 
   costTabSearchTerm: "",
   setCostTabSearchTerm: (costTabSearchTerm) => set({ costTabSearchTerm }),

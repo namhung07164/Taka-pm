@@ -39,6 +39,7 @@ interface TaskModalProps {
   prefillProjectCode: string | null;
   prefillProjectYear?: string | number | null;
   prefillProjectStore?: string | null;
+  prefillProjectId?: string | null;
   isReadOnly?: boolean;
   onNavigateToDelegation?: (groupId: string, taskId?: string) => void;
   initialTab?: 'details' | 'chat';

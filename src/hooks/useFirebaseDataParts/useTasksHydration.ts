@@ -24,7 +24,7 @@ import {
   calculateProjectComputedDates,
   syncProjectDatesToFirestore,
 } from "../../lib/projectDatesService";
-import { markTasksDeleted } from "../../lib/taskDeletedTracker";
+import { markTasksDeleted, clearDeletedTasksTracker } from "../../lib/taskDeletedTracker";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
@@ -302,6 +302,7 @@ export function useTasksHydration({
         tasksPool.current.clear();
         tasksTTLTimeouts.current.forEach((t) => clearTimeout(t));
         tasksTTLTimeouts.current.clear();
+        clearDeletedTasksTracker();
       }
       prevQuerySigTasks.current = querySignature;
     }

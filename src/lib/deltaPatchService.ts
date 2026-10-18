@@ -93,12 +93,18 @@ export function computeFieldPatch<T extends Record<string, any>>(
     patch.updatedAt = current.updatedAt;
   }
 
-  // Preserve projectCode/projectYear if present to support Tri-Gate / year filter routing
+  // Preserve 4-key isolation markers if present to support Tri-Gate / year filter routing
+  if (current.projectId && !patch.projectId) {
+    patch.projectId = current.projectId;
+  }
   if (current.projectCode && !patch.projectCode) {
     patch.projectCode = current.projectCode;
   }
   if (current.projectYear !== undefined && patch.projectYear === undefined) {
     patch.projectYear = current.projectYear;
+  }
+  if (current.projectStore && !patch.projectStore) {
+    patch.projectStore = current.projectStore;
   }
 
   return patch;
