@@ -3,7 +3,7 @@ import { Database, Trash2, Calendar, FolderOutput, Sparkles, Hash, Layers, Check
 import { clearAllIDB } from "../../lib/idb";
 import { clearDexieDatabase } from "../../lib/localDb";
 import { useAppStore } from "../../store/useAppStore";
-import { syncAllProjectsTaskCountsToFirestore } from "../../lib/projectDatesService";
+import { syncAllProjectsTaskCountFromFirestore } from "../../lib/projectDatesService";
 import { convertAllSubtaskCodesAndPredecessorsToHash } from "../../lib/ganttUtils";
 import { scanAndRemoveDuplicateTasksOnFirestore, deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
 import { 
@@ -228,9 +228,7 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
           type: "info"
         });
         try {
-          const result = await syncAllProjectsTaskCountsToFirestore((processed, total) => {
-            console.log(`[TaskCountSync] Processed ${processed}/${total} projects`);
-          });
+          const result = await syncAllProjectsTaskCountFromFirestore();
           useAppStore.getState().setToast({
             title: "Sync Complete",
             message: `Successfully updated task counts for ${result.updatedCount}/${result.totalProjects} projects on Firestore.`,

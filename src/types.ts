@@ -332,6 +332,9 @@ export interface TakaDeltaItem {
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
   action: 'create' | 'update' | 'delete';
   year?: string;
+  projectId?: string;
+  projectCode?: string;
+  projectStore?: string;
   data?: Record<string, any>;
   isPatch?: boolean;
   /** Signal-only item: receivers re-read this doc from the server (used for writes that carry no patch). */
@@ -344,6 +347,9 @@ export interface TakaDelta {
   collectionName?: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
   action: 'create' | 'update' | 'delete' | 'batch_update';
   year?: string;
+  projectId?: string;
+  projectCode?: string;
+  projectStore?: string;
   data?: Record<string, any>;
   isPatch?: boolean;
   batchItems?: TakaDeltaItem[];

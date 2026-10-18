@@ -24,6 +24,24 @@ import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
 import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from './utils';
+import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
+
+/**
+ * Làm tươi (refresh) Task của một dự án cụ thể khi có biến động (0ms lag)
+ */
+export async function refreshProjectTasksAndDates(pId: string): Promise<void> {
+  const store = useAppStore.getState();
+  const p = store.projects.find(proj => proj.id === pId);
+  if (!p) return;
+
+  // Trích xuất task: Hỗ trợ cả projectCode vắt qua linkCodes
+  const pTasks = getTasksForProject(p, store.tasks);
+  
+  const computed = calculateProjectComputedDates(p, pTasks, store.delegationGroups);
+  if (computed.taskCount !== p.taskCount || JSON.stringify(computed.taskSummaries) !== JSON.stringify(p.taskSummaries)) {
+    await syncProjectDatesToFirestore(p.id, computed);
+  }
+}
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store

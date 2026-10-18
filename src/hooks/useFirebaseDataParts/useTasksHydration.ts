@@ -24,11 +24,11 @@ import {
   calculateProjectComputedDates,
   syncProjectDatesToFirestore,
 } from "../../lib/projectDatesService";
-import { markTasksDeleted, clearDeletedTasksTracker } from "../../lib/taskDeletedTracker";
+import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from "../../lib/taskDeletedTracker";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
+const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
 
 
 interface UseTasksHydrationProps {
@@ -79,7 +79,7 @@ export function useTasksHydration({
   const pendingTasksRemoved = useRef<Set<string>>(new Set());
   const tasksBatchTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const batchTasksUpdate = useCallback((docChanges: any[], fromCache: boolean = false) => {
+  const batchTasksUpdate = useCallback((docChanges: any[], fromCache: boolean = false, isForceSnapshot: boolean = false) => {
     if (!pendingTasksMap.current) {
       const currentTasks = useAppStore.getState().tasks || [];
       const map = new Map<string, Task>();
@@ -99,9 +99,8 @@ export function useTasksHydration({
         pendingTasksChanged.current.delete(id);
         pendingTasksRemoved.current.add(id);
       } else {
-        if (fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
+        if (!isForceSnapshot && fromCache && isStaleCacheDoc(pendingTasksMap.current!.get(id), data)) return;
         if (!data.isDeleted) {
-          const { unmarkTaskDeleted } = require("../../lib/taskDeletedTracker");
           unmarkTaskDeleted(id);
         }
         pendingTasksMap.current!.set(id, data);

@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
 import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
@@ -446,7 +446,6 @@ export function computeProjectActStatus(
     const pGroups = delegationGroups.filter(g => isDelegationGroupBelongsToProject(g, p, matchedTaskIds));
 
     if (pGroups.length > 0) {
-      const { resolveActualStatus } = require('./utils');
       const statuses = pGroups.map(g => {
         if (g.actStatus) return g.actStatus;
         return resolveActualStatus(p.computedStatus || 'On process', g.subTasks || []).label;
@@ -502,7 +501,45 @@ export {
   getAppBootAgeMs,
   BOOT_SYNC_GUARD_MS,
   backfillMissingProjectDates,
-  syncAllProjectsTaskCountsToFirestore,
 } from "./projectDatesBackfill";
+
+/**
+ * Lệnh cưỡng bức đồng bộ lại Task Count từ Firestore cho toàn bộ dự án
+ * (Dùng để sửa lỗi iPad/iPhone lệch count khi snapshot cache bị cũ)
+ */
+export async function syncAllProjectsTaskCountFromFirestore(): Promise<{ updatedCount: number; totalProjects: number }> {
+  try {
+    const { projects, tasks, delegationGroups } = useAppStore.getState();
+    const totalProjects = projects.length;
+    let updatedCount = 0;
+
+    // Chỉ thực hiện trên 200 dự án gần nhất hoặc đang hiển thị để tránh quá tải
+    for (const p of projects) {
+      if (!p.id || p.isDeleted) continue;
+
+      // 1. Lấy task thật đang có trong RAM (đã được onSnapshot nạp đầy đủ)
+      const pTasks = getTasksForProject(p, tasks);
+      
+      // 2. Tính toán lại bộ chỉ số
+      const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
+
+      // 3. So khớp: nếu lệch count hoặc lệch summaries thì ghi đè Firestore
+      const hasDiscrepancy = 
+        p.taskCount !== computed.taskCount || 
+        (p.taskSummaries?.length || 0) !== (computed.taskSummaries?.length || 0);
+
+      if (hasDiscrepancy) {
+        await syncProjectDatesToFirestore(p.id, computed);
+        updatedCount++;
+      }
+    }
+
+    return { updatedCount, totalProjects };
+  } catch (err: any) {
+    console.error("[syncAllProjectsTaskCountFromFirestore] Sync Failed", err);
+    useAppStore.getState().setToast({ title: "Sync Failed", message: err.message || "Error syncing task counts", type: "error" });
+    return { updatedCount: 0, totalProjects: 0 };
+  }
+}
 
 

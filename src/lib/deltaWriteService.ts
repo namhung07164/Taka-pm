@@ -23,6 +23,9 @@ export async function recordDelta(delta: {
   action: 'create' | 'update' | 'delete';
   data: Record<string, any> | null;
   year?: string;
+  projectId?: string;
+  projectCode?: string;
+  store?: string;
   updatedBy?: string;
   isPatch?: boolean;
 }): Promise<void> {
@@ -37,6 +40,9 @@ export async function recordDelta(delta: {
     collectionName: delta.collectionName,
     action: delta.action,
     ...(delta.year ? { year: String(delta.year) } : {}),
+    ...(delta.projectId ? { projectId: String(delta.projectId) } : {}),
+    ...(delta.projectCode ? { projectCode: String(delta.projectCode) } : {}),
+    ...(delta.store ? { projectStore: String(delta.store) } : {}),
     data: delta.data || {},
     ...(delta.isPatch !== undefined ? { isPatch: delta.isPatch } : {}),
     updatedBy: delta.updatedBy || useAppStore.getState().currentUser?.email || 'system',

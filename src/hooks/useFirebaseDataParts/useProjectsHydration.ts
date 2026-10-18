@@ -26,7 +26,7 @@ import { isTaskBelongsToProject } from "../../lib/taskStateService";
 
 // Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
 // Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
+const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
 
 
 interface UseProjectsHydrationProps {

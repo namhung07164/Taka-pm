@@ -1,8 +1,41 @@
-import { collection, query, where, limit, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
+import { collection, query, where, limit, getDocsFromCache, getDocsFromServer, setDoc, doc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { getLocalTasks, bulkPersistTasks } from './localDb';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { Task } from '../types';
+
+/**
+ * Lưu Task thông báo (không làm crash app nếu doc chưa tồn tại)
+ */
+export async function saveNotificationTask(taskId: string, data: Partial<Task>): Promise<void> {
+  if (!taskId) return;
+  try {
+    const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId);
+    
+    // Tuyệt đối không dùng updateDoc (gây crash 404). Dùng setDoc merge: true.
+    // Bảo đảm luôn có identification keys để multi-device sync không bị lạc trôi
+    const payload = {
+      ...data,
+      updatedAt: new Date().toISOString()
+    };
+
+    await setDoc(taskRef, payload, { merge: true });
+
+    // Phát delta để các máy khác biết
+    const { recordDelta } = await import('./deltaSyncService');
+    recordDelta({
+      docId: taskId,
+      collectionName: 'taka_tasks',
+      action: 'update',
+      isPatch: true,
+      data: payload,
+      year: data.projectYear ? String(data.projectYear) : undefined
+    }).catch(() => {});
+
+  } catch (err) {
+    console.warn("[saveNotificationTask] Failed to save notification task:", err);
+  }
+}
 
 /**
  * Returns the standard notification date window:
