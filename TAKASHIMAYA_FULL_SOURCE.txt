@@ -117389,3 +117389,722 @@ export function PredecessorMultiInput({
   );
 }
 
+
+// File: AGENTS.md
+# Project Architecture & Coding Conventions
+
+> ⛔ **QUY TẮC BẤT KHẢ XÂM PHẠM**: Toàn bộ logic nghiệp vụ, UI/UX, tính năng và luồng dữ liệu TUYỆT ĐỐI KHÔNG ĐƯỢC XÓA, DISABLE HAY LÀM SUY GIẢM khi cập nhật, trừ khi người dùng yêu cầu rõ ràng. Mọi thay đổi phải là mở rộng (additive) hoặc tối ưu (optimization).
+
+## 1. On-Demand Business Logic
+- **Kho quy chuẩn**: `BUSINESS_LOGIC.md` lưu trữ toàn bộ công thức tài chính, schema, RBAC và quy tắc nghiệp vụ.
+- **Quy trình**: Tác vụ UI/màu sắc không cần đọc. Tác vụ can thiệp sâu vào tính toán, phân quyền hoặc nghiệp vụ (Budget, Gantt, RBAC) **bắt buộc** dùng `view_file` tra cứu `BUSINESS_LOGIC.md` qua Navigation Index trước khi sửa code.
+
+## 2. Core Architecture & Build Constraints
+- **Safe Boot**: Luôn boot tại tab General; cấm lưu `taka_last_tab` vào `localStorage`.
+- **Global State (Zustand)**: Quản lý toàn bộ state qua `useAppStore.ts`. Dùng Atomic Selectors (vd: `state => state.projects`) và shallow hooks (`useUISlice`, `useDataSlice`) để chống re-render. Cấm truyền prop quá sâu.
+- **Package Manager (NPM ONLY)**: Chỉ dùng NPM. Cấm Bun/Yarn/Pnpm (nếu có lockfile khác phải xóa ngay). Build SPA luôn trỏ vào `dist/`.
+- **Zero-Delay Optimistic UI & Offline Queue**: Lưu/sửa/xóa cập nhật ngay vào Zustand (0ms). Đẩy tác vụ Firestore ra chạy ngầm; bắt buộc bọc `try/catch` đẩy tác vụ lỗi vào Offline Queue (`src/lib/syncQueue.ts`) để chống mất dữ liệu ngầm (Silent Data Loss). Nút bấm dùng `active:scale-95 touch-manipulation`.
+- **Tính toàn vẹn Schema**: Cấm thêm field rác hoặc đổi tên schema ngoài `src/types.ts`. Bảo toàn 100% tính năng xuất file, watermark, delegation, export.
+
+## 3. Data Fetching & Performance Guards (Firebase)
+- **Tri-Gate Lazy Loading**: Bảo toàn 3 cờ (`isTasksRequested`, `isCostsRequested`, `isDelegationsRequested`); không query khi user chưa yêu cầu.
+- **Dot-Notation & Atomic Aggregates**: Cập nhật tài chính lồng sâu bắt buộc dùng chuỗi chấm (`'financial.byStore...'` + `increment()`), gom 1 update/doc/batch để chống xung đột ghi đè đồng thời giữa các kế toán.
+- **Anti-Read-Storm**: Không query thừa; cấm đưa object vào deps của `useEffect`. Khi chuyển tab, luôn ưu tiên đọc cache Zustand.
+- **Multi-listener Pooling ("All Years")**: Quản lý listener từng năm qua `useRef<Map>` pool (giữ Delta Sync), không unmount khi chuyển năm cũ để Zero-Read từ cache.
+- **IDB Locks & Trần Bộ Nhớ iOS 40MB**: Iframe/PWA dùng `persistentSingleTabManager({ forceOwnership: true })`; Desktop chuẩn dùng `persistentMultipleTabManager`. Bắt buộc giới hạn cache iOS ở mức 40MB (`cacheSizeBytes: isIOS ? 41943040 : CACHE_SIZE_UNLIMITED`) để tránh WebKit dọn sạch IDB gây bão đọc.
+
+## 4. Hardware, Storage & Financial Audit Safety
+- **Camera/Scanner**: Luôn kiểm tra quyền `getUserMedia`; gọi `track.stop()` khi unmount. Giới hạn 3-5 FPS khi scan Face/QR để chống đơ UI.
+- **Storage Deep Clean**: Khi xóa (soft/hard delete) Task/Project/Cost, bắt buộc dùng `extractStorageUrls` và `deleteStorageFiles` (trong `src/lib/storageUtils.ts`) để xóa sạch file đính kèm trên Firebase Storage, chống rác mồ côi.
+- **Config Realtime & Audit Logging**: Bảng config (`taka_users`, `taka_config`) phải dùng `onSnapshot`. Mọi biến động luồng tiền (Budget/Cost) bắt buộc ghi log vào `audit_logs` (Append-only) để truy vết kiểm toán.
+
+## 5. Safe Integration (Tích Hợp Module Mới / ZIP)
+- **Strict Isolation**: Gom toàn bộ UI/Logic mới vào thư mục riêng (vd: `src/components/NewFeature/`). Không trộn lẫn vào core components.
+- **Zero-Modification**: Tuyệt đối không sửa/ghi đè UI layout, CSS, hooks hiện có. Chỉ kết nối qua 1 nút/tab navigation (Plug-and-play).
+- **State & Schema Safety**: State mới tạo slice độc lập trong Zustand; type mới viết nối cuối `src/types.ts` hoặc file riêng. Cấm sửa `BUSINESS_LOGIC.md`.
+
+## 6. UI/UX & Responsive Architecture
+- **Tách biệt UI Controls**: Nút điều khiển phức tạp (Ribbon/Toolbar) tách thành standalone component quản lý qua `UISlice`, không nhồi vào data slices.
+- **Mobile Responsive**: Trên di động, dùng `hidden lg:inline-flex` để ẩn Ribbon/Toolbar phức tạp trên Header và gom gọn vào Navigation Drawer.
+- **Sticky & Reflow Guard**: Thanh công cụ/nút chính dùng `sticky top-0 z-[100] backdrop-blur-md` để cuộn mượt mà, chống layout reflow.
+- **Shortcuts & Memory**: Full-screen/Focus mode gắn phím `Escape` trên `window` và cleanup listener khi unmount.
+
+## 7. Graphics & Canvas Guards (Konva & SVG)
+- **Hit-Graph Elimination**: Mọi Konva element không nhận sự kiện click (Labels, Badges, Rings, Grid, Background Map) **bắt buộc** gắn `listening={false}` và `perfectDrawEnabled={false}`.
+- **Event Throttling**: Wheel, Pan, Pinch, Drag phải bọc trong `requestAnimationFrame` và hủy bằng `cancelAnimationFrame` khi unmount.
+- **Image Caching**: Mặt bằng nặng giải mã qua `useOffscreenImage` hoặc memoized HTMLImage; cấm reload lại ảnh khi đổi filter/tầng.
+- **O(1) Data Pre-Indexing**: Không lồng `.filter()` trong `.map()`. Tiền xử lý dữ liệu qua `Map<string, T[]>` trong `useMemo` trước khi render.
+
+## 8. Realtime Mutation & Chat Economy
+- **Zero-Query for Modals**: Modal chi tiết (Task/Project Detail, QuickNav) đọc trực tiếp từ Zustand, cấm gọi query/getDoc Firestore độc lập.
+- **Targeted ArrayUnion**: Thêm bình luận (`project.comments`), activity log, chat phải dùng `arrayUnion()` trên doc, tránh ghi đè toàn bộ doc.
+- **Debounced Auto-Save**: Ô nhập nhanh cập nhật tức thì vào Zustand (0ms) và debounce 400ms trước khi đưa vào hàng đợi `syncQueue` (Firestore Batch Write).
+
+## 9. Task Hierarchy & Rollup Engine
+- **In-Memory Computed Rollup**: Ngày bắt đầu, kết thúc, duration, tiến độ (%) của Task mẹ tính tự động từ Task con 100% trong bộ nhớ client (Pure Function). Cấm dùng Cloud Function trigger ghi ngược Firestore.
+- **Circular Guard**: Dùng `visited` Set khi duyệt cây task để chống treo trình duyệt do vòng lặp cha - con.
+
+## 10. Language Standard (English UI Mandate)
+- **100% English UI**: Toàn bộ tiêu đề (Titles), nhãn (Labels), chú thích (Tooltips), diễn giải (Descriptions), cảnh báo (Alerts/Toasts), trạng thái (Badges) phải dùng tiếng Anh chuyên nghiệp chuẩn Enterprise.
+
+## 11. Universal Draggable Modals & Tooltips
+- Mọi modal (`ProjectModal`, `TaskModal`, `UserModal`, `ConfirmModal`, `CalendarSync`, `QuickNav`...) và modular tooltip bắt buộc hỗ trợ kéo thả (Draggable/Pointer Drag) với handle (`.modal-handle`, `cursor-grab active:cursor-grabbing` hoặc icon `GripHorizontal`).
+
+## 12. Modal Performance, Code Splitting & Modular Architecture
+- **Trần Giới Hạn File (Hard File Size Cap < 500 lines)**: Mỗi component / file `.tsx` / `.ts` **tuyệt đối không vượt quá 500 dòng code**. Khi nâng cấp hoặc thêm tính năng mới làm file vượt quá ranh giới này, AI **bắt buộc** phải băm nhỏ/tách submodule vào thư mục tương ứng (`src/components/<TabName>Parts/`).
+- **Mô Hình Module Hóa Tiêu Chuẩn (Modular Directory Standard)**: Mọi Tab và Module phức tạp bắt buộc tuân theo mô hình phân tách 4 lớp:
+  ```
+  src/components/<TabName>Parts/
+  ├── <TabName>FilterToolbar.tsx   (Thanh công cụ, bộ lọc, tìm kiếm, xuất/nhập)
+  ├── <TabName>TableView.tsx       (Giao diện View chính: Bảng/Lưới/Cây)
+  ├── <TabName>MobileView.tsx      (Giao diện tối ưu di động iOS/Android)
+  ├── <TabName>RowItem.tsx         (Hàng dữ liệu con bọc React.memo)
+  ├── <TabName>Modal.tsx           (Modal phụ bọc React.lazy & JIT Mounting)
+  ├── <tabName>Types.ts            (Type/Interface riêng của module)
+  └── use<TabName>Data.ts          (Custom Hook xử lý tính toán/memo/filter)
+  ```
+- **Container Orchestrator**: Container file chính (`<TabName>.tsx`) chỉ giữ vai trò điều phối (dưới 300-400 dòng), đọc state từ Zustand (`useAppStore`) và truyền props phẳng xuống submodules.
+- **Cấm Tái Tạo File Nguyên Khối (Zero Monolithic Logic)**: Tuyệt đối cấm gộp lại hoặc nhồi code mới trực tiếp vào file chính. Mọi nâng cấp mới phải là mở rộng submodule độc lập hoặc viết hook riêng (Additive/Modular Pattern).
+- **JIT Mounting**: Modal nặng bắt buộc dùng Dynamic Import (`React.lazy`), bọc `<Suspense fallback={null}>` và chỉ mount khi mở (`{isOpen && <Modal />}`). Cấm DOM ẩn chạy ngầm.
+- **Thư Viện Nặng & Code Splitting**: Cấm import tĩnh các thư viện nặng (`xlsx`, `html2canvas`, `konva`, `jspdf`) vào bundle chính. Bắt buộc dùng `await import(...)` hoặc `React.lazy` để file bundle chính luôn dưới 1MB, tối ưu thời gian khởi động (FCP) trên máy POS/di động.
+- **Form Sub-Components**: Form phức tạp tách thành các component con bọc `React.memo` để gõ phím không re-render cả modal.
+
+## 13. Quy Chuẩn Đồng Bộ Source Code (Single Source of Truth)
+
+1. 🛑 CẤM Cập Nhật Tài Liệu Lắt Nhắt (No Docs Spam)
+Tuyệt đối KHÔNG tự động viết log, tóm tắt, hay cập nhật các file tài liệu (như `manual_usual.md`, `README.md`, v.v.) sau mỗi lần sửa/viết code. Việc thay đổi tính năng chỉ được phản ánh trực tiếp vào code.
+
+2. 🔄 Cập Nhật Thẳng Vào Mã Nguồn Gốc (Update The Source)
+Sau mỗi lần tái cấu trúc, băm nhỏ file, hoặc viết thêm tính năng mới thành công, AI bắt buộc phải cập nhật (ghi đè đoạn code cũ bằng đoạn code mới) trực tiếp vào file `TAKASHIMAYA_FULL_SOURCE.txt`.
+
+3. 🎯 Nguyên Tắc "Single Source of Truth"
+File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm duy nhất chứa trạng thái code hiện tại. Bất kỳ Agent nào trước khi bắt tay vào sửa logic đều phải đảm bảo mã nguồn trong file này luôn đồng bộ với các thay đổi mới nhất để không ghi đè làm mất các bản vá lỗi (hotfix) hoặc các module vừa được tách nhỏ.
+
+## 14. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
+- **Primary Storage (Dexie.js / IndexedDB)**: Coi `src/lib/localDb.ts` (`TakaLocalDB`) và in-memory Zustand là Primary Data Source cho client. Khi boot app, luôn ưu tiên đọc cache Dexie (`bootstrapLocalStore()`) nạp ngay 100% dữ liệu trong 5ms – 10ms, triệt tiêu hoàn toàn loading spinner.
+- **Delta Sync Pipeline (`taka_deltas`)**: Mọi đột biến (mutation) sau khi xả ghi xuống Firestore bắt buộc ghi nhận bản ghi delta qua `recordDelta()` (`src/lib/deltaSyncService.ts`). Background worker định kỳ kéo delta (`numericTime > lastSyncTime`) và áp dụng nguyên tử vào Zustand + Dexie, cắt giảm 80%–95% lượt Firestore READ.
+- **Non-blocking UI Thread**: Mọi tác vụ ghi nặng (`offloadPersistSnapshot`, `bulkPut`, `applyDeltasToLocalDatabase`) bắt buộc đẩy sang background microtasks (`setTimeout(..., 0)`), cấm thực hiện I/O làm nghẽn luồng render chính của React, bảo đảm 60 FPS.
+- **Self-Mutation Skipping & Tri-Gate Guards**: Tránh echo giật con trỏ khi đang gõ phím (`delta.updatedBy === currentUser.email`) và tuân thủ tuyệt đối 3 cờ Tri-Gate (`isTasksRequested`, `isCostsRequested`, `isDelegationsRequested`) không nhồi dữ liệu vào slice chưa kích hoạt.
+- **Fault-Tolerant Fallback & Sync Queue**: Khi IndexedDB bị chặn (Incognito/Private) hoặc rỗng dữ liệu, tự động fallback về nạp Firestore. Mọi tác vụ ghi tiếp tục được bảo vệ bởi hàng đợi `syncQueue.ts` chống mất mát dữ liệu ngoại tuyến.
+
+
+## 15. Real-time Delta Channel & Auto Delta (Sync Consistency)
+- **Realtime**: `deltaRealtimeListener.ts` giữ 1 `onSnapshot` trên `taka_deltas` (thay polling 25s). Polling chỉ còn là safety net 5 phút. Cấm đưa lại polling ngắn hạn.
+- **Auto Delta**: mọi ghi vào `taka_projects/tasks/costs/delegation_groups` qua wrapper trong `firebase.ts` tự phát delta `invalidate` (`autoDeltaQueue.ts`). Code mới KHÔNG cần tự gọi `recordDelta`, nhưng nếu gọi thì phải gọi trong vòng vài giây sau lệnh ghi để tránh phát trùng.
+- **Ghost record guard**: delta `update` cho doc chưa có trong store/Dexie phải bị bỏ qua, cấm tạo bản ghi từ patch một phần.
+- **Write imports (BẮT BUỘC)**: file ghi vào `taka_projects/tasks/costs/delegation_groups` phải import `setDoc/updateDoc/deleteDoc/writeBatch` từ `src/lib/firestoreWrites.ts` (hoặc `src/lib/firebase.ts`), CẤM import trực tiếp từ `firebase/firestore`, nếu không các máy khác sẽ không nhận được thay đổi.
+- **Sync cursor**: delta được sắp/lọc theo `serverTime` (serverTimestamp), không dùng `numericTime` (giờ máy) để truy vấn, để delta tạo lúc offline vẫn tới được các máy khác.
+
+## 16. Quy Chuẩn Đồng Bộ Đa Thiết Bị & Cô Lập Khóa Dữ Liệu Tuyệt Đối (Multi-Device Sync & Composite Key Isolation)
+
+### 16.1. Cô Lập Tuyệt Đối 4 Khóa Định Danh (`projectId` + `projectCode` + `year` + `store`)
+- **Nguyên Tắc Bất Khả Xâm Phạm**: Không bao giờ được dùng riêng lẻ `projectCode` để đối chiếu, gom nhóm, liên kết hoặc truy vấn dữ liệu giữa các thực thể (Task, Project, Cost, Delegation). Một mã `projectCode` (ví dụ: `A01`) có thể tồn tại ở nhiều năm tài chính khác nhau và nhiều chi nhánh khác nhau; chúng là các thực thể hoàn toàn độc lập và cấm gộp chung.
+- **Tiêu Chuẩn Bắt Buộc Khi Tạo Mới / Cập Nhật (Persistence Standard)**:
+  - Mọi bản ghi khi ghi xuống Firestore (`taka_tasks`, `taka_costs`, `taka_delegation_groups`), lưu vào Dexie `localDb` và Zustand bắt buộc phải có đầy đủ 4 trường định danh: `projectId`, `projectCode`, `projectYear` (hoặc `year`), và `projectStore` (hoặc `store`). CẤM để trống hoặc gán `undefined`/`null` cho các trường này.
+  - Khi tạo Task mới từ Project, bắt buộc kế thừa trực tiếp: `task.projectId = project.id`, `task.projectCode = project.code`, `task.projectYear = project.year`, `task.projectStore = project.store`.
+- **Thứ Tự Ưu Tiên Khi Đối Chiếu & Liên Kết Thực Thể (Matching Priority Engine)**:
+  - Mọi hàm liên kết thực thể (như `isTaskBelongsToProject`, `isDelegationGroupBelongsToProject`, `getTasksForProject`, `computeProjectActStatus`, `resolveProjectContext`, `computeTaskCode`, `buildTaskNoMap`, `resolvePredecessorString`) bắt buộc tuân thủ thứ tự kiểm tra:
+    1. **Loại trừ đã xóa**: Bỏ qua ngay lập tức mọi bản ghi có `isDeleted: true` hoặc nằm trong danh sách `taskDeletedTracker`.
+    2. **Khớp ID dự án (Ưu tiên cao nhất #1)**: So khớp `task.projectId === project.id`. Nếu CẢ HAI BÊN đều có ID nhưng giá trị KHÁC NHAU -> LẬP TỨC LOẠI TRỪ (`return false`). TUYỆT ĐỐI CẤM fallback sang so sánh `projectCode` khi ID đã không khớp.
+    3. **Khớp Chi Nhánh Store (Ưu tiên #2)**: Bắt buộc cùng chi nhánh store (so khớp chuẩn hóa `toLowerCase().trim()`). Nếu một bên là `HCM` và một bên là `HN` -> LẬP TỨC LOẠI TRỪ (`return false`).
+    4. **Khớp Năm Tài Chính Year (Ưu tiên #3)**: Bắt buộc cùng năm tài chính (so khớp chuỗi chuẩn hóa `String(year).trim()`). Nếu khác năm -> LẬP TỨC LOẠI TRỪ (`return false`).
+    5. **Chế độ tương thích dữ liệu cũ (Legacy Fallback)**: Chỉ khi bản ghi cũ thiếu hoàn toàn trường `projectId`, mới được phép đối chiếu kết hợp đồng thời cả 3 yếu tố: `projectCode` + `store` + `year`. Thiếu bất kỳ yếu tố nào trong 3 yếu tố này cũng không được liên kết bừa bãi.
+
+### 16.2. Cơ Chế Thức Giấc Qua Đêm & Hồi Phục Kết Nối (Overnight Wake-up & Sleep Resume Guard)
+- **Bản Chất Lỗi Qua Đêm**: Khi máy tính Desktop/Laptop gập màn hình hoặc iPad vào chế độ ngủ qua đêm, trình duyệt (Chrome/Safari) chuyển sang trạng thái đóng băng tiến trình (frozen/throttled). Kết nối WebSockets của Firestore và listener Delta bị ngắt ngầm mà không kích hoạt sự kiện lỗi ngay lập tức, dẫn đến việc thiết bị bỏ lỡ các delta phát sinh từ các thiết bị khác trong đêm.
+- **Cơ Chế Bắt Sự Kiện Thức Giấc Toàn Diện**:
+  - Hệ thống bắt buộc duy trì các listener toàn cục: `document.addEventListener('visibilitychange')`, `window.addEventListener('pageshow')`, `window.addEventListener('online')`, `window.addEventListener('focus')`.
+  - **Heartbeat Gap Detection**: Định kỳ mỗi 15-30 giây kiểm tra một nhịp tim (timestamp). Nếu khoảng cách giữa hai lần kiểm tra thực tế vượt quá 60 giây (dấu hiệu chắc chắn máy vừa bị tạm dừng hoặc ngủ qua đêm), hệ thống kích hoạt chuỗi hành động hồi phục:
+    1. **Kiểm Tra & Tái Kích Hoạt Realtime Socket**: Kiểm tra trạng thái Firestore Network, nếu socket bị treo hoặc stale thì reset và tái kích hoạt listener.
+    2. **Bù Đắp Delta Toàn Diện (`forceAll`)**: Ngay lập tức gọi `pullAndApplyDeltas(undefined, true)` với cờ cưỡng chế kéo bù tất cả các delta phát sinh từ mốc `lastSyncTime` trên server để nạp ngay vào Zustand + Dexie.
+    3. **Tự Động Kích Hoạt Reconcile**: Kích hoạt quét đối chiếu nhanh giữa server snapshot và local cache để loại trừ mọi task đã bị xóa hoặc sửa đổi trong đêm.
+
+### 16.3. Tự Động Đối Chiếu Hai Chiều & Triệt Tiêu Task Ma (Bi-directional Reconciliation & Zero-Zombie Standard - Bản Vá 1L)
+- **Chấm Dứt Phụ Thuộc Vào "Clear & Resync Cache"**:
+  - Không bao giờ bắt người dùng phải bấm nút xóa cache thủ công khi dữ liệu bị lệch giữa các thiết bị. Hệ thống phải tự động tự cân bằng và tự làm sạch (Self-Healing).
+- **Cơ Chế Đối Chiếu Snapshot Hai Chiều**:
+  - Mỗi khi nhận một Server Snapshot đầy đủ (từ listener theo năm `useTasksHydration` hoặc listener theo dự án), và snapshot đó **KHÔNG từ cache** (`!snapshot.metadata.fromCache`) và **KHÔNG có pending writes** (`!snapshot.metadata.hasPendingWrites`):
+    - **Chiều Thuận**: Task có trên server mà thiếu hoặc cũ dưới client -> cập nhật ngay vào Zustand và Dexie (đã có qua `snapshot.docChanges()`).
+    - **Chiều Nghịch (Zombie Detection)**: Task đang tồn tại trong Zustand/Dexie thuộc phạm vi của năm/dự án đang nghe, nhưng trên server snapshot không còn tồn tại -> TỰ ĐỘNG XÓA KHỎI LOCAL (`buildZombieRemovalsForYear`, `buildZombieRemovalsForProject`).
+- **An Toàn Tuyệt Đối Khi Loại Trừ Task Ma**:
+  - **Guard 30 Giây (Recent Edit Guard)**: Tuyệt đối không xóa các task vừa được tạo hoặc sửa đổi trong vòng 30.000ms (`RECENT_EDIT_GUARD_MS`) để tránh xóa nhầm task mới tạo dưới local chưa kịp hoàn tất ghi lên server.
+  - **Phạm Vi Đối Chiếu Chuẩn Xác**: Chỉ đối chiếu các task thuộc đúng `projectYear` và `projectStore` được phân quyền, hoặc đúng `projectId`/mã dự án nằm trong truy vấn. Task của dự án khác hoặc năm khác không bao giờ bị đụng tới.
+  - **Chỉ Xóa Cục Bộ**: Thao tác loại trừ task ma chỉ thực hiện trên bộ nhớ (Zustand) và IndexedDB (Dexie), TUYỆT ĐỐI KHÔNG ghi ngược lệnh xóa lên Firestore.
+
+### 16.4. Đồng Bộ Đa Chiều & Tính Toán Tiến Độ Tức Thì (Instant Multi-Device Sync & Rollup)
+- **Phát Tán Đột Biến (Mutation Broadcast)**:
+  - Mọi thao tác Thêm / Sửa / Xóa trên thiết bị A được phản ánh ngay 0ms vào Zustand và Dexie của thiết bị A, đồng thời phát sinh `taka_deltas` với đầy đủ thông tin: `id`, `projectId`, `projectCode`, `projectYear`, `projectStore`, `action`, `updatedBy`.
+  - Thiết bị B, C, iPad đón nhận qua `deltaRealtimeListener.ts` và áp dụng ngay lập tức vào Zustand + Dexie.
+- **Xử Lý Khi Nhận Lệnh Xóa**:
+  - Khi nhận delta xóa Task từ thiết bị khác:
+    1. Xóa ngay bản ghi khỏi `localDb.tasks` (Dexie) và Zustand.
+    2. Đưa `id` của task vào `taskDeletedTracker` để ngăn snapshot cũ hồi sinh lại task.
+    3. Cắt đứt task khỏi mảng `p.taskSummaries` trong tài liệu dự án tương ứng.
+    4. Tự động kích hoạt `calculateProjectComputedDates` để tính toán lại ngày bắt đầu, ngày kết thúc và % tiến độ của dự án trên toàn bộ các thiết bị.
+
+### 16.5. Kỷ Luật Nhập Xuất & Ghi Dữ Liệu Đột Biến (Write Imports & Delta Integrity)
+- **Cấm Nhập Trực Tiếp Từ Firebase SDK**:
+  - Toàn bộ các file thao tác ghi vào `taka_projects`, `taka_tasks`, `taka_costs`, `taka_delegation_groups` **BẮT BUỘC** import `setDoc`, `updateDoc`, `deleteDoc`, `writeBatch` từ `src/lib/firestoreWrites.ts` (hoặc `src/lib/firebase.ts`).
+  - **TUYỆT ĐỐI CẤM** import các hàm ghi trực tiếp từ `firebase/firestore`. Việc import trực tiếp sẽ bỏ qua bộ phát delta tự động (`autoDeltaQueue.ts`), dẫn đến việc các thiết bị khác không nhận được thông báo thay đổi và gây ra hiện tượng lệch dữ liệu âm thầm.
+- **Cursor Đồng Bộ Dựa Trên Thời Gian Máy Chủ (`serverTime`)**:
+  - Con trỏ đồng bộ delta phải luôn dùng `serverTimestamp()` (`serverTime`), tuyệt đối không dùng giờ đồng hồ cục bộ của thiết bị (`numericTime`) để truy vấn delta, bảo đảm các thiết bị có múi giờ hoặc đồng hồ lệch vẫn nhận đủ 100% dữ liệu.
+
+
+// File: src/components/DetailTabParts/detailTaskImportParser.ts
+import { Project } from '../../types';
+import { parseCSV } from '../../lib/csvUtils';
+import { cleanDurationString } from '../../lib/taskImportService';
+import { parseCSVDate } from './detailCsvUtils';
+
+export async function parseTasksFile(
+  file: File,
+  projects: Project[]
+): Promise<Map<string, Array<{ rowData: any; originalCsvIndex: number }>>> {
+  let rows: string[][] = [];
+  const fileName = file.name.toLowerCase();
+
+  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    const XLSX = await import('xlsx');
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames.includes('tasks') ? 'tasks' : workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
+    rows = rawRows.map(row => row.map((cell: any) => String(cell !== null && cell !== undefined ? cell : '').trim()));
+  } else {
+    const text = await file.text();
+    rows = parseCSV(text);
+  }
+
+  if (!rows || rows.length < 2) {
+    throw new Error('CSV file is empty or format is invalid.');
+  }
+
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const dataRows = rows.slice(1);
+
+  // Field validation
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    if (row.every(c => !String(c).trim())) continue;
+
+    let hasYear = false;
+    let hasStore = false;
+    let hasCode = false;
+
+    headers.forEach((h, i) => {
+      const val = String(row[i] || '').trim();
+      if ((h === 'year' || h === 'projectyear') && val) hasYear = true;
+      if ((h === 'store' || h === 'projectstore') && val) hasStore = true;
+      if ((h === 'code' || h === 'projectcode') && val) hasCode = true;
+    });
+
+    if (!hasYear || !hasStore || !hasCode) {
+      throw new Error(`Row ${idx + 2} is missing Year, Store, or Project Code. All imported data must include these three fields.`);
+    }
+  }
+
+  const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();
+
+  dataRows.forEach((row, rowIndex) => {
+    if (row.length < headers.length) return;
+    const t: any = {};
+
+    headers.forEach((h, i) => {
+      let key = h;
+      if (h === 'task name') key = 'name';
+      if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
+      if (h === 'projectcode') key = 'projectCode';
+      if (h === 'year' || h === 'projectyear') key = 'projectYear';
+      if (h === 'store' || h === 'projectstore') key = 'projectStore';
+      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') {
+        key = 'taskCodePhu';
+      }
+      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
+      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') {
+        key = 'delegation';
+      }
+      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') {
+        key = 'realtimeUpdate';
+      }
+      if (h === 'comments' || h === 'comment') {
+        key = 'importComment';
+      }
+      if (h === 'parent task code' || h === 'parenttaskcode' || h === 'parent_task_code' || h === 'parent code' || h === 'parent_code' || h === 'task mẹ code' || h === 'task me code') {
+        key = 'parentTaskCode';
+      }
+      if (h === 'parent task name' || h === 'parenttaskname' || h === 'parent_task_name' || h === 'parent name' || h === 'parent_name' || h === 'task mẹ name' || h === 'task me name' || h === 'task mẹ' || h === 'task me' || h === 'parent task' || h === 'parenttask') {
+        key = 'parentTaskName';
+      }
+      if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parent id' || h === 'parentid') {
+        key = 'parentTaskId';
+      }
+      if (h === 'is parent' || h === 'is_parent' || h === 'isparent') {
+        key = 'isParent';
+      }
+      if (h === 'level' || h === 'wbs level' || h === 'wbs_level') {
+        key = 'level';
+      }
+
+      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
+        let val: any = row[i];
+        if (key === 'start' || key === 'finish') {
+          val = parseCSVDate(val);
+        } else if (key === 'duration') {
+          val = cleanDurationString(val);
+        } else if (key === 'delegation' || key === 'realtimeUpdate') {
+          const strVal = String(val || '').trim().toLowerCase();
+          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
+        } else if (key === 'projectYear') {
+          val = isNaN(Number(val)) ? val : Number(val);
+        }
+        t[key] = val;
+      }
+    });
+
+    if (t.projectCode && t.name) {
+      if (!t.projectYear || !t.projectStore) {
+        const possibleProjects = projects.filter(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
+        if (possibleProjects.length === 1) {
+          if (!t.projectYear) t.projectYear = possibleProjects[0].year;
+          if (!t.projectStore) t.projectStore = possibleProjects[0].store;
+        }
+      }
+
+      if (!t.projectYear) {
+        const matchedProj = projects.find(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
+        t.projectYear = (matchedProj?.year && !isNaN(Number(matchedProj.year))) ? Number(matchedProj.year) : new Date().getFullYear();
+      }
+
+      if (t.projectYear !== undefined && !isNaN(Number(t.projectYear))) {
+        t.projectYear = Number(t.projectYear);
+      } else {
+        t.projectYear = new Date().getFullYear();
+      }
+
+      const yearKey = t.projectYear ? String(t.projectYear).trim().toLowerCase() : '';
+      const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const prjKey = `${String(t.projectCode).trim().toLowerCase()}_${yearKey}_${storeKey}`;
+
+      if (!rawParsedRowsByProject.has(prjKey)) {
+        rawParsedRowsByProject.set(prjKey, []);
+      }
+      rawParsedRowsByProject.get(prjKey)!.push({ rowData: t, originalCsvIndex: rowIndex });
+    }
+  });
+
+  return rawParsedRowsByProject;
+}
+
+
+// File: src/components/DetailTabParts/detailTaskImportExecutor.ts
+import { Task, Project, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { undoManager } from '../../lib/undoManager';
+import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
+import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
+import { 
+  calculateDatesFromPredecessorsAndDuration, 
+  rollupParentTaskDates, 
+  batchSaveTasksToFirestore 
+} from '../../lib/taskImportService';
+import { healAllTasksPredecessors } from '../../lib/ganttUtils';
+import { findAffectedProjects } from '../../lib/taskStateService';
+import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+
+interface ExecuteImportTasksParams {
+  rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
+  projects: Project[];
+  tasks: Task[];
+  appUsers: AppUser[];
+  currentUser: AppUser;
+}
+
+export async function executeImportTasks({
+  rawParsedRowsByProject,
+  projects,
+  tasks,
+  appUsers,
+  currentUser
+}: ExecuteImportTasksParams): Promise<{ count: number }> {
+  // Build fast multi-index maps for existing tasks
+  const existingTasksById = new Map<string, Task>();
+  const existingTasksByName = new Map<string, Task>();
+  const existingTasksByNorm = new Map<string, Task>();
+  const existingTasksByCode = new Map<string, Task>();
+
+  tasks.forEach(tsk => {
+    existingTasksById.set(tsk.id, tsk);
+    const prjKey = buildCanonicalProjectKey(tsk.projectCode, tsk.projectYear, tsk.projectStore, projects);
+    const pCode = String(tsk.projectCode || '').trim().toLowerCase();
+    if (tsk.name) {
+      const nameKey = `${prjKey}:::${String(tsk.name).trim().toLowerCase()}`;
+      existingTasksByName.set(nameKey, tsk);
+      const norm = normalizeTaskNameForComparison(tsk.name, tsk.projectCode);
+      if (norm) {
+        existingTasksByNorm.set(`${pCode}:::norm:::${norm}`, tsk);
+      }
+    }
+    if (tsk.taskCodePhu) {
+      const codeKey = `${pCode}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
+      existingTasksByCode.set(codeKey, tsk);
+    }
+  });
+
+  const previousStates = new Map<string, any>();
+  const newIds = new Set<string>();
+  const tasksToImport: Task[] = [];
+  const processedImportTasksMap = new Map<string, Task>();
+
+  // Process rows project by project
+  rawParsedRowsByProject.forEach((items, prjKey) => {
+    const sortedItems = [...items].sort((a, b) => {
+      const codeA = String(a.rowData.taskCodePhu || '').trim();
+      const codeB = String(b.rowData.taskCodePhu || '').trim();
+      const numMatchA = codeA.match(/-(\d+)$/);
+      const numMatchB = codeB.match(/-(\d+)$/);
+      if (numMatchA && numMatchB) {
+        const numA = parseInt(numMatchA[1], 10);
+        const numB = parseInt(numMatchB[1], 10);
+        if (numA !== numB) return numA - numB;
+      } else if (codeA && codeB) {
+        const comp = codeA.localeCompare(codeB, undefined, { numeric: true });
+        if (comp !== 0) return comp;
+      } else if (codeA && !codeB) {
+        return -1;
+      } else if (!codeA && codeB) {
+        return 1;
+      }
+
+      if (a.rowData.orderIndex !== undefined && b.rowData.orderIndex !== undefined && a.rowData.orderIndex !== '' && b.rowData.orderIndex !== '') {
+        const ordA = Number(a.rowData.orderIndex);
+        const ordB = Number(b.rowData.orderIndex);
+        if (!isNaN(ordA) && !isNaN(ordB) && ordA !== ordB) return ordA - ordB;
+      }
+      return a.originalCsvIndex - b.originalCsvIndex;
+    });
+
+    sortedItems.forEach((item, index) => {
+      const t = item.rowData;
+      // Dùng index thực tế của dòng trong file CSV để đánh số lại, đảm bảo không nhảy cóc
+      const taskOrderIndex = index; 
+      const exactProjectCode = String(t.projectCode || '').trim();
+      
+      // Ép buộc tạo Subtask code: Lấy tuyệt đối Project Code + # + (Thứ tự dòng + 1)
+      const taskCodePhu = `${exactProjectCode}#${taskOrderIndex + 1}`;
+
+      const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
+      const pCode = exactProjectCode.toLowerCase();
+      const rawName = String(t.name || '').trim().toLowerCase();
+      const normName = normalizeTaskNameForComparison(t.name, t.projectCode);
+      const nameKey = `${canonicalPrjKey}:::${rawName}`;
+      const normKey = `${pCode}:::norm:::${normName}`;
+      const codeKey = `${pCode}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
+
+      // Match against existing tasks in priority:
+      // 1. Matched in current import batch (by exact name, norm name, or code)
+      // 2. By ID
+      // 3. By exact project + name
+      // 4. By normalized project + name
+      // 5. By project + taskCodePhu
+      let existing: Task | undefined = processedImportTasksMap.get(nameKey) ||
+                                       (normName ? processedImportTasksMap.get(normKey) : undefined) ||
+                                       (taskCodePhu ? processedImportTasksMap.get(codeKey) : undefined);
+      if (!existing && t.id) {
+        existing = existingTasksById.get(t.id);
+      }
+      if (!existing && nameKey) {
+        existing = existingTasksByName.get(nameKey);
+      }
+      if (!existing && normKey) {
+        existing = existingTasksByNorm.get(normKey);
+      }
+      if (!existing && taskCodePhu) {
+        existing = existingTasksByCode.get(codeKey);
+      }
+
+      const id = existing ? existing.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+
+      if (existing) {
+        if (!previousStates.has(id)) {
+          previousStates.set(id, existing);
+        }
+      } else {
+        newIds.add(id);
+      }
+
+      let updatedComments = existing?.comments ? [...existing.comments] : [];
+      if (t.importComment !== undefined) {
+        const importedCommentText = String(t.importComment).trim();
+        if (importedCommentText === '[DELETE]' || importedCommentText === '[CLEAR]') {
+          updatedComments = [];
+        } else if (importedCommentText) {
+          const existingText = updatedComments.map(c => {
+            const author = appUsers.find(u => 
+              u.id === c.userId || 
+              (u.username && String(u.username).toLowerCase() === String(c.userId).toLowerCase())
+            );
+            const name = c.userName || author?.username || c.userId || '';
+            return `${name ? name + ': ' : ''}${c.text}`;
+          }).join(' | ');
+
+          if (importedCommentText !== existingText) {
+            const activeUser = useAppStore.getState().currentUser || currentUser;
+            const activeUserId = activeUser?.id && activeUser.id !== 'guest' ? activeUser.id : (activeUser?.username || 'system');
+            const activeUserName = (activeUser?.username && activeUser.username !== 'Guest') ? activeUser.username : (activeUser?.name || activeUser?.email || 'User');
+
+            let commentText = importedCommentText;
+            let commentUserId = activeUserId;
+            let commentUserName = activeUserName;
+            const prefixMatch = importedCommentText.match(/^([^:\n]+):\s*(.+)$/s);
+            if (prefixMatch) {
+              const potentialName = prefixMatch[1].trim();
+              const potentialText = prefixMatch[2].trim();
+              const matchedUser = appUsers.find(u => 
+                (u.username && u.username.toLowerCase() === potentialName.toLowerCase()) ||
+                (u.id && u.id.toLowerCase() === potentialName.toLowerCase()) ||
+                (u.email && u.email.toLowerCase() === potentialName.toLowerCase())
+              );
+              if (matchedUser) {
+                commentUserId = matchedUser.id;
+                commentUserName = matchedUser.username || potentialName;
+                commentText = potentialText;
+              }
+            }
+
+            updatedComments.push({
+              id: `c_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              text: commentText,
+              createdAt: new Date().toISOString(),
+              userId: commentUserId,
+              userName: commentUserName
+            });
+          }
+        }
+      }
+      delete t.importComment;
+
+      if (!existing) {
+        const defaultToday = getDefaultDatetimeLocal();
+        if (!t.start) t.start = defaultToday;
+        if (!t.finish) t.finish = t.start || defaultToday;
+        if (!t.baselineStart) t.baselineStart = t.start || defaultToday;
+        if (!t.baselineFinish) t.baselineFinish = t.finish || defaultToday;
+        if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') {
+          t.duration = "0";
+        }
+      }
+
+      const finalTask: Task = existing
+        ? {
+            ...existing,
+            ...t,
+            id: existing.id,
+            comments: updatedComments,
+            orderIndex: taskOrderIndex,
+            taskCodePhu,
+            durationManual: true,
+            finishManual: false,
+            startManual: false,
+            updatedAt: new Date().toISOString()
+          }
+        : {
+            ...t,
+            id,
+            comments: updatedComments,
+            orderIndex: taskOrderIndex,
+            taskCodePhu,
+            durationManual: true,
+            finishManual: false,
+            startManual: false,
+            updatedAt: new Date().toISOString()
+          };
+
+      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
+      if (!finalTask.projectId && projects && projects.length > 0) {
+        const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
+        const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
+        const pYear = String(finalTask.projectYear ?? '').trim();
+        const matched = projects.find(p => {
+          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
+          const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
+          return matchCode && matchStore && matchYear;
+        });
+        if (matched) {
+          finalTask.projectId = matched.id;
+          if (!finalTask.projectStore && matched.store) finalTask.projectStore = matched.store;
+          if (finalTask.projectYear === undefined && matched.year !== undefined) finalTask.projectYear = matched.year;
+        }
+      }
+
+      if (finalTask.start && finalTask.duration !== undefined && finalTask.duration !== '') {
+        const s = new Date(finalTask.start);
+        const days = parseFloat(String(finalTask.duration));
+        if (!isNaN(s.getTime()) && !isNaN(days)) {
+          const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+          finalTask.finish = formatToDatetimeLocal(f);
+          finalTask.durationManual = true;
+        }
+      } else if (finalTask.start && finalTask.finish) {
+        const s = new Date(finalTask.start);
+        const f = new Date(finalTask.finish);
+        if (!isNaN(s.getTime()) && !isNaN(f.getTime())) {
+          const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+          finalTask.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+          finalTask.durationManual = true;
+        }
+      } else if (finalTask.start) {
+        finalTask.duration = finalTask.duration || "0";
+        finalTask.finish = finalTask.finish || finalTask.start;
+        finalTask.durationManual = true;
+      }
+
+      // Register immediately into lookup maps to prevent duplicate tasks within same import
+      processedImportTasksMap.set(nameKey, finalTask);
+      if (normKey) processedImportTasksMap.set(normKey, finalTask);
+      if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
+      existingTasksByName.set(nameKey, finalTask);
+      if (normKey) existingTasksByNorm.set(normKey, finalTask);
+      existingTasksByCode.set(codeKey, finalTask);
+      existingTasksById.set(finalTask.id, finalTask);
+
+      const existingIndex = tasksToImport.findIndex(tk => tk.id === finalTask.id);
+      if (existingIndex >= 0) {
+        tasksToImport[existingIndex] = finalTask;
+      } else {
+        tasksToImport.push(finalTask);
+      }
+    });
+  });
+
+  // Resolve parent-child hierarchy across imported tasks and existing tasks
+  const lookupTaskMap = new Map<string, Task>();
+  tasks.forEach(t => lookupTaskMap.set(t.id, t));
+  tasksToImport.forEach(t => lookupTaskMap.set(t.id, t));
+
+  tasksToImport.forEach(t => {
+    let resolvedParentId: string | undefined = undefined;
+
+    if (t.parentTaskId && lookupTaskMap.has(t.parentTaskId)) {
+      resolvedParentId = t.parentTaskId;
+    } else if ((t as any).parentTaskCode) {
+      const pCode = String((t as any).parentTaskCode).trim().toLowerCase();
+      const cleanNumMatch = pCode.match(/^#?(\d+)$/);
+      const targetIndex = cleanNumMatch ? parseInt(cleanNumMatch[1], 10) - 1 : -1;
+
+      const matchedParent = Array.from(lookupTaskMap.values()).find(
+        pt => pt.projectCode === t.projectCode &&
+              (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
+              (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
+              (
+                String(pt.taskCodePhu || '').trim().toLowerCase() === pCode ||
+                String(pt.id).toLowerCase() === pCode ||
+                (cleanNumMatch && String(pt.taskCodePhu || '').trim().toLowerCase().endsWith(`#${cleanNumMatch[1]}`)) ||
+                (targetIndex >= 0 && pt.orderIndex === targetIndex)
+              )
+      );
+      if (matchedParent && matchedParent.id !== t.id) {
+        resolvedParentId = matchedParent.id;
+      }
+    } else if ((t as any).parentTaskName) {
+      const pName = String((t as any).parentTaskName).trim().toLowerCase();
+      const matchedParent = Array.from(lookupTaskMap.values()).find(
+        pt => pt.projectCode === t.projectCode &&
+              (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
+              (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
+              String(pt.name || '').trim().toLowerCase() === pName
+      );
+      if (matchedParent && matchedParent.id !== t.id) {
+        resolvedParentId = matchedParent.id;
+      }
+    }
+
+    if (resolvedParentId && resolvedParentId !== t.id) {
+      t.parentTaskId = resolvedParentId;
+      (t as any).parentId = resolvedParentId;
+    } else if (resolvedParentId === t.id) {
+      delete t.parentTaskId;
+      delete (t as any).parentId;
+    }
+
+    delete (t as any).parentTaskCode;
+    delete (t as any).parentTaskName;
+    delete (t as any).isParent;
+    delete (t as any).level;
+  });
+
+  // Calculate dates from predecessors and duration
+  useAppStore.getState().optimisticUpdateTasks(tasksToImport);
+
+  const allCurrentTasks = useAppStore.getState().tasks;
+  const calculatedTasks = calculateDatesFromPredecessorsAndDuration(
+    tasksToImport,
+    allCurrentTasks,
+    projects
+  );
+
+  const tasksMapAfterCalc = new Map<string, Task>();
+  allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+  calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+  const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
+  const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc);
+
+  const tasksToSaveMap = new Map<string, Task>();
+  calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));
+  updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
+  const rawTasksToSave = Array.from(tasksToSaveMap.values());
+
+  // Auto-heal predecessor string codes on imported CSV/Excel tasks
+  const healed = healAllTasksPredecessors(rawTasksToSave, projects);
+  const finalTasksToSave = healed.updatedTasks;
+
+  // Optimistic update
+  useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
+
+  // Sync project summaries
+  const finalFullTasksList = Array.from(allTasksMap.values());
+  const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
+  const delegationGroups = useAppStore.getState().delegationGroups;
+  const currentProjects = useAppStore.getState().projects;
+  const updatedProjects = currentProjects.map(proj => {
+    const isAffected = affectedProjects.some(ap => ap.id === proj.id);
+    if (!isAffected) return proj;
+    const pTasks = getTasksForProject(proj, finalFullTasksList);
+    const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
+    return { ...proj, ...computed };
+  });
+  useAppStore.getState().setProjects(updatedProjects);
+
+  // Save to Firestore
+  const activeUser = useAppStore.getState().currentUser || currentUser;
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
+
+  for (const p of affectedProjects) {
+    const pTasks = getTasksForProject(p, finalFullTasksList);
+    const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
+    await syncProjectDatesToFirestore(p.id, computed);
+  }
+
+  if (finalTasksToSave.length > 0) {
+    undoManager.push({
+      description: 'Import Tasks',
+      revert: async () => {
+        const batch = writeBatch(db);
+        previousStates.forEach((oldData, id) => {
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), oldData);
+        });
+        newIds.forEach(id => {
+          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id));
+        });
+        await batch.commit();
+      }
+    });
+  }
+
+  return { count: tasksToImport.length };
+}
+

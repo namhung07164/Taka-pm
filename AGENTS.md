@@ -103,15 +103,55 @@ File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm
 - **Sync cursor**: delta được sắp/lọc theo `serverTime` (serverTimestamp), không dùng `numericTime` (giờ máy) để truy vấn, để delta tạo lúc offline vẫn tới được các máy khác.
 
 ## 16. Quy Chuẩn Đồng Bộ Đa Thiết Bị & Cô Lập Khóa Dữ Liệu Tuyệt Đối (Multi-Device Sync & Composite Key Isolation)
-- **Cô Lập Tuyệt Đối 4 Khóa (`projectId` + `projectCode` + `year` + `store`)**:
-  - Không bao giờ dùng riêng lẻ `projectCode` để đối chiếu, gom nhóm, hoặc truy vấn dữ liệu.
-  - Mọi hàm liên kết thực thể (Task, Delegation, Cost) với Project (như `isTaskBelongsToProject`, `isDelegationGroupBelongsToProject`, `getTasksForProject`, `computeProjectActStatus`, `resolveProjectContext`, `computeTaskCode`, `buildTaskNoMap`) bắt buộc kiểm tra:
-    1. Bỏ qua bản ghi có `isDeleted: true` hoặc nằm trong `taskDeletedTracker`.
-    2. Khớp theo `projectId` / `id` làm ưu tiên cao nhất. Nếu cả 2 bên có ID nhưng khác nhau -> lập tức loại trừ (`return false`), cấm fallback sang `projectCode` làm gộp nhầm dữ liệu.
-    3. Nếu cả 2 bên có `store`: bắt buộc cùng chi nhánh (so khớp không phân biệt hoa thường). Nếu khác nhau -> loại trừ ngay.
-    4. Nếu cả 2 bên có `year`: bắt buộc cùng năm tài chính. Nếu khác nhau -> loại trừ ngay.
-- **Đồng Bộ Đa Màn Hình / Đa Thiết Bị (iPhone, iPad, Desktop)**:
-  - Khi thao tác Thêm / Sửa / Xóa trên thiết bị A, cập nhật ngay tức thì vào Zustand và Dexie local (0ms lag), đồng thời phát sinh `taka_deltas` lên Firestore với đầy đủ thông tin định danh (`id`, `projectId`, `projectCode`, `projectYear`, `projectStore`).
-  - Thiết bị B đón nhận qua `deltaRealtimeListener.ts` và áp dụng tức thì vào Zustand + Dexie.
-  - Khi xóa Task/Project trên một thiết bị: Các thiết bị khác khi nhận delta xóa phải ngay lập tức loại bỏ task khỏi `localDb.tasks`, đánh dấu vào `taskDeletedTracker`, cắt đứt task khỏi `p.taskSummaries`, và tự động kích hoạt tính toán lại `calculateProjectComputedDates` cho dự án tương ứng.
-  - Cơ chế hồi phục kết nối iOS/Safari: Khi thiết bị mở lại từ chế độ ngủ / ẩn màn hình (`visibilitychange`, `pageshow`, `online`), hệ thống tự động kiểm tra socket, khôi phục listener và kích hoạt `pullAndApplyDeltas(undefined, true)` để bù đắp các delta phát sinh trong thời gian ngoại tuyến.
+
+### 16.1. Cô Lập Tuyệt Đối 4 Khóa Định Danh (`projectId` + `projectCode` + `year` + `store`)
+- **Nguyên Tắc Bất Khả Xâm Phạm**: Không bao giờ được dùng riêng lẻ `projectCode` để đối chiếu, gom nhóm, liên kết hoặc truy vấn dữ liệu giữa các thực thể (Task, Project, Cost, Delegation). Một mã `projectCode` (ví dụ: `A01`) có thể tồn tại ở nhiều năm tài chính khác nhau và nhiều chi nhánh khác nhau; chúng là các thực thể hoàn toàn độc lập và cấm gộp chung.
+- **Tiêu Chuẩn Bắt Buộc Khi Tạo Mới / Cập Nhật (Persistence Standard)**:
+  - Mọi bản ghi khi ghi xuống Firestore (`taka_tasks`, `taka_costs`, `taka_delegation_groups`), lưu vào Dexie `localDb` và Zustand bắt buộc phải có đầy đủ 4 trường định danh: `projectId`, `projectCode`, `projectYear` (hoặc `year`), và `projectStore` (hoặc `store`). CẤM để trống hoặc gán `undefined`/`null` cho các trường này.
+  - Khi tạo Task mới từ Project, bắt buộc kế thừa trực tiếp: `task.projectId = project.id`, `task.projectCode = project.code`, `task.projectYear = project.year`, `task.projectStore = project.store`.
+- **Thứ Tự Ưu Tiên Khi Đối Chiếu & Liên Kết Thực Thể (Matching Priority Engine)**:
+  - Mọi hàm liên kết thực thể (như `isTaskBelongsToProject`, `isDelegationGroupBelongsToProject`, `getTasksForProject`, `computeProjectActStatus`, `resolveProjectContext`, `computeTaskCode`, `buildTaskNoMap`, `resolvePredecessorString`) bắt buộc tuân thủ thứ tự kiểm tra:
+    1. **Loại trừ đã xóa**: Bỏ qua ngay lập tức mọi bản ghi có `isDeleted: true` hoặc nằm trong danh sách `taskDeletedTracker`.
+    2. **Khớp ID dự án (Ưu tiên cao nhất #1)**: So khớp `task.projectId === project.id`. Nếu CẢ HAI BÊN đều có ID nhưng giá trị KHÁC NHAU -> LẬP TỨC LOẠI TRỪ (`return false`). TUYỆT ĐỐI CẤM fallback sang so sánh `projectCode` khi ID đã không khớp.
+    3. **Khớp Chi Nhánh Store (Ưu tiên #2)**: Bắt buộc cùng chi nhánh store (so khớp chuẩn hóa `toLowerCase().trim()`). Nếu một bên là `HCM` và một bên là `HN` -> LẬP TỨC LOẠI TRỪ (`return false`).
+    4. **Khớp Năm Tài Chính Year (Ưu tiên #3)**: Bắt buộc cùng năm tài chính (so khớp chuỗi chuẩn hóa `String(year).trim()`). Nếu khác năm -> LẬP TỨC LOẠI TRỪ (`return false`).
+    5. **Chế độ tương thích dữ liệu cũ (Legacy Fallback)**: Chỉ khi bản ghi cũ thiếu hoàn toàn trường `projectId`, mới được phép đối chiếu kết hợp đồng thời cả 3 yếu tố: `projectCode` + `store` + `year`. Thiếu bất kỳ yếu tố nào trong 3 yếu tố này cũng không được liên kết bừa bãi.
+
+### 16.2. Cơ Chế Thức Giấc Qua Đêm & Hồi Phục Kết Nối (Overnight Wake-up & Sleep Resume Guard)
+- **Bản Chất Lỗi Qua Đêm**: Khi máy tính Desktop/Laptop gập màn hình hoặc iPad vào chế độ ngủ qua đêm, trình duyệt (Chrome/Safari) chuyển sang trạng thái đóng băng tiến trình (frozen/throttled). Kết nối WebSockets của Firestore và listener Delta bị ngắt ngầm mà không kích hoạt sự kiện lỗi ngay lập tức, dẫn đến việc thiết bị bỏ lỡ các delta phát sinh từ các thiết bị khác trong đêm.
+- **Cơ Chế Bắt Sự Kiện Thức Giấc Toàn Diện**:
+  - Hệ thống bắt buộc duy trì các listener toàn cục: `document.addEventListener('visibilitychange')`, `window.addEventListener('pageshow')`, `window.addEventListener('online')`, `window.addEventListener('focus')`.
+  - **Heartbeat Gap Detection**: Định kỳ mỗi 15-30 giây kiểm tra một nhịp tim (timestamp). Nếu khoảng cách giữa hai lần kiểm tra thực tế vượt quá 60 giây (dấu hiệu chắc chắn máy vừa bị tạm dừng hoặc ngủ qua đêm), hệ thống kích hoạt chuỗi hành động hồi phục:
+    1. **Kiểm Tra & Tái Kích Hoạt Realtime Socket**: Kiểm tra trạng thái Firestore Network, nếu socket bị treo hoặc stale thì reset và tái kích hoạt listener.
+    2. **Bù Đắp Delta Toàn Diện (`forceAll`)**: Ngay lập tức gọi `pullAndApplyDeltas(undefined, true)` với cờ cưỡng chế kéo bù tất cả các delta phát sinh từ mốc `lastSyncTime` trên server để nạp ngay vào Zustand + Dexie.
+    3. **Tự Động Kích Hoạt Reconcile**: Kích hoạt quét đối chiếu nhanh giữa server snapshot và local cache để loại trừ mọi task đã bị xóa hoặc sửa đổi trong đêm.
+
+### 16.3. Tự Động Đối Chiếu Hai Chiều & Triệt Tiêu Task Ma (Bi-directional Reconciliation & Zero-Zombie Standard - Bản Vá 1L)
+- **Chấm Dứt Phụ Thuộc Vào "Clear & Resync Cache"**:
+  - Không bao giờ bắt người dùng phải bấm nút xóa cache thủ công khi dữ liệu bị lệch giữa các thiết bị. Hệ thống phải tự động tự cân bằng và tự làm sạch (Self-Healing).
+- **Cơ Chế Đối Chiếu Snapshot Hai Chiều**:
+  - Mỗi khi nhận một Server Snapshot đầy đủ (từ listener theo năm `useTasksHydration` hoặc listener theo dự án), và snapshot đó **KHÔNG từ cache** (`!snapshot.metadata.fromCache`) và **KHÔNG có pending writes** (`!snapshot.metadata.hasPendingWrites`):
+    - **Chiều Thuận**: Task có trên server mà thiếu hoặc cũ dưới client -> cập nhật ngay vào Zustand và Dexie (đã có qua `snapshot.docChanges()`).
+    - **Chiều Nghịch (Zombie Detection)**: Task đang tồn tại trong Zustand/Dexie thuộc phạm vi của năm/dự án đang nghe, nhưng trên server snapshot không còn tồn tại -> TỰ ĐỘNG XÓA KHỎI LOCAL (`buildZombieRemovalsForYear`, `buildZombieRemovalsForProject`).
+- **An Toàn Tuyệt Đối Khi Loại Trừ Task Ma**:
+  - **Guard 30 Giây (Recent Edit Guard)**: Tuyệt đối không xóa các task vừa được tạo hoặc sửa đổi trong vòng 30.000ms (`RECENT_EDIT_GUARD_MS`) để tránh xóa nhầm task mới tạo dưới local chưa kịp hoàn tất ghi lên server.
+  - **Phạm Vi Đối Chiếu Chuẩn Xác**: Chỉ đối chiếu các task thuộc đúng `projectYear` và `projectStore` được phân quyền, hoặc đúng `projectId`/mã dự án nằm trong truy vấn. Task của dự án khác hoặc năm khác không bao giờ bị đụng tới.
+  - **Chỉ Xóa Cục Bộ**: Thao tác loại trừ task ma chỉ thực hiện trên bộ nhớ (Zustand) và IndexedDB (Dexie), TUYỆT ĐỐI KHÔNG ghi ngược lệnh xóa lên Firestore.
+
+### 16.4. Đồng Bộ Đa Chiều & Tính Toán Tiến Độ Tức Thì (Instant Multi-Device Sync & Rollup)
+- **Phát Tán Đột Biến (Mutation Broadcast)**:
+  - Mọi thao tác Thêm / Sửa / Xóa trên thiết bị A được phản ánh ngay 0ms vào Zustand và Dexie của thiết bị A, đồng thời phát sinh `taka_deltas` với đầy đủ thông tin: `id`, `projectId`, `projectCode`, `projectYear`, `projectStore`, `action`, `updatedBy`.
+  - Thiết bị B, C, iPad đón nhận qua `deltaRealtimeListener.ts` và áp dụng ngay lập tức vào Zustand + Dexie.
+- **Xử Lý Khi Nhận Lệnh Xóa**:
+  - Khi nhận delta xóa Task từ thiết bị khác:
+    1. Xóa ngay bản ghi khỏi `localDb.tasks` (Dexie) và Zustand.
+    2. Đưa `id` của task vào `taskDeletedTracker` để ngăn snapshot cũ hồi sinh lại task.
+    3. Cắt đứt task khỏi mảng `p.taskSummaries` trong tài liệu dự án tương ứng.
+    4. Tự động kích hoạt `calculateProjectComputedDates` để tính toán lại ngày bắt đầu, ngày kết thúc và % tiến độ của dự án trên toàn bộ các thiết bị.
+
+### 16.5. Kỷ Luật Nhập Xuất & Ghi Dữ Liệu Đột Biến (Write Imports & Delta Integrity)
+- **Cấm Nhập Trực Tiếp Từ Firebase SDK**:
+  - Toàn bộ các file thao tác ghi vào `taka_projects`, `taka_tasks`, `taka_costs`, `taka_delegation_groups` **BẮT BUỘC** import `setDoc`, `updateDoc`, `deleteDoc`, `writeBatch` từ `src/lib/firestoreWrites.ts` (hoặc `src/lib/firebase.ts`).
+  - **TUYỆT ĐỐI CẤM** import các hàm ghi trực tiếp từ `firebase/firestore`. Việc import trực tiếp sẽ bỏ qua bộ phát delta tự động (`autoDeltaQueue.ts`), dẫn đến việc các thiết bị khác không nhận được thông báo thay đổi và gây ra hiện tượng lệch dữ liệu âm thầm.
+- **Cursor Đồng Bộ Dựa Trên Thời Gian Máy Chủ (`serverTime`)**:
+  - Con trỏ đồng bộ delta phải luôn dùng `serverTimestamp()` (`serverTime`), tuyệt đối không dùng giờ đồng hồ cục bộ của thiết bị (`numericTime`) để truy vấn delta, bảo đảm các thiết bị có múi giờ hoặc đồng hồ lệch vẫn nhận đủ 100% dữ liệu.

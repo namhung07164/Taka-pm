@@ -223,6 +223,24 @@ export async function executeImportTasks({
             updatedAt: new Date().toISOString()
           };
 
+      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
+      if (!finalTask.projectId && projects && projects.length > 0) {
+        const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
+        const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
+        const pYear = String(finalTask.projectYear ?? '').trim();
+        const matched = projects.find(p => {
+          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
+          const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
+          return matchCode && matchStore && matchYear;
+        });
+        if (matched) {
+          finalTask.projectId = matched.id;
+          if (!finalTask.projectStore && matched.store) finalTask.projectStore = matched.store;
+          if (finalTask.projectYear === undefined && matched.year !== undefined) finalTask.projectYear = matched.year;
+        }
+      }
+
       if (finalTask.start && finalTask.duration !== undefined && finalTask.duration !== '') {
         const s = new Date(finalTask.start);
         const days = parseFloat(String(finalTask.duration));

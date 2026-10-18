@@ -60,6 +60,7 @@ export async function parseTasksFile(
     headers.forEach((h, i) => {
       let key = h;
       if (h === 'task name') key = 'name';
+      if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
       if (h === 'projectcode') key = 'projectCode';
       if (h === 'year' || h === 'projectyear') key = 'projectYear';
       if (h === 'store' || h === 'projectstore') key = 'projectStore';
@@ -92,7 +93,7 @@ export async function parseTasksFile(
         key = 'level';
       }
 
-      if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
+      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
         let val: any = row[i];
         if (key === 'start' || key === 'finish') {
           val = parseCSVDate(val);
