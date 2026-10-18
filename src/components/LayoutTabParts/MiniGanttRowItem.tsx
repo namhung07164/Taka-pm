@@ -76,12 +76,12 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
     return (
       <div
         className={cn(
-          'flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group h-9',
+          'flex items-center hover:bg-slate-50 dark:hover:bg-[#252528]/50 transition-colors group min-h-[38px] py-1',
           isChild && 'bg-slate-50/40 dark:bg-[#1a1a1c]/40'
         )}
       >
         {/* Task Info Cell: Name & Dates */}
-        <div className="w-[240px] sm:w-[270px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
+        <div className="w-[310px] sm:w-[380px] md:w-[420px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {isChild && (
               <span className="text-slate-400 dark:text-slate-500 font-mono text-[11px] select-none pl-1.5 shrink-0">
@@ -99,10 +99,10 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
             })()}
             <span
               className={cn(
-                'text-xs truncate flex-1',
+                'text-xs leading-snug break-words flex-1 font-medium',
                 isChild
                   ? 'text-slate-600 dark:text-slate-300 font-normal'
-                  : 'text-slate-800 dark:text-slate-100 font-medium'
+                  : 'text-slate-800 dark:text-slate-100 font-semibold'
               )}
               title={`${t.taskCodePhu || (t.orderIndex !== undefined ? `#${t.orderIndex + 1} ` : '')}${t.name}${
                 sFormatted || fFormatted ? ` (${sFormatted || ''} - ${fFormatted || ''})` : ''
