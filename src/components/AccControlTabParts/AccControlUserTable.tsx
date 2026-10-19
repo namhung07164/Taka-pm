@@ -3,7 +3,8 @@ import { useLanguage } from "../../lib/LanguageContext";
 import { Plus, Trash2 } from "lucide-react";
 import { AppUser, AppRole } from "../../types";
 import { useAppStore } from "../../store/useAppStore";
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from "../../lib/firebase";
 import { bumpConfigVersion } from "../../lib/configCacheService";
 

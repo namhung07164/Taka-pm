@@ -43,35 +43,22 @@ export function useStaticAndAuthHydration() {
 
   const lastActiveTimestampRef = useRef<number>(Date.now());
 
-  // 1. Sleep / Wake Guard
+  // 1. Sleep / Wake Guard & 20s Heartbeat Gap Detection (Rule 16.2)
   useEffect(() => {
-    const handleSleepWake = () => {
-      const isVisible = typeof document !== "undefined" && document.visibilityState === "visible";
-      if (!isVisible) {
-        lastActiveTimestampRef.current = Date.now();
-        return;
-      }
+    const triggerOvernightRecovery = (elapsedSleepMs: number) => {
+      import("../../lib/deltaOrchestratorService").then((m) => {
+        m.triggerImmediateDeltaSync().catch(() => {});
+      });
 
-      const now = Date.now();
-      const elapsedSleepMs = now - lastActiveTimestampRef.current;
-      lastActiveTimestampRef.current = now;
-
-      if (elapsedSleepMs > 30 * 1000) {
-        import("../../lib/deltaOrchestratorService").then(m => {
-          m.triggerImmediateDeltaSync().catch(() => {});
-        });
-      }
-
-      const IS_LONG_SLEEP = elapsedSleepMs > 10 * 60 * 1000; // > 10 min
-      if (IS_LONG_SLEEP) {
-        // Dispatch recovery event to sub-hooks
+      if (elapsedSleepMs > 60 * 1000) {
+        // Dispatch recovery event to sub-hooks (>60s sleep/freeze gap per Rule 16.2)
         window.dispatchEvent(
           new CustomEvent("taka_sleep_wake_recovery", { detail: { elapsedSleepMs } })
         );
 
         // Check iOS 40MB storage budget and log audit
         enforceStorageBudget().catch(() => {});
-        const sleepMinutes = Math.round(elapsedSleepMs / 60000);
+        const sleepMinutes = Math.max(1, Math.round(elapsedSleepMs / 60000));
         usePerformanceStore
           .getState()
           .trackGetDoc(
@@ -83,14 +70,50 @@ export function useStaticAndAuthHydration() {
       }
     };
 
+    const handleSleepWake = () => {
+      const isVisible =
+        typeof document !== "undefined" && document.visibilityState === "visible";
+      if (!isVisible) {
+        lastActiveTimestampRef.current = Date.now();
+        return;
+      }
+
+      const now = Date.now();
+      const elapsedSleepMs = now - lastActiveTimestampRef.current;
+      lastActiveTimestampRef.current = now;
+
+      if (elapsedSleepMs > 30 * 1000) {
+        triggerOvernightRecovery(elapsedSleepMs);
+      }
+    };
+
+    // Heartbeat Gap Detection every 20s (catches OS sleep when tab remained visible)
+    let lastHeartbeat = Date.now();
+    const heartbeatTimer = setInterval(() => {
+      const now = Date.now();
+      const gapMs = now - lastHeartbeat;
+      lastHeartbeat = now;
+      lastActiveTimestampRef.current = now;
+      if (
+        gapMs > 60 * 1000 &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible"
+      ) {
+        triggerOvernightRecovery(gapMs);
+      }
+    }, 20 * 1000);
+
     document.addEventListener("visibilitychange", handleSleepWake);
     window.addEventListener("pageshow", handleSleepWake);
     window.addEventListener("focus", handleSleepWake);
+    window.addEventListener("online", handleSleepWake);
 
     return () => {
+      clearInterval(heartbeatTimer);
       document.removeEventListener("visibilitychange", handleSleepWake);
       window.removeEventListener("pageshow", handleSleepWake);
       window.removeEventListener("focus", handleSleepWake);
+      window.removeEventListener("online", handleSleepWake);
     };
   }, []);
 
@@ -227,7 +250,7 @@ export function useStaticAndAuthHydration() {
         if (synced > 0) {
           setToast({
             title: "Sync Complete",
-            message: `Đã đồng bộ ${synced} thay đổi offline lên server.`,
+            message: `Successfully synced ${synced} offline change(s) to server.`,
           });
         }
         if (failed > 0) setCloudStatus("offline");

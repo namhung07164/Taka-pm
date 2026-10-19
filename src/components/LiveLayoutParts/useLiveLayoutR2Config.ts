@@ -4,7 +4,8 @@ import { useDataStore } from '../PictureMapping/DataContext';
 import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
 import { preloadFloorImages } from '../../lib/imageDBCache';
 import { db, APP_ID } from '../../lib/firebase';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
 
 export interface LiveLayoutR2ConfigState {
   config: any;

@@ -31,7 +31,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     const now = Date.now();
     if (!force && now - lastTriggerAt < 10000) return;
     lastTriggerAt = now;
-    const year = useAppStore.getState().globalYearFilter;
+    const year = force ? undefined : useAppStore.getState().globalYearFilter;
     pullAndApplyDeltas(year, force).catch(() => {});
   };
 
@@ -139,5 +139,5 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
 export async function triggerImmediateDeltaSync(year?: string): Promise<number> {
   lastActivityTime = Date.now();
   isHibernating = false;
-  return pullAndApplyDeltas(year || useAppStore.getState().globalYearFilter, true);
+  return pullAndApplyDeltas(year, true);
 }

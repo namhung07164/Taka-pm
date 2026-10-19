@@ -2,7 +2,8 @@ import React, { FC, Fragment } from 'react';
 import { useLanguage } from "../../lib/LanguageContext";
 import { PermissionMatrix, AppRole, PermissionAction, PermissionModule } from "../../types";
 import { useAppStore } from "../../store/useAppStore";
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from "../../lib/firebase";
 import { bumpConfigVersion } from "../../lib/configCacheService";
 

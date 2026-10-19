@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { usePerformanceStore } from '../../store/usePerformanceStore';
 import { executeTriggerExportProcess } from '../PictureMapping/lib/dynamicExportService';

@@ -185,6 +185,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                     strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
+                    listening={false}
                   />
                   <Text
                     text={unitData.alerts.count > 1 ? String(unitData.alerts.count) : '!'}
@@ -200,6 +201,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                     fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
+                    listening={false}
                   />
                 </Group>
               )}
@@ -214,6 +216,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                     strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
+                    listening={false}
                   />
                   <Path
                     data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"
@@ -224,6 +227,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                     y={-badgeRadius * 0.65}
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
+                    listening={false}
                   />
                 </Group>
               )}
