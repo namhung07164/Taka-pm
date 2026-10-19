@@ -12,8 +12,6 @@ import {
   getLocalTasksForProjects,
   getLocalCosts,
   getLocalDelegations,
-  getLocalDelegationsForProjects,
-  getLocalDelegationsForTasks,
 } from './localDb';
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
@@ -23,73 +21,44 @@ import { deduplicateTasks } from './taskDeduplicationService';
 import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
-import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from './utils';
-import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
+import { isTaskBelongsToProject } from './utils';
+import {
+  getTasksForProject,
+  calculateProjectComputedDates,
+  syncProjectDatesToFirestore,
+} from './projectDatesService';
+import {
+  tsOf,
+  buildZombieProjectIndex,
+  isZombieTaskAgainstProjects,
+  hydrateCostsFromLocal,
+  hydrateDelegationsFromLocal,
+  hydrateDelegationsForProjects,
+  hydrateDelegationsForTasks,
+} from './backgroundSyncParts/localHydrationHelpers';
 
-import { isTaskDeletedInTracker } from './taskDeletedTracker';
-
-const tsOf = (v: any): number => {
-  if (!v) return 0;
-  if (typeof v === 'string') {
-    const n = Date.parse(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.toMillis === 'function') {
-    const n = v.toMillis();
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.seconds === 'number') {
-    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+export {
+  hydrateCostsFromLocal,
+  hydrateDelegationsFromLocal,
+  hydrateDelegationsForProjects,
+  hydrateDelegationsForTasks,
 };
-
-/**
- * Checks if a cached Dexie task `t` is a zombie that was deleted on the server according to its parent project's `taskSummaries`.
- */
-function isZombieTaskAgainstProjects(t: Task, projects: Project[]): boolean {
-  if (!t || !t.id || t.isDeleted) return true;
-  if (isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) return true;
-  if ((t as any)._isVirtualSummary) return false;
-
-  const updatedMs = tsOf(t.updatedAt);
-  if (updatedMs > 0 && Date.now() - updatedMs <= 30000) return false;
-
-  if (!projects || projects.length === 0) return false;
-  const ownerProj = projects.find(p => !p.isDeleted && isTaskBelongsToProject(t, p));
-  if (!ownerProj) return false;
-
-  if (!Array.isArray(ownerProj.taskSummaries)) return false;
-  if (ownerProj.taskSummaries.length === 0) {
-    return false;
-  }
-
-  const allSummariesHaveIds = ownerProj.taskSummaries.every(
-    (s: any) => Boolean(s?.id)
-  );
-  if (!allSummariesHaveIds) return false;
-
-  const summaryIds = new Set(
-    ownerProj.taskSummaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
-  );
-  if (summaryIds.size === 0) return false;
-  return !summaryIds.has(String(t.id).trim().toLowerCase());
-}
 
 /**
  * Làm tươi (refresh) Task của một dự án cụ thể khi có biến động (0ms lag)
  */
 export async function refreshProjectTasksAndDates(pId: string): Promise<void> {
   const store = useAppStore.getState();
-  const p = store.projects.find(proj => proj.id === pId);
+  const p = store.projects.find((proj) => proj.id === pId);
   if (!p) return;
 
-  // Trích xuất task: Hỗ trợ cả projectCode vắt qua linkCodes
   const pTasks = getTasksForProject(p, store.tasks);
-  
+
   const computed = calculateProjectComputedDates(p, pTasks, store.delegationGroups);
-  if (computed.taskCount !== p.taskCount || JSON.stringify(computed.taskSummaries) !== JSON.stringify(p.taskSummaries)) {
+  if (
+    computed.taskCount !== p.taskCount ||
+    JSON.stringify(computed.taskSummaries) !== JSON.stringify(p.taskSummaries)
+  ) {
     await syncProjectDatesToFirestore(p.id, computed);
   }
 }
@@ -107,8 +76,6 @@ export async function bootstrapLocalStore(): Promise<{
     const store = useAppStore.getState();
     const currentYear = store.globalYearFilter;
 
-    // Boot siêu tốc (~5ms, 0 read): Chỉ nạp Projects cần thiết của năm hiện tại
-    // Tuân thủ triệt để Tri-Gate lazy loading: KHÔNG đọc Task, Cost hay Delegation khi chưa kích hoạt cờ
     const [projects, tasks, costs, delegations] = await Promise.all([
       getLocalProjects(currentYear),
       store.isTasksRequested ? getLocalTasks(currentYear) : Promise.resolve([]),
@@ -117,22 +84,30 @@ export async function bootstrapLocalStore(): Promise<{
     ]);
 
     if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
-      const normalizedProjects = projects.map(p => ({
+      const normalizedProjects = projects.map((p) => ({
         ...p,
-        taskCount: Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-          ? p.taskSummaries.length
-          : (p.taskCount ?? 0),
+        taskCount:
+          Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+            ? p.taskSummaries.length
+            : (p.taskCount ?? 0),
       }));
       store.setProjects(normalizedProjects);
     }
     if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-      const cleanTasks = tasks.filter(t => !isZombieTaskAgainstProjects(t, projects));
+      const zombieIndex = buildZombieProjectIndex(projects);
+      const cleanTasks = tasks.filter(
+        (t) => !isZombieTaskAgainstProjects(t, projects, zombieIndex)
+      );
       store.setTasks(deduplicateTasks(cleanTasks, projects));
     }
     if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
       store.setCosts(costs);
     }
-    if (delegations.length > 0 && store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0)) {
+    if (
+      delegations.length > 0 &&
+      store.isDelegationsRequested &&
+      (!store.delegationGroups || store.delegationGroups.length === 0)
+    ) {
       store.setDelegationGroups(delegations);
     }
 
@@ -143,7 +118,6 @@ export async function bootstrapLocalStore(): Promise<{
         .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
     }
 
-    // Tự động kiểm tra và bảo đảm ngân sách bộ nhớ 40MB iOS
     setTimeout(() => {
       enforceStorageBudget().catch(() => {});
     }, 1000);
@@ -162,7 +136,10 @@ export async function bootstrapLocalStore(): Promise<{
 /**
  * Nạp tức thời Projects từ Dexie khi mở app hoặc chuyển năm (0ms UI, 0 Firestore Read)
  */
-export async function hydrateProjectsFromLocal(year?: string, storeFilter?: string): Promise<number> {
+export async function hydrateProjectsFromLocal(
+  year?: string,
+  storeFilter?: string
+): Promise<number> {
   try {
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
@@ -171,14 +148,12 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
     const currentProjects = store.projects || [];
     const mergedMap = new Map<string, Project>();
 
-    // 1. Nạp danh sách dự án hiện có trong RAM (bảo toàn 100% dự án các năm/store khác)
     currentProjects.forEach((p) => {
       if (p && p.id && !p.isDeleted) {
         mergedMap.set(String(p.id), p);
       }
     });
 
-    // 2. Gộp dự án từ Dexie thuộc năm/store target vào RAM (KHÔNG ghi đè nếu bản trong RAM mới hơn hoặc đã có mặt)
     if (localProjects && localProjects.length > 0) {
       localProjects.forEach((p) => {
         if (p && p.id && !p.isDeleted) {
@@ -186,9 +161,10 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
           if (!existing) {
             mergedMap.set(String(p.id), {
               ...p,
-              taskCount: Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                ? p.taskSummaries.length
-                : (p.taskCount ?? 0),
+              taskCount:
+                Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                  ? p.taskSummaries.length
+                  : (p.taskCount ?? 0),
             });
           } else {
             const existingTs = tsOf(existing.updatedAt);
@@ -197,9 +173,10 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
               mergedMap.set(String(p.id), {
                 ...existing,
                 ...p,
-                taskCount: Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                  ? p.taskSummaries.length
-                  : (p.taskCount ?? existing.taskCount ?? 0),
+                taskCount:
+                  Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+                    ? p.taskSummaries.length
+                    : (p.taskCount ?? existing.taskCount ?? 0),
                 taskSummaries: p.taskSummaries || existing.taskSummaries,
               });
             }
@@ -214,7 +191,12 @@ export async function hydrateProjectsFromLocal(year?: string, storeFilter?: stri
     if (localProjects && localProjects.length > 0) {
       usePerformanceStore
         .getState()
-        .trackGetDoc('dexie_projects_hydration', true, localProjects.length, `Instant Local-First Projects Hydration (0ms, 0 Read)`);
+        .trackGetDoc(
+          'dexie_projects_hydration',
+          true,
+          localProjects.length,
+          'Instant Local-First Projects Hydration (0ms, 0 Read)'
+        );
       return localProjects.length;
     }
     return 0;
@@ -233,7 +215,9 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
     const targetYear = year || store.globalYearFilter;
     if (store.tasks && store.tasks.length > 0) {
       if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.tasks.length;
-      const hasForYear = store.tasks.some(t => String(t.projectYear || '') === String(targetYear));
+      const hasForYear = store.tasks.some(
+        (t) => String(t.projectYear || '') === String(targetYear)
+      );
       if (hasForYear) return store.tasks.length;
     }
 
@@ -243,25 +227,25 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
       const projectsNow = currentStore.projects || [];
       const existing = currentStore.tasks || [];
       const zombieIdsToDelete: string[] = [];
+      const zombieIndex = buildZombieProjectIndex(projectsNow);
 
       const tMap = new Map<string, Task>();
-      localTasks.forEach(t => {
-        if (isZombieTaskAgainstProjects(t, projectsNow)) {
+      localTasks.forEach((t) => {
+        if (isZombieTaskAgainstProjects(t, projectsNow, zombieIndex)) {
           if (t?.id) zombieIdsToDelete.push(t.id);
           return;
         }
         tMap.set(t.id, t);
       });
 
-      // Keep fresher in-memory tasks on top of Dexie tasks (excluding any zombies)
-      existing.forEach(t => {
-        if (!isZombieTaskAgainstProjects(t, projectsNow)) {
+      existing.forEach((t) => {
+        if (!isZombieTaskAgainstProjects(t, projectsNow, zombieIndex)) {
           tMap.set(t.id, t);
         }
       });
 
       if (zombieIdsToDelete.length > 0) {
-        zombieIdsToDelete.forEach(id => {
+        zombieIdsToDelete.forEach((id) => {
           deleteLocalRecord('taka_tasks', id).catch(() => {});
         });
       }
@@ -271,7 +255,12 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
 
       usePerformanceStore
         .getState()
-        .trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');
+        .trackGetDoc(
+          'dexie_tasks_hydration',
+          true,
+          deduped.length,
+          'Instant Local-First Tasks Hydration (0ms)'
+        );
       return deduped.length;
     }
     return 0;
@@ -293,23 +282,28 @@ export async function hydrateTasksForProjects(
   try {
     const store = useAppStore.getState();
     const currentProjects = store.projects || [];
-    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
-      ? String(year).trim()
-      : '';
-    const normStore = storeFilter && String(storeFilter).toLowerCase() !== 'all'
-      ? String(storeFilter).trim().toUpperCase()
-      : '';
+    const normYear =
+      year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
+        ? String(year).trim()
+        : '';
+    const normStore =
+      storeFilter && String(storeFilter).toLowerCase() !== 'all'
+        ? String(storeFilter).trim().toUpperCase()
+        : '';
 
-    const keySet = new Set(projectIdsOrCodes.map(k => String(k).trim()).filter(Boolean));
-    const lowerKeySet = new Set(projectIdsOrCodes.map(k => String(k).trim().toLowerCase()).filter(Boolean));
+    const keySet = new Set(projectIdsOrCodes.map((k) => String(k).trim()).filter(Boolean));
+    const lowerKeySet = new Set(
+      projectIdsOrCodes.map((k) => String(k).trim().toLowerCase()).filter(Boolean)
+    );
 
-    const targetProjects = currentProjects.filter(p => {
+    const targetProjects = currentProjects.filter((p) => {
       if (!p || p.isDeleted) return false;
       if (p.id && keySet.has(String(p.id).trim())) return true;
       const pCode = String(p.code || '').trim().toLowerCase();
       if (pCode && lowerKeySet.has(pCode)) {
         if (normYear && p.year && String(p.year).trim() !== normYear) return false;
-        if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore) return false;
+        if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore)
+          return false;
         return true;
       }
       return false;
@@ -319,16 +313,17 @@ export async function hydrateTasksForProjects(
     if (!localTasks || localTasks.length === 0) return 0;
 
     const existingTasks = store.tasks || [];
-    const existingIds = new Set(existingTasks.map(t => t.id));
+    const existingIds = new Set(existingTasks.map((t) => t.id));
     const newTasksToAdd: Task[] = [];
+    const zombieIndex = buildZombieProjectIndex(currentProjects);
 
     for (const t of localTasks) {
       if (existingIds.has(t.id)) continue;
-      if (isZombieTaskAgainstProjects(t, currentProjects)) {
+      if (isZombieTaskAgainstProjects(t, currentProjects, zombieIndex)) {
         if (t?.id) deleteLocalRecord('taka_tasks', t.id).catch(() => {});
         continue;
       }
-      if (targetProjects.length > 0 && !targetProjects.some(p => isTaskBelongsToProject(t, p))) {
+      if (targetProjects.length > 0 && !targetProjects.some((p) => isTaskBelongsToProject(t, p))) {
         continue;
       }
       newTasksToAdd.push(t);
@@ -339,7 +334,12 @@ export async function hydrateTasksForProjects(
       store.setTasks(merged);
       usePerformanceStore
         .getState()
-        .trackGetDoc('dexie_tasks_partial_hydration', true, newTasksToAdd.length, `Local-First Hydration for ${projectIdsOrCodes.length} projects (0ms)`);
+        .trackGetDoc(
+          'dexie_tasks_partial_hydration',
+          true,
+          newTasksToAdd.length,
+          `Local-First Hydration for ${projectIdsOrCodes.length} projects (0ms)`
+        );
       return newTasksToAdd.length;
     }
     return 0;
@@ -350,220 +350,59 @@ export async function hydrateTasksForProjects(
 }
 
 /**
- * Nạp tức thời Costs từ Dexie khi người dùng chuyển sang tab yêu cầu Chi phí (0ms UI)
- */
-export async function hydrateCostsFromLocal(year?: string): Promise<number> {
-  try {
-    const store = useAppStore.getState();
-    const targetYear = year || store.globalYearFilter;
-    if (store.costs && store.costs.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.costs.length;
-      const hasForYear = store.costs.some(c => String(c.projectYear || '') === String(targetYear));
-      if (hasForYear) return store.costs.length;
-    }
-    const localCosts = await getLocalCosts(targetYear);
-    if (localCosts && localCosts.length > 0) {
-      const currentStore = useAppStore.getState();
-      const existing = currentStore.costs || [];
-      const cMap = new Map<string, Cost>(localCosts.map(c => [c.id, c]));
-      existing.forEach(c => cMap.set(c.id, c));
-      const merged = Array.from(cMap.values());
-      currentStore.setCosts(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_costs_hydration', true, localCosts.length, 'Instant Local-First Costs Hydration (0ms)');
-      return localCosts.length;
-    }
-    return 0;
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] hydrateCostsFromLocal error:', err);
-    return 0;
-  }
-}
-
-/**
- * Nạp tức thời Delegations từ Dexie khi người dùng chuyển sang tab Phân quyền (0ms UI, lọc theo năm)
- */
-export async function hydrateDelegationsFromLocal(year?: string): Promise<number> {
-  try {
-    const store = useAppStore.getState();
-    const targetYear = year || store.globalYearFilter;
-
-    // Nếu store đã nạp delegations của năm này, giữ nguyên (0 Read)
-    if (store.delegationGroups && store.delegationGroups.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') {
-        return store.delegationGroups.length;
-      }
-      const hasForYear = store.delegationGroups.some(d => String(d.projectYear || '') === String(targetYear));
-      if (hasForYear) return store.delegationGroups.length;
-    }
-
-    const localDelegations = await getLocalDelegations(targetYear);
-    if (localDelegations && localDelegations.length > 0) {
-      const currentStore = useAppStore.getState();
-      const existing = currentStore.delegationGroups || [];
-      const dMap = new Map(existing.map(d => [d.id, d]));
-      // Store data (from Firestore listeners / deltas) is fresher than Dexie: never overwrite it
-      localDelegations.forEach(d => { if (!dMap.has(d.id)) dMap.set(d.id, d); });
-      const merged = Array.from(dMap.values());
-      currentStore.setDelegationGroups(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_delegations_hydration', true, localDelegations.length, `Instant Local-First Delegations Hydration for ${targetYear || 'all'} (0ms, 0 Read)`);
-      return localDelegations.length;
-    }
-    return 0;
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] hydrateDelegationsFromLocal error:', err);
-    return 0;
-  }
-}
-
-/**
- * Nạp tức thì Delegations của các dự án cụ thể từ Dexie vào Zustand (0ms UI, không tải cả kho 4000 items)
- */
-export async function hydrateDelegationsForProjects(
-  projectIdsOrCodes: string[],
-  year?: string | number | null,
-  storeFilter?: string | null
-): Promise<number> {
-  if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return 0;
-  try {
-    const store = useAppStore.getState();
-    const currentProjects = store.projects || [];
-    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
-      ? String(year).trim()
-      : '';
-    const normStore = storeFilter && String(storeFilter).toLowerCase() !== 'all'
-      ? String(storeFilter).trim().toUpperCase()
-      : '';
-
-    const expandedKeys = new Set<string>();
-    const targetProjects: Project[] = [];
-
-    projectIdsOrCodes.forEach((key) => {
-      const trimmed = String(key).trim();
-      if (!trimmed) return;
-      expandedKeys.add(trimmed);
-      const matched =
-        currentProjects.find((p) => String(p.id) === trimmed) ||
-        currentProjects.find((p) => {
-          if (String(p.code).trim().toLowerCase() !== trimmed.toLowerCase() && String(p.no) !== trimmed) {
-            return false;
-          }
-          if (normYear && p.year && String(p.year).trim() !== normYear) return false;
-          if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore) return false;
-          return true;
-        });
-      if (matched) {
-        if (!targetProjects.some(tp => tp.id === matched.id)) targetProjects.push(matched);
-        if (matched.code) expandedKeys.add(String(matched.code).trim());
-        if (matched.id) expandedKeys.add(String(matched.id).trim());
-      }
-    });
-
-    const localDelegations = await getLocalDelegationsForProjects(Array.from(expandedKeys), year, storeFilter);
-    if (!localDelegations || localDelegations.length === 0) return 0;
-
-    const existing = store.delegationGroups || [];
-    const dMap = new Map(existing.map(d => [d.id, d]));
-    let hasNew = false;
-    localDelegations.forEach(d => {
-      if (dMap.has(d.id)) return;
-      if (targetProjects.length > 0 && !targetProjects.some(p => isDelegationGroupBelongsToProject(d, p))) {
-        return;
-      }
-      dMap.set(d.id, d);
-      hasNew = true;
-    });
-
-    if (hasNew) {
-      store.setDelegationGroups(Array.from(dMap.values()));
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_delegations_by_project', true, localDelegations.length, `Instant Delegations Hydration for ${projectIdsOrCodes.length} projects (0ms)`);
-      return localDelegations.length;
-    }
-    return 0;
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] hydrateDelegationsForProjects error:', err);
-    return 0;
-  }
-}
-
-/**
- * Nạp tức thì Delegations của các task cụ thể từ Dexie vào Zustand (0ms UI)
- */
-export async function hydrateDelegationsForTasks(taskIds: string[]): Promise<number> {
-  if (!taskIds || taskIds.length === 0) return 0;
-  try {
-    const localDelegations = await getLocalDelegationsForTasks(taskIds);
-    if (!localDelegations || localDelegations.length === 0) return 0;
-
-    const store = useAppStore.getState();
-    const existing = store.delegationGroups || [];
-    const dMap = new Map(existing.map(d => [d.id, d]));
-    let hasNew = false;
-    localDelegations.forEach(d => {
-      if (!dMap.has(d.id)) {
-        dMap.set(d.id, d);
-        hasNew = true;
-      }
-    });
-
-    if (hasNew) {
-      store.setDelegationGroups(Array.from(dMap.values()));
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_delegations_by_task', true, localDelegations.length, `Instant Delegations Hydration for ${taskIds.length} tasks (0ms)`);
-      return localDelegations.length;
-    }
-    return 0;
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] hydrateDelegationsForTasks error:', err);
-    return 0;
-  }
-}
-
-/**
  * Ghi nhận các Delta nhận được từ server vào Dexie Local Database ngầm
  */
 export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<void> {
   if (!deltas || deltas.length === 0) return;
 
-  // Thực hiện giao dịch bất đồng bộ ngoài luồng render UI
   setTimeout(async () => {
     try {
-      await localDb.transaction('rw', [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations], async () => {
-        const processDeltaItem = async (
-          docId?: string,
-          collectionName?: any,
-          action?: string,
-          data?: any,
-          isPatch?: boolean
-        ) => {
-          if (!docId || !collectionName) return;
-          if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
-          if (action === 'delete' || data?.isDeleted === true) {
-            await deleteLocalRecord(collectionName, docId);
-          } else if (action === 'update' || isPatch) {
-            await patchLocalRecord(collectionName, docId, data || {});
-          } else {
-            await upsertLocalRecord(collectionName, { id: docId, ...data });
-          }
-        };
-
-        for (const delta of deltas) {
-          if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
-            for (const item of delta.batchItems) {
-              if (item.invalidate) continue;
-              await processDeltaItem(item.docId, item.collectionName, item.action, item.data, item.isPatch);
+      await localDb.transaction(
+        'rw',
+        [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations],
+        async () => {
+          const processDeltaItem = async (
+            docId?: string,
+            collectionName?: any,
+            action?: string,
+            data?: any,
+            isPatch?: boolean
+          ) => {
+            if (!docId || !collectionName) return;
+            if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
+            if (action === 'delete' || data?.isDeleted === true) {
+              await deleteLocalRecord(collectionName, docId);
+            } else if (action === 'update' || isPatch) {
+              await patchLocalRecord(collectionName, docId, data || {});
+            } else {
+              await upsertLocalRecord(collectionName, { id: docId, ...data });
             }
-          } else if (delta.docId && delta.collectionName) {
-            await processDeltaItem(delta.docId, delta.collectionName, delta.action, delta.data, delta.isPatch);
+          };
+
+          for (const delta of deltas) {
+            if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+              for (const item of delta.batchItems) {
+                if (item.invalidate) continue;
+                await processDeltaItem(
+                  item.docId,
+                  item.collectionName,
+                  item.action,
+                  item.data,
+                  item.isPatch
+                );
+              }
+            } else if (delta.docId && delta.collectionName) {
+              await processDeltaItem(
+                delta.docId,
+                delta.collectionName,
+                delta.action,
+                delta.data,
+                delta.isPatch
+              );
+            }
           }
         }
-      });
+      );
     } catch (err) {
       console.warn('[backgroundSyncWorker] applyDeltasToLocalDatabase error:', err);
     }
@@ -579,7 +418,6 @@ export function offloadPersistSnapshot(
 ): void {
   if (!items || items.length === 0) return;
 
-  // Đẩy sang Microtask để UI duy trì 60 FPS
   setTimeout(async () => {
     try {
       switch (collectionName) {
@@ -611,18 +449,13 @@ let syncCoordinatorTimer: any = null;
 export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  // 1. Boot local store ngay lập tức
   bootstrapLocalStore().catch(() => {});
-
-  // 2. Kích hoạt BroadcastChannel Multi-Tab Synchronization
   const cleanupBroadcast = initBroadcastSyncListener();
 
-  // 3. Khởi chạy ngầm Auto-Purge dọn dẹp các delta cũ (>48h) không làm nghẽn UI
   setTimeout(() => {
     purgeOldDeltas(48).catch(() => {});
   }, 5000);
 
-  // 4. Định kỳ kích hoạt Delta Sync
   const runSync = async () => {
     try {
       const year = useAppStore.getState().globalYearFilter;
