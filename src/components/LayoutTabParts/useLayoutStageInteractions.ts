@@ -405,7 +405,7 @@ export function useLayoutStageInteractions({
     }
   }, [gestures.isInteractingRef, miniGanttProject, isProjectModalOpen]);
 
-  const pinAndShowTooltip = useCallback((unit: any, clientX: number, clientY: number) => {
+  const pinAndShowTooltip = useCallback((unit: any, clientX: number, clientY: number, quickImageMode = false) => {
     isPinnedRef.current = true;
     const uName = (unit?.name || '').toLowerCase();
     const agg = aggregatedDataRef.current;
@@ -414,27 +414,28 @@ export function useLayoutStageInteractions({
       data: (uName && agg[uName]) ? agg[uName] : {},
       unitName: unit?.name || 'Unknown',
       clientX,
-      clientY
+      clientY,
+      quickImageMode,
     });
     setTimeout(() => updateTooltipPos(clientX, clientY), 0);
   }, [updateTooltipPos]);
 
-  const handleClickUnit = useCallback((unit: any, e: any) => {
+  const handleClickUnit = useCallback((unit: any, e: any, quickImageMode = false) => {
     if (gestures.isInteractingRef.current || Boolean(miniGanttProject)) return;
     try {
-      pinAndShowTooltip(unit, e.evt.clientX, e.evt.clientY);
+      pinAndShowTooltip(unit, e.evt.clientX, e.evt.clientY, quickImageMode);
       onUnitSelected?.(unit);
     } catch (err) {
       console.error("Defensive Check: Error onClick unit in LiveLayoutViewer:", err, unit);
     }
   }, [gestures.isInteractingRef, miniGanttProject, pinAndShowTooltip, onUnitSelected]);
 
-  const handleTapUnit = useCallback((unit: any, e: any) => {
+  const handleTapUnit = useCallback((unit: any, e: any, quickImageMode = false) => {
     if (gestures.isInteractingRef.current || Boolean(miniGanttProject)) return;
     try {
       const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
       const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
-      pinAndShowTooltip(unit, clientX, clientY);
+      pinAndShowTooltip(unit, clientX, clientY, quickImageMode);
       onUnitSelected?.(unit);
     } catch (err) {
       console.error("Defensive Check: Error onTap unit in LiveLayoutViewer:", err, unit);

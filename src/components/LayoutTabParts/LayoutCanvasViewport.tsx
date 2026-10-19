@@ -41,8 +41,8 @@ interface LayoutCanvasViewportProps {
   handleMouseEnterUnit: (unit: any, e: any) => void;
   handleMouseMoveUnit: (unit: any, e: any) => void;
   handleMouseLeaveUnit: (unit: any, e: any) => void;
-  handleClickUnit: (unit: any, e: any) => void;
-  handleTapUnit: (unit: any, e: any) => void;
+  handleClickUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  handleTapUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
   hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
   storeFilter?: string;
 }

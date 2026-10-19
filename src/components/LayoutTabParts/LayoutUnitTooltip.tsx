@@ -1,5 +1,6 @@
-import React, { FC, useMemo } from 'react';
+import React, { FC, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Image as ImageIcon, FileText, Crosshair, X, GripHorizontal } from 'lucide-react';
 import { cn, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -35,6 +36,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const vis = useAppStore(state => state.layoutTooltipVisibility);
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
+
+  const [isQuickImageView, setIsQuickImageView] = useState<boolean>(Boolean(hoverInfo?.quickImageMode));
+  useEffect(() => {
+    setIsQuickImageView(Boolean(hoverInfo?.quickImageMode));
+  }, [hoverInfo?.quickImageMode, hoverInfo?.unitName]);
 
   const p: Project | undefined = useMemo(() => {
     const expectedStore = (
@@ -192,6 +198,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     tooltipRef,
     positionTooltip: (force) => positionTooltipRef.current(force),
     storeFilter: storeDisplay,
+    quickImageMode: isQuickImageView,
   });
 
   // Hook 1: Position & Dragging management
@@ -204,7 +211,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     hoverInfo,
     tooltipRef,
     containerRef,
-    showImagePanel,
+    showImagePanel: isQuickImageView || showImagePanel,
   });
 
   positionTooltipRef.current = positionTooltip;
@@ -257,92 +264,180 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         }
       }}
     >
-      {/* 1. Header Bar: Badges, Drag Handle & Action Buttons */}
-      <TooltipHeaderBar
-        v={v}
-        mdStatus={mdStatus}
-        mdStatusColorClass={mdStatusColorClass}
-        status={status}
-        statusColorClass={statusColorClass}
-        allUnitImages={allUnitImages}
-        showImagePanel={showImagePanel}
-        setShowImagePanel={setShowImagePanel}
-        targetProject={targetProject}
-        unitCode={unitCode}
-        unitName={hoverInfo.unitName}
-        onFocusUnit={onFocusUnit}
-        onClose={onClose}
-        handlePointerDown={handlePointerDown}
-        handlePointerMove={handlePointerMove}
-        handlePointerUp={handlePointerUp}
-      />
+      {isQuickImageView ? (
+        /* Dedicated Quick Image Tooltip Mode (Bypasses Task Tooltip) */
+        <>
+          <div
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              handlePointerDown(e);
+            }}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            className="modal-handle sticky top-0 z-30 bg-white/95 dark:bg-[#1e1e20]/95 backdrop-blur-md pb-1.5 pt-0.5 -mt-1 -mx-1 px-1 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
+          >
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[10px] font-bold shrink-0 shadow-2xs">
+                <ImageIcon className="w-3 h-3 shrink-0" />
+                <span>{unitCode}</span>
+              </span>
+              {projectName && projectName !== unitCode && (
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate" title={projectName}>
+                  {projectName}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsQuickImageView(false);
+                }}
+                className="px-2 py-1 rounded-md bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446] text-[10px] font-bold flex items-center gap-1 transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                title="Switch to Task & Unit Info Tooltip"
+              >
+                <FileText className="w-3 h-3" />
+                <span>Task Info</span>
+              </button>
+              {onFocusUnit && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFocusUnit(unitCode || hoverInfo.unitName);
+                  }}
+                  className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 border border-slate-200 dark:border-[#444446] transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                  title="Zoom & Center this unit"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close Quick Image Tooltip"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
-      {/* 2. Full-Width Task / Unit Title Section */}
-      <TooltipTitleSection
-        v={v}
-        p={p}
-        canWrite={canWrite}
-        storeDisplay={storeDisplay}
-        unitCode={unitCode}
-        projectName={projectName}
-        onEditProject={onEditProject}
-      />
+          <TooltipImageGalleryPanel
+            showImagePanel={true}
+            setShowImagePanel={(val) => {
+              const next = typeof val === 'function' ? val(true) : val;
+              if (!next) onClose();
+              else setShowImagePanel(next);
+            }}
+            showAddLinkInput={showAddLinkInput}
+            setShowAddLinkInput={setShowAddLinkInput}
+            newLinkInput={newLinkInput}
+            setNewLinkInput={setNewLinkInput}
+            allUnitImages={allUnitImages}
+            copiedLink={copiedLink}
+            handleAddCustomImage={handleAddCustomImage}
+            handleDeleteCustomImage={handleDeleteCustomImage}
+            handleCopyLink={handleCopyLink}
+            setEnlargedImage={setEnlargedImage}
+            unitCode={unitCode || data.code || ''}
+            activeStore={storeDisplay}
+          />
+        </>
+      ) : (
+        /* Standard Task & Unit Tooltip Mode */
+        <>
+          {/* 1. Header Bar: Badges, Drag Handle & Action Buttons */}
+          <TooltipHeaderBar
+            v={v}
+            mdStatus={mdStatus}
+            mdStatusColorClass={mdStatusColorClass}
+            status={status}
+            statusColorClass={statusColorClass}
+            allUnitImages={allUnitImages}
+            showImagePanel={showImagePanel}
+            setShowImagePanel={setShowImagePanel}
+            targetProject={targetProject}
+            unitCode={unitCode}
+            unitName={hoverInfo.unitName}
+            onFocusUnit={onFocusUnit}
+            onClose={onClose}
+            handlePointerDown={handlePointerDown}
+            handlePointerMove={handlePointerMove}
+            handlePointerUp={handlePointerUp}
+          />
 
-      {/* 3. Smart Alert Notification Banner */}
-      <TooltipAlertBanner
-        alerts={data.alerts}
-        visNotifications={vis?.notifications}
-        p={p}
-        canWrite={canWrite}
-        onEditProject={onEditProject}
-      />
+          {/* 2. Full-Width Task / Unit Title Section */}
+          <TooltipTitleSection
+            v={v}
+            p={p}
+            canWrite={canWrite}
+            storeDisplay={storeDisplay}
+            unitCode={unitCode}
+            projectName={projectName}
+            onEditProject={onEditProject}
+          />
 
-      {/* 4. Progress Bars */}
-      {v.progressBars && (
-        <TooltipProgressBars
-          planProgressPercent={planProgressPercent}
-          actProgressPercent={actProgressPercent}
-        />
+          {/* 3. Smart Alert Notification Banner */}
+          <TooltipAlertBanner
+            alerts={data.alerts}
+            visNotifications={vis?.notifications}
+            p={p}
+            canWrite={canWrite}
+            onEditProject={onEditProject}
+          />
+
+          {/* 4. Progress Bars */}
+          {v.progressBars && (
+            <TooltipProgressBars
+              planProgressPercent={planProgressPercent}
+              actProgressPercent={actProgressPercent}
+            />
+          )}
+
+          {/* 5. Unified Information Row: Floor, Area, Comment Symbol & Dates */}
+          <TooltipMetaRow
+            v={v}
+            p={p}
+            floorValue={floorValue}
+            dataSize={data.size}
+            commentsCount={commentsCount}
+            computedTakStart={computedTakStart}
+            computedTakCompl={computedTakCompl}
+            onEditProject={onEditProject}
+            onOpenMiniGantt={onOpenMiniGantt}
+          />
+
+          {/* 6. Details & Description Section */}
+          <TooltipDetailsSection
+            v={v}
+            taskLines={taskLines}
+            detailText={detailText}
+            descriptionText={descriptionText}
+          />
+
+          {/* 7. Image & Link Thumbnail Gallery Panel */}
+          <TooltipImageGalleryPanel
+            showImagePanel={showImagePanel}
+            setShowImagePanel={setShowImagePanel}
+            showAddLinkInput={showAddLinkInput}
+            setShowAddLinkInput={setShowAddLinkInput}
+            newLinkInput={newLinkInput}
+            setNewLinkInput={setNewLinkInput}
+            allUnitImages={allUnitImages}
+            copiedLink={copiedLink}
+            handleAddCustomImage={handleAddCustomImage}
+            handleDeleteCustomImage={handleDeleteCustomImage}
+            handleCopyLink={handleCopyLink}
+            setEnlargedImage={setEnlargedImage}
+            unitCode={unitCode || data.code || ''}
+            activeStore={storeDisplay}
+          />
+        </>
       )}
-
-      {/* 5. Unified Information Row: Floor, Area, Comment Symbol & Dates */}
-      <TooltipMetaRow
-        v={v}
-        p={p}
-        floorValue={floorValue}
-        dataSize={data.size}
-        commentsCount={commentsCount}
-        computedTakStart={computedTakStart}
-        computedTakCompl={computedTakCompl}
-        onEditProject={onEditProject}
-        onOpenMiniGantt={onOpenMiniGantt}
-      />
-
-      {/* 6. Details & Description Section */}
-      <TooltipDetailsSection
-        v={v}
-        taskLines={taskLines}
-        detailText={detailText}
-        descriptionText={descriptionText}
-      />
-
-      {/* 7. Image & Link Thumbnail Gallery Panel */}
-      <TooltipImageGalleryPanel
-        showImagePanel={showImagePanel}
-        setShowImagePanel={setShowImagePanel}
-        showAddLinkInput={showAddLinkInput}
-        setShowAddLinkInput={setShowAddLinkInput}
-        newLinkInput={newLinkInput}
-        setNewLinkInput={setNewLinkInput}
-        allUnitImages={allUnitImages}
-        copiedLink={copiedLink}
-        handleAddCustomImage={handleAddCustomImage}
-        handleDeleteCustomImage={handleDeleteCustomImage}
-        handleCopyLink={handleCopyLink}
-        setEnlargedImage={setEnlargedImage}
-        unitCode={unitCode || data.code || ''}
-        activeStore={storeDisplay}
-      />
     </div>,
     document.body
   );

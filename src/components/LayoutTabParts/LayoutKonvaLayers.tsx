@@ -15,8 +15,8 @@ export interface LayoutKonvaLayersProps {
   onMouseEnterUnit: (unit: any, e: any) => void;
   onMouseMoveUnit: (unit: any, e: any) => void;
   onMouseLeaveUnit: (unit: any, e: any) => void;
-  onClickUnit: (unit: any, e: any) => void;
-  onTapUnit: (unit: any, e: any) => void;
+  onClickUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  onTapUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
   hasStoredUnitImages: (codeOrName: string | undefined | null, store?: string) => boolean;
   storeFilter?: string;
 }
@@ -95,8 +95,8 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             onMouseEnter: (e: any) => onMouseEnterUnit(unit, e),
             onMouseMove: (e: any) => onMouseMoveUnit(unit, e),
             onMouseLeave: (e: any) => onMouseLeaveUnit(unit, e),
-            onClick: (e: any) => onClickUnit(unit, e),
-            onTap: (e: any) => onTapUnit(unit, e),
+            onClick: (e: any) => onClickUnit(unit, e, false),
+            onTap: (e: any) => onTapUnit(unit, e, false),
           };
 
           // Calculated font size for optimal legibility
@@ -105,17 +105,25 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
           const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
           const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
 
+          const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+          const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+
+          // Distinct, easily recognizable Interactive Image Button dimensions
+          const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, stageScale || 1))));
+          const imgBtnW = imgBtnH * 1.26;
+          const imgIconScale = (imgBtnH * 0.78) / 24;
+
           // Badge placement coordinates
           let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
           let badgeY = (unit.textY || unit.y || 0) + 8;
-          let imgBadgeX = (unit.textX || unit.x || 0) + 8;
-          let imgBadgeY = (unit.textY || unit.y || 0) + 8;
+          let imgBadgeX = (unit.textX || unit.x || 0) + Math.max(9, imgBtnW * 0.5 + 1.5);
+          let imgBadgeY = (unit.textY || unit.y || 0) + Math.max(8, imgBtnH * 0.5 + 1.5);
           if (unit.type === 'circle') {
             const r = unit.radius || 20;
             badgeX = (unit.x || 0) + r * 0.6;
             badgeY = (unit.y || 0) - r * 0.6;
-            imgBadgeX = (unit.x || 0) - r * 0.6;
-            imgBadgeY = (unit.y || 0) - r * 0.6;
+            imgBadgeX = (unit.x || 0) - r * 0.65;
+            imgBadgeY = (unit.y || 0) - r * 0.65;
           }
           const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase();
           const unitData = (uCode && aggregatedData[uCode]) ? aggregatedData[uCode] : null;
@@ -129,9 +137,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             hasStoredUnitImages(unit.id, storeFilter) ||
             hasStoredUnitImages(unit.code, storeFilter)
           );
-          const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-          const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-          const imgPathScale = (badgeRadius * 1.3) / 24;
 
           // Dynamic Level of Detail (LOD) threshold:
           // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
@@ -206,25 +211,59 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                 </Group>
               )}
 
-              {/* Thumbnail / Image Indicator Badge (Rendered when project has attached photos/thumbnails) */}
+              {/* Interactive Quick-Image Button Badge (Click/Tap opens Quick Image Tooltip directly) */}
               {hasImage && showTextAndBadge && (
-                <Group x={imgBadgeX} y={imgBadgeY} listening={false}>
-                  <Circle
-                    radius={badgeRadius}
+                <Group x={imgBadgeX} y={imgBadgeY}>
+                  <Rect
+                    x={-imgBtnW / 2}
+                    y={-imgBtnH / 2}
+                    width={imgBtnW}
+                    height={imgBtnH}
+                    cornerRadius={imgBtnH * 0.28}
                     fill="#2563eb"
                     stroke="#ffffff"
-                    strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    strokeWidth={Math.max(1.2, 1.6 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    hitStrokeWidth={10}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    onMouseEnter={(e: any) => {
+                      e.cancelBubble = true;
+                      const container = e.target.getStage()?.container();
+                      if (container) container.style.cursor = 'pointer';
+                    }}
+                    onMouseMove={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onMouseLeave={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onClick={(e: any) => {
+                      e.cancelBubble = true;
+                      onClickUnit(unit, e, true);
+                    }}
+                    onTap={(e: any) => {
+                      e.cancelBubble = true;
+                      onTapUnit(unit, e, true);
+                    }}
+                  />
+                  {/* Golden Sun inside Photo Button */}
+                  <Circle
+                    x={-imgBtnW * 0.18}
+                    y={-imgBtnH * 0.15}
+                    radius={imgBtnH * 0.12}
+                    fill="#fde047"
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
                     listening={false}
                   />
+                  {/* Crisp White Mountain Landscape inside Photo Button */}
                   <Path
-                    data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"
+                    data="M4 18l4-5 3 3.5L15 11l5 7H4z"
                     fill="#ffffff"
-                    scaleX={imgPathScale}
-                    scaleY={imgPathScale}
-                    x={-badgeRadius * 0.65}
-                    y={-badgeRadius * 0.65}
+                    scaleX={imgIconScale}
+                    scaleY={imgIconScale}
+                    x={-12 * imgIconScale}
+                    y={-11.5 * imgIconScale}
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
                     listening={false}

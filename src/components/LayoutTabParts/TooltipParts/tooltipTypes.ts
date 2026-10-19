@@ -15,6 +15,7 @@ export interface TooltipHoverInfo {
     centerX: number;
     centerY: number;
   };
+  quickImageMode?: boolean;
 }
 
 export interface LayoutUnitTooltipProps {

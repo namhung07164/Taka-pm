@@ -8,7 +8,6 @@ import { QuickNavButton } from '../../QuickNavButton';
 import { Project } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
-import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
 
 interface TooltipHeaderBarProps {
   v: any;
@@ -81,7 +80,7 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
 
       {/* Right: Actions (Image Gallery Toggle, Quick Nav, Focus, Close) */}
       <div className="flex items-center gap-1 shrink-0 ml-auto">
-        {/* Image & Link Thumbnail Gallery Button */}
+        {/* Recognizable Image & Link Gallery Button */}
         <button
           type="button"
           onClick={(e) => {
@@ -89,56 +88,26 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
             setShowImagePanel(prev => !prev);
           }}
           className={cn(
-            "rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1",
-            allUnitImages.length > 0 ? "p-0.5" : "p-1",
+            "rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold",
             showImagePanel 
-              ? "bg-blue-100 text-blue-600 dark:bg-blue-900/60 dark:text-[#8ab4f8] border-blue-400 dark:border-blue-600 shadow-2xs ring-1 ring-blue-400/40" 
+              ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-400/40" 
               : allUnitImages.length > 0
-                ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-[#8ab4f8] border-blue-300 dark:border-blue-700/80 shadow-2xs hover:border-blue-400"
+                ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-500 shadow-xs"
                 : "bg-slate-50 text-slate-500 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-[#8ab4f8] border-slate-200 dark:border-[#444446] hover:bg-slate-100"
           )}
           title={
             showImagePanel 
-              ? "Đóng bảng hình ảnh" 
+              ? "Close image gallery" 
               : allUnitImages.length > 0 
-                ? `Có ${allUnitImages.length} hình ảnh/thumbnail. Bấm để xem chi tiết.` 
-                : "Mở bảng hình ảnh & link thumbnail"
+                ? `${allUnitImages.length} attached photo(s)/PDF(s). Click to view.` 
+                : "Open photo & link gallery"
           }
         >
-          {allUnitImages.length > 0 ? (
-            <div className="relative flex items-center gap-1">
-              {/* Mini Image Thumbnail Preview */}
-              <div 
-                className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center pointer-events-none"
-              >
-                <img 
-                  src={normalizeImageUrl(allUnitImages[0].url)} 
-                  alt="Thumbnail" 
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                  decoding="async"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                    const parent = (e.target as HTMLElement).parentElement;
-                    if (parent && !parent.querySelector('.img-fallback-icon')) {
-                      const iconSpan = document.createElement('span');
-                      iconSpan.className = 'img-fallback-icon flex items-center justify-center text-[10px] text-blue-500 font-bold';
-                      iconSpan.innerText = '🖼️';
-                      parent.appendChild(iconSpan);
-                    }
-                  }}
-                />
-              </div>
-              {allUnitImages.length > 1 ? (
-                <span className="text-[9px] font-bold font-mono text-blue-600 dark:text-[#8ab4f8] pr-1">
-                  +{allUnitImages.length - 1}
-                </span>
-              ) : (
-                <div className="w-1" />
-              )}
-            </div>
-          ) : (
-            <ImageIcon className="w-3.5 h-3.5" />
+          <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+          {allUnitImages.length > 0 && (
+            <span className="font-mono leading-none">
+              {allUnitImages.length}
+            </span>
           )}
         </button>
 

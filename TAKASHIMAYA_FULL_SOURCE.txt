@@ -42388,8 +42388,8 @@ interface LayoutCanvasViewportProps {
   handleMouseEnterUnit: (unit: any, e: any) => void;
   handleMouseMoveUnit: (unit: any, e: any) => void;
   handleMouseLeaveUnit: (unit: any, e: any) => void;
-  handleClickUnit: (unit: any, e: any) => void;
-  handleTapUnit: (unit: any, e: any) => void;
+  handleClickUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  handleTapUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
   hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
   storeFilter?: string;
 }
@@ -42678,7 +42678,6 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutColorLegendBar.tsx
@@ -43736,8 +43735,8 @@ export interface LayoutKonvaLayersProps {
   onMouseEnterUnit: (unit: any, e: any) => void;
   onMouseMoveUnit: (unit: any, e: any) => void;
   onMouseLeaveUnit: (unit: any, e: any) => void;
-  onClickUnit: (unit: any, e: any) => void;
-  onTapUnit: (unit: any, e: any) => void;
+  onClickUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  onTapUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
   hasStoredUnitImages: (codeOrName: string | undefined | null, store?: string) => boolean;
   storeFilter?: string;
 }
@@ -43816,8 +43815,8 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             onMouseEnter: (e: any) => onMouseEnterUnit(unit, e),
             onMouseMove: (e: any) => onMouseMoveUnit(unit, e),
             onMouseLeave: (e: any) => onMouseLeaveUnit(unit, e),
-            onClick: (e: any) => onClickUnit(unit, e),
-            onTap: (e: any) => onTapUnit(unit, e),
+            onClick: (e: any) => onClickUnit(unit, e, false),
+            onTap: (e: any) => onTapUnit(unit, e, false),
           };
 
           // Calculated font size for optimal legibility
@@ -43826,17 +43825,25 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
           const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
           const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
 
+          const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+          const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+
+          // Distinct, easily recognizable Interactive Image Button dimensions
+          const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, stageScale || 1))));
+          const imgBtnW = imgBtnH * 1.26;
+          const imgIconScale = (imgBtnH * 0.78) / 24;
+
           // Badge placement coordinates
           let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
           let badgeY = (unit.textY || unit.y || 0) + 8;
-          let imgBadgeX = (unit.textX || unit.x || 0) + 8;
-          let imgBadgeY = (unit.textY || unit.y || 0) + 8;
+          let imgBadgeX = (unit.textX || unit.x || 0) + Math.max(9, imgBtnW * 0.5 + 1.5);
+          let imgBadgeY = (unit.textY || unit.y || 0) + Math.max(8, imgBtnH * 0.5 + 1.5);
           if (unit.type === 'circle') {
             const r = unit.radius || 20;
             badgeX = (unit.x || 0) + r * 0.6;
             badgeY = (unit.y || 0) - r * 0.6;
-            imgBadgeX = (unit.x || 0) - r * 0.6;
-            imgBadgeY = (unit.y || 0) - r * 0.6;
+            imgBadgeX = (unit.x || 0) - r * 0.65;
+            imgBadgeY = (unit.y || 0) - r * 0.65;
           }
           const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase();
           const unitData = (uCode && aggregatedData[uCode]) ? aggregatedData[uCode] : null;
@@ -43850,9 +43857,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             hasStoredUnitImages(unit.id, storeFilter) ||
             hasStoredUnitImages(unit.code, storeFilter)
           );
-          const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-          const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-          const imgPathScale = (badgeRadius * 1.3) / 24;
 
           // Dynamic Level of Detail (LOD) threshold:
           // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
@@ -43927,25 +43931,59 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                 </Group>
               )}
 
-              {/* Thumbnail / Image Indicator Badge (Rendered when project has attached photos/thumbnails) */}
+              {/* Interactive Quick-Image Button Badge (Click/Tap opens Quick Image Tooltip directly) */}
               {hasImage && showTextAndBadge && (
-                <Group x={imgBadgeX} y={imgBadgeY} listening={false}>
-                  <Circle
-                    radius={badgeRadius}
+                <Group x={imgBadgeX} y={imgBadgeY}>
+                  <Rect
+                    x={-imgBtnW / 2}
+                    y={-imgBtnH / 2}
+                    width={imgBtnW}
+                    height={imgBtnH}
+                    cornerRadius={imgBtnH * 0.28}
                     fill="#2563eb"
                     stroke="#ffffff"
-                    strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    strokeWidth={Math.max(1.2, 1.6 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    hitStrokeWidth={10}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    onMouseEnter={(e: any) => {
+                      e.cancelBubble = true;
+                      const container = e.target.getStage()?.container();
+                      if (container) container.style.cursor = 'pointer';
+                    }}
+                    onMouseMove={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onMouseLeave={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onClick={(e: any) => {
+                      e.cancelBubble = true;
+                      onClickUnit(unit, e, true);
+                    }}
+                    onTap={(e: any) => {
+                      e.cancelBubble = true;
+                      onTapUnit(unit, e, true);
+                    }}
+                  />
+                  {/* Golden Sun inside Photo Button */}
+                  <Circle
+                    x={-imgBtnW * 0.18}
+                    y={-imgBtnH * 0.15}
+                    radius={imgBtnH * 0.12}
+                    fill="#fde047"
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
                     listening={false}
                   />
+                  {/* Crisp White Mountain Landscape inside Photo Button */}
                   <Path
-                    data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5.04-6.71l-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"
+                    data="M4 18l4-5 3 3.5L15 11l5 7H4z"
                     fill="#ffffff"
-                    scaleX={imgPathScale}
-                    scaleY={imgPathScale}
-                    x={-badgeRadius * 0.65}
-                    y={-badgeRadius * 0.65}
+                    scaleX={imgIconScale}
+                    scaleY={imgIconScale}
+                    x={-12 * imgIconScale}
+                    y={-11.5 * imgIconScale}
                     strokeScaleEnabled={false}
                     perfectDrawEnabled={false}
                     listening={false}
@@ -43983,7 +44021,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
     </>
   );
 });
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutMiniGanttModal.tsx
@@ -45554,8 +45591,9 @@ export function LayoutUnitLightboxModal({
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutUnitTooltip.tsx
 ================================================================================
-import React, { FC, useMemo } from 'react';
+import React, { FC, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Image as ImageIcon, FileText, Crosshair, X, GripHorizontal } from 'lucide-react';
 import { cn, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../lib/utils';
 import { Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -45591,6 +45629,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const vis = useAppStore(state => state.layoutTooltipVisibility);
   const data = hoverInfo?.data || {};
   const initialP: Project | undefined = data.matchedProject;
+
+  const [isQuickImageView, setIsQuickImageView] = useState<boolean>(Boolean(hoverInfo?.quickImageMode));
+  useEffect(() => {
+    setIsQuickImageView(Boolean(hoverInfo?.quickImageMode));
+  }, [hoverInfo?.quickImageMode, hoverInfo?.unitName]);
 
   const p: Project | undefined = useMemo(() => {
     const expectedStore = (
@@ -45748,6 +45791,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     tooltipRef,
     positionTooltip: (force) => positionTooltipRef.current(force),
     storeFilter: storeDisplay,
+    quickImageMode: isQuickImageView,
   });
 
   // Hook 1: Position & Dragging management
@@ -45760,7 +45804,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     hoverInfo,
     tooltipRef,
     containerRef,
-    showImagePanel,
+    showImagePanel: isQuickImageView || showImagePanel,
   });
 
   positionTooltipRef.current = positionTooltip;
@@ -45813,92 +45857,180 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
         }
       }}
     >
-      {/* 1. Header Bar: Badges, Drag Handle & Action Buttons */}
-      <TooltipHeaderBar
-        v={v}
-        mdStatus={mdStatus}
-        mdStatusColorClass={mdStatusColorClass}
-        status={status}
-        statusColorClass={statusColorClass}
-        allUnitImages={allUnitImages}
-        showImagePanel={showImagePanel}
-        setShowImagePanel={setShowImagePanel}
-        targetProject={targetProject}
-        unitCode={unitCode}
-        unitName={hoverInfo.unitName}
-        onFocusUnit={onFocusUnit}
-        onClose={onClose}
-        handlePointerDown={handlePointerDown}
-        handlePointerMove={handlePointerMove}
-        handlePointerUp={handlePointerUp}
-      />
+      {isQuickImageView ? (
+        /* Dedicated Quick Image Tooltip Mode (Bypasses Task Tooltip) */
+        <>
+          <div
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              handlePointerDown(e);
+            }}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            className="modal-handle sticky top-0 z-30 bg-white/95 dark:bg-[#1e1e20]/95 backdrop-blur-md pb-1.5 pt-0.5 -mt-1 -mx-1 px-1 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
+          >
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[10px] font-bold shrink-0 shadow-2xs">
+                <ImageIcon className="w-3 h-3 shrink-0" />
+                <span>{unitCode}</span>
+              </span>
+              {projectName && projectName !== unitCode && (
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate" title={projectName}>
+                  {projectName}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsQuickImageView(false);
+                }}
+                className="px-2 py-1 rounded-md bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446] text-[10px] font-bold flex items-center gap-1 transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                title="Switch to Task & Unit Info Tooltip"
+              >
+                <FileText className="w-3 h-3" />
+                <span>Task Info</span>
+              </button>
+              {onFocusUnit && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFocusUnit(unitCode || hoverInfo.unitName);
+                  }}
+                  className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 border border-slate-200 dark:border-[#444446] transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                  title="Zoom & Center this unit"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close Quick Image Tooltip"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
-      {/* 2. Full-Width Task / Unit Title Section */}
-      <TooltipTitleSection
-        v={v}
-        p={p}
-        canWrite={canWrite}
-        storeDisplay={storeDisplay}
-        unitCode={unitCode}
-        projectName={projectName}
-        onEditProject={onEditProject}
-      />
+          <TooltipImageGalleryPanel
+            showImagePanel={true}
+            setShowImagePanel={(val) => {
+              const next = typeof val === 'function' ? val(true) : val;
+              if (!next) onClose();
+              else setShowImagePanel(next);
+            }}
+            showAddLinkInput={showAddLinkInput}
+            setShowAddLinkInput={setShowAddLinkInput}
+            newLinkInput={newLinkInput}
+            setNewLinkInput={setNewLinkInput}
+            allUnitImages={allUnitImages}
+            copiedLink={copiedLink}
+            handleAddCustomImage={handleAddCustomImage}
+            handleDeleteCustomImage={handleDeleteCustomImage}
+            handleCopyLink={handleCopyLink}
+            setEnlargedImage={setEnlargedImage}
+            unitCode={unitCode || data.code || ''}
+            activeStore={storeDisplay}
+          />
+        </>
+      ) : (
+        /* Standard Task & Unit Tooltip Mode */
+        <>
+          {/* 1. Header Bar: Badges, Drag Handle & Action Buttons */}
+          <TooltipHeaderBar
+            v={v}
+            mdStatus={mdStatus}
+            mdStatusColorClass={mdStatusColorClass}
+            status={status}
+            statusColorClass={statusColorClass}
+            allUnitImages={allUnitImages}
+            showImagePanel={showImagePanel}
+            setShowImagePanel={setShowImagePanel}
+            targetProject={targetProject}
+            unitCode={unitCode}
+            unitName={hoverInfo.unitName}
+            onFocusUnit={onFocusUnit}
+            onClose={onClose}
+            handlePointerDown={handlePointerDown}
+            handlePointerMove={handlePointerMove}
+            handlePointerUp={handlePointerUp}
+          />
 
-      {/* 3. Smart Alert Notification Banner */}
-      <TooltipAlertBanner
-        alerts={data.alerts}
-        visNotifications={vis?.notifications}
-        p={p}
-        canWrite={canWrite}
-        onEditProject={onEditProject}
-      />
+          {/* 2. Full-Width Task / Unit Title Section */}
+          <TooltipTitleSection
+            v={v}
+            p={p}
+            canWrite={canWrite}
+            storeDisplay={storeDisplay}
+            unitCode={unitCode}
+            projectName={projectName}
+            onEditProject={onEditProject}
+          />
 
-      {/* 4. Progress Bars */}
-      {v.progressBars && (
-        <TooltipProgressBars
-          planProgressPercent={planProgressPercent}
-          actProgressPercent={actProgressPercent}
-        />
+          {/* 3. Smart Alert Notification Banner */}
+          <TooltipAlertBanner
+            alerts={data.alerts}
+            visNotifications={vis?.notifications}
+            p={p}
+            canWrite={canWrite}
+            onEditProject={onEditProject}
+          />
+
+          {/* 4. Progress Bars */}
+          {v.progressBars && (
+            <TooltipProgressBars
+              planProgressPercent={planProgressPercent}
+              actProgressPercent={actProgressPercent}
+            />
+          )}
+
+          {/* 5. Unified Information Row: Floor, Area, Comment Symbol & Dates */}
+          <TooltipMetaRow
+            v={v}
+            p={p}
+            floorValue={floorValue}
+            dataSize={data.size}
+            commentsCount={commentsCount}
+            computedTakStart={computedTakStart}
+            computedTakCompl={computedTakCompl}
+            onEditProject={onEditProject}
+            onOpenMiniGantt={onOpenMiniGantt}
+          />
+
+          {/* 6. Details & Description Section */}
+          <TooltipDetailsSection
+            v={v}
+            taskLines={taskLines}
+            detailText={detailText}
+            descriptionText={descriptionText}
+          />
+
+          {/* 7. Image & Link Thumbnail Gallery Panel */}
+          <TooltipImageGalleryPanel
+            showImagePanel={showImagePanel}
+            setShowImagePanel={setShowImagePanel}
+            showAddLinkInput={showAddLinkInput}
+            setShowAddLinkInput={setShowAddLinkInput}
+            newLinkInput={newLinkInput}
+            setNewLinkInput={setNewLinkInput}
+            allUnitImages={allUnitImages}
+            copiedLink={copiedLink}
+            handleAddCustomImage={handleAddCustomImage}
+            handleDeleteCustomImage={handleDeleteCustomImage}
+            handleCopyLink={handleCopyLink}
+            setEnlargedImage={setEnlargedImage}
+            unitCode={unitCode || data.code || ''}
+            activeStore={storeDisplay}
+          />
+        </>
       )}
-
-      {/* 5. Unified Information Row: Floor, Area, Comment Symbol & Dates */}
-      <TooltipMetaRow
-        v={v}
-        p={p}
-        floorValue={floorValue}
-        dataSize={data.size}
-        commentsCount={commentsCount}
-        computedTakStart={computedTakStart}
-        computedTakCompl={computedTakCompl}
-        onEditProject={onEditProject}
-        onOpenMiniGantt={onOpenMiniGantt}
-      />
-
-      {/* 6. Details & Description Section */}
-      <TooltipDetailsSection
-        v={v}
-        taskLines={taskLines}
-        detailText={detailText}
-        descriptionText={descriptionText}
-      />
-
-      {/* 7. Image & Link Thumbnail Gallery Panel */}
-      <TooltipImageGalleryPanel
-        showImagePanel={showImagePanel}
-        setShowImagePanel={setShowImagePanel}
-        showAddLinkInput={showAddLinkInput}
-        setShowAddLinkInput={setShowAddLinkInput}
-        newLinkInput={newLinkInput}
-        setNewLinkInput={setNewLinkInput}
-        allUnitImages={allUnitImages}
-        copiedLink={copiedLink}
-        handleAddCustomImage={handleAddCustomImage}
-        handleDeleteCustomImage={handleDeleteCustomImage}
-        handleCopyLink={handleCopyLink}
-        setEnlargedImage={setEnlargedImage}
-        unitCode={unitCode || data.code || ''}
-        activeStore={storeDisplay}
-      />
     </div>,
     document.body
   );
@@ -45920,7 +46052,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 };
 
 export default LayoutUnitTooltip;
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutZoomControls.tsx
@@ -47775,7 +47906,6 @@ import { QuickNavButton } from '../../QuickNavButton';
 import { Project } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
-import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
 
 interface TooltipHeaderBarProps {
   v: any;
@@ -47848,7 +47978,7 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
 
       {/* Right: Actions (Image Gallery Toggle, Quick Nav, Focus, Close) */}
       <div className="flex items-center gap-1 shrink-0 ml-auto">
-        {/* Image & Link Thumbnail Gallery Button */}
+        {/* Recognizable Image & Link Gallery Button */}
         <button
           type="button"
           onClick={(e) => {
@@ -47856,56 +47986,26 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
             setShowImagePanel(prev => !prev);
           }}
           className={cn(
-            "rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1",
-            allUnitImages.length > 0 ? "p-0.5" : "p-1",
+            "rounded-md transition-all active:scale-95 touch-manipulation cursor-pointer border flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold",
             showImagePanel 
-              ? "bg-blue-100 text-blue-600 dark:bg-blue-900/60 dark:text-[#8ab4f8] border-blue-400 dark:border-blue-600 shadow-2xs ring-1 ring-blue-400/40" 
+              ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-400/40" 
               : allUnitImages.length > 0
-                ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-[#8ab4f8] border-blue-300 dark:border-blue-700/80 shadow-2xs hover:border-blue-400"
+                ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-500 shadow-xs"
                 : "bg-slate-50 text-slate-500 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:text-[#8ab4f8] border-slate-200 dark:border-[#444446] hover:bg-slate-100"
           )}
           title={
             showImagePanel 
-              ? "Đóng bảng hình ảnh" 
+              ? "Close image gallery" 
               : allUnitImages.length > 0 
-                ? `Có ${allUnitImages.length} hình ảnh/thumbnail. Bấm để xem chi tiết.` 
-                : "Mở bảng hình ảnh & link thumbnail"
+                ? `${allUnitImages.length} attached photo(s)/PDF(s). Click to view.` 
+                : "Open photo & link gallery"
           }
         >
-          {allUnitImages.length > 0 ? (
-            <div className="relative flex items-center gap-1">
-              {/* Mini Image Thumbnail Preview */}
-              <div 
-                className="w-5 h-5 rounded overflow-hidden bg-slate-100 dark:bg-slate-900 border border-blue-200 dark:border-blue-800 shrink-0 flex items-center justify-center pointer-events-none"
-              >
-                <img 
-                  src={normalizeImageUrl(allUnitImages[0].url)} 
-                  alt="Thumbnail" 
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                  decoding="async"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                    const parent = (e.target as HTMLElement).parentElement;
-                    if (parent && !parent.querySelector('.img-fallback-icon')) {
-                      const iconSpan = document.createElement('span');
-                      iconSpan.className = 'img-fallback-icon flex items-center justify-center text-[10px] text-blue-500 font-bold';
-                      iconSpan.innerText = '🖼️';
-                      parent.appendChild(iconSpan);
-                    }
-                  }}
-                />
-              </div>
-              {allUnitImages.length > 1 ? (
-                <span className="text-[9px] font-bold font-mono text-blue-600 dark:text-[#8ab4f8] pr-1">
-                  +{allUnitImages.length - 1}
-                </span>
-              ) : (
-                <div className="w-1" />
-              )}
-            </div>
-          ) : (
-            <ImageIcon className="w-3.5 h-3.5" />
+          <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+          {allUnitImages.length > 0 && (
+            <span className="font-mono leading-none">
+              {allUnitImages.length}
+            </span>
           )}
         </button>
 
@@ -47941,7 +48041,6 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/TooltipImageGalleryPanel.tsx
@@ -48882,6 +48981,7 @@ export interface TooltipHoverInfo {
     centerX: number;
     centerY: number;
   };
+  quickImageMode?: boolean;
 }
 
 export interface LayoutUnitTooltipProps {
@@ -48943,7 +49043,6 @@ export function getMdStatusColorClass(mdStatus: string): string {
   return 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
 }
 
-
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/useTooltipImages.ts
 ================================================================================
@@ -48965,6 +49064,7 @@ interface UseTooltipImagesParams {
   tooltipRef: React.RefObject<HTMLDivElement>;
   positionTooltip: (forceRecalculate?: boolean) => void;
   storeFilter?: string;
+  quickImageMode?: boolean;
 }
 
 export function useTooltipImages({
@@ -48974,8 +49074,9 @@ export function useTooltipImages({
   tooltipRef,
   positionTooltip,
   storeFilter,
+  quickImageMode = false,
 }: UseTooltipImagesParams) {
-  const [showImagePanel, setShowImagePanel] = useState(false);
+  const [showImagePanel, setShowImagePanel] = useState<boolean>(Boolean(quickImageMode));
   const [showAddLinkInput, setShowAddLinkInput] = useState(false);
   const [newLinkInput, setNewLinkInput] = useState('');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
@@ -48996,74 +49097,53 @@ export function useTooltipImages({
   // Load custom images from localStorage with strict store separation
   useEffect(() => {
     try {
-      // 1. Primary: load store-partitioned key
       const saved = localStorage.getItem(activeUnitStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          const matching = parsed.filter(item => !item.store || item.store.toUpperCase() === activeStore);
-          setCustomUnitImages(matching);
+          setCustomUnitImages(parsed.filter(item => !item.store || item.store.toUpperCase() === activeStore));
           return;
         }
       }
-
-      // 2. Legacy key check: only migrate to HN if currently in HN (never load into HCM!)
       const legacyKey = `taka_unit_images_${cleanCode}`;
       const legacySaved = localStorage.getItem(legacyKey);
-      if (legacySaved) {
-        try {
-          const parsedLegacy = JSON.parse(legacySaved);
-          if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
-            if (activeStore === 'HN') {
-              const tagged = parsedLegacy.map(item => ({ ...item, store: 'HN' }));
-              localStorage.setItem(activeUnitStorageKey, JSON.stringify(tagged));
-              localStorage.removeItem(legacyKey);
-              setCustomUnitImages(tagged);
-              return;
-            }
-          }
-        } catch {}
+      if (legacySaved && activeStore === 'HN') {
+        const parsedLegacy = JSON.parse(legacySaved);
+        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+          const tagged = parsedLegacy.map(item => ({ ...item, store: 'HN' }));
+          localStorage.setItem(activeUnitStorageKey, JSON.stringify(tagged));
+          localStorage.removeItem(legacyKey);
+          setCustomUnitImages(tagged);
+          return;
+        }
       }
-
       setCustomUnitImages([]);
     } catch {
       setCustomUnitImages([]);
     }
   }, [activeUnitStorageKey, activeStore, cleanCode]);
 
-  // Reset panel open state when unit changes
+  // Sync panel open state when unit or quickImageMode changes
   useEffect(() => {
-    setShowImagePanel(false);
+    setShowImagePanel(Boolean(quickImageMode));
     setShowAddLinkInput(false);
-  }, [data.code, unitCode]);
+  }, [data.code, unitCode, quickImageMode]);
 
-  // Re-evaluate position & smoothly scroll tooltip down to reveal image panel expanding below description box when image button is pressed
+  // Re-evaluate position & smoothly scroll tooltip when image panel opens
   useEffect(() => {
-    if (tooltipRef.current) {
-      positionTooltip(true);
-      if (showImagePanel) {
-        const timer1 = setTimeout(() => {
-          if (tooltipRef.current) {
-            positionTooltip(true);
-            tooltipRef.current.scrollTo({
-              top: tooltipRef.current.scrollHeight,
-              behavior: 'smooth'
-            });
-          }
-        }, 60);
-        const timer2 = setTimeout(() => {
-          if (tooltipRef.current) {
-            positionTooltip(true);
-            tooltipRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }, 180);
-        return () => {
-          clearTimeout(timer1);
-          clearTimeout(timer2);
-        };
+    if (!tooltipRef.current) return;
+    positionTooltip(true);
+    if (!showImagePanel) return;
+    const timer1 = setTimeout(() => {
+      if (tooltipRef.current) {
+        positionTooltip(true);
+        if (!quickImageMode) {
+          tooltipRef.current.scrollTo({ top: tooltipRef.current.scrollHeight, behavior: 'smooth' });
+        }
       }
-    }
-  }, [showImagePanel, positionTooltip, tooltipRef]);
+    }, 50);
+    return () => clearTimeout(timer1);
+  }, [showImagePanel, quickImageMode, positionTooltip, tooltipRef]);
 
   // Close enlarged image modal with Escape key
   useEffect(() => {
@@ -49463,7 +49543,6 @@ export function useTooltipImages({
     handleCopyLink,
   };
 }
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/useTooltipPosition.ts
@@ -51377,6 +51456,7 @@ export interface HoverInfo {
   clientX?: number;
   clientY?: number;
   unitScreenBounds?: UnitScreenBounds;
+  quickImageMode?: boolean;
 }
 
 
@@ -52977,7 +53057,7 @@ export function useLayoutStageInteractions({
     }
   }, [gestures.isInteractingRef, miniGanttProject, isProjectModalOpen]);
 
-  const pinAndShowTooltip = useCallback((unit: any, clientX: number, clientY: number) => {
+  const pinAndShowTooltip = useCallback((unit: any, clientX: number, clientY: number, quickImageMode = false) => {
     isPinnedRef.current = true;
     const uName = (unit?.name || '').toLowerCase();
     const agg = aggregatedDataRef.current;
@@ -52986,27 +53066,28 @@ export function useLayoutStageInteractions({
       data: (uName && agg[uName]) ? agg[uName] : {},
       unitName: unit?.name || 'Unknown',
       clientX,
-      clientY
+      clientY,
+      quickImageMode,
     });
     setTimeout(() => updateTooltipPos(clientX, clientY), 0);
   }, [updateTooltipPos]);
 
-  const handleClickUnit = useCallback((unit: any, e: any) => {
+  const handleClickUnit = useCallback((unit: any, e: any, quickImageMode = false) => {
     if (gestures.isInteractingRef.current || Boolean(miniGanttProject)) return;
     try {
-      pinAndShowTooltip(unit, e.evt.clientX, e.evt.clientY);
+      pinAndShowTooltip(unit, e.evt.clientX, e.evt.clientY, quickImageMode);
       onUnitSelected?.(unit);
     } catch (err) {
       console.error("Defensive Check: Error onClick unit in LiveLayoutViewer:", err, unit);
     }
   }, [gestures.isInteractingRef, miniGanttProject, pinAndShowTooltip, onUnitSelected]);
 
-  const handleTapUnit = useCallback((unit: any, e: any) => {
+  const handleTapUnit = useCallback((unit: any, e: any, quickImageMode = false) => {
     if (gestures.isInteractingRef.current || Boolean(miniGanttProject)) return;
     try {
       const clientX = e.evt.changedTouches ? e.evt.changedTouches[0].clientX : e.evt.clientX;
       const clientY = e.evt.changedTouches ? e.evt.changedTouches[0].clientY : e.evt.clientY;
-      pinAndShowTooltip(unit, clientX, clientY);
+      pinAndShowTooltip(unit, clientX, clientY, quickImageMode);
       onUnitSelected?.(unit);
     } catch (err) {
       console.error("Defensive Check: Error onTap unit in LiveLayoutViewer:", err, unit);
@@ -53057,7 +53138,6 @@ export function useLayoutStageInteractions({
     updateAggregatedData,
   };
 }
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutTabData.ts

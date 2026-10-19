@@ -67,4 +67,6 @@ export interface HoverInfo {
   clientX?: number;
   clientY?: number;
   unitScreenBounds?: UnitScreenBounds;
+  quickImageMode?: boolean;
 }
+

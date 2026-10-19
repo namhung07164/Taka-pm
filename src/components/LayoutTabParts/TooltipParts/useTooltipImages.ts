@@ -16,6 +16,7 @@ interface UseTooltipImagesParams {
   tooltipRef: React.RefObject<HTMLDivElement>;
   positionTooltip: (forceRecalculate?: boolean) => void;
   storeFilter?: string;
+  quickImageMode?: boolean;
 }
 
 export function useTooltipImages({
@@ -25,8 +26,9 @@ export function useTooltipImages({
   tooltipRef,
   positionTooltip,
   storeFilter,
+  quickImageMode = false,
 }: UseTooltipImagesParams) {
-  const [showImagePanel, setShowImagePanel] = useState(false);
+  const [showImagePanel, setShowImagePanel] = useState<boolean>(Boolean(quickImageMode));
   const [showAddLinkInput, setShowAddLinkInput] = useState(false);
   const [newLinkInput, setNewLinkInput] = useState('');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
@@ -47,74 +49,53 @@ export function useTooltipImages({
   // Load custom images from localStorage with strict store separation
   useEffect(() => {
     try {
-      // 1. Primary: load store-partitioned key
       const saved = localStorage.getItem(activeUnitStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          const matching = parsed.filter(item => !item.store || item.store.toUpperCase() === activeStore);
-          setCustomUnitImages(matching);
+          setCustomUnitImages(parsed.filter(item => !item.store || item.store.toUpperCase() === activeStore));
           return;
         }
       }
-
-      // 2. Legacy key check: only migrate to HN if currently in HN (never load into HCM!)
       const legacyKey = `taka_unit_images_${cleanCode}`;
       const legacySaved = localStorage.getItem(legacyKey);
-      if (legacySaved) {
-        try {
-          const parsedLegacy = JSON.parse(legacySaved);
-          if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
-            if (activeStore === 'HN') {
-              const tagged = parsedLegacy.map(item => ({ ...item, store: 'HN' }));
-              localStorage.setItem(activeUnitStorageKey, JSON.stringify(tagged));
-              localStorage.removeItem(legacyKey);
-              setCustomUnitImages(tagged);
-              return;
-            }
-          }
-        } catch {}
+      if (legacySaved && activeStore === 'HN') {
+        const parsedLegacy = JSON.parse(legacySaved);
+        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+          const tagged = parsedLegacy.map(item => ({ ...item, store: 'HN' }));
+          localStorage.setItem(activeUnitStorageKey, JSON.stringify(tagged));
+          localStorage.removeItem(legacyKey);
+          setCustomUnitImages(tagged);
+          return;
+        }
       }
-
       setCustomUnitImages([]);
     } catch {
       setCustomUnitImages([]);
     }
   }, [activeUnitStorageKey, activeStore, cleanCode]);
 
-  // Reset panel open state when unit changes
+  // Sync panel open state when unit or quickImageMode changes
   useEffect(() => {
-    setShowImagePanel(false);
+    setShowImagePanel(Boolean(quickImageMode));
     setShowAddLinkInput(false);
-  }, [data.code, unitCode]);
+  }, [data.code, unitCode, quickImageMode]);
 
-  // Re-evaluate position & smoothly scroll tooltip down to reveal image panel expanding below description box when image button is pressed
+  // Re-evaluate position & smoothly scroll tooltip when image panel opens
   useEffect(() => {
-    if (tooltipRef.current) {
-      positionTooltip(true);
-      if (showImagePanel) {
-        const timer1 = setTimeout(() => {
-          if (tooltipRef.current) {
-            positionTooltip(true);
-            tooltipRef.current.scrollTo({
-              top: tooltipRef.current.scrollHeight,
-              behavior: 'smooth'
-            });
-          }
-        }, 60);
-        const timer2 = setTimeout(() => {
-          if (tooltipRef.current) {
-            positionTooltip(true);
-            tooltipRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }, 180);
-        return () => {
-          clearTimeout(timer1);
-          clearTimeout(timer2);
-        };
+    if (!tooltipRef.current) return;
+    positionTooltip(true);
+    if (!showImagePanel) return;
+    const timer1 = setTimeout(() => {
+      if (tooltipRef.current) {
+        positionTooltip(true);
+        if (!quickImageMode) {
+          tooltipRef.current.scrollTo({ top: tooltipRef.current.scrollHeight, behavior: 'smooth' });
+        }
       }
-    }
-  }, [showImagePanel, positionTooltip, tooltipRef]);
+    }, 50);
+    return () => clearTimeout(timer1);
+  }, [showImagePanel, quickImageMode, positionTooltip, tooltipRef]);
 
   // Close enlarged image modal with Escape key
   useEffect(() => {
