@@ -119665,3 +119665,1803 @@ export default defineConfig({
     }
   }
 });
+
+--- FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx ---
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  X,
+  Copy,
+  ExternalLink,
+  Image as ImageIcon,
+  Link as LinkIcon,
+  Check,
+  Loader2,
+  AlertCircle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Maximize2,
+  Minimize2,
+  Hand,
+  Layers,
+  Zap,
+  RefreshCw,
+} from 'lucide-react';
+import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
+import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
+
+export function normalizeImageUrl(rawUrl: string | undefined | null, size: string = 'w1600'): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('r2://')) return `https://hcm.taka-pm.org/${trimmed.replace('r2://', '')}`;
+
+  const driveMatch = trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/);
+  if (driveMatch?.[1]) return `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=${size}`;
+
+  const driveIdParam = trimmed.match(/drive\.google\.com\/.*[?&]id=([a-zA-Z0-9_-]+)/);
+  if (driveIdParam?.[1]) return `https://drive.google.com/thumbnail?id=${driveIdParam[1]}&sz=${size}`;
+
+  if (trimmed.includes('dropbox.com') && !trimmed.includes('raw=1')) {
+    return trimmed.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
+  }
+  return trimmed;
+}
+
+interface LayoutUnitLightboxModalProps {
+  enlargedImage: { url: string; title?: string; initialScale?: number } | null;
+  onClose: () => void;
+  onCopyLink: (url: string) => void;
+  copiedLink: string | null;
+}
+
+export function LayoutUnitLightboxModal({
+  enlargedImage,
+  onClose,
+  onCopyLink,
+  copiedLink,
+}: LayoutUnitLightboxModalProps) {
+  const [imageError, setImageError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFullDisplay, setIsFullDisplay] = useState(true);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [driveTouchMode, setDriveTouchMode] = useState<'fast' | 'ultrahd' | 'scroll'>('fast');
+  const [scrollReloadKey, setScrollReloadKey] = useState(0);
+  // Pixel-locked iframe size: prevents iOS Safari upward-scroll dynamic toolbar jitter from firing window.onresize inside Google Drive PDF viewer
+  const [lockedIframeSize, setLockedIframeSize] = useState<{ w: number; h: number } | null>(null);
+
+  const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const scrollHostRef = useRef<HTMLDivElement>(null);
+
+  const rawUrl = enlargedImage?.url || '';
+  const targetRasterSize = driveTouchMode === 'ultrahd' ? 'w2400' : 'w1600';
+  const resolvedUrl = useMemo(() => normalizeImageUrl(rawUrl, targetRasterSize), [rawUrl, targetRasterSize]);
+  const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
+  const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
+
+  const initialZoom =
+    enlargedImage?.initialScale && enlargedImage.initialScale > 1 ? Math.min(6, enlargedImage.initialScale) : 1;
+
+  const isDirectPdf = useMemo(() => {
+    const u = (rawUrl || '').toLowerCase();
+    if (u.includes('drive.google.com') || u.includes('docs.google.com')) return false;
+    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
+  }, [rawUrl]);
+
+  const isDriveDoc = useMemo(() => {
+    const u = (rawUrl || '').toLowerCase();
+    return u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [rawUrl]);
+
+  const driveFileId = useMemo(() => {
+    const m =
+      rawUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
+      rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+    return m?.[1] || null;
+  }, [rawUrl]);
+
+  const effectiveEmbedUrl = useMemo(() => {
+    if (isDriveDoc && driveFileId) {
+      return `https://drive.google.com/file/d/${driveFileId}/preview?rm=minimal`;
+    }
+    return resolvedUrl;
+  }, [resolvedUrl, isDriveDoc, driveFileId]);
+
+  const releaseIframeMemory = useCallback(() => {
+    if (iframeRef.current) {
+      try {
+        iframeRef.current.src = 'about:blank';
+      } catch {}
+    }
+  }, []);
+
+  const handleImageError = useCallback(() => {
+    if (driveFileId && !hasTriedCdnFallback) {
+      setHasTriedCdnFallback(true);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}=${targetRasterSize}`);
+      return;
+    }
+    if (isDriveDoc && (driveTouchMode === 'fast' || driveTouchMode === 'ultrahd')) {
+      setDriveTouchMode('scroll');
+      setIsLoading(false);
+      setImageError(false);
+      return;
+    }
+    setIsLoading(false);
+    setImageError(true);
+  }, [driveFileId, hasTriedCdnFallback, isDriveDoc, driveTouchMode, targetRasterSize]);
+
+  const handleImageLoad = useCallback(() => {
+    setIsLoading(false);
+    setImageError(false);
+    if (initialZoom > 1) zoomStageRef.current?.centerView(initialZoom);
+  }, [initialZoom]);
+
+  useEffect(() => {
+    setDriveTouchMode('fast');
+    setHasTriedCdnFallback(false);
+    setImageError(false);
+    setZoomScale(initialZoom);
+    setScrollReloadKey(0);
+  }, [rawUrl, initialZoom]);
+
+  useEffect(() => {
+    setCurrentSrc(resolvedUrl);
+    setHasTriedCdnFallback(false);
+    setImageError(false);
+    if (!resolvedUrl) {
+      setIsLoading(false);
+      return;
+    }
+    if (isDirectPdf || (isDriveDoc && driveTouchMode === 'scroll')) {
+      setIsLoading(true);
+      const timer = setTimeout(() => setIsLoading(false), 650);
+      return () => clearTimeout(timer);
+    }
+    setIsLoading(true);
+  }, [resolvedUrl, isDirectPdf, isDriveDoc, driveTouchMode, scrollReloadKey]);
+
+  // Freeze body scroll & pause background Konva canvas GPU compositing while modal is open
+  useEffect(() => {
+    if (!enlargedImage) return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+
+    const konvaContents = Array.from(document.querySelectorAll('.konvajs-content')) as HTMLElement[];
+    konvaContents.forEach((el) => {
+      el.style.visibility = 'hidden';
+    });
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overscrollBehavior = prevBodyOverscroll;
+      konvaContents.forEach((el) => {
+        el.style.visibility = '';
+      });
+    };
+  }, [enlargedImage]);
+
+  // Stabilize iframe pixel dimensions so iOS upward-scroll dynamic address-bar jitters never fire window.onresize inside the PDF viewer
+  useEffect(() => {
+    if (!enlargedImage || !isDriveDoc || driveTouchMode !== 'scroll') {
+      setLockedIframeSize(null);
+      return;
+    }
+    const host = scrollHostRef.current;
+    if (!host) return;
+
+    const measureAndLock = (force = false) => {
+      const rect = host.getBoundingClientRect();
+      const nextW = Math.max(280, Math.floor(rect.width) - 8);
+      const nextH = Math.max(240, Math.floor(rect.height) - 8);
+      setLockedIframeSize((prev) => {
+        if (!prev || force) return { w: nextW, h: nextH };
+        const widthChanged = Math.abs(nextW - prev.w) > 12;
+        const majorHeightChanged = Math.abs(nextH - prev.h) > 120;
+        return widthChanged || majorHeightChanged ? { w: nextW, h: nextH } : prev;
+      });
+    };
+
+    measureAndLock(true);
+    const onResize = () => measureAndLock(false);
+    const onOrientation = () => setTimeout(() => measureAndLock(true), 180);
+    window.addEventListener('resize', onResize, { passive: true });
+    window.addEventListener('orientationchange', onOrientation, { passive: true });
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onOrientation);
+    };
+  }, [enlargedImage, isDriveDoc, driveTouchMode, isFullDisplay]);
+
+  const handleSafeClose = useCallback(() => {
+    releaseIframeMemory();
+    if (imgRef.current) {
+      try {
+        imgRef.current.src = '';
+      } catch {}
+    }
+    onClose();
+  }, [onClose, releaseIframeMemory]);
+
+  useEffect(() => {
+    if (!enlargedImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSafeClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [enlargedImage, handleSafeClose]);
+
+  if (!enlargedImage || typeof document === 'undefined') return null;
+
+  const isScrollMode = isDriveDoc && driveTouchMode === 'scroll';
+  const showZoomControls = !isDirectPdf && !isScrollMode;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[999999] bg-slate-950/98 flex items-center justify-center p-0 sm:p-2 md:p-4 select-none"
+      style={{ overscrollBehavior: 'none' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleSafeClose();
+      }}
+    >
+      <div
+        className={`relative bg-slate-950 overflow-hidden shadow-2xl border border-slate-800 flex flex-col z-[1000000] ${
+          isFullDisplay ? 'w-full h-full max-w-none max-h-none rounded-none border-none' : 'max-w-6xl w-full h-[92vh] rounded-2xl'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Header */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900 text-white shrink-0 z-30">
+          <div className="flex items-center gap-2 min-w-0">
+            <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
+            <span className="font-bold text-xs sm:text-sm truncate max-w-[160px] sm:max-w-[260px]">
+              {enlargedImage.title || 'Document Preview'}
+            </span>
+
+            {showZoomControls && (
+              <div className="flex items-center gap-1 ml-1 sm:ml-3 px-1.5 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700">
+                <button type="button" onClick={() => zoomStageRef.current?.zoomOut(0.45)} className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation" title="Zoom Out (-)">
+                  <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+                <span className="text-[11px] font-mono font-bold px-1 min-w-[2.8rem] text-center text-blue-300">
+                  {Math.round(zoomScale * 100)}%
+                </span>
+                <button type="button" onClick={() => zoomStageRef.current?.zoomIn(0.45)} className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation" title="Zoom In (+)">
+                  <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+                <button type="button" onClick={() => zoomStageRef.current?.resetTransform()} className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white active:scale-95 touch-manipulation" title="Reset Zoom (100%)">
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFullDisplay(!isFullDisplay)}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium active:scale-95 touch-manipulation"
+              title={isFullDisplay ? 'Normal View' : 'Full Display'}
+            >
+              {isFullDisplay ? <Minimize2 className="w-4 h-4 text-blue-400" /> : <Maximize2 className="w-4 h-4 text-blue-400" />}
+              <span className="hidden md:inline font-bold">{isFullDisplay ? 'Normal View' : 'Full Display'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onCopyLink(rawUrl)}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium active:scale-95 touch-manipulation"
+              title={copiedLink === rawUrl ? 'Link Copied!' : 'Copy Link'}
+            >
+              {copiedLink === rawUrl ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span className="hidden md:inline text-emerald-400 font-bold">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  <span className="hidden md:inline">Copy Link</span>
+                </>
+              )}
+            </button>
+
+            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 sm:px-2.5 sm:py-1.5 text-blue-400 hover:text-white bg-blue-950/60 hover:bg-blue-600 border border-blue-800 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shadow-sm active:scale-95 touch-manipulation" title="Open in new tab">
+              <ExternalLink className="w-4 h-4" />
+              <span className="hidden sm:inline">Open in New Tab</span>
+            </a>
+
+            <button type="button" onClick={handleSafeClose} className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold active:scale-95 touch-manipulation shadow-sm" title="Close (Escape)">
+              <X className="w-4 h-4" />
+              <span>Close</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Google Drive Anti-Freeze Mode Bar */}
+        {isDriveDoc && (
+          <div className="bg-slate-900/95 border-b border-slate-800 px-3 py-1.5 text-xs text-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0 z-30">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { releaseIframeMemory(); setImageError(false); setDriveTouchMode('fast'); }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
+                  driveTouchMode === 'fast' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Fast Light HD (Pinch Zoom)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { releaseIframeMemory(); setImageError(false); setDriveTouchMode('ultrahd'); }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
+                  driveTouchMode === 'ultrahd' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                <Hand className="w-3.5 h-3.5" />
+                <span>Ultra HD Blueprint (2400px)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { zoomStageRef.current?.resetTransform(); setDriveTouchMode('scroll'); }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
+                  driveTouchMode === 'scroll' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Scroll Multi-Page PDF</span>
+              </button>
+
+              {isScrollMode && (
+                <button
+                  type="button"
+                  onClick={() => { releaseIframeMemory(); setScrollReloadKey((k) => k + 1); }}
+                  className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 active:scale-95 touch-manipulation cursor-pointer"
+                  title="Flush stuck tile cache and reload PDF stream"
+                >
+                  <RefreshCw className="w-3 h-3 text-indigo-400" />
+                  <span>Reload Stream</span>
+                </button>
+              )}
+            </div>
+
+            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 font-bold rounded-lg text-[11px] flex items-center gap-1 shrink-0 transition-colors">
+              <ExternalLink className="w-3 h-3" />
+              <span>Open in Google Drive</span>
+            </a>
+          </div>
+        )}
+
+        {/* Content Body: No contain:paint so offscreen upper PDF pages stay cached in iOS GPU memory during upward scroll */}
+        <div
+          ref={scrollHostRef}
+          className="flex-1 p-1 sm:p-2 flex items-center justify-center bg-slate-950 overflow-hidden min-h-[260px] relative"
+          style={{ contain: 'layout style', overscrollBehavior: 'none' }}
+        >
+          {isLoading && !imageError && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/60 z-20 pointer-events-none">
+              <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
+              <span className="text-xs font-medium">Loading document...</span>
+            </div>
+          )}
+
+          {imageError ? (
+            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+              <AlertCircle className="w-10 h-10 text-amber-400" />
+              <div>
+                <h4 className="text-sm font-bold text-white mb-1">Cannot display content directly</h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  This document may require Google account access permissions or restricts embedding.
+                </p>
+              </div>
+              <a
+                href={rawUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>Open Link in New Tab</span>
+              </a>
+            </div>
+          ) : isScrollMode ? (
+            <div
+              className="rounded-xl overflow-hidden border border-slate-800 bg-slate-900 relative flex items-center justify-center"
+              style={{
+                width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
+                height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
+                contain: 'layout style',
+                isolation: 'isolate',
+                overscrollBehavior: 'contain',
+              }}
+            >
+              <iframe
+                key={`drive_scroll_${driveFileId || rawUrl}_${scrollReloadKey}`}
+                ref={iframeRef}
+                src={effectiveEmbedUrl}
+                onLoad={() => setIsLoading(false)}
+                scrolling="yes"
+                className="border-0 bg-white block"
+                style={{
+                  width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
+                  height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
+                  overscrollBehavior: 'contain',
+                }}
+                title={enlargedImage.title || 'Google Drive Document'}
+                allow="autoplay"
+              />
+            </div>
+          ) : isDirectPdf ? (
+            <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
+              <PdfNativeCanvasViewer url={rawUrl} isFullscreen={true} />
+            </div>
+          ) : (
+            <TouchPinchZoomStage ref={zoomStageRef} initialScale={initialZoom} minScale={0.5} maxScale={10} onScaleChange={setZoomScale}>
+              <img
+                ref={imgRef}
+                src={currentSrc}
+                alt={enlargedImage.title || 'Enlarged Preview'}
+                decoding="async"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg select-none"
+                draggable={false}
+              />
+            </TouchPinchZoomStage>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-3 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2 shrink-0 text-xs z-30">
+          <div className="flex items-center gap-2 min-w-0">
+            <LinkIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 font-mono text-[11px] truncate">
+              {rawUrl}
+            </a>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="hidden sm:inline text-[11px] text-slate-400">Pinch with 2 fingers to zoom • Drag to pan • Double-tap to zoom</span>
+            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-slate-300 hover:text-white shrink-0 text-[11px] font-medium">
+              <span>Open Link</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+
+
+
+
+--- FILE: src/components/LayoutTabParts/TouchPinchZoomStage.tsx ---
+import React, {
+  useRef,
+  useEffect,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+} from 'react';
+
+export interface TouchPinchZoomStageHandle {
+  zoomIn: (step?: number) => void;
+  zoomOut: (step?: number) => void;
+  resetTransform: () => void;
+  centerView: (scale?: number) => void;
+  getScale: () => number;
+}
+
+export interface TouchPinchZoomStageProps {
+  children: React.ReactNode;
+  initialScale?: number;
+  minScale?: number;
+  maxScale?: number;
+  onScaleChange?: (scale: number) => void;
+  captureOverlay?: boolean;
+  allowNativeTouch?: boolean;
+  alwaysPan?: boolean;
+  className?: string;
+  contentClassName?: string;
+}
+
+export const TouchPinchZoomStage = forwardRef<
+  TouchPinchZoomStageHandle,
+  TouchPinchZoomStageProps
+>(function TouchPinchZoomStage(
+  {
+    children,
+    initialScale = 1,
+    minScale = 0.5,
+    maxScale = 8,
+    onScaleChange,
+    captureOverlay = false,
+    allowNativeTouch = false,
+    alwaysPan = true,
+    className = '',
+    contentClassName = '',
+  },
+  ref
+) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const stateRef = useRef<{ scale: number; x: number; y: number }>({
+    scale: initialScale,
+    x: 0,
+    y: 0,
+  });
+
+  const rafIdRef = useRef<number | null>(null);
+  const lastReportedScaleRef = useRef<number>(initialScale);
+  const scaleReportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const pinchStartRef = useRef<{
+    startDist: number;
+    startScale: number;
+    startX: number;
+    startY: number;
+    startMidX: number;
+    startMidY: number;
+  } | null>(null);
+
+  const panStartRef = useRef<{
+    clientX: number;
+    clientY: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+
+  const isMouseDraggingRef = useRef(false);
+  const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
+
+  const clampScale = useCallback(
+    (s: number) => Math.max(minScale, Math.min(maxScale, s)),
+    [minScale, maxScale]
+  );
+
+  const notifyScale = useCallback(
+    (s: number, immediate = false) => {
+      if (!onScaleChange) return;
+      const rounded = Math.round(s * 100) / 100;
+      if (immediate) {
+        if (scaleReportTimerRef.current) {
+          clearTimeout(scaleReportTimerRef.current);
+          scaleReportTimerRef.current = null;
+        }
+        lastReportedScaleRef.current = rounded;
+        onScaleChange(rounded);
+        return;
+      }
+      if (Math.abs(rounded - lastReportedScaleRef.current) < 0.02) return;
+      if (!scaleReportTimerRef.current) {
+        scaleReportTimerRef.current = setTimeout(() => {
+          scaleReportTimerRef.current = null;
+          const latest = Math.round(stateRef.current.scale * 100) / 100;
+          lastReportedScaleRef.current = latest;
+          onScaleChange(latest);
+        }, 60);
+      }
+    },
+    [onScaleChange]
+  );
+
+  const applyTransformDOM = useCallback(
+    (animate = false) => {
+      const el = contentRef.current;
+      if (!el) return;
+      if (allowNativeTouch) {
+        el.style.transition = 'none';
+        el.style.transform = 'none';
+        return;
+      }
+      const { scale, x, y } = stateRef.current;
+      el.style.transition = animate ? 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
+      el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+    },
+    [allowNativeTouch]
+  );
+
+  const scheduleRender = useCallback(() => {
+    if (rafIdRef.current !== null) return;
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      applyTransformDOM(false);
+    });
+  }, [applyTransformDOM]);
+
+  const setTransformAnimated = useCallback(
+    (nextScale: number, nextX: number, nextY: number) => {
+      const clamped = clampScale(nextScale);
+      stateRef.current = {
+        scale: clamped,
+        x: clamped <= 1.01 ? 0 : nextX,
+        y: clamped <= 1.01 ? 0 : nextY,
+      };
+      applyTransformDOM(true);
+      notifyScale(clamped, true);
+    },
+    [clampScale, applyTransformDOM, notifyScale]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      zoomIn: (step = 0.4) => {
+        const cur = stateRef.current;
+        const nextScale = clampScale(cur.scale + step);
+        const ratio = nextScale / cur.scale;
+        setTransformAnimated(nextScale, cur.x * ratio, cur.y * ratio);
+      },
+      zoomOut: (step = 0.4) => {
+        const cur = stateRef.current;
+        const nextScale = clampScale(cur.scale - step);
+        if (nextScale <= 1.02) setTransformAnimated(1, 0, 0);
+        else {
+          const ratio = nextScale / cur.scale;
+          setTransformAnimated(nextScale, cur.x * ratio, cur.y * ratio);
+        }
+      },
+      resetTransform: () => setTransformAnimated(1, 0, 0),
+      centerView: (targetScale = 1) => setTransformAnimated(targetScale, 0, 0),
+      getScale: () => stateRef.current.scale,
+    }),
+    [clampScale, setTransformAnimated]
+  );
+
+  useEffect(() => {
+    const clamped = clampScale(initialScale || 1);
+    stateRef.current = { scale: clamped, x: 0, y: 0 };
+    applyTransformDOM(false);
+    notifyScale(clamped, true);
+  }, [initialScale, clampScale, applyTransformDOM, notifyScale]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || allowNativeTouch) return;
+
+    const getCenter = () => {
+      const rect = container.getBoundingClientRect();
+      return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (allowNativeTouch && e.touches.length < 2) return;
+      if (e.touches.length === 2) {
+        if (e.cancelable) e.preventDefault();
+        panStartRef.current = null;
+        const [t1, t2] = [e.touches[0], e.touches[1]];
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        pinchStartRef.current = {
+          startDist: Math.max(dist, 10),
+          startScale: stateRef.current.scale,
+          startX: stateRef.current.x,
+          startY: stateRef.current.y,
+          startMidX: (t1.clientX + t2.clientX) / 2,
+          startMidY: (t1.clientY + t2.clientY) / 2,
+        };
+      } else if (e.touches.length === 1) {
+        pinchStartRef.current = null;
+        const t = e.touches[0];
+        panStartRef.current = {
+          clientX: t.clientX,
+          clientY: t.clientY,
+          startX: stateRef.current.x,
+          startY: stateRef.current.y,
+          moved: false,
+        };
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchStartRef.current) {
+        if (e.cancelable) e.preventDefault();
+        const [t1, t2] = [e.touches[0], e.touches[1]];
+        const currDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        const currMidX = (t1.clientX + t2.clientX) / 2;
+        const currMidY = (t1.clientY + t2.clientY) / 2;
+
+        const { startDist, startScale, startX, startY, startMidX, startMidY } = pinchStartRef.current;
+        const newScale = clampScale(startScale * (currDist / startDist));
+        const { cx, cy } = getCenter();
+        const pointX = (startMidX - cx - startX) / startScale;
+        const pointY = (startMidY - cy - startY) / startScale;
+
+        stateRef.current.scale = newScale;
+        stateRef.current.x = currMidX - cx - pointX * newScale;
+        stateRef.current.y = currMidY - cy - pointY * newScale;
+
+        scheduleRender();
+        notifyScale(newScale, false);
+      } else if (!allowNativeTouch && e.touches.length === 1 && panStartRef.current) {
+        const canPan = alwaysPan || stateRef.current.scale > 1.02 || captureOverlay;
+        if (!canPan) return;
+        const t = e.touches[0];
+        const dx = t.clientX - panStartRef.current.clientX;
+        const dy = t.clientY - panStartRef.current.clientY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panStartRef.current.moved = true;
+        if (panStartRef.current.moved) {
+          if (e.cancelable) e.preventDefault();
+          stateRef.current.x = panStartRef.current.startX + dx;
+          stateRef.current.y = panStartRef.current.startY + dy;
+          scheduleRender();
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        pinchStartRef.current = null;
+        if (!allowNativeTouch) {
+          const t = e.touches[0];
+          panStartRef.current = {
+            clientX: t.clientX,
+            clientY: t.clientY,
+            startX: stateRef.current.x,
+            startY: stateRef.current.y,
+            moved: true,
+          };
+        }
+        notifyScale(stateRef.current.scale, true);
+        return;
+      }
+
+      if (e.touches.length === 0) {
+        const wasPinching = Boolean(pinchStartRef.current);
+        const wasMoved = panStartRef.current?.moved ?? false;
+        pinchStartRef.current = null;
+        panStartRef.current = null;
+
+        if (wasPinching) {
+          if (stateRef.current.scale < 1.02 && stateRef.current.scale > 0.95) {
+            setTransformAnimated(1, 0, 0);
+          } else {
+            notifyScale(stateRef.current.scale, true);
+          }
+          return;
+        }
+
+        if (!allowNativeTouch && !wasMoved && e.changedTouches.length === 1) {
+          const t = e.changedTouches[0];
+          const now = Date.now();
+          const dt = now - lastTapRef.current.time;
+          const dist = Math.hypot(t.clientX - lastTapRef.current.x, t.clientY - lastTapRef.current.y);
+
+          if (dt > 0 && dt < 300 && dist < 32) {
+            if (e.cancelable) e.preventDefault();
+            lastTapRef.current = { time: 0, x: 0, y: 0 };
+            const cur = stateRef.current;
+            if (cur.scale > 1.15) {
+              setTransformAnimated(1, 0, 0);
+            } else {
+              const targetScale = Math.min(maxScale, 2.5);
+              const { cx, cy } = getCenter();
+              const tapPx = t.clientX - cx;
+              const tapPy = t.clientY - cy;
+              setTransformAnimated(
+                targetScale,
+                tapPx - ((tapPx - cur.x) / cur.scale) * targetScale,
+                tapPy - ((tapPy - cur.y) / cur.scale) * targetScale
+              );
+            }
+          } else {
+            lastTapRef.current = { time: now, x: t.clientX, y: t.clientY };
+          }
+        }
+      }
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (allowNativeTouch && !e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const cur = stateRef.current;
+      const factor = e.ctrlKey ? 0.012 : 0.002;
+      const nextScale = clampScale(cur.scale * Math.exp(-e.deltaY * factor));
+      if (Math.abs(nextScale - cur.scale) < 0.001) return;
+
+      const { cx, cy } = getCenter();
+      const cursorPx = e.clientX - cx;
+      const cursorPy = e.clientY - cy;
+      stateRef.current.scale = nextScale;
+      stateRef.current.x = nextScale <= 1.01 ? 0 : cursorPx - ((cursorPx - cur.x) / cur.scale) * nextScale;
+      stateRef.current.y = nextScale <= 1.01 ? 0 : cursorPy - ((cursorPy - cur.y) / cur.scale) * nextScale;
+
+      scheduleRender();
+      notifyScale(nextScale, false);
+    };
+
+    const handleGesture = (e: Event) => {
+      if (e.cancelable) e.preventDefault();
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: false });
+    container.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('gesturestart', handleGesture, { passive: false });
+    container.addEventListener('gesturechange', handleGesture, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('gesturestart', handleGesture);
+      container.removeEventListener('gesturechange', handleGesture);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      if (scaleReportTimerRef.current) {
+        clearTimeout(scaleReportTimerRef.current);
+        scaleReportTimerRef.current = null;
+      }
+    };
+  }, [allowNativeTouch, alwaysPan, captureOverlay, clampScale, maxScale, notifyScale, scheduleRender, setTransformAnimated]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (allowNativeTouch || e.button !== 0) return;
+    isMouseDraggingRef.current = true;
+    panStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      startX: stateRef.current.x,
+      startY: stateRef.current.y,
+      moved: false,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (allowNativeTouch || !isMouseDraggingRef.current || !panStartRef.current) return;
+    const dx = e.clientX - panStartRef.current.clientX;
+    const dy = e.clientY - panStartRef.current.clientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panStartRef.current.moved = true;
+    if (panStartRef.current.moved) {
+      stateRef.current.x = panStartRef.current.startX + dx;
+      stateRef.current.y = panStartRef.current.startY + dy;
+      scheduleRender();
+    }
+  };
+
+  const handleMouseUp = () => {
+    isMouseDraggingRef.current = false;
+    panStartRef.current = null;
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (allowNativeTouch) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const cur = stateRef.current;
+    if (cur.scale > 1.15) {
+      setTransformAnimated(1, 0, 0);
+    } else {
+      const targetScale = Math.min(maxScale, 2.5);
+      const rect = container.getBoundingClientRect();
+      const tapPx = e.clientX - (rect.left + rect.width / 2);
+      const tapPy = e.clientY - (rect.top + rect.height / 2);
+      setTransformAnimated(
+        targetScale,
+        tapPx - ((tapPx - cur.x) / cur.scale) * targetScale,
+        tapPy - ((tapPy - cur.y) / cur.scale) * targetScale
+      );
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onDoubleClick={handleDoubleClick}
+      className={`relative w-full h-full overflow-hidden flex items-center justify-center select-none ${
+        allowNativeTouch ? '' : 'cursor-grab active:cursor-grabbing'
+      } ${className}`}
+      style={{
+        touchAction: allowNativeTouch ? 'pan-x pan-y' : 'none',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+      }}
+    >
+      <div
+        ref={contentRef}
+        className={`w-full h-full flex items-center justify-center ${contentClassName}`}
+        style={
+          allowNativeTouch
+            ? undefined
+            : {
+                transformOrigin: 'center center',
+                willChange: 'transform',
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+              }
+        }
+      >
+        {children}
+      </div>
+
+      {captureOverlay && !allowNativeTouch && (
+        <div
+          className="absolute inset-0 z-20 bg-transparent"
+          style={{ touchAction: 'none' }}
+          title="Pinch with 2 fingers to zoom • Drag with 1 finger to pan • Double-tap to toggle zoom"
+        />
+      )}
+    </div>
+  );
+});
+
+
+
+--- FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx ---
+import React, { useState, useRef } from 'react';
+import {
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  Maximize2,
+  ExternalLink,
+  FileText,
+  AlertCircle,
+  RefreshCw,
+  Hand,
+  Layers,
+} from 'lucide-react';
+import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
+import {
+  TouchPinchZoomStage,
+  TouchPinchZoomStageHandle,
+} from './TouchPinchZoomStage';
+
+export interface PdfOrImageViewerProps {
+  url: string;
+  getCleanUrl?: (u: string | undefined | null) => string | undefined;
+  fallbackSvg?: string;
+  cacheBuster?: number;
+  isAdmin?: boolean;
+  onOpenFullscreen?: () => void;
+  isFullscreen?: boolean;
+  className?: string;
+  alt?: string;
+}
+
+export function isPdfOrDocUrl(url?: string): boolean {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  if (/\.pdf($|\?|#)/i.test(lower)) return true;
+  if (
+    lower.includes('type=pdf') ||
+    lower.includes('format=pdf') ||
+    lower.includes('application/pdf')
+  )
+    return true;
+  if (lower.includes('drive.google.com') && !lower.includes('thumbnail'))
+    return true;
+  if (lower.includes('docs.google.com')) return true;
+  return false;
+}
+
+export function resolvePdfIframeUrl(
+  url: string,
+  useGdocsFallback: boolean = false
+): string {
+  if (!url) return '';
+  const driveMatch =
+    url.match(
+      /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i
+    ) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+  if (driveMatch && driveMatch[1]) {
+    return `https://drive.google.com/file/d/${driveMatch[1]}/preview?rm=minimal`;
+  }
+  if (url.includes('docs.google.com')) {
+    return url;
+  }
+  if (useGdocsFallback) {
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+  }
+  return url;
+}
+
+export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
+  url,
+  getCleanUrl = (u) => u || undefined,
+  fallbackSvg = '',
+  cacheBuster = 0,
+  onOpenFullscreen,
+  isFullscreen = false,
+  className = '',
+  alt = 'Layout Preview',
+}) => {
+  const [hasPdfError, setHasPdfError] = useState(false);
+  const [useGdocsFallback, setUseGdocsFallback] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [touchZoomMode, setTouchZoomMode] = useState<'pinch' | 'scroll'>('pinch');
+
+  const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+
+  const cleanUrl = getCleanUrl(url) || url;
+  const isPdf = isPdfOrDocUrl(cleanUrl);
+  const isDriveDoc =
+    cleanUrl.toLowerCase().includes('drive.google.com') ||
+    cleanUrl.toLowerCase().includes('docs.google.com');
+
+  if (!url) {
+    return (
+      <div
+        className={`w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-900 ${className}`}
+      >
+        <FileText className="w-12 h-12 mb-3 opacity-20" />
+        <p className="text-sm font-medium">No document or layout available</p>
+      </div>
+    );
+  }
+
+  // PDF or Google Drive / Docs document mode
+  if (isPdf) {
+    if (!useIframeFallback && !isDriveDoc) {
+      return (
+        <PdfNativeCanvasViewer
+          url={cleanUrl}
+          isFullscreen={isFullscreen}
+          onOpenFullscreen={onOpenFullscreen}
+          className={className}
+          onFallbackToIframe={() => setUseIframeFallback(true)}
+        />
+      );
+    }
+
+    const iframeSrc = resolvePdfIframeUrl(cleanUrl, useGdocsFallback);
+
+    return (
+      <div
+        className={`w-full h-full relative flex flex-col bg-slate-900 overflow-hidden ${className}`}
+      >
+        {/* Floating action controls */}
+        <div className="absolute top-3 right-3 z-[50] flex items-center gap-1.5 bg-slate-900/95 p-1 border border-slate-700 shadow-md rounded-xl flex-wrap">
+          <button
+            type="button"
+            onClick={() => zoomStageRef.current?.zoomOut(0.45)}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Zoom Out (-)"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+
+          <span className="px-2 py-0.5 text-xs font-mono font-bold text-blue-300 border-l border-r border-slate-700">
+            {Math.round(zoomScale * 100)}%
+          </span>
+
+          <button
+            type="button"
+            onClick={() => zoomStageRef.current?.zoomIn(0.45)}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Zoom In (+)"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => zoomStageRef.current?.resetTransform()}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Reset Zoom"
+          >
+            <Maximize className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (touchZoomMode === 'pinch') {
+                zoomStageRef.current?.resetTransform();
+                setTouchZoomMode('scroll');
+              } else {
+                setTouchZoomMode('pinch');
+              }
+            }}
+            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors active:scale-95 touch-manipulation flex items-center gap-1 ${
+              touchZoomMode === 'pinch'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+            }`}
+            title="Toggle between Finger Pinch Zoom and Page Scroll"
+          >
+            {touchZoomMode === 'pinch' ? (
+              <>
+                <Hand className="w-3.5 h-3.5" />
+                <span>Pinch Zoom</span>
+              </>
+            ) : (
+              <>
+                <Layers className="w-3.5 h-3.5" />
+                <span>Scroll Pages</span>
+              </>
+            )}
+          </button>
+
+          {!isDriveDoc && (
+            <button
+              type="button"
+              onClick={() => setUseIframeFallback(false)}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation flex items-center gap-1 text-xs"
+              title="Switch to Native Canvas Viewer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline font-medium text-[11px]">
+                Native Mode
+              </span>
+            </button>
+          )}
+
+          <a
+            href={cleanUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation flex items-center gap-1 text-xs"
+            title="Open in new window"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </a>
+
+          {onOpenFullscreen && !isFullscreen && (
+            <button
+              type="button"
+              onClick={onOpenFullscreen}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+              title="Fullscreen"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {hasPdfError ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-300 text-center">
+            <AlertCircle className="w-12 h-12 text-amber-400 mb-3" />
+            <p className="text-base font-semibold">
+              Cannot embed this PDF document directly
+            </p>
+            <p className="text-xs text-slate-400 mt-1 max-w-md">
+              The external host may restrict embedding. You can view or download the file directly in a new window.
+            </p>
+            <div className="mt-4 flex items-center gap-3">
+              <a
+                href={cleanUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm inline-flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open PDF in New Window
+              </a>
+              {!useGdocsFallback && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseGdocsFallback(true);
+                    setHasPdfError(false);
+                  }}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium"
+                >
+                  Try GDocs Embed
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <TouchPinchZoomStage
+            ref={zoomStageRef}
+            initialScale={1}
+            minScale={0.5}
+            maxScale={8}
+            onScaleChange={setZoomScale}
+            captureOverlay={touchZoomMode === 'pinch'}
+            allowNativeTouch={touchZoomMode === 'scroll'}
+            className="w-full h-full"
+          >
+            <iframe
+              key={`${cacheBuster}_${iframeSrc}`}
+              src={iframeSrc}
+              width="100%"
+              height="100%"
+              style={{
+                width: '100%',
+                height: '100%',
+                minHeight: isFullscreen ? '100vh' : '600px',
+                border: 'none',
+              }}
+              allow="autoplay; fullscreen"
+              title="PDF or Document Viewer"
+              onError={() => setHasPdfError(true)}
+            />
+          </TouchPinchZoomStage>
+        )}
+      </div>
+    );
+  }
+
+  // Image mode with 60fps interactive zoom and pan
+  return (
+    <div
+      className={`w-full h-full relative flex-grow flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950 ${className}`}
+    >
+      <div className="absolute top-4 right-4 z-[50] flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 p-1 border border-slate-200 dark:border-slate-700 shadow-md rounded-xl">
+        <button
+          type="button"
+          onClick={() => zoomStageRef.current?.zoomIn(0.45)}
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+          title="Zoom In"
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomStageRef.current?.zoomOut(0.45)}
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border-l border-r border-slate-200 dark:border-slate-700">
+          {Math.round(zoomScale * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => zoomStageRef.current?.resetTransform()}
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+          title="Reset"
+        >
+          <Maximize className="w-4 h-4" />
+        </button>
+        {onOpenFullscreen && !isFullscreen && (
+          <button
+            type="button"
+            onClick={onOpenFullscreen}
+            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Fullscreen"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <TouchPinchZoomStage
+        ref={zoomStageRef}
+        initialScale={1}
+        minScale={0.5}
+        maxScale={10}
+        onScaleChange={setZoomScale}
+        className="w-full h-full p-4"
+      >
+        <img
+          src={cleanUrl}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className="max-w-full max-h-full object-contain shadow-lg rounded-lg border border-slate-200 bg-white select-none"
+          onError={(e) => {
+            if (fallbackSvg) {
+              (e.target as HTMLImageElement).src = fallbackSvg;
+            }
+          }}
+        />
+      </TouchPinchZoomStage>
+    </div>
+  );
+};
+
+export default PdfOrImageViewer;
+
+
+--- FILE: src/components/LayoutTabParts/PdfNativeCanvasViewer.tsx ---
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Maximize2,
+  ExternalLink,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  TouchPinchZoomStage,
+  TouchPinchZoomStageHandle,
+} from './TouchPinchZoomStage';
+
+export interface PdfNativeCanvasViewerProps {
+  url: string;
+  isFullscreen?: boolean;
+  onOpenFullscreen?: () => void;
+  className?: string;
+  onFallbackToIframe?: () => void;
+}
+
+const MAX_CANVAS_DIMENSION = 1600; // Safe iOS WebKit GPU canvas texture cap for heavy CAD PDFs
+
+export function PdfNativeCanvasViewer({
+  url,
+  isFullscreen = false,
+  onOpenFullscreen,
+  className = '',
+  onFallbackToIframe,
+}: PdfNativeCanvasViewerProps) {
+  const [pdfDoc, setPdfDoc] = useState<any | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageInput, setPageInput] = useState<string>('1');
+  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState<boolean>(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+  const renderTaskRef = useRef<any>(null);
+  const activePdfRef = useRef<any>(null);
+  const loadingTaskRef = useRef<any>(null);
+  const pageBitmapCacheRef = useRef<
+    Map<number, { bitmap: ImageBitmap; width: number; height: number; cssWidth: number; cssHeight: number }>
+  >(new Map());
+
+  const clearBitmapCache = useCallback(() => {
+    pageBitmapCacheRef.current.forEach((entry) => {
+      try {
+        entry.bitmap.close?.();
+      } catch {}
+    });
+    pageBitmapCacheRef.current.clear();
+  }, []);
+
+  // Load PDF Document asynchronously with dynamic import of pdfjs-dist
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setError(null);
+    setLoadingProgress(10);
+    setPdfDoc(null);
+    setCurrentPage(1);
+    setPageInput('1');
+    setZoomScale(1);
+    clearBitmapCache();
+
+    if (activePdfRef.current) {
+      try {
+        activePdfRef.current.cleanup?.();
+        activePdfRef.current.destroy?.();
+      } catch {}
+      activePdfRef.current = null;
+    }
+
+    (async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        if (!isMounted) return;
+
+        if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+              'pdfjs-dist/build/pdf.worker.min.mjs',
+              import.meta.url
+            ).toString();
+          } catch {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
+          }
+        }
+
+        const loadingTask = pdfjsLib.getDocument({
+          url,
+          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
+          cMapPacked: true,
+          disableAutoFetch: true,
+          disableStream: false,
+        });
+        loadingTaskRef.current = loadingTask;
+
+        loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
+          if (!isMounted) return;
+          if (progress.total > 0) {
+            const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
+            setLoadingProgress(pct);
+          } else {
+            setLoadingProgress((prev) => Math.min(90, prev + 15));
+          }
+        };
+
+        const doc = await loadingTask.promise;
+        if (!isMounted) {
+          try {
+            doc.cleanup?.();
+            (doc as any).destroy?.();
+          } catch {}
+          return;
+        }
+        activePdfRef.current = doc;
+        setPdfDoc(doc);
+        setNumPages(doc.numPages);
+        setIsLoading(false);
+        setLoadingProgress(100);
+      } catch (err) {
+        if (!isMounted) return;
+        console.warn('Native PDF loading failed or blocked by CORS:', err);
+        setError('Cannot load PDF natively (CORS or network policy).');
+        setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {}
+        renderTaskRef.current = null;
+      }
+      if (loadingTaskRef.current) {
+        try {
+          loadingTaskRef.current.destroy?.();
+        } catch {}
+        loadingTaskRef.current = null;
+      }
+      clearBitmapCache();
+      if (canvasRef.current) {
+        canvasRef.current.width = 0;
+        canvasRef.current.height = 0;
+      }
+      if (activePdfRef.current) {
+        try {
+          activePdfRef.current.cleanup?.();
+          activePdfRef.current.destroy?.();
+        } catch {}
+        activePdfRef.current = null;
+      }
+    };
+  }, [url, clearBitmapCache]);
+
+  const renderSeqRef = useRef<number>(0);
+
+  // Render Page ONCE per page change — zooming uses 60fps GPU transform without re-rendering canvas!
+  const renderPage = useCallback(
+    async (pageNum: number) => {
+      if (!pdfDoc || !canvasRef.current) return;
+
+      const seq = ++renderSeqRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) return;
+
+      // 1. Instant 0ms restore if page is already in bitmap cache
+      const cached = pageBitmapCacheRef.current.get(pageNum);
+      if (cached) {
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch {}
+          renderTaskRef.current = null;
+        }
+        canvas.width = cached.width;
+        canvas.height = cached.height;
+        canvas.style.width = `${cached.cssWidth}px`;
+        canvas.style.height = `${cached.cssHeight}px`;
+        context.drawImage(cached.bitmap, 0, 0);
+        setIsRendering(false);
+        return;
+      }
+
+      if (renderTaskRef.current) {
+        const prevTask = renderTaskRef.current;
+        renderTaskRef.current = null;
+        try {
+          prevTask.cancel();
+          await prevTask.promise;
+        } catch {}
+      }
+
+      if (seq !== renderSeqRef.current || !canvasRef.current) return;
+
+      setIsRendering(true);
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        if (seq !== renderSeqRef.current || !canvasRef.current) return;
+
+        const containerWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
+        const containerHeight = Math.max(320, (containerRef.current?.clientHeight || 700) - 72);
+        const unscaledViewport = page.getViewport({ scale: 1 });
+
+        const scaleX = containerWidth / unscaledViewport.width;
+        const scaleY = containerHeight / unscaledViewport.height;
+        const fitScale = Math.max(0.6, Math.min(scaleX, scaleY * 1.15, 1.5));
+
+        const viewport = page.getViewport({ scale: fitScale });
+        const rawDpr = Math.min(window.devicePixelRatio || 1, 1.35);
+        const maxAllowedDpr = Math.min(
+          rawDpr,
+          MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1)
+        );
+        const dpr = Math.max(1, maxAllowedDpr);
+
+        const pixelWidth = Math.floor(viewport.width * dpr);
+        const pixelHeight = Math.floor(viewport.height * dpr);
+        const cssWidth = Math.floor(viewport.width);
+        const cssHeight = Math.floor(viewport.height);
+
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
+
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
+
+        const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
+        const renderTask = page.render({
+          canvasContext: context,
+          transform,
+          viewport,
+        });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+
+        if (seq === renderSeqRef.current && typeof createImageBitmap === 'function' && canvas.width > 0 && canvas.height > 0) {
+          try {
+            if (pageBitmapCacheRef.current.size >= 5) {
+              const oldestKey = pageBitmapCacheRef.current.keys().next().value;
+              if (oldestKey !== undefined) {
+                pageBitmapCacheRef.current.get(oldestKey)?.bitmap.close?.();
+                pageBitmapCacheRef.current.delete(oldestKey);
+              }
+            }
+            const bmp = await createImageBitmap(canvas);
+            pageBitmapCacheRef.current.set(pageNum, {
+              bitmap: bmp,
+              width: pixelWidth,
+              height: pixelHeight,
+              cssWidth,
+              cssHeight,
+            });
+          } catch {}
+        }
+
+        page.cleanup?.();
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.error('PDF page render error:', err);
+        }
+      } finally {
+        if (seq === renderSeqRef.current) {
+          setIsRendering(false);
+        }
+      }
+    },
+    [pdfDoc]
+  );
+
+  useEffect(() => {
+    if (pdfDoc && currentPage >= 1 && currentPage <= numPages) {
+      zoomStageRef.current?.resetTransform();
+      renderPage(currentPage);
+    }
+  }, [pdfDoc, currentPage, numPages, renderPage]);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= numPages) {
+      setCurrentPage(newPage);
+      setPageInput(String(newPage));
+    }
+  };
+
+  const handlePageInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseInt(pageInput, 10);
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= numPages) {
+      setCurrentPage(parsed);
+    } else {
+      setPageInput(String(currentPage));
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-200 text-center bg-slate-900 rounded-xl">
+        <AlertCircle className="w-10 h-10 text-amber-400 mb-3 shrink-0" />
+        <p className="text-base font-semibold text-slate-100">Cannot load PDF directly in canvas</p>
+        <p className="text-xs text-slate-400 mt-1 max-w-md">
+          The document server prevents direct binary access. You can use embedded mode or open in a new window.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          {onFallbackToIframe && (
+            <button
+              type="button"
+              onClick={onFallbackToIframe}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Switch to Embed Viewer
+            </button>
+          )}
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Open File in New Tab
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={`w-full h-full relative flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none ${className}`}
+    >
+      {/* Top Toolbar: Page Navigation & Instant GPU Zoom Controls */}
+      <div className="z-[60] flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-900 border-b border-slate-800 shrink-0">
+        {/* Left: Page Navigation */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={currentPage <= 1 || isLoading}
+            onClick={() => handlePageChange(currentPage - 1)}
+            className="p-1.5 hover:bg-slate-800 disabled:opacity-40 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Previous Page"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1">
+            <span className="text-xs text-slate-400 font-medium hidden sm:inline">Page</span>
+            <input
+              type="text"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onBlur={() => setPageInput(String(currentPage))}
+              className="w-10 px-1.5 py-0.5 text-center bg-slate-800 border border-slate-700 rounded text-xs font-mono font-semibold text-white focus:outline-none focus:border-indigo-500"
+            />
+            <span className="text-xs text-slate-400 font-mono font-medium">/ {numPages || 1}</span>
+          </form>
+
+          <button
+            type="button"
+            disabled={currentPage >= numPages || isLoading}
+            onClick={() => handlePageChange(currentPage + 1)}
+            className="p-1.5 hover:bg-slate-800 disabled:opacity-40 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Next Page"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Center: 0ms GPU Zoom Controls */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => zoomStageRef.current?.zoomOut(0.4)}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Zoom Out (-)"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+
+          <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 bg-slate-800 rounded border border-slate-700 min-w-[3.2rem] text-center">
+            {Math.round(zoomScale * 100)}%
+          </span>
+
+          <button
+            type="button"
+            onClick={() => zoomStageRef.current?.zoomIn(0.4)}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Zoom In (+)"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => zoomStageRef.current?.resetTransform()}
+            className="px-2 py-1 text-[11px] font-semibold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors active:scale-95 touch-manipulation flex items-center gap-1"
+            title="Reset Zoom (100%)"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset</span>
+          </button>
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center gap-1">
+          {onOpenFullscreen && !isFullscreen && (
+            <button
+              type="button"
+              onClick={onOpenFullscreen}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+              title="Full Display"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          )}
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
+            title="Open in new window"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+
+      {/* Main Canvas Viewport with 60fps iOS Pinch-to-Zoom & Pan */}
+      <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center">
+        {isLoading && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300">
+            <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
+            <p className="text-xs font-semibold tracking-wide">
+              Loading PDF Document ({loadingProgress}%)...
+            </p>
+            <div className="w-48 h-1.5 bg-slate-800 rounded-full mt-2.5 overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 transition-all duration-150"
+                style={{ width: `${loadingProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <TouchPinchZoomStage
+          ref={zoomStageRef}
+          initialScale={1}
+          minScale={0.5}
+          maxScale={8}
+          onScaleChange={setZoomScale}
+        >
+          <div className="relative shadow-xl rounded-lg overflow-hidden border border-slate-800 bg-white">
+            <canvas ref={canvasRef} className="block max-w-full h-auto" />
+            {isRendering && (
+              <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Rendering...</span>
+              </div>
+            )}
+          </div>
+        </TouchPinchZoomStage>
+      </div>
+    </div>
+  );
+}
+
+export default PdfNativeCanvasViewer;
+

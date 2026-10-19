@@ -55,7 +55,7 @@ export function resolvePdfIframeUrl(
       /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i
     ) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
   if (driveMatch && driveMatch[1]) {
-    return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+    return `https://drive.google.com/file/d/${driveMatch[1]}/preview?rm=minimal`;
   }
   if (url.includes('docs.google.com')) {
     return url;

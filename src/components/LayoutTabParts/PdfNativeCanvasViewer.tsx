@@ -167,11 +167,14 @@ export function PdfNativeCanvasViewer({
     };
   }, [url, clearBitmapCache]);
 
+  const renderSeqRef = useRef<number>(0);
+
   // Render Page ONCE per page change — zooming uses 60fps GPU transform without re-rendering canvas!
   const renderPage = useCallback(
     async (pageNum: number) => {
       if (!pdfDoc || !canvasRef.current) return;
 
+      const seq = ++renderSeqRef.current;
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d', { alpha: false });
       if (!context) return;
@@ -179,25 +182,36 @@ export function PdfNativeCanvasViewer({
       // 1. Instant 0ms restore if page is already in bitmap cache
       const cached = pageBitmapCacheRef.current.get(pageNum);
       if (cached) {
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch {}
+          renderTaskRef.current = null;
+        }
         canvas.width = cached.width;
         canvas.height = cached.height;
         canvas.style.width = `${cached.cssWidth}px`;
         canvas.style.height = `${cached.cssHeight}px`;
         context.drawImage(cached.bitmap, 0, 0);
+        setIsRendering(false);
         return;
       }
 
       if (renderTaskRef.current) {
-        try {
-          renderTaskRef.current.cancel();
-        } catch {}
+        const prevTask = renderTaskRef.current;
         renderTaskRef.current = null;
+        try {
+          prevTask.cancel();
+          await prevTask.promise;
+        } catch {}
       }
+
+      if (seq !== renderSeqRef.current || !canvasRef.current) return;
 
       setIsRendering(true);
       try {
         const page = await pdfDoc.getPage(pageNum);
-        if (!canvasRef.current) return;
+        if (seq !== renderSeqRef.current || !canvasRef.current) return;
 
         const containerWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
         const containerHeight = Math.max(320, (containerRef.current?.clientHeight || 700) - 72);
@@ -237,8 +251,7 @@ export function PdfNativeCanvasViewer({
         renderTaskRef.current = renderTask;
         await renderTask.promise;
 
-        // Cache up to 5 rendered pages as lightweight ImageBitmap for instant page flipping
-        if (typeof createImageBitmap === 'function' && canvas.width > 0 && canvas.height > 0) {
+        if (seq === renderSeqRef.current && typeof createImageBitmap === 'function' && canvas.width > 0 && canvas.height > 0) {
           try {
             if (pageBitmapCacheRef.current.size >= 5) {
               const oldestKey = pageBitmapCacheRef.current.keys().next().value;
@@ -264,7 +277,9 @@ export function PdfNativeCanvasViewer({
           console.error('PDF page render error:', err);
         }
       } finally {
-        setIsRendering(false);
+        if (seq === renderSeqRef.current) {
+          setIsRendering(false);
+        }
       }
     },
     [pdfDoc]

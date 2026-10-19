@@ -109,13 +109,21 @@ export const TouchPinchZoomStage = forwardRef<
     [onScaleChange]
   );
 
-  const applyTransformDOM = useCallback((animate = false) => {
-    const el = contentRef.current;
-    if (!el) return;
-    const { scale, x, y } = stateRef.current;
-    el.style.transition = animate ? 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
-    el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
-  }, []);
+  const applyTransformDOM = useCallback(
+    (animate = false) => {
+      const el = contentRef.current;
+      if (!el) return;
+      if (allowNativeTouch) {
+        el.style.transition = 'none';
+        el.style.transform = 'none';
+        return;
+      }
+      const { scale, x, y } = stateRef.current;
+      el.style.transition = animate ? 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
+      el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+    },
+    [allowNativeTouch]
+  );
 
   const scheduleRender = useCallback(() => {
     if (rafIdRef.current !== null) return;
@@ -173,7 +181,7 @@ export const TouchPinchZoomStage = forwardRef<
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || allowNativeTouch) return;
 
     const getCenter = () => {
       const rect = container.getBoundingClientRect();
