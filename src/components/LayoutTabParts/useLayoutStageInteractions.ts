@@ -137,6 +137,7 @@ export function useLayoutStageInteractions({
     stageRef,
     containerRef,
     dimensions,
+    setDimensions,
     stageScale,
     setStageScale,
     stagePos,
@@ -300,6 +301,9 @@ export function useLayoutStageInteractions({
     stageRef,
     containerRef,
     setDimensions,
+    versionId: version?.id,
+    activeTab,
+    focusedUnitId,
   });
 
   // Handle position tooltip directly via DOM with RAF throttle and 2D collision clamping

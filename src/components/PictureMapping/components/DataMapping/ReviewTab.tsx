@@ -688,7 +688,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
       window.removeEventListener('resize', updateSize);
       if (observer) observer.disconnect();
     };
-  }, []);
+  }, [activeVersion?.id]);
 
   const handleWheel = (e: any) => {
     e.evt.preventDefault();

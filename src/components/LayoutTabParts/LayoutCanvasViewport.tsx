@@ -94,7 +94,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
     <div 
       id="live-layout-canvas-container"
       ref={containerRef} 
-      className="flex-grow w-full h-full relative cursor-grab active:cursor-grabbing"
+      className="flex-1 min-h-0 w-full h-full relative overflow-hidden cursor-grab active:cursor-grabbing"
       style={{ touchAction: 'none' }}
     >
       <Stage 

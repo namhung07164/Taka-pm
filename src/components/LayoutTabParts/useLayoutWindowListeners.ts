@@ -8,6 +8,9 @@ interface UseLayoutWindowListenersParams {
   stageRef: React.RefObject<any>;
   containerRef: React.RefObject<HTMLDivElement | null>;
   setDimensions: React.Dispatch<React.SetStateAction<{ width: number; height: number }>>;
+  versionId?: string | null;
+  activeTab?: string;
+  focusedUnitId?: string | null;
 }
 
 export function useLayoutWindowListeners({
@@ -18,28 +21,67 @@ export function useLayoutWindowListeners({
   stageRef,
   containerRef,
   setDimensions,
+  versionId,
+  activeTab,
+  focusedUnitId,
 }: UseLayoutWindowListenersParams) {
-  // ResizeObserver for canvas container: safely only update state when width/height actually changes
+  const focusedUnitIdRef = useRef(focusedUnitId);
+  focusedUnitIdRef.current = focusedUnitId;
+  const hasMeasuredRealSizeRef = useRef(false);
+
+  // ResizeObserver for canvas container: re-binds whenever versionId or activeTab causes containerRef to mount
   useEffect(() => {
     const updateSize = () => {
-      if (!containerRef.current) return;
-      const newW = containerRef.current.offsetWidth || 800;
-      const newH = containerRef.current.offsetHeight || 600;
-      setDimensions(prev => (prev.width === newW && prev.height === newH) ? prev : { width: newW, height: newH });
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const newW = Math.round(rect.width || el.clientWidth || el.offsetWidth || 0);
+      const newH = Math.round(rect.height || el.clientHeight || el.offsetHeight || 0);
+      if (newW <= 0 || newH <= 0) return;
+
+      if (stageRef.current) {
+        if (stageRef.current.width() !== newW) stageRef.current.width(newW);
+        if (stageRef.current.height() !== newH) stageRef.current.height(newH);
+        stageRef.current.batchDraw();
+      }
+
+      setDimensions(prev => {
+        const changed = prev.width !== newW || prev.height !== newH;
+        if (changed && (!hasMeasuredRealSizeRef.current || Math.abs(prev.height - newH) > 20 || Math.abs(prev.width - newW) > 20)) {
+          hasMeasuredRealSizeRef.current = true;
+          if (!focusedUnitIdRef.current) {
+            requestAnimationFrame(() => fitToScreenRef.current(false));
+          }
+        }
+        return changed ? { width: newW, height: newH } : prev;
+      });
     };
 
     updateSize();
+    const rafId = requestAnimationFrame(updateSize);
+    const t1 = setTimeout(updateSize, 60);
+    const t2 = setTimeout(updateSize, 220);
+
     window.addEventListener('resize', updateSize);
+    window.addEventListener('orientationchange', updateSize);
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    vv?.addEventListener('resize', updateSize);
+
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
       ro = new ResizeObserver(updateSize);
       ro.observe(containerRef.current);
     }
     return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(t1);
+      clearTimeout(t2);
       window.removeEventListener('resize', updateSize);
+      window.removeEventListener('orientationchange', updateSize);
+      vv?.removeEventListener('resize', updateSize);
       if (ro) ro.disconnect();
     };
-  }, [containerRef, setDimensions]);
+  }, [containerRef, setDimensions, stageRef, fitToScreenRef, versionId, activeTab]);
 
   // When print preview activates or deactivates, automatically fit floor plan to screen
   const prevPrintPreviewRef = useRef(isPrintPreview);

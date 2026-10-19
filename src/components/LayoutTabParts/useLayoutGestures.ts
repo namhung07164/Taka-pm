@@ -5,6 +5,7 @@ interface UseLayoutGesturesProps {
   stageRef: React.RefObject<any>;
   containerRef: React.RefObject<HTMLDivElement | null>;
   dimensions: { width: number; height: number };
+  setDimensions?: React.Dispatch<React.SetStateAction<{ width: number; height: number }>>;
   stageScale: number;
   setStageScale: (s: number) => void;
   stagePos: { x: number; y: number };
@@ -19,6 +20,7 @@ export function useLayoutGestures({
   stageRef,
   containerRef,
   dimensions,
+  setDimensions,
   stageScale,
   setStageScale,
   stagePos,
@@ -73,46 +75,97 @@ export function useLayoutGestures({
   // Auto-fit floor plan background & units to perfectly fit and center in the viewport
   const fitToScreen = useCallback((animated: boolean = false) => {
     stopInertia();
-    const containerW = containerRef.current?.offsetWidth || dimensions.width;
-    const containerH = containerRef.current?.offsetHeight || dimensions.height;
+    const el = containerRef.current;
+    const rect = el ? el.getBoundingClientRect() : null;
+    const containerW = Math.round(rect?.width || el?.clientWidth || el?.offsetWidth || dimensions.width);
+    const containerH = Math.round(rect?.height || el?.clientHeight || el?.offsetHeight || dimensions.height);
     if (containerW <= 0 || containerH <= 0) return;
 
-    let contentW = 1000;
-    let contentH = 800;
-    let contentX = 0;
-    let contentY = 0;
+    // Immediately sync Stage and dimensions state with real container size so Stage never clips at 800x600
+    if (setDimensions) {
+      setDimensions(prev => (prev.width === containerW && prev.height === containerH) ? prev : { width: containerW, height: containerH });
+    }
+    const stage = stageRef.current;
+    if (stage) {
+      if (stage.width() !== containerW) stage.width(containerW);
+      if (stage.height() !== containerH) stage.height(containerH);
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
 
     if (bgImage) {
       const imgNaturalW = (bgImage as HTMLImageElement).naturalWidth || bgImage.width || 1000;
       const imgNaturalH = (bgImage as HTMLImageElement).naturalHeight || bgImage.height || 800;
       const imgScale = version?.imageScale || 1;
-      contentW = imgNaturalW * imgScale;
-      contentH = imgNaturalH * imgScale;
-      contentX = version?.imagePos?.x || 0;
-      contentY = version?.imagePos?.y || 0;
-    } else if (units && units.length > 0) {
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      units.forEach((u: any) => {
-        const ux = u.x || 0;
-        const uy = u.y || 0;
-        const uw = u.width || 100;
-        const uh = u.height || 100;
-        minX = Math.min(minX, ux);
-        minY = Math.min(minY, uy);
-        maxX = Math.max(maxX, ux + uw);
-        maxY = Math.max(maxY, uy + uh);
+      const w = imgNaturalW * imgScale;
+      const h = imgNaturalH * imgScale;
+      const px = version?.imagePos?.x || 0;
+      const py = version?.imagePos?.y || 0;
+      const angle = ((version?.backgroundRotation || 0) * Math.PI) / 180;
+      const s = Math.sin(angle);
+      const c = Math.cos(angle);
+
+      const corners = [
+        { x: px, y: py },
+        { x: px + w * c, y: py + w * s },
+        { x: px + w * c - h * s, y: py + w * s + h * c },
+        { x: px - h * s, y: py + h * c },
+      ];
+      corners.forEach(pt => {
+        minX = Math.min(minX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
       });
-      if (minX !== Infinity && maxX > minX) {
-        contentX = minX;
-        contentY = minY;
-        contentW = Math.max(100, maxX - minX);
-        contentH = Math.max(100, maxY - minY);
-      }
     }
 
-    const pad = containerW < 640 ? 12 : 24;
-    const availW = Math.max(10, containerW - pad * 2);
-    const availH = Math.max(10, containerH - pad * 2);
+    if (units && units.length > 0) {
+      units.forEach((u: any) => {
+        if (u.type === 'polygon' && Array.isArray(u.points) && u.points.length >= 2) {
+          const ox = u.x || 0;
+          const oy = u.y || 0;
+          for (let i = 0; i < u.points.length; i += 2) {
+            const px = ox + u.points[i];
+            const py = oy + u.points[i + 1];
+            minX = Math.min(minX, px);
+            minY = Math.min(minY, py);
+            maxX = Math.max(maxX, px);
+            maxY = Math.max(maxY, py);
+          }
+        } else if (u.type === 'circle') {
+          const r = u.radius || 20;
+          const cx = u.x || 0;
+          const cy = u.y || 0;
+          minX = Math.min(minX, cx - r);
+          minY = Math.min(minY, cy - r);
+          maxX = Math.max(maxX, cx + r);
+          maxY = Math.max(maxY, cy + r);
+        } else {
+          const ux = u.x || 0;
+          const uy = u.y || 0;
+          const uw = u.width || 100;
+          const uh = u.height || 100;
+          minX = Math.min(minX, ux);
+          minY = Math.min(minY, uy);
+          maxX = Math.max(maxX, ux + uw);
+          maxY = Math.max(maxY, uy + uh);
+        }
+      });
+    }
+
+    const contentX = minX !== Infinity ? minX : 0;
+    const contentY = minY !== Infinity ? minY : 0;
+    const contentW = minX !== Infinity && maxX > minX ? Math.max(100, maxX - minX) : 1000;
+    const contentH = minY !== Infinity && maxY > minY ? Math.max(100, maxY - minY) : 800;
+
+    const sidePad = containerW < 640 ? 12 : 24;
+    const topPad = containerW < 640 ? 52 : 56;
+    const bottomPad = containerW < 640 ? 48 : 28;
+    const availW = Math.max(10, containerW - sidePad * 2);
+    const availH = Math.max(10, containerH - topPad - bottomPad);
 
     const scaleX = availW / contentW;
     const scaleY = availH / contentH;
@@ -122,11 +175,10 @@ export function useLayoutGestures({
     const contentCenterX = contentX + contentW / 2;
     const contentCenterY = contentY + contentH / 2;
     const posX = containerW / 2 - contentCenterX * clampedScale;
-    const posY = containerH / 2 - contentCenterY * clampedScale;
+    const posY = topPad + availH / 2 - contentCenterY * clampedScale;
 
     const newPos = { x: posX, y: posY };
 
-    const stage = stageRef.current;
     if (stage) {
       if (animated) {
         stage.to({
@@ -152,7 +204,7 @@ export function useLayoutGestures({
       setStageScale(clampedScale);
       setStagePos(newPos);
     }
-  }, [bgImage, version?.id, version?.imageScale, version?.imagePos?.x, version?.imagePos?.y, units, dimensions.width, dimensions.height, containerRef, stageRef, setStageScale, setStagePos, stopInertia]);
+  }, [bgImage, version?.id, version?.imageScale, version?.imagePos?.x, version?.imagePos?.y, version?.backgroundRotation, units, dimensions.width, dimensions.height, containerRef, stageRef, setDimensions, setStageScale, setStagePos, stopInertia]);
 
   // Inertia momentum panning handlers
   const handleDragStart = useCallback(() => {
