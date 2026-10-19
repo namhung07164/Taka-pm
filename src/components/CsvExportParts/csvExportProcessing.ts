@@ -58,21 +58,44 @@ export const getCellValue = (
   mapping: Record<string, string>,
   constantMapping: Record<string, string>,
   keepOriginal: Record<string, boolean>,
-  unitSizeMap: Record<string, string>
+  unitSizeMap: Record<string, string>,
+  rowIndex?: number
 ) => {
   if (!row || typeof row !== 'object') return '';
 
   let val = constantMapping[colName] || row[mapping[colName]];
 
-  if (
-    activeTab === 'task' &&
-    colName.toLowerCase() === 'predecessor' &&
-    !keepOriginal[colName]
-  ) {
+  if (activeTab === 'task') {
     const projCode =
       constantMapping['projectCode'] || row[mapping['projectCode']] || '';
-    if (val !== undefined && val !== null && String(val).trim() !== '') {
-      val = `${projCode}-${val}`;
+
+    if (colName === 'Sub-task code') {
+      if (keepOriginal['Sub-task code'] && val !== undefined && val !== null && String(val).trim() !== '') {
+        // Keep original
+      } else if (val !== undefined && val !== null && String(val).trim() !== '') {
+        const strVal = String(val).trim();
+        if (projCode && !strVal.includes('#') && !strVal.startsWith(projCode)) {
+          val = `${projCode}#${strVal}`;
+        } else {
+          val = strVal;
+        }
+      } else {
+        const lineNum = (rowIndex ?? 0) + 1;
+        val = projCode ? `${projCode}#${lineNum}` : String(lineNum);
+      }
+    } else if (colName === 'Parent task code') {
+      if (!keepOriginal['Parent task code'] && val !== undefined && val !== null && String(val).trim() !== '') {
+        const strVal = String(val).trim();
+        if (projCode && !strVal.includes('#') && !strVal.includes('-') && !strVal.startsWith(projCode)) {
+          val = `${projCode}#${strVal}`;
+        } else {
+          val = strVal;
+        }
+      }
+    } else if (colName.toLowerCase() === 'predecessor' && !keepOriginal[colName]) {
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        val = `${projCode}-${val}`;
+      }
     }
   }
 
@@ -379,7 +402,7 @@ export async function executeCsvExport({
 
     xlsx.writeFile(wb, `${TAB_CONFIG[activeTab].fileNamePrefix}.xlsx`);
   } else {
-    const exportJson = excelData.map((row) => {
+    const exportJson = excelData.map((row, rowIndex) => {
       const out: any = {};
       targetCols.forEach((col: string) => {
         out[col] = getCellValue(
@@ -389,7 +412,8 @@ export async function executeCsvExport({
           mapping,
           constantMapping,
           keepOriginal,
-          unitSizeMap
+          unitSizeMap,
+          rowIndex
         );
       });
       return out;

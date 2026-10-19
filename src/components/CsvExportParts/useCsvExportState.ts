@@ -447,7 +447,7 @@ export function useCsvExportState() {
       return finalJson;
     }
 
-    return excelData.slice(0, 10).map((row) => {
+    return excelData.slice(0, 10).map((row, rowIndex) => {
       const parsedRow: any = {};
       TAB_CONFIG[activeTab].columns.forEach((c: string) => {
         parsedRow[c] = getCellValue(
@@ -457,7 +457,8 @@ export function useCsvExportState() {
           mapping,
           constantMapping,
           keepOriginal,
-          unitSizeMap
+          unitSizeMap,
+          rowIndex
         );
       });
       return parsedRow;
