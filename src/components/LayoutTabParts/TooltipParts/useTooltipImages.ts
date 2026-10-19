@@ -91,16 +91,27 @@ export function useTooltipImages({
   // Re-evaluate position & smoothly scroll tooltip down to reveal image panel expanding below description box when image button is pressed
   useEffect(() => {
     if (tooltipRef.current) {
+      positionTooltip(true);
       if (showImagePanel) {
-        positionTooltip(true);
-        setTimeout(() => {
+        const timer1 = setTimeout(() => {
           if (tooltipRef.current) {
+            positionTooltip(true);
             tooltipRef.current.scrollTo({
               top: tooltipRef.current.scrollHeight,
               behavior: 'smooth'
             });
           }
-        }, 50);
+        }, 60);
+        const timer2 = setTimeout(() => {
+          if (tooltipRef.current) {
+            positionTooltip(true);
+            tooltipRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }, 180);
+        return () => {
+          clearTimeout(timer1);
+          clearTimeout(timer2);
+        };
       }
     }
   }, [showImagePanel, positionTooltip, tooltipRef]);

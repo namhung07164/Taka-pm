@@ -171,9 +171,9 @@ export function GanttToolbar({
 
   return (
     <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
-      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      {/* Row 1: 5 Compact Filter & Search Boxes in 1 row on desktop */}
       <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 flex-grow w-full">
           {/* Col 1: Year */}
           <select
             value={globalYearFilter}
@@ -222,6 +222,15 @@ export function GanttToolbar({
             <option value="Handover">{t('Handover')}</option>
             <option value="Canceled">{t('Canceled')}</option>
           </select>
+
+          {/* Col 5: Inline Search Box */}
+          <div className="w-full col-span-2 sm:col-span-1">
+            <DebouncedSearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search (+ AND, , OR)"
+            />
+          </div>
         </div>
 
       {/* Floating Sticky Edit Mode Button - Moved to bottom-16 right-4 */}
@@ -326,13 +335,7 @@ export function GanttToolbar({
               onAddColumn={handleToggleColumn}
             />
 
-            <div className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-md">
-              <DebouncedSearchInput
-                value={searchTerm}
-                onChange={setSearchTerm}
-                placeholder="Search or ... ( + AND, , OR )"
-              />
-            </div>
+
           </div>
 
           {/* Task loading spinner - Only on cold start when no cached tasks exist */}

@@ -141,7 +141,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 
           {/* Search Unit Box Inline */}
           {!isEditing && (
-            <div ref={searchContainerRef} className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-sm">
+            <div ref={searchContainerRef} className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
               <div className="relative flex items-center">
                 <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                 <DebouncedSearchInput 

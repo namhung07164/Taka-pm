@@ -168,18 +168,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
   const rawDescText = (p as any)?.description || (p?.detail !== detailText ? p?.detail : '') || data.appProjectDescription || data.appDescription || data.description || '';
   const descriptionText = isUrlOrPhotoLine(rawDescText) ? '' : rawDescText;
 
-  // Hook 1: Position & Dragging management
-  const {
-    handlePointerDown,
-    handlePointerMove,
-    handlePointerUp,
-    positionTooltip,
-  } = useTooltipPosition({
-    hoverInfo,
-    tooltipRef,
-    containerRef,
-    showImagePanel: false,
-  });
+  const positionTooltipRef = React.useRef<(forceRecalculate?: boolean) => void>(() => {});
 
   // Hook 2: Images & Gallery management
   const {
@@ -201,9 +190,24 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     data,
     unitCode,
     tooltipRef,
-    positionTooltip,
+    positionTooltip: (force) => positionTooltipRef.current(force),
     storeFilter: storeDisplay,
   });
+
+  // Hook 1: Position & Dragging management
+  const {
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    positionTooltip,
+  } = useTooltipPosition({
+    hoverInfo,
+    tooltipRef,
+    containerRef,
+    showImagePanel,
+  });
+
+  positionTooltipRef.current = positionTooltip;
 
   // Safe fallback if vis is undefined
   const v = vis || {

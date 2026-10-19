@@ -96,7 +96,7 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
           <option value="has_value">Has Act/Forc</option>
         </select>
 
-        <div className="relative flex-grow min-w-[140px] sm:min-w-[180px] max-w-full">
+        <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 dark:text-[#838383] z-10">
             <Search className="w-4 h-4" />
           </div>

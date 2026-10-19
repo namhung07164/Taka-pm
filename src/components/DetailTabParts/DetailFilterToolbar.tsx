@@ -135,7 +135,7 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
           <option value="Canceled">Canceled</option>
         </select>
 
-        <div className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-md">
+        <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
           <DebouncedSearchInput 
             value={searchTerm}
             onChange={onSearchTermChange}
