@@ -1,29 +1,10 @@
 import { Project } from '../../types';
 import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 import { parseCSVDate } from './detailCsvUtils';
-import { generateCSV } from '../../lib/csvUtils';
+import { ImportErrorDetail, ImportValidationResult, generateTaskErrorReportCSV } from './importTypes';
 
-export interface ImportErrorDetail {
-  rowNumber: number; // 1-indexed row number in the file (header is row 1, data starts at 2)
-  projectCode: string;
-  projectYear: string;
-  projectStore: string;
-  taskName: string;
-  subTaskCode?: string;
-  errorType: 'DUPLICATE' | 'MISSING_FIELD' | 'INVALID_DATE' | 'DATE_LOGIC' | 'PROJECT_NOT_FOUND' | 'PREDECESSOR_ERROR' | 'INVALID_DATA';
-  field: string;
-  message: string;
-}
-
-export interface ImportValidationResult {
-  isValid: boolean;
-  totalRows: number;
-  validRowsCount: number;
-  errorCount: number;
-  errors: ImportErrorDetail[];
-  errorRowNumbers: Set<number>;
-  errorSummaryByType: Record<string, number>;
-}
+export type { ImportErrorDetail, ImportValidationResult };
+export { generateTaskErrorReportCSV };
 
 /**
  * Deeply validates all rows in a task CSV / Excel file before import.
@@ -58,13 +39,9 @@ export function validateTasksImportData(
     return '';
   };
 
-  // Map to track duplicates within the file itself:
-  // Key: ${projectKey}:::name:::${normalizedTaskName} -> { rowNumber, rawName }
   const seenTaskNamesWithinFile = new Map<string, { rowNumber: number; rawName: string }>();
-  // Key: ${projectKey}:::code:::${subTaskCode} -> { rowNumber }
   const seenSubTaskCodesWithinFile = new Map<string, { rowNumber: number }>();
 
-  // Pre-index existing projects for O(1) project matching
   const projectLookup = new Map<string, Project>();
   existingProjects.forEach(p => {
     const pCode = String(p.code || '').trim().toLowerCase();
@@ -83,9 +60,8 @@ export function validateTasksImportData(
 
   for (let idx = 0; idx < dataRows.length; idx++) {
     const row = dataRows[idx];
-    const rowNumber = idx + 2; // Line in CSV/Excel (header is line 1)
+    const rowNumber = idx + 2;
 
-    // Skip completely blank rows
     if (row.every(c => !String(c).trim())) continue;
     totalDataRows++;
 
@@ -98,7 +74,7 @@ export function validateTasksImportData(
     const finishDateRaw = getCol(row, 'finish', 'finish date', 'finishdate', 'end');
     const predecessor = getCol(row, 'predecessor', 'predecessors');
 
-    // 1. Check Missing Required Fields
+    // 1. Missing Required Fields
     if (!projectCode) {
       addError({
         rowNumber,
@@ -179,7 +155,7 @@ export function validateTasksImportData(
       }
     }
 
-    // 2. Check Project Existence in Database
+    // 2. Project Existence
     if (projectCode && existingProjects.length > 0) {
       const pCodeLower = projectCode.toLowerCase();
       const pYearNorm = normalizeYearString(projectYear);
@@ -196,18 +172,17 @@ export function validateTasksImportData(
           taskName,
           errorType: 'PROJECT_NOT_FOUND',
           field: 'Project Code',
-          message: `Project '${projectCode}' (${projectYear || 'no year'} - ${projectStore || 'no store'}) was not found in the project list. Please create the project first or check project code.`
+          message: `Project '${projectCode}' (${projectYear || 'no year'} - ${projectStore || 'no store'}) was not found in database.`
         });
       }
     }
 
-    // 3. Check Duplicate Task Within This File
+    // 3. Duplicate Task Within File
     if (projectCode && taskName) {
       const pYearNorm = normalizeYearString(projectYear);
       const pStoreNorm = normalizeStoreCode(projectStore);
       const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
       
-      // Treat task name as absolute value (trim + lowercase, NO stripping prefixes or dashes)
       const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
       const taskNameKey = `${projKey}:::name:::${absTaskName}`;
 
@@ -221,13 +196,12 @@ export function validateTasksImportData(
           taskName,
           errorType: 'DUPLICATE',
           field: 'Task Name',
-          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}). In the same project, each task name must be unique.`
+          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
         });
       } else {
         seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
       }
 
-      // Check Sub-task Code duplicates within file
       if (subTaskCode) {
         const subTaskCodeKey = `${projKey}:::code:::${subTaskCode.toLowerCase()}`;
         if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
@@ -249,7 +223,7 @@ export function validateTasksImportData(
       }
     }
 
-    // 4. Check Date Formats and Chronological Date Logic
+    // 4. Date Formats & Chronological Logic
     let parsedStart: string | null = null;
     let parsedFinish: string | null = null;
 
@@ -264,7 +238,7 @@ export function validateTasksImportData(
           taskName,
           errorType: 'INVALID_DATE',
           field: 'Start Date',
-          message: `Invalid Start Date format '${startDateRaw}'. Expected format YYYY-MM-DD or DD/MM/YYYY.`
+          message: `Invalid Start Date format '${startDateRaw}'. Expected YYYY-MM-DD or DD/MM/YYYY.`
         });
       }
     }
@@ -280,12 +254,11 @@ export function validateTasksImportData(
           taskName,
           errorType: 'INVALID_DATE',
           field: 'Finish Date',
-          message: `Invalid Finish Date format '${finishDateRaw}'. Expected format YYYY-MM-DD or DD/MM/YYYY.`
+          message: `Invalid Finish Date format '${finishDateRaw}'. Expected YYYY-MM-DD or DD/MM/YYYY.`
         });
       }
     }
 
-    // Check Start date <= Finish date
     if (parsedStart && parsedFinish) {
       const startTime = new Date(parsedStart).getTime();
       const finishTime = new Date(parsedFinish).getTime();
@@ -298,15 +271,14 @@ export function validateTasksImportData(
           taskName,
           errorType: 'DATE_LOGIC',
           field: 'Start/Finish Dates',
-          message: `Date Logic Error: Start date (${parsedStart}) is later than Finish date (${parsedFinish}). Start date must be earlier than or equal to Finish date.`
+          message: `Date Logic Error: Start date (${parsedStart}) is later than Finish date (${parsedFinish}).`
         });
       }
     }
 
-    // 5. Predecessor Self-Reference Check
-    if (predecessor) {
-      const predUpper = predecessor.toUpperCase();
-      if (subTaskCode && predUpper.includes(subTaskCode.toUpperCase())) {
+    // 5. Predecessor Self-Reference
+    if (predecessor && subTaskCode) {
+      if (predecessor.toUpperCase().includes(subTaskCode.toUpperCase())) {
         addError({
           rowNumber,
           projectCode,
@@ -331,61 +303,6 @@ export function validateTasksImportData(
     errorRowNumbers,
     errorSummaryByType
   };
-}
-
-/**
- * Generates an enriched Error Report CSV pointing out exact row issues.
- */
-export function generateTaskErrorReportCSV(
-  originalHeaders: string[],
-  dataRows: string[][],
-  validationResult: ImportValidationResult
-): string {
-  const errorMap = new Map<number, ImportErrorDetail[]>();
-  validationResult.errors.forEach(err => {
-    if (!errorMap.has(err.rowNumber)) {
-      errorMap.set(err.rowNumber, []);
-    }
-    errorMap.get(err.rowNumber)!.push(err);
-  });
-
-  const reportHeaders = [
-    'Row In File',
-    'Status',
-    'Error Count',
-    'Error Types',
-    'Error Details (What To Fix)',
-    ...originalHeaders
-  ];
-
-  const reportRows: string[][] = [];
-
-  for (let idx = 0; idx < dataRows.length; idx++) {
-    const row = dataRows[idx];
-    const rowNumber = idx + 2;
-    if (row.every(c => !String(c).trim())) continue;
-
-    const rowErrors = errorMap.get(rowNumber);
-    const hasError = Boolean(rowErrors && rowErrors.length > 0);
-
-    const status = hasError ? 'FAILED / ERROR' : 'PASSED';
-    const errCount = hasError ? String(rowErrors!.length) : '0';
-    const errorTypes = hasError ? Array.from(new Set(rowErrors!.map(e => e.errorType))).join(' | ') : 'None';
-    const errorDetails = hasError
-      ? rowErrors!.map((e, i) => `[Issue ${i + 1}] (${e.field}): ${e.message}`).join('; ')
-      : 'No errors found';
-
-    reportRows.push([
-      `Row ${rowNumber}`,
-      status,
-      errCount,
-      errorTypes,
-      errorDetails,
-      ...row
-    ]);
-  }
-
-  return generateCSV(reportHeaders, reportRows);
 }
 
 /**
@@ -530,4 +447,3 @@ export function validateProjectsImportData(
     errorSummaryByType
   };
 }
-

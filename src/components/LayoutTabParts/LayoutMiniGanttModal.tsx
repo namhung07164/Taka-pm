@@ -84,7 +84,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
           onTouchMove={(e) => e.stopPropagation()}
           onTouchEnd={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
-          className="relative pointer-events-auto bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl flex flex-col w-full max-w-4xl max-h-[88vh] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150 overscroll-contain"
+          className="relative pointer-events-auto bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl flex flex-col w-full max-w-5xl max-h-[88vh] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-150 overscroll-contain"
           style={{ cursor: 'default' }}
         >
           {/* 1. Header (Handle) */}
@@ -160,7 +160,7 @@ export const LayoutMiniGanttModal: React.FC<LayoutMiniGanttModalProps> = ({
                 {/* Timeline Grid Header */}
                 <div className="sticky top-0 z-10 flex items-center border-b border-slate-200 dark:border-[#333336] bg-slate-100/90 dark:bg-[#202022] backdrop-blur-xs text-[10px] font-bold text-slate-500 dark:text-slate-400">
                   {/* Left Column: Task Name & Dates */}
-                  <div className="w-[310px] sm:w-[380px] md:w-[420px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider flex items-center justify-between">
+                  <div className="w-[320px] sm:w-[420px] md:w-[480px] px-3 py-1.5 border-r border-slate-200 dark:border-[#333336] shrink-0 uppercase tracking-wider flex items-center justify-between">
                     <span>Task Name</span>
                     <span className="font-mono text-[9px] text-slate-400 font-medium">
                       Dates (Start - End)

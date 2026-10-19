@@ -81,7 +81,7 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
         )}
       >
         {/* Task Info Cell: Name & Dates */}
-        <div className="w-[310px] sm:w-[380px] md:w-[420px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
+        <div className="w-[320px] sm:w-[420px] md:w-[480px] px-3 py-1 border-r border-slate-100 dark:border-[#333336] shrink-0 flex items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {isChild && (
               <span className="text-slate-400 dark:text-slate-500 font-mono text-[11px] select-none pl-1.5 shrink-0">
