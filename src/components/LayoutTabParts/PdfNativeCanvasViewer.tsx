@@ -24,7 +24,7 @@ export interface PdfNativeCanvasViewerProps {
   onFallbackToIframe?: () => void;
 }
 
-const MAX_CANVAS_DIMENSION = 2048; // Safe iOS WebKit GPU canvas texture cap
+const MAX_CANVAS_DIMENSION = 1600; // Safe iOS WebKit GPU canvas texture cap for heavy CAD PDFs
 
 export function PdfNativeCanvasViewer({
   url,
@@ -88,7 +88,14 @@ export function PdfNativeCanvasViewer({
         if (!isMounted) return;
 
         if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
+          try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+              'pdfjs-dist/build/pdf.worker.min.mjs',
+              import.meta.url
+            ).toString();
+          } catch {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
+          }
         }
 
         const loadingTask = pdfjsLib.getDocument({
@@ -198,10 +205,10 @@ export function PdfNativeCanvasViewer({
 
         const scaleX = containerWidth / unscaledViewport.width;
         const scaleY = containerHeight / unscaledViewport.height;
-        const fitScale = Math.max(0.6, Math.min(scaleX, scaleY * 1.15, 2.2));
+        const fitScale = Math.max(0.6, Math.min(scaleX, scaleY * 1.15, 1.5));
 
         const viewport = page.getViewport({ scale: fitScale });
-        const rawDpr = Math.min(window.devicePixelRatio || 1, 1.75);
+        const rawDpr = Math.min(window.devicePixelRatio || 1, 1.35);
         const maxAllowedDpr = Math.min(
           rawDpr,
           MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1)

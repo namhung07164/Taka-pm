@@ -425,12 +425,16 @@ export const TouchPinchZoomStage = forwardRef<
       <div
         ref={contentRef}
         className={`w-full h-full flex items-center justify-center ${contentClassName}`}
-        style={{
-          transformOrigin: 'center center',
-          willChange: 'transform',
-          backfaceVisibility: 'hidden',
-          WebkitBackfaceVisibility: 'hidden',
-        }}
+        style={
+          allowNativeTouch
+            ? undefined
+            : {
+                transformOrigin: 'center center',
+                willChange: 'transform',
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+              }
+        }
       >
         {children}
       </div>
@@ -445,3 +449,4 @@ export const TouchPinchZoomStage = forwardRef<
     </div>
   );
 });
+

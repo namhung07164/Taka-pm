@@ -1,5 +1,5 @@
-import React, { FC, lazy, useCallback, useRef, useState } from 'react';
-import { Maximize2, ZoomIn } from 'lucide-react';
+import React, { FC, useMemo, useRef, useState } from 'react';
+import { Maximize2, ZoomIn, FileText } from 'lucide-react';
 import { TooltipImageItem } from './tooltipTypes';
 import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
 
@@ -25,6 +25,22 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
   const singleTouchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const lastTapRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const thumbnailSrc = useMemo(() => normalizeImageUrl(img.url, 'w400'), [img.url]);
+
+  // Guard: On iOS/macOS Safari, putting a direct .pdf URL into <img src> downloads & decodes the entire multi-MB PDF on the UI thread!
+  const isDirectPdfFile = useMemo(() => {
+    const u = (thumbnailSrc || img.url || '').toLowerCase();
+    if (u.includes('drive.google.com/thumbnail') || u.includes('googleusercontent.com')) {
+      return false;
+    }
+    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
+  }, [thumbnailSrc, img.url]);
+
+  const isDrivePdfOrDoc = useMemo(() => {
+    const u = (img.url || '').toLowerCase();
+    return u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [img.url]);
 
   // 1. Pinch-to-zoom & Drag-to-zoom gesture on touch devices (iOS / iPad / mobile)
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -52,12 +68,10 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       const currentDist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
       const ratio = currentDist / Math.max(touchStateRef.current.initialDist, 1);
 
-      // User spreading fingers to zoom into thumbnail
       if (ratio > 1.05) {
         if (e.cancelable) e.preventDefault();
         setPreviewScale(Math.min(2.2, ratio));
 
-        // When zoom expansion crosses threshold, auto-expand to fullscreen and continue zooming
         if (ratio >= 1.15 && !touchStateRef.current.triggered) {
           touchStateRef.current.triggered = true;
           const targetScale = Math.min(4, Math.max(1.35, ratio * 1.3));
@@ -81,11 +95,9 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       return;
     }
 
-    // Double-tap zoom detection for single touch
     if (e.changedTouches.length === 1) {
       const now = Date.now();
       if (now - lastTapRef.current < 320) {
-        // Double-tap detected -> auto open fullscreen at 2x zoom
         lastTapRef.current = 0;
         if (e.cancelable) e.preventDefault();
         onOpenFullscreen({
@@ -99,7 +111,6 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     }
   };
 
-  // Regular click to open full display mode directly
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onOpenFullscreen({
@@ -122,9 +133,21 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[190px] sm:max-h-[280px] flex items-center justify-center group/thumb p-1 touch-manipulation cursor-pointer"
       title="Click to view full display HD"
     >
-      {!isImgError ? (
+      {isDirectPdfFile ? (
+        <div className="flex flex-col items-center justify-center gap-1.5 py-5 px-3 text-center w-full bg-slate-900/5 dark:bg-slate-900/60 rounded-md">
+          <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+            <FileText className="w-5 h-5" />
+          </div>
+          <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate max-w-[220px]">
+            {img.title || 'PDF Document'}
+          </span>
+          <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+            Click to open lightweight PDF Viewer
+          </span>
+        </div>
+      ) : !isImgError ? (
         <img
-          src={normalizeImageUrl(img.url, 'w600')}
+          src={thumbnailSrc}
           alt={img.title}
           loading="lazy"
           decoding="async"
@@ -137,11 +160,9 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
           className="w-full h-auto max-h-[180px] sm:max-h-[270px] object-contain hover:scale-[1.01] duration-150 rounded-md select-none"
         />
       ) : (
-        <div
-          className="flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-3 text-center w-full"
-        >
+        <div className="flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-3 text-center w-full">
           <span className="font-semibold text-slate-600 dark:text-slate-300">
-            Web Link / Article Preview
+            {isDrivePdfOrDoc ? 'Document / PDF Preview' : 'Web Link / Article Preview'}
           </span>
           <span className="truncate max-w-[200px] text-[9px] font-mono text-blue-500">
             {img.url}
@@ -178,3 +199,4 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
 };
 
 export default TooltipZoomableThumbnail;
+

@@ -80,17 +80,21 @@ export function LayoutUnitLightboxModal({
   const [zoomScale, setZoomScale] = useState(1);
 
   // For Google Drive docs:
-  // 'pinch' = Full PDF with 60fps iOS 2-finger pinch-to-zoom & pan enabled
-  // 'scroll' = Full PDF with native 1-finger page scrolling inside the document
-  // 'fast' = Ultra-lightweight HD rasterized sheet (0 iframe overhead, instant load & pinch zoom)
-  const [driveTouchMode, setDriveTouchMode] = useState<'pinch' | 'scroll' | 'fast'>('pinch');
+  // 'fast'    = Default: Server-rasterized HD sheet (w1600) with 60fps 2-finger pinch zoom & 0 iframe freeze
+  // 'ultrahd' = Ultra-crisp server-rasterized CAD sheet (w2400) with 60fps pinch zoom & 0 iframe freeze
+  // 'scroll'  = Multi-page native PDF embed isolated from CSS 3D transform layers to prevent GPU hangs
+  const [driveTouchMode, setDriveTouchMode] = useState<'fast' | 'ultrahd' | 'scroll'>('fast');
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawUrl = enlargedImage?.url || '';
-  const resolvedUrl = normalizeImageUrl(rawUrl, 'w1600');
+  const targetRasterSize = driveTouchMode === 'ultrahd' ? 'w2400' : 'w1600';
+  const resolvedUrl = useMemo(
+    () => normalizeImageUrl(rawUrl, targetRasterSize),
+    [rawUrl, targetRasterSize]
+  );
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
 
@@ -100,13 +104,16 @@ export function LayoutUnitLightboxModal({
       : 1;
 
   const isDirectPdf = useMemo(() => {
-    const u = (rawUrl || resolvedUrl || '').toLowerCase();
+    const u = (rawUrl || '').toLowerCase();
+    if (u.includes('drive.google.com') || u.includes('docs.google.com')) {
+      return false;
+    }
     return (
       /\.pdf($|\?|#)/i.test(u) ||
       u.includes('type=pdf') ||
       u.includes('application/pdf')
     );
-  }, [rawUrl, resolvedUrl]);
+  }, [rawUrl]);
 
   const isDriveDoc = useMemo(() => {
     const u = (rawUrl || '').toLowerCase();
@@ -128,22 +135,30 @@ export function LayoutUnitLightboxModal({
     return resolvedUrl;
   }, [resolvedUrl, isDriveDoc, driveFileId]);
 
+  const releaseIframeMemory = useCallback(() => {
+    if (iframeRef.current) {
+      try {
+        iframeRef.current.src = 'about:blank';
+      } catch {}
+    }
+  }, []);
+
   const handleImageError = useCallback(() => {
     if (driveFileId && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}=w1600`);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}=${targetRasterSize}`);
       return;
     }
-    if (isDriveDoc && driveTouchMode === 'fast') {
-      // Fallback seamlessly to full PDF embed if thumbnail endpoint is unavailable
-      setDriveTouchMode('pinch');
+    if (isDriveDoc && (driveTouchMode === 'fast' || driveTouchMode === 'ultrahd')) {
+      // Fallback to isolated native scroll viewer if thumbnail endpoint is restricted
+      setDriveTouchMode('scroll');
       setIsLoading(false);
       setImageError(false);
       return;
     }
     setIsLoading(false);
     setImageError(true);
-  }, [driveFileId, hasTriedCdnFallback, isDriveDoc, driveTouchMode]);
+  }, [driveFileId, hasTriedCdnFallback, isDriveDoc, driveTouchMode, targetRasterSize]);
 
   const handleImageLoad = useCallback(() => {
     setIsLoading(false);
@@ -153,41 +168,43 @@ export function LayoutUnitLightboxModal({
     }
   }, [initialZoom]);
 
+  // Reset state when opening a new document URL
+  useEffect(() => {
+    setDriveTouchMode('fast');
+    setHasTriedCdnFallback(false);
+    setImageError(false);
+    setZoomScale(initialZoom);
+  }, [rawUrl, initialZoom]);
+
+  // Sync image source when resolvedUrl changes (e.g. toggling Fast HD <-> Ultra HD)
   useEffect(() => {
     setCurrentSrc(resolvedUrl);
     setHasTriedCdnFallback(false);
     setImageError(false);
-    setZoomScale(initialZoom);
-    setDriveTouchMode(initialZoom > 1 ? 'fast' : 'pinch');
 
     if (!resolvedUrl) {
       setIsLoading(false);
       return;
     }
 
-    if (isDirectPdf || (isDriveDoc && initialZoom <= 1)) {
+    if (isDirectPdf || (isDriveDoc && driveTouchMode === 'scroll')) {
       setIsLoading(true);
-      const timer = setTimeout(() => setIsLoading(false), 900);
+      const timer = setTimeout(() => setIsLoading(false), 750);
       return () => clearTimeout(timer);
     }
 
     setIsLoading(true);
-  }, [resolvedUrl, isDirectPdf, isDriveDoc, initialZoom]);
+  }, [resolvedUrl, isDirectPdf, isDriveDoc, driveTouchMode]);
 
-  // Aggressively release iframe & image memory on close so the app stays feather-light
   const handleSafeClose = useCallback(() => {
-    if (iframeRef.current) {
-      try {
-        iframeRef.current.src = 'about:blank';
-      } catch {}
-    }
+    releaseIframeMemory();
     if (imgRef.current) {
       try {
         imgRef.current.src = '';
       } catch {}
     }
     onClose();
-  }, [onClose]);
+  }, [onClose, releaseIframeMemory]);
 
   useEffect(() => {
     if (!enlargedImage) return;
@@ -204,7 +221,7 @@ export function LayoutUnitLightboxModal({
 
   if (!enlargedImage || typeof document === 'undefined') return null;
 
-  const showZoomControls = !isDirectPdf;
+  const showZoomControls = !isDirectPdf && !(isDriveDoc && driveTouchMode === 'scroll');
 
   return createPortal(
     <div
@@ -212,8 +229,10 @@ export function LayoutUnitLightboxModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) handleSafeClose();
       }}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
     >
-      {/* Lightbox Card Container */}
       <div
         className={`relative bg-slate-950 overflow-hidden shadow-2xl border border-slate-800 flex flex-col z-[1000000] ${
           isFullDisplay
@@ -223,14 +242,13 @@ export function LayoutUnitLightboxModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b border-slate-800 bg-slate-900 text-white shrink-0 z-30">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900 text-white shrink-0 z-30">
           <div className="flex items-center gap-2 min-w-0">
             <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
             <span className="font-bold text-xs sm:text-sm truncate max-w-[160px] sm:max-w-[260px]">
               {enlargedImage.title || 'Document Preview'}
             </span>
 
-            {/* Zoom Controls in Header for iPad / iPhone / Desktop */}
             {showZoomControls && (
               <div className="flex items-center gap-1 ml-1 sm:ml-3 px-1.5 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700">
                 <button
@@ -323,22 +341,44 @@ export function LayoutUnitLightboxModal({
           </div>
         </div>
 
-        {/* Google Drive Interactive Touch & Mode Bar */}
+        {/* Google Drive Anti-Freeze Mode Bar */}
         {isDriveDoc && (
           <div className="bg-slate-900/95 border-b border-slate-800 px-3 py-1.5 text-xs text-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0 z-30">
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                onClick={() => setDriveTouchMode('pinch')}
+                onClick={() => {
+                  releaseIframeMemory();
+                  setImageError(false);
+                  setDriveTouchMode('fast');
+                }}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
-                  driveTouchMode === 'pinch'
+                  driveTouchMode === 'fast'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+                title="Default: Instant server-rasterized HD sheet with 60fps pinch-to-zoom (Zero lag)"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Fast Light HD (Pinch Zoom)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  releaseIframeMemory();
+                  setImageError(false);
+                  setDriveTouchMode('ultrahd');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
+                  driveTouchMode === 'ultrahd'
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
-                title="Enable 2-finger pinch zoom & 1-finger pan on iPad/iPhone"
+                title="Ultra-sharp 2400px CAD drawing mode with 60fps pinch-to-zoom"
               >
                 <Hand className="w-3.5 h-3.5" />
-                <span>Finger Pinch Zoom</span>
+                <span>Ultra HD Blueprint (2400px)</span>
               </button>
 
               <button
@@ -355,25 +395,7 @@ export function LayoutUnitLightboxModal({
                 title="Scroll vertically through multi-page PDF documents"
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span>Scroll PDF Pages</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setImageError(false);
-                  setIsLoading(true);
-                  setDriveTouchMode('fast');
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
-                  driveTouchMode === 'fast'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-                title="Ultra-lightweight HD sheet mode for instant load & smooth touch zoom"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Fast Light HD</span>
+                <span>Scroll Multi-Page PDF</span>
               </button>
             </div>
 
@@ -389,7 +411,7 @@ export function LayoutUnitLightboxModal({
           </div>
         )}
 
-        {/* Content Body: 60fps Hardware-Accelerated Touch Pinch-Zoom Stage */}
+        {/* Content Body */}
         <div className="flex-1 p-1 sm:p-2 flex items-center justify-center bg-slate-950 overflow-hidden min-h-[300px] relative">
           {isLoading && !imageError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/60 z-20 pointer-events-none">
@@ -421,17 +443,9 @@ export function LayoutUnitLightboxModal({
                 </a>
               </div>
             </div>
-          ) : isDriveDoc && driveTouchMode !== 'fast' ? (
-            <TouchPinchZoomStage
-              ref={zoomStageRef}
-              initialScale={initialZoom}
-              minScale={0.5}
-              maxScale={8}
-              onScaleChange={setZoomScale}
-              captureOverlay={driveTouchMode === 'pinch'}
-              allowNativeTouch={driveTouchMode === 'scroll'}
-              className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-slate-900"
-            >
+          ) : isDriveDoc && driveTouchMode === 'scroll' ? (
+            /* Isolated Native Multi-Page PDF Container: Zero CSS 3D transform / will-change wrapper so heavy vector PDFs never hang the GPU compositor */
+            <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-slate-900 relative">
               <iframe
                 ref={iframeRef}
                 src={effectiveEmbedUrl}
@@ -440,7 +454,7 @@ export function LayoutUnitLightboxModal({
                 title={enlargedImage.title || 'Google Drive Document'}
                 allow="autoplay"
               />
-            </TouchPinchZoomStage>
+            </div>
           ) : isDirectPdf ? (
             <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
               <PdfNativeCanvasViewer url={rawUrl} isFullscreen={true} />
@@ -500,3 +514,4 @@ export function LayoutUnitLightboxModal({
     document.body
   );
 }
+
