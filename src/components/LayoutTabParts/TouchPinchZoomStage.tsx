@@ -109,21 +109,23 @@ export const TouchPinchZoomStage = forwardRef<
     [onScaleChange]
   );
 
-  const applyTransformDOM = useCallback(
-    (animate = false) => {
-      const el = contentRef.current;
-      if (!el) return;
-      if (allowNativeTouch) {
-        el.style.transition = 'none';
-        el.style.transform = 'none';
-        return;
-      }
-      const { scale, x, y } = stateRef.current;
-      el.style.transition = animate ? 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
-      el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
-    },
-    [allowNativeTouch]
-  );
+  const allowNativeTouchRef = useRef(allowNativeTouch);
+  allowNativeTouchRef.current = allowNativeTouch;
+
+  const applyTransformDOM = useCallback((animate = false) => {
+    const el = contentRef.current;
+    if (!el) return;
+    const { scale, x, y } = stateRef.current;
+    const isIdentity =
+      Math.abs(scale - 1) < 0.005 && Math.abs(x) < 0.5 && Math.abs(y) < 0.5;
+    if (allowNativeTouchRef.current || isIdentity) {
+      el.style.transition = 'none';
+      el.style.transform = 'none';
+      return;
+    }
+    el.style.transition = animate ? 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
+    el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+  }, []);
 
   const scheduleRender = useCallback(() => {
     if (rafIdRef.current !== null) return;
@@ -136,6 +138,9 @@ export const TouchPinchZoomStage = forwardRef<
   const setTransformAnimated = useCallback(
     (nextScale: number, nextX: number, nextY: number) => {
       const clamped = clampScale(nextScale);
+      if (clamped > 1.01) {
+        allowNativeTouchRef.current = false;
+      }
       stateRef.current = {
         scale: clamped,
         x: clamped <= 1.01 ? 0 : nextX,
@@ -178,6 +183,18 @@ export const TouchPinchZoomStage = forwardRef<
     applyTransformDOM(false);
     notifyScale(clamped, true);
   }, [initialScale, clampScale, applyTransformDOM, notifyScale]);
+
+  useEffect(() => {
+    allowNativeTouchRef.current = allowNativeTouch;
+    if (allowNativeTouch) {
+      stateRef.current = { scale: 1, x: 0, y: 0 };
+      applyTransformDOM(false);
+      notifyScale(1, true);
+    } else {
+      applyTransformDOM(true);
+      notifyScale(stateRef.current.scale, true);
+    }
+  }, [allowNativeTouch, applyTransformDOM, notifyScale]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -433,16 +450,7 @@ export const TouchPinchZoomStage = forwardRef<
       <div
         ref={contentRef}
         className={`w-full h-full flex items-center justify-center ${contentClassName}`}
-        style={
-          allowNativeTouch
-            ? undefined
-            : {
-                transformOrigin: 'center center',
-                willChange: 'transform',
-                backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden',
-              }
-        }
+        style={{ transformOrigin: 'center center' }}
       >
         {children}
       </div>

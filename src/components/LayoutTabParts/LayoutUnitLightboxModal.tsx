@@ -1,23 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X,
-  Copy,
-  ExternalLink,
-  Image as ImageIcon,
-  Link as LinkIcon,
-  Check,
-  Loader2,
-  AlertCircle,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Maximize2,
-  Minimize2,
-  Hand,
-  Layers,
-  Zap,
-  RefreshCw,
+  X, Copy, ExternalLink, Image as ImageIcon, Link as LinkIcon, Check,
+  Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2,
+  Hand, Layers, Zap, RefreshCw,
 } from 'lucide-react';
 import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
@@ -58,14 +44,16 @@ export function LayoutUnitLightboxModal({
   const [isFullDisplay, setIsFullDisplay] = useState(true);
   const [zoomScale, setZoomScale] = useState(1);
   const [driveTouchMode, setDriveTouchMode] = useState<'fast' | 'ultrahd' | 'scroll'>('fast');
+  const [isMultiPageActive, setIsMultiPageActive] = useState(false);
   const [scrollReloadKey, setScrollReloadKey] = useState(0);
-  // Pixel-locked iframe size: prevents iOS Safari upward-scroll dynamic toolbar jitter from firing window.onresize inside Google Drive PDF viewer
   const [lockedIframeSize, setLockedIframeSize] = useState<{ w: number; h: number } | null>(null);
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const scrollHostRef = useRef<HTMLDivElement>(null);
+  const prevMultiPageRef = useRef(false);
+  const prevReloadKeyRef = useRef(0);
 
   const rawUrl = enlargedImage?.url || '';
   const targetRasterSize = driveTouchMode === 'ultrahd' ? 'w2400' : 'w1600';
@@ -103,9 +91,7 @@ export function LayoutUnitLightboxModal({
 
   const releaseIframeMemory = useCallback(() => {
     if (iframeRef.current) {
-      try {
-        iframeRef.current.src = 'about:blank';
-      } catch {}
+      try { iframeRef.current.src = 'about:blank'; } catch {}
     }
   }, []);
 
@@ -116,6 +102,7 @@ export function LayoutUnitLightboxModal({
       return;
     }
     if (isDriveDoc && (driveTouchMode === 'fast' || driveTouchMode === 'ultrahd')) {
+      setIsMultiPageActive(true);
       setDriveTouchMode('scroll');
       setIsLoading(false);
       setImageError(false);
@@ -133,6 +120,9 @@ export function LayoutUnitLightboxModal({
 
   useEffect(() => {
     setDriveTouchMode('fast');
+    setIsMultiPageActive(false);
+    prevMultiPageRef.current = false;
+    prevReloadKeyRef.current = 0;
     setHasTriedCdnFallback(false);
     setImageError(false);
     setZoomScale(initialZoom);
@@ -147,15 +137,28 @@ export function LayoutUnitLightboxModal({
       setIsLoading(false);
       return;
     }
-    if (isDirectPdf || (isDriveDoc && driveTouchMode === 'scroll')) {
+    if (isDriveDoc && isMultiPageActive) {
+      const justActivated = !prevMultiPageRef.current;
+      const justReloaded = prevReloadKeyRef.current !== scrollReloadKey;
+      prevMultiPageRef.current = true;
+      prevReloadKeyRef.current = scrollReloadKey;
+      if (justActivated || justReloaded) {
+        setIsLoading(true);
+        const timer = setTimeout(() => setIsLoading(false), 650);
+        return () => clearTimeout(timer);
+      }
+      setIsLoading(false);
+      return;
+    }
+    prevMultiPageRef.current = false;
+    if (isDirectPdf) {
       setIsLoading(true);
       const timer = setTimeout(() => setIsLoading(false), 650);
       return () => clearTimeout(timer);
     }
     setIsLoading(true);
-  }, [resolvedUrl, isDirectPdf, isDriveDoc, driveTouchMode, scrollReloadKey]);
+  }, [resolvedUrl, isDirectPdf, isDriveDoc, isMultiPageActive, scrollReloadKey]);
 
-  // Freeze body scroll & pause background Konva canvas GPU compositing while modal is open
   useEffect(() => {
     if (!enlargedImage) return;
     const prevBodyOverflow = document.body.style.overflow;
@@ -166,23 +169,18 @@ export function LayoutUnitLightboxModal({
     document.body.style.overscrollBehavior = 'none';
 
     const konvaContents = Array.from(document.querySelectorAll('.konvajs-content')) as HTMLElement[];
-    konvaContents.forEach((el) => {
-      el.style.visibility = 'hidden';
-    });
+    konvaContents.forEach((el) => { el.style.visibility = 'hidden'; });
 
     return () => {
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflow = prevHtmlOverflow;
       document.body.style.overscrollBehavior = prevBodyOverscroll;
-      konvaContents.forEach((el) => {
-        el.style.visibility = '';
-      });
+      konvaContents.forEach((el) => { el.style.visibility = ''; });
     };
   }, [enlargedImage]);
 
-  // Stabilize iframe pixel dimensions so iOS upward-scroll dynamic address-bar jitters never fire window.onresize inside the PDF viewer
   useEffect(() => {
-    if (!enlargedImage || !isDriveDoc || driveTouchMode !== 'scroll') {
+    if (!enlargedImage || !isDriveDoc) {
       setLockedIframeSize(null);
       return;
     }
@@ -210,14 +208,12 @@ export function LayoutUnitLightboxModal({
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onOrientation);
     };
-  }, [enlargedImage, isDriveDoc, driveTouchMode, isFullDisplay]);
+  }, [enlargedImage, isDriveDoc, isFullDisplay]);
 
   const handleSafeClose = useCallback(() => {
     releaseIframeMemory();
     if (imgRef.current) {
-      try {
-        imgRef.current.src = '';
-      } catch {}
+      try { imgRef.current.src = ''; } catch {}
     }
     onClose();
   }, [onClose, releaseIframeMemory]);
@@ -238,7 +234,8 @@ export function LayoutUnitLightboxModal({
   if (!enlargedImage || typeof document === 'undefined') return null;
 
   const isScrollMode = isDriveDoc && driveTouchMode === 'scroll';
-  const showZoomControls = !isDirectPdf && !isScrollMode;
+  const useMultiPageViewer = isDriveDoc && (isMultiPageActive || isScrollMode);
+  const showZoomControls = !isDirectPdf;
 
   return createPortal(
     <div
@@ -264,16 +261,31 @@ export function LayoutUnitLightboxModal({
 
             {showZoomControls && (
               <div className="flex items-center gap-1 ml-1 sm:ml-3 px-1.5 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700">
-                <button type="button" onClick={() => zoomStageRef.current?.zoomOut(0.45)} className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation" title="Zoom Out (-)">
+                <button
+                  type="button"
+                  onClick={() => { if (isScrollMode) setDriveTouchMode('fast'); zoomStageRef.current?.zoomOut(0.45); }}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation"
+                  title="Zoom Out (-)"
+                >
                   <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
                 <span className="text-[11px] font-mono font-bold px-1 min-w-[2.8rem] text-center text-blue-300">
                   {Math.round(zoomScale * 100)}%
                 </span>
-                <button type="button" onClick={() => zoomStageRef.current?.zoomIn(0.45)} className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation" title="Zoom In (+)">
+                <button
+                  type="button"
+                  onClick={() => { if (isScrollMode) setDriveTouchMode('fast'); zoomStageRef.current?.zoomIn(0.45); }}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation"
+                  title="Zoom In on Current Page (+)"
+                >
                   <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
-                <button type="button" onClick={() => zoomStageRef.current?.resetTransform()} className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white active:scale-95 touch-manipulation" title="Reset Zoom (100%)">
+                <button
+                  type="button"
+                  onClick={() => zoomStageRef.current?.resetTransform()}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white active:scale-95 touch-manipulation"
+                  title="Reset Zoom (100%)"
+                >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -298,15 +310,9 @@ export function LayoutUnitLightboxModal({
               title={copiedLink === rawUrl ? 'Link Copied!' : 'Copy Link'}
             >
               {copiedLink === rawUrl ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span className="hidden md:inline text-emerald-400 font-bold">Copied</span>
-                </>
+                <><Check className="w-4 h-4 text-emerald-400" /><span className="hidden md:inline text-emerald-400 font-bold">Copied</span></>
               ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span className="hidden md:inline">Copy Link</span>
-                </>
+                <><Copy className="w-4 h-4" /><span className="hidden md:inline">Copy Link</span></>
               )}
             </button>
 
@@ -328,7 +334,7 @@ export function LayoutUnitLightboxModal({
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                onClick={() => { releaseIframeMemory(); setImageError(false); setDriveTouchMode('fast'); }}
+                onClick={() => { setImageError(false); setDriveTouchMode('fast'); }}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
                   driveTouchMode === 'fast' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
@@ -339,7 +345,11 @@ export function LayoutUnitLightboxModal({
 
               <button
                 type="button"
-                onClick={() => { releaseIframeMemory(); setImageError(false); setDriveTouchMode('ultrahd'); }}
+                onClick={() => {
+                  setImageError(false);
+                  setDriveTouchMode('ultrahd');
+                  if (isMultiPageActive && zoomScale <= 1.05) zoomStageRef.current?.centerView(1.75);
+                }}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
                   driveTouchMode === 'ultrahd' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
@@ -350,7 +360,7 @@ export function LayoutUnitLightboxModal({
 
               <button
                 type="button"
-                onClick={() => { zoomStageRef.current?.resetTransform(); setDriveTouchMode('scroll'); }}
+                onClick={() => { setIsMultiPageActive(true); zoomStageRef.current?.resetTransform(); setDriveTouchMode('scroll'); }}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
                   driveTouchMode === 'scroll' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
@@ -359,10 +369,10 @@ export function LayoutUnitLightboxModal({
                 <span>Scroll Multi-Page PDF</span>
               </button>
 
-              {isScrollMode && (
+              {useMultiPageViewer && (
                 <button
                   type="button"
-                  onClick={() => { releaseIframeMemory(); setScrollReloadKey((k) => k + 1); }}
+                  onClick={() => { releaseIframeMemory(); zoomStageRef.current?.resetTransform(); setScrollReloadKey((k) => k + 1); }}
                   className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 active:scale-95 touch-manipulation cursor-pointer"
                   title="Flush stuck tile cache and reload PDF stream"
                 >
@@ -401,43 +411,49 @@ export function LayoutUnitLightboxModal({
                   This document may require Google account access permissions or restricts embedding.
                 </p>
               </div>
-              <a
-                href={rawUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95"
-              >
+              <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95">
                 <ExternalLink className="w-4 h-4" />
                 <span>Open Link in New Tab</span>
               </a>
             </div>
-          ) : isScrollMode ? (
-            <div
-              className="rounded-xl overflow-hidden border border-slate-800 bg-slate-900 relative flex items-center justify-center"
-              style={{
-                width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
-                height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
-                contain: 'layout style',
-                isolation: 'isolate',
-                overscrollBehavior: 'contain',
-              }}
+          ) : useMultiPageViewer ? (
+            <TouchPinchZoomStage
+              ref={zoomStageRef}
+              initialScale={1}
+              minScale={0.5}
+              maxScale={8}
+              onScaleChange={setZoomScale}
+              captureOverlay={!isScrollMode}
+              allowNativeTouch={isScrollMode}
+              className="w-full h-full flex items-center justify-center"
             >
-              <iframe
-                key={`drive_scroll_${driveFileId || rawUrl}_${scrollReloadKey}`}
-                ref={iframeRef}
-                src={effectiveEmbedUrl}
-                onLoad={() => setIsLoading(false)}
-                scrolling="yes"
-                className="border-0 bg-white block"
+              <div
+                className="rounded-xl overflow-hidden border border-slate-800 bg-slate-900 relative flex items-center justify-center"
                 style={{
                   width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
                   height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
+                  contain: 'layout style',
+                  isolation: 'isolate',
                   overscrollBehavior: 'contain',
                 }}
-                title={enlargedImage.title || 'Google Drive Document'}
-                allow="autoplay"
-              />
-            </div>
+              >
+                <iframe
+                  key={`drive_scroll_${driveFileId || rawUrl}_${scrollReloadKey}`}
+                  ref={iframeRef}
+                  src={effectiveEmbedUrl}
+                  onLoad={() => setIsLoading(false)}
+                  scrolling="yes"
+                  className="border-0 bg-white block"
+                  style={{
+                    width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
+                    height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
+                    overscrollBehavior: 'contain',
+                  }}
+                  title={enlargedImage.title || 'Google Drive Document'}
+                  allow="autoplay"
+                />
+              </div>
+            </TouchPinchZoomStage>
           ) : isDirectPdf ? (
             <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
               <PdfNativeCanvasViewer url={rawUrl} isFullscreen={true} />
@@ -479,6 +495,3 @@ export function LayoutUnitLightboxModal({
     document.body
   );
 }
-
-
-

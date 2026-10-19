@@ -1,27 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  ExternalLink,
-  Copy,
-  Check,
-  Loader2,
-  AlertCircle,
-  Maximize2,
-  FileText,
-  RefreshCw,
-  Hand,
-  Layers,
+  X, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Copy, Check,
+  Loader2, AlertCircle, Maximize2, FileText, RefreshCw, Hand, Layers,
 } from 'lucide-react';
 import { normalizeImageUrl } from './LayoutTabParts/LayoutUnitLightboxModal';
 import { PdfNativeCanvasViewer } from './LayoutTabParts/PdfNativeCanvasViewer';
-import {
-  TouchPinchZoomStage,
-  TouchPinchZoomStageHandle,
-} from './LayoutTabParts/TouchPinchZoomStage';
+import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './LayoutTabParts/TouchPinchZoomStage';
 import { useAppStore } from '../store/useAppStore';
 
 export interface ZoomableImageViewerProps {
@@ -278,7 +263,10 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
             <>
               <button
                 type="button"
-                onClick={() => zoomStageRef.current?.zoomOut(0.45)}
+                onClick={() => {
+                  if (useEmbedViewer && touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                  zoomStageRef.current?.zoomOut(0.45);
+                }}
                 title="Zoom Out (-)"
                 className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
               >
@@ -291,8 +279,11 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 
               <button
                 type="button"
-                onClick={() => zoomStageRef.current?.zoomIn(0.45)}
-                title="Zoom In (+)"
+                onClick={() => {
+                  if (useEmbedViewer && touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                  zoomStageRef.current?.zoomIn(0.45);
+                }}
+                title="Zoom In on Current Page (+)"
                 className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors active:scale-95 touch-manipulation"
               >
                 <ZoomIn className="w-4 h-4" />
@@ -321,22 +312,14 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
                 }
               }}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors active:scale-95 touch-manipulation flex items-center gap-1.5 ${
-                touchZoomMode === 'pinch'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                touchZoomMode === 'pinch' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
               }`}
               title="Toggle between Finger Pinch Zoom and Page Scroll"
             >
               {touchZoomMode === 'pinch' ? (
-                <>
-                  <Hand className="w-3.5 h-3.5" />
-                  <span>Pinch Zoom</span>
-                </>
+                <><Hand className="w-3.5 h-3.5" /><span>Pinch Zoom</span></>
               ) : (
-                <>
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Scroll Pages</span>
-                </>
+                <><Layers className="w-3.5 h-3.5" /><span>Scroll Pages</span></>
               )}
             </button>
           )}
