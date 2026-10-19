@@ -1,8 +1,3 @@
-import {
-  safeGetItemLocal,
-  safeSetItemLocal,
-  safeRemoveItemLocal,
-} from "./lib/storage";
 import { useFirebaseData } from "./hooks/useFirebaseData";
 import { useDeepLinkLogic } from "./hooks/useDeepLinkLogic";
 import { useNotificationActions } from "./hooks/useNotificationActions";
@@ -11,48 +6,21 @@ import { useEnrichedData } from "./hooks/useEnrichedData";
 import { useAppNotificationsSync } from "./hooks/appParts/useAppNotificationsSync";
 import { useAppNavigationAndShortcuts } from "./hooks/appParts/useAppNavigationAndShortcuts";
 import { useAppPrintController } from "./hooks/appParts/useAppPrintController";
-import { Profiler, Suspense, useEffect, useRef } from "react";
-import { requestNotificationPermission } from "./lib/notifications";
-import { cleanupLocalStorage } from "./lib/cleanup";
-import { AppUser, AppRole } from "./types";
+import { useAppLifecycleEffects } from "./hooks/appParts/useAppLifecycleEffects";
+import { Suspense, useEffect, useRef } from "react";
+import { AppRole } from "./types";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
 import { RibbonDisplayMenu } from "./components/RibbonDisplayMenu";
 import { lazyWithRetry } from "./lib/lazyWithRetry";
 import { AppTabRouter } from "./components/AppTabRouter";
 import { AppModals } from "./components/AppModals";
-import { Toast } from "./components/Toast";
-import { undoManager } from "./lib/undoManager";
 import { useAppStore } from "./store/useAppStore";
 import { PrintFilterHeader } from "./components/PrintFilterHeader";
 import { AppPrintStyles } from "./components/AppParts/AppPrintStyles";
+import { AppGanttPrintPagesView } from "./components/AppParts/AppGanttPrintPagesView";
+import { AppGlobalOverlays } from "./components/AppParts/AppGlobalOverlays";
 
-const GanttTab = lazyWithRetry(() => import("./components/GanttTab"), "GanttTab");
-const AppTour = lazyWithRetry(
-  () => import("./components/AppTour").then((m) => ({ default: m.AppTour })),
-  "AppTour"
-);
-const CommandPaletteModal = lazyWithRetry(
-  () =>
-    import("./components/CommandPaletteModal").then((m) => ({
-      default: m.CommandPaletteModal,
-    })),
-  "CommandPaletteModal"
-);
-const ProjectQuickNavModal = lazyWithRetry(
-  () =>
-    import("./components/ProjectQuickNavModal").then((m) => ({
-      default: m.ProjectQuickNavModal,
-    })),
-  "ProjectQuickNavModal"
-);
-const PrintPreviewOverlay = lazyWithRetry(
-  () =>
-    import("./components/PrintPreviewOverlay").then((m) => ({
-      default: m.PrintPreviewOverlay,
-    })),
-  "PrintPreviewOverlay"
-);
 const PrintOptionsPanel = lazyWithRetry(
   () =>
     import("./components/PrintOptionsPanel").then((m) => ({
@@ -157,117 +125,6 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
-    if (currentUser?.role === "guest") {
-      const hasSeenTour = safeGetItemLocal("taka_has_seen_tour");
-      if (!hasSeenTour) {
-        setShowTour(true);
-      }
-    }
-  }, [currentUser, setShowTour]);
-
-  const handleCloseTour = () => {
-    safeSetItemLocal("taka_has_seen_tour", "true");
-    setShowTour(false);
-  };
-
-  useEffect(() => {
-    cleanupLocalStorage();
-    if (typeof window !== "undefined") {
-      const savedAuth = safeGetItemLocal("taka_auth_v1");
-      if (savedAuth) {
-        try {
-          const savedAppUser = JSON.parse(savedAuth) as AppUser;
-          if (savedAppUser.preferences?.defaultStore) {
-            useAppStore.getState().setGlobalStoreFilter(savedAppUser.preferences.defaultStore);
-          }
-          if (savedAppUser.preferences?.defaultYear) {
-            useAppStore
-              .getState()
-              .setGlobalYearFilter(String(savedAppUser.preferences.defaultYear));
-          }
-          if (savedAppUser.preferences?.currency) {
-            useAppStore.getState().setCurrency(savedAppUser.preferences.currency);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      // Enforce Safe Boot to 'general' (Rule 2)
-    }
-  }, [setActiveTab]);
-
-  useEffect(() => {
-    return undoManager.subscribe((undo, redo) => {
-      setUndoStack(undo);
-      setRedoStack(redo);
-    });
-  }, [setUndoStack, setRedoStack]);
-
-  useEffect(() => {
-    if (ribbonDisplayMode !== "fullscreen") return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setRibbonDisplayMode("always_show");
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [ribbonDisplayMode, setRibbonDisplayMode]);
-
-  useEffect(() => {
-    safeRemoveItemLocal("taka_gantt_custom_today");
-  }, []);
-
-  useEffect(() => {
-    const savedTheme = safeGetItemLocal("taka_theme_v1");
-    if (savedTheme === "dark") {
-      setTheme("dark");
-      document.documentElement.classList.add("dark");
-    } else {
-      setTheme("light");
-      document.documentElement.classList.remove("dark");
-    }
-  }, [setTheme]);
-
-  const toggleTheme = () => {
-    const newTheme = theme === "light" ? "dark" : "light";
-    setTheme(newTheme);
-    safeSetItemLocal("taka_theme_v1", newTheme);
-    if (newTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  };
-
-  const handleRequestPermission = async () => {
-    const token = await requestNotificationPermission(currentUser.id);
-    if (token) {
-      setTimeout(() => {
-        setToast({ title: "Success", message: "Push notifications enabled!" });
-      }, 500);
-    }
-  };
-
-  useEffect(() => {
-    if (
-      currentUser.id !== "guest" &&
-      "Notification" in window &&
-      Notification.permission === "granted"
-    ) {
-      requestNotificationPermission(currentUser.id, true).catch(console.error);
-    }
-  }, [currentUser.id]);
-
-  useEffect(() => {
-    if (isAnyModalOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-  }, [isAnyModalOpen]);
-
   // Core Data & Sync Hooks
   useFirebaseData();
   usePushNotifications();
@@ -311,47 +168,31 @@ export default function App() {
     filteredTasksRef
   );
 
-  const handleLogin = (appUser: AppUser) => {
-    setCurrentUser(appUser);
-    safeSetItemLocal("taka_auth_v1", JSON.stringify(appUser));
-
-    if (appUser.preferences?.defaultStore) {
-      useAppStore.getState().setGlobalStoreFilter(appUser.preferences.defaultStore);
-    }
-    if (appUser.preferences?.defaultYear) {
-      useAppStore.getState().setGlobalYearFilter(String(appUser.preferences.defaultYear));
-    }
-    if (appUser.preferences?.currency) {
-      useAppStore.getState().setCurrency(appUser.preferences.currency);
-    }
-
-    setIsLoginModalOpen(false);
-
-    if (pendingDeepLinkRef.current && executeDeepLinkRef.current) {
-      const pending = pendingDeepLinkRef.current;
-      pendingDeepLinkRef.current = null;
-      executeDeepLinkRef.current(pending.targetType, pending.targetId, pending.extraParams);
-    } else {
-      setActiveTab("general");
-    }
-  };
-
-  useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-  }, [activeTab]);
-
-  const handleLogout = () => {
-    const guest: AppUser = {
-      id: "guest",
-      username: "Guest",
-      role: "guest",
-      canSee: false,
-      canWrite: false,
-    };
-    setCurrentUser(guest);
-    safeSetItemLocal("taka_auth_v1", JSON.stringify(guest));
-    handleTabChange("calendar");
-  };
+  const {
+    handleCloseTour,
+    toggleTheme,
+    handleRequestPermission,
+    handleLogin,
+    handleLogout,
+  } = useAppLifecycleEffects({
+    currentUser,
+    setCurrentUser,
+    setShowTour,
+    setActiveTab,
+    setUndoStack,
+    setRedoStack,
+    ribbonDisplayMode,
+    setRibbonDisplayMode,
+    theme,
+    setTheme,
+    setToast,
+    isAnyModalOpen,
+    activeTab,
+    setIsLoginModalOpen,
+    handleTabChange,
+    pendingDeepLinkRef,
+    executeDeepLinkRef,
+  });
 
   const canSee = currentUser.role === "admin" || currentUser.canSee;
   const userRole = (
@@ -391,10 +232,6 @@ export default function App() {
     filteredTasks,
   });
 
-  const handlePrintClick = () => {
-    setIsPrintPreview(true);
-  };
-
   return (
     <div
       className={`min-h-[100dvh] p-2 lg:p-4 flex flex-col bg-slate-50 dark:bg-[#131314] text-slate-800 dark:text-[#f3f3f3] font-sans pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] print:p-0 transition-colors ${
@@ -423,67 +260,23 @@ export default function App() {
       )}
 
       {ganttPrintPages ? (
-        <div className="flex flex-col gap-8 w-full items-center bg-slate-300 dark:bg-slate-800 p-8 print:p-0 print:bg-transparent">
-          {ganttPrintPages.map((pageData, idx) => (
-            <div
-              key={idx}
-              className="print-paper relative flex flex-col shrink-0"
-              style={{ pageBreakAfter: idx < ganttPrintPages.length - 1 ? "always" : "auto" }}
-            >
-              {printWatermark !== "none" && (
-                <div
-                  className="absolute inset-0 pointer-events-none flex items-center justify-center z-[150] overflow-hidden"
-                  style={{ opacity: 0.15 }}
-                >
-                  <span
-                    className="font-black text-slate-500 uppercase tracking-widest text-center"
-                    style={{
-                      fontSize: printOrientation === "landscape" ? "12vw" : "15vw",
-                      transform: "rotate(-45deg)",
-                    }}
-                  >
-                    {printWatermark}
-                  </span>
-                </div>
-              )}
-              {printDate && (
-                <div className="absolute bottom-4 left-4 text-xs font-mono text-slate-500 z-[90]">
-                  Printed on: {new Date().toLocaleString()} - Page {idx + 1}
-                </div>
-              )}
-              {printFilterHeader && (
-                <div className="w-full px-4 pt-3 pb-1 bg-white dark:bg-[#1e1e20] shrink-0">
-                  <PrintFilterHeader
-                    context={printFilterContext}
-                    pageIndex={idx}
-                    totalPages={ganttPrintPages.length}
-                  />
-                </div>
-              )}
-              <div className="w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] p-0 print-content-wrapper print-preview-content-active relative overflow-hidden">
-                {isPrintPreview && (
-                  <Suspense fallback={null}>
-                    <PrintPreviewOverlay
-                      printScale={printScale}
-                      printPaperSize={printPaperSize}
-                      printOrientation={printOrientation}
-                      printScaleMode={printScaleMode}
-                    />
-                  </Suspense>
-                )}
-                <Profiler id={`GanttTab-Page-${idx}`} onRender={onRenderCallback}>
-                  <GanttTab
-                    printDateRangeOverride={pageData.dateRange}
-                    initialFocusTaskId={ganttTabFocusTaskId}
-                    onClearFocus={() => setGanttTabFocusTaskId("")}
-                    onNavigateToLayout={handleNavigateToLayout}
-                    onNavigateToTaskDetail={handleNavigateToTaskDetail}
-                  />
-                </Profiler>
-              </div>
-            </div>
-          ))}
-        </div>
+        <AppGanttPrintPagesView
+          ganttPrintPages={ganttPrintPages}
+          printWatermark={printWatermark}
+          printOrientation={printOrientation}
+          printDate={printDate}
+          printFilterHeader={printFilterHeader}
+          printFilterContext={printFilterContext}
+          isPrintPreview={isPrintPreview}
+          printScale={printScale}
+          printPaperSize={printPaperSize}
+          printScaleMode={printScaleMode}
+          ganttTabFocusTaskId={ganttTabFocusTaskId}
+          setGanttTabFocusTaskId={setGanttTabFocusTaskId}
+          handleNavigateToLayout={handleNavigateToLayout}
+          handleNavigateToTaskDetail={handleNavigateToTaskDetail}
+          onRenderCallback={onRenderCallback}
+        />
       ) : (
         <div
           className={
@@ -542,7 +335,7 @@ export default function App() {
                   cloudStatus={cloudStatus}
                   onLoginClick={() => setIsLoginModalOpen(true)}
                   onLogoutClick={handleLogout}
-                  onPrintClick={handlePrintClick}
+                  onPrintClick={() => setIsPrintPreview(true)}
                   onTabChange={handleTabChange}
                   activeTab={activeTab}
                   notificationCount={unreadCount}
@@ -679,78 +472,24 @@ export default function App() {
 
       <AppModals onLogin={handleLogin} onTabChange={handleTabChange} />
 
-      {quickNavTarget && (
-        <Suspense fallback={null}>
-          <ProjectQuickNavModal
-            target={quickNavTarget}
-            isOpen={!!quickNavTarget}
-            onClose={() => setQuickNavTarget(null)}
-            onNavigate={handleQuickNavigate}
-          />
-        </Suspense>
-      )}
-
-      {isCommandPaletteOpen && (
-        <Suspense fallback={null}>
-          <CommandPaletteModal
-            isOpen={isCommandPaletteOpen}
-            onClose={() => setIsCommandPaletteOpen(false)}
-            onTabChange={handleTabChange}
-            onToggleTheme={toggleTheme}
-            onToggleFocusMode={() => setIsFocusMode(!isFocusMode)}
-            onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
-          />
-        </Suspense>
-      )}
-
-      {toast && (
-        <Toast
-          title={toast.title}
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
-
-      <div className="fixed bottom-1 right-3 text-[10px] text-slate-400 z-50 pointer-events-none">
-        copyright by Nam Hung CP
-      </div>
-      {showTour && (
-        <Suspense fallback={null}>
-          <AppTour onClose={handleCloseTour} />
-        </Suspense>
-      )}
-      {isExportingPDF && (
-        <div className="fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white print:hidden hide-on-actual-print">
-          <svg
-            className="w-12 h-12 animate-spin text-blue-500 mb-4"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            ></circle>
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <h2 className="text-xl font-bold tracking-tight">
-            Generating High Quality Document...
-          </h2>
-          <p className="text-slate-300 mt-2 text-sm text-center max-w-sm">
-            Please wait while we render your chart. This may take a moment depending on the
-            project size.
-          </p>
-        </div>
-      )}
+      <AppGlobalOverlays
+        quickNavTarget={quickNavTarget}
+        setQuickNavTarget={setQuickNavTarget}
+        handleQuickNavigate={handleQuickNavigate}
+        isCommandPaletteOpen={isCommandPaletteOpen}
+        setIsCommandPaletteOpen={setIsCommandPaletteOpen}
+        handleTabChange={handleTabChange}
+        toggleTheme={toggleTheme}
+        isFocusMode={isFocusMode}
+        setIsFocusMode={setIsFocusMode}
+        isPrintPreview={isPrintPreview}
+        setIsPrintPreview={setIsPrintPreview}
+        toast={toast}
+        setToast={setToast}
+        showTour={showTour}
+        handleCloseTour={handleCloseTour}
+        isExportingPDF={isExportingPDF}
+      />
     </div>
   );
 }
