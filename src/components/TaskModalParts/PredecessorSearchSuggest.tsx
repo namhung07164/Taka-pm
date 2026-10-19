@@ -320,16 +320,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
-    const [dropUp, setDropUp] = useState(false);
 
-    useEffect(() => {
-      if (open && inputRef.current) {
-        const rect = inputRef.current.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        setDropUp(spaceBelow < 240 && spaceAbove > spaceBelow);
-      }
-    }, [open, deferredQuery, candidates.length]);
 
     useEffect(() => {
       if (open && listRef.current && listRef.current.children[hi]) {
@@ -464,6 +455,17 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
         } as RankedPredecessorMatch;
       });
     }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx]);
+
+    const [dropUp, setDropUp] = useState(false);
+
+    useEffect(() => {
+      if (open && inputRef.current) {
+        const rect = inputRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        setDropUp(spaceBelow < 240 && spaceAbove > spaceBelow);
+      }
+    }, [open, deferredQuery, candidates.length]);
 
     const commit = async (list: LinkItem[]) => {
       const finalList = normalize(list);
@@ -789,10 +791,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
               <ul
                 ref={listRef}
                 role="listbox"
-                className={cn(
-                  'absolute left-0 right-0 z-[300000] min-h-[140px] max-h-72 sm:max-h-80 md:max-h-96 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white dark:border-[#444446] dark:bg-[#252528] p-1.5 shadow-2xl backdrop-blur-md transition-all',
-                  dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-                )}
+                className="mt-2 w-full min-h-[160px] max-h-56 sm:max-h-72 md:max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-slate-200/90 bg-slate-50/90 dark:border-[#444446] dark:bg-[#252528] p-1.5 shadow-inner backdrop-blur-md transition-all custom-scrollbar"
               >
                 {!hasQuery && candidates.length > 0 && (
                   <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
