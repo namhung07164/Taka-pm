@@ -325,6 +325,14 @@ export function GanttToolbar({
               visibleColumns={visibleColumns}
               onAddColumn={handleToggleColumn}
             />
+
+            <div className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-md">
+              <DebouncedSearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Search or ... ( + AND, , OR )"
+              />
+            </div>
           </div>
 
           {/* Task loading spinner - Only on cold start when no cached tasks exist */}
@@ -334,18 +342,7 @@ export function GanttToolbar({
               <span>{t('Syncing...')}</span>
             </div>
           )}
-
-
         </div>
-      </div>
-
-      {/* Row 3: Full-width Search Bar */}
-      <div className="relative w-full">
-        <DebouncedSearchInput
-          value={searchTerm}
-          onChange={setSearchTerm}
-          placeholder="Search or ... ( + AND, , OR )"
-        />
       </div>
     </div>
   );

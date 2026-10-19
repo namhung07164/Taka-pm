@@ -138,6 +138,87 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
               <span className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No accessible projects</span>
             )}
           </div>
+
+          {/* Search Unit Box Inline */}
+          {!isEditing && (
+            <div ref={searchContainerRef} className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-sm">
+              <div className="relative flex items-center">
+                <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                <DebouncedSearchInput 
+                  value={unitSearchInput}
+                  onChange={(val) => {
+                    setUnitSearchInput(val);
+                    if (!val.trim()) {
+                      setTargetUnitSearch(null);
+                    } else {
+                      setTargetUnitSearch(val.trim());
+                    }
+                    setShowSuggestions(true);
+                  }}
+                  debounceMs={250}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (filteredUnitSuggestions.length > 0) {
+                        onSelectSearchUnit(filteredUnitSuggestions[0]);
+                      } else if (unitSearchInput.trim()) {
+                        onSelectSearchUnit({ unit: unitSearchInput.trim() });
+                      }
+                    } else if (e.key === 'Escape') {
+                      setShowSuggestions(false);
+                      onClearSearchAndFocus();
+                    }
+                  }}
+                  placeholder="Search unit, brand, or project..."
+                  className="w-full pl-9 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-xs transition-all"
+                />
+              </div>
+
+              {/* Suggestions Dropdown */}
+              {showSuggestions && unitSearchInput.trim() && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto p-1.5 animate-in fade-in duration-100">
+                  {filteredUnitSuggestions.length === 0 ? (
+                    <div className="p-3 text-xs text-slate-500 dark:text-slate-400 text-center italic">
+                      Nhấn Enter để tìm "{unitSearchInput}"
+                    </div>
+                  ) : (
+                    filteredUnitSuggestions.slice(0, 20).map((item) => (
+                      <button
+                        key={`${item.unit}_${item.project || ''}_${item.location || ''}`}
+                        type="button"
+                        onClick={() => onSelectSearchUnit(item)}
+                        className="w-full text-left flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/50 text-slate-800 dark:text-slate-100 transition-colors group cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-b-0"
+                      >
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs sm:text-sm font-mono text-purple-700 dark:text-purple-400 shrink-0">
+                              {item.unit}
+                            </span>
+                            {item.brand && (
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                                {item.brand}
+                              </span>
+                            )}
+                          </div>
+                          {item.project && item.project !== item.unit && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                              📁 {item.project}
+                            </div>
+                          )}
+                        </div>
+                        {item.location && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-300 shrink-0 ml-1">
+                            {item.location}
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Buttons & Navigation Cluster */}
@@ -145,7 +226,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           {onBackToGantt && (
             <button
               onClick={onBackToGantt}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-xs active:scale-95 touch-manipulation shrink-0"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-[#28282a] dark:text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-xs active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Back to Gantt</span>
@@ -156,7 +237,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           {/* Live Map / Exit Live */}
           <button
             onClick={() => setIsLiveMapMode((prev: boolean) => !prev)}
-            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 ${
+            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all border shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer ${
               isLiveMapMode 
                 ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400' 
                 : 'bg-white dark:bg-[#1e1e20] text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-slate-200 dark:border-[#444446]'
@@ -169,7 +250,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           {/* Refresh */}
           <button 
             onClick={onRefresh}
-            className="flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 dark:border-[#444446] shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0"
+            className="flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-slate-200 dark:border-[#444446] shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             title="Làm mới dữ liệu mặt bằng"
           >
             <RefreshCw className="w-3.5 h-3.5 shrink-0" />
@@ -182,7 +263,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
               onClick={onTriggerReExport}
               disabled={isExporting}
               title="Tự động thực hiện: Bước 1 Apply all rules Dynamic -> Bước 2 Save Cloud R2"
-              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0"
+              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isExporting ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{isExporting ? (exportStatusMessage || 'Đang xuất...') : 'Trigger Export'}</span>
@@ -194,7 +275,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           {isAdmin && (
             <button 
               onClick={() => { setEditUrl(url); setIsEditing(true); }}
-              className="flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 dark:border-blue-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0"
+              className="flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-blue-200 dark:border-blue-800 shadow-xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
               title="Chỉnh sửa liên kết URL bản đồ"
             >
               <Edit2 className="w-3.5 h-3.5 shrink-0" />
@@ -211,89 +292,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           )}
         </div>
       </div>
-
-      {/* Row 2: Search Unit Box */}
-      {!isEditing && (
-        <div className="w-full">
-          <div ref={searchContainerRef} className="relative w-full">
-            <div className="relative flex items-center">
-              <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
-              <DebouncedSearchInput 
-                value={unitSearchInput}
-                onChange={(val) => {
-                  setUnitSearchInput(val);
-                  if (!val.trim()) {
-                    setTargetUnitSearch(null);
-                  } else {
-                    setTargetUnitSearch(val.trim());
-                  }
-                  setShowSuggestions(true);
-                }}
-                debounceMs={250}
-                onFocus={() => setShowSuggestions(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (filteredUnitSuggestions.length > 0) {
-                      onSelectSearchUnit(filteredUnitSuggestions[0]);
-                    } else if (unitSearchInput.trim()) {
-                      onSelectSearchUnit({ unit: unitSearchInput.trim() });
-                    }
-                  } else if (e.key === 'Escape') {
-                    setShowSuggestions(false);
-                    onClearSearchAndFocus();
-                  }
-                }}
-                placeholder="Search unit, brand, or project..."
-                className="w-full pl-9 py-1.5 sm:py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-xs transition-all"
-              />
-            </div>
-
-            {/* Suggestions Dropdown */}
-            {showSuggestions && unitSearchInput.trim() && (
-              <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto p-1.5 animate-in fade-in duration-100">
-                {filteredUnitSuggestions.length === 0 ? (
-                  <div className="p-3 text-xs text-slate-500 dark:text-slate-400 text-center italic">
-                    Nhấn Enter để tìm "{unitSearchInput}"
-                  </div>
-                ) : (
-                  filteredUnitSuggestions.slice(0, 20).map((item) => (
-                    <button
-                      key={`${item.unit}_${item.project || ''}_${item.location || ''}`}
-                      type="button"
-                      onClick={() => onSelectSearchUnit(item)}
-                      className="w-full text-left flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/50 text-slate-800 dark:text-slate-100 transition-colors group cursor-pointer border-b border-slate-100 dark:border-slate-800/60 last:border-b-0"
-                    >
-                      <div className="flex flex-col min-w-0 pr-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs sm:text-sm font-mono text-purple-700 dark:text-purple-400 shrink-0">
-                            {item.unit}
-                          </span>
-                          {item.brand && (
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
-                              {item.brand}
-                            </span>
-                          )}
-                        </div>
-                        {item.project && item.project !== item.unit && (
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                            📁 {item.project}
-                          </div>
-                        )}
-                      </div>
-                      {item.location && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-300 shrink-0 ml-1">
-                          {item.location}
-                        </span>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Admin URL Edit Bar */}
       {isAdmin && isEditing && (

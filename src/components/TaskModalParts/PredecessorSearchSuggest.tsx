@@ -791,7 +791,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
               <ul
                 ref={listRef}
                 role="listbox"
-                className="mt-2 w-full min-h-[160px] max-h-56 sm:max-h-72 md:max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-slate-200/90 bg-slate-50/90 dark:border-[#444446] dark:bg-[#252528] p-1.5 shadow-inner backdrop-blur-md transition-all custom-scrollbar"
+                className="mt-2 w-full max-h-48 sm:max-h-56 md:max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200/90 bg-slate-50/90 dark:border-[#444446] dark:bg-[#252528] p-1.5 shadow-inner backdrop-blur-md transition-all custom-scrollbar"
               >
                 {!hasQuery && candidates.length > 0 && (
                   <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">

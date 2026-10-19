@@ -95,63 +95,63 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
   onBulkAction
 }: DetailFilterToolbarProps) {
   return (
-    <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
-      <div className="flex flex-col gap-2.5 sm:gap-3 w-full xl:w-auto flex-grow max-w-4xl">
+    <>
+      <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
-          <select 
-            value={globalYearFilter}
-            onChange={(e) => setGlobalYearFilter(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none"
-          >
-            <option value="all">All Years</option>
-            {years.map(y => <option key={y} value={y}>Year {y}</option>)}
-          </select>
-          <select 
-            value={effectiveStore}
-            onChange={(e) => setGlobalStoreFilter(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none"
-          >
-            {stores.length > 1 && <option value="all">All Stores</option>}
-            {stores.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <MultiCheckboxSelect 
-            value={globalLocationFilter}
-            onChange={setGlobalLocationFilter}
-            options={locationFilterOptions}
-            placeholder="All Locations"
-            className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
-          />
-          <select 
-            value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
-          >
-            <option value="all">All Status</option>
-            <option value="Upcoming">Upcoming</option>
-            <option value="On process">On process</option>
-            <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
-            <option value="Handover">Handover</option>
-            <option value="Completed">Completed</option>
-            <option value="Canceled">Canceled</option>
-          </select>
-        </div>
-        <div className="relative w-full">
+        <select 
+          value={globalYearFilter}
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">All Years</option>
+          {years.map(y => <option key={y} value={y}>Year {y}</option>)}
+        </select>
+        <select 
+          value={effectiveStore}
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          {stores.length > 1 && <option value="all">All Stores</option>}
+          {stores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <MultiCheckboxSelect 
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationFilterOptions}
+          placeholder="All Locations"
+          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+        />
+        <select 
+          value={statusFilter}
+          onChange={(e) => onStatusFilterChange(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">All Status</option>
+          <option value="Upcoming">Upcoming</option>
+          <option value="On process">On process</option>
+          <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
+          <option value="Handover">Handover</option>
+          <option value="Completed">Completed</option>
+          <option value="Canceled">Canceled</option>
+        </select>
+
+        <div className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-md">
           <DebouncedSearchInput 
             value={searchTerm}
             onChange={onSearchTermChange}
             placeholder="Search in detail..."
           />
         </div>
-      </div>
 
-      {/* Controls - Column customization is only used on desktop table view (xl), hidden on iOS/mobile */}
-      <div className="hidden xl:flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 self-end xl:self-center">
-        <ColumnAdder 
-          availableColumns={availableColumnsForUser} 
-          visibleColumns={visibleColumns} 
-          onAddColumn={onToggleColumn} 
-        />
+        <div className="hidden xl:flex items-center gap-2 shrink-0 ml-auto">
+          <ColumnAdder 
+            availableColumns={availableColumnsForUser} 
+            visibleColumns={visibleColumns} 
+            onAddColumn={onToggleColumn} 
+          />
+        </div>
       </div>
+    </div>
 
       {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
       {hasWritePermission && !isEditMode && (
@@ -383,6 +383,6 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
             </div>
           </>
         )}
-    </div>
+    </>
   );
 });

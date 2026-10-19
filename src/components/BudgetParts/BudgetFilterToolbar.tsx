@@ -56,55 +56,53 @@ export function BudgetFilterToolbar({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden rounded-t-xl">
-      <div className="flex flex-col gap-2.5 sm:gap-3 w-full xl:w-auto flex-grow max-w-4xl">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
-          <select 
-            value={globalYearFilter} 
-            onChange={(e) => setGlobalYearFilter(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none"
-          >
-            <option value="all">{t('All Years')}</option>
-            {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
-          </select>
+    <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-grow">
+        <select 
+          value={globalYearFilter} 
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">{t('All Years')}</option>
+          {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
+        </select>
 
-          <select 
-            value={effectiveStore} 
-            onChange={(e) => setGlobalStoreFilter(e.target.value)}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none"
-          >
-            {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
-            {stores.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        <select 
+          value={effectiveStore} 
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
+          {stores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
 
-          <MultiCheckboxSelect 
-            value={globalLocationFilter}
-            onChange={setGlobalLocationFilter}
-            options={locationOptions}
-            placeholder={t('All Locations')}
-            className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
-          />
+        <MultiCheckboxSelect 
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationOptions}
+          placeholder={t('All Locations')}
+          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+        />
 
-          <select
-            value={moneyFilter}
-            onChange={(e) => {
-              const val = e.target.value;
-              setMoneyFilter(val);
-              if (!searchTerm.trim()) {
-                lastSelectedMoneyFilterRef.current = val;
-                safeSetItemSession("taka_budget_money_filter", val);
-              }
-            }}
-            className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
-          >
-            <option value="all">{t('All Projects')}</option>
-            <option value="has_money">{t('Has Budget or Actual')}</option>
-            <option value="has_budget">{t('Has Budget Only')}</option>
-            <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
-          </select>
-        </div>
+        <select
+          value={moneyFilter}
+          onChange={(e) => {
+            const val = e.target.value;
+            setMoneyFilter(val);
+            if (!searchTerm.trim()) {
+              lastSelectedMoneyFilterRef.current = val;
+              safeSetItemSession("taka_budget_money_filter", val);
+            }
+          }}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">{t('All Projects')}</option>
+          <option value="has_money">{t('Has Budget or Actual')}</option>
+          <option value="has_budget">{t('Has Budget Only')}</option>
+          <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
+        </select>
 
-        <div className="relative w-full">
+        <div className="relative flex-grow min-w-[180px] max-w-full sm:max-w-xs md:max-w-md">
           <DebouncedSearchInput 
             value={searchTerm} 
             onChange={(val) => setSearchTerm(val)}
