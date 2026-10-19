@@ -109,7 +109,7 @@ export function TaskModal(props: TaskModalProps) {
         )}
       </React.Suspense>
         <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
-          <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-md overflow-hidden relative flex flex-col pointer-events-auto">
+          <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] md:rounded-2xl shadow-2xl w-full h-full md:h-auto max-h-[100dvh] md:max-h-[90vh] max-w-lg sm:max-w-xl overflow-hidden relative flex flex-col pointer-events-auto">
             <TaskModalHeader 
               task={task}
               activeTab={activeTab}

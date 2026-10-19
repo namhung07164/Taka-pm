@@ -49,14 +49,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
       return;
     }
     const r = el.getBoundingClientRect();
-    const width = Math.min(440, vw - 16);
+    const width = Math.min(540, vw - 24);
     const left = Math.max(8, Math.min(r.left, vw - width - 8));
     const spaceBelow = vh - r.bottom - 8;
     const spaceAbove = r.top - 8;
-    if (spaceBelow >= 400 || spaceBelow >= spaceAbove) {
-      setLayout({ mode: 'pop', left, width, top: r.bottom + 4, maxH: Math.max(380, Math.min(560, spaceBelow - 4)) });
+    if (spaceBelow >= 440 || spaceBelow >= spaceAbove) {
+      setLayout({ mode: 'pop', left, width, top: r.bottom + 4, maxH: Math.max(480, Math.min(680, spaceBelow - 4)) });
     } else {
-      setLayout({ mode: 'pop', left, width, bottom: vh - r.top + 4, maxH: Math.max(380, Math.min(560, spaceAbove - 4)) });
+      setLayout({ mode: 'pop', left, width, bottom: vh - r.top + 4, maxH: Math.max(480, Math.min(680, spaceAbove - 4)) });
     }
   }, []);
 

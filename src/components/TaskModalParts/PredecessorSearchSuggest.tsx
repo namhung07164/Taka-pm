@@ -320,6 +320,16 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+    const [dropUp, setDropUp] = useState(false);
+
+    useEffect(() => {
+      if (open && inputRef.current) {
+        const rect = inputRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        setDropUp(spaceBelow < 240 && spaceAbove > spaceBelow);
+      }
+    }, [open, deferredQuery, candidates.length]);
 
     useEffect(() => {
       if (open && listRef.current && listRef.current.children[hi]) {
@@ -586,126 +596,130 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           </div>
         )}
 
-        {items.map((it, idx) => {
-          const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
-          const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+        {items.length > 0 && (
+          <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto overscroll-contain pr-1 custom-scrollbar">
+            {items.map((it, idx) => {
+              const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
+              const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
 
-          return (
-            <div
-              key={it.key}
-              className={cn(
-                'group flex flex-col gap-1.5 rounded-xl border bg-white dark:bg-[#1c1c1f] p-2 shadow-2xs transition-all hover:border-blue-300 dark:hover:border-blue-700',
-                it.resolved ? 'border-slate-200 dark:border-[#38383a]' : 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20'
-              )}
-            >
-              <div className="flex items-start justify-between gap-2 min-w-0">
-                <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                  <span
-                    className={cn(
-                      'inline-flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded px-1 text-[11px] font-black mt-0.5',
-                      idx === 0
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300'
-                        : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
-                    )}
-                  >
-                    {idx === 0 ? '①' : '②'}
-                  </span>
+              return (
+                <div
+                  key={it.key}
+                  className={cn(
+                    'group flex flex-col gap-2 rounded-xl border bg-white dark:bg-[#1c1c1f] p-2.5 shadow-2xs transition-all hover:border-blue-300 dark:hover:border-blue-700',
+                    it.resolved ? 'border-slate-200 dark:border-[#38383a]' : 'border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20'
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                      <span
+                        className={cn(
+                          'inline-flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded px-1 text-[11px] font-black mt-0.5',
+                          idx === 0
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300'
+                            : 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                        )}
+                      >
+                        {idx === 0 ? '①' : '②'}
+                      </span>
 
-                  {it.resolved && it.task ? (
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-xs font-black text-blue-600 dark:text-[#8ab4f8] shrink-0">
-                          {it.code}
-                        </span>
-                        <span className="text-xs font-bold text-slate-800 dark:text-[#f3f3f3] leading-snug break-words">
-                          {it.task.name}
-                        </span>
-                      </div>
-                      {it.isExternal && (
-                        <span className="mt-1 inline-flex shrink-0 items-center gap-1 w-fit rounded border border-amber-300 bg-amber-100/70 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                          <ExternalLink className="h-3 w-3" />
-                          {it.externalLabel}
+                      {it.resolved && it.task ? (
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-black text-blue-600 dark:text-[#8ab4f8] shrink-0">
+                              {it.code}
+                            </span>
+                            <span className="text-xs font-bold text-slate-800 dark:text-[#f3f3f3] leading-snug break-words">
+                              {it.task.name}
+                            </span>
+                          </div>
+                          {it.isExternal && (
+                            <span className="mt-1 inline-flex shrink-0 items-center gap-1 w-fit rounded border border-amber-300 bg-amber-100/70 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                              <ExternalLink className="h-3 w-3" />
+                              {it.externalLabel}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                          Not found «{it.raw}»
                         </span>
                       )}
                     </div>
-                  ) : (
-                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                      Not found «{it.raw}»
-                    </span>
-                  )}
-                </div>
 
-                {canWrite && (
-                  <button
-                    type="button"
-                    onClick={() => removeItem(idx)}
-                    disabled={saving}
-                    title="Remove link"
-                    className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-all touch-manipulation disabled:opacity-50 cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(idx)}
+                        disabled={saving}
+                        title="Remove link"
+                        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 active:scale-95 transition-all touch-manipulation disabled:opacity-50 cursor-pointer"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
 
-              {/* Row 2: Type Segmented Pills + Lag Controls placed on the SAME ROW */}
-              {it.resolved && canWrite && (
-                <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-100 dark:border-[#2a2a2d] text-xs flex-nowrap overflow-x-auto">
-                  {/* Type Segmented Control */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
-                    <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
-                      {allowed.map((rel) => {
-                        const active = it.type === rel;
-                        return (
+                  {/* Row 2: Type Segmented Pills + Lag Controls placed on the SAME ROW */}
+                  {it.resolved && canWrite && (
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#2a2a2d] text-xs flex-wrap sm:flex-nowrap">
+                      {/* Type Segmented Control */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
+                        <div className="inline-flex rounded-lg bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                          {allowed.map((rel) => {
+                            const active = it.type === rel;
+                            return (
+                              <button
+                                key={rel}
+                                type="button"
+                                disabled={saving}
+                                onClick={() => !active && patchItem(idx, { type: rel })}
+                                className={cn(
+                                  'px-2 py-0.5 text-[11px] font-black rounded-md transition-all active:scale-95 touch-manipulation disabled:opacity-60 cursor-pointer',
+                                  active
+                                    ? 'bg-blue-600 text-white shadow-2xs dark:bg-blue-600'
+                                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                                )}
+                              >
+                                {rel}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Lag Control Inline */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
+                        <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
                           <button
-                            key={rel}
                             type="button"
                             disabled={saving}
-                            onClick={() => !active && patchItem(idx, { type: rel })}
-                            className={cn(
-                              'px-2 py-0.5 text-[11px] font-black rounded-md transition-all active:scale-95 touch-manipulation disabled:opacity-60 cursor-pointer',
-                              active
-                                ? 'bg-blue-600 text-white shadow-2xs dark:bg-blue-600'
-                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                            )}
+                            onClick={() => stepLag(idx, -1)}
+                            className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
                           >
-                            {rel}
+                            <Minus className="h-3 w-3" />
                           </button>
-                        );
-                      })}
+                          <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                          <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => stepLag(idx, 1)}
+                            className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Lag Control Inline */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
-                    <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => stepLag(idx, -1)}
-                        className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
-                      >
-                        <Minus className="h-3 w-3" />
-                      </button>
-                      <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
-                      <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => stepLag(idx, 1)}
-                        className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-[#1c1c1f] text-slate-600 dark:text-slate-300 shadow-2xs hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all touch-manipulation cursor-pointer"
-                      >
-                        <Plus className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        )}
 
         {/* Confirm cross project link */}
         {pendingExternal && (
@@ -775,7 +789,10 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
               <ul
                 ref={listRef}
                 role="listbox"
-                className="absolute left-0 right-0 top-full z-[300000] mt-1 max-h-72 sm:max-h-80 md:max-h-96 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white dark:border-[#444446] dark:bg-[#252528] p-1 shadow-2xl backdrop-blur-md transition-all"
+                className={cn(
+                  'absolute left-0 right-0 z-[300000] min-h-[140px] max-h-72 sm:max-h-80 md:max-h-96 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white dark:border-[#444446] dark:bg-[#252528] p-1.5 shadow-2xl backdrop-blur-md transition-all',
+                  dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                )}
               >
                 {!hasQuery && candidates.length > 0 && (
                   <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">

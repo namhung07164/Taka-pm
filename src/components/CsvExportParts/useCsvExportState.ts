@@ -353,27 +353,58 @@ export function useCsvExportState() {
             unitSizeMap
           );
 
+        let taskIndex = 0;
         for (const taskDef of templateData) {
           if (finalJson.length >= 10) return finalJson;
+          taskIndex++;
           const taskName = taskDef['Task name'] || '';
+
           const tcKey = Object.keys(taskDef).find((k) => {
             const clean = k
               .toLowerCase()
               .replace(/á»¥/g, 'ụ')
-              .replace(/\s+/g, '');
-            return clean.includes('taskcodeph') || clean.includes('taskcodephu');
+              .replace(/[^a-z0-9]/g, '');
+            return clean.includes('subtaskcode') || clean.includes('taskcodephu') || clean.includes('subtask');
           });
-          let taskCodePhu = tcKey ? taskDef[tcKey] : '';
+          let subTaskCode = tcKey ? taskDef[tcKey] : '';
           if (
-            !keepOriginal['Task code phụ'] &&
-            taskCodePhu !== undefined &&
-            taskCodePhu !== null &&
-            String(taskCodePhu).trim() !== ''
+            keepOriginal['Sub-task code'] ||
+            keepOriginal['Task code phụ']
           ) {
-            taskCodePhu = projCode
-              ? `${projCode}#${String(taskCodePhu).trim()}`
-              : String(taskCodePhu).trim();
+            if (subTaskCode !== undefined && subTaskCode !== null && String(subTaskCode).trim() !== '') {
+              subTaskCode = String(subTaskCode).trim();
+            } else {
+              subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
+            }
+          } else if (
+            subTaskCode !== undefined &&
+            subTaskCode !== null &&
+            String(subTaskCode).trim() !== ''
+          ) {
+            const strVal = String(subTaskCode).trim();
+            subTaskCode = projCode && !strVal.includes('#') ? `${projCode}#${strVal}` : strVal;
+          } else {
+            subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
           }
+
+          const ptKey = Object.keys(taskDef).find((k) => {
+            const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return clean.includes('parenttaskcode') || clean.includes('parenttask') || clean.includes('taskme');
+          });
+          let parentTaskCode = ptKey ? taskDef[ptKey] : '';
+          if (!keepOriginal['Parent task code']) {
+            if (parentTaskCode !== undefined && parentTaskCode !== null && String(parentTaskCode).trim() !== '') {
+              const strVal = String(parentTaskCode).trim();
+              if (projCode && !strVal.includes('#') && !strVal.includes('-') && !strVal.startsWith(projCode)) {
+                parentTaskCode = `${projCode}#${strVal}`;
+              } else {
+                parentTaskCode = strVal;
+              }
+            } else {
+              parentTaskCode = '';
+            }
+          }
+
           let start = taskDef['start'] || '';
           let finish = taskDef['finish'] || '';
 
@@ -432,8 +463,9 @@ export function useCsvExportState() {
             location: projLocation,
             projectYear: projYear,
             projectCode: projCode,
-            'Task code phụ': taskCodePhu,
+            'Sub-task code': subTaskCode,
             'Task name': taskName,
+            'Parent task code': parentTaskCode,
             start: start,
             finish: finish,
             duration: duration,
