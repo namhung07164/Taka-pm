@@ -137,13 +137,40 @@ function computeSingleProjectInfo(
       rawGroupTasks.push(vt);
     }
   });
-  const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
-  const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
-  const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(unrolledTasks || []);
-  const sortedTasks = sortGroupTasks(rolledUpGroupTasks).map(t => ({
-    ...t,
-    name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
-  }));
+
+  if (rawGroupTasks.length === 0) {
+    const computedTakStart = p.computedTakStart || p.start;
+    const computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
+    const computedOpening = p.computedOpening || p.opening;
+    const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+    const finish = computedTakCompl || computedOpening || p.opening || '9999-12-31';
+    return {
+      status,
+      start: computedTakStart || '9999-12-31',
+      finish,
+      computedTakStart,
+      computedTakCompl,
+      computedOpening,
+      sortedTasks: [],
+    };
+  }
+
+  let sortedTasks: Task[];
+  if (rawGroupTasks.length === 1 && !rawGroupTasks[0].parentTaskId) {
+    const single = rawGroupTasks[0];
+    sortedTasks = [{
+      ...single,
+      name: (single.name && String(single.name).trim()) ? single.name : (single.taskCodePhu || 'Task'),
+    }];
+  } else {
+    const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
+    const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
+    const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(unrolledTasks || []);
+    sortedTasks = sortGroupTasks(rolledUpGroupTasks).map(t => ({
+      ...t,
+      name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
+    }));
+  }
 
   let computedTakStart = p.computedTakStart || p.start;
   let computedTakCompl: string | undefined = p.computedTakCompl || p.handover;
@@ -194,7 +221,7 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       const t = tasks[idx];
       if (t.isDeleted) continue;
       if (t.projectId) {
-        const pIdStr = String(t.projectId);
+        const pIdStr = String(t.projectId).trim();
         let pList = idMap.get(pIdStr);
         if (!pList) {
           pList = [];
@@ -210,13 +237,18 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
       }
       list.push(t);
       if (t.projectCode) {
-        const c = String(t.projectCode).trim().toLowerCase();
-        let cList = codeMap.get(c);
-        if (!cList) {
-          cList = [];
-          codeMap.set(c, cList);
+        const rawCode = String(t.projectCode).trim().toLowerCase();
+        const parts = rawCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+        const codes = parts.length > 0 ? parts : [rawCode];
+        for (let cIdx = 0; cIdx < codes.length; cIdx++) {
+          const c = codes[cIdx];
+          let cList = codeMap.get(c);
+          if (!cList) {
+            cList = [];
+            codeMap.set(c, cList);
+          }
+          cList.push(t);
         }
-        cList.push(t);
       }
     }
     return { tasksByProjectId: idMap, tasksByProjectKey: keyMap, tasksByCodeMap: codeMap };

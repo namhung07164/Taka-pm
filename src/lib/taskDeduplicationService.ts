@@ -36,6 +36,8 @@ export function normalizeTaskNameForComparison(name?: string | null, _projectCod
   return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+const EMPTY_PROJECTS: Project[] = [];
+
 /**
  * Builds a canonical project key for a task or project.
  */
@@ -43,7 +45,7 @@ export function buildCanonicalProjectKey(
   projectCode?: string | null,
   year?: string | number | null,
   store?: string | null,
-  projects: Project[] = [],
+  projects: Project[] = EMPTY_PROJECTS,
   projectLookupMap?: Map<string, Project>,
   projectId?: string | null
 ): string {
@@ -102,7 +104,7 @@ export function buildCanonicalProjectKey(
  * If multiple tasks exist with the same project and same task name (case-insensitive or normalized)
  * or same task code, it merges them keeping the most complete / latest updated task.
  */
-export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []): {
+export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EMPTY_PROJECTS): {
   dedupedTasks: Task[];
   duplicateCount: number;
   removedTaskIds: string[];
@@ -138,9 +140,18 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
 
   const seenMap = new Map<string, Task>();
   const seenNormMap = new Map<string, string>(); // normKey -> taskId
-  const seenCodeMap = new Map<string, string>(); // codeKey -> taskId
   const removedTaskIds: string[] = [];
   let duplicateCount = 0;
+
+  // Pre-compute updatedAt numeric timestamps in O(N) to avoid O(N log N) Date allocations in sort comparator
+  const updatedTimeCache = new WeakMap<Task, number>();
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (t && t.updatedAt) {
+      const parsed = Date.parse(t.updatedAt);
+      updatedTimeCache.set(t, Number.isNaN(parsed) ? 0 : parsed);
+    }
+  }
 
   // Sort tasks so the most recently updated, non-deleted, or feature-rich task comes first
   const sorted = [...tasks].sort((a, b) => {
@@ -164,9 +175,9 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = []
     // Prefer task with party
     if (a.party && !b.party) return -1;
     if (!a.party && b.party) return 1;
-    // Prefer latest updatedAt
-    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    // Prefer latest updatedAt (O(1) cached lookup)
+    const aTime = updatedTimeCache.get(a) || 0;
+    const bTime = updatedTimeCache.get(b) || 0;
     if (bTime !== aTime) return bTime - aTime;
     // Tie-break: use ID to ensure all devices pick the same task, independent of load order
     return String(a.id).localeCompare(String(b.id));
@@ -291,17 +302,19 @@ let _cachedDedupTasksResult: Task[] = [];
  * Convenient helper returning just the deduplicated array of tasks.
  * Includes reference-equality caching to prevent redundant sorting and map allocations.
  */
-export function deduplicateTasks(tasks: Task[], projects: Project[] = []): Task[] {
+export function deduplicateTasks(tasks: Task[], projects: Project[] = EMPTY_PROJECTS): Task[] {
   if (!tasks || tasks.length === 0) return [];
   if (tasks.length === 1) return tasks;
 
-  if (_lastDedupInputTasksRef === tasks && _lastDedupInputProjectsRef === projects && _lastDedupInputTasksRef !== null) {
+  const normalizedProjects = projects && projects.length > 0 ? projects : EMPTY_PROJECTS;
+
+  if (_lastDedupInputTasksRef === tasks && _lastDedupInputProjectsRef === normalizedProjects && _lastDedupInputTasksRef !== null) {
     return _cachedDedupTasksResult;
   }
 
   _lastDedupInputTasksRef = tasks;
-  _lastDedupInputProjectsRef = projects;
-  _cachedDedupTasksResult = deduplicateTasksInMemory(tasks, projects).dedupedTasks;
+  _lastDedupInputProjectsRef = normalizedProjects;
+  _cachedDedupTasksResult = deduplicateTasksInMemory(tasks, normalizedProjects).dedupedTasks;
   return _cachedDedupTasksResult;
 }
 

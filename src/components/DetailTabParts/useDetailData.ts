@@ -1,20 +1,18 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task, DelegationGroup, AppUser } from '../../types';
-import { useAppStore } from '../../store/useAppStore';
 import { 
   getTaskStatus, 
   parseDateTime, 
-  formatDisplayDateMain, 
-  formatDisplayDateTime, 
   resolveActualStatus, 
   matchesAdvancedSearch 
 } from '../../lib/utils';
-import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
-import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { computeAllTaskCodes } from '../../lib/ganttUtils';
+import { safeGetItemSession } from '../../lib/storage';
 import { SortConfig } from './detailTypes';
 import { useDetailProjectInfo } from './useDetailProjectInfo';
 import { useDetailFlatRows } from './useDetailFlatRows';
 import { useDetailFocusTracking } from './useDetailFocusTracking';
+import { useDetailFilterSync, doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
 interface UseDetailDataParams {
   projects: Project[];
@@ -67,26 +65,6 @@ export function useDetailData({
   const [visibleCount, setVisibleCount] = useState(30);
   const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
   const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
-  const wasSearchingRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    const isSearching = !!deferredSearchTerm.trim();
-    if (!wasSearchingRef.current && isSearching) {
-      if (statusFilter !== 'all') {
-        lastSelectedStatusFilterRef.current = statusFilter;
-        safeSetItemSession("taka_detail_status_filter", statusFilter);
-      }
-      lastSelectedLocationFilterRef.current = globalLocationFilter;
-      setStatusFilter('all');
-      wasSearchingRef.current = true;
-    } else if (wasSearchingRef.current && !isSearching) {
-      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days';
-      setStatusFilter(restored);
-      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
-      wasSearchingRef.current = false;
-    }
-  }, [deferredSearchTerm]);
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = useRef<string | null>(null);
@@ -122,65 +100,6 @@ export function useDetailData({
     getProjectInfo,
   } = useDetailProjectInfo({ projects, tasks });
 
-  // Auto-jump to matched project location(s) when searching (Debounced)
-  useEffect(() => {
-    const term = deferredSearchTerm.trim();
-    if (!term) return;
-
-    const timer = setTimeout(() => {
-      const matchedProjects = projects.filter(p => {
-        const pYear = p.year ? String(p.year) : null;
-        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-        if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
-
-        const groupTasks = tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
-        const isMatch = matchesAdvancedSearch(
-          term,
-          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
-          [],
-          (tLower) => {
-            const summariesMatch = p.taskSummaries?.some(ts =>
-              String(ts.name || "").toLowerCase().includes(tLower)
-            ) || false;
-            const taskMatches = groupTasks.some((t, idx) => {
-              const taskFields = [
-                t.taskCodePhu,
-                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-                t.name,
-                t.duration,
-                t.start,
-                t.finish,
-                t.party,
-                formatDisplayDateMain(t.start),
-                formatDisplayDateTime(t.start),
-                formatDisplayDateMain(t.finish),
-                formatDisplayDateTime(t.finish)
-              ];
-              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(tLower));
-              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(tLower)) || false;
-              return fieldMatch || notesMatch;
-            });
-            return summariesMatch || taskMatches;
-          }
-        );
-        return isMatch;
-      });
-
-      const matchedLocations = Array.from(
-        new Set(matchedProjects.map(p => p.location).filter((loc): loc is string => !!loc && loc.trim() !== ''))
-      );
-      if (matchedLocations.length > 0) {
-        const currentLocs = globalLocationFilter || [];
-        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
-        if (!isSame) {
-          setGlobalLocationFilter(matchedLocations);
-        }
-      }
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [deferredSearchTerm, projects, tasksByProjectKey, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
-
   const delegationGroupByParentKey = useMemo(() => {
     const map = new Map<string, DelegationGroup>();
     delegationGroups.forEach(g => {
@@ -197,87 +116,6 @@ export function useDetailData({
 
   useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
 
-  // === Auto-clear stale filters when user changes Year / Store in Task Detail ===
-  const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
-
-  useEffect(() => {
-    const currentKey = `${globalYearFilter}_${effectiveStore}`;
-    if (prevYearStoreRef.current !== currentKey) {
-      prevYearStoreRef.current = currentKey;
-
-      // 1. Khi đổi Year hoặc Store: nếu đang có detailTabFilterCode / detailTabFocusTaskId của dự án thuộc Store/Year cũ thì xóa đi
-      const storeState = useAppStore.getState();
-      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
-        storeState.setDetailTabFilterCode('');
-        storeState.setDetailTabFocusTaskId('');
-        if (searchTerm && searchTerm === storeState.detailTabFilterCode) {
-          setSearchTerm('');
-        }
-      }
-
-      // 2. Kiểm tra xem globalLocationFilter hiện tại có hợp lệ với Store/Year mới không
-      const projectsInNewScope = projects.filter((p) => {
-        if (p.isDeleted) return false;
-        const pYear = p.year ? String(p.year) : null;
-        if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
-        if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
-        return true;
-      });
-
-      if (projectsInNewScope.length > 0) {
-        // Nếu location đang chọn không có dự án nào ở Store/Year mới -> reset location filter
-        if (globalLocationFilter.length > 0) {
-          const hasMatchingLoc = projectsInNewScope.some(
-            (p) => p.location && globalLocationFilter.includes(p.location)
-          );
-          if (!hasMatchingLoc) {
-            setGlobalLocationFilter([]);
-          }
-        }
-
-        // Nếu statusFilter đang khác 'all' mà làm ẩn toàn bộ dự án của Store/Year mới -> tự động mở về 'all'
-        if (statusFilter !== 'all') {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayTime = today.getTime();
-          const hasMatchingStatus = projectsInNewScope.some((p) => {
-            const info = getProjectInfo(p);
-            if (statusFilter === 'On process + Upcoming 3 days') {
-              if (info.status === 'On process') return true;
-              if (info.status === 'Upcoming') {
-                const dStart = parseDateTime(info.start);
-                if (dStart) {
-                  dStart.setHours(0, 0, 0, 0);
-                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
-                  return diffDays <= 3 && diffDays >= 0;
-                }
-              }
-              return false;
-            }
-            return info.status === statusFilter;
-          });
-          if (!hasMatchingStatus) {
-            setStatusFilter('all');
-            safeSetItemSession('taka_detail_status_filter', 'all');
-          }
-        }
-      }
-    }
-  }, [
-    globalYearFilter,
-    effectiveStore,
-    projects,
-    globalLocationFilter,
-    statusFilter,
-    searchTerm,
-    setGlobalLocationFilter,
-    setStatusFilter,
-    setSearchTerm,
-    getProjectInfo,
-  ]);
-
-  // Vị trí đang chọn nhưng không có dự án nào trong store/năm hiện tại thì bỏ qua,
-  // tránh bảng trống dù nhãn hiển thị "All Locations" (ví dụ vị trí STORE của HN còn sót khi chuyển sang HCM)
   const effectiveLocationFilter = useMemo(() => {
     if (globalLocationFilter.length === 0) return globalLocationFilter;
     const available = new Set<string>();
@@ -335,25 +173,8 @@ export function useDetailData({
             const summariesMatch = p.taskSummaries?.some(ts =>
               String(ts.name || "").toLowerCase().includes(term)
             ) || false;
-            const taskMatches = groupTasks.some((t, idx) => {
-              const taskFields = [
-                t.taskCodePhu,
-                `${p.code}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`,
-                t.name,
-                t.duration,
-                t.start,
-                t.finish,
-                t.party,
-                formatDisplayDateMain(t.start),
-                formatDisplayDateTime(t.start),
-                formatDisplayDateMain(t.finish),
-                formatDisplayDateTime(t.finish)
-              ];
-              const fieldMatch = taskFields.some(val => String(val || "").toLowerCase().includes(term));
-              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(term)) || false;
-              return fieldMatch || notesMatch;
-            });
-            return summariesMatch || taskMatches;
+            if (summariesMatch) return true;
+            return groupTasks.some((t, idx) => doesTaskMatchSearchTerm(t, idx, p.code, term));
           }
         );
         if (!isMatch) return false;
@@ -363,60 +184,27 @@ export function useDetailData({
     });
   }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
 
-  // Chẩn đoán: bảng trống dù store có dự án
-  useEffect(() => {
-    if (filteredProjects.length === 0 && projects.length > 0) {
-      console.warn('[Detail] 0 dự án sau khi lọc', {
-        totalProjects: projects.length,
-        year: globalYearFilter,
-        store: effectiveStore,
-        locationSelected: globalLocationFilter,
-        locationEffective: effectiveLocationFilter,
-        status: statusFilter,
-        search: deferredSearchTerm,
-      });
-    }
-  }, [filteredProjects.length, projects.length, globalYearFilter, effectiveStore, globalLocationFilter, effectiveLocationFilter, statusFilter, deferredSearchTerm]);
-
-  // Ensure visibleCount is large enough to render target project row
-  useEffect(() => {
-    if (!initialFilterCode) return;
-    const filterClean = String(initialFilterCode).trim().toUpperCase();
-    const projIdx = filteredProjects.findIndex(p => {
-      const pCode = String(p.code || '').trim().toUpperCase();
-      const pId = String(p.id || '').trim().toUpperCase();
-      return pId === filterClean || pCode === filterClean || (pCode && filterClean.startsWith(pCode));
-    });
-    if (projIdx >= 0 && projIdx >= visibleCount) {
-      setVisibleCount(projIdx + 25);
-    }
-  }, [initialFilterCode, filteredProjects, visibleCount]);
-
-  const prevVisibleIdsRef = useRef<string>("");
-  useEffect(() => {
-    const targetProjects = filteredProjects.length > 0
-      ? filteredProjects.slice(0, visibleCount)
-      : projects.filter(p => {
-          const pYear = p.year ? String(p.year) : null;
-          if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return false;
-          if (effectiveStore !== 'all' && p.store !== effectiveStore) return false;
-          if (globalLocationFilter.length > 0 && (!p.location || !globalLocationFilter.includes(p.location))) return false;
-          return true;
-        }).slice(0, visibleCount);
-
-    const visibleIds = targetProjects.map(p => String(p.id || p.no));
-    const idsKey = visibleIds.join(',');
-    if (prevVisibleIdsRef.current !== idsKey) {
-      prevVisibleIdsRef.current = idsKey;
-      setVisibleActiveProjectIds(visibleIds);
-    }
-  }, [filteredProjects, projects, visibleCount, globalYearFilter, effectiveStore, globalLocationFilter, setVisibleActiveProjectIds]);
-
-  useEffect(() => {
-    return () => {
-      useAppStore.getState().setVisibleActiveProjectIds([]);
-    };
-  }, []);
+  useDetailFilterSync({
+    projects,
+    filteredProjects,
+    tasksByProjectKey,
+    getProjectInfo,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    effectiveLocationFilter,
+    initialFilterCode,
+    visibleCount,
+    setVisibleCount,
+    setVisibleActiveProjectIds,
+  });
 
   const allVisibleTaskIds = useMemo(() => {
     return filteredProjects.slice(0, visibleCount).flatMap(p => {

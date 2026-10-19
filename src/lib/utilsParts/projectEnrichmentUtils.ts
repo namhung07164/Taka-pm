@@ -12,6 +12,7 @@ import {
 } from "./progressAndStatusUtils";
 
 // Module-level cache for zero-cost multi-component calls to enrichProjects
+const EMPTY_DELEGATION_GROUPS: DelegationGroup[] = [];
 let _lastProjectsRef: Project[] | null = null;
 let _lastTasksRef: Task[] | null = null;
 let _lastDelegationRef: DelegationGroup[] | null = null;
@@ -20,12 +21,15 @@ let _lastEnrichedResult: Project[] | null = null;
 export function enrichProjects(
   projects: Project[], 
   tasks: Task[], 
-  delegationGroups: DelegationGroup[] = []
+  delegationGroups: DelegationGroup[] = EMPTY_DELEGATION_GROUPS
 ): Project[] {
+  const normDelegations =
+    delegationGroups && delegationGroups.length > 0 ? delegationGroups : EMPTY_DELEGATION_GROUPS;
+
   if (
     _lastProjectsRef === projects &&
     _lastTasksRef === tasks &&
-    _lastDelegationRef === delegationGroups &&
+    _lastDelegationRef === normDelegations &&
     _lastEnrichedResult
   ) {
     return _lastEnrichedResult;
@@ -62,6 +66,48 @@ export function enrichProjects(
     });
   });
 
+  // Pre-index delegationGroups in O(D) to eliminate O(P * D) scans per project
+  const delegationsByProjectId = new Map<string, DelegationGroup[]>();
+  const delegationsByParentTaskId = new Map<string, DelegationGroup[]>();
+  const delegationsByCodePart = new Map<string, DelegationGroup[]>();
+
+  for (let i = 0; i < normDelegations.length; i++) {
+    const g = normDelegations[i];
+    if (!g || g.isDeleted) continue;
+    if (g.projectId) {
+      const gPid = String(g.projectId).trim();
+      let list = delegationsByProjectId.get(gPid);
+      if (!list) {
+        list = [];
+        delegationsByProjectId.set(gPid, list);
+      }
+      list.push(g);
+    }
+    if (g.parentTaskId) {
+      const pTid = String(g.parentTaskId).trim();
+      let list = delegationsByParentTaskId.get(pTid);
+      if (!list) {
+        list = [];
+        delegationsByParentTaskId.set(pTid, list);
+      }
+      list.push(g);
+    }
+    if (g.projectCode) {
+      const gCode = String(g.projectCode).trim().toLowerCase();
+      const gCodeParts = gCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+      const codes = gCodeParts.length > 0 ? gCodeParts : [gCode];
+      for (let cIdx = 0; cIdx < codes.length; cIdx++) {
+        const c = codes[cIdx];
+        let list = delegationsByCodePart.get(c);
+        if (!list) {
+          list = [];
+          delegationsByCodePart.set(c, list);
+        }
+        list.push(g);
+      }
+    }
+  }
+
   const enrichedProjects = projects.map((p) => {
     const pId = p.id ? String(p.id).trim() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
@@ -97,6 +143,30 @@ export function enrichProjects(
     }
 
     const projectTasks = Array.from(matchedTaskMap.values());
+
+    // Gather candidate delegation groups for this project in O(1)
+    let candidateDelegations: DelegationGroup[] = EMPTY_DELEGATION_GROUPS;
+    if (normDelegations.length > 0) {
+      const candSet = new Set<DelegationGroup>();
+      if (pId) {
+        const byPid = delegationsByProjectId.get(pId);
+        if (byPid) for (let i = 0; i < byPid.length; i++) candSet.add(byPid[i]);
+      }
+      for (let i = 0; i < projectTasks.length; i++) {
+        const tId = projectTasks[i].id;
+        if (tId) {
+          const byTid = delegationsByParentTaskId.get(String(tId).trim());
+          if (byTid) for (let j = 0; j < byTid.length; j++) candSet.add(byTid[j]);
+        }
+      }
+      for (let i = 0; i < pCodeParts.length; i++) {
+        const byCode = delegationsByCodePart.get(pCodeParts[i]);
+        if (byCode) for (let j = 0; j < byCode.length; j++) candSet.add(byCode[j]);
+      }
+      if (candSet.size > 0) {
+        candidateDelegations = Array.from(candSet);
+      }
+    }
 
     const sortedProjTasks = [...projectTasks].sort((a, b) => {
       const codeA = a.taskCodePhu || '';
@@ -237,7 +307,7 @@ export function enrichProjects(
           : (taskSummaries.length > 0 ? computePlanProgressFromSummaries(taskSummaries) : (p.computedPlanProgress ?? 0)));
 
     const actProgressPercent = isAuthoritativeRealTasks && projectTasks.length > 0
-      ? computeActProgressPercent(projectTasks, delegationGroups)
+      ? computeActProgressPercent(projectTasks, candidateDelegations)
       : (p.computedActProgress && p.computedActProgress > 0 
           ? p.computedActProgress 
           : (taskSummaries.length > 0 ? computeActProgressFromSummaries(taskSummaries) : (p.computedActProgress ?? 0)));
@@ -249,7 +319,7 @@ export function enrichProjects(
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const actStatus = computeProjectActStatus(
       { ...p, computedStatus: status, computedActProgress: actProgressPercent },
-      delegationGroups,
+      candidateDelegations,
       projectTasks
     );
 
@@ -279,6 +349,18 @@ export function enrichProjects(
   today.setHours(0, 0, 0, 0);
   const todayTime = today.getTime();
 
+  // Pre-compute finish timestamps in O(P) for 'On process' projects before sorting
+  const onProcessFinishDiffMap = new WeakMap<Project, number>();
+  for (let i = 0; i < enrichedProjects.length; i++) {
+    const ep = enrichedProjects[i];
+    if ((ep.computedStatus || 'Upcoming') === 'On process') {
+      const parsed = parseDateTime(ep.computedTakCompl || ep.computedOpening || ep.opening || '9999-12-31');
+      if (parsed) {
+        onProcessFinishDiffMap.set(ep, Math.abs(parsed.getTime() - todayTime));
+      }
+    }
+  }
+
   enrichedProjects.sort((a, b) => {
     const statusA = a.computedStatus || 'Upcoming';
     const statusB = b.computedStatus || 'Upcoming';
@@ -291,14 +373,10 @@ export function enrichProjects(
     }
 
     if (statusA === 'On process') {
-      const finishA = parseDateTime(a.computedTakCompl || a.computedOpening || a.opening || '9999-12-31');
-      const finishB = parseDateTime(b.computedTakCompl || b.computedOpening || b.opening || '9999-12-31');
-      if (finishA && finishB) {
-        const diffA = Math.abs(finishA.getTime() - todayTime);
-        const diffB = Math.abs(finishB.getTime() - todayTime);
-        if (diffA !== diffB) {
-          return diffA - diffB;
-        }
+      const diffA = onProcessFinishDiffMap.get(a);
+      const diffB = onProcessFinishDiffMap.get(b);
+      if (diffA !== undefined && diffB !== undefined && diffA !== diffB) {
+        return diffA - diffB;
       }
     }
 
@@ -313,7 +391,7 @@ export function enrichProjects(
 
   _lastProjectsRef = projects;
   _lastTasksRef = tasks;
-  _lastDelegationRef = delegationGroups;
+  _lastDelegationRef = normDelegations;
   _lastEnrichedResult = enrichedProjects;
 
   return enrichedProjects;
