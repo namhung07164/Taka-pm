@@ -355,7 +355,10 @@ const checkAccessLocally = useCallback((data: any): boolean => {
       } else if (searchTab === 'cost') {
         useAppStore.getState().setCostTabSearchTerm(searchQuery);
       } else if (searchTab === 'gantt') {
-        useAppStore.getState().setGanttSearchTerm(searchQuery);
+        useAppStore.getState().setGanttTabFilterProjectId(searchQuery);
+        try {
+          sessionStorage.setItem("taka_gantt_search", searchQuery);
+        } catch {}
       }
 
       handleTabChange(searchTab);

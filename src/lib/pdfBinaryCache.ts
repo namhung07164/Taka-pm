@@ -80,6 +80,10 @@ function openThumbIdb(): Promise<IDBDatabase | null> {
           db.createObjectStore(IDB_BINARY_STORE);
         }
       };
+      req.onblocked = () => {
+        idbPromise = null;
+        resolve(null);
+      };
       req.onsuccess = () => {
         const db = req.result;
         db.onclose = () => { idbPromise = null; };
@@ -93,6 +97,12 @@ function openThumbIdb(): Promise<IDBDatabase | null> {
         idbPromise = null;
         resolve(null);
       };
+      // Timeout guard: never hang indefinitely if IDB open is blocked or slow
+      setTimeout(() => {
+        if (idbPromise) {
+          resolve(null);
+        }
+      }, 500);
     } catch {
       idbPromise = null;
       resolve(null);

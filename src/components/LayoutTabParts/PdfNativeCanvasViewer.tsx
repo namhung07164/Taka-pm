@@ -48,6 +48,12 @@ export function PdfNativeCanvasViewer({
   const activePdfRef = useRef<any>(null);
   const loadingTaskRef = useRef<any>(null);
 
+  const prevUrlRef = useRef<string | null>(null);
+  const onFallbackToIframeRef = useRef(onFallbackToIframe);
+  useEffect(() => {
+    onFallbackToIframeRef.current = onFallbackToIframe;
+  }, [onFallbackToIframe]);
+
   const initialThumbPlaceholder = getCachedPageThumbSync(url, 1);
   const pageCacheRef = useRef<Map<number, PdfCanvasCacheEntry>>(new Map());
 
@@ -57,16 +63,22 @@ export function PdfNativeCanvasViewer({
 
   useEffect(() => {
     let isMounted = true;
+    const isNewUrl = prevUrlRef.current !== url;
+    prevUrlRef.current = url;
+
     setIsLoading(true);
     setError(null);
     setLoadingProgress(15);
-    setPdfDoc(null);
-    setCurrentPage(1);
-    setPageInput('1');
-    setZoomScale(1);
-    clearPageCache();
 
-    if (activePdfRef.current) {
+    if (isNewUrl) {
+      setPdfDoc(null);
+      setCurrentPage(1);
+      setPageInput('1');
+      setZoomScale(1);
+      clearPageCache();
+    }
+
+    if (activePdfRef.current && isNewUrl) {
       try {
         activePdfRef.current.cleanup?.();
         activePdfRef.current.destroy?.();
@@ -132,13 +144,12 @@ export function PdfNativeCanvasViewer({
         setShowThumbnails(doc.numPages > 1);
         setIsLoading(false);
         setLoadingProgress(100);
-      } catch (err) {
+      } catch (err: any) {
         if (!isMounted) return;
-        console.warn('Native PDF loading failed:', err);
-        if (onFallbackToIframe) {
-          onFallbackToIframe();
+        if (err?.name === 'RenderingCancelledException' || err?.name === 'AbortException') {
           return;
         }
+        console.warn('Native PDF loading failed:', err);
         setError('Cannot load PDF directly in canvas (CORS or permissions).');
         setIsLoading(false);
       }
@@ -167,7 +178,7 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = null;
       }
     };
-  }, [url, onFallbackToIframe, clearPageCache]);
+  }, [url, clearPageCache]);
 
   const renderSeqRef = useRef<number>(0);
 
@@ -347,8 +358,8 @@ export function PdfNativeCanvasViewer({
           The document server prevents direct binary access. You can use embedded mode or open in a new window.
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          {onFallbackToIframe && (
-            <button type="button" onClick={onFallbackToIframe} className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
+          {onFallbackToIframeRef.current && (
+            <button type="button" onClick={() => onFallbackToIframeRef.current?.()} className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
               <RefreshCw className="w-3.5 h-3.5" /> Switch to Embed Viewer
             </button>
           )}

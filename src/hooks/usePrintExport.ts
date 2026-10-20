@@ -95,7 +95,7 @@ export function usePrintExport(printFilteredData: any) {
     let estimatedGanttHeight = 800;
 
     const ganttElem = document.getElementById('gantt-export-area');
-    if (ganttElem && ganttElem.scrollWidth > 500 && printRangeType === 'all') {
+    if (ganttElem && ganttElem.scrollWidth > 500 && printRangeType === 'entire') {
       estimatedGanttWidth = ganttElem.scrollWidth;
       estimatedGanttHeight = ganttElem.scrollHeight;
     } else {

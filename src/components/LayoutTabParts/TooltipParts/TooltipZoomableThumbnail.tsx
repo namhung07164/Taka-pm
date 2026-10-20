@@ -24,20 +24,26 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
   const [fallbackImgSrc, setFallbackImgSrc] = useState<string | null>(null);
   const [triedProxyFallback, setTriedProxyFallback] = useState(false);
   const [triedPdfFallback, setTriedPdfFallback] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(0);
 
   const driveId = useMemo(() => extractDriveIdFromUrl(img.url), [img.url]);
 
-  // For Google Drive links, use same-origin server proxy (/api/drive-thumb) first to bypass iOS Safari ITP blocks
-  const thumbnailSrc = useMemo(() => {
+  // For Google Drive links, provide multi-tier candidates (Google CDN -> LH3 CDN -> Server Proxy)
+  const thumbnailCandidates = useMemo(() => {
     if (driveId) {
-      return `/api/drive-thumb?id=${driveId}&sz=w400`;
+      return [
+        `https://drive.google.com/thumbnail?id=${driveId}&sz=w400`,
+        `https://lh3.googleusercontent.com/d/${driveId}=w400`,
+        `/api/drive-thumb?id=${driveId}&sz=w400`,
+      ];
     }
-    return normalizeImageUrl(img.url, 'w400');
+    const normalized = normalizeImageUrl(img.url, 'w400');
+    return normalized ? [normalized] : [];
   }, [img.url, driveId]);
 
   const isDirectPdfFile = useMemo(() => {
     const u = (img.url || '').toLowerCase();
-    if (driveId) return false; // Drive uses /api/drive-thumb first, then falls back to PDF generator if needed
+    if (driveId) return false; // Drive uses fast image thumbnail candidates first
     return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
   }, [img.url, driveId]);
 
@@ -53,6 +59,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     setFallbackImgSrc(null);
     setTriedProxyFallback(false);
     setTriedPdfFallback(false);
+    setCandidateIndex(0);
 
     const cached = getCachedPdfThumbnail(img.url);
     if (cached) {
@@ -173,7 +180,8 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     });
   };
 
-  const effectiveImageSrc = pdfThumbSrc || fallbackImgSrc || (isDirectPdfFile ? null : thumbnailSrc);
+  const currentCandidate = thumbnailCandidates[candidateIndex] || null;
+  const effectiveImageSrc = pdfThumbSrc || fallbackImgSrc || (isDirectPdfFile ? null : currentCandidate);
 
   return (
     <div
@@ -202,6 +210,12 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
           loading="lazy"
           decoding="async"
           onError={() => {
+            // Stage 0 Fallback for Google Drive: Try next candidate (Google CDN -> LH3 CDN -> Server Proxy)
+            if (driveId && candidateIndex < thumbnailCandidates.length - 1) {
+              setCandidateIndex((prev) => prev + 1);
+              return;
+            }
+
             // Stage 1 Fallback: For non-Drive HTTP URLs, try /api/pdf-proxy in case of CORS/ISP block
             const normalized = normalizeImageUrl(img.url, 'w400');
             if (!triedProxyFallback && !driveId && /^https?:\/\//i.test(normalized)) {
@@ -209,6 +223,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
               setFallbackImgSrc(`/api/pdf-proxy?url=${encodeURIComponent(normalized)}`);
               return;
             }
+
             // Stage 2 Fallback: Render Page 1 via PDF.js (handles Drive PDFs without thumb & R2 PDFs)
             if (!triedPdfFallback && !pdfThumbSrc && !isPdfThumbLoading) {
               setTriedPdfFallback(true);

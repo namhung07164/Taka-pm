@@ -99,6 +99,11 @@ export function LayoutUnitLightboxModal({
     }
   }, []);
 
+  const handleFallbackToIframe = useCallback(() => {
+    setUseIframeFallback(true);
+  }, []);
+
+
   const handleImageError = useCallback(() => {
     if (driveFileId && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
@@ -305,7 +310,7 @@ export function LayoutUnitLightboxModal({
                 <PdfNativeCanvasViewer
                   url={effectivePdfSourceUrl}
                   isFullscreen={isFullDisplay}
-                  onFallbackToIframe={() => setUseIframeFallback(true)}
+                  onFallbackToIframe={handleFallbackToIframe}
                 />
               </div>
             )
