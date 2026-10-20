@@ -50,6 +50,10 @@ export const PdfPageThumbnailStrip: React.FC<PdfPageThumbnailStripProps> = React
     let cancelled = false;
 
     (async () => {
+      // Yield to main page render first (180ms) so main canvas renders at 60 FPS without PDF.js worker contention
+      await new Promise((r) => setTimeout(r, 180));
+      if (cancelled) return;
+
       // Prioritize currentPage and nearby pages first, then remaining pages
       const order: number[] = [];
       const seen = new Set<number>();
@@ -79,14 +83,23 @@ export const PdfPageThumbnailStrip: React.FC<PdfPageThumbnailStripProps> = React
         }
 
         // 2. Yield to UI frame before rendering thumbnail
-        await new Promise((r) => setTimeout(r, 25));
+        await new Promise((r) => setTimeout(r, 35));
         if (cancelled) return;
 
-        const rendered = await renderPdfPageToThumbDataUrl(pdfDoc, pageNum, 220);
-        if (cancelled) return;
-        if (rendered) {
-          setCachedPageThumb(url, pageNum, rendered);
-          setThumbs((prev) => ({ ...prev, [pageNum]: rendered }));
+        try {
+          const rendered = await renderPdfPageToThumbDataUrl(pdfDoc, pageNum, 220);
+          if (cancelled) return;
+          if (rendered) {
+            setCachedPageThumb(url, pageNum, rendered);
+            setThumbs((prev) => ({ ...prev, [pageNum]: rendered }));
+          } else {
+            // Prevent infinite spinner on iOS/memory constrained devices: mark as placeholder
+            setThumbs((prev) => (prev[pageNum] ? prev : { ...prev, [pageNum]: '__placeholder__' }));
+          }
+        } catch {
+          if (!cancelled) {
+            setThumbs((prev) => (prev[pageNum] ? prev : { ...prev, [pageNum]: '__placeholder__' }));
+          }
         }
       }
     })();
@@ -131,7 +144,7 @@ export const PdfPageThumbnailStrip: React.FC<PdfPageThumbnailStripProps> = React
             title={`Go to Page ${pageNum}`}
           >
             <div className="w-14 h-18 sm:w-16 sm:h-20 rounded bg-white overflow-hidden flex items-center justify-center relative">
-              {thumbSrc ? (
+              {thumbSrc && thumbSrc !== '__placeholder__' ? (
                 <img
                   src={thumbSrc}
                   alt={`Page ${pageNum}`}
@@ -140,6 +153,10 @@ export const PdfPageThumbnailStrip: React.FC<PdfPageThumbnailStripProps> = React
                   draggable={false}
                   className="w-full h-full object-contain select-none"
                 />
+              ) : thumbSrc === '__placeholder__' ? (
+                <div className="flex flex-col items-center justify-center gap-1 text-slate-400">
+                  <FileText className="w-5 h-5 text-slate-400" />
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center gap-1 text-slate-400">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />

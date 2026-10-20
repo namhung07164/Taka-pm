@@ -7,9 +7,8 @@ import { PdfPageThumbnailStrip } from './PdfPageThumbnailStrip';
 import {
   fetchPdfBinaryUnified,
   getCachedPageThumbSync,
+  setCachedPageThumb,
   normalizePdfSourceUrl,
-  renderPdfPageToCanvasEntry,
-  PdfCanvasCacheEntry,
 } from '../../lib/pdfBinaryCache';
 
 export interface PdfNativeCanvasViewerProps {
@@ -55,11 +54,6 @@ export function PdfNativeCanvasViewer({
   }, [onFallbackToIframe]);
 
   const initialThumbPlaceholder = getCachedPageThumbSync(url, 1);
-  const pageCacheRef = useRef<Map<number, PdfCanvasCacheEntry>>(new Map());
-
-  const clearPageCache = useCallback(() => {
-    pageCacheRef.current.clear();
-  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -75,7 +69,6 @@ export function PdfNativeCanvasViewer({
       setCurrentPage(1);
       setPageInput('1');
       setZoomScale(1);
-      clearPageCache();
     }
 
     if (activePdfRef.current && isNewUrl) {
@@ -150,6 +143,11 @@ export function PdfNativeCanvasViewer({
           return;
         }
         console.warn('Native PDF loading failed:', err);
+        // Seamlessly fallback to embedded iframe viewer if available (e.g. Google Drive auth or restricted CORS)
+        if (onFallbackToIframeRef.current) {
+          onFallbackToIframeRef.current();
+          return;
+        }
         setError('Cannot load PDF directly in canvas (CORS or permissions).');
         setIsLoading(false);
       }
@@ -165,7 +163,6 @@ export function PdfNativeCanvasViewer({
         try { loadingTaskRef.current.destroy?.(); } catch {}
         loadingTaskRef.current = null;
       }
-      clearPageCache();
       if (canvasRef.current) {
         canvasRef.current.width = 0;
         canvasRef.current.height = 0;
@@ -178,106 +175,118 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = null;
       }
     };
-  }, [url, clearPageCache]);
+  }, [url]);
 
   const renderSeqRef = useRef<number>(0);
 
-  const renderPageToCacheEntry = useCallback(
-    async (pageNum: number) => {
-      if (!pdfDoc) return null;
-      const availWidth = Math.max(260, (containerRef.current?.clientWidth || window.innerWidth) - 24);
-      const availHeight = Math.max(260, (containerRef.current?.clientHeight || window.innerHeight) - (showThumbnails ? 155 : 80));
-      const entry = await renderPdfPageToCanvasEntry({
-        pdfDoc,
-        pageNum,
-        availWidth,
-        availHeight,
-        maxDimension: MAX_CANVAS_DIMENSION,
-        url,
-        onRenderTask: (task) => { renderTaskRef.current = task; },
-      });
-      if (entry) {
-        if (pageCacheRef.current.size >= 8) {
-          const oldestKey = pageCacheRef.current.keys().next().value;
-          if (oldestKey !== undefined) pageCacheRef.current.delete(oldestKey);
-        }
-        pageCacheRef.current.set(pageNum, entry);
-      }
-      return entry;
-    },
-    [pdfDoc, showThumbnails, url]
-  );
-
-  // Render active page to visible canvas (0ms from cache or fresh render + adjacent page pre-render)
+  // Render active page directly to visible DOM canvas (rock-solid across iOS Safari, iPad, and Desktop)
   const renderPage = useCallback(
     async (pageNum: number) => {
       if (!pdfDoc || !canvasRef.current) return;
       const seq = ++renderSeqRef.current;
       const canvas = canvasRef.current;
-      const context = canvas.getContext('2d', { alpha: false });
-      if (!context) return;
 
-      const drawEntryToCanvas = (entry: {
-        canvas: HTMLCanvasElement;
-        width: number;
-        height: number;
-        cssWidth: number;
-        cssHeight: number;
-      }) => {
-        canvas.width = entry.width;
-        canvas.height = entry.height;
-        canvas.style.width = `${entry.cssWidth}px`;
-        canvas.style.height = `${entry.cssHeight}px`;
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, entry.width, entry.height);
-        context.drawImage(entry.canvas, 0, 0);
-      };
-
-      const cached = pageCacheRef.current.get(pageNum);
-      if (cached) {
-        if (renderTaskRef.current) {
-          try { renderTaskRef.current.cancel(); } catch {}
-          renderTaskRef.current = null;
-        }
-        drawEntryToCanvas(cached);
-        setIsRendering(false);
-      } else {
-        if (renderTaskRef.current) {
-          const prevTask = renderTaskRef.current;
-          renderTaskRef.current = null;
-          try {
-            prevTask.cancel();
-            await prevTask.promise;
-          } catch {}
-        }
-        if (seq !== renderSeqRef.current || !canvasRef.current) return;
-        setIsRendering(true);
+      // Cancel previous in-flight render task if any
+      if (renderTaskRef.current) {
         try {
-          const entry = await renderPageToCacheEntry(pageNum);
-          if (seq === renderSeqRef.current && entry && canvasRef.current) {
-            drawEntryToCanvas(entry);
-          }
-        } catch (err: any) {
-          if (err?.name !== 'RenderingCancelledException') {
-            console.error('PDF page render error:', err);
-          }
-        } finally {
-          if (seq === renderSeqRef.current) {
-            setIsRendering(false);
-          }
-        }
+          renderTaskRef.current.cancel();
+        } catch {}
+        renderTaskRef.current = null;
       }
 
-      // Silently pre-render next page (pageNum + 1) in idle time for instant 0ms page flip
-      if (seq === renderSeqRef.current && pageNum < numPages && !pageCacheRef.current.has(pageNum + 1)) {
-        setTimeout(() => {
-          if (seq === renderSeqRef.current && !pageCacheRef.current.has(pageNum + 1)) {
-            renderPageToCacheEntry(pageNum + 1).catch(() => {});
-          }
-        }, 120);
+      setIsRendering(true);
+
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        if (seq !== renderSeqRef.current || !canvasRef.current) {
+          try { page.cleanup?.(); } catch {}
+          return;
+        }
+
+        const availWidth = Math.max(260, (containerRef.current?.clientWidth || window.innerWidth) - 24);
+        const availHeight = Math.max(260, (containerRef.current?.clientHeight || window.innerHeight) - (showThumbnails ? 155 : 80));
+
+        const unscaled = page.getViewport({ scale: 1 });
+        const fitScale = Math.min(
+          availWidth / Math.max(1, unscaled.width),
+          availHeight / Math.max(1, unscaled.height),
+          2.5
+        );
+
+        // Cap DPR at 2 for crisp Retina display while preventing iOS WebKit canvas memory crashes
+        const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
+        const maxDpr = MAX_CANVAS_DIMENSION / Math.max(unscaled.width * fitScale, unscaled.height * fitScale, 1);
+        const dpr = Math.max(1, Math.min(rawDpr, maxDpr));
+
+        const viewport = page.getViewport({ scale: fitScale * dpr });
+        const pixelWidth = Math.max(1, Math.floor(viewport.width));
+        const pixelHeight = Math.max(1, Math.floor(viewport.height));
+        const cssWidth = Math.max(1, Math.floor(viewport.width / dpr));
+        const cssHeight = Math.max(1, Math.floor(viewport.height / dpr));
+
+        // 1. Set dimensions on DOM canvas FIRST to ensure clean GPU reallocation
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
+
+        // 2. Obtain fresh 2D context AFTER dimension change (critical for iOS Safari)
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) {
+          try { page.cleanup?.(); } catch {}
+          return;
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pixelWidth, pixelHeight);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // 3. Render directly into visible canvas
+        const task = page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+        });
+        renderTaskRef.current = task;
+
+        await task.promise;
+        try { page.cleanup?.(); } catch {}
+
+        // 4. Save rendered thumbnail to cache for instant filmstrip display
+        if (!getCachedPageThumbSync(url, pageNum)) {
+          setTimeout(() => {
+            try {
+              const thumbRatio = Math.min(1, 260 / Math.max(pixelWidth, pixelHeight, 1));
+              const tCanvas = document.createElement('canvas');
+              tCanvas.width = Math.max(1, Math.round(pixelWidth * thumbRatio));
+              tCanvas.height = Math.max(1, Math.round(pixelHeight * thumbRatio));
+              const tCtx = tCanvas.getContext('2d', { alpha: false });
+              if (tCtx) {
+                tCtx.fillStyle = '#ffffff';
+                tCtx.fillRect(0, 0, tCanvas.width, tCanvas.height);
+                tCtx.drawImage(canvas, 0, 0, tCanvas.width, tCanvas.height);
+                const thumbData = tCanvas.toDataURL('image/jpeg', 0.8);
+                if (thumbData && thumbData.length > 64) {
+                  setCachedPageThumb(url, pageNum, thumbData);
+                }
+              }
+              tCanvas.width = 0;
+              tCanvas.height = 0;
+            } catch {}
+          }, 30);
+        }
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.error('PDF page render error:', err);
+        }
+      } finally {
+        if (seq === renderSeqRef.current) {
+          setIsRendering(false);
+          renderTaskRef.current = null;
+        }
       }
     },
-    [pdfDoc, numPages, renderPageToCacheEntry]
+    [pdfDoc, showThumbnails, url]
   );
 
   useEffect(() => {
@@ -330,7 +339,6 @@ export function PdfNativeCanvasViewer({
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         if (pdfDoc && currentPage) {
-          clearPageCache();
           renderPage(currentPage);
         }
       }, 150);
@@ -340,7 +348,7 @@ export function PdfNativeCanvasViewer({
       if (timer) clearTimeout(timer);
       observer.disconnect();
     };
-  }, [pdfDoc, currentPage, renderPage, clearPageCache]);
+  }, [pdfDoc, currentPage, renderPage]);
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
