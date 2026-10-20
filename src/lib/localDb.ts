@@ -467,9 +467,6 @@ export async function getLocalDelegationsForTasks(taskIds: string[]): Promise<De
   }
 }
 
-/**
- * Đọc giá trị metadata đồng bộ
- */
 export async function getLocalSyncMeta(key: string): Promise<string | null> {
   try {
     const record = await localDb.syncMeta.get(key);
@@ -479,24 +476,14 @@ export async function getLocalSyncMeta(key: string): Promise<string | null> {
   }
 }
 
-/**
- * Ghi giá trị metadata đồng bộ
- */
 export async function setLocalSyncMeta(key: string, value: string): Promise<void> {
   try {
-    await localDb.syncMeta.put({
-      key,
-      value,
-      updatedAt: Date.now(),
-    });
+    await localDb.syncMeta.put({ key, value, updatedAt: Date.now() });
   } catch (err) {
     console.warn('[localDb] setLocalSyncMeta error:', err);
   }
 }
 
-/**
- * Xóa sạch toàn bộ dữ liệu Dexie IndexedDB (dành cho Resync Cache)
- */
 export async function clearDexieDatabase(): Promise<void> {
   try {
     await Promise.all([

@@ -471,30 +471,25 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
         const footerY = pdfPageHeight - 4;
         pdf.setFontSize(7.5);
         pdf.setTextColor(130, 130, 130);
-        let footerLeftText = `Page ${pageCount + 1} of ${totalPages}`;
-        if (printDate) {
-          footerLeftText += ` • Printed: ${new Date().toLocaleString()}`;
-        }
+        const footerLeftText = printDate
+          ? `Page ${pageCount + 1} of ${totalPages} • Printed: ${new Date().toLocaleString()}`
+          : `Page ${pageCount + 1} of ${totalPages}`;
         pdf.text(footerLeftText, margin, footerY);
 
-        // Status Indicators for Gantt
         if (activeTab === 'gantt') {
-          let currentLegendX = pdfPageWidth - margin - 18;
-          pdf.text("Completed", currentLegendX, footerY);
-          pdf.setFillColor(34, 197, 94);
-          pdf.rect(currentLegendX - 4, footerY - 2.5, 3, 3, 'F');
-
-          currentLegendX -= 24;
-          pdf.text("In Process", currentLegendX, footerY);
-          pdf.setFillColor(59, 130, 246);
-          pdf.rect(currentLegendX - 4, footerY - 2.5, 3, 3, 'F');
-
-          currentLegendX -= 22;
-          pdf.text("Upcoming", currentLegendX, footerY);
-          pdf.setFillColor(100, 116, 139);
-          pdf.rect(currentLegendX - 4, footerY - 2.5, 3, 3, 'F');
+          const legends: [string, number, [number, number, number]][] = [
+            ["Completed", 18, [34, 197, 94]],
+            ["In Process", 24, [59, 130, 246]],
+            ["Upcoming", 22, [100, 116, 139]],
+          ];
+          let currentLegendX = pdfPageWidth - margin;
+          for (const [label, offset, [rCol, gCol, bCol]] of legends) {
+            currentLegendX -= offset;
+            pdf.text(label, currentLegendX, footerY);
+            pdf.setFillColor(rCol, gCol, bCol);
+            pdf.rect(currentLegendX - 4, footerY - 2.5, 3, 3, 'F');
+          }
         }
-
         pageCount++;
       }
     }

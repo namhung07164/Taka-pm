@@ -5,7 +5,8 @@ import { computeTaskCode } from "../../lib/ganttUtils";
 import { extractFloorFromCodeOrName } from "../../lib/layoutUnitFinder";
 import { undoManager } from "../../lib/undoManager";
 import { triggerChangeFlash } from "../../lib/changeFlashService";
-import { AppRole, Project, TabId, Task } from "../../types";
+import { Project, TabId, Task } from "../../types";
+import { useAppKeyboardAndTouch } from "./useAppKeyboardAndTouch";
 
 interface UseAppNavigationAndShortcutsParams {
   projects: Project[];
@@ -20,6 +21,7 @@ export function useAppNavigationAndShortcuts({
   visibleTabs,
   isAppReadyRef,
 }: UseAppNavigationAndShortcutsParams) {
+  void visibleTabs;
   const currentUser = useAppStore((state) => state.currentUser)!;
   const activeTab = useAppStore((state) => state.activeTab);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
@@ -36,20 +38,6 @@ export function useAppNavigationAndShortcuts({
   const triggerGanttToday = useAppStore((state) => state.triggerGanttToday);
   const undoStack = useAppStore((state) => state.undoStack);
   const redoStack = useAppStore((state) => state.redoStack);
-  const isFocusMode = useAppStore((state) => state.isFocusMode);
-  const setIsFocusMode = useAppStore((state) => state.setIsFocusMode);
-  const isPrintPreview = useAppStore((state) => state.isPrintPreview);
-  const setIsPrintPreview = useAppStore((state) => state.setIsPrintPreview);
-  const toast = useAppStore((state) => state.toast);
-  const setToast = useAppStore((state) => state.setToast);
-  const setEditingProject = useAppStore((state) => state.setEditingProject);
-  const setEditingTask = useAppStore((state) => state.setEditingTask);
-  const setIsReadOnlyModal = useAppStore((state) => state.setIsReadOnlyModal);
-  const setModalInitialTab = useAppStore((state) => state.setModalInitialTab);
-  const setIsProjectModalOpen = useAppStore((state) => state.setIsProjectModalOpen);
-  const setIsTaskModalOpen = useAppStore((state) => state.setIsTaskModalOpen);
-  const setPrefillProjectCode = useAppStore((state) => state.setPrefillProjectCode);
-  const setPrefillProjectYear = useAppStore((state) => state.setPrefillProjectYear);
 
   // 15-minute inactivity reset check for location filter
   useEffect(() => {
@@ -427,236 +415,14 @@ export function useAppNavigationAndShortcuts({
     handleDataRedoRef.current = handleDataRedo;
   });
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeElement = document.activeElement;
-      const isTyping =
-        activeElement &&
-        (activeElement.tagName === "INPUT" ||
-          activeElement.tagName === "TEXTAREA" ||
-          (activeElement as HTMLElement).isContentEditable);
-
-      if (e.key === "Escape") {
-        if (isPrintPreview) {
-          setIsPrintPreview(false);
-          return;
-        }
-        if (toast) {
-          setToast(null);
-        }
-        const state = useAppStore.getState();
-        if (state.isProjectModalOpen) state.setIsProjectModalOpen(false);
-        if (state.isTaskModalOpen) state.setIsTaskModalOpen(false);
-        if (state.isUserModalOpen) state.setIsUserModalOpen(false);
-        if (state.isLoginModalOpen) state.setIsLoginModalOpen(false);
-        if (activeElement && typeof (activeElement as HTMLElement).blur === "function") {
-          (activeElement as HTMLElement).blur();
-        }
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        const state = useAppStore.getState();
-        state.setIsCommandPaletteOpen(!state.isCommandPaletteOpen);
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
-        if (!isTyping) {
-          e.preventDefault();
-          handleDataUndoRef.current?.();
-        }
-        return;
-      }
-
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))
-      ) {
-        if (!isTyping) {
-          e.preventDefault();
-          handleDataRedoRef.current?.();
-        }
-        return;
-      }
-
-      if (e.shiftKey && e.key.toUpperCase() === "F" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (!isTyping) {
-          e.preventDefault();
-          setIsFocusMode(!isFocusMode);
-        }
-        return;
-      }
-
-      if (isTyping) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      if (e.key === "/") {
-        e.preventDefault();
-        const globalSearchInput = document.querySelector<HTMLInputElement>(
-          'input[data-global-search-input="true"]'
-        );
-        if (globalSearchInput) {
-          globalSearchInput.focus();
-          globalSearchInput.select?.();
-        } else {
-          const searchInput = document.querySelector<HTMLInputElement>(
-            'input[placeholder*="Search" i], input[placeholder*="Tìm kiếm" i], input[type="search"]'
-          );
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.select?.();
-          }
-        }
-        return;
-      }
-
-      if (e.key === "Backspace") {
-        const state = useAppStore.getState();
-        if (
-          state.isProjectModalOpen ||
-          state.isTaskModalOpen ||
-          state.isUserModalOpen ||
-          state.isLoginModalOpen
-        ) {
-          e.preventDefault();
-          if (state.isProjectModalOpen) state.setIsProjectModalOpen(false);
-          if (state.isTaskModalOpen) state.setIsTaskModalOpen(false);
-          if (state.isUserModalOpen) state.setIsUserModalOpen(false);
-          if (state.isLoginModalOpen) state.setIsLoginModalOpen(false);
-          return;
-        }
-        e.preventDefault();
-        handleGoBackRef.current?.();
-        return;
-      }
-
-      if (e.key.toLowerCase() === "p") {
-        const state = useAppStore.getState();
-        const userRole = state.currentUser?.role;
-        const canWrite =
-          userRole === "admin" ||
-          (userRole && state.permissionMatrix[userRole as AppRole]?.Write?.general);
-        if (canWrite) {
-          e.preventDefault();
-          setEditingProject(null);
-          setIsReadOnlyModal(false);
-          setModalInitialTab("details");
-          setIsProjectModalOpen(true);
-        }
-        return;
-      }
-
-      if (e.key.toLowerCase() === "t") {
-        if (!isAppReadyRef.current) return;
-        const state = useAppStore.getState();
-        const userRole = state.currentUser?.role;
-        const canWrite =
-          userRole === "admin" ||
-          (userRole && state.permissionMatrix[userRole as AppRole]?.Write?.detail);
-        if (canWrite) {
-          e.preventDefault();
-          setEditingTask(null);
-          setIsReadOnlyModal(false);
-          setModalInitialTab("details");
-          const safeP = projects && projects.length > 0 ? projects[0] : null;
-          setPrefillProjectCode(safeP?.code || "");
-          setPrefillProjectYear(safeP?.year || null);
-          setIsTaskModalOpen(true);
-        }
-        return;
-      }
-
-      const tabNumberMap: Record<string, TabId> = {
-        "1": "general",
-        "2": "calendar",
-        "3": "gantt",
-        "4": "detail",
-        "5": "budget",
-        "6": "cost",
-        "7": "layout",
-        "8": "summary",
-        "9": "taskDelegation",
-      };
-      if (tabNumberMap[e.key]) {
-        e.preventDefault();
-        handleTabChange(tabNumberMap[e.key]);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isFocusMode,
-    isPrintPreview,
-    toast,
+  useAppKeyboardAndTouch({
     projects,
+    isAppReadyRef,
     handleTabChange,
-    setIsFocusMode,
-    setIsPrintPreview,
-    setToast,
-    setEditingProject,
-    setEditingTask,
-    setIsReadOnlyModal,
-    setModalInitialTab,
-    setIsProjectModalOpen,
-    setIsTaskModalOpen,
-    setPrefillProjectCode,
-    setPrefillProjectYear,
-  ]);
-
-  useEffect(() => {
-    let startX = 0;
-    let startY = 0;
-    let touchTarget: HTMLElement | null = null;
-    let isMultiTouch = false;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length > 1) {
-        isMultiTouch = true;
-        return;
-      }
-      isMultiTouch = false;
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      touchTarget = e.target as HTMLElement;
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (isMultiTouch) return;
-      if (window.visualViewport && window.visualViewport.scale > 1) return;
-
-      const endX = e.changedTouches[0].clientX;
-      const endY = e.changedTouches[0].clientY;
-      const diffX = startX - endX;
-      const diffY = startY - endY;
-
-      const selection = window.getSelection();
-      if (selection && selection.toString().length > 0) return;
-
-      if (
-        touchTarget &&
-        touchTarget.closest('input, textarea, [contenteditable="true"]')
-      ) {
-        return;
-      }
-
-      if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
-        if (diffX < 0 && startX <= 40) {
-          handleGoBackRef.current();
-        }
-      }
-    };
-
-    document.addEventListener("touchstart", handleTouchStart, { passive: true });
-    document.addEventListener("touchend", handleTouchEnd, { passive: true });
-
-    return () => {
-      document.removeEventListener("touchstart", handleTouchStart);
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [activeTab, visibleTabs]);
+    handleDataUndoRef,
+    handleDataRedoRef,
+    handleGoBackRef,
+  });
 
   return {
     handleTabChange,

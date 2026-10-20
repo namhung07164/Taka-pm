@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AlertCircle, Loader2, RefreshCw, ExternalLink } from 'lucide-react';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
 import { PdfNativeViewerToolbar } from './PdfNativeViewerToolbar';
+import { PdfScrollablePagesView } from './PdfScrollablePagesView';
 
 export interface PdfNativeCanvasViewerProps {
   url: string;
@@ -345,14 +346,24 @@ export function PdfNativeCanvasViewer({
     }
   }, [pdfDoc, currentPage, numPages, renderPage]);
 
-  // ResizeObserver to re-fit page cleanly when container size settles or orientation changes
+  // ResizeObserver: only invalidate cache & re-render when container size meaningfully changes
+  const lastContainerSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
   useEffect(() => {
     if (!containerRef.current) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (Math.abs(w - lastContainerSizeRef.current.w) < 8 && Math.abs(h - lastContainerSizeRef.current.h) < 8) {
+        return;
+      }
+      lastContainerSizeRef.current = { w, h };
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         if (pdfDoc && currentPage) {
+          clearPageCache();
           renderPage(currentPage);
         }
       }, 150);
@@ -362,7 +373,7 @@ export function PdfNativeCanvasViewer({
       if (timer) clearTimeout(timer);
       observer.disconnect();
     };
-  }, [pdfDoc, currentPage, renderPage]);
+  }, [pdfDoc, currentPage, renderPage, clearPageCache]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= numPages) {
@@ -374,11 +385,8 @@ export function PdfNativeCanvasViewer({
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseInt(pageInput, 10);
-    if (!isNaN(parsed) && parsed >= 1 && parsed <= numPages) {
-      setCurrentPage(parsed);
-    } else {
-      setPageInput(String(currentPage));
-    }
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= numPages) setCurrentPage(parsed);
+    else setPageInput(String(currentPage));
   };
 
   if (error) {
@@ -391,23 +399,12 @@ export function PdfNativeCanvasViewer({
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           {onFallbackToIframe && (
-            <button
-              type="button"
-              onClick={onFallbackToIframe}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Switch to Embed Viewer
+            <button type="button" onClick={onFallbackToIframe} className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
+              <RefreshCw className="w-3.5 h-3.5" /> Switch to Embed Viewer
             </button>
           )}
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Open File in New Tab
+          <a href={url} target="_blank" rel="noopener noreferrer" className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
+            <ExternalLink className="w-3.5 h-3.5" /> Open File in New Tab
           </a>
         </div>
       </div>
@@ -415,11 +412,7 @@ export function PdfNativeCanvasViewer({
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={`w-full h-full relative flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none ${className}`}
-    >
-      {/* Unified Toolbar for both R2 Cloud and Google Drive */}
+    <div ref={containerRef} className={`w-full h-full relative flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none ${className}`}>
       <PdfNativeViewerToolbar
         currentPage={currentPage}
         numPages={numPages}
@@ -429,9 +422,9 @@ export function PdfNativeCanvasViewer({
         onPageChange={handlePageChange}
         isLoading={isLoading}
         zoomScale={zoomScale}
-        onZoomIn={() => zoomStageRef.current?.zoomIn(0.4)}
-        onZoomOut={() => zoomStageRef.current?.zoomOut(0.4)}
-        onResetZoom={() => zoomStageRef.current?.resetTransform()}
+        onZoomIn={() => viewMode === 'scroll' ? setZoomScale((s) => Math.min(6, Math.round((s + 0.4) * 100) / 100)) : zoomStageRef.current?.zoomIn(0.4)}
+        onZoomOut={() => viewMode === 'scroll' ? setZoomScale((s) => Math.max(0.5, Math.round((s - 0.4) * 100) / 100)) : zoomStageRef.current?.zoomOut(0.4)}
+        onResetZoom={() => viewMode === 'scroll' ? setZoomScale(1) : zoomStageRef.current?.resetTransform()}
         isFullscreen={isFullscreen}
         onOpenFullscreen={onOpenFullscreen}
         url={url}
@@ -439,7 +432,7 @@ export function PdfNativeCanvasViewer({
         onToggleViewMode={() => setViewMode((m) => (m === 'page' ? 'scroll' : 'page'))}
       />
 
-      {/* Main Canvas Viewport with 60fps Gesture Pinch-to-Zoom & Pan */}
+      {/* Main Canvas Viewport with 60fps Gesture Pinch-to-Zoom & Pan or Virtualized Scroll */}
       <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center p-1 sm:p-2">
         {isLoading && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300">
@@ -456,24 +449,36 @@ export function PdfNativeCanvasViewer({
           </div>
         )}
 
-        <TouchPinchZoomStage
-          ref={zoomStageRef}
-          initialScale={1}
-          minScale={0.5}
-          maxScale={10}
-          onScaleChange={setZoomScale}
-          className="w-full h-full flex items-center justify-center"
-        >
-          <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white inline-block">
-            <canvas ref={canvasRef} className="block select-none" />
-            {isRendering && (
-              <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700 pointer-events-none">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Rendering...</span>
-              </div>
-            )}
-          </div>
-        </TouchPinchZoomStage>
+        {viewMode === 'scroll' && pdfDoc ? (
+          <PdfScrollablePagesView
+            pdfDoc={pdfDoc}
+            numPages={numPages}
+            zoomScale={zoomScale}
+            onVisiblePageChange={(p) => {
+              setCurrentPage(p);
+              setPageInput(String(p));
+            }}
+          />
+        ) : (
+          <TouchPinchZoomStage
+            ref={zoomStageRef}
+            initialScale={1}
+            minScale={0.5}
+            maxScale={10}
+            onScaleChange={setZoomScale}
+            className="w-full h-full flex items-center justify-center"
+          >
+            <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white inline-block">
+              <canvas ref={canvasRef} className="block select-none" />
+              {isRendering && (
+                <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700 pointer-events-none">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Rendering...</span>
+                </div>
+              )}
+            </div>
+          </TouchPinchZoomStage>
+        )}
       </div>
     </div>
   );

@@ -36,6 +36,8 @@ export default defineConfig({
             if (id.includes('motion')) return 'vendor-motion';
             if (id.includes('date-fns')) return 'vendor-date-fns';
             if (id.includes('react-zoom-pan-pinch') || id.includes('react-markdown') || id.includes('react-draggable') || id.includes('react-dropzone')) return 'vendor-ui-helpers';
+            if (id.includes('dexie')) return 'vendor-dexie';
+            if (id.includes('lodash') || id.includes('papaparse') || id.includes('zod') || id.includes('clsx') || id.includes('tailwind-merge')) return 'vendor-utils';
             if (id.includes('react-dom') || id.includes('scheduler') || id.includes('/react/')) return 'vendor-react-core';
           }
         }

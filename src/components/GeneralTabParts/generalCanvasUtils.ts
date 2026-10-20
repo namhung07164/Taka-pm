@@ -448,51 +448,30 @@ interface ResolveCanvasClickParams {
 }
 
 export function resolveCanvasClick({
-  e,
-  canvas,
-  wrapper,
-  paginatedProjects,
-  onProjectClick,
-  handlePinToggle,
-  setSortConfig,
-  t
+  e, canvas, wrapper, paginatedProjects, onProjectClick, handlePinToggle, setSortConfig, t
 }: ResolveCanvasClickParams) {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
   const headerHeight = 60;
   const rowHeight = 70;
+  const baseWidths = [100, 75, 80, 140, 210, 125, 210, 105, 105, 105];
+  const logicalWidth = Math.max(wrapper.clientWidth, 1280);
+  const scale = logicalWidth / baseWidths.reduce((a, b) => a + b, 0);
 
   if (y <= headerHeight) {
-    const baseWidths = [100, 75, 80, 140, 210, 125, 210, 105, 105, 105];
-    const logicalWidth = Math.max(wrapper.clientWidth, 1280);
-    const totalBase = baseWidths.reduce((a, b) => a + b, 0);
-    const scale = logicalWidth / totalBase;
     const colWidths = baseWidths.map(w => w * scale);
-    
-    const cols = [
-      { label: t('Year'), key: 'year' },
-      { label: t('Store'), key: 'store' },
-      { label: t('Location'), key: 'location' },
-      { label: t('Code'), key: 'code' },
-      { label: t('Project'), key: 'name' },
-      { label: t('Status'), key: 'status' },
-      { label: t('Details'), key: 'detail' },
-      { label: t('Tak start'), key: 'start' },
-      { label: t('Tak compl'), key: 'handover' },
-      { label: t('Opening'), key: 'opening' }
-    ];
-
+    const colKeys = ['year', 'store', 'location', 'code', 'name', 'status', 'detail', 'start', 'handover', 'opening'];
+    void t;
     let currentX = 0;
-    for (let i = 0; i < cols.length; i++) {
+    for (let i = 0; i < colKeys.length; i++) {
       const colWidth = colWidths[i];
       if (x >= currentX && x <= currentX + colWidth) {
-        const key = cols[i].key;
+        const key = colKeys[i];
         if (key === 'start' || key === 'handover' || key === 'opening') {
           setSortConfig(prev => {
             if (prev && prev.key === key) {
-              if (prev.direction === 'asc') return { key, direction: 'desc' };
-              return null;
+              return prev.direction === 'asc' ? { key, direction: 'desc' } : null;
             }
             return { key, direction: 'asc' };
           });
@@ -506,18 +485,11 @@ export function resolveCanvasClick({
 
   const idx = Math.floor((y - headerHeight) / rowHeight);
   if (idx >= 0 && idx < paginatedProjects.length) {
-    const baseWidths = [100, 75, 80, 140, 210, 125, 210, 105, 105, 105];
-    const logicalWidth = Math.max(wrapper.clientWidth, 1280);
-    const totalBase = baseWidths.reduce((a, b) => a + b, 0);
-    const scale = logicalWidth / totalBase;
-    const noColWidth = 100 * scale;
     const clickedProject = paginatedProjects[idx];
-    
-    if (x < noColWidth && clickedProject.id) {
+    if (x < 100 * scale && clickedProject.id) {
       handlePinToggle(e, clickedProject.id);
       return;
     }
-    
     onProjectClick(clickedProject);
   }
 }
