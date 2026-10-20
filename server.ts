@@ -116,6 +116,18 @@ async function startServer() {
     }
   });
 
+  // In-memory LRU Cache cho binary PDF và Thumbnail để phản hồi 0ms cho các lần mở tiếp theo
+  const mediaMemoryCache = new Map<string, { buffer: Buffer; contentType: string; ts: number }>();
+  const MAX_MEDIA_CACHE_ITEMS = 40;
+  const setMediaCache = (key: string, buffer: Buffer, contentType: string) => {
+    if (buffer.byteLength > 25 * 1024 * 1024) return; // Không cache file > 25MB trong RAM
+    if (mediaMemoryCache.size >= MAX_MEDIA_CACHE_ITEMS) {
+      const oldestKey = mediaMemoryCache.keys().next().value;
+      if (oldestKey) mediaMemoryCache.delete(oldestKey);
+    }
+    mediaMemoryCache.set(key, { buffer, contentType, ts: Date.now() });
+  };
+
   // API Proxy tải binary PDF từ Google Drive để đồng bộ hiển thị Native Canvas như R2
   app.get('/api/drive-pdf', async (req, res) => {
     try {
@@ -125,6 +137,16 @@ async function startServer() {
       }
 
       const cleanId = fileId.trim();
+      const cacheKey = `drive-pdf:${cleanId}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType || 'application/pdf');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        res.setHeader('Accept-Ranges', 'bytes');
+        return res.send(cached.buffer);
+      }
+
       const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&authuser=0`;
 
       let response = await fetch(directDownloadUrl, {
@@ -150,7 +172,6 @@ async function startServer() {
             redirect: 'follow',
           });
         } else {
-          // Thử endpoint uc?export=download
           const ucUrl = `https://drive.google.com/uc?export=download&id=${cleanId}`;
           const ucRes = await fetch(ucUrl, {
             headers: {
@@ -172,16 +193,114 @@ async function startServer() {
         });
       }
 
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.setHeader('Accept-Ranges', 'bytes');
-
       const arrayBuffer = await response.arrayBuffer();
-      return res.send(Buffer.from(arrayBuffer));
+      const buffer = Buffer.from(arrayBuffer);
+      const resolvedMime = finalContentType.includes('image/') ? finalContentType : 'application/pdf';
+      setMediaCache(cacheKey, buffer, resolvedMime);
+
+      res.setHeader('Content-Type', resolvedMime);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      res.setHeader('Accept-Ranges', 'bytes');
+      return res.send(buffer);
     } catch (error: any) {
       console.error('Drive PDF Proxy Exception:', error);
       res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // API Proxy tải nhanh Thumbnail từ Google Drive (chống lỗi chặn ITP/CORS trên iOS Safari)
+  app.get('/api/drive-thumb', async (req, res) => {
+    try {
+      const fileId = String(req.query.id || '').trim();
+      const sz = String(req.query.sz || 'w600').trim();
+      if (!fileId) return res.status(400).end();
+
+      const cacheKey = `drive-thumb:${fileId}:${sz}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(cached.buffer);
+      }
+
+      const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=${sz}`;
+      let response = await fetch(thumbUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok || (response.headers.get('content-type') || '').includes('text/html')) {
+        const fallbackLh3 = `https://lh3.googleusercontent.com/d/${fileId}=${sz}`;
+        response = await fetch(fallbackLh3, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'image/*,*/*;q=0.8',
+          },
+          redirect: 'follow',
+        });
+      }
+
+      const ct = response.headers.get('content-type') || 'image/jpeg';
+      if (!response.ok || ct.includes('text/html')) {
+        return res.status(404).end();
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      setMediaCache(cacheKey, buffer, ct);
+
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.send(buffer);
+    } catch {
+      return res.status(500).end();
+    }
+  });
+
+  // API Proxy đa năng cho mọi nguồn PDF/Image (R2, Firebase, HTTP) khi trình duyệt gặp rào cản CORS
+  app.get('/api/pdf-proxy', async (req, res) => {
+    try {
+      const targetUrl = String(req.query.url || '').trim();
+      if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+        return res.status(400).json({ success: false, error: 'URL không hợp lệ' });
+      }
+
+      const cacheKey = `pdf-proxy:${targetUrl}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(cached.buffer);
+      }
+
+      const response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/pdf,image/*,application/octet-stream,*/*',
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).end();
+      }
+
+      const ct = response.headers.get('content-type') || 'application/pdf';
+      const buffer = Buffer.from(await response.arrayBuffer());
+      setMediaCache(cacheKey, buffer, ct);
+
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.send(buffer);
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message });
     }
   });
 

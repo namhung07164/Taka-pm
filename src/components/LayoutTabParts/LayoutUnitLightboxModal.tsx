@@ -50,9 +50,11 @@ export function LayoutUnitLightboxModal({
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const rawUrl = enlargedImage?.url || '';
-  const resolvedUrl = useMemo(() => normalizeImageUrl(rawUrl, 'w2400'), [rawUrl]);
+  const resolvedUrl = useMemo(() => normalizeImageUrl(rawUrl, 'w1600'), [rawUrl]);
+  const lowResPlaceholderUrl = useMemo(() => normalizeImageUrl(rawUrl, 'w400'), [rawUrl]);
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
+  const [hasTriedProxyFallback, setHasTriedProxyFallback] = useState(false);
 
   const initialZoom =
     enlargedImage?.initialScale && enlargedImage.initialScale > 1 ? Math.min(6, enlargedImage.initialScale) : 1;
@@ -100,12 +102,17 @@ export function LayoutUnitLightboxModal({
   const handleImageError = useCallback(() => {
     if (driveFileId && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}=w2400`);
+      setCurrentSrc(`/api/drive-thumb?id=${driveFileId}&sz=w1600`);
+      return;
+    }
+    if (!driveFileId && !hasTriedProxyFallback && /^https?:\/\//i.test(resolvedUrl)) {
+      setHasTriedProxyFallback(true);
+      setCurrentSrc(`/api/pdf-proxy?url=${encodeURIComponent(resolvedUrl)}`);
       return;
     }
     setIsLoading(false);
     setImageError(true);
-  }, [driveFileId, hasTriedCdnFallback]);
+  }, [driveFileId, hasTriedCdnFallback, hasTriedProxyFallback, resolvedUrl]);
 
   const handleImageLoad = useCallback(() => {
     setIsLoading(false);
@@ -116,10 +123,12 @@ export function LayoutUnitLightboxModal({
   useEffect(() => {
     setUseIframeFallback(false);
     setHasTriedCdnFallback(false);
+    setHasTriedProxyFallback(false);
     setImageError(false);
+    setIsLoading(Boolean(resolvedUrl && !isPdf));
     setZoomScale(initialZoom);
     setCurrentSrc(resolvedUrl);
-  }, [rawUrl, resolvedUrl, initialZoom]);
+  }, [rawUrl, resolvedUrl, initialZoom, isPdf]);
 
   // Lock background scroll when open
   useEffect(() => {
@@ -311,8 +320,17 @@ export function LayoutUnitLightboxModal({
             >
               {isLoading && !imageError && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/60 z-20 pointer-events-none">
-                  <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
-                  <span className="text-xs font-medium">Loading image...</span>
+                  {lowResPlaceholderUrl && (
+                    <img
+                      src={lowResPlaceholderUrl}
+                      alt=""
+                      className="max-w-full max-h-[85vh] object-contain rounded-lg opacity-55 blur-[1px]"
+                    />
+                  )}
+                  <div className="absolute flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 shadow-lg">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                    <span className="text-xs font-medium text-slate-200">Loading HD image...</span>
+                  </div>
                 </div>
               )}
               {imageError ? (
@@ -333,6 +351,7 @@ export function LayoutUnitLightboxModal({
                   src={currentSrc}
                   alt={enlargedImage.title || 'Enlarged Preview'}
                   decoding="async"
+                  fetchPriority="high"
                   onLoad={handleImageLoad}
                   onError={handleImageError}
                   className="max-w-full max-h-[85vh] object-contain rounded-lg select-none shadow-2xl"

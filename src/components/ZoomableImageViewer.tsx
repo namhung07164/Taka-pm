@@ -148,17 +148,14 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
   const resolvedUrl = normalizeImageUrl(rawTargetUrl, 'w1600');
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
+  const [hasTriedProxyFallback, setHasTriedProxyFallback] = useState(false);
 
   const handleClose = useCallback(() => {
     if (iframeRef.current) {
-      try {
-        iframeRef.current.src = 'about:blank';
-      } catch {}
+      try { iframeRef.current.src = 'about:blank'; } catch {}
     }
     if (imgRef.current) {
-      try {
-        imgRef.current.src = '';
-      } catch {}
+      try { imgRef.current.src = ''; } catch {}
     }
     if (isControlled) {
       propOnClose?.();
@@ -170,17 +167,21 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 
   const handleImageError = useCallback(() => {
     const driveMatch =
-      rawTargetUrl.match(
-        /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/
-      ) || rawTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      rawTargetUrl.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/) ||
+      rawTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (driveMatch && driveMatch[1] && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveMatch[1]}=w1600`);
+      setCurrentSrc(`/api/drive-thumb?id=${driveMatch[1]}&sz=w1600`);
+      return;
+    }
+    if (!driveMatch?.[1] && !hasTriedProxyFallback && /^https?:\/\//i.test(resolvedUrl)) {
+      setHasTriedProxyFallback(true);
+      setCurrentSrc(`/api/pdf-proxy?url=${encodeURIComponent(resolvedUrl)}`);
       return;
     }
     setIsLoading(false);
     setHasError(true);
-  }, [rawTargetUrl, hasTriedCdnFallback]);
+  }, [rawTargetUrl, resolvedUrl, hasTriedCdnFallback, hasTriedProxyFallback]);
 
   const handleImageLoad = useCallback(() => {
     setIsLoading(false);
@@ -194,16 +195,12 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
     if (!isVisible) return;
     setCurrentSrc(resolvedUrl);
     setHasTriedCdnFallback(false);
+    setHasTriedProxyFallback(false);
     setHasError(false);
     setUseGdocsFallback(false);
     setZoomScale(effectiveInitialScale);
     setTouchZoomMode('pinch');
-
-    if (!resolvedUrl) {
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
+    setIsLoading(Boolean(resolvedUrl));
   }, [isVisible, resolvedUrl, effectiveInitialScale]);
 
   useEffect(() => {

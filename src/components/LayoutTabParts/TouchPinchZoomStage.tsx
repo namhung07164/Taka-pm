@@ -20,6 +20,8 @@ export interface TouchPinchZoomStageProps {
   minScale?: number;
   maxScale?: number;
   onScaleChange?: (scale: number) => void;
+  onSwipeUp?: () => void;
+  onSwipeDown?: () => void;
   captureOverlay?: boolean;
   allowNativeTouch?: boolean;
   alwaysPan?: boolean;
@@ -37,6 +39,8 @@ export const TouchPinchZoomStage = forwardRef<
     minScale = 0.5,
     maxScale = 8,
     onScaleChange,
+    onSwipeUp,
+    onSwipeDown,
     captureOverlay = false,
     allowNativeTouch = false,
     alwaysPan = true,
@@ -111,6 +115,10 @@ export const TouchPinchZoomStage = forwardRef<
 
   const allowNativeTouchRef = useRef(allowNativeTouch);
   allowNativeTouchRef.current = allowNativeTouch;
+  const onSwipeUpRef = useRef(onSwipeUp);
+  onSwipeUpRef.current = onSwipeUp;
+  const onSwipeDownRef = useRef(onSwipeDown);
+  onSwipeDownRef.current = onSwipeDown;
 
   const applyTransformDOM = useCallback((animate = false) => {
     const el = contentRef.current;
@@ -119,7 +127,7 @@ export const TouchPinchZoomStage = forwardRef<
     const isIdentity =
       Math.abs(scale - 1) < 0.005 && Math.abs(x) < 0.5 && Math.abs(y) < 0.5;
     if (allowNativeTouchRef.current || isIdentity) {
-      el.style.transition = 'none';
+      el.style.transition = animate ? 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
       el.style.transform = 'none';
       return;
     }
@@ -254,16 +262,23 @@ export const TouchPinchZoomStage = forwardRef<
         scheduleRender();
         notifyScale(newScale, false);
       } else if (!allowNativeTouch && e.touches.length === 1 && panStartRef.current) {
-        const canPan = alwaysPan || stateRef.current.scale > 1.02 || captureOverlay;
+        const hasSwipePaging = Boolean(onSwipeUpRef.current || onSwipeDownRef.current);
+        const isUnzoomed = stateRef.current.scale <= 1.05;
+        const canPan = alwaysPan || stateRef.current.scale > 1.02 || captureOverlay || hasSwipePaging;
         if (!canPan) return;
         const t = e.touches[0];
         const dx = t.clientX - panStartRef.current.clientX;
         const dy = t.clientY - panStartRef.current.clientY;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panStartRef.current.moved = true;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) panStartRef.current.moved = true;
         if (panStartRef.current.moved) {
           if (e.cancelable) e.preventDefault();
-          stateRef.current.x = panStartRef.current.startX + dx;
-          stateRef.current.y = panStartRef.current.startY + dy;
+          if (hasSwipePaging && isUnzoomed) {
+            stateRef.current.x = 0;
+            stateRef.current.y = dy * 0.28;
+          } else {
+            stateRef.current.x = panStartRef.current.startX + dx;
+            stateRef.current.y = panStartRef.current.startY + dy;
+          }
           scheduleRender();
         }
       }
@@ -288,7 +303,8 @@ export const TouchPinchZoomStage = forwardRef<
 
       if (e.touches.length === 0) {
         const wasPinching = Boolean(pinchStartRef.current);
-        const wasMoved = panStartRef.current?.moved ?? false;
+        const panSnapshot = panStartRef.current;
+        const wasMoved = panSnapshot?.moved ?? false;
         pinchStartRef.current = null;
         panStartRef.current = null;
 
@@ -297,6 +313,20 @@ export const TouchPinchZoomStage = forwardRef<
             setTransformAnimated(1, 0, 0);
           } else {
             notifyScale(stateRef.current.scale, true);
+          }
+          return;
+        }
+
+        const hasSwipePaging = Boolean(onSwipeUpRef.current || onSwipeDownRef.current);
+        if (hasSwipePaging && wasMoved && panSnapshot && stateRef.current.scale <= 1.05 && e.changedTouches.length === 1) {
+          const endTouch = e.changedTouches[0];
+          const dx = endTouch.clientX - panSnapshot.clientX;
+          const dy = endTouch.clientY - panSnapshot.clientY;
+          setTransformAnimated(1, 0, 0);
+          if (dy < -38 && Math.abs(dy) >= Math.abs(dx)) {
+            onSwipeUpRef.current?.();
+          } else if (dy > 38 && Math.abs(dy) >= Math.abs(dx)) {
+            onSwipeDownRef.current?.();
           }
           return;
         }

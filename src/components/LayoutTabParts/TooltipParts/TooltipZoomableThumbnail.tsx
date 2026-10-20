@@ -1,4 +1,4 @@
-import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, ZoomIn, FileText, Loader2 } from 'lucide-react';
 import { TooltipImageItem } from './tooltipTypes';
 import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
@@ -6,6 +6,7 @@ import {
   generatePdfFirstPageThumbnail,
   getCachedPdfThumbnail,
 } from './pdfThumbnailGenerator';
+import { extractDriveIdFromUrl } from '../../../lib/pdfBinaryCache';
 
 interface TooltipZoomableThumbnailProps {
   img: TooltipImageItem;
@@ -20,16 +21,25 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
   const [isPinching, setIsPinching] = useState(false);
   const [showZoomHint, setShowZoomHint] = useState(false);
   const [isImgError, setIsImgError] = useState(false);
+  const [fallbackImgSrc, setFallbackImgSrc] = useState<string | null>(null);
+  const [triedProxyFallback, setTriedProxyFallback] = useState(false);
+  const [triedPdfFallback, setTriedPdfFallback] = useState(false);
 
-  const thumbnailSrc = useMemo(() => normalizeImageUrl(img.url, 'w400'), [img.url]);
+  const driveId = useMemo(() => extractDriveIdFromUrl(img.url), [img.url]);
+
+  // For Google Drive links, use same-origin server proxy (/api/drive-thumb) first to bypass iOS Safari ITP blocks
+  const thumbnailSrc = useMemo(() => {
+    if (driveId) {
+      return `/api/drive-thumb?id=${driveId}&sz=w400`;
+    }
+    return normalizeImageUrl(img.url, 'w400');
+  }, [img.url, driveId]);
 
   const isDirectPdfFile = useMemo(() => {
-    const u = (thumbnailSrc || img.url || '').toLowerCase();
-    if (u.includes('drive.google.com/thumbnail') || u.includes('googleusercontent.com')) {
-      return false;
-    }
+    const u = (img.url || '').toLowerCase();
+    if (driveId) return false; // Drive uses /api/drive-thumb first, then falls back to PDF generator if needed
     return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
-  }, [thumbnailSrc, img.url]);
+  }, [img.url, driveId]);
 
   const [pdfThumbSrc, setPdfThumbSrc] = useState<string | null>(() =>
     getCachedPdfThumbnail(img.url)
@@ -40,6 +50,10 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
 
   useEffect(() => {
     setIsImgError(false);
+    setFallbackImgSrc(null);
+    setTriedProxyFallback(false);
+    setTriedPdfFallback(false);
+
     const cached = getCachedPdfThumbnail(img.url);
     if (cached) {
       setPdfThumbSrc(cached);
@@ -78,10 +92,10 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
 
   const isDrivePdfOrDoc = useMemo(() => {
     const u = (img.url || '').toLowerCase();
-    return u.includes('drive.google.com') || u.includes('docs.google.com');
-  }, [img.url]);
+    return Boolean(driveId) || u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [img.url, driveId]);
 
-  // 1. Pinch-to-zoom & Drag-to-zoom gesture on touch devices (iOS / iPad / mobile)
+  // 1. Pinch-to-zoom gesture on touch devices (iOS / iPad / mobile)
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const p1 = e.touches[0];
@@ -159,7 +173,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     });
   };
 
-  const effectiveImageSrc = isDirectPdfFile ? pdfThumbSrc : thumbnailSrc;
+  const effectiveImageSrc = pdfThumbSrc || fallbackImgSrc || (isDirectPdfFile ? null : thumbnailSrc);
 
   return (
     <div
@@ -174,7 +188,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[190px] sm:max-h-[280px] flex items-center justify-center group/thumb p-1 touch-manipulation cursor-pointer"
       title="Click to view full display HD"
     >
-      {isDirectPdfFile && isPdfThumbLoading ? (
+      {isPdfThumbLoading ? (
         <div className="flex flex-col items-center justify-center gap-2 py-7 px-3 text-center w-full bg-slate-900/5 dark:bg-slate-900/60 rounded-md">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
           <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -188,8 +202,16 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
           loading="lazy"
           decoding="async"
           onError={() => {
-            // If an R2 URL without .pdf extension is actually a PDF, attempt PDF thumbnail generation before showing error
-            if (!isDirectPdfFile && !pdfThumbSrc && !isPdfThumbLoading) {
+            // Stage 1 Fallback: For non-Drive HTTP URLs, try /api/pdf-proxy in case of CORS/ISP block
+            const normalized = normalizeImageUrl(img.url, 'w400');
+            if (!triedProxyFallback && !driveId && /^https?:\/\//i.test(normalized)) {
+              setTriedProxyFallback(true);
+              setFallbackImgSrc(`/api/pdf-proxy?url=${encodeURIComponent(normalized)}`);
+              return;
+            }
+            // Stage 2 Fallback: Render Page 1 via PDF.js (handles Drive PDFs without thumb & R2 PDFs)
+            if (!triedPdfFallback && !pdfThumbSrc && !isPdfThumbLoading) {
+              setTriedPdfFallback(true);
               setIsPdfThumbLoading(true);
               generatePdfFirstPageThumbnail(img.url).then((dataUrl) => {
                 setIsPdfThumbLoading(false);
@@ -211,7 +233,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
           draggable={false}
           className="w-full h-auto max-h-[180px] sm:max-h-[270px] object-contain hover:scale-[1.01] duration-150 rounded-md select-none bg-white"
         />
-      ) : isDirectPdfFile ? (
+      ) : isDirectPdfFile || isDrivePdfOrDoc ? (
         <div className="flex flex-col items-center justify-center gap-1.5 py-5 px-3 text-center w-full bg-slate-900/5 dark:bg-slate-900/60 rounded-md">
           <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
             <FileText className="w-5 h-5" />
@@ -220,13 +242,13 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
             {img.title || 'PDF Document'}
           </span>
           <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
-            Click to open lightweight PDF Viewer
+            Click to open Unified PDF Viewer
           </span>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-3 text-center w-full">
           <span className="font-semibold text-slate-600 dark:text-slate-300">
-            {isDrivePdfOrDoc ? 'Document / PDF Preview' : 'Web Link / Article Preview'}
+            Web Link / Document Preview
           </span>
           <span className="truncate max-w-[200px] text-[9px] font-mono text-blue-500">
             {img.url}
@@ -235,7 +257,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
       )}
 
       {/* Subtle PDF badge when showing rendered PDF thumbnail */}
-      {isDirectPdfFile && effectiveImageSrc && !isImgError && (
+      {(isDirectPdfFile || Boolean(pdfThumbSrc)) && effectiveImageSrc && !isImgError && (
         <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600/90 text-white rounded text-[9px] font-bold tracking-wider uppercase shadow-xs pointer-events-none z-10">
           PDF
         </div>
@@ -270,5 +292,3 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
 };
 
 export default TooltipZoomableThumbnail;
-
-

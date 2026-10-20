@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertCircle, Loader2, RefreshCw, ExternalLink } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
 import { PdfNativeViewerToolbar } from './PdfNativeViewerToolbar';
 import { PdfScrollablePagesView } from './PdfScrollablePagesView';
+import { PdfPageThumbnailStrip } from './PdfPageThumbnailStrip';
+import {
+  fetchPdfBinaryUnified,
+  getCachedPageThumbSync,
+  normalizePdfSourceUrl,
+  renderPdfPageToCanvasEntry,
+  PdfCanvasCacheEntry,
+} from '../../lib/pdfBinaryCache';
 
 export interface PdfNativeCanvasViewerProps {
   url: string;
@@ -12,7 +20,7 @@ export interface PdfNativeCanvasViewerProps {
   onFallbackToIframe?: () => void;
 }
 
-const MAX_CANVAS_DIMENSION = 2400; // Safe GPU canvas texture cap
+const MAX_CANVAS_DIMENSION = 2400; // Safe GPU canvas texture cap for iOS Safari & Desktop
 
 export function PdfNativeCanvasViewer({
   url,
@@ -31,6 +39,7 @@ export function PdfNativeCanvasViewer({
   const [error, setError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'page' | 'scroll'>('page');
+  const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,36 +48,18 @@ export function PdfNativeCanvasViewer({
   const activePdfRef = useRef<any>(null);
   const loadingTaskRef = useRef<any>(null);
 
-  // In-memory cloned canvas cache to avoid WebKit ImageBitmap memory and blank canvas bugs
-  const pageCacheRef = useRef<
-    Map<number, { canvas: HTMLCanvasElement; width: number; height: number; cssWidth: number; cssHeight: number }>
-  >(new Map());
+  const initialThumbPlaceholder = getCachedPageThumbSync(url, 1);
+  const pageCacheRef = useRef<Map<number, PdfCanvasCacheEntry>>(new Map());
 
   const clearPageCache = useCallback(() => {
     pageCacheRef.current.clear();
   }, []);
 
-  // Determine effective PDF source (Google Drive proxy fallback if drive URL)
-  const resolveEffectiveUrl = useCallback((inputUrl: string): string => {
-    if (!inputUrl) return '';
-    const trimmed = inputUrl.trim();
-    const driveMatch =
-      trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
-      trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
-    if (driveMatch?.[1]) {
-      return `/api/drive-pdf?id=${driveMatch[1]}`;
-    }
-    return trimmed;
-  }, []);
-
-  const effectivePdfUrl = resolveEffectiveUrl(url);
-
-  // Load PDF Document asynchronously with main-thread binary fetching
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
     setError(null);
-    setLoadingProgress(10);
+    setLoadingProgress(15);
     setPdfDoc(null);
     setCurrentPage(1);
     setPageInput('1');
@@ -85,58 +76,34 @@ export function PdfNativeCanvasViewer({
 
     (async () => {
       try {
-        const pdfjsLib = await import('pdfjs-dist');
+        const [pdfjsLib, binaryData] = await Promise.all([
+          import('pdfjs-dist'),
+          fetchPdfBinaryUnified(url, (pct) => {
+            if (isMounted) setLoadingProgress(pct);
+          }),
+        ]);
         if (!isMounted) return;
 
-        // Rock-solid local worker from public directory
         if (pdfjsLib.GlobalWorkerOptions) {
           pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
         }
 
         const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-        const cMapLocal = `${baseOrigin}/cmaps/`;
-        const fontLocal = `${baseOrigin}/standard_fonts/`;
-
-        // Step 1: Attempt main-thread fetch to avoid worker-level CORS and Range request stalls
-        let binaryData: Uint8Array | null = null;
-        try {
-          setLoadingProgress(25);
-          const res = await fetch(effectivePdfUrl);
-          if (res.ok) {
-            const buf = await res.arrayBuffer();
-            binaryData = new Uint8Array(buf);
-            setLoadingProgress(55);
-          }
-        } catch {}
-
-        // Fallback for R2 direct links: try S3 presigned URL
-        if (!binaryData && !effectivePdfUrl.includes('/api/drive-pdf')) {
-          try {
-            const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
-            const presigned = await resolveR2UrlToHttp(url);
-            if (presigned && presigned !== url) {
-              const res = await fetch(presigned);
-              if (res.ok) {
-                const buf = await res.arrayBuffer();
-                binaryData = new Uint8Array(buf);
-                setLoadingProgress(55);
-              }
-            }
-          } catch {}
-        }
-
         const docConfig: any = {
-          cMapUrl: cMapLocal,
+          cMapUrl: `${baseOrigin}/cmaps/`,
           cMapPacked: true,
-          standardFontDataUrl: fontLocal,
+          standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
           disableAutoFetch: false,
           disableStream: true,
         };
 
-        if (binaryData) {
+        if (binaryData && binaryData.byteLength > 0) {
           docConfig.data = binaryData;
         } else {
-          docConfig.url = effectivePdfUrl;
+          const normalized = normalizePdfSourceUrl(url);
+          docConfig.url = normalized.startsWith('http')
+            ? `/api/pdf-proxy?url=${encodeURIComponent(normalized)}`
+            : normalized;
         }
 
         const loadingTask = pdfjsLib.getDocument(docConfig);
@@ -147,13 +114,10 @@ export function PdfNativeCanvasViewer({
           if (progress.total > 0) {
             const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
             setLoadingProgress(pct);
-          } else {
-            setLoadingProgress((prev) => Math.min(90, prev + 15));
           }
         };
 
         const doc = await loadingTask.promise;
-
         if (!isMounted) {
           try {
             doc.cleanup?.();
@@ -165,12 +129,12 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = doc;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
+        setShowThumbnails(doc.numPages > 1);
         setIsLoading(false);
         setLoadingProgress(100);
       } catch (err) {
         if (!isMounted) return;
         console.warn('Native PDF loading failed:', err);
-        // If an iframe fallback handler exists, automatically trigger it without blocking
         if (onFallbackToIframe) {
           onFallbackToIframe();
           return;
@@ -183,15 +147,11 @@ export function PdfNativeCanvasViewer({
     return () => {
       isMounted = false;
       if (renderTaskRef.current) {
-        try {
-          renderTaskRef.current.cancel();
-        } catch {}
+        try { renderTaskRef.current.cancel(); } catch {}
         renderTaskRef.current = null;
       }
       if (loadingTaskRef.current) {
-        try {
-          loadingTaskRef.current.destroy?.();
-        } catch {}
+        try { loadingTaskRef.current.destroy?.(); } catch {}
         loadingTaskRef.current = null;
       }
       clearPageCache();
@@ -207,136 +167,106 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = null;
       }
     };
-  }, [url, effectivePdfUrl, onFallbackToIframe, clearPageCache]);
+  }, [url, onFallbackToIframe, clearPageCache]);
 
   const renderSeqRef = useRef<number>(0);
 
-  // Render Page with true responsive fit-to-screen and white background fill
+  const renderPageToCacheEntry = useCallback(
+    async (pageNum: number) => {
+      if (!pdfDoc) return null;
+      const availWidth = Math.max(260, (containerRef.current?.clientWidth || window.innerWidth) - 24);
+      const availHeight = Math.max(260, (containerRef.current?.clientHeight || window.innerHeight) - (showThumbnails ? 155 : 80));
+      const entry = await renderPdfPageToCanvasEntry({
+        pdfDoc,
+        pageNum,
+        availWidth,
+        availHeight,
+        maxDimension: MAX_CANVAS_DIMENSION,
+        url,
+        onRenderTask: (task) => { renderTaskRef.current = task; },
+      });
+      if (entry) {
+        if (pageCacheRef.current.size >= 8) {
+          const oldestKey = pageCacheRef.current.keys().next().value;
+          if (oldestKey !== undefined) pageCacheRef.current.delete(oldestKey);
+        }
+        pageCacheRef.current.set(pageNum, entry);
+      }
+      return entry;
+    },
+    [pdfDoc, showThumbnails, url]
+  );
+
+  // Render active page to visible canvas (0ms from cache or fresh render + adjacent page pre-render)
   const renderPage = useCallback(
     async (pageNum: number) => {
       if (!pdfDoc || !canvasRef.current) return;
-
       const seq = ++renderSeqRef.current;
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d', { alpha: false });
       if (!context) return;
 
-      // 1. Instant 0ms restore from cloned offscreen canvas cache
+      const drawEntryToCanvas = (entry: {
+        canvas: HTMLCanvasElement;
+        width: number;
+        height: number;
+        cssWidth: number;
+        cssHeight: number;
+      }) => {
+        canvas.width = entry.width;
+        canvas.height = entry.height;
+        canvas.style.width = `${entry.cssWidth}px`;
+        canvas.style.height = `${entry.cssHeight}px`;
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, entry.width, entry.height);
+        context.drawImage(entry.canvas, 0, 0);
+      };
+
       const cached = pageCacheRef.current.get(pageNum);
       if (cached) {
         if (renderTaskRef.current) {
-          try {
-            renderTaskRef.current.cancel();
-          } catch {}
+          try { renderTaskRef.current.cancel(); } catch {}
           renderTaskRef.current = null;
         }
-        canvas.width = cached.width;
-        canvas.height = cached.height;
-        canvas.style.width = `${cached.cssWidth}px`;
-        canvas.style.height = `${cached.cssHeight}px`;
-
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, cached.width, cached.height);
-        context.drawImage(cached.canvas, 0, 0);
+        drawEntryToCanvas(cached);
         setIsRendering(false);
-        return;
-      }
-
-      if (renderTaskRef.current) {
-        const prevTask = renderTaskRef.current;
-        renderTaskRef.current = null;
-        try {
-          prevTask.cancel();
-          await prevTask.promise;
-        } catch {}
-      }
-
-      if (seq !== renderSeqRef.current || !canvasRef.current) return;
-
-      setIsRendering(true);
-      try {
-        const page = await pdfDoc.getPage(pageNum);
-        if (seq !== renderSeqRef.current || !canvasRef.current) return;
-
-        // Container bounds (with safety fallbacks for initial mount on mobile)
-        const availWidth = Math.max(260, (containerRef.current?.clientWidth || window.innerWidth) - 24);
-        const availHeight = Math.max(260, (containerRef.current?.clientHeight || window.innerHeight) - 80);
-
-        const unscaledViewport = page.getViewport({ scale: 1 });
-
-        // TRUE fit-to-screen scale without artificial Math.max(0.6) clamp
-        const scaleX = availWidth / Math.max(1, unscaledViewport.width);
-        const scaleY = availHeight / Math.max(1, unscaledViewport.height);
-        const fitScale = Math.min(scaleX, scaleY, 2.5);
-
-        // Device pixel ratio with safe mobile WebKit GPU texture cap
-        const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
-        const maxDprByDimension = MAX_CANVAS_DIMENSION / Math.max(unscaledViewport.width * fitScale, unscaledViewport.height * fitScale, 1);
-        const dpr = Math.max(1, Math.min(rawDpr, maxDprByDimension));
-
-        // Use direct effective scale in viewport so PDF.js handles pixel density natively without matrix transform
-        const effectiveScale = fitScale * dpr;
-        const viewport = page.getViewport({ scale: effectiveScale });
-
-        const pixelWidth = Math.max(1, Math.floor(viewport.width));
-        const pixelHeight = Math.max(1, Math.floor(viewport.height));
-        const cssWidth = Math.max(1, Math.floor(viewport.width / dpr));
-        const cssHeight = Math.max(1, Math.floor(viewport.height / dpr));
-
-        canvas.width = pixelWidth;
-        canvas.height = pixelHeight;
-        canvas.style.width = `${cssWidth}px`;
-        canvas.style.height = `${cssHeight}px`;
-
-        // Pre-fill solid white background for transparent vector drawings
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, pixelWidth, pixelHeight);
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = 'high';
-
-        const renderTask = page.render({
-          canvasContext: context,
-          viewport,
-        });
-        renderTaskRef.current = renderTask;
-        await renderTask.promise;
-
-        // Cache rendered page into a lightweight offscreen canvas
-        if (seq === renderSeqRef.current && canvas.width > 0 && canvas.height > 0) {
+      } else {
+        if (renderTaskRef.current) {
+          const prevTask = renderTaskRef.current;
+          renderTaskRef.current = null;
           try {
-            if (pageCacheRef.current.size >= 8) {
-              const oldestKey = pageCacheRef.current.keys().next().value;
-              if (oldestKey !== undefined) pageCacheRef.current.delete(oldestKey);
-            }
-            const offscreen = document.createElement('canvas');
-            offscreen.width = pixelWidth;
-            offscreen.height = pixelHeight;
-            const offCtx = offscreen.getContext('2d');
-            if (offCtx) {
-              offCtx.drawImage(canvas, 0, 0);
-              pageCacheRef.current.set(pageNum, {
-                canvas: offscreen,
-                width: pixelWidth,
-                height: pixelHeight,
-                cssWidth,
-                cssHeight,
-              });
-            }
+            prevTask.cancel();
+            await prevTask.promise;
           } catch {}
         }
-
-        page.cleanup?.();
-      } catch (err: any) {
-        if (err?.name !== 'RenderingCancelledException') {
-          console.error('PDF page render error:', err);
-        }
-      } finally {
-        if (seq === renderSeqRef.current) {
-          setIsRendering(false);
+        if (seq !== renderSeqRef.current || !canvasRef.current) return;
+        setIsRendering(true);
+        try {
+          const entry = await renderPageToCacheEntry(pageNum);
+          if (seq === renderSeqRef.current && entry && canvasRef.current) {
+            drawEntryToCanvas(entry);
+          }
+        } catch (err: any) {
+          if (err?.name !== 'RenderingCancelledException') {
+            console.error('PDF page render error:', err);
+          }
+        } finally {
+          if (seq === renderSeqRef.current) {
+            setIsRendering(false);
+          }
         }
       }
+
+      // Silently pre-render next page (pageNum + 1) in idle time for instant 0ms page flip
+      if (seq === renderSeqRef.current && pageNum < numPages && !pageCacheRef.current.has(pageNum + 1)) {
+        setTimeout(() => {
+          if (seq === renderSeqRef.current && !pageCacheRef.current.has(pageNum + 1)) {
+            renderPageToCacheEntry(pageNum + 1).catch(() => {});
+          }
+        }, 120);
+      }
     },
-    [pdfDoc]
+    [pdfDoc, numPages, renderPageToCacheEntry]
   );
 
   useEffect(() => {
@@ -345,6 +275,34 @@ export function PdfNativeCanvasViewer({
       renderPage(currentPage);
     }
   }, [pdfDoc, currentPage, numPages, renderPage]);
+
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      if (newPage >= 1 && newPage <= numPages) {
+        setCurrentPage(newPage);
+        setPageInput(String(newPage));
+      }
+    },
+    [numPages]
+  );
+
+  // Desktop Keyboard Arrow Navigation (Left/Up = Prev Page, Right/Down = Next Page)
+  useEffect(() => {
+    if (!pdfDoc || numPages <= 1) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') {
+        e.preventDefault();
+        handlePageChange(currentPage + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault();
+        handlePageChange(currentPage - 1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pdfDoc, numPages, currentPage, handlePageChange]);
 
   // ResizeObserver: only invalidate cache & re-render when container size meaningfully changes
   const lastContainerSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -356,9 +314,7 @@ export function PdfNativeCanvasViewer({
       if (!rect) return;
       const w = Math.round(rect.width);
       const h = Math.round(rect.height);
-      if (Math.abs(w - lastContainerSizeRef.current.w) < 8 && Math.abs(h - lastContainerSizeRef.current.h) < 8) {
-        return;
-      }
+      if (Math.abs(w - lastContainerSizeRef.current.w) < 8 && Math.abs(h - lastContainerSizeRef.current.h) < 8) return;
       lastContainerSizeRef.current = { w, h };
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
@@ -374,13 +330,6 @@ export function PdfNativeCanvasViewer({
       observer.disconnect();
     };
   }, [pdfDoc, currentPage, renderPage, clearPageCache]);
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= numPages) {
-      setCurrentPage(newPage);
-      setPageInput(String(newPage));
-    }
-  };
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -430,23 +379,53 @@ export function PdfNativeCanvasViewer({
         url={url}
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode((m) => (m === 'page' ? 'scroll' : 'page'))}
+        showThumbnails={showThumbnails}
+        onToggleThumbnails={() => setShowThumbnails((prev) => !prev)}
       />
 
-      {/* Main Canvas Viewport with 60fps Gesture Pinch-to-Zoom & Pan or Virtualized Scroll */}
+      {/* Main Canvas Viewport: Wheel Zoom & Arrow Buttons on Desktop | 2-Finger Pinch & Swipe-Up Page Flip on iOS */}
       <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center p-1 sm:p-2">
         {isLoading && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300">
-            <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-            <p className="text-xs font-semibold tracking-wide">
-              Loading PDF Document ({loadingProgress}%)...
-            </p>
-            <div className="w-48 h-1.5 bg-slate-800 rounded-full mt-2.5 overflow-hidden">
-              <div
-                className="h-full bg-indigo-500 transition-all duration-150"
-                style={{ width: `${loadingProgress}%` }}
+            {initialThumbPlaceholder && (
+              <img
+                src={initialThumbPlaceholder}
+                alt="PDF Preview"
+                className="max-w-[85%] max-h-[80%] object-contain rounded-lg opacity-45 blur-[0.5px] mb-4 pointer-events-none"
               />
+            )}
+            <div className="flex flex-col items-center bg-slate-900/95 px-5 py-3.5 rounded-xl border border-slate-800 shadow-xl">
+              <Loader2 className="w-7 h-7 text-indigo-400 animate-spin mb-2" />
+              <p className="text-xs font-semibold tracking-wide">Loading PDF Document ({loadingProgress}%)...</p>
+              <div className="w-44 h-1.5 bg-slate-800 rounded-full mt-2 overflow-hidden">
+                <div className="h-full bg-indigo-500 transition-all duration-150" style={{ width: `${loadingProgress}%` }} />
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Desktop Floating Left/Right Page Arrow Buttons */}
+        {viewMode === 'page' && numPages > 1 && !isLoading && (
+          <>
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => handlePageChange(currentPage - 1)}
+              className="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-slate-900/85 hover:bg-blue-600 text-slate-100 border border-slate-700/80 shadow-xl disabled:opacity-20 disabled:pointer-events-none transition-all active:scale-95 cursor-pointer"
+              title="Previous Page (Left Arrow)"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              disabled={currentPage >= numPages}
+              onClick={() => handlePageChange(currentPage + 1)}
+              className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-slate-900/85 hover:bg-blue-600 text-slate-100 border border-slate-700/80 shadow-xl disabled:opacity-20 disabled:pointer-events-none transition-all active:scale-95 cursor-pointer"
+              title="Next Page (Right Arrow)"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </>
         )}
 
         {viewMode === 'scroll' && pdfDoc ? (
@@ -466,6 +445,8 @@ export function PdfNativeCanvasViewer({
             minScale={0.5}
             maxScale={10}
             onScaleChange={setZoomScale}
+            onSwipeUp={numPages > 1 ? () => handlePageChange(currentPage + 1) : undefined}
+            onSwipeDown={numPages > 1 ? () => handlePageChange(currentPage - 1) : undefined}
             className="w-full h-full flex items-center justify-center"
           >
             <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white inline-block">
@@ -480,6 +461,20 @@ export function PdfNativeCanvasViewer({
           </TouchPinchZoomStage>
         )}
       </div>
+
+      {/* Unified Interactive Page Thumbnail Filmstrip (Desktop & iOS) */}
+      {showThumbnails && pdfDoc && numPages >= 1 && (
+        <PdfPageThumbnailStrip
+          pdfDoc={pdfDoc}
+          url={url}
+          numPages={numPages}
+          currentPage={currentPage}
+          onSelectPage={(pageNum) => {
+            handlePageChange(pageNum);
+            if (viewMode === 'scroll') setViewMode('page');
+          }}
+        />
+      )}
     </div>
   );
 }

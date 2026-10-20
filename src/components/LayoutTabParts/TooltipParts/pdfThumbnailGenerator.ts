@@ -1,97 +1,66 @@
-import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
+import {
+  fetchPdfBinaryUnified,
+  getCachedPageThumbSync,
+  getCachedPageThumbAsync,
+  setCachedPageThumb,
+  renderPdfPageToThumbDataUrl,
+  canonicalizePdfKey,
+} from '../../../lib/pdfBinaryCache';
 
-/**
- * In-memory LRU cache mapping normalized PDF URLs to lightweight WebP/JPEG data URLs of Page 1.
- * Ensures 0ms instant thumbnail display on subsequent opens without re-fetching or re-decoding the PDF.
- */
-const pdfThumbnailCache = new Map<string, string>();
 const inFlightRequests = new Map<string, Promise<string | null>>();
-
-const MAX_CACHE_ENTRIES = 120;
-const THUMBNAIL_MAX_DIMENSION = 680;
+const THUMBNAIL_MAX_DIMENSION = 640;
 
 export function getCachedPdfThumbnail(rawUrl: string | undefined | null): string | null {
-  if (!rawUrl) return null;
-  const normalized = normalizeImageUrl(rawUrl, 'w600');
-  return pdfThumbnailCache.get(normalized) || pdfThumbnailCache.get(rawUrl) || null;
-}
-
-function setCachedPdfThumbnail(key: string, dataUrl: string): void {
-  if (pdfThumbnailCache.size >= MAX_CACHE_ENTRIES) {
-    const oldestKey = pdfThumbnailCache.keys().next().value;
-    if (oldestKey) pdfThumbnailCache.delete(oldestKey);
-  }
-  pdfThumbnailCache.set(key, dataUrl);
+  return getCachedPageThumbSync(rawUrl, 1);
 }
 
 /**
- * Renders Page 1 of a PDF URL (including Cloudflare R2 and Google Drive links)
- * into a lightweight, crisp WebP/JPEG data URL for instant thumbnail preview inside Quick Image.
+ * Renders Page 1 of ANY PDF URL (R2 Cloud, Google Drive, Firebase Storage, HTTP)
+ * into a lightweight, crisp WebP/JPEG data URL and persists it in both RAM and IndexedDB.
+ * Also caches the PDF binary in memory so opening the full PDF viewer afterwards takes 0ms!
  */
 export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<string | null> {
   if (!rawUrl || typeof window === 'undefined') return null;
 
-  const url = normalizeImageUrl(rawUrl, 'w600') || rawUrl.trim();
-  if (!url) return null;
+  const key = canonicalizePdfKey(rawUrl);
+  if (!key) return null;
 
-  const cached = pdfThumbnailCache.get(url) || pdfThumbnailCache.get(rawUrl);
-  if (cached) return cached;
+  // 1. Check synchronous RAM cache first (0ms)
+  const syncCached = getCachedPageThumbSync(rawUrl, 1);
+  if (syncCached) return syncCached;
 
-  const existingPromise = inFlightRequests.get(url);
+  // 2. Check persistent IndexedDB cache (< 2ms, zero network download)
+  const idbCached = await getCachedPageThumbAsync(rawUrl, 1);
+  if (idbCached) {
+    // Warm up binary cache in background so clicking to open full PDF is instant
+    setTimeout(() => {
+      fetchPdfBinaryUnified(rawUrl).catch(() => {});
+    }, 50);
+    return idbCached;
+  }
+
+  const existingPromise = inFlightRequests.get(key);
   if (existingPromise) return existingPromise;
 
   const taskPromise = (async (): Promise<string | null> => {
     let loadingTask: any = null;
     let pdfDoc: any = null;
-    let page: any = null;
-    let canvas: HTMLCanvasElement | null = null;
 
     try {
-      const pdfjsLib = await import('pdfjs-dist');
+      const [pdfjsLib, binaryData] = await Promise.all([
+        import('pdfjs-dist'),
+        fetchPdfBinaryUnified(rawUrl),
+      ]);
 
       if (pdfjsLib.GlobalWorkerOptions) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
       }
 
       const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-      const cMapLocal = `${baseOrigin}/cmaps/`;
-      const fontLocal = `${baseOrigin}/standard_fonts/`;
-
-      // If Google Drive link, extract ID and proxy
-      const driveMatch =
-        url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
-        url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
-      const effectiveUrl = driveMatch?.[1] ? `/api/drive-pdf?id=${driveMatch[1]}` : url;
-
-      // 1. First attempt: fetch binary buffer directly on main thread to avoid worker CORS issues
-      let binaryData: Uint8Array | null = null;
-      try {
-        const res = await fetch(effectiveUrl);
-        if (res.ok) {
-          const buf = await res.arrayBuffer();
-          binaryData = new Uint8Array(buf);
-        }
-      } catch {}
-
-      // Fallback for R2 links: fetch S3 presigned URL
-      if (!binaryData && !driveMatch?.[1]) {
-        try {
-          const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
-          const presignedUrl = await resolveR2UrlToHttp(url);
-          if (presignedUrl && presignedUrl !== url) {
-            const res = await fetch(presignedUrl);
-            if (res.ok) {
-              const buf = await res.arrayBuffer();
-              binaryData = new Uint8Array(buf);
-            }
-          }
-        } catch {}
-      }
-
       const docConfig: any = {
-        cMapUrl: cMapLocal,
+        cMapUrl: `${baseOrigin}/cmaps/`,
         cMapPacked: true,
-        standardFontDataUrl: fontLocal,
+        standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
         disableAutoFetch: false,
         disableStream: true,
       };
@@ -99,62 +68,23 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
       if (binaryData) {
         docConfig.data = binaryData;
       } else {
-        docConfig.url = effectiveUrl;
+        docConfig.url = rawUrl.trim();
       }
 
       loadingTask = pdfjsLib.getDocument(docConfig);
       pdfDoc = await loadingTask.promise;
-
       if (!pdfDoc) return null;
 
-      page = await pdfDoc.getPage(1);
-      const unscaledViewport = page.getViewport({ scale: 1 });
-      const maxSide = Math.max(unscaledViewport.width, unscaledViewport.height, 1);
-      const scale = Math.min(2.0, Math.max(0.4, THUMBNAIL_MAX_DIMENSION / maxSide));
-      const viewport = page.getViewport({ scale });
-
-      canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.floor(viewport.width));
-      canvas.height = Math.max(1, Math.floor(viewport.height));
-
-      const context = canvas.getContext('2d', { alpha: false });
-      if (!context) return null;
-
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
-
-      await page.render({
-        canvasContext: context,
-        viewport,
-      }).promise;
-
-      let dataUrl = '';
-      try {
-        dataUrl = canvas.toDataURL('image/webp', 0.84);
-        if (!dataUrl.startsWith('data:image/webp')) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch {
-        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      }
-
-      if (dataUrl && dataUrl.length > 64) {
-        setCachedPdfThumbnail(url, dataUrl);
-        if (rawUrl !== url) {
-          setCachedPdfThumbnail(rawUrl, dataUrl);
-        }
+      const dataUrl = await renderPdfPageToThumbDataUrl(pdfDoc, 1, THUMBNAIL_MAX_DIMENSION);
+      if (dataUrl) {
+        setCachedPageThumb(rawUrl, 1, dataUrl);
         return dataUrl;
       }
       return null;
     } catch (err) {
-      console.warn('[PDF Thumbnail] Could not generate thumbnail for PDF URL:', url, err);
+      console.warn('[PDF Thumbnail] Could not generate thumbnail for PDF URL:', rawUrl, err);
       return null;
     } finally {
-      try {
-        page?.cleanup?.();
-      } catch {}
       try {
         pdfDoc?.cleanup?.();
         pdfDoc?.destroy?.();
@@ -162,15 +92,11 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
       try {
         loadingTask?.destroy?.();
       } catch {}
-      if (canvas) {
-        canvas.width = 0;
-        canvas.height = 0;
-      }
-      inFlightRequests.delete(url);
+      inFlightRequests.delete(key);
     }
   })();
 
-  inFlightRequests.set(url, taskPromise);
+  inFlightRequests.set(key, taskPromise);
   return taskPromise;
 }
 

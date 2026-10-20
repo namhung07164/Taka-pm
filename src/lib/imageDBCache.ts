@@ -239,6 +239,11 @@ export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> 
         }
       }
 
+      // Universal server proxy fallback if browser CORS blocks R2/external fetch
+      if ((!res || !res.ok) && /^https?:\/\//i.test(activeFetchUrl)) {
+        res = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(activeFetchUrl)}`).catch(() => null);
+      }
+
       if (!res || !res.ok) {
         return null;
       }

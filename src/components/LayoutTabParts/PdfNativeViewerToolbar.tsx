@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Layers,
   FileText,
+  LayoutGrid,
 } from 'lucide-react';
 
 export interface PdfNativeViewerToolbarProps {
@@ -28,6 +29,8 @@ export interface PdfNativeViewerToolbarProps {
   url: string;
   viewMode: 'page' | 'scroll';
   onToggleViewMode: () => void;
+  showThumbnails?: boolean;
+  onToggleThumbnails?: () => void;
 }
 
 export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
@@ -47,17 +50,19 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
   url,
   viewMode,
   onToggleViewMode,
+  showThumbnails = false,
+  onToggleThumbnails,
 }) => {
   return (
     <div className="z-[60] flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900 border-b border-slate-800 shrink-0 text-slate-100 select-none">
-      {/* Left: Page Navigation & Mode */}
+      {/* Left: Page Navigation Arrows, Input, Mode & Thumbnails */}
       <div className="flex items-center gap-1 sm:gap-1.5">
         <button
           type="button"
-          disabled={currentPage <= 1 || isLoading || viewMode === 'scroll'}
+          disabled={currentPage <= 1 || isLoading}
           onClick={() => onPageChange(currentPage - 1)}
-          className="p-1 sm:p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
-          title="Previous Page"
+          className="p-1 sm:p-1.5 bg-slate-800/80 hover:bg-slate-700 disabled:opacity-30 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer border border-slate-700/80"
+          title="Previous Page (Left Arrow)"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -66,7 +71,6 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
           <span className="text-[11px] sm:text-xs text-slate-400 font-medium hidden xs:inline">Page</span>
           <input
             type="text"
-            disabled={viewMode === 'scroll'}
             value={pageInput}
             onChange={(e) => onPageInputChange(e.target.value)}
             onBlur={() => onPageInputChange(String(currentPage))}
@@ -77,34 +81,50 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
 
         <button
           type="button"
-          disabled={currentPage >= numPages || isLoading || viewMode === 'scroll'}
+          disabled={currentPage >= numPages || isLoading}
           onClick={() => onPageChange(currentPage + 1)}
-          className="p-1 sm:p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
-          title="Next Page"
+          className="p-1 sm:p-1.5 bg-slate-800/80 hover:bg-slate-700 disabled:opacity-30 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer border border-slate-700/80"
+          title="Next Page (Right Arrow / Swipe Up)"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
+
+        {onToggleThumbnails && numPages >= 1 && (
+          <button
+            type="button"
+            onClick={onToggleThumbnails}
+            className={`ml-0.5 px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer border ${
+              showThumbnails
+                ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+            }`}
+            title="Toggle Page Thumbnails"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Thumbnails</span>
+          </button>
+        )}
 
         {numPages > 1 && (
           <button
             type="button"
             onClick={onToggleViewMode}
-            className={`ml-1 px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer border ${
+            className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer border ${
               viewMode === 'scroll'
                 ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
-                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
             }`}
             title={viewMode === 'scroll' ? 'Switch to Page by Page' : 'Switch to Continuous Scroll'}
           >
             {viewMode === 'scroll' ? (
               <>
                 <Layers className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Scroll Mode</span>
+                <span className="hidden md:inline">Scroll Mode</span>
               </>
             ) : (
               <>
                 <FileText className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Page Mode</span>
+                <span className="hidden md:inline">Page Mode</span>
               </>
             )}
           </button>
@@ -117,7 +137,7 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
           type="button"
           onClick={onZoomOut}
           className="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
-          title="Zoom Out (-)"
+          title="Zoom Out (- / Scroll Down)"
         >
           <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
@@ -130,7 +150,7 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
           type="button"
           onClick={onZoomIn}
           className="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
-          title="Zoom In (+)"
+          title="Zoom In (+ / Scroll Up)"
         >
           <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
