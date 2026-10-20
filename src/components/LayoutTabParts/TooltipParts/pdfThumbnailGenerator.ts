@@ -25,7 +25,7 @@ function setCachedPdfThumbnail(key: string, dataUrl: string): void {
 }
 
 /**
- * Renders Page 1 of a PDF URL (including Cloudflare R2 https://hcm.taka-pm.org/... links)
+ * Renders Page 1 of a PDF URL (including Cloudflare R2 and Google Drive links)
  * into a lightweight, crisp WebP/JPEG data URL for instant thumbnail preview inside Quick Image.
  */
 export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<string | null> {
@@ -34,7 +34,7 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
   const url = normalizeImageUrl(rawUrl, 'w600') || rawUrl.trim();
   if (!url) return null;
 
-  const cached = pdfThumbnailCache.get(url);
+  const cached = pdfThumbnailCache.get(url) || pdfThumbnailCache.get(rawUrl);
   if (cached) return cached;
 
   const existingPromise = inFlightRequests.get(url);
@@ -49,15 +49,8 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
     try {
       const pdfjsLib = await import('pdfjs-dist');
 
-      if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        try {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-            'pdfjs-dist/build/pdf.worker.min.mjs',
-            import.meta.url
-          ).toString();
-        } catch {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
-        }
+      if (pdfjsLib.GlobalWorkerOptions) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
       }
 
       const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -70,33 +63,47 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
         url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
       const effectiveUrl = driveMatch?.[1] ? `/api/drive-pdf?id=${driveMatch[1]}` : url;
 
-      const getDocConfig = (targetUrl: string) => ({
-        url: targetUrl,
+      // 1. First attempt: fetch binary buffer directly on main thread to avoid worker CORS issues
+      let binaryData: Uint8Array | null = null;
+      try {
+        const res = await fetch(effectiveUrl);
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          binaryData = new Uint8Array(buf);
+        }
+      } catch {}
+
+      // Fallback for R2 links: fetch S3 presigned URL
+      if (!binaryData && !driveMatch?.[1]) {
+        try {
+          const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
+          const presignedUrl = await resolveR2UrlToHttp(url);
+          if (presignedUrl && presignedUrl !== url) {
+            const res = await fetch(presignedUrl);
+            if (res.ok) {
+              const buf = await res.arrayBuffer();
+              binaryData = new Uint8Array(buf);
+            }
+          }
+        } catch {}
+      }
+
+      const docConfig: any = {
         cMapUrl: cMapLocal,
         cMapPacked: true,
         standardFontDataUrl: fontLocal,
         disableAutoFetch: false,
         disableStream: true,
-      });
+      };
 
-      try {
-        loadingTask = pdfjsLib.getDocument(getDocConfig(effectiveUrl));
-        pdfDoc = await loadingTask.promise;
-      } catch (directErr) {
-        // Fallback for R2 links if direct URL fetch fails: try fetching object via S3 presigned URL
-        try {
-          const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
-          const presignedUrl = await resolveR2UrlToHttp(url);
-          if (presignedUrl && presignedUrl !== url) {
-            loadingTask = pdfjsLib.getDocument(getDocConfig(presignedUrl));
-            pdfDoc = await loadingTask.promise;
-          } else {
-            throw directErr;
-          }
-        } catch {
-          throw directErr;
-        }
+      if (binaryData) {
+        docConfig.data = binaryData;
+      } else {
+        docConfig.url = effectiveUrl;
       }
+
+      loadingTask = pdfjsLib.getDocument(docConfig);
+      pdfDoc = await loadingTask.promise;
 
       if (!pdfDoc) return null;
 
@@ -166,3 +173,5 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
   inFlightRequests.set(url, taskPromise);
   return taskPromise;
 }
+
+export default generatePdfFirstPageThumbnail;

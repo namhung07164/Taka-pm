@@ -62,7 +62,7 @@ export function PdfNativeCanvasViewer({
 
   const effectivePdfUrl = resolveEffectiveUrl(url);
 
-  // Load PDF Document asynchronously
+  // Load PDF Document asynchronously with main-thread binary fetching
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -87,64 +87,71 @@ export function PdfNativeCanvasViewer({
         const pdfjsLib = await import('pdfjs-dist');
         if (!isMounted) return;
 
-        if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-          try {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-              'pdfjs-dist/build/pdf.worker.min.mjs',
-              import.meta.url
-            ).toString();
-          } catch {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
-          }
+        // Rock-solid local worker from public directory
+        if (pdfjsLib.GlobalWorkerOptions) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
         }
 
         const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
         const cMapLocal = `${baseOrigin}/cmaps/`;
         const fontLocal = `${baseOrigin}/standard_fonts/`;
 
-        const getDocConfig = (fetchUrl: string) => ({
-          url: fetchUrl,
+        // Step 1: Attempt main-thread fetch to avoid worker-level CORS and Range request stalls
+        let binaryData: Uint8Array | null = null;
+        try {
+          setLoadingProgress(25);
+          const res = await fetch(effectivePdfUrl);
+          if (res.ok) {
+            const buf = await res.arrayBuffer();
+            binaryData = new Uint8Array(buf);
+            setLoadingProgress(55);
+          }
+        } catch {}
+
+        // Fallback for R2 direct links: try S3 presigned URL
+        if (!binaryData && !effectivePdfUrl.includes('/api/drive-pdf')) {
+          try {
+            const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
+            const presigned = await resolveR2UrlToHttp(url);
+            if (presigned && presigned !== url) {
+              const res = await fetch(presigned);
+              if (res.ok) {
+                const buf = await res.arrayBuffer();
+                binaryData = new Uint8Array(buf);
+                setLoadingProgress(55);
+              }
+            }
+          } catch {}
+        }
+
+        const docConfig: any = {
           cMapUrl: cMapLocal,
           cMapPacked: true,
           standardFontDataUrl: fontLocal,
           disableAutoFetch: false,
-          disableStream: true, // Prevents Range-request stream worker freeze on mobile Safari
-        });
+          disableStream: true,
+        };
 
-        let doc: any;
-        try {
-          const loadingTask = pdfjsLib.getDocument(getDocConfig(effectivePdfUrl));
-          loadingTaskRef.current = loadingTask;
-
-          loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
-            if (!isMounted) return;
-            if (progress.total > 0) {
-              const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
-              setLoadingProgress(pct);
-            } else {
-              setLoadingProgress((prev) => Math.min(90, prev + 15));
-            }
-          };
-
-          doc = await loadingTask.promise;
-        } catch (initialErr) {
-          // If effectivePdfUrl was a Google Drive proxy and failed, or R2 direct URL failed:
-          if (effectivePdfUrl !== url) {
-            // Re-throw so user can use embed fallback
-            throw initialErr;
-          }
-
-          // Fallback for R2 links: try S3 Presigned URL
-          const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
-          const presigned = await resolveR2UrlToHttp(url);
-          if (presigned && presigned !== url) {
-            const fallbackTask = pdfjsLib.getDocument(getDocConfig(presigned));
-            loadingTaskRef.current = fallbackTask;
-            doc = await fallbackTask.promise;
-          } else {
-            throw initialErr;
-          }
+        if (binaryData) {
+          docConfig.data = binaryData;
+        } else {
+          docConfig.url = effectivePdfUrl;
         }
+
+        const loadingTask = pdfjsLib.getDocument(docConfig);
+        loadingTaskRef.current = loadingTask;
+
+        loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
+          if (!isMounted) return;
+          if (progress.total > 0) {
+            const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
+            setLoadingProgress(pct);
+          } else {
+            setLoadingProgress((prev) => Math.min(90, prev + 15));
+          }
+        };
+
+        const doc = await loadingTask.promise;
 
         if (!isMounted) {
           try {
@@ -162,7 +169,12 @@ export function PdfNativeCanvasViewer({
       } catch (err) {
         if (!isMounted) return;
         console.warn('Native PDF loading failed:', err);
-        setError('Cannot load PDF natively (CORS or permissions).');
+        // If an iframe fallback handler exists, automatically trigger it without blocking
+        if (onFallbackToIframe) {
+          onFallbackToIframe();
+          return;
+        }
+        setError('Cannot load PDF directly in canvas (CORS or permissions).');
         setIsLoading(false);
       }
     })();
@@ -194,7 +206,7 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = null;
       }
     };
-  }, [url, effectivePdfUrl, clearPageCache]);
+  }, [url, effectivePdfUrl, onFallbackToIframe, clearPageCache]);
 
   const renderSeqRef = useRef<number>(0);
 
@@ -251,40 +263,38 @@ export function PdfNativeCanvasViewer({
 
         const unscaledViewport = page.getViewport({ scale: 1 });
 
-        // TRUE fit-to-screen scale without artificial Math.max(0.6) clamp!
-        // This ensures entire CAD blueprints / signages fit inside mobile screen without showing empty margins!
+        // TRUE fit-to-screen scale without artificial Math.max(0.6) clamp
         const scaleX = availWidth / Math.max(1, unscaledViewport.width);
         const scaleY = availHeight / Math.max(1, unscaledViewport.height);
         const fitScale = Math.min(scaleX, scaleY, 2.5);
 
-        const viewport = page.getViewport({ scale: fitScale });
-
         // Device pixel ratio with safe mobile WebKit GPU texture cap
         const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
-        const maxDprByDimension = MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1);
+        const maxDprByDimension = MAX_CANVAS_DIMENSION / Math.max(unscaledViewport.width * fitScale, unscaledViewport.height * fitScale, 1);
         const dpr = Math.max(1, Math.min(rawDpr, maxDprByDimension));
 
-        const pixelWidth = Math.max(1, Math.floor(viewport.width * dpr));
-        const pixelHeight = Math.max(1, Math.floor(viewport.height * dpr));
-        const cssWidth = Math.max(1, Math.floor(viewport.width));
-        const cssHeight = Math.max(1, Math.floor(viewport.height));
+        // Use direct effective scale in viewport so PDF.js handles pixel density natively without matrix transform
+        const effectiveScale = fitScale * dpr;
+        const viewport = page.getViewport({ scale: effectiveScale });
+
+        const pixelWidth = Math.max(1, Math.floor(viewport.width));
+        const pixelHeight = Math.max(1, Math.floor(viewport.height));
+        const cssWidth = Math.max(1, Math.floor(viewport.width / dpr));
+        const cssHeight = Math.max(1, Math.floor(viewport.height / dpr));
 
         canvas.width = pixelWidth;
         canvas.height = pixelHeight;
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        // CRITICAL: Fill canvas with solid white before rendering vector drawings!
-        // Architectural CAD drawings have transparent backgrounds and dark lines.
+        // Pre-fill solid white background for transparent vector drawings
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, pixelWidth, pixelHeight);
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = 'high';
 
-        const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
         const renderTask = page.render({
           canvasContext: context,
-          transform,
           viewport,
         });
         renderTaskRef.current = renderTask;

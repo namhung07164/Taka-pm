@@ -123259,7 +123259,6 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
 };
 
 
-
 // FILE: src/components/LayoutTabParts/PdfNativeCanvasViewer.tsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AlertCircle, Loader2, RefreshCw, ExternalLink } from 'lucide-react';
@@ -123325,7 +123324,7 @@ export function PdfNativeCanvasViewer({
 
   const effectivePdfUrl = resolveEffectiveUrl(url);
 
-  // Load PDF Document asynchronously
+  // Load PDF Document asynchronously with main-thread binary fetching
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -123350,64 +123349,71 @@ export function PdfNativeCanvasViewer({
         const pdfjsLib = await import('pdfjs-dist');
         if (!isMounted) return;
 
-        if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-          try {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-              'pdfjs-dist/build/pdf.worker.min.mjs',
-              import.meta.url
-            ).toString();
-          } catch {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
-          }
+        // Rock-solid local worker from public directory
+        if (pdfjsLib.GlobalWorkerOptions) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
         }
 
         const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
         const cMapLocal = `${baseOrigin}/cmaps/`;
         const fontLocal = `${baseOrigin}/standard_fonts/`;
 
-        const getDocConfig = (fetchUrl: string) => ({
-          url: fetchUrl,
+        // Step 1: Attempt main-thread fetch to avoid worker-level CORS and Range request stalls
+        let binaryData: Uint8Array | null = null;
+        try {
+          setLoadingProgress(25);
+          const res = await fetch(effectivePdfUrl);
+          if (res.ok) {
+            const buf = await res.arrayBuffer();
+            binaryData = new Uint8Array(buf);
+            setLoadingProgress(55);
+          }
+        } catch {}
+
+        // Fallback for R2 direct links: try S3 presigned URL
+        if (!binaryData && !effectivePdfUrl.includes('/api/drive-pdf')) {
+          try {
+            const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
+            const presigned = await resolveR2UrlToHttp(url);
+            if (presigned && presigned !== url) {
+              const res = await fetch(presigned);
+              if (res.ok) {
+                const buf = await res.arrayBuffer();
+                binaryData = new Uint8Array(buf);
+                setLoadingProgress(55);
+              }
+            }
+          } catch {}
+        }
+
+        const docConfig: any = {
           cMapUrl: cMapLocal,
           cMapPacked: true,
           standardFontDataUrl: fontLocal,
           disableAutoFetch: false,
-          disableStream: true, // Prevents Range-request stream worker freeze on mobile Safari
-        });
+          disableStream: true,
+        };
 
-        let doc: any;
-        try {
-          const loadingTask = pdfjsLib.getDocument(getDocConfig(effectivePdfUrl));
-          loadingTaskRef.current = loadingTask;
-
-          loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
-            if (!isMounted) return;
-            if (progress.total > 0) {
-              const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
-              setLoadingProgress(pct);
-            } else {
-              setLoadingProgress((prev) => Math.min(90, prev + 15));
-            }
-          };
-
-          doc = await loadingTask.promise;
-        } catch (initialErr) {
-          // If effectivePdfUrl was a Google Drive proxy and failed, or R2 direct URL failed:
-          if (effectivePdfUrl !== url) {
-            // Re-throw so user can use embed fallback
-            throw initialErr;
-          }
-
-          // Fallback for R2 links: try S3 Presigned URL
-          const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
-          const presigned = await resolveR2UrlToHttp(url);
-          if (presigned && presigned !== url) {
-            const fallbackTask = pdfjsLib.getDocument(getDocConfig(presigned));
-            loadingTaskRef.current = fallbackTask;
-            doc = await fallbackTask.promise;
-          } else {
-            throw initialErr;
-          }
+        if (binaryData) {
+          docConfig.data = binaryData;
+        } else {
+          docConfig.url = effectivePdfUrl;
         }
+
+        const loadingTask = pdfjsLib.getDocument(docConfig);
+        loadingTaskRef.current = loadingTask;
+
+        loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
+          if (!isMounted) return;
+          if (progress.total > 0) {
+            const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
+            setLoadingProgress(pct);
+          } else {
+            setLoadingProgress((prev) => Math.min(90, prev + 15));
+          }
+        };
+
+        const doc = await loadingTask.promise;
 
         if (!isMounted) {
           try {
@@ -123425,7 +123431,12 @@ export function PdfNativeCanvasViewer({
       } catch (err) {
         if (!isMounted) return;
         console.warn('Native PDF loading failed:', err);
-        setError('Cannot load PDF natively (CORS or permissions).');
+        // If an iframe fallback handler exists, automatically trigger it without blocking
+        if (onFallbackToIframe) {
+          onFallbackToIframe();
+          return;
+        }
+        setError('Cannot load PDF directly in canvas (CORS or permissions).');
         setIsLoading(false);
       }
     })();
@@ -123457,7 +123468,7 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = null;
       }
     };
-  }, [url, effectivePdfUrl, clearPageCache]);
+  }, [url, effectivePdfUrl, onFallbackToIframe, clearPageCache]);
 
   const renderSeqRef = useRef<number>(0);
 
@@ -123514,40 +123525,38 @@ export function PdfNativeCanvasViewer({
 
         const unscaledViewport = page.getViewport({ scale: 1 });
 
-        // TRUE fit-to-screen scale without artificial Math.max(0.6) clamp!
-        // This ensures entire CAD blueprints / signages fit inside mobile screen without showing empty margins!
+        // TRUE fit-to-screen scale without artificial Math.max(0.6) clamp
         const scaleX = availWidth / Math.max(1, unscaledViewport.width);
         const scaleY = availHeight / Math.max(1, unscaledViewport.height);
         const fitScale = Math.min(scaleX, scaleY, 2.5);
 
-        const viewport = page.getViewport({ scale: fitScale });
-
         // Device pixel ratio with safe mobile WebKit GPU texture cap
         const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
-        const maxDprByDimension = MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1);
+        const maxDprByDimension = MAX_CANVAS_DIMENSION / Math.max(unscaledViewport.width * fitScale, unscaledViewport.height * fitScale, 1);
         const dpr = Math.max(1, Math.min(rawDpr, maxDprByDimension));
 
-        const pixelWidth = Math.max(1, Math.floor(viewport.width * dpr));
-        const pixelHeight = Math.max(1, Math.floor(viewport.height * dpr));
-        const cssWidth = Math.max(1, Math.floor(viewport.width));
-        const cssHeight = Math.max(1, Math.floor(viewport.height));
+        // Use direct effective scale in viewport so PDF.js handles pixel density natively without matrix transform
+        const effectiveScale = fitScale * dpr;
+        const viewport = page.getViewport({ scale: effectiveScale });
+
+        const pixelWidth = Math.max(1, Math.floor(viewport.width));
+        const pixelHeight = Math.max(1, Math.floor(viewport.height));
+        const cssWidth = Math.max(1, Math.floor(viewport.width / dpr));
+        const cssHeight = Math.max(1, Math.floor(viewport.height / dpr));
 
         canvas.width = pixelWidth;
         canvas.height = pixelHeight;
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        // CRITICAL: Fill canvas with solid white before rendering vector drawings!
-        // Architectural CAD drawings have transparent backgrounds and dark lines.
+        // Pre-fill solid white background for transparent vector drawings
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, pixelWidth, pixelHeight);
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = 'high';
 
-        const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
         const renderTask = page.render({
           canvasContext: context,
-          transform,
           viewport,
         });
         renderTaskRef.current = renderTask;
@@ -123733,7 +123742,6 @@ export function PdfNativeCanvasViewer({
 }
 
 export default PdfNativeCanvasViewer;
-
 
 
 // FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx
@@ -124105,7 +124113,6 @@ export function LayoutUnitLightboxModal({
 }
 
 export default LayoutUnitLightboxModal;
-
 
 
 // FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx
@@ -125004,7 +125011,7 @@ function setCachedPdfThumbnail(key: string, dataUrl: string): void {
 }
 
 /**
- * Renders Page 1 of a PDF URL (including Cloudflare R2 https://hcm.taka-pm.org/... links)
+ * Renders Page 1 of a PDF URL (including Cloudflare R2 and Google Drive links)
  * into a lightweight, crisp WebP/JPEG data URL for instant thumbnail preview inside Quick Image.
  */
 export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<string | null> {
@@ -125013,7 +125020,7 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
   const url = normalizeImageUrl(rawUrl, 'w600') || rawUrl.trim();
   if (!url) return null;
 
-  const cached = pdfThumbnailCache.get(url);
+  const cached = pdfThumbnailCache.get(url) || pdfThumbnailCache.get(rawUrl);
   if (cached) return cached;
 
   const existingPromise = inFlightRequests.get(url);
@@ -125028,15 +125035,8 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
     try {
       const pdfjsLib = await import('pdfjs-dist');
 
-      if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        try {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-            'pdfjs-dist/build/pdf.worker.min.mjs',
-            import.meta.url
-          ).toString();
-        } catch {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
-        }
+      if (pdfjsLib.GlobalWorkerOptions) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
       }
 
       const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -125049,33 +125049,47 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
         url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
       const effectiveUrl = driveMatch?.[1] ? `/api/drive-pdf?id=${driveMatch[1]}` : url;
 
-      const getDocConfig = (targetUrl: string) => ({
-        url: targetUrl,
+      // 1. First attempt: fetch binary buffer directly on main thread to avoid worker CORS issues
+      let binaryData: Uint8Array | null = null;
+      try {
+        const res = await fetch(effectiveUrl);
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          binaryData = new Uint8Array(buf);
+        }
+      } catch {}
+
+      // Fallback for R2 links: fetch S3 presigned URL
+      if (!binaryData && !driveMatch?.[1]) {
+        try {
+          const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
+          const presignedUrl = await resolveR2UrlToHttp(url);
+          if (presignedUrl && presignedUrl !== url) {
+            const res = await fetch(presignedUrl);
+            if (res.ok) {
+              const buf = await res.arrayBuffer();
+              binaryData = new Uint8Array(buf);
+            }
+          }
+        } catch {}
+      }
+
+      const docConfig: any = {
         cMapUrl: cMapLocal,
         cMapPacked: true,
         standardFontDataUrl: fontLocal,
         disableAutoFetch: false,
         disableStream: true,
-      });
+      };
 
-      try {
-        loadingTask = pdfjsLib.getDocument(getDocConfig(effectiveUrl));
-        pdfDoc = await loadingTask.promise;
-      } catch (directErr) {
-        // Fallback for R2 links if direct URL fetch fails: try fetching object via S3 presigned URL
-        try {
-          const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
-          const presignedUrl = await resolveR2UrlToHttp(url);
-          if (presignedUrl && presignedUrl !== url) {
-            loadingTask = pdfjsLib.getDocument(getDocConfig(presignedUrl));
-            pdfDoc = await loadingTask.promise;
-          } else {
-            throw directErr;
-          }
-        } catch {
-          throw directErr;
-        }
+      if (binaryData) {
+        docConfig.data = binaryData;
+      } else {
+        docConfig.url = effectiveUrl;
       }
+
+      loadingTask = pdfjsLib.getDocument(docConfig);
+      pdfDoc = await loadingTask.promise;
 
       if (!pdfDoc) return null;
 
@@ -125146,6 +125160,7 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
   return taskPromise;
 }
 
+export default generatePdfFirstPageThumbnail;
 
 
 // FILE: server.ts
@@ -125378,4 +125393,282 @@ async function startServer() {
 }
 
 startServer();
+
+
+
+// FILE: src/components/LayoutTabParts/TooltipParts/TooltipZoomableThumbnail.tsx
+import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, ZoomIn, FileText, Loader2 } from 'lucide-react';
+import { TooltipImageItem } from './tooltipTypes';
+import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
+import {
+  generatePdfFirstPageThumbnail,
+  getCachedPdfThumbnail,
+} from './pdfThumbnailGenerator';
+
+interface TooltipZoomableThumbnailProps {
+  img: TooltipImageItem;
+  onOpenFullscreen: (img: { url: string; title?: string; initialScale?: number }) => void;
+}
+
+export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> = ({
+  img,
+  onOpenFullscreen,
+}) => {
+  const [previewScale, setPreviewScale] = useState(1);
+  const [isPinching, setIsPinching] = useState(false);
+  const [showZoomHint, setShowZoomHint] = useState(false);
+  const [isImgError, setIsImgError] = useState(false);
+
+  const thumbnailSrc = useMemo(() => normalizeImageUrl(img.url, 'w400'), [img.url]);
+
+  const isDirectPdfFile = useMemo(() => {
+    const u = (thumbnailSrc || img.url || '').toLowerCase();
+    if (u.includes('drive.google.com/thumbnail') || u.includes('googleusercontent.com')) {
+      return false;
+    }
+    return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
+  }, [thumbnailSrc, img.url]);
+
+  const [pdfThumbSrc, setPdfThumbSrc] = useState<string | null>(() =>
+    getCachedPdfThumbnail(img.url)
+  );
+  const [isPdfThumbLoading, setIsPdfThumbLoading] = useState<boolean>(() =>
+    isDirectPdfFile && !getCachedPdfThumbnail(img.url)
+  );
+
+  useEffect(() => {
+    setIsImgError(false);
+    const cached = getCachedPdfThumbnail(img.url);
+    if (cached) {
+      setPdfThumbSrc(cached);
+      setIsPdfThumbLoading(false);
+      return;
+    }
+
+    if (!isDirectPdfFile) {
+      setPdfThumbSrc(null);
+      setIsPdfThumbLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsPdfThumbLoading(true);
+
+    generatePdfFirstPageThumbnail(img.url).then((dataUrl) => {
+      if (cancelled) return;
+      setPdfThumbSrc(dataUrl);
+      setIsPdfThumbLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [img.url, isDirectPdfFile]);
+
+  const touchStateRef = useRef<{
+    initialDist: number;
+    triggered: boolean;
+  } | null>(null);
+
+  const singleTouchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastTapRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const isDrivePdfOrDoc = useMemo(() => {
+    const u = (img.url || '').toLowerCase();
+    return u.includes('drive.google.com') || u.includes('docs.google.com');
+  }, [img.url]);
+
+  // 1. Pinch-to-zoom & Drag-to-zoom gesture on touch devices (iOS / iPad / mobile)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const p1 = e.touches[0];
+      const p2 = e.touches[1];
+      const dist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+      touchStateRef.current = { initialDist: dist, triggered: false };
+      setIsPinching(true);
+      setShowZoomHint(true);
+      singleTouchStartRef.current = null;
+    } else if (e.touches.length === 1) {
+      singleTouchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        time: Date.now(),
+      };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStateRef.current) {
+      const p1 = e.touches[0];
+      const p2 = e.touches[1];
+      const currentDist = Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+      const ratio = currentDist / Math.max(touchStateRef.current.initialDist, 1);
+
+      if (ratio > 1.05) {
+        if (e.cancelable) e.preventDefault();
+        setPreviewScale(Math.min(2.2, ratio));
+
+        if (ratio >= 1.15 && !touchStateRef.current.triggered) {
+          touchStateRef.current.triggered = true;
+          const targetScale = Math.min(4, Math.max(1.35, ratio * 1.3));
+          onOpenFullscreen({
+            url: img.url,
+            title: img.title,
+            initialScale: targetScale,
+          });
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    singleTouchStartRef.current = null;
+    if (touchStateRef.current) {
+      touchStateRef.current = null;
+      setIsPinching(false);
+      setPreviewScale(1);
+      setTimeout(() => setShowZoomHint(false), 800);
+      return;
+    }
+
+    if (e.changedTouches.length === 1) {
+      const now = Date.now();
+      if (now - lastTapRef.current < 320) {
+        lastTapRef.current = 0;
+        if (e.cancelable) e.preventDefault();
+        onOpenFullscreen({
+          url: img.url,
+          title: img.title,
+          initialScale: 2.0,
+        });
+      } else {
+        lastTapRef.current = now;
+      }
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onOpenFullscreen({
+      url: img.url,
+      title: img.title,
+      initialScale: 1,
+    });
+  };
+
+  const effectiveImageSrc = isDirectPdfFile ? pdfThumbSrc : thumbnailSrc;
+
+  return (
+    <div
+      ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onClick={handleClick}
+      onMouseEnter={() => setShowZoomHint(true)}
+      onMouseLeave={() => setShowZoomHint(false)}
+      className="relative rounded-lg overflow-hidden bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800/80 w-full max-h-[190px] sm:max-h-[280px] flex items-center justify-center group/thumb p-1 touch-manipulation cursor-pointer"
+      title="Click to view full display HD"
+    >
+      {isDirectPdfFile && isPdfThumbLoading ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-7 px-3 text-center w-full bg-slate-900/5 dark:bg-slate-900/60 rounded-md">
+          <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+            Generating thumbnail preview...
+          </span>
+        </div>
+      ) : effectiveImageSrc && !isImgError ? (
+        <img
+          src={effectiveImageSrc}
+          alt={img.title}
+          loading="lazy"
+          decoding="async"
+          onError={() => {
+            // If an R2 URL without .pdf extension is actually a PDF, attempt PDF thumbnail generation before showing error
+            if (!isDirectPdfFile && !pdfThumbSrc && !isPdfThumbLoading) {
+              setIsPdfThumbLoading(true);
+              generatePdfFirstPageThumbnail(img.url).then((dataUrl) => {
+                setIsPdfThumbLoading(false);
+                if (dataUrl) {
+                  setPdfThumbSrc(dataUrl);
+                  setIsImgError(false);
+                } else {
+                  setIsImgError(true);
+                }
+              });
+              return;
+            }
+            setIsImgError(true);
+          }}
+          style={{
+            transform: previewScale > 1 ? `scale(${previewScale})` : undefined,
+            transition: isPinching ? 'none' : 'transform 0.15s ease-out',
+          }}
+          draggable={false}
+          className="w-full h-auto max-h-[180px] sm:max-h-[270px] object-contain hover:scale-[1.01] duration-150 rounded-md select-none bg-white"
+        />
+      ) : isDirectPdfFile ? (
+        <div className="flex flex-col items-center justify-center gap-1.5 py-5 px-3 text-center w-full bg-slate-900/5 dark:bg-slate-900/60 rounded-md">
+          <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+            <FileText className="w-5 h-5" />
+          </div>
+          <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate max-w-[220px]">
+            {img.title || 'PDF Document'}
+          </span>
+          <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+            Click to open lightweight PDF Viewer
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-1 text-[10px] text-slate-400 p-3 text-center w-full">
+          <span className="font-semibold text-slate-600 dark:text-slate-300">
+            {isDrivePdfOrDoc ? 'Document / PDF Preview' : 'Web Link / Article Preview'}
+          </span>
+          <span className="truncate max-w-[200px] text-[9px] font-mono text-blue-500">
+            {img.url}
+          </span>
+        </div>
+      )}
+
+      {/* Subtle PDF badge when showing rendered PDF thumbnail */}
+      {isDirectPdfFile && effectiveImageSrc && !isImgError && (
+        <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600/90 text-white rounded text-[9px] font-bold tracking-wider uppercase shadow-xs pointer-events-none z-10">
+          PDF
+        </div>
+      )}
+
+      {/* Floating Action Bar: Maximize & Zoom HD */}
+      <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-90 group-hover/thumb:opacity-100 transition-opacity z-10">
+        <button
+          type="button"
+          onClick={handleClick}
+          className="p-1.5 bg-black/75 hover:bg-black/95 text-white rounded-md backdrop-blur-xs transition-all active:scale-90 cursor-pointer shadow-md flex items-center gap-1 text-[10px] font-medium"
+          title="Zoom HD Fullscreen (Escape to close)"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Zoom HD</span>
+        </button>
+      </div>
+
+      {/* Interactive Micro-badge feedback */}
+      {(showZoomHint || previewScale > 1) && (
+        <div className="absolute bottom-2 left-2 bg-slate-900/85 backdrop-blur-xs text-white text-[9px] px-2 py-0.5 rounded-full pointer-events-none flex items-center gap-1 font-mono shadow-md animate-in fade-in duration-100 z-10">
+          <ZoomIn className="w-2.5 h-2.5 text-blue-400" />
+          <span>
+            {previewScale > 1
+              ? `Zooming ${(previewScale * 100).toFixed(0)}%...`
+              : 'Click to open full display'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default TooltipZoomableThumbnail;
+
+
 
