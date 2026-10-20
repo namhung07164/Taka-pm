@@ -19,7 +19,7 @@ interface PerformanceMetricsCardsProps {
   heavyCollections: CollectionStatItem[];
 }
 
-export const PerformanceMetricsCards: React.FC<PerformanceMetricsCardsProps> = ({
+export const PerformanceMetricsCards: React.FC<PerformanceMetricsCardsProps> = React.memo(({
   serverReads,
   cacheReads,
   cacheEfficiency,
@@ -143,4 +143,4 @@ export const PerformanceMetricsCards: React.FC<PerformanceMetricsCardsProps> = (
       )}
     </div>
   );
-};
+});

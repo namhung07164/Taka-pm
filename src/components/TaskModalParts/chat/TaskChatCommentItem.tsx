@@ -24,7 +24,7 @@ interface TaskChatCommentItemProps {
   delegationGroups: DelegationGroup[];
 }
 
-export const TaskChatCommentItem: React.FC<TaskChatCommentItemProps> = ({
+export const TaskChatCommentItem: React.FC<TaskChatCommentItemProps> = React.memo(({
   comment: c,
   currentUser,
   appUsers,
@@ -158,4 +158,17 @@ export const TaskChatCommentItem: React.FC<TaskChatCommentItemProps> = ({
       </div>
     </div>
   );
-};
+}, (prev, next) => {
+  const wasEditing = prev.editingCommentId === prev.comment?.id;
+  const isNowEditing = next.editingCommentId === next.comment?.id;
+  if (wasEditing !== isNowEditing) return false;
+  if (isNowEditing && prev.editingText !== next.editingText) return false;
+  return (
+    prev.comment === next.comment &&
+    prev.task === next.task &&
+    prev.linkedGroup === next.linkedGroup &&
+    prev.currentUser === next.currentUser &&
+    prev.appUsers === next.appUsers &&
+    prev.subAppUsers === next.subAppUsers
+  );
+});

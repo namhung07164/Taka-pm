@@ -21,7 +21,7 @@ interface ProjectCommentItemProps {
   onOpenTask?: (taskId: string) => void;
 }
 
-export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = ({
+export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = React.memo(({
   comment: c,
   currentUser,
   appUsers,
@@ -239,4 +239,14 @@ export const ProjectCommentItem: React.FC<ProjectCommentItemProps> = ({
       </div>
     </div>
   );
-};
+}, (prev, next) => {
+  if (prev.isEditing !== next.isEditing) return false;
+  if (next.isEditing && prev.editingText !== next.editingText) return false;
+  return (
+    prev.comment === next.comment &&
+    prev.isMe === next.isMe &&
+    prev.currentUser === next.currentUser &&
+    prev.appUsers === next.appUsers &&
+    prev.projectTasks === next.projectTasks
+  );
+});

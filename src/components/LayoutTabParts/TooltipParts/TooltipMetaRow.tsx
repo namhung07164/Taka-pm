@@ -15,7 +15,7 @@ interface TooltipMetaRowProps {
   onOpenMiniGantt?: (project: Project) => void;
 }
 
-export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = ({
+export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   v,
   p,
   floorValue,
@@ -123,4 +123,4 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = ({
       )}
     </div>
   );
-};
+});

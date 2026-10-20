@@ -11,7 +11,7 @@ interface BudgetSummaryCardProps {
   formatCurrency: (val: number | undefined) => string;
 }
 
-export function BudgetSummaryCard({
+export const BudgetSummaryCard = React.memo(function BudgetSummaryCard({
   totalGlobalBudget,
   totalGlobalActual,
   totalGlobalSupportingFee,
@@ -54,4 +54,4 @@ export function BudgetSummaryCard({
       </div>
     </div>
   );
-}
+});

@@ -37,61 +37,76 @@ export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCou
   return { cleaned, fixedCount };
 }
 
+interface RollupNodeResult {
+  start: string;
+  finish: string;
+  allCompleted: boolean;
+  hasInProcess: boolean;
+}
+
+let _lastRollupInputRef: Task[] | null = null;
+let _lastRollupOutputRef: Task[] | null = null;
+
 /**
  * Computes rolled up start date, finish date, duration, and status for parent tasks
- * based on their child tasks (recursive with circular loop detection).
+ * based on their child tasks in O(N) time with subtree memoization and circular loop guard.
  */
 export function rollupParentTaskDatesAndStatus(
   tasks: Task[],
-  delegationGroups?: DelegationGroup[]
+  _delegationGroups?: DelegationGroup[]
 ): Task[] {
   if (!Array.isArray(tasks) || tasks.length === 0) return tasks || [];
+  if (_lastRollupInputRef === tasks && _lastRollupOutputRef) {
+    return _lastRollupOutputRef;
+  }
 
-  // Group children by parentTaskId
   const childrenMap = new Map<string, Task[]>();
-  const taskMap = new Map<string, Task>();
 
-  tasks.forEach((t) => {
-    if (!t || !t.id || t.isDeleted) return;
-    taskMap.set(t.id, t);
-    if (t.parentTaskId) {
-      const list = childrenMap.get(t.parentTaskId) || [];
-      list.push(t);
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || !t.id || t.isDeleted || !t.parentTaskId) continue;
+    let list = childrenMap.get(t.parentTaskId);
+    if (!list) {
+      list = [];
       childrenMap.set(t.parentTaskId, list);
     }
-  });
+    list.push(t);
+  }
 
-  if (childrenMap.size === 0) return tasks;
+  if (childrenMap.size === 0) {
+    _lastRollupInputRef = tasks;
+    _lastRollupOutputRef = tasks;
+    return tasks;
+  }
 
   const result = [...tasks];
+  const memoRollup = new Map<string, RollupNodeResult | null>();
+  const visiting = new Set<string>();
 
-  // Helper to recursively collect leaf/child dates for a parent with circular guard
-  function getRolledUpDatesAndStatus(
-    parentId: string,
-    visited = new Set<string>()
-  ): { start: string; finish: string; allCompleted: boolean; hasInProcess: boolean } | null {
-    if (visited.has(parentId)) return null;
-    visited.add(parentId);
+  function getRolledUpDatesAndStatus(parentId: string): RollupNodeResult | null {
+    if (memoRollup.has(parentId)) return memoRollup.get(parentId)!;
+    if (visiting.has(parentId)) return null;
 
     const children = childrenMap.get(parentId);
-    if (!children || children.length === 0) return null;
+    if (!children || children.length === 0) {
+      memoRollup.set(parentId, null);
+      return null;
+    }
 
+    visiting.add(parentId);
     let minStart = '';
     let maxFinish = '';
     let allCompleted = true;
     let hasInProcess = false;
 
-    for (const child of children) {
-      const subRollup = getRolledUpDatesAndStatus(child.id, new Set(visited));
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      const subRollup = child.id ? getRolledUpDatesAndStatus(child.id) : null;
       const childStart = subRollup ? subRollup.start : (child.start || '');
       const childFinish = subRollup ? subRollup.finish : (child.finish || '');
 
-      if (childStart) {
-        if (!minStart || childStart < minStart) minStart = childStart;
-      }
-      if (childFinish) {
-        if (!maxFinish || childFinish > maxFinish) maxFinish = childFinish;
-      }
+      if (childStart && (!minStart || childStart < minStart)) minStart = childStart;
+      if (childFinish && (!maxFinish || childFinish > maxFinish)) maxFinish = childFinish;
 
       const status = String(child.runningStatus || '').toLowerCase();
       if (status !== 'completed' && status !== 'pj compl' && status !== 'done' && status !== '100%') {
@@ -102,74 +117,86 @@ export function rollupParentTaskDatesAndStatus(
       }
     }
 
-    return { start: minStart, finish: maxFinish, allCompleted, hasInProcess };
+    visiting.delete(parentId);
+    const computed: RollupNodeResult = { start: minStart, finish: maxFinish, allCompleted, hasInProcess };
+    memoRollup.set(parentId, computed);
+    return computed;
   }
 
-  // Update parent tasks
   for (let i = 0; i < result.length; i++) {
     const task = result[i];
-    if (!task || !task.id) continue;
-    
-    if (childrenMap.has(task.id)) {
-      const rolled = getRolledUpDatesAndStatus(task.id);
-      if (rolled) {
-        const newStart = rolled.start || '';
-        const newFinish = rolled.finish || '';
+    if (!task || !task.id || !childrenMap.has(task.id)) continue;
 
-        let newStatus = task.runningStatus;
-        if (rolled.allCompleted) {
-          newStatus = 'Completed';
-        } else if (rolled.hasInProcess) {
-          newStatus = 'On process';
-        }
+    const rolled = getRolledUpDatesAndStatus(task.id);
+    if (rolled) {
+      const newStart = rolled.start || '';
+      const newFinish = rolled.finish || '';
 
-        if (newStart !== (task.start || '') || newFinish !== (task.finish || '') || newStatus !== task.runningStatus) {
-          result[i] = {
-            ...task,
-            start: newStart,
-            finish: newFinish,
-            runningStatus: newStatus as any,
-          };
-        }
+      let newStatus = task.runningStatus;
+      if (rolled.allCompleted) {
+        newStatus = 'Completed';
+      } else if (rolled.hasInProcess) {
+        newStatus = 'On process';
+      }
+
+      if (newStart !== (task.start || '') || newFinish !== (task.finish || '') || newStatus !== task.runningStatus) {
+        result[i] = {
+          ...task,
+          start: newStart,
+          finish: newFinish,
+          runningStatus: newStatus as any,
+        };
       }
     }
   }
 
+  _lastRollupInputRef = tasks;
+  _lastRollupOutputRef = result;
   return result;
 }
 
 /**
- * Rolls up task summaries for project computed summaries.
+ * Rolls up task summaries for project computed summaries in O(N).
  */
 export function rollupTaskSummaries(summaries: any[]): any[] {
   if (!Array.isArray(summaries) || summaries.length === 0) return summaries || [];
 
   const childrenMap = new Map<string, any[]>();
-  summaries.forEach((s) => {
+  for (let i = 0; i < summaries.length; i++) {
+    const s = summaries[i];
     if (s && s.id && s.parentTaskId) {
-      const list = childrenMap.get(s.parentTaskId) || [];
+      let list = childrenMap.get(s.parentTaskId);
+      if (!list) {
+        list = [];
+        childrenMap.set(s.parentTaskId, list);
+      }
       list.push(s);
-      childrenMap.set(s.parentTaskId, list);
     }
-  });
+  }
 
   if (childrenMap.size === 0) return summaries;
 
   const result = [...summaries];
+  const memoSummary = new Map<string, { start: string; finish: string } | null>();
+  const visiting = new Set<string>();
 
-  function getSummaryRollup(parentId: string, visited = new Set<string>()): { start: string; finish: string } | null {
-    if (visited.has(parentId)) return null;
-    visited.add(parentId);
+  function getSummaryRollup(parentId: string): { start: string; finish: string } | null {
+    if (memoSummary.has(parentId)) return memoSummary.get(parentId)!;
+    if (visiting.has(parentId)) return null;
 
     const children = childrenMap.get(parentId);
-    if (!children || children.length === 0) return null;
+    if (!children || children.length === 0) {
+      memoSummary.set(parentId, null);
+      return null;
+    }
 
+    visiting.add(parentId);
     let minStart = '';
     let maxFinish = '';
 
-    for (const child of children) {
-      const childId = child.id;
-      const sub = childId ? getSummaryRollup(childId, new Set(visited)) : null;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      const sub = child.id ? getSummaryRollup(child.id) : null;
       const cStart = sub ? sub.start : (child.start || '');
       const cFinish = sub ? sub.finish : (child.finish || '');
 
@@ -177,7 +204,10 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
       if (cFinish && (!maxFinish || cFinish > maxFinish)) maxFinish = cFinish;
     }
 
-    return { start: minStart, finish: maxFinish };
+    visiting.delete(parentId);
+    const out = { start: minStart, finish: maxFinish };
+    memoSummary.set(parentId, out);
+    return out;
   }
 
   for (let i = 0; i < result.length; i++) {
@@ -196,4 +226,3 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
 
   return result;
 }
-

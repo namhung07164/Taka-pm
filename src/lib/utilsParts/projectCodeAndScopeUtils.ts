@@ -348,10 +348,8 @@ export function isTaskBelongsToProject(
 
   const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  if (tYear && pYear && tYear !== pYear) {
-    if (hasOtherProjectInStoreWithCode(pStore, t.projectCode, tYear, pId, allProjects)) {
-      return false;
-    }
+  if (tYear && pYear && tYear.toLowerCase() !== 'all' && pYear.toLowerCase() !== 'all' && tYear !== pYear) {
+    return false;
   }
 
   return true;
@@ -385,10 +383,8 @@ export function isDelegationGroupBelongsToProject(
 
   const gYear = g.projectYear !== undefined && g.projectYear !== null ? String(g.projectYear).trim() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  if (gYear && pYear && gYear !== pYear) {
-    if (hasOtherProjectInStoreWithCode(pStore, g.projectCode, gYear, pId)) {
-      return false;
-    }
+  if (gYear && pYear && gYear.toLowerCase() !== 'all' && pYear.toLowerCase() !== 'all' && gYear !== pYear) {
+    return false;
   }
 
   return true;
