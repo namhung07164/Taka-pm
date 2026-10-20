@@ -93,7 +93,7 @@ const SingleScrollPage: React.FC<SingleScrollPageProps> = React.memo(({
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        const ctx = canvas.getContext('2d', { alpha: false });
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         ctx.fillStyle = '#ffffff';

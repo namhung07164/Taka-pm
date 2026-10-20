@@ -365,7 +365,7 @@ export async function renderPdfPageToThumbDataUrl(
     canvas.width = Math.max(1, Math.floor(viewport.width));
     canvas.height = Math.max(1, Math.floor(viewport.height));
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
     ctx.fillStyle = '#ffffff';

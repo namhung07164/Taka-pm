@@ -362,7 +362,6 @@ export default defineConfig({
 });
 ================================================================================
 FILE: server.ts
-================================================================================
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -481,6 +480,18 @@ async function startServer() {
     }
   });
 
+  // In-memory LRU Cache cho binary PDF và Thumbnail để phản hồi 0ms cho các lần mở tiếp theo
+  const mediaMemoryCache = new Map<string, { buffer: Buffer; contentType: string; ts: number }>();
+  const MAX_MEDIA_CACHE_ITEMS = 40;
+  const setMediaCache = (key: string, buffer: Buffer, contentType: string) => {
+    if (buffer.byteLength > 25 * 1024 * 1024) return; // Không cache file > 25MB trong RAM
+    if (mediaMemoryCache.size >= MAX_MEDIA_CACHE_ITEMS) {
+      const oldestKey = mediaMemoryCache.keys().next().value;
+      if (oldestKey) mediaMemoryCache.delete(oldestKey);
+    }
+    mediaMemoryCache.set(key, { buffer, contentType, ts: Date.now() });
+  };
+
   // API Proxy tải binary PDF từ Google Drive để đồng bộ hiển thị Native Canvas như R2
   app.get('/api/drive-pdf', async (req, res) => {
     try {
@@ -490,6 +501,16 @@ async function startServer() {
       }
 
       const cleanId = fileId.trim();
+      const cacheKey = `drive-pdf:${cleanId}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType || 'application/pdf');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        res.setHeader('Accept-Ranges', 'bytes');
+        return res.send(cached.buffer);
+      }
+
       const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&authuser=0`;
 
       let response = await fetch(directDownloadUrl, {
@@ -515,7 +536,6 @@ async function startServer() {
             redirect: 'follow',
           });
         } else {
-          // Thử endpoint uc?export=download
           const ucUrl = `https://drive.google.com/uc?export=download&id=${cleanId}`;
           const ucRes = await fetch(ucUrl, {
             headers: {
@@ -537,17 +557,147 @@ async function startServer() {
         });
       }
 
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.setHeader('Accept-Ranges', 'bytes');
-
       const arrayBuffer = await response.arrayBuffer();
-      return res.send(Buffer.from(arrayBuffer));
+      const buffer = Buffer.from(arrayBuffer);
+      const resolvedMime = finalContentType.includes('image/') ? finalContentType : 'application/pdf';
+      setMediaCache(cacheKey, buffer, resolvedMime);
+
+      res.setHeader('Content-Type', resolvedMime);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      res.setHeader('Accept-Ranges', 'bytes');
+      return res.send(buffer);
     } catch (error: any) {
       console.error('Drive PDF Proxy Exception:', error);
       res.status(500).json({ success: false, error: error.message });
     }
+  });
+
+  // API Proxy tải nhanh Thumbnail từ Google Drive (chống lỗi chặn ITP/CORS trên iOS Safari)
+  app.get('/api/drive-thumb', async (req, res) => {
+    try {
+      const fileId = String(req.query.id || '').trim();
+      const sz = String(req.query.sz || 'w600').trim();
+      if (!fileId) return res.status(400).end();
+
+      const cacheKey = `drive-thumb:${fileId}:${sz}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(cached.buffer);
+      }
+
+      const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=${sz}`;
+      let response = await fetch(thumbUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok || (response.headers.get('content-type') || '').includes('text/html')) {
+        const fallbackLh3 = `https://lh3.googleusercontent.com/d/${fileId}=${sz}`;
+        response = await fetch(fallbackLh3, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'image/*,*/*;q=0.8',
+          },
+          redirect: 'follow',
+        });
+      }
+
+      const ct = response.headers.get('content-type') || 'image/jpeg';
+      if (!response.ok || ct.includes('text/html')) {
+        return res.status(404).end();
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      setMediaCache(cacheKey, buffer, ct);
+
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.send(buffer);
+    } catch {
+      return res.status(500).end();
+    }
+  });
+
+  // API Proxy đa năng cho mọi nguồn PDF/Image (R2, Firebase, HTTP) khi trình duyệt gặp rào cản CORS
+  app.get('/api/pdf-proxy', async (req, res) => {
+    try {
+      const targetUrl = String(req.query.url || '').trim();
+      if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+        return res.status(400).json({ success: false, error: 'URL không hợp lệ' });
+      }
+
+      const cacheKey = `pdf-proxy:${targetUrl}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(cached.buffer);
+      }
+
+      const response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/pdf,image/*,application/octet-stream,*/*',
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).end();
+      }
+
+      const ct = response.headers.get('content-type') || 'application/pdf';
+      const buffer = Buffer.from(await response.arrayBuffer());
+      setMediaCache(cacheKey, buffer, ct);
+
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.send(buffer);
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Phục vụ tĩnh tài nguyên cmaps & standard_fonts của PDF.js (chống trả nhầm file HTML làm crash canvas)
+  const publicPath = path.join(process.cwd(), 'public');
+  app.use('/cmaps', express.static(path.join(publicPath, 'cmaps'), {
+    fallthrough: false,
+    setHeaders: (res) => {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+
+  app.use('/standard_fonts', express.static(path.join(publicPath, 'standard_fonts'), {
+    fallthrough: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.ttf')) {
+        res.setHeader('Content-Type', 'font/ttf');
+      } else {
+        res.setHeader('Content-Type', 'application/octet-stream');
+      }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+
+  // Chặn trả file index.html cho các đuôi mở rộng nhị phân nếu file không tồn tại (trả 404 thay vì 200 HTML)
+  app.use((req, res, next) => {
+    if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+      return res.status(404).end();
+    }
+    next();
   });
 
   // Tích hợp Vite Middleware cho môi trường Dev
@@ -594,7 +744,6 @@ async function startServer() {
 startServer();
 
 
-================================================================================
 FILE: index.html
 ================================================================================
 <!doctype html>
@@ -45094,13 +45243,13 @@ export const MiniGanttRowItem: React.FC<MiniGanttRowItemProps> = React.memo(
 
 ================================================================================
 FILE: src/components/LayoutTabParts/PdfNativeCanvasViewer.tsx
-================================================================================
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertCircle, Loader2, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
 import { PdfNativeViewerToolbar } from './PdfNativeViewerToolbar';
 import { PdfScrollablePagesView } from './PdfScrollablePagesView';
 import { PdfPageThumbnailStrip } from './PdfPageThumbnailStrip';
+import { PdfDocumentErrorView, PdfPageRenderErrorOverlay } from './PdfViewerErrorState';
 import {
   fetchPdfBinaryUnified,
   getCachedPageThumbSync,
@@ -45134,6 +45283,7 @@ export function PdfNativeCanvasViewer({
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState<boolean>(false);
+  const [pageRenderError, setPageRenderError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'page' | 'scroll'>('page');
   const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
 
@@ -45327,8 +45477,8 @@ export function PdfNativeCanvasViewer({
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        // 2. Obtain fresh 2D context AFTER dimension change (critical for iOS Safari)
-        const ctx = canvas.getContext('2d', { alpha: false });
+        // 2. Obtain fresh 2D context (standard alpha context for full PDF blend/mask support)
+        const ctx = canvas.getContext('2d');
         if (!ctx) {
           try { page.cleanup?.(); } catch {}
           return;
@@ -45348,6 +45498,7 @@ export function PdfNativeCanvasViewer({
 
         await task.promise;
         try { page.cleanup?.(); } catch {}
+        setPageRenderError(null);
 
         // 4. Save rendered thumbnail to cache for instant filmstrip display
         if (!getCachedPageThumbSync(url, pageNum)) {
@@ -45357,7 +45508,7 @@ export function PdfNativeCanvasViewer({
               const tCanvas = document.createElement('canvas');
               tCanvas.width = Math.max(1, Math.round(pixelWidth * thumbRatio));
               tCanvas.height = Math.max(1, Math.round(pixelHeight * thumbRatio));
-              const tCtx = tCanvas.getContext('2d', { alpha: false });
+              const tCtx = tCanvas.getContext('2d');
               if (tCtx) {
                 tCtx.fillStyle = '#ffffff';
                 tCtx.fillRect(0, 0, tCanvas.width, tCanvas.height);
@@ -45375,6 +45526,7 @@ export function PdfNativeCanvasViewer({
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
           console.error('PDF page render error:', err);
+          setPageRenderError('Cannot render this page directly on device canvas.');
         }
       } finally {
         if (seq === renderSeqRef.current) {
@@ -45455,25 +45607,7 @@ export function PdfNativeCanvasViewer({
   };
 
   if (error) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-200 text-center bg-slate-900 rounded-xl">
-        <AlertCircle className="w-10 h-10 text-amber-400 mb-3 shrink-0" />
-        <p className="text-base font-semibold text-slate-100">Cannot load PDF directly in canvas</p>
-        <p className="text-xs text-slate-400 mt-1 max-w-md">
-          The document server prevents direct binary access. You can use embedded mode or open in a new window.
-        </p>
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          {onFallbackToIframeRef.current && (
-            <button type="button" onClick={() => onFallbackToIframeRef.current?.()} className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
-              <RefreshCw className="w-3.5 h-3.5" /> Switch to Embed Viewer
-            </button>
-          )}
-          <a href={url} target="_blank" rel="noopener noreferrer" className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
-            <ExternalLink className="w-3.5 h-3.5" /> Open File in New Tab
-          </a>
-        </div>
-      </div>
-    );
+    return <PdfDocumentErrorView url={url} onFallbackToIframe={onFallbackToIframeRef.current} />;
   }
 
   return (
@@ -45573,6 +45707,15 @@ export function PdfNativeCanvasViewer({
                   <span>Rendering...</span>
                 </div>
               )}
+              {pageRenderError && (
+                <PdfPageRenderErrorOverlay
+                  onRetry={() => {
+                    setPageRenderError(null);
+                    renderPage(currentPage);
+                  }}
+                  onFallbackToIframe={onFallbackToIframeRef.current}
+                />
+              )}
             </div>
           </TouchPinchZoomStage>
         )}
@@ -45596,7 +45739,8 @@ export function PdfNativeCanvasViewer({
 }
 
 export default PdfNativeCanvasViewer;
-================================================================================
+
+
 FILE: src/components/LayoutTabParts/PdfNativeViewerToolbar.tsx
 ================================================================================
 import React from 'react';
@@ -46165,7 +46309,6 @@ export default PdfOrImageViewer;
 
 ================================================================================
 FILE: src/components/LayoutTabParts/PdfScrollablePagesView.tsx
-================================================================================
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
@@ -46261,7 +46404,7 @@ const SingleScrollPage: React.FC<SingleScrollPageProps> = React.memo(({
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        const ctx = canvas.getContext('2d', { alpha: false });
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         ctx.fillStyle = '#ffffff';
@@ -46374,7 +46517,6 @@ export const PdfScrollablePagesView: React.FC<PdfScrollablePagesViewProps> = ({
 export default PdfScrollablePagesView;
 
 
-================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/TooltipAlertBanner.tsx
 ================================================================================
 import React from 'react';
@@ -119609,7 +119751,6 @@ export interface TakaDelta {
 
 ================================================================================
 FILE: src/lib/pdfBinaryCache.ts
-================================================================================
 /**
  * Unified PDF Binary & Persistent Thumbnail Cache Engine
  * - Normalizes all PDF sources (Cloudflare R2, r2://, Google Drive, Firebase Storage, HTTP)
@@ -119692,6 +119833,10 @@ function openThumbIdb(): Promise<IDBDatabase | null> {
           db.createObjectStore(IDB_BINARY_STORE);
         }
       };
+      req.onblocked = () => {
+        idbPromise = null;
+        resolve(null);
+      };
       req.onsuccess = () => {
         const db = req.result;
         db.onclose = () => { idbPromise = null; };
@@ -119705,6 +119850,12 @@ function openThumbIdb(): Promise<IDBDatabase | null> {
         idbPromise = null;
         resolve(null);
       };
+      // Timeout guard: never hang indefinitely if IDB open is blocked or slow
+      setTimeout(() => {
+        if (idbPromise) {
+          resolve(null);
+        }
+      }, 500);
     } catch {
       idbPromise = null;
       resolve(null);
@@ -119967,7 +120118,7 @@ export async function renderPdfPageToThumbDataUrl(
     canvas.width = Math.max(1, Math.floor(viewport.width));
     canvas.height = Math.max(1, Math.floor(viewport.height));
 
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
     ctx.fillStyle = '#ffffff';
@@ -120075,7 +120226,6 @@ export async function renderPdfPageToCanvasEntry(params: {
 
 
 
-================================================================================
 FILE: src/components/LayoutTabParts/PdfPageThumbnailStrip.tsx
 ================================================================================
 import React, { useEffect, useRef, useState } from 'react';
@@ -120259,3 +120409,86 @@ export const PdfPageThumbnailStrip: React.FC<PdfPageThumbnailStripProps> = React
 });
 
 export default PdfPageThumbnailStrip;
+
+
+FILE: src/components/LayoutTabParts/PdfViewerErrorState.tsx
+import React from 'react';
+import { AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
+
+export interface PdfDocumentErrorViewProps {
+  url: string;
+  onFallbackToIframe?: () => void;
+}
+
+export const PdfDocumentErrorView: React.FC<PdfDocumentErrorViewProps> = ({
+  url,
+  onFallbackToIframe,
+}) => {
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-200 text-center bg-slate-900 rounded-xl">
+      <AlertCircle className="w-10 h-10 text-amber-400 mb-3 shrink-0" />
+      <p className="text-base font-semibold text-slate-100">Cannot load PDF directly in canvas</p>
+      <p className="text-xs text-slate-400 mt-1 max-w-md">
+        The document server prevents direct binary access. You can use embedded mode or open in a new window.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+        {onFallbackToIframe && (
+          <button
+            type="button"
+            onClick={onFallbackToIframe}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Switch to Embed Viewer
+          </button>
+        )}
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer"
+        >
+          <ExternalLink className="w-3.5 h-3.5" /> Open File in New Tab
+        </a>
+      </div>
+    </div>
+  );
+};
+
+export interface PdfPageRenderErrorOverlayProps {
+  onRetry: () => void;
+  onFallbackToIframe?: () => void;
+}
+
+export const PdfPageRenderErrorOverlay: React.FC<PdfPageRenderErrorOverlayProps> = ({
+  onRetry,
+  onFallbackToIframe,
+}) => {
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-950/90 p-4 text-center">
+      <AlertCircle className="w-8 h-8 text-amber-400 mb-2" />
+      <p className="text-xs font-semibold text-slate-200">Không thể vẽ trang PDF trên canvas thiết bị</p>
+      <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
+        File có thể chứa font hoặc bộ lọc đồ họa đặc biệt. Bạn có thể mở bằng trình xem Iframe hoặc tab mới.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onRetry}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-medium active:scale-95 cursor-pointer"
+        >
+          Thử lại
+        </button>
+        {onFallbackToIframe && (
+          <button
+            type="button"
+            onClick={onFallbackToIframe}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-medium active:scale-95 cursor-pointer"
+          >
+            Chuyển sang Iframe
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+

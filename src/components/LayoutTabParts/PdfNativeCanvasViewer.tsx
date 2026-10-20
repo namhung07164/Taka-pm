@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertCircle, Loader2, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
 import { PdfNativeViewerToolbar } from './PdfNativeViewerToolbar';
 import { PdfScrollablePagesView } from './PdfScrollablePagesView';
 import { PdfPageThumbnailStrip } from './PdfPageThumbnailStrip';
+import { PdfDocumentErrorView, PdfPageRenderErrorOverlay } from './PdfViewerErrorState';
 import {
   fetchPdfBinaryUnified,
   getCachedPageThumbSync,
@@ -37,6 +38,7 @@ export function PdfNativeCanvasViewer({
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState<boolean>(false);
+  const [pageRenderError, setPageRenderError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'page' | 'scroll'>('page');
   const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
 
@@ -230,8 +232,8 @@ export function PdfNativeCanvasViewer({
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        // 2. Obtain fresh 2D context AFTER dimension change (critical for iOS Safari)
-        const ctx = canvas.getContext('2d', { alpha: false });
+        // 2. Obtain fresh 2D context (standard alpha context for full PDF blend/mask support)
+        const ctx = canvas.getContext('2d');
         if (!ctx) {
           try { page.cleanup?.(); } catch {}
           return;
@@ -251,6 +253,7 @@ export function PdfNativeCanvasViewer({
 
         await task.promise;
         try { page.cleanup?.(); } catch {}
+        setPageRenderError(null);
 
         // 4. Save rendered thumbnail to cache for instant filmstrip display
         if (!getCachedPageThumbSync(url, pageNum)) {
@@ -260,7 +263,7 @@ export function PdfNativeCanvasViewer({
               const tCanvas = document.createElement('canvas');
               tCanvas.width = Math.max(1, Math.round(pixelWidth * thumbRatio));
               tCanvas.height = Math.max(1, Math.round(pixelHeight * thumbRatio));
-              const tCtx = tCanvas.getContext('2d', { alpha: false });
+              const tCtx = tCanvas.getContext('2d');
               if (tCtx) {
                 tCtx.fillStyle = '#ffffff';
                 tCtx.fillRect(0, 0, tCanvas.width, tCanvas.height);
@@ -278,6 +281,7 @@ export function PdfNativeCanvasViewer({
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
           console.error('PDF page render error:', err);
+          setPageRenderError('Cannot render this page directly on device canvas.');
         }
       } finally {
         if (seq === renderSeqRef.current) {
@@ -358,25 +362,7 @@ export function PdfNativeCanvasViewer({
   };
 
   if (error) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-200 text-center bg-slate-900 rounded-xl">
-        <AlertCircle className="w-10 h-10 text-amber-400 mb-3 shrink-0" />
-        <p className="text-base font-semibold text-slate-100">Cannot load PDF directly in canvas</p>
-        <p className="text-xs text-slate-400 mt-1 max-w-md">
-          The document server prevents direct binary access. You can use embedded mode or open in a new window.
-        </p>
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          {onFallbackToIframeRef.current && (
-            <button type="button" onClick={() => onFallbackToIframeRef.current?.()} className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
-              <RefreshCw className="w-3.5 h-3.5" /> Switch to Embed Viewer
-            </button>
-          )}
-          <a href={url} target="_blank" rel="noopener noreferrer" className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95 touch-manipulation cursor-pointer">
-            <ExternalLink className="w-3.5 h-3.5" /> Open File in New Tab
-          </a>
-        </div>
-      </div>
-    );
+    return <PdfDocumentErrorView url={url} onFallbackToIframe={onFallbackToIframeRef.current} />;
   }
 
   return (
@@ -475,6 +461,15 @@ export function PdfNativeCanvasViewer({
                   <Loader2 className="w-3 h-3 animate-spin" />
                   <span>Rendering...</span>
                 </div>
+              )}
+              {pageRenderError && (
+                <PdfPageRenderErrorOverlay
+                  onRetry={() => {
+                    setPageRenderError(null);
+                    renderPage(currentPage);
+                  }}
+                  onFallbackToIframe={onFallbackToIframeRef.current}
+                />
               )}
             </div>
           </TouchPinchZoomStage>

@@ -304,6 +304,38 @@ async function startServer() {
     }
   });
 
+  // Phục vụ tĩnh tài nguyên cmaps & standard_fonts của PDF.js (chống trả nhầm file HTML làm crash canvas)
+  const publicPath = path.join(process.cwd(), 'public');
+  app.use('/cmaps', express.static(path.join(publicPath, 'cmaps'), {
+    fallthrough: false,
+    setHeaders: (res) => {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+
+  app.use('/standard_fonts', express.static(path.join(publicPath, 'standard_fonts'), {
+    fallthrough: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.ttf')) {
+        res.setHeader('Content-Type', 'font/ttf');
+      } else {
+        res.setHeader('Content-Type', 'application/octet-stream');
+      }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+
+  // Chặn trả file index.html cho các đuôi mở rộng nhị phân nếu file không tồn tại (trả 404 thay vì 200 HTML)
+  app.use((req, res, next) => {
+    if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+      return res.status(404).end();
+    }
+    next();
+  });
+
   // Tích hợp Vite Middleware cho môi trường Dev
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
