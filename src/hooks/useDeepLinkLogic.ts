@@ -3,6 +3,7 @@ import { doc, getDoc, getDocs, collection, query, where, limit } from 'firebase/
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
+import { resolveStoreAndYearForQuery } from './deepLinkStoreResolver';
 
 export function useDeepLinkLogic(
   handleTabChange: (tab: any) => void,
@@ -59,10 +60,9 @@ const checkAccessLocally = useCallback((data: any): boolean => {
       }
       if (
         extraParams?.store &&
-        useAppStore.getState().globalStoreFilter !== "all" &&
-        extraParams.store.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
+        useAppStore.getState().globalStoreFilter.toLowerCase() !== extraParams.store.toLowerCase()
       ) {
-        useAppStore.getState().setGlobalStoreFilter("all");
+        useAppStore.getState().setGlobalStoreFilter(extraParams.store.toUpperCase() as any);
       }
 
       // 1. PROJECT TARGET
@@ -304,8 +304,63 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         }, 100);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
+
+      // 4. TAB SEARCH TARGET (Deep links with ?tab=...&q=...)
+      if (targetType === "tab_search") {
+        await applyTabSearch(extraParams?.code as any, targetId, extraParams?.store, extraParams?.year);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     },
     [checkAccessLocally, handleTabChange]
+  );
+
+  const applyTabSearch = useCallback(
+    async (
+      searchTab: string,
+      searchQuery: string,
+      explicitStore?: string,
+      explicitYear?: string
+    ) => {
+      const resolved = await resolveStoreAndYearForQuery(searchQuery, enrichedProjectsRef.current || []);
+      const targetStore = explicitStore?.trim().toUpperCase() || resolved.store;
+      const targetYear = explicitYear ? String(explicitYear).trim() : resolved.year;
+
+      if (targetStore) {
+        const user = useAppStore.getState().currentUser;
+        const hasAccess =
+          !user ||
+          user.role === 'admin' ||
+          (targetStore === 'HCM' && user.storePermissions?.hcm) ||
+          (targetStore === 'HN' && user.storePermissions?.hn);
+
+        if (hasAccess && useAppStore.getState().globalStoreFilter.toUpperCase() !== targetStore) {
+          useAppStore.getState().setGlobalStoreFilter(targetStore as any);
+        }
+      }
+
+      if (targetYear && String(targetYear) !== useAppStore.getState().globalYearFilter) {
+        useAppStore.getState().setGlobalYearFilter(String(targetYear));
+      }
+
+      if (searchTab === 'budget' || searchTab === 'cost') {
+        useAppStore.getState().setIsCostsRequested(true);
+      } else if (searchTab === 'detail' || searchTab === 'gantt') {
+        useAppStore.getState().setIsTasksRequested(true);
+      }
+
+      if (searchTab === 'detail') {
+        useAppStore.getState().setDetailTabFilterCode(searchQuery);
+      } else if (searchTab === 'budget') {
+        useAppStore.getState().setBudgetTabSearchTerm(searchQuery);
+      } else if (searchTab === 'cost') {
+        useAppStore.getState().setCostTabSearchTerm(searchQuery);
+      } else if (searchTab === 'gantt') {
+        useAppStore.getState().setGanttSearchTerm(searchQuery);
+      }
+
+      handleTabChange(searchTab);
+    },
+    [handleTabChange, enrichedProjectsRef]
   );
 
   useEffect(() => {
@@ -348,17 +403,19 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         const searchQuery = params.get("q");
 
         if (searchTab && searchQuery) {
-          if (searchTab === 'detail') {
-            useAppStore.getState().setDetailTabFilterCode(searchQuery);
-          } else if (searchTab === 'budget') {
-            useAppStore.getState().setBudgetTabSearchTerm(searchQuery);
-          } else if (searchTab === 'cost') {
-            // For cost, we might receive a description/vendor or a project code. 
-            // In CostTab, searchTerm handles both. So we can just set costTabSearchTerm.
-                        useAppStore.getState().setCostTabSearchTerm(searchQuery);
+          const user = useAppStore.getState().currentUser;
+          if (!user || user.id === "guest") {
+            pendingDeepLinkRef.current = {
+              targetType: "tab_search",
+              targetId: searchQuery,
+              extraParams: { store, year, code: searchTab }
+            };
+            setIsLoginModalOpen(true);
+            return;
           }
-          useAppStore.getState().setActiveTab(searchTab);
-          window.history.replaceState({}, document.title, window.location.pathname);
+          applyTabSearch(searchTab, searchQuery, store, year).then(() => {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          });
           return;
         }
 

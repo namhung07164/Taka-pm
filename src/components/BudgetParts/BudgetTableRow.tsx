@@ -211,8 +211,16 @@ export const BudgetTableRow = memo(function BudgetTableRow({
       )}
 
       {visibleColumns.includes('actual') && (
-        <td className="px-4 py-3 text-right font-mono">
-          <div className="flex items-center justify-end gap-1.5">
+        <td className="px-4 py-2.5 text-right font-mono">
+          <div className="flex flex-col items-end justify-center">
+            {node.hasForc && (
+              <span 
+                className="text-[8.5px] leading-none font-bold px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800 uppercase mb-0.5 tracking-wider inline-block select-none" 
+                title="Includes Forecasted Costs"
+              >
+                FORC
+              </span>
+            )}
             <span 
               onClick={() => onGoToCost(node.code)}
               className={cn(
@@ -223,11 +231,6 @@ export const BudgetTableRow = memo(function BudgetTableRow({
             >
               {formatCurrency(node.totalActual)}
             </span>
-            {node.hasForc && (
-              <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800 uppercase" title="Includes Forecasted Costs">
-                FORC
-              </span>
-            )}
           </div>
         </td>
       )}
@@ -290,7 +293,14 @@ export const BudgetTableRow = memo(function BudgetTableRow({
         <td className="px-3 py-2.5 text-center">
           <div className="flex items-center justify-center gap-1.5">
             <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
-            <QRCodeButton title={node.name || node.code} url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}`} />
+            <QRCodeButton 
+              title={node.name || node.code} 
+              url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}${
+                (node.store || node.project?.store) ? `&store=${encodeURIComponent(node.store || node.project?.store || '')}` : ''
+              }${
+                (node.year || node.project?.year) ? `&year=${encodeURIComponent(String(node.year || node.project?.year || ''))}` : ''
+              }`} 
+            />
             {canWrite && (
               <>
                 {node.isParentNode ? (

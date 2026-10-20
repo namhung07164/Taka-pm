@@ -292,7 +292,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
                 title={c.description || c.vendor || 'Cost Entry'}
                 url={`${window.location.origin}${window.location.pathname}?tab=cost&q=${encodeURIComponent(
                   c.description || c.vendor || ''
-                )}`}
+                )}${c.projectStore ? `&store=${encodeURIComponent(c.projectStore)}` : ''}${c.projectYear ? `&year=${encodeURIComponent(String(c.projectYear))}` : ''}`}
               />
               {canWrite && (
                 <button

@@ -175,7 +175,14 @@ export const BudgetMobileCard = memo(function BudgetMobileCard({
         
         <div className="flex items-center gap-1.5 shrink-0">
           <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
-          <QRCodeButton title={node.name || node.code} url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}`} />
+          <QRCodeButton 
+            title={node.name || node.code} 
+            url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}${
+              (node.store || node.project?.store) ? `&store=${encodeURIComponent(node.store || node.project?.store || '')}` : ''
+            }${
+              (node.year || node.project?.year) ? `&year=${encodeURIComponent(String(node.year || node.project?.year || ''))}` : ''
+            }`} 
+          />
           {canWrite && (
             <>
               {node.isParentNode ? (

@@ -7345,7 +7345,14 @@ export const BudgetMobileCard = memo(function BudgetMobileCard({
         
         <div className="flex items-center gap-1.5 shrink-0">
           <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
-          <QRCodeButton title={node.name || node.code} url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}`} />
+          <QRCodeButton 
+            title={node.name || node.code} 
+            url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}${
+              (node.store || node.project?.store) ? `&store=${encodeURIComponent(node.store || node.project?.store || '')}` : ''
+            }${
+              (node.year || node.project?.year) ? `&year=${encodeURIComponent(String(node.year || node.project?.year || ''))}` : ''
+            }`} 
+          />
           {canWrite && (
             <>
               {node.isParentNode ? (
@@ -7383,7 +7390,6 @@ export const BudgetMobileCard = memo(function BudgetMobileCard({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/BudgetParts/BudgetMobileView.tsx
@@ -7779,8 +7785,16 @@ export const BudgetTableRow = memo(function BudgetTableRow({
       )}
 
       {visibleColumns.includes('actual') && (
-        <td className="px-4 py-3 text-right font-mono">
-          <div className="flex items-center justify-end gap-1.5">
+        <td className="px-4 py-2.5 text-right font-mono">
+          <div className="flex flex-col items-end justify-center">
+            {node.hasForc && (
+              <span 
+                className="text-[8.5px] leading-none font-bold px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800 uppercase mb-0.5 tracking-wider inline-block select-none" 
+                title="Includes Forecasted Costs"
+              >
+                FORC
+              </span>
+            )}
             <span 
               onClick={() => onGoToCost(node.code)}
               className={cn(
@@ -7791,11 +7805,6 @@ export const BudgetTableRow = memo(function BudgetTableRow({
             >
               {formatCurrency(node.totalActual)}
             </span>
-            {node.hasForc && (
-              <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800 uppercase" title="Includes Forecasted Costs">
-                FORC
-              </span>
-            )}
           </div>
         </td>
       )}
@@ -7858,7 +7867,14 @@ export const BudgetTableRow = memo(function BudgetTableRow({
         <td className="px-3 py-2.5 text-center">
           <div className="flex items-center justify-center gap-1.5">
             <QuickNavButton project={node.project} title={`Quick Navigator (${node.code})`} />
-            <QRCodeButton title={node.name || node.code} url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}`} />
+            <QRCodeButton 
+              title={node.name || node.code} 
+              url={`${window.location.origin}${window.location.pathname}?tab=budget&q=${encodeURIComponent(node.code || '')}${
+                (node.store || node.project?.store) ? `&store=${encodeURIComponent(node.store || node.project?.store || '')}` : ''
+              }${
+                (node.year || node.project?.year) ? `&year=${encodeURIComponent(String(node.year || node.project?.year || ''))}` : ''
+              }`} 
+            />
             {canWrite && (
               <>
                 {node.isParentNode ? (
@@ -7897,7 +7913,6 @@ export const BudgetTableRow = memo(function BudgetTableRow({
     </tr>
   );
 });
-
 
 ================================================================================
 FILE: src/components/BudgetParts/BudgetTableView.tsx
@@ -12585,7 +12600,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
                 title={c.description || c.vendor || 'Cost Entry'}
                 url={`${window.location.origin}${window.location.pathname}?tab=cost&q=${encodeURIComponent(
                   c.description || c.vendor || ''
-                )}`}
+                )}${c.projectStore ? `&store=${encodeURIComponent(c.projectStore)}` : ''}${c.projectYear ? `&year=${encodeURIComponent(String(c.projectYear))}` : ''}`}
               />
               {canWrite && (
                 <button
@@ -12609,7 +12624,6 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
     </tr>
   );
 });
-
 
 ================================================================================
 FILE: src/components/CostParts/CostEditableCell.tsx
@@ -14552,7 +14566,7 @@ export const CostTableRow = React.memo(function CostTableRow({
                 title={p.name || p.code}
                 url={`${window.location.origin}${window.location.pathname}?tab=cost&q=${encodeURIComponent(
                   p.code || ''
-                )}`}
+                )}${p.store ? `&store=${encodeURIComponent(p.store)}` : ''}${p.year ? `&year=${encodeURIComponent(String(p.year))}` : ''}`}
               />
               {canWrite && (
                 <button
@@ -14606,7 +14620,6 @@ export const CostTableRow = React.memo(function CostTableRow({
     </React.Fragment>
   );
 });
-
 
 ================================================================================
 FILE: src/components/CostParts/CostTableTotalRow.tsx
@@ -90412,6 +90425,7 @@ import { doc, getDoc, getDocs, collection, query, where, limit } from 'firebase/
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
+import { resolveStoreAndYearForQuery } from './deepLinkStoreResolver';
 
 export function useDeepLinkLogic(
   handleTabChange: (tab: any) => void,
@@ -90468,10 +90482,9 @@ const checkAccessLocally = useCallback((data: any): boolean => {
       }
       if (
         extraParams?.store &&
-        useAppStore.getState().globalStoreFilter !== "all" &&
-        extraParams.store.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
+        useAppStore.getState().globalStoreFilter.toLowerCase() !== extraParams.store.toLowerCase()
       ) {
-        useAppStore.getState().setGlobalStoreFilter("all");
+        useAppStore.getState().setGlobalStoreFilter(extraParams.store.toUpperCase() as any);
       }
 
       // 1. PROJECT TARGET
@@ -90713,8 +90726,63 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         }, 100);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
+
+      // 4. TAB SEARCH TARGET (Deep links with ?tab=...&q=...)
+      if (targetType === "tab_search") {
+        await applyTabSearch(extraParams?.code as any, targetId, extraParams?.store, extraParams?.year);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     },
     [checkAccessLocally, handleTabChange]
+  );
+
+  const applyTabSearch = useCallback(
+    async (
+      searchTab: string,
+      searchQuery: string,
+      explicitStore?: string,
+      explicitYear?: string
+    ) => {
+      const resolved = await resolveStoreAndYearForQuery(searchQuery, enrichedProjectsRef.current || []);
+      const targetStore = explicitStore?.trim().toUpperCase() || resolved.store;
+      const targetYear = explicitYear ? String(explicitYear).trim() : resolved.year;
+
+      if (targetStore) {
+        const user = useAppStore.getState().currentUser;
+        const hasAccess =
+          !user ||
+          user.role === 'admin' ||
+          (targetStore === 'HCM' && user.storePermissions?.hcm) ||
+          (targetStore === 'HN' && user.storePermissions?.hn);
+
+        if (hasAccess && useAppStore.getState().globalStoreFilter.toUpperCase() !== targetStore) {
+          useAppStore.getState().setGlobalStoreFilter(targetStore as any);
+        }
+      }
+
+      if (targetYear && String(targetYear) !== useAppStore.getState().globalYearFilter) {
+        useAppStore.getState().setGlobalYearFilter(String(targetYear));
+      }
+
+      if (searchTab === 'budget' || searchTab === 'cost') {
+        useAppStore.getState().setIsCostsRequested(true);
+      } else if (searchTab === 'detail' || searchTab === 'gantt') {
+        useAppStore.getState().setIsTasksRequested(true);
+      }
+
+      if (searchTab === 'detail') {
+        useAppStore.getState().setDetailTabFilterCode(searchQuery);
+      } else if (searchTab === 'budget') {
+        useAppStore.getState().setBudgetTabSearchTerm(searchQuery);
+      } else if (searchTab === 'cost') {
+        useAppStore.getState().setCostTabSearchTerm(searchQuery);
+      } else if (searchTab === 'gantt') {
+        useAppStore.getState().setGanttSearchTerm(searchQuery);
+      }
+
+      handleTabChange(searchTab);
+    },
+    [handleTabChange, enrichedProjectsRef]
   );
 
   useEffect(() => {
@@ -90757,17 +90825,19 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         const searchQuery = params.get("q");
 
         if (searchTab && searchQuery) {
-          if (searchTab === 'detail') {
-            useAppStore.getState().setDetailTabFilterCode(searchQuery);
-          } else if (searchTab === 'budget') {
-            useAppStore.getState().setBudgetTabSearchTerm(searchQuery);
-          } else if (searchTab === 'cost') {
-            // For cost, we might receive a description/vendor or a project code. 
-            // In CostTab, searchTerm handles both. So we can just set costTabSearchTerm.
-                        useAppStore.getState().setCostTabSearchTerm(searchQuery);
+          const user = useAppStore.getState().currentUser;
+          if (!user || user.id === "guest") {
+            pendingDeepLinkRef.current = {
+              targetType: "tab_search",
+              targetId: searchQuery,
+              extraParams: { store, year, code: searchTab }
+            };
+            setIsLoginModalOpen(true);
+            return;
           }
-          useAppStore.getState().setActiveTab(searchTab);
-          window.history.replaceState({}, document.title, window.location.pathname);
+          applyTabSearch(searchTab, searchQuery, store, year).then(() => {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          });
           return;
         }
 
@@ -90835,7 +90905,6 @@ const checkAccessLocally = useCallback((data: any): boolean => {
     executeDeepLinkRef
   };
 }
-
 
 ================================================================================
 FILE: src/hooks/useDetailPredecessorSync.ts
@@ -122901,5 +122970,114 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
 
   inFlightRequests.set(url, taskPromise);
   return taskPromise;
+}
+
+
+================================================================================
+FILE: src/hooks/deepLinkStoreResolver.ts
+================================================================================
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { db, APP_ID } from '../lib/firebase';
+import { useAppStore } from '../store/useAppStore';
+
+export interface ResolvedStoreYear {
+  store?: string;
+  year?: string;
+}
+
+/**
+ * Resolves the target store and year for a deep link search query (e.g. "HN-TKV-BWW" or "TKV-BWW").
+ * Checks in-memory projects first, then Dexie localDb, and finally Firestore.
+ */
+export async function resolveStoreAndYearForQuery(
+  searchQuery: string,
+  enrichedProjects: any[] = []
+): Promise<ResolvedStoreYear> {
+  const qTrim = (searchQuery || '').trim();
+  if (!qTrim) return {};
+
+  const qUpper = qTrim.toUpperCase();
+  let store: string | undefined;
+  let year: string | undefined;
+
+  // 1. Detect store from code prefix
+  if (qUpper.startsWith('HN-') || qUpper.startsWith('HN_') || qUpper.startsWith('HN ')) {
+    store = 'HN';
+  } else if (qUpper.startsWith('HCM-') || qUpper.startsWith('HCM_') || qUpper.startsWith('HCM ')) {
+    store = 'HCM';
+  }
+
+  const normQ = qTrim.toLowerCase();
+  const strippedCode = normQ.replace(/^(hn|hcm)[-_ ]/, '');
+
+  const matchProject = (p: any): boolean => {
+    if (!p) return false;
+    const pCode = String(p.code || '').trim().toLowerCase();
+    const pId = String(p.id || '').trim().toLowerCase();
+    const pStoreCode = `${String(p.store || '').toLowerCase()}-${pCode}`;
+    const pName = String(p.name || '').trim().toLowerCase();
+    return (
+      pCode === normQ ||
+      pCode === strippedCode ||
+      pStoreCode === normQ ||
+      pId === normQ ||
+      (pName && pName.includes(normQ))
+    );
+  };
+
+  // 2. Search in-memory projects
+  const curProjects = useAppStore.getState().projects || [];
+  const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
+
+  let found =
+    enrichedProjects.find(matchProject) ||
+    curProjects.find(matchProject) ||
+    curNotifProjects.find(matchProject);
+
+  // 3. Search Dexie localDb
+  if (!found || !year || !store) {
+    try {
+      const { localDb } = await import('../lib/localDb');
+      const localProjects = await localDb.projects.toArray();
+      const localMatch = localProjects.find(matchProject);
+      if (localMatch) found = localMatch;
+    } catch (err) {
+      console.warn('[DeepLinkResolver] localDb lookup error:', err);
+    }
+  }
+
+  // 4. Query Firestore taka_projects if still not resolved
+  if (!found || !year || !store) {
+    try {
+      const q1 = query(
+        collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"),
+        where("code", "==", qTrim),
+        limit(1)
+      );
+      const snap1 = await getDocs(q1);
+      if (!snap1.empty) {
+        found = snap1.docs[0].data();
+      } else if (strippedCode && strippedCode !== normQ) {
+        const q2 = query(
+          collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"),
+          where("code", "==", strippedCode.toUpperCase()),
+          limit(1)
+        );
+        const snap2 = await getDocs(q2);
+        if (!snap2.empty) {
+          found = snap2.docs[0].data();
+        }
+      }
+    } catch (err) {
+      console.warn('[DeepLinkResolver] Firestore lookup error:', err);
+    }
+  }
+
+  if (found) {
+    if (!store && found.store) store = String(found.store).trim().toUpperCase();
+    if (!year && found.year) year = String(found.year).trim();
+  }
+
+  return { store, year };
 }
 

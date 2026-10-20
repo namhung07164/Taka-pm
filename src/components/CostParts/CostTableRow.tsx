@@ -232,7 +232,7 @@ export const CostTableRow = React.memo(function CostTableRow({
                 title={p.name || p.code}
                 url={`${window.location.origin}${window.location.pathname}?tab=cost&q=${encodeURIComponent(
                   p.code || ''
-                )}`}
+                )}${p.store ? `&store=${encodeURIComponent(p.store)}` : ''}${p.year ? `&year=${encodeURIComponent(String(p.year))}` : ''}`}
               />
               {canWrite && (
                 <button
