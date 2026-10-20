@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import {
   X, Copy, ExternalLink, Image as ImageIcon, Link as LinkIcon, Check,
   Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2,
-  RefreshCw,
+  RefreshCw, Hand, Layers,
 } from 'lucide-react';
 import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
+import { LightboxZoomDock } from './LightboxZoomDock';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null, size: string = 'w1600'): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -44,6 +45,8 @@ export function LayoutUnitLightboxModal({
   const [isFullDisplay, setIsFullDisplay] = useState(true);
   const [zoomScale, setZoomScale] = useState(1);
   const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [touchZoomMode, setTouchZoomMode] = useState<'pinch' | 'scroll'>('pinch');
+  const [modeToast, setModeToast] = useState<string | null>(null);
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -103,6 +106,20 @@ export function LayoutUnitLightboxModal({
     setUseIframeFallback(true);
   }, []);
 
+  const handleToggleTouchZoomMode = useCallback(() => {
+    setTouchZoomMode((prev) => {
+      const next = prev === 'pinch' ? 'scroll' : 'pinch';
+      if (next === 'scroll') {
+        zoomStageRef.current?.resetTransform();
+      }
+      setModeToast(
+        next === 'pinch'
+          ? 'Pinch Zoom Active • 2-finger pinch & 1-finger pan'
+          : 'Scroll Mode Active • Direct document scrolling'
+      );
+      return next;
+    });
+  }, []);
 
   const handleImageError = useCallback(() => {
     if (driveFileId && !hasTriedCdnFallback) {
@@ -133,7 +150,15 @@ export function LayoutUnitLightboxModal({
     setIsLoading(Boolean(resolvedUrl && !isPdf));
     setZoomScale(initialZoom);
     setCurrentSrc(resolvedUrl);
+    setTouchZoomMode('pinch');
+    setModeToast(null);
   }, [rawUrl, resolvedUrl, initialZoom, isPdf]);
+
+  useEffect(() => {
+    if (!modeToast) return;
+    const t = setTimeout(() => setModeToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [modeToast]);
 
   // Lock background scroll when open
   useEffect(() => {
@@ -201,23 +226,39 @@ export function LayoutUnitLightboxModal({
               {enlargedImage.title || (isPdf ? 'PDF Blueprint Viewer' : 'Image Preview')}
             </span>
 
-            {/* Raster image zoom controls (PDF mode uses PdfNativeViewerToolbar) */}
-            {!isPdf && (
+            {/* Zoom controls for raster images and Google Drive / iframe PDF viewer */}
+            {(!isPdf || useIframeFallback) && (
               <div className="flex items-center gap-1 ml-1 sm:ml-3 px-1.5 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700">
                 <button
                   type="button"
-                  onClick={() => zoomStageRef.current?.zoomOut(0.45)}
+                  onClick={() => {
+                    if (useIframeFallback && touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                    zoomStageRef.current?.zoomOut(0.35);
+                  }}
                   className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation cursor-pointer"
                   title="Zoom Out (-)"
                 >
                   <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
-                <span className="text-[11px] font-mono font-bold px-1 min-w-[2.8rem] text-center text-blue-300">
-                  {Math.round(zoomScale * 100)}%
-                </span>
                 <button
                   type="button"
-                  onClick={() => zoomStageRef.current?.zoomIn(0.45)}
+                  onClick={() => {
+                    if (useIframeFallback && touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                    const currentPct = Math.round(zoomScale * 100);
+                    const next = currentPct < 125 ? 1.5 : currentPct < 175 ? 2.0 : currentPct < 250 ? 3.0 : 1.0;
+                    zoomStageRef.current?.centerView(next);
+                  }}
+                  className="text-[11px] font-mono font-bold px-1 min-w-[2.8rem] text-center text-blue-300 hover:text-blue-200 hover:underline cursor-pointer"
+                  title="Click to cycle zoom: 100% → 150% → 200% → 300%"
+                >
+                  {Math.round(zoomScale * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (useIframeFallback && touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                    zoomStageRef.current?.zoomIn(0.35);
+                  }}
                   className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation cursor-pointer"
                   title="Zoom In (+)"
                 >
@@ -231,6 +272,25 @@ export function LayoutUnitLightboxModal({
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
+
+                {useIframeFallback && (
+                  <button
+                    type="button"
+                    onClick={handleToggleTouchZoomMode}
+                    className={`hidden sm:flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-colors active:scale-95 cursor-pointer ${
+                      touchZoomMode === 'pinch'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                    title={touchZoomMode === 'pinch' ? 'Switch to Scroll Mode' : 'Switch to Pinch & Pan Mode'}
+                  >
+                    {touchZoomMode === 'pinch' ? (
+                      <><Hand className="w-3 h-3 text-blue-200" /><span>Pinch</span></>
+                    ) : (
+                      <><Layers className="w-3 h-3 text-slate-300" /><span>Scroll</span></>
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -285,26 +345,58 @@ export function LayoutUnitLightboxModal({
 
         {/* Content Body: Unified Viewer for Google Drive and R2 Cloud */}
         <div className="flex-1 w-full h-full flex items-center justify-center bg-slate-950 overflow-hidden relative">
+          {/* Floating Mode Switch Toast Notification */}
+          {modeToast && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-full bg-slate-900/95 border border-blue-500/60 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none transition-all">
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+              <span>{modeToast}</span>
+            </div>
+          )}
+
           {isPdf ? (
             useIframeFallback ? (
-              <TouchPinchZoomStage
-                ref={zoomStageRef}
-                initialScale={1}
-                minScale={0.5}
-                maxScale={8}
-                onScaleChange={setZoomScale}
-                className="w-full h-full flex items-center justify-center"
-              >
-                <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
-                  <iframe
-                    ref={iframeRef}
-                    src={effectiveEmbedUrl}
-                    className="w-full h-full border-0 bg-white block"
-                    title={enlargedImage.title || 'Document Embed Viewer'}
-                    allow="autoplay; fullscreen"
-                  />
-                </div>
-              </TouchPinchZoomStage>
+              <>
+                <TouchPinchZoomStage
+                  ref={zoomStageRef}
+                  initialScale={1}
+                  minScale={0.5}
+                  maxScale={8}
+                  onScaleChange={setZoomScale}
+                  captureOverlay={touchZoomMode === 'pinch'}
+                  allowNativeTouch={touchZoomMode === 'scroll'}
+                  className="w-full h-full flex items-center justify-center"
+                >
+                  <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
+                    <iframe
+                      ref={iframeRef}
+                      src={effectiveEmbedUrl}
+                      className="w-full h-full border-0 bg-white block"
+                      title={enlargedImage.title || 'Document Embed Viewer'}
+                      allow="autoplay; fullscreen"
+                    />
+                  </div>
+                </TouchPinchZoomStage>
+
+                <LightboxZoomDock
+                  zoomScale={zoomScale}
+                  onZoomIn={() => {
+                    if (touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                    zoomStageRef.current?.zoomIn(0.35);
+                  }}
+                  onZoomOut={() => {
+                    if (touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                    zoomStageRef.current?.zoomOut(0.35);
+                  }}
+                  onResetZoom={() => zoomStageRef.current?.resetTransform()}
+                  onSetScale={(s) => {
+                    if (touchZoomMode === 'scroll') setTouchZoomMode('pinch');
+                    zoomStageRef.current?.centerView(s);
+                  }}
+                  touchZoomMode={touchZoomMode}
+                  onToggleTouchZoomMode={handleToggleTouchZoomMode}
+                  isIframeMode={true}
+                />
+              </>
             ) : (
               <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
                 <PdfNativeCanvasViewer
