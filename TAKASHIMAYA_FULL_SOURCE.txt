@@ -6455,7 +6455,7 @@ export function BudgetFilterToolbar({
           <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
         </select>
 
-        <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput 
             value={searchTerm} 
             onChange={(val) => setSearchTerm(val)}
@@ -6519,8 +6519,6 @@ export function BudgetFilterToolbar({
     </div>
   );
 }
-
-
 ================================================================================
 FILE: src/components/BudgetParts/BudgetLinkChildColumn.tsx
 ================================================================================
@@ -12828,7 +12826,7 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
           <option value="has_value">Has Act/Forc</option>
         </select>
 
-        <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput
             value={searchTerm}
             onChange={(val) => setSearchTerm(val)}
@@ -12925,8 +12923,6 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
     </div>
   );
 });
-
-
 ================================================================================
 FILE: src/components/CostParts/CostMobileCard.tsx
 ================================================================================
@@ -21001,7 +20997,7 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
           <option value="Canceled">Canceled</option>
         </select>
 
-        <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput 
             value={searchTerm}
             onChange={onSearchTermChange}
@@ -21252,8 +21248,6 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
     </>
   );
 });
-
-
 ================================================================================
 FILE: src/components/DetailTabParts/DetailFloatingActionBar.tsx
 ================================================================================
@@ -33911,7 +33905,7 @@ export function GanttToolbar({
               onAddColumn={handleToggleColumn}
             />
 
-            <div className="relative flex-grow min-w-[160px] max-w-full sm:max-w-xs md:max-w-sm">
+            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
               <DebouncedSearchInput
                 value={searchTerm}
                 onChange={setSearchTerm}
@@ -33934,8 +33928,6 @@ export function GanttToolbar({
     </div>
   );
 }
-
-
 ================================================================================
 FILE: src/components/Gantt/GanttToolbarActions.tsx
 ================================================================================
@@ -38963,7 +38955,7 @@ export function GeneralFilterToolbar({
             <option value="Canceled">{t('Canceled')}</option>
           </select>
 
-          <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
+          <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
             <DebouncedSearchInput 
               value={searchTerm}
               onChange={(val) => setSearchTerm(val)}
@@ -38975,8 +38967,6 @@ export function GeneralFilterToolbar({
     </>
   );
 }
-
-
 ================================================================================
 FILE: src/components/GeneralTabParts/GeneralMobileCard.tsx
 ================================================================================
@@ -43784,9 +43774,11 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
 
       {/* Layer 2: Interactive unit shapes, text, and alert badges */}
       <Layer id="units-interactive-layer">
-        {visibleUnits.map((unit: any) => {
-          const hasColor = Boolean(unit.targetColor);
-          const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
+        {(() => {
+          const renderedImgBadgePositions: { x: number; y: number; normCode: string }[] = [];
+          return visibleUnits.map((unit: any) => {
+            const hasColor = Boolean(unit.targetColor);
+            const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
           const isFocused = focusedUnitId === unit.id;
           const isDimmed = isLegendColorOn && hasColor && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
           const contrast = isLegendColorOn && hasColor 
@@ -43862,6 +43854,22 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
           // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
           const showTextAndBadge = isFocused || (stageScale || 1) >= 0.22;
 
+          const normUnitCode = String(unit.name || unit.id || unit.code || '')
+            .toLowerCase()
+            .replace(/^(l\d+|b\d+|md-[lb]\d+)[-_]/i, '')
+            .trim();
+
+          const isDuplicateImgBtn = Boolean(
+            hasImage && renderedImgBadgePositions.some(
+              pos => (pos.normCode && normUnitCode && pos.normCode === normUnitCode) ||
+                     Math.hypot(pos.x - imgBadgeX, pos.y - imgBadgeY) < 32
+            )
+          );
+
+          if (hasImage && !isDuplicateImgBtn && showTextAndBadge) {
+            renderedImgBadgePositions.push({ x: imgBadgeX, y: imgBadgeY, normCode: normUnitCode });
+          }
+
           return (
             <React.Fragment key={unit.id}>
               {unit.type === 'rect' && (
@@ -43932,7 +43940,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
               )}
 
               {/* Interactive Quick-Image Button Badge (Click/Tap opens Quick Image Tooltip directly) */}
-              {hasImage && showTextAndBadge && (
+              {hasImage && !isDuplicateImgBtn && showTextAndBadge && (
                 <Group x={imgBadgeX} y={imgBadgeY}>
                   <Rect
                     x={-imgBtnW / 2}
@@ -43992,7 +44000,8 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
               )}
             </React.Fragment>
           );
-        })}
+        });
+      })()}
       </Layer>
 
       {/* Layer 3: Dynamic Isolated Overlay Layer for Focused Unit Golden Ring */}
@@ -44021,7 +44030,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
     </>
   );
 });
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutMiniGanttModal.tsx
 ================================================================================
@@ -44475,7 +44483,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 
         {/* Center: Expanded Search Unit Box (All on the same line) */}
         {!isEditing && (
-          <div ref={searchContainerRef} className="relative flex-1 min-w-[200px] max-w-xl mx-1">
+          <div ref={searchContainerRef} className="relative flex-1 min-w-[180px] max-w-full md:max-w-xl lg:max-w-2xl mx-1 sm:mx-2">
             <div className="relative flex items-center w-full">
               <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10 shrink-0" />
               <DebouncedSearchInput 
@@ -44505,7 +44513,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                   }
                 }}
                 placeholder="Search unit, brand, or project..."
-                className="w-full pl-9 pr-8 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-2xs transition-all"
+                className="w-full h-9 pl-9 pr-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 rounded-xl text-xs sm:text-sm font-semibold text-purple-700 dark:text-purple-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 dark:focus:border-purple-400 shadow-2xs transition-all"
               />
               {unitSearchInput && (
                 <button
@@ -44564,15 +44572,15 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           </div>
         )}
 
-        {/* Right: Compact Action Buttons (Exit View, Refresh, Export) on the same line */}
+        {/* Right: Harmonized Action Buttons (Exit/Live, Export, Edit URL) */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Shrunk Compact Live Map / Exit View button */}
+          {/* Live Map / Exit View button */}
           <button
             onClick={() => setIsLiveMapMode((prev: boolean) => !prev)}
             title={isLiveMapMode ? 'Exit Live Map View' : 'Switch to Live Interactive Map'}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all border shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer ${
+            className={`h-9 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer ${
               isLiveMapMode 
-                ? 'bg-purple-600 text-white border-purple-700 ring-1 ring-purple-400' 
+                ? 'bg-purple-600 text-white border-purple-700 ring-1 ring-purple-400/50 hover:bg-purple-700' 
                 : 'bg-white dark:bg-[#1e1e20] text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-slate-200 dark:border-[#444446]'
             }`}
           >
@@ -44580,23 +44588,13 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
             <span>{isLiveMapMode ? 'Exit' : 'Live'}</span>
           </button>
 
-          {/* Refresh */}
-          <button 
-            onClick={onRefresh}
-            className="flex items-center justify-center gap-1 px-2 sm:px-2.5 py-1.5 bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors border border-slate-200 dark:border-[#444446] shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
-            title="Refresh layout data"
-          >
-            <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-
-          {/* Trigger Export */}
+          {/* Trigger Export to Cloud R2 */}
           {canWrite && (
             <button 
               onClick={onTriggerReExport}
               disabled={isExporting}
               title="Apply Dynamic Rules -> Save Cloud R2"
-              className="flex items-center justify-center gap-1 px-2.5 sm:px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-50 rounded-xl text-xs font-semibold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+              className="h-9 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 disabled:opacity-50 rounded-xl text-xs font-bold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isExporting ? 'animate-spin' : ''}`} />
               <span>{isExporting ? 'Exporting...' : 'Export'}</span>
@@ -44607,7 +44605,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
           {isAdmin && (
             <button 
               onClick={() => { setEditUrl(url); setIsEditing(true); }}
-              className="flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-xl text-xs font-semibold transition-colors border border-blue-200 dark:border-blue-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
+              className="h-9 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition-colors border border-blue-200 dark:border-blue-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
               title="Edit layout image/drive URL"
             >
               <Edit2 className="w-3.5 h-3.5 shrink-0" />
@@ -44673,8 +44671,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
     </div>
   );
 });
-
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutTabFullscreenView.tsx
@@ -45856,6 +45852,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 <ImageIcon className="w-3 h-3 shrink-0" />
                 <span>{unitCode}</span>
               </span>
+              {allUnitImages.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 font-bold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8]">
+                  {allUnitImages.length}
+                </span>
+              )}
               {projectName && projectName !== unitCode && (
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate" title={projectName}>
                   {projectName}
@@ -45906,7 +45907,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               if (!next) onClose();
               else setShowImagePanel(next);
             }}
-            showAddLinkInput={showAddLinkInput}
+            showAddLinkInput={false}
             setShowAddLinkInput={setShowAddLinkInput}
             newLinkInput={newLinkInput}
             setNewLinkInput={setNewLinkInput}
@@ -45918,6 +45919,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             setEnlargedImage={setEnlargedImage}
             unitCode={unitCode || data.code || ''}
             activeStore={storeDisplay}
+            isQuickMode={true}
           />
         </>
       ) : (
@@ -46032,7 +46034,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 };
 
 export default LayoutUnitTooltip;
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutZoomControls.tsx
 ================================================================================
@@ -48066,6 +48067,7 @@ interface TooltipImageGalleryPanelProps {
   setEnlargedImage: (img: { url: string; title?: string; initialScale?: number } | null) => void;
   unitCode?: string;
   activeStore?: string;
+  isQuickMode?: boolean;
 }
 
 export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> = ({
@@ -48083,6 +48085,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   setEnlargedImage,
   unitCode,
   activeStore = 'HCM',
+  isQuickMode = false,
 }) => {
   const [addMode, setAddMode] = useState<'link' | 'picture'>('link');
   const [isUploading, setIsUploading] = useState(false);
@@ -48122,54 +48125,61 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   };
 
   return (
-    <div className="w-full bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150 my-1">
-      {/* Panel Header */}
-      <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
-        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200 min-w-0">
-          <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8] shrink-0" />
-          <span className="truncate">Hình ảnh liên kết ({activeStore})</span>
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 font-bold",
-            activeStore.toUpperCase() === 'HN'
-              ? "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-400"
-              : "bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8]"
-          )}>
-            {allUnitImages.length}
-          </span>
+    <div className={cn(
+      "w-full flex flex-col gap-2 duration-150",
+      isQuickMode 
+        ? "pt-1" 
+        : "bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner animate-in fade-in zoom-in-95 my-1"
+    )}>
+      {/* Panel Header: Hidden in Quick-Image Mode to eliminate duplicate title and buttons */}
+      {!isQuickMode && (
+        <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
+          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200 min-w-0">
+            <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8] shrink-0" />
+            <span className="truncate">Hình ảnh liên kết ({activeStore})</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 font-bold",
+              activeStore.toUpperCase() === 'HN'
+                ? "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-400"
+                : "bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8]"
+            )}>
+              {allUnitImages.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Top "+ Thêm" Button */}
+            <button
+              type="button"
+              onClick={() => setShowAddLinkInput(prev => !prev)}
+              className={cn(
+                "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
+                showAddLinkInput 
+                  ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
+                  : "bg-blue-600 hover:bg-blue-700 text-white"
+              )}
+              title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
+            >
+              <Plus className="w-3 h-3" />
+              <span>Thêm</span>
+            </button>
+            {/* Close Image Panel Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowImagePanel(false);
+                setShowAddLinkInput(false);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Đóng bảng ảnh"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {/* Top "+ Thêm" Button */}
-          <button
-            type="button"
-            onClick={() => setShowAddLinkInput(prev => !prev)}
-            className={cn(
-              "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
-              showAddLinkInput 
-                ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
-                : "bg-blue-600 hover:bg-blue-700 text-white"
-            )}
-            title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
-          >
-            <Plus className="w-3 h-3" />
-            <span>Thêm</span>
-          </button>
-          {/* Close Image Panel Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowImagePanel(false);
-              setShowAddLinkInput(false);
-            }}
-            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Đóng bảng ảnh"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
+      )}
 
-      {/* Add / Post Link Input or Upload Picture Section (Only visible when clicking "+ Thêm") */}
-      {showAddLinkInput && (
+      {/* Add / Post Link Input or Upload Picture Section (Hidden in Quick Mode) */}
+      {!isQuickMode && showAddLinkInput && (
         <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-top-1 duration-150 py-1 bg-white dark:bg-[#1a1a1c] border border-blue-300 dark:border-blue-900 rounded-xl p-2 shadow-xs">
           {/* Mode Switcher Tabs */}
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5 gap-1">
@@ -48382,8 +48392,6 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
     </div>
   );
 };
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/TooltipMetaRow.tsx
 ================================================================================
@@ -52185,8 +52193,23 @@ export function useLayoutFloorData({
         return;
       }
 
+      // Check Normalized Code Collision (e.g. "333-2" vs "L3-333-2" on same floor):
+      const normCode = lowerName.replace(/^(l\d+|b\d+|md-[lb]\d+)[-_]/i, '').trim();
+      if (normCode && normCode !== lowerName && seenUnitNames.has(normCode)) {
+        const prevId = seenUnitNames.get(normCode)!;
+        const prev = unitsMap.get(prevId);
+        if (prev && (!prev.type && taggedUnit.type)) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenUnitNames.set(normCode, id);
+          if (coordKey) seenCoordinates.set(coordKey, id);
+        }
+        return;
+      }
+
       if (coordKey) seenCoordinates.set(coordKey, id);
       if (lowerName) seenUnitNames.set(lowerName, id);
+      if (normCode) seenUnitNames.set(normCode, id);
       unitsMap.set(id, taggedUnit);
     });
 
@@ -52307,8 +52330,6 @@ export function useLayoutFloorData({
     effectiveLayoutYear,
   };
 }
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutGestures.ts
 ================================================================================

@@ -64,9 +64,11 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
 
       {/* Layer 2: Interactive unit shapes, text, and alert badges */}
       <Layer id="units-interactive-layer">
-        {visibleUnits.map((unit: any) => {
-          const hasColor = Boolean(unit.targetColor);
-          const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
+        {(() => {
+          const renderedImgBadgePositions: { x: number; y: number; normCode: string }[] = [];
+          return visibleUnits.map((unit: any) => {
+            const hasColor = Boolean(unit.targetColor);
+            const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
           const isFocused = focusedUnitId === unit.id;
           const isDimmed = isLegendColorOn && hasColor && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
           const contrast = isLegendColorOn && hasColor 
@@ -142,6 +144,22 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
           // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
           const showTextAndBadge = isFocused || (stageScale || 1) >= 0.22;
 
+          const normUnitCode = String(unit.name || unit.id || unit.code || '')
+            .toLowerCase()
+            .replace(/^(l\d+|b\d+|md-[lb]\d+)[-_]/i, '')
+            .trim();
+
+          const isDuplicateImgBtn = Boolean(
+            hasImage && renderedImgBadgePositions.some(
+              pos => (pos.normCode && normUnitCode && pos.normCode === normUnitCode) ||
+                     Math.hypot(pos.x - imgBadgeX, pos.y - imgBadgeY) < 32
+            )
+          );
+
+          if (hasImage && !isDuplicateImgBtn && showTextAndBadge) {
+            renderedImgBadgePositions.push({ x: imgBadgeX, y: imgBadgeY, normCode: normUnitCode });
+          }
+
           return (
             <React.Fragment key={unit.id}>
               {unit.type === 'rect' && (
@@ -212,7 +230,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
               )}
 
               {/* Interactive Quick-Image Button Badge (Click/Tap opens Quick Image Tooltip directly) */}
-              {hasImage && showTextAndBadge && (
+              {hasImage && !isDuplicateImgBtn && showTextAndBadge && (
                 <Group x={imgBadgeX} y={imgBadgeY}>
                   <Rect
                     x={-imgBtnW / 2}
@@ -272,7 +290,8 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
               )}
             </React.Fragment>
           );
-        })}
+        });
+      })()}
       </Layer>
 
       {/* Layer 3: Dynamic Isolated Overlay Layer for Focused Unit Golden Ring */}

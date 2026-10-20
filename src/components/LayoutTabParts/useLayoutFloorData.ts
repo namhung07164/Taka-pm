@@ -333,8 +333,23 @@ export function useLayoutFloorData({
         return;
       }
 
+      // Check Normalized Code Collision (e.g. "333-2" vs "L3-333-2" on same floor):
+      const normCode = lowerName.replace(/^(l\d+|b\d+|md-[lb]\d+)[-_]/i, '').trim();
+      if (normCode && normCode !== lowerName && seenUnitNames.has(normCode)) {
+        const prevId = seenUnitNames.get(normCode)!;
+        const prev = unitsMap.get(prevId);
+        if (prev && (!prev.type && taggedUnit.type)) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenUnitNames.set(normCode, id);
+          if (coordKey) seenCoordinates.set(coordKey, id);
+        }
+        return;
+      }
+
       if (coordKey) seenCoordinates.set(coordKey, id);
       if (lowerName) seenUnitNames.set(lowerName, id);
+      if (normCode) seenUnitNames.set(normCode, id);
       unitsMap.set(id, taggedUnit);
     });
 

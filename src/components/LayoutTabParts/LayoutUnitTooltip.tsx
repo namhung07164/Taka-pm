@@ -283,6 +283,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
                 <ImageIcon className="w-3 h-3 shrink-0" />
                 <span>{unitCode}</span>
               </span>
+              {allUnitImages.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 font-bold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8]">
+                  {allUnitImages.length}
+                </span>
+              )}
               {projectName && projectName !== unitCode && (
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate" title={projectName}>
                   {projectName}
@@ -333,7 +338,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
               if (!next) onClose();
               else setShowImagePanel(next);
             }}
-            showAddLinkInput={showAddLinkInput}
+            showAddLinkInput={false}
             setShowAddLinkInput={setShowAddLinkInput}
             newLinkInput={newLinkInput}
             setNewLinkInput={setNewLinkInput}
@@ -345,6 +350,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             setEnlargedImage={setEnlargedImage}
             unitCode={unitCode || data.code || ''}
             activeStore={storeDisplay}
+            isQuickMode={true}
           />
         </>
       ) : (

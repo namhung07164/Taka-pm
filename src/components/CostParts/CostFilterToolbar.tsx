@@ -96,7 +96,7 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
           <option value="has_value">Has Act/Forc</option>
         </select>
 
-        <div className="relative flex-grow min-w-[130px] max-w-[180px] sm:max-w-[210px] flex-1 sm:flex-none">
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput
             value={searchTerm}
             onChange={(val) => setSearchTerm(val)}

@@ -326,7 +326,7 @@ export function GanttToolbar({
               onAddColumn={handleToggleColumn}
             />
 
-            <div className="relative flex-grow min-w-[160px] max-w-full sm:max-w-xs md:max-w-sm">
+            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
               <DebouncedSearchInput
                 value={searchTerm}
                 onChange={setSearchTerm}
