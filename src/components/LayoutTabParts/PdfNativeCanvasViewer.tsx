@@ -98,26 +98,46 @@ export function PdfNativeCanvasViewer({
           }
         }
 
-        const loadingTask = pdfjsLib.getDocument({
-          url,
-          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
-          cMapPacked: true,
-          disableAutoFetch: true,
-          disableStream: false,
-        });
-        loadingTaskRef.current = loadingTask;
+        let doc: any;
+        try {
+          const loadingTask = pdfjsLib.getDocument({
+            url,
+            cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
+            cMapPacked: true,
+            disableAutoFetch: true,
+            disableStream: false,
+          });
+          loadingTaskRef.current = loadingTask;
 
-        loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
-          if (!isMounted) return;
-          if (progress.total > 0) {
-            const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
-            setLoadingProgress(pct);
+          loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
+            if (!isMounted) return;
+            if (progress.total > 0) {
+              const pct = Math.min(99, Math.round((progress.loaded / progress.total) * 100));
+              setLoadingProgress(pct);
+            } else {
+              setLoadingProgress((prev) => Math.min(90, prev + 15));
+            }
+          };
+
+          doc = await loadingTask.promise;
+        } catch (directErr) {
+          const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
+          const presigned = await resolveR2UrlToHttp(url);
+          if (presigned && presigned !== url) {
+            const fallbackTask = pdfjsLib.getDocument({
+              url: presigned,
+              cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
+              cMapPacked: true,
+              disableAutoFetch: true,
+              disableStream: false,
+            });
+            loadingTaskRef.current = fallbackTask;
+            doc = await fallbackTask.promise;
           } else {
-            setLoadingProgress((prev) => Math.min(90, prev + 15));
+            throw directErr;
           }
-        };
+        }
 
-        const doc = await loadingTask.promise;
         if (!isMounted) {
           try {
             doc.cleanup?.();

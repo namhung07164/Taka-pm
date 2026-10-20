@@ -67,6 +67,10 @@ export function extractR2Key(url: string | null | undefined): string | null {
     try {
       const parsed = new URL(trimmed);
       const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+      const takaFolderIdx = pathname.indexOf('Taka-Pm-folder/');
+      if (takaFolderIdx !== -1) {
+        return pathname.slice(takaFolderIdx);
+      }
       // If pathname starts with bucket name (e.g. hcmlayout/key)
       const pathParts = pathname.split('/');
       const filename = pathParts[pathParts.length - 1];

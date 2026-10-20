@@ -456,7 +456,7 @@ export function LayoutUnitLightboxModal({
             </TouchPinchZoomStage>
           ) : isDirectPdf ? (
             <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
-              <PdfNativeCanvasViewer url={rawUrl} isFullscreen={true} />
+              <PdfNativeCanvasViewer url={resolvedUrl || rawUrl} isFullscreen={true} />
             </div>
           ) : (
             <TouchPinchZoomStage ref={zoomStageRef} initialScale={initialZoom} minScale={0.5} maxScale={10} onScaleChange={setZoomScale}>

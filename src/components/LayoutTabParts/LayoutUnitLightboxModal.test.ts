@@ -44,3 +44,18 @@ describe('normalizeImageUrl', () => {
     expect(normalizeImageUrl('   ')).toBe('');
   });
 });
+
+import { extractR2Key } from '../PictureMapping/lib/r2Upload';
+import { getCachedPdfThumbnail } from './TooltipParts/pdfThumbnailGenerator';
+
+describe('extractR2Key & PDF Thumbnail Cache', () => {
+  it('preserves Taka-Pm-folder/ prefix when extracting R2 keys from public URLs', () => {
+    const r2PdfUrl = 'https://hcm.taka-pm.org/Taka-Pm-folder/HN_TKV_SNG_1729384920_drawing.pdf';
+    expect(extractR2Key(r2PdfUrl)).toBe('Taka-Pm-folder/HN_TKV_SNG_1729384920_drawing.pdf');
+  });
+
+  it('returns null from getCachedPdfThumbnail for uncached URLs', () => {
+    expect(getCachedPdfThumbnail('https://hcm.taka-pm.org/Taka-Pm-folder/uncached.pdf')).toBeNull();
+  });
+});
+
