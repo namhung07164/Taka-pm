@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   X, Copy, ExternalLink, Image as ImageIcon, Link as LinkIcon, Check,
   Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2,
-  Hand, Layers, Zap, RefreshCw,
+  RefreshCw,
 } from 'lucide-react';
 import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
@@ -43,21 +43,14 @@ export function LayoutUnitLightboxModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isFullDisplay, setIsFullDisplay] = useState(true);
   const [zoomScale, setZoomScale] = useState(1);
-  const [driveTouchMode, setDriveTouchMode] = useState<'fast' | 'ultrahd' | 'scroll'>('fast');
-  const [isMultiPageActive, setIsMultiPageActive] = useState(false);
-  const [scrollReloadKey, setScrollReloadKey] = useState(0);
-  const [lockedIframeSize, setLockedIframeSize] = useState<{ w: number; h: number } | null>(null);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const scrollHostRef = useRef<HTMLDivElement>(null);
-  const prevMultiPageRef = useRef(false);
-  const prevReloadKeyRef = useRef(0);
 
   const rawUrl = enlargedImage?.url || '';
-  const targetRasterSize = driveTouchMode === 'ultrahd' ? 'w2400' : 'w1600';
-  const resolvedUrl = useMemo(() => normalizeImageUrl(rawUrl, targetRasterSize), [rawUrl, targetRasterSize]);
+  const resolvedUrl = useMemo(() => normalizeImageUrl(rawUrl, 'w2400'), [rawUrl]);
   const [currentSrc, setCurrentSrc] = useState(resolvedUrl);
   const [hasTriedCdnFallback, setHasTriedCdnFallback] = useState(false);
 
@@ -82,12 +75,21 @@ export function LayoutUnitLightboxModal({
     return m?.[1] || null;
   }, [rawUrl]);
 
+  const isPdf = isDirectPdf || isDriveDoc;
+
+  const effectivePdfSourceUrl = useMemo(() => {
+    if (isDriveDoc && driveFileId) {
+      return `/api/drive-pdf?id=${driveFileId}`;
+    }
+    return resolvedUrl || rawUrl;
+  }, [isDriveDoc, driveFileId, resolvedUrl, rawUrl]);
+
   const effectiveEmbedUrl = useMemo(() => {
     if (isDriveDoc && driveFileId) {
       return `https://drive.google.com/file/d/${driveFileId}/preview?rm=minimal`;
     }
-    return resolvedUrl;
-  }, [resolvedUrl, isDriveDoc, driveFileId]);
+    return resolvedUrl || rawUrl;
+  }, [isDriveDoc, driveFileId, resolvedUrl, rawUrl]);
 
   const releaseIframeMemory = useCallback(() => {
     if (iframeRef.current) {
@@ -98,19 +100,12 @@ export function LayoutUnitLightboxModal({
   const handleImageError = useCallback(() => {
     if (driveFileId && !hasTriedCdnFallback) {
       setHasTriedCdnFallback(true);
-      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}=${targetRasterSize}`);
-      return;
-    }
-    if (isDriveDoc && (driveTouchMode === 'fast' || driveTouchMode === 'ultrahd')) {
-      setIsMultiPageActive(true);
-      setDriveTouchMode('scroll');
-      setIsLoading(false);
-      setImageError(false);
+      setCurrentSrc(`https://lh3.googleusercontent.com/d/${driveFileId}=w2400`);
       return;
     }
     setIsLoading(false);
     setImageError(true);
-  }, [driveFileId, hasTriedCdnFallback, isDriveDoc, driveTouchMode, targetRasterSize]);
+  }, [driveFileId, hasTriedCdnFallback]);
 
   const handleImageLoad = useCallback(() => {
     setIsLoading(false);
@@ -119,46 +114,14 @@ export function LayoutUnitLightboxModal({
   }, [initialZoom]);
 
   useEffect(() => {
-    setDriveTouchMode('fast');
-    setIsMultiPageActive(false);
-    prevMultiPageRef.current = false;
-    prevReloadKeyRef.current = 0;
+    setUseIframeFallback(false);
     setHasTriedCdnFallback(false);
     setImageError(false);
     setZoomScale(initialZoom);
-    setScrollReloadKey(0);
-  }, [rawUrl, initialZoom]);
-
-  useEffect(() => {
     setCurrentSrc(resolvedUrl);
-    setHasTriedCdnFallback(false);
-    setImageError(false);
-    if (!resolvedUrl) {
-      setIsLoading(false);
-      return;
-    }
-    if (isDriveDoc && isMultiPageActive) {
-      const justActivated = !prevMultiPageRef.current;
-      const justReloaded = prevReloadKeyRef.current !== scrollReloadKey;
-      prevMultiPageRef.current = true;
-      prevReloadKeyRef.current = scrollReloadKey;
-      if (justActivated || justReloaded) {
-        setIsLoading(true);
-        const timer = setTimeout(() => setIsLoading(false), 650);
-        return () => clearTimeout(timer);
-      }
-      setIsLoading(false);
-      return;
-    }
-    prevMultiPageRef.current = false;
-    if (isDirectPdf) {
-      setIsLoading(true);
-      const timer = setTimeout(() => setIsLoading(false), 650);
-      return () => clearTimeout(timer);
-    }
-    setIsLoading(true);
-  }, [resolvedUrl, isDirectPdf, isDriveDoc, isMultiPageActive, scrollReloadKey]);
+  }, [rawUrl, resolvedUrl, initialZoom]);
 
+  // Lock background scroll when open
   useEffect(() => {
     if (!enlargedImage) return;
     const prevBodyOverflow = document.body.style.overflow;
@@ -178,37 +141,6 @@ export function LayoutUnitLightboxModal({
       konvaContents.forEach((el) => { el.style.visibility = ''; });
     };
   }, [enlargedImage]);
-
-  useEffect(() => {
-    if (!enlargedImage || !isDriveDoc) {
-      setLockedIframeSize(null);
-      return;
-    }
-    const host = scrollHostRef.current;
-    if (!host) return;
-
-    const measureAndLock = (force = false) => {
-      const rect = host.getBoundingClientRect();
-      const nextW = Math.max(280, Math.floor(rect.width) - 8);
-      const nextH = Math.max(240, Math.floor(rect.height) - 8);
-      setLockedIframeSize((prev) => {
-        if (!prev || force) return { w: nextW, h: nextH };
-        const widthChanged = Math.abs(nextW - prev.w) > 12;
-        const majorHeightChanged = Math.abs(nextH - prev.h) > 120;
-        return widthChanged || majorHeightChanged ? { w: nextW, h: nextH } : prev;
-      });
-    };
-
-    measureAndLock(true);
-    const onResize = () => measureAndLock(false);
-    const onOrientation = () => setTimeout(() => measureAndLock(true), 180);
-    window.addEventListener('resize', onResize, { passive: true });
-    window.addEventListener('orientationchange', onOrientation, { passive: true });
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onOrientation);
-    };
-  }, [enlargedImage, isDriveDoc, isFullDisplay]);
 
   const handleSafeClose = useCallback(() => {
     releaseIframeMemory();
@@ -233,10 +165,6 @@ export function LayoutUnitLightboxModal({
 
   if (!enlargedImage || typeof document === 'undefined') return null;
 
-  const isScrollMode = isDriveDoc && driveTouchMode === 'scroll';
-  const useMultiPageViewer = isDriveDoc && (isMultiPageActive || isScrollMode);
-  const showZoomControls = !isDirectPdf;
-
   return createPortal(
     <div
       className="fixed inset-0 z-[999999] bg-slate-950/98 flex items-center justify-center p-0 sm:p-2 md:p-4 select-none"
@@ -255,16 +183,17 @@ export function LayoutUnitLightboxModal({
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900 text-white shrink-0 z-30">
           <div className="flex items-center gap-2 min-w-0">
             <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
-            <span className="font-bold text-xs sm:text-sm truncate max-w-[160px] sm:max-w-[260px]">
-              {enlargedImage.title || 'Document Preview'}
+            <span className="font-bold text-xs sm:text-sm truncate max-w-[160px] sm:max-w-[280px]">
+              {enlargedImage.title || (isPdf ? 'PDF Blueprint Viewer' : 'Image Preview')}
             </span>
 
-            {showZoomControls && (
+            {/* Raster image zoom controls (PDF mode uses PdfNativeViewerToolbar) */}
+            {!isPdf && (
               <div className="flex items-center gap-1 ml-1 sm:ml-3 px-1.5 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700">
                 <button
                   type="button"
-                  onClick={() => { if (isScrollMode) setDriveTouchMode('fast'); zoomStageRef.current?.zoomOut(0.45); }}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation"
+                  onClick={() => zoomStageRef.current?.zoomOut(0.45)}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation cursor-pointer"
                   title="Zoom Out (-)"
                 >
                   <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -274,16 +203,16 @@ export function LayoutUnitLightboxModal({
                 </span>
                 <button
                   type="button"
-                  onClick={() => { if (isScrollMode) setDriveTouchMode('fast'); zoomStageRef.current?.zoomIn(0.45); }}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation"
-                  title="Zoom In on Current Page (+)"
+                  onClick={() => zoomStageRef.current?.zoomIn(0.45)}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-200 hover:text-white active:scale-95 touch-manipulation cursor-pointer"
+                  title="Zoom In (+)"
                 >
                   <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => zoomStageRef.current?.resetTransform()}
-                  className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white active:scale-95 touch-manipulation"
+                  className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white active:scale-95 touch-manipulation cursor-pointer"
                   title="Reset Zoom (100%)"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -293,6 +222,18 @@ export function LayoutUnitLightboxModal({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {useIframeFallback && (
+              <button
+                type="button"
+                onClick={() => setUseIframeFallback(false)}
+                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                title="Switch back to Native Canvas Viewer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span className="hidden sm:inline">Try Native Canvas</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsFullDisplay(!isFullDisplay)}
@@ -328,148 +269,76 @@ export function LayoutUnitLightboxModal({
           </div>
         </div>
 
-        {/* Google Drive Anti-Freeze Mode Bar */}
-        {isDriveDoc && (
-          <div className="bg-slate-900/95 border-b border-slate-800 px-3 py-1.5 text-xs text-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0 z-30">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                onClick={() => { setImageError(false); setDriveTouchMode('fast'); }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
-                  driveTouchMode === 'fast' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
+        {/* Content Body: Unified Viewer for Google Drive and R2 Cloud */}
+        <div className="flex-1 w-full h-full flex items-center justify-center bg-slate-950 overflow-hidden relative">
+          {isPdf ? (
+            useIframeFallback ? (
+              <TouchPinchZoomStage
+                ref={zoomStageRef}
+                initialScale={1}
+                minScale={0.5}
+                maxScale={8}
+                onScaleChange={setZoomScale}
+                className="w-full h-full flex items-center justify-center"
               >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Fast Light HD (Pinch Zoom)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setImageError(false);
-                  setDriveTouchMode('ultrahd');
-                  if (isMultiPageActive && zoomScale <= 1.05) zoomStageRef.current?.centerView(1.75);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
-                  driveTouchMode === 'ultrahd' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                <Hand className="w-3.5 h-3.5" />
-                <span>Ultra HD Blueprint (2400px)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setIsMultiPageActive(true); zoomStageRef.current?.resetTransform(); setDriveTouchMode('scroll'); }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer ${
-                  driveTouchMode === 'scroll' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Scroll Multi-Page PDF</span>
-              </button>
-
-              {useMultiPageViewer && (
-                <button
-                  type="button"
-                  onClick={() => { releaseIframeMemory(); zoomStageRef.current?.resetTransform(); setScrollReloadKey((k) => k + 1); }}
-                  className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 active:scale-95 touch-manipulation cursor-pointer"
-                  title="Flush stuck tile cache and reload PDF stream"
-                >
-                  <RefreshCw className="w-3 h-3 text-indigo-400" />
-                  <span>Reload Stream</span>
-                </button>
-              )}
-            </div>
-
-            <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 font-bold rounded-lg text-[11px] flex items-center gap-1 shrink-0 transition-colors">
-              <ExternalLink className="w-3 h-3" />
-              <span>Open in Google Drive</span>
-            </a>
-          </div>
-        )}
-
-        {/* Content Body: No contain:paint so offscreen upper PDF pages stay cached in iOS GPU memory during upward scroll */}
-        <div
-          ref={scrollHostRef}
-          className="flex-1 p-1 sm:p-2 flex items-center justify-center bg-slate-950 overflow-hidden min-h-[260px] relative"
-          style={{ contain: 'layout style', overscrollBehavior: 'none' }}
-        >
-          {isLoading && !imageError && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/60 z-20 pointer-events-none">
-              <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
-              <span className="text-xs font-medium">Loading document...</span>
-            </div>
-          )}
-
-          {imageError ? (
-            <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
-              <AlertCircle className="w-10 h-10 text-amber-400" />
-              <div>
-                <h4 className="text-sm font-bold text-white mb-1">Cannot display content directly</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  This document may require Google account access permissions or restricts embedding.
-                </p>
-              </div>
-              <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95">
-                <ExternalLink className="w-4 h-4" />
-                <span>Open Link in New Tab</span>
-              </a>
-            </div>
-          ) : useMultiPageViewer ? (
-            <TouchPinchZoomStage
-              ref={zoomStageRef}
-              initialScale={1}
-              minScale={0.5}
-              maxScale={8}
-              onScaleChange={setZoomScale}
-              captureOverlay={!isScrollMode}
-              allowNativeTouch={isScrollMode}
-              className="w-full h-full flex items-center justify-center"
-            >
-              <div
-                className="rounded-xl overflow-hidden border border-slate-800 bg-slate-900 relative flex items-center justify-center"
-                style={{
-                  width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
-                  height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
-                  contain: 'layout style',
-                  isolation: 'isolate',
-                  overscrollBehavior: 'contain',
-                }}
-              >
-                <iframe
-                  key={`drive_scroll_${driveFileId || rawUrl}_${scrollReloadKey}`}
-                  ref={iframeRef}
-                  src={effectiveEmbedUrl}
-                  onLoad={() => setIsLoading(false)}
-                  scrolling="yes"
-                  className="border-0 bg-white block"
-                  style={{
-                    width: lockedIframeSize ? `${lockedIframeSize.w}px` : '100%',
-                    height: lockedIframeSize ? `${lockedIframeSize.h}px` : '100%',
-                    overscrollBehavior: 'contain',
-                  }}
-                  title={enlargedImage.title || 'Google Drive Document'}
-                  allow="autoplay"
+                <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
+                  <iframe
+                    ref={iframeRef}
+                    src={effectiveEmbedUrl}
+                    className="w-full h-full border-0 bg-white block"
+                    title={enlargedImage.title || 'Document Embed Viewer'}
+                    allow="autoplay; fullscreen"
+                  />
+                </div>
+              </TouchPinchZoomStage>
+            ) : (
+              <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
+                <PdfNativeCanvasViewer
+                  url={effectivePdfSourceUrl}
+                  isFullscreen={isFullDisplay}
+                  onFallbackToIframe={() => setUseIframeFallback(true)}
                 />
               </div>
-            </TouchPinchZoomStage>
-          ) : isDirectPdf ? (
-            <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden border border-slate-800">
-              <PdfNativeCanvasViewer url={resolvedUrl || rawUrl} isFullscreen={true} />
-            </div>
+            )
           ) : (
-            <TouchPinchZoomStage ref={zoomStageRef} initialScale={initialZoom} minScale={0.5} maxScale={10} onScaleChange={setZoomScale}>
-              <img
-                ref={imgRef}
-                src={currentSrc}
-                alt={enlargedImage.title || 'Enlarged Preview'}
-                decoding="async"
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-                className="max-w-full max-h-[85vh] object-contain rounded-lg select-none"
-                draggable={false}
-              />
+            <TouchPinchZoomStage
+              ref={zoomStageRef}
+              initialScale={initialZoom}
+              minScale={0.5}
+              maxScale={10}
+              onScaleChange={setZoomScale}
+              className="w-full h-full flex items-center justify-center p-2"
+            >
+              {isLoading && !imageError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-950/60 z-20 pointer-events-none">
+                  <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
+                  <span className="text-xs font-medium">Loading image...</span>
+                </div>
+              )}
+              {imageError ? (
+                <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                  <AlertCircle className="w-10 h-10 text-amber-400" />
+                  <h4 className="text-sm font-bold text-white">Cannot display image directly</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    The external host restricts inline display. You can open the file link in a new tab.
+                  </p>
+                  <a href={rawUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95">
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Open in New Tab</span>
+                  </a>
+                </div>
+              ) : (
+                <img
+                  ref={imgRef}
+                  src={currentSrc}
+                  alt={enlargedImage.title || 'Enlarged Preview'}
+                  decoding="async"
+                  onLoad={handleImageLoad}
+                  onError={handleImageError}
+                  className="max-w-full max-h-[85vh] object-contain rounded-lg select-none shadow-2xl"
+                  draggable={false}
+                />
+              )}
             </TouchPinchZoomStage>
           )}
         </div>
@@ -495,3 +364,5 @@ export function LayoutUnitLightboxModal({
     document.body
   );
 }
+
+export default LayoutUnitLightboxModal;

@@ -1,20 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Maximize2,
-  ExternalLink,
-  AlertCircle,
-  Loader2,
-  RefreshCw,
-} from 'lucide-react';
-import {
-  TouchPinchZoomStage,
-  TouchPinchZoomStageHandle,
-} from './TouchPinchZoomStage';
+import { AlertCircle, Loader2, RefreshCw, ExternalLink } from 'lucide-react';
+import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
+import { PdfNativeViewerToolbar } from './PdfNativeViewerToolbar';
 
 export interface PdfNativeCanvasViewerProps {
   url: string;
@@ -24,7 +11,7 @@ export interface PdfNativeCanvasViewerProps {
   onFallbackToIframe?: () => void;
 }
 
-const MAX_CANVAS_DIMENSION = 1600; // Safe iOS WebKit GPU canvas texture cap for heavy CAD PDFs
+const MAX_CANVAS_DIMENSION = 2400; // Safe GPU canvas texture cap
 
 export function PdfNativeCanvasViewer({
   url,
@@ -42,6 +29,7 @@ export function PdfNativeCanvasViewer({
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'page' | 'scroll'>('page');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,20 +37,32 @@ export function PdfNativeCanvasViewer({
   const renderTaskRef = useRef<any>(null);
   const activePdfRef = useRef<any>(null);
   const loadingTaskRef = useRef<any>(null);
-  const pageBitmapCacheRef = useRef<
-    Map<number, { bitmap: ImageBitmap; width: number; height: number; cssWidth: number; cssHeight: number }>
+
+  // In-memory cloned canvas cache to avoid WebKit ImageBitmap memory and blank canvas bugs
+  const pageCacheRef = useRef<
+    Map<number, { canvas: HTMLCanvasElement; width: number; height: number; cssWidth: number; cssHeight: number }>
   >(new Map());
 
-  const clearBitmapCache = useCallback(() => {
-    pageBitmapCacheRef.current.forEach((entry) => {
-      try {
-        entry.bitmap.close?.();
-      } catch {}
-    });
-    pageBitmapCacheRef.current.clear();
+  const clearPageCache = useCallback(() => {
+    pageCacheRef.current.clear();
   }, []);
 
-  // Load PDF Document asynchronously with dynamic import of pdfjs-dist
+  // Determine effective PDF source (Google Drive proxy fallback if drive URL)
+  const resolveEffectiveUrl = useCallback((inputUrl: string): string => {
+    if (!inputUrl) return '';
+    const trimmed = inputUrl.trim();
+    const driveMatch =
+      trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
+      trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+    if (driveMatch?.[1]) {
+      return `/api/drive-pdf?id=${driveMatch[1]}`;
+    }
+    return trimmed;
+  }, []);
+
+  const effectivePdfUrl = resolveEffectiveUrl(url);
+
+  // Load PDF Document asynchronously
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -72,7 +72,7 @@ export function PdfNativeCanvasViewer({
     setCurrentPage(1);
     setPageInput('1');
     setZoomScale(1);
-    clearBitmapCache();
+    clearPageCache();
 
     if (activePdfRef.current) {
       try {
@@ -98,15 +98,22 @@ export function PdfNativeCanvasViewer({
           }
         }
 
+        const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+        const cMapLocal = `${baseOrigin}/cmaps/`;
+        const fontLocal = `${baseOrigin}/standard_fonts/`;
+
+        const getDocConfig = (fetchUrl: string) => ({
+          url: fetchUrl,
+          cMapUrl: cMapLocal,
+          cMapPacked: true,
+          standardFontDataUrl: fontLocal,
+          disableAutoFetch: false,
+          disableStream: true, // Prevents Range-request stream worker freeze on mobile Safari
+        });
+
         let doc: any;
         try {
-          const loadingTask = pdfjsLib.getDocument({
-            url,
-            cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
-            cMapPacked: true,
-            disableAutoFetch: true,
-            disableStream: false,
-          });
+          const loadingTask = pdfjsLib.getDocument(getDocConfig(effectivePdfUrl));
           loadingTaskRef.current = loadingTask;
 
           loadingTask.onProgress = (progress: { loaded: number; total: number }) => {
@@ -120,21 +127,22 @@ export function PdfNativeCanvasViewer({
           };
 
           doc = await loadingTask.promise;
-        } catch (directErr) {
+        } catch (initialErr) {
+          // If effectivePdfUrl was a Google Drive proxy and failed, or R2 direct URL failed:
+          if (effectivePdfUrl !== url) {
+            // Re-throw so user can use embed fallback
+            throw initialErr;
+          }
+
+          // Fallback for R2 links: try S3 Presigned URL
           const { resolveR2UrlToHttp } = await import('../PictureMapping/lib/r2Upload');
           const presigned = await resolveR2UrlToHttp(url);
           if (presigned && presigned !== url) {
-            const fallbackTask = pdfjsLib.getDocument({
-              url: presigned,
-              cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
-              cMapPacked: true,
-              disableAutoFetch: true,
-              disableStream: false,
-            });
+            const fallbackTask = pdfjsLib.getDocument(getDocConfig(presigned));
             loadingTaskRef.current = fallbackTask;
             doc = await fallbackTask.promise;
           } else {
-            throw directErr;
+            throw initialErr;
           }
         }
 
@@ -145,6 +153,7 @@ export function PdfNativeCanvasViewer({
           } catch {}
           return;
         }
+
         activePdfRef.current = doc;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
@@ -152,8 +161,8 @@ export function PdfNativeCanvasViewer({
         setLoadingProgress(100);
       } catch (err) {
         if (!isMounted) return;
-        console.warn('Native PDF loading failed or blocked by CORS:', err);
-        setError('Cannot load PDF natively (CORS or network policy).');
+        console.warn('Native PDF loading failed:', err);
+        setError('Cannot load PDF natively (CORS or permissions).');
         setIsLoading(false);
       }
     })();
@@ -172,7 +181,7 @@ export function PdfNativeCanvasViewer({
         } catch {}
         loadingTaskRef.current = null;
       }
-      clearBitmapCache();
+      clearPageCache();
       if (canvasRef.current) {
         canvasRef.current.width = 0;
         canvasRef.current.height = 0;
@@ -185,11 +194,11 @@ export function PdfNativeCanvasViewer({
         activePdfRef.current = null;
       }
     };
-  }, [url, clearBitmapCache]);
+  }, [url, effectivePdfUrl, clearPageCache]);
 
   const renderSeqRef = useRef<number>(0);
 
-  // Render Page ONCE per page change — zooming uses 60fps GPU transform without re-rendering canvas!
+  // Render Page with true responsive fit-to-screen and white background fill
   const renderPage = useCallback(
     async (pageNum: number) => {
       if (!pdfDoc || !canvasRef.current) return;
@@ -199,8 +208,8 @@ export function PdfNativeCanvasViewer({
       const context = canvas.getContext('2d', { alpha: false });
       if (!context) return;
 
-      // 1. Instant 0ms restore if page is already in bitmap cache
-      const cached = pageBitmapCacheRef.current.get(pageNum);
+      // 1. Instant 0ms restore from cloned offscreen canvas cache
+      const cached = pageCacheRef.current.get(pageNum);
       if (cached) {
         if (renderTaskRef.current) {
           try {
@@ -212,7 +221,10 @@ export function PdfNativeCanvasViewer({
         canvas.height = cached.height;
         canvas.style.width = `${cached.cssWidth}px`;
         canvas.style.height = `${cached.cssHeight}px`;
-        context.drawImage(cached.bitmap, 0, 0);
+
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, cached.width, cached.height);
+        context.drawImage(cached.canvas, 0, 0);
         setIsRendering(false);
         return;
       }
@@ -233,32 +245,39 @@ export function PdfNativeCanvasViewer({
         const page = await pdfDoc.getPage(pageNum);
         if (seq !== renderSeqRef.current || !canvasRef.current) return;
 
-        const containerWidth = Math.max(320, (containerRef.current?.clientWidth || 900) - 24);
-        const containerHeight = Math.max(320, (containerRef.current?.clientHeight || 700) - 72);
+        // Container bounds (with safety fallbacks for initial mount on mobile)
+        const availWidth = Math.max(260, (containerRef.current?.clientWidth || window.innerWidth) - 24);
+        const availHeight = Math.max(260, (containerRef.current?.clientHeight || window.innerHeight) - 80);
+
         const unscaledViewport = page.getViewport({ scale: 1 });
 
-        const scaleX = containerWidth / unscaledViewport.width;
-        const scaleY = containerHeight / unscaledViewport.height;
-        const fitScale = Math.max(0.6, Math.min(scaleX, scaleY * 1.15, 1.5));
+        // TRUE fit-to-screen scale without artificial Math.max(0.6) clamp!
+        // This ensures entire CAD blueprints / signages fit inside mobile screen without showing empty margins!
+        const scaleX = availWidth / Math.max(1, unscaledViewport.width);
+        const scaleY = availHeight / Math.max(1, unscaledViewport.height);
+        const fitScale = Math.min(scaleX, scaleY, 2.5);
 
         const viewport = page.getViewport({ scale: fitScale });
-        const rawDpr = Math.min(window.devicePixelRatio || 1, 1.35);
-        const maxAllowedDpr = Math.min(
-          rawDpr,
-          MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1)
-        );
-        const dpr = Math.max(1, maxAllowedDpr);
 
-        const pixelWidth = Math.floor(viewport.width * dpr);
-        const pixelHeight = Math.floor(viewport.height * dpr);
-        const cssWidth = Math.floor(viewport.width);
-        const cssHeight = Math.floor(viewport.height);
+        // Device pixel ratio with safe mobile WebKit GPU texture cap
+        const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
+        const maxDprByDimension = MAX_CANVAS_DIMENSION / Math.max(viewport.width, viewport.height, 1);
+        const dpr = Math.max(1, Math.min(rawDpr, maxDprByDimension));
+
+        const pixelWidth = Math.max(1, Math.floor(viewport.width * dpr));
+        const pixelHeight = Math.max(1, Math.floor(viewport.height * dpr));
+        const cssWidth = Math.max(1, Math.floor(viewport.width));
+        const cssHeight = Math.max(1, Math.floor(viewport.height));
 
         canvas.width = pixelWidth;
         canvas.height = pixelHeight;
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
+        // CRITICAL: Fill canvas with solid white before rendering vector drawings!
+        // Architectural CAD drawings have transparent backgrounds and dark lines.
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, pixelWidth, pixelHeight);
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = 'high';
 
@@ -271,23 +290,27 @@ export function PdfNativeCanvasViewer({
         renderTaskRef.current = renderTask;
         await renderTask.promise;
 
-        if (seq === renderSeqRef.current && typeof createImageBitmap === 'function' && canvas.width > 0 && canvas.height > 0) {
+        // Cache rendered page into a lightweight offscreen canvas
+        if (seq === renderSeqRef.current && canvas.width > 0 && canvas.height > 0) {
           try {
-            if (pageBitmapCacheRef.current.size >= 5) {
-              const oldestKey = pageBitmapCacheRef.current.keys().next().value;
-              if (oldestKey !== undefined) {
-                pageBitmapCacheRef.current.get(oldestKey)?.bitmap.close?.();
-                pageBitmapCacheRef.current.delete(oldestKey);
-              }
+            if (pageCacheRef.current.size >= 8) {
+              const oldestKey = pageCacheRef.current.keys().next().value;
+              if (oldestKey !== undefined) pageCacheRef.current.delete(oldestKey);
             }
-            const bmp = await createImageBitmap(canvas);
-            pageBitmapCacheRef.current.set(pageNum, {
-              bitmap: bmp,
-              width: pixelWidth,
-              height: pixelHeight,
-              cssWidth,
-              cssHeight,
-            });
+            const offscreen = document.createElement('canvas');
+            offscreen.width = pixelWidth;
+            offscreen.height = pixelHeight;
+            const offCtx = offscreen.getContext('2d');
+            if (offCtx) {
+              offCtx.drawImage(canvas, 0, 0);
+              pageCacheRef.current.set(pageNum, {
+                canvas: offscreen,
+                width: pixelWidth,
+                height: pixelHeight,
+                cssWidth,
+                cssHeight,
+              });
+            }
           } catch {}
         }
 
@@ -311,6 +334,25 @@ export function PdfNativeCanvasViewer({
       renderPage(currentPage);
     }
   }, [pdfDoc, currentPage, numPages, renderPage]);
+
+  // ResizeObserver to re-fit page cleanly when container size settles or orientation changes
+  useEffect(() => {
+    if (!containerRef.current) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const observer = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (pdfDoc && currentPage) {
+          renderPage(currentPage);
+        }
+      }, 150);
+    });
+    observer.observe(containerRef.current);
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [pdfDoc, currentPage, renderPage]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= numPages) {
@@ -342,7 +384,7 @@ export function PdfNativeCanvasViewer({
             <button
               type="button"
               onClick={onFallbackToIframe}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Switch to Embed Viewer
@@ -352,7 +394,7 @@ export function PdfNativeCanvasViewer({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             Open File in New Tab
@@ -367,104 +409,28 @@ export function PdfNativeCanvasViewer({
       ref={containerRef}
       className={`w-full h-full relative flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none ${className}`}
     >
-      {/* Top Toolbar: Page Navigation & Instant GPU Zoom Controls */}
-      <div className="z-[60] flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-900 border-b border-slate-800 shrink-0">
-        {/* Left: Page Navigation */}
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            disabled={currentPage <= 1 || isLoading}
-            onClick={() => handlePageChange(currentPage - 1)}
-            className="p-1.5 hover:bg-slate-800 disabled:opacity-40 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Previous Page"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+      {/* Unified Toolbar for both R2 Cloud and Google Drive */}
+      <PdfNativeViewerToolbar
+        currentPage={currentPage}
+        numPages={numPages}
+        pageInput={pageInput}
+        onPageInputChange={setPageInput}
+        onPageInputSubmit={handlePageInputSubmit}
+        onPageChange={handlePageChange}
+        isLoading={isLoading}
+        zoomScale={zoomScale}
+        onZoomIn={() => zoomStageRef.current?.zoomIn(0.4)}
+        onZoomOut={() => zoomStageRef.current?.zoomOut(0.4)}
+        onResetZoom={() => zoomStageRef.current?.resetTransform()}
+        isFullscreen={isFullscreen}
+        onOpenFullscreen={onOpenFullscreen}
+        url={url}
+        viewMode={viewMode}
+        onToggleViewMode={() => setViewMode((m) => (m === 'page' ? 'scroll' : 'page'))}
+      />
 
-          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1">
-            <span className="text-xs text-slate-400 font-medium hidden sm:inline">Page</span>
-            <input
-              type="text"
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onBlur={() => setPageInput(String(currentPage))}
-              className="w-10 px-1.5 py-0.5 text-center bg-slate-800 border border-slate-700 rounded text-xs font-mono font-semibold text-white focus:outline-none focus:border-indigo-500"
-            />
-            <span className="text-xs text-slate-400 font-mono font-medium">/ {numPages || 1}</span>
-          </form>
-
-          <button
-            type="button"
-            disabled={currentPage >= numPages || isLoading}
-            onClick={() => handlePageChange(currentPage + 1)}
-            className="p-1.5 hover:bg-slate-800 disabled:opacity-40 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Next Page"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Center: 0ms GPU Zoom Controls */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => zoomStageRef.current?.zoomOut(0.4)}
-            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Zoom Out (-)"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-
-          <span className="px-2 py-0.5 text-xs font-mono font-bold text-slate-200 bg-slate-800 rounded border border-slate-700 min-w-[3.2rem] text-center">
-            {Math.round(zoomScale * 100)}%
-          </span>
-
-          <button
-            type="button"
-            onClick={() => zoomStageRef.current?.zoomIn(0.4)}
-            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Zoom In (+)"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => zoomStageRef.current?.resetTransform()}
-            className="px-2 py-1 text-[11px] font-semibold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors active:scale-95 touch-manipulation flex items-center gap-1"
-            title="Reset Zoom (100%)"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>Reset</span>
-          </button>
-        </div>
-
-        {/* Right: Actions */}
-        <div className="flex items-center gap-1">
-          {onOpenFullscreen && !isFullscreen && (
-            <button
-              type="button"
-              onClick={onOpenFullscreen}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-              title="Full Display"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-          )}
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-200 transition-colors active:scale-95 touch-manipulation"
-            title="Open in new window"
-          >
-            <ExternalLink className="w-4 h-4" />
-          </a>
-        </div>
-      </div>
-
-      {/* Main Canvas Viewport with 60fps iOS Pinch-to-Zoom & Pan */}
-      <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center">
+      {/* Main Canvas Viewport with 60fps Gesture Pinch-to-Zoom & Pan */}
+      <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center p-1 sm:p-2">
         {isLoading && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 text-slate-300">
             <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
@@ -484,13 +450,14 @@ export function PdfNativeCanvasViewer({
           ref={zoomStageRef}
           initialScale={1}
           minScale={0.5}
-          maxScale={8}
+          maxScale={10}
           onScaleChange={setZoomScale}
+          className="w-full h-full flex items-center justify-center"
         >
-          <div className="relative shadow-xl rounded-lg overflow-hidden border border-slate-800 bg-white">
-            <canvas ref={canvasRef} className="block max-w-full h-auto" />
+          <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 bg-white inline-block">
+            <canvas ref={canvasRef} className="block select-none" />
             {isRendering && (
-              <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700">
+              <div className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-indigo-400 rounded text-[10px] font-mono flex items-center gap-1 border border-slate-700 pointer-events-none">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 <span>Rendering...</span>
               </div>

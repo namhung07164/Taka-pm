@@ -226,7 +226,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 
   if (!isVisible || typeof document === 'undefined') return null;
 
-  const useEmbedViewer = isPdf && (isDriveOrDocs || useGdocsFallback);
+  const useEmbedViewer = isPdf && useGdocsFallback;
   const iframeSrc = useEmbedViewer
     ? getPdfIframeUrl(rawTargetUrl, useGdocsFallback)
     : '';

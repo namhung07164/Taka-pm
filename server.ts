@@ -116,6 +116,75 @@ async function startServer() {
     }
   });
 
+  // API Proxy tải binary PDF từ Google Drive để đồng bộ hiển thị Native Canvas như R2
+  app.get('/api/drive-pdf', async (req, res) => {
+    try {
+      const fileId = req.query.id as string;
+      if (!fileId || typeof fileId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Thiếu file ID' });
+      }
+
+      const cleanId = fileId.trim();
+      const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&authuser=0`;
+
+      let response = await fetch(directDownloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/pdf,application/octet-stream,*/*',
+        },
+        redirect: 'follow',
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+
+      // Xử lý trang xác nhận virus scan nếu file dung lượng lớn
+      if (response.ok && contentType.includes('text/html')) {
+        const text = await response.text();
+        const confirmMatch = text.match(/confirm=([a-zA-Z0-9_-]+)/);
+        if (confirmMatch?.[1]) {
+          const confirmUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&confirm=${confirmMatch[1]}`;
+          response = await fetch(confirmUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+            redirect: 'follow',
+          });
+        } else {
+          // Thử endpoint uc?export=download
+          const ucUrl = `https://drive.google.com/uc?export=download&id=${cleanId}`;
+          const ucRes = await fetch(ucUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            },
+            redirect: 'follow',
+          });
+          if (ucRes.ok && !ucRes.headers.get('content-type')?.includes('text/html')) {
+            response = ucRes;
+          }
+        }
+      }
+
+      const finalContentType = response.headers.get('content-type') || '';
+      if (!response.ok || finalContentType.includes('text/html')) {
+        return res.status(404).json({
+          success: false,
+          error: 'Tài liệu Google Drive không cho phép tải trực tiếp dạng binary (yêu cầu quyền xem hoặc mở trong iframe)'
+        });
+      }
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Accept-Ranges', 'bytes');
+
+      const arrayBuffer = await response.arrayBuffer();
+      return res.send(Buffer.from(arrayBuffer));
+    } catch (error: any) {
+      console.error('Drive PDF Proxy Exception:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // Tích hợp Vite Middleware cho môi trường Dev
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

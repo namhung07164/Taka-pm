@@ -60,14 +60,27 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
         }
       }
 
+      const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+      const cMapLocal = `${baseOrigin}/cmaps/`;
+      const fontLocal = `${baseOrigin}/standard_fonts/`;
+
+      // If Google Drive link, extract ID and proxy
+      const driveMatch =
+        url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
+        url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
+      const effectiveUrl = driveMatch?.[1] ? `/api/drive-pdf?id=${driveMatch[1]}` : url;
+
+      const getDocConfig = (targetUrl: string) => ({
+        url: targetUrl,
+        cMapUrl: cMapLocal,
+        cMapPacked: true,
+        standardFontDataUrl: fontLocal,
+        disableAutoFetch: false,
+        disableStream: true,
+      });
+
       try {
-        loadingTask = pdfjsLib.getDocument({
-          url,
-          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
-          cMapPacked: true,
-          disableAutoFetch: true,
-          disableStream: false,
-        });
+        loadingTask = pdfjsLib.getDocument(getDocConfig(effectiveUrl));
         pdfDoc = await loadingTask.promise;
       } catch (directErr) {
         // Fallback for R2 links if direct URL fetch fails: try fetching object via S3 presigned URL
@@ -75,13 +88,7 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
           const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
           const presignedUrl = await resolveR2UrlToHttp(url);
           if (presignedUrl && presignedUrl !== url) {
-            loadingTask = pdfjsLib.getDocument({
-              url: presignedUrl,
-              cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/cmaps/`,
-              cMapPacked: true,
-              disableAutoFetch: true,
-              disableStream: false,
-            });
+            loadingTask = pdfjsLib.getDocument(getDocConfig(presignedUrl));
             pdfDoc = await loadingTask.promise;
           } else {
             throw directErr;

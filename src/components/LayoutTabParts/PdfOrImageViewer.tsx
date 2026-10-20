@@ -103,7 +103,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 
   // PDF or Google Drive / Docs document mode
   if (isPdf) {
-    if (!useIframeFallback && !isDriveDoc) {
+    if (!useIframeFallback) {
       return (
         <PdfNativeCanvasViewer
           url={cleanUrl}
