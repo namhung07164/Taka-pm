@@ -158,16 +158,20 @@ export function useGeneralData({
   }, [locationOptions, globalLocationFilter, setGlobalLocationFilter]);
 
   const filteredProjects = useMemo(() => {
-    // Pre-calculate project dates & status once (O(N)) to eliminate O(N log N) recalculations during sorting
-    const infoMap = new Map<string, ReturnType<typeof getProjectDatesAndStatus>>();
-    projects.forEach(p => {
-      const pKey = p.id || p.code || String(p.no || '');
-      infoMap.set(pKey, getProjectDatesAndStatus(p, tasks));
-    });
-
+    // Pre-calculate project dates & status once (O(1) per project using pre-computed fields) to eliminate O(N*M) scans
     const getMemoizedInfo = (p: Project) => {
-      const pKey = p.id || p.code || String(p.no || '');
-      return infoMap.get(pKey) || getProjectDatesAndStatus(p, tasks);
+      const computedTakStart = p.computedTakStart || p.start || "";
+      const computedTakCompl = p.computedTakCompl || p.handover || (p as any).takCompl || "";
+      const computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : "") || "";
+      const status = p.computedStatus || getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
+      return {
+        computedTakStart,
+        computedTakCompl,
+        computedOpening,
+        status,
+        planProgressPercent: p.computedPlanProgress ?? 0,
+        actProgressPercent: p.computedActProgress ?? 0
+      };
     };
 
     return projects.filter(p => {
@@ -267,12 +271,7 @@ export function useGeneralData({
       
       return a.code.localeCompare(b.code) || String(a.year || '').localeCompare(String(b.year || ''));
     });
-  }, [projects, tasks, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
-
-  useEffect(() => {
-    const interval = setInterval(() => setFlashToggle(prev => !prev), 600);
-    return () => clearInterval(interval);
-  }, []);
+  }, [projects, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
 
   const paginatedProjects = useMemo(() => {
     return filteredProjects.slice(0, visibleCount);

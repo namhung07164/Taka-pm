@@ -270,7 +270,8 @@ export function useGanttProjectsFilter({
         return isTarget;
       }
 
-      const { computedTakStart, status } = getProjectDatesAndStatus(p, tasks);
+      const computedTakStart = p.computedTakStart || p.start || "";
+      const status = p.computedStatus || getStatus(computedTakStart, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
       const pYear = p.year ? String(p.year).trim() : null;
       const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
       const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
