@@ -21,6 +21,7 @@ import { applyIncomingDeltas } from './deltaApplyService';
 import { safeSetItemLocal } from './storage';
 
 let inFlightPullPromise: Promise<number> | null = null;
+let inFlightStartedAt = 0;
 let lastPullCompletedAt = 0;
 let pendingForcedFollowUp = false;
 
@@ -30,16 +31,22 @@ let pendingForcedFollowUp = false;
  * B4: In-flight deduplication prevents concurrent identical queries across tabs/effects
  */
 export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = false): Promise<number> {
+  const now = Date.now();
   if (inFlightPullPromise) {
-    if (force) pendingForcedFollowUp = true;
+    // Only queue a follow-up if the current in-flight pull started >800ms ago; otherwise it is already fetching the latest state
+    if (force && now - inFlightStartedAt > 800) {
+      pendingForcedFollowUp = true;
+    }
     return inFlightPullPromise;
   }
-  const now = Date.now();
-  if (!force && now - lastPullCompletedAt < 2000) {
+  // Prevent duplicate back-to-back server pulls across multiple wake/hydration callers
+  const minCooldownMs = force ? 1500 : 5000;
+  if (now - lastPullCompletedAt < minCooldownMs) {
     return 0;
   }
 
   let pullSucceeded = false;
+  inFlightStartedAt = now;
   inFlightPullPromise = (async () => {
     await waitForNetworkRecovery();
 
@@ -54,6 +61,7 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
     try {
       const deltas: TakaDelta[] = [];
       let currentSince = Math.max(lastSyncTime - CLOCK_SKEW_OVERLAP_MS, restoreCutoff);
+      let latestSeenServerMs = lastSyncTime;
       let iteration = 0;
       const MAX_PAGES = 5;
 
@@ -84,8 +92,10 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
         snapshot.forEach((d: any) => {
           const item = d.data() as TakaDelta;
           const itemId = item.id || d.id;
+          const itemMs = deltaTime(item);
+          if (itemMs > latestSeenServerMs) latestSeenServerMs = itemMs;
           if (appliedDeltaIds.has(itemId)) {
-            if (deltaTime(item) > pageMaxTime) pageMaxTime = deltaTime(item);
+            if (itemMs > pageMaxTime) pageMaxTime = itemMs;
             return;
           }
           appliedDeltaIds.add(itemId);
@@ -94,8 +104,8 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
             if (oldest !== undefined) appliedDeltaIds.delete(oldest);
           }
           deltas.push(item);
-          if (deltaTime(item) > pageMaxTime) {
-            pageMaxTime = deltaTime(item);
+          if (itemMs > pageMaxTime) {
+            pageMaxTime = itemMs;
           }
         });
 
@@ -108,13 +118,16 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
       pullSucceeded = true;
 
       if (deltas.length === 0) {
-        // Server confirmed 0 new deltas: advance sync cursor safely
-        const safeRecentTime = Math.max(lastSyncTime, Date.now() - 60000);
+        // Server confirmed 0 new unapplied deltas: advance sync cursor so already-applied deltas are not re-read on next pull
+        const safeRecentTime = Math.max(lastSyncTime, latestSeenServerMs, Date.now() - 5000);
         safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
         return 0;
       }
 
-      return applyIncomingDeltas(deltas);
+      const appliedCount = applyIncomingDeltas(deltas);
+      const advancedCursor = Math.max(getLastDeltaSyncTime(), latestSeenServerMs, Date.now() - 5000);
+      safeSetItemLocal(LAST_SYNC_KEY, String(advancedCursor));
+      return appliedCount;
     } catch (err) {
       console.warn('[deltaSync] Error pulling deltas:', err);
       return 0;
@@ -127,7 +140,7 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
         pendingForcedFollowUp = false;
         setTimeout(() => {
           pullAndApplyDeltas(yearFilter, true).catch(() => {});
-        }, 150);
+        }, 200);
       }
     }
   })();

@@ -258,7 +258,8 @@ export function setupStaticConfigSync(): Unsubscribe {
       // 1. Locations
       const localLocs = store.locations;
       const remoteLocVer = remoteData.locationsVersion || 1;
-      if (localVersions.locationsVersion !== remoteLocVer || localLocs.length === 0 || needsInit) {
+      const hasCachedLocs = safeGetItemLocal(CACHE_KEYS.LOCATIONS) !== null;
+      if (localVersions.locationsVersion !== remoteLocVer || (!hasCachedLocs && localLocs.length === 0) || needsInit) {
         try {
           const locDoc = await getDoc(
             doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations")
@@ -270,6 +271,8 @@ export function setupStaticConfigSync(): Unsubscribe {
             store.setLocations(uniqueList);
             store.setLocationVisibility(visibility);
             cacheLocations(uniqueList, visibility);
+          } else {
+            cacheLocations(localLocs, store.locationVisibility);
           }
         } catch (err) {
           console.error("Error fetching locations config:", err);
@@ -279,7 +282,8 @@ export function setupStaticConfigSync(): Unsubscribe {
       // 2. Parties
       const localParties = store.parties;
       const remotePartyVer = remoteData.partiesVersion || 1;
-      if (localVersions.partiesVersion !== remotePartyVer || localParties.length === 0 || needsInit) {
+      const hasCachedParties = safeGetItemLocal(CACHE_KEYS.PARTIES) !== null;
+      if (localVersions.partiesVersion !== remotePartyVer || (!hasCachedParties && localParties.length === 0) || needsInit) {
         try {
           const partyDoc = await getDoc(
             doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "parties")
@@ -320,7 +324,8 @@ export function setupStaticConfigSync(): Unsubscribe {
 
       // 4. Notification Rules
       const remoteRuleVer = remoteData.rulesVersion || 1;
-      if (localVersions.rulesVersion !== remoteRuleVer || store.notificationRules.length === 0 || needsInit) {
+      const hasCachedRules = safeGetItemLocal(CACHE_KEYS.RULES) !== null;
+      if (localVersions.rulesVersion !== remoteRuleVer || !hasCachedRules || needsInit) {
         try {
           const rulesSnap = await getDocs(
             collection(db, "artifacts", APP_ID, "public", "data", "taka_rules")
@@ -338,7 +343,8 @@ export function setupStaticConfigSync(): Unsubscribe {
 
       // 5. R2 Config
       const remoteR2Ver = remoteData.r2Version || 1;
-      if (localVersions.r2Version !== remoteR2Ver || store.r2Config === null || needsInit) {
+      const hasCachedR2 = safeGetItemLocal(CACHE_KEYS.R2_CONFIG) !== null;
+      if (localVersions.r2Version !== remoteR2Ver || !hasCachedR2 || needsInit) {
         try {
           const r2Doc = await getDoc(
             doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials")
@@ -348,7 +354,11 @@ export function setupStaticConfigSync(): Unsubscribe {
             if (data.accountId && data.accessKeyId) {
                store.setR2Config(data);
                cacheR2Config(data);
+            } else {
+               cacheR2Config(null);
             }
+          } else {
+            cacheR2Config(null);
           }
         } catch (err) {
           console.error("Error fetching r2 config:", err);
@@ -357,7 +367,8 @@ export function setupStaticConfigSync(): Unsubscribe {
 
       // 6. Permissions Matrix
       const remotePermsVer = remoteData.permissionsVersion || 1;
-      if (localVersions.permissionsVersion !== remotePermsVer || Object.keys(store.permissionMatrix || {}).length === 0 || needsInit) {
+      const hasCachedPerms = safeGetItemLocal(CACHE_KEYS.PERMISSIONS) !== null;
+      if (localVersions.permissionsVersion !== remotePermsVer || (!hasCachedPerms && Object.keys(store.permissionMatrix || {}).length === 0) || needsInit) {
         try {
           const permsDoc = await getDoc(
             doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "permissions")
@@ -366,6 +377,8 @@ export function setupStaticConfigSync(): Unsubscribe {
             const data = permsDoc.data() as PermissionMatrix;
             store.setPermissionMatrix(data);
             cachePermissions(data);
+          } else {
+            cachePermissions(store.permissionMatrix || ({} as PermissionMatrix));
           }
         } catch (err) {
           console.error("Error fetching permissions config:", err);
@@ -374,7 +387,8 @@ export function setupStaticConfigSync(): Unsubscribe {
 
       // 7. Sub App Users
       const remoteSubUsersVer = remoteData.subAppUsersVersion || 1;
-      if (localVersions.subAppUsersVersion !== remoteSubUsersVer || store.subAppUsers.length === 0 || needsInit) {
+      const hasCachedSubUsers = safeGetItemLocal(CACHE_KEYS.SUB_APP_USERS) !== null;
+      if (localVersions.subAppUsersVersion !== remoteSubUsersVer || !hasCachedSubUsers || needsInit) {
         try {
           const subUsersSnap = await getDocs(
             collection(db, "artifacts", APP_ID, "public", "data", "taka_sub_app_users")
@@ -392,7 +406,8 @@ export function setupStaticConfigSync(): Unsubscribe {
 
       // 8. App Users (taka_users versioning)
       const remoteAppUsersVer = remoteData.appUsersVersion || 1;
-      if (localVersions.appUsersVersion !== remoteAppUsersVer || store.appUsers.length === 0 || needsInit) {
+      const hasCachedAppUsers = safeGetItemLocal(CACHE_KEYS.APP_USERS) !== null;
+      if (localVersions.appUsersVersion !== remoteAppUsersVer || (!hasCachedAppUsers && store.appUsers.length === 0) || needsInit) {
         try {
           const usersSnap = await getDocs(
             collection(db, "artifacts", APP_ID, "public", "data", "taka_users")

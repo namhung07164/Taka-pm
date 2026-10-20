@@ -13,13 +13,6 @@ import {
 } from '../../lib/backgroundSyncWorker';
 import { deleteLocalRecord } from '../../lib/localDb';
 import {
-  fetchYearsMeta,
-  setMemoryYearsMeta,
-  isYearCacheValid,
-  loadYearDataFromLocal,
-  YearsMetaMap,
-} from '../../lib/yearsFingerprintService';
-import {
   startDeltaSyncService,
   pullAndApplyDeltas,
   applyIncomingDeltas,
@@ -44,7 +37,7 @@ interface UseProjectsHydrationProps {
   allowedStores: string[];
 }
 
-// Các (người dùng, bộ lọc store, năm) thuộc nhóm năm phụ đã được nạp trong phiên này: không truy vấn server lặp lại
+// Các (người dùng, năm) thuộc nhóm năm phụ đã được nạp trong phiên này: không truy vấn server lặp lại
 const secondaryYearsFetched = new Set<string>();
 
 export function useProjectsHydration({
@@ -53,13 +46,11 @@ export function useProjectsHydration({
   allowedStores,
 }: UseProjectsHydrationProps) {
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
-  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
   const setCloudStatus = useAppStore((state) => state.setCloudStatus);
-  const [recoveryTick, setRecoveryTick] = useState(0);
+  const [recoveryTick] = useState(0);
 
   const projectsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigProjects = useRef<string>('');
-  const remoteYearsMetaRef = useRef<YearsMetaMap>({});
 
   // Atomic batching buffers for Projects and Tasks updates to prevent JS main thread freezing
   const pendingProjectsMap = useRef<Map<string, Project> | null>(null);
@@ -221,11 +212,6 @@ export function useProjectsHydration({
   useEffect(() => {
     bootstrapLocalStore().catch(() => {});
 
-    fetchYearsMeta().then((meta) => {
-      remoteYearsMetaRef.current = meta;
-      setMemoryYearsMeta(meta);
-    });
-
     const stopDeltaSync = startDeltaSyncService();
     return () => {
       stopDeltaSync();
@@ -235,15 +221,11 @@ export function useProjectsHydration({
   // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      projectsPool.current.forEach((u, key) => {
-        try {
-          u();
-        } catch {}
-        usePerformanceStore.getState().unregisterListener(`taka_projects_${key}`);
-      });
-      projectsPool.current.clear();
-      secondaryYearsFetched.clear();
-      setRecoveryTick((c) => c + 1);
+      // Preserve active onSnapshot listeners in projectsPool so Firestore SDK resumes via resumeToken (0 full-collection re-read)
+      hydrateProjectsFromLocal(
+        useAppStore.getState().globalYearFilter,
+        useAppStore.getState().globalStoreFilter
+      ).catch(() => {});
     };
 
     window.addEventListener('taka_sleep_wake_recovery', handleSleepWakeRecovery);
@@ -283,7 +265,10 @@ export function useProjectsHydration({
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
     liveTargetYears.forEach(async (year) => {
-      const localCount = await hydrateProjectsFromLocal(year, globalStoreFilter);
+      const localCount = await hydrateProjectsFromLocal(
+        year,
+        useAppStore.getState().globalStoreFilter
+      );
 
       if (!projectsPool.current.has(year)) {
         const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
@@ -298,7 +283,7 @@ export function useProjectsHydration({
             hasMarker(await getLoadedMarkers(), 'projects_year', year));
         if (deltaManaged) {
           projectsPool.current.set(year, () => {});
-          pullAndApplyDeltas(year, true)
+          pullAndApplyDeltas(year, false)
             .then(() => setCloudStatus('online'))
             .catch(() => {});
           usePerformanceStore
@@ -310,28 +295,6 @@ export function useProjectsHydration({
               'Dexie Local-First Projects Hydration (0 Read full collection)'
             );
           return;
-        }
-
-        if (false && isClosedOrPastYear && isYearCacheValid(year, remoteYearsMetaRef.current)) {
-          const cached = loadYearDataFromLocal(year);
-          if (cached && cached.projects && cached.projects.length > 0) {
-            batchProjectsUpdate(
-              cached.projects.map((p) => ({
-                type: 'added',
-                doc: { id: p.id, data: () => p },
-              }))
-            );
-            usePerformanceStore
-              .getState()
-              .trackGetDoc(
-                `taka_projects_${year}`,
-                true,
-                cached.projects.length,
-                'Metadata Fingerprint Cache Hit'
-              );
-            projectsPool.current.set(year, () => {});
-            return;
-          }
         }
 
         const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
@@ -369,8 +332,11 @@ export function useProjectsHydration({
             batchProjectsUpdate(changesToApply, fromCache);
             setCloudStatus('online');
 
-            if (DELTA_FIRST.projects && !fromCache) {
+            if (!fromCache) {
               markLoaded('projects_year', year).catch(() => {});
+            }
+
+            if (DELTA_FIRST.projects && !fromCache) {
               const u = projectsPool.current.get(year);
               projectsPool.current.set(year, () => {});
               u?.();
@@ -391,10 +357,19 @@ export function useProjectsHydration({
     if (isAllYears) {
       SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
         if (projectsPool.current.has(year)) return;
-        const secKey = `${querySignature}_${globalStoreFilter}_${year}`;
+        const secKey = `${querySignature}_${year}`;
         if (secondaryYearsFetched.has(secKey)) return;
         secondaryYearsFetched.add(secKey);
         try {
+          const localCount = await hydrateProjectsFromLocal(
+            year,
+            useAppStore.getState().globalStoreFilter
+          );
+          const markers = await getLoadedMarkers();
+          if (localCount > 0 || hasMarker(markers, 'projects_year', year)) {
+            return;
+          }
+
           const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
           const qProjects = buildStoreAndYearQuery(
             colRef,
@@ -405,26 +380,39 @@ export function useProjectsHydration({
             allowedStores
           );
           let snapshot;
+          let fetchedFromServer = false;
           try {
             snapshot = await getDocsFromCache(qProjects);
             if (snapshot.empty) {
               snapshot = await getDocsFromServer(qProjects);
+              fetchedFromServer = true;
             }
           } catch {
             snapshot = await getDocsFromServer(qProjects);
+            fetchedFromServer = true;
+          }
+
+          if (fetchedFromServer) {
+            markLoaded('projects_year', year).catch(() => {});
           }
 
           if (snapshot && !snapshot.empty) {
             const currentProjects = useAppStore.getState().projects || [];
             const projectMap = new Map<string, Project>();
             currentProjects.forEach((p) => projectMap.set(p.id, p));
+            const fetchedDocs: Project[] = [];
 
             snapshot.forEach((docSnap) => {
               const data = { id: docSnap.id, ...docSnap.data() } as Project;
               if (!data.isDeleted) {
                 projectMap.set(docSnap.id, data);
+                fetchedDocs.push(data);
               }
             });
+
+            if (fetchedDocs.length > 0) {
+              offloadPersistSnapshot('taka_projects', fetchedDocs);
+            }
 
             const updatedList = Array.from(projectMap.values());
             updatedList.sort((a, b) => (a.no || 0) - (b.no || 0));
@@ -440,7 +428,6 @@ export function useProjectsHydration({
     userRole,
     allowedStores,
     globalYearFilter,
-    globalStoreFilter,
     batchProjectsUpdate,
     setCloudStatus,
     recoveryTick,

@@ -416,7 +416,7 @@ export function useTasksHydration({
       });
 
       if (needTasksDeltaSync) {
-        pullAndApplyDeltas(undefined, true)
+        pullAndApplyDeltas(undefined, false)
           .then(() => setCloudStatus('online'))
           .catch(() => {});
       }
@@ -442,17 +442,9 @@ export function useTasksHydration({
     });
 
     const handleSleepWakeRecovery = () => {
+      // Preserve active tasksPool onSnapshot listeners so Firestore SDK uses resumeToken instead of re-reading all tasks
       if (useAppStore.getState().isTasksRequested) {
         hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      }
-      if (tasksPool.current.size > 0) {
-        tasksPool.current.forEach((u, key) => {
-          u();
-          usePerformanceStore.getState().unregisterListener(`taka_tasks_${key}`);
-        });
-        tasksPool.current.clear();
-        wakeRefreshCounter.current += 1;
-        runTasksSync().catch(() => {});
       }
     };
 

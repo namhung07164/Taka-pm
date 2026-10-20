@@ -23,6 +23,7 @@ interface UseCostsHydrationProps {
 }
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const secondaryCostsYearsFetched = new Set<string>();
 
 // Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
 const tsOf = (v: any): number => {
@@ -223,8 +224,11 @@ export function useCostsHydration({
               const fromCache = snapshot.metadata.fromCache;
               batchCostsUpdate(snapshot.docChanges(), fromCache);
 
-              if (DELTA_FIRST.costs && !fromCache) {
+              if (!fromCache) {
                 markLoaded('costs_year', year).catch(() => {});
+              }
+
+              if (DELTA_FIRST.costs && !fromCache) {
                 const u = costsPool.current.get(year);
                 costsPool.current.set(year, () => {});
                 u?.();
@@ -246,7 +250,16 @@ export function useCostsHydration({
     if (isAllYears) {
       SECONDARY_ACTIVE_YEARS.forEach(async (year) => {
         if (costsPool.current.has(year)) return;
+        const secKey = `${querySignature}_${year}`;
+        if (secondaryCostsYearsFetched.has(secKey)) return;
+        secondaryCostsYearsFetched.add(secKey);
         try {
+          const localCount = await hydrateCostsFromLocal(year);
+          const markers = await getLoadedMarkers();
+          if (localCount > 0 || hasMarker(markers, 'costs_year', year)) {
+            return;
+          }
+
           const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
           const qCosts = buildStoreAndYearQuery(
             colRef,
@@ -257,31 +270,46 @@ export function useCostsHydration({
             allowedStores
           );
           let snapshot;
+          let fetchedFromServer = false;
           try {
             snapshot = await getDocsFromCache(qCosts);
             if (snapshot.empty) {
               snapshot = await getDocsFromServer(qCosts);
+              fetchedFromServer = true;
             }
           } catch {
             snapshot = await getDocsFromServer(qCosts);
+            fetchedFromServer = true;
+          }
+
+          if (fetchedFromServer) {
+            markLoaded('costs_year', year).catch(() => {});
           }
 
           if (snapshot && !snapshot.empty) {
             const liveCosts = useAppStore.getState().costs || [];
             const costMap = new Map<string, Cost>();
             liveCosts.forEach((c) => costMap.set(c.id, c));
+            const fetchedDocs: Cost[] = [];
 
             snapshot.forEach((docSnap) => {
               const data = { id: docSnap.id, ...docSnap.data() } as Cost;
               if (!data.isDeleted) {
                 costMap.set(docSnap.id, data);
+                fetchedDocs.push(data);
               }
             });
+
+            if (fetchedDocs.length > 0) {
+              offloadPersistSnapshot('taka_costs', fetchedDocs);
+            }
 
             const updatedList = Array.from(costMap.values());
             useAppStore.getState().setCosts(updatedList);
           }
-        } catch {}
+        } catch {
+          secondaryCostsYearsFetched.delete(secKey);
+        }
       });
     }
   }, [

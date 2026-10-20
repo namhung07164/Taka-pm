@@ -1,7 +1,7 @@
 import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, APP_ID } from './firebase';
-import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime, pullAndApplyDeltas } from './deltaSyncService';
+import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime } from './deltaSyncService';
 import type { TakaDelta } from '../types';
 
 /**
@@ -15,7 +15,7 @@ import type { TakaDelta } from '../types';
  */
 
 const OVERLAP_MS = 10 * 1000; // serverTime overlap window, duplicates filtered by delta id
-const DETACH_AFTER_HIDDEN_MS = 2 * 60 * 1000;
+const DETACH_AFTER_HIDDEN_MS = 5 * 60 * 1000; // Keep listener alive for up to 5 min when tab hidden
 const RETRY_MS = 30 * 1000;
 
 export function startDeltaRealtimeListener(): () => void {
@@ -85,7 +85,7 @@ export function startDeltaRealtimeListener(): () => void {
 
   let hiddenAt = 0;
   let lastActiveAt = Date.now();
-  const IDLE_REATTACH_MS = 3 * 60 * 1000;
+  const IDLE_REATTACH_MS = 10 * 60 * 1000;
 
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
@@ -98,13 +98,11 @@ export function startDeltaRealtimeListener(): () => void {
       const hiddenFor = hiddenAt ? now - hiddenAt : Infinity;
       hiddenAt = 0;
       lastActiveAt = now;
-      // Ẩn ngắn (dưới 15 giây, ví dụ chuyển tab): kết nối vẫn sống và listener vẫn nhận delta realtime,
-      // không cần tạo lại listener hay kéo delta (tránh đọc lại cửa sổ 3 phút).
-      if (unsub && hiddenFor < 15000) return;
-      // Ẩn lâu: ép tạo lại socket để phục hồi kết nối WebChannel bị iOS/Safari/Desktop treo
+      // If hidden < 2 minutes and listener is still active, keep existing WebChannel socket (0 extra reads)
+      if (unsub && hiddenFor < 2 * 60 * 1000) return;
+      // Re-attach listener if it was detached or hidden > 2 minutes (attach() already queries since lastSyncTime - 10s)
       detach();
       attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
     }
   };
 
@@ -113,7 +111,6 @@ export function startDeltaRealtimeListener(): () => void {
     if (document.visibilityState === 'visible') {
       detach();
       attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
     }
   };
 
@@ -122,7 +119,6 @@ export function startDeltaRealtimeListener(): () => void {
       lastActiveAt = Date.now();
       detach();
       attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
     }
   };
 
@@ -130,28 +126,24 @@ export function startDeltaRealtimeListener(): () => void {
     lastActiveAt = Date.now();
     detach();
     attach();
-    pullAndApplyDeltas(undefined, true).catch(() => {});
   };
 
   const handleFocus = () => {
     const now = Date.now();
     const idleFor = now - lastActiveAt;
     lastActiveAt = now;
-    // Nếu Desktop để qua đêm (tab vẫn visible nhưng không tương tác > 3 phút), socket có thể bị treo: ép gắn lại
     if (idleFor > IDLE_REATTACH_MS || !unsub) {
       detach();
       attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
     }
   };
 
   const handleActivity = () => {
     const now = Date.now();
-    if (now - lastActiveAt > IDLE_REATTACH_MS) {
+    if (now - lastActiveAt > IDLE_REATTACH_MS || !unsub) {
       lastActiveAt = now;
       detach();
       attach();
-      pullAndApplyDeltas(undefined, true).catch(() => {});
     } else {
       lastActiveAt = now;
     }

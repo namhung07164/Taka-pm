@@ -189,7 +189,7 @@ export async function uploadPictureToTakaFolder(
   unitCode?: string,
   store?: string
 ): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
-  let creds = getStoredR2Credentials();
+  let creds = getStoredR2Credentials() || useAppStore.getState().r2Config;
   if (!creds) {
     try {
       const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
@@ -283,7 +283,7 @@ export async function deleteR2ImageCleanly(
     return { success: false, deletedKeys: [] };
   }
 
-  let creds = customCreds || getStoredR2Credentials();
+  let creds = customCreds || getStoredR2Credentials() || useAppStore.getState().r2Config;
   if (!creds) {
     try {
       const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));

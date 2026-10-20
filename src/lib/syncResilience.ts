@@ -13,10 +13,10 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
  *    than that can never catch up through deltas, so wipe the local cache and reload once.
  */
 
-const HIDDEN_THRESHOLD_MS = 45 * 1000;
-const WALL_CLOCK_CHECK_INTERVAL_MS = 15 * 1000;
-const WALL_CLOCK_JUMP_THRESHOLD_MS = 45 * 1000;
-const IDLE_FOCUS_THRESHOLD_MS = 3 * 60 * 1000;
+const HIDDEN_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes hidden before cycling network
+const WALL_CLOCK_CHECK_INTERVAL_MS = 20 * 1000;
+const WALL_CLOCK_JUMP_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes OS sleep jump
+const IDLE_FOCUS_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes idle before cycling network on focus
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
 const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
 
@@ -45,7 +45,7 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
 
   const recover = async () => {
     const now = Date.now();
-    if (busy || now - lastRecoveredAt < 5000) return;
+    if (busy || now - lastRecoveredAt < 15000) return;
     busy = true;
     lastRecoveredAt = now;
     const p = (async () => {
@@ -123,7 +123,6 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handleOnline);
   window.addEventListener('focus', handleFocusOrSleepWake);
-  window.addEventListener('taka_sleep_wake_recovery', recover);
   window.addEventListener('pointerdown', handleUserActivity, { passive: true });
   window.addEventListener('keydown', handleUserActivity, { passive: true });
 
@@ -133,7 +132,6 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     window.removeEventListener('pageshow', handlePageShow);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('focus', handleFocusOrSleepWake);
-    window.removeEventListener('taka_sleep_wake_recovery', recover);
     window.removeEventListener('pointerdown', handleUserActivity);
     window.removeEventListener('keydown', handleUserActivity);
   };

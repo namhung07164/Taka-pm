@@ -201,19 +201,22 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     }
   });
 
-  // 3. If project already has tasks hydrated in RAM (or is expanded), check if server data.taskSummaries has added or modified tasks
-  const isProjHydratedOrExpanded =
-    localProjTasks.length > 0 ||
+  // 3. If project already has tasks hydrated in RAM (and is not just freshly expanding with 0 local tasks while useTasksHydration attaches its query),
+  // reconcile only genuinely missing single tasks or patch summary fields in-place without firing N getDocFromServer calls.
+  const isActivelyExpanded =
     expandedSet.has(String(id)) ||
     (resolvedData.code && expandedSet.has(String(resolvedData.code)));
 
-  if (isProjHydratedOrExpanded && serverSummaryIds.size > 0) {
+  if (localProjTasksById.size > 0 && serverSummaryIds.size > 0) {
     data.taskSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
       const localT = localProjTasksById.get(sId.toLowerCase());
       if (!localT) {
-        pendingInvalidatedTaskIds.set(sId, String(resolvedData.year || ''));
+        // If the project is not covered by an active expanded listener in useTasksHydration, fetch the single missing task
+        if (!isActivelyExpanded) {
+          pendingInvalidatedTaskIds.set(sId, String(resolvedData.year || ''));
+        }
       } else {
         const localUpdatedMs = tsOf(localT.updatedAt);
         const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 30000;
@@ -226,7 +229,13 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
             (s.approval !== undefined && s.approval !== localT.approval) ||
             (s.party !== undefined && s.party !== localT.party);
           if (summaryDiffers) {
-            pendingInvalidatedTaskIds.set(sId, String(resolvedData.year || ''));
+            // Patch summary fields directly in memory (and Dexie via background reconciliation) to avoid getDocFromServer
+            if (s.name !== undefined) localT.name = s.name;
+            if (s.start !== undefined) localT.start = s.start;
+            if (s.finish !== undefined) localT.finish = s.finish;
+            if (s.runningStatus !== undefined) localT.runningStatus = s.runningStatus;
+            if (s.approval !== undefined) localT.approval = s.approval;
+            if (s.party !== undefined) localT.party = s.party;
           }
         }
       }
