@@ -48,19 +48,19 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
 
     try {
       const [pdfjsLib, binaryData] = await Promise.all([
-        import('pdfjs-dist'),
+        import('pdfjs-dist/legacy/build/pdf.mjs'),
         fetchPdfBinaryUnified(rawUrl),
       ]);
 
       if (pdfjsLib.GlobalWorkerOptions) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://unpkg.com/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs';
       }
 
-      const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
       const docConfig: any = {
-        cMapUrl: `${baseOrigin}/cmaps/`,
+        cMapUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/cmaps/',
         cMapPacked: true,
-        standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
+        standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/standard_fonts/',
         disableAutoFetch: false,
         disableStream: true,
       };

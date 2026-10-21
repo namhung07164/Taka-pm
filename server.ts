@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 
@@ -334,7 +335,9 @@ async function startServer() {
   // (không cần lưu 186 file nhị phân nặng vào thư mục public/ của Git repo, chống lỗi timeout khi Clone repo trên Cloudflare)
   const pdfjsBasePath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist');
   app.get('/pdf.worker.min.mjs', (_req, res) => {
-    const workerFile = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    const legacyWorker = path.join(pdfjsBasePath, 'legacy', 'build', 'pdf.worker.min.mjs');
+    const stdWorker = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    const workerFile = fs.existsSync(legacyWorker) ? legacyWorker : stdWorker;
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

@@ -311,7 +311,6 @@ FILE: package.json
 
 ================================================================================
 FILE: vite.config.ts
-================================================================================
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
@@ -322,16 +321,13 @@ function pdfjsAssetsPlugin() {
   return {
     name: 'copy-pdfjs-assets',
     closeBundle() {
-      // Only copy the 186 static PDF.js files into dist/ on static cloud builders (Cloudflare Pages / Vercel).
-      // In AI Studio / Node server mode, server.ts serves /pdf.worker.min.mjs, /cmaps, and /standard_fonts
-      // directly from node_modules/pdfjs-dist to avoid flooding the workspace file-sync watcher.
-      if (!process.env.CF_PAGES && !process.env.CF_PAGES_URL && !process.env.VERCEL) return;
-
       const pdfjsDir = path.resolve(__dirname, 'node_modules/pdfjs-dist');
       const outDir = path.resolve(__dirname, 'dist');
       if (!fs.existsSync(pdfjsDir) || !fs.existsSync(outDir)) return;
 
-      const workerSrc = path.join(pdfjsDir, 'build/pdf.worker.min.mjs');
+      const legacyWorker = path.join(pdfjsDir, 'legacy/build/pdf.worker.min.mjs');
+      const stdWorker = path.join(pdfjsDir, 'build/pdf.worker.min.mjs');
+      const workerSrc = fs.existsSync(legacyWorker) ? legacyWorker : stdWorker;
       if (fs.existsSync(workerSrc)) {
         fs.copyFileSync(workerSrc, path.join(outDir, 'pdf.worker.min.mjs'));
       }
@@ -389,9 +385,10 @@ export default defineConfig({
     }
   }
 });
-================================================================================
+
 FILE: server.ts
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 
@@ -521,6 +518,44 @@ async function startServer() {
     mediaMemoryCache.set(key, { buffer, contentType, ts: Date.now() });
   };
 
+  // Helper phục vụ file nhị phân kèm Range Request (HTTP 206 Partial Content) cho PDF viewer & iframe
+  const sendBinaryWithRange = (
+    req: express.Request,
+    res: express.Response,
+    buffer: Buffer,
+    contentType: string,
+    isPdf: boolean = false
+  ) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    if (isPdf) {
+      res.setHeader('Content-Disposition', 'inline; filename="document.pdf"');
+    }
+
+    const total = buffer.length;
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+
+      if (!isNaN(start) && start < total && end < total && start <= end) {
+        const chunk = buffer.subarray(start, end + 1);
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+        res.setHeader('Content-Length', String(chunk.length));
+        res.setHeader('Content-Type', contentType);
+        return res.end(chunk);
+      }
+    }
+
+    res.setHeader('Content-Length', String(total));
+    res.setHeader('Content-Type', contentType);
+    return res.send(buffer);
+  };
+
   // API Proxy tải binary PDF từ Google Drive để đồng bộ hiển thị Native Canvas như R2
   app.get('/api/drive-pdf', async (req, res) => {
     try {
@@ -533,11 +568,7 @@ async function startServer() {
       const cacheKey = `drive-pdf:${cleanId}`;
       const cached = mediaMemoryCache.get(cacheKey);
       if (cached && Date.now() - cached.ts < 3600_000) {
-        res.setHeader('Content-Type', cached.contentType || 'application/pdf');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-        res.setHeader('Accept-Ranges', 'bytes');
-        return res.send(cached.buffer);
+        return sendBinaryWithRange(req, res, cached.buffer, cached.contentType || 'application/pdf', true);
       }
 
       const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&authuser=0`;
@@ -591,11 +622,7 @@ async function startServer() {
       const resolvedMime = finalContentType.includes('image/') ? finalContentType : 'application/pdf';
       setMediaCache(cacheKey, buffer, resolvedMime);
 
-      res.setHeader('Content-Type', resolvedMime);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      res.setHeader('Accept-Ranges', 'bytes');
-      return res.send(buffer);
+      return sendBinaryWithRange(req, res, buffer, resolvedMime, true);
     } catch (error: any) {
       console.error('Drive PDF Proxy Exception:', error);
       res.status(500).json({ success: false, error: error.message });
@@ -666,10 +693,8 @@ async function startServer() {
       const cacheKey = `pdf-proxy:${targetUrl}`;
       const cached = mediaMemoryCache.get(cacheKey);
       if (cached && Date.now() - cached.ts < 3600_000) {
-        res.setHeader('Content-Type', cached.contentType);
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-        return res.send(cached.buffer);
+        const isPdf = cached.contentType.includes('pdf') || /\.pdf($|\?)/i.test(targetUrl);
+        return sendBinaryWithRange(req, res, cached.buffer, cached.contentType, isPdf);
       }
 
       const response = await fetch(targetUrl, {
@@ -688,18 +713,31 @@ async function startServer() {
       const buffer = Buffer.from(await response.arrayBuffer());
       setMediaCache(cacheKey, buffer, ct);
 
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      return res.send(buffer);
+      const isPdf = ct.includes('pdf') || /\.pdf($|\?)/i.test(targetUrl);
+      return sendBinaryWithRange(req, res, buffer, ct, isPdf);
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });
     }
   });
 
-  // Phục vụ tĩnh tài nguyên cmaps & standard_fonts của PDF.js (chống trả nhầm file HTML làm crash canvas)
-  const publicPath = path.join(process.cwd(), 'public');
-  app.use('/cmaps', express.static(path.join(publicPath, 'cmaps'), {
+  // Phục vụ trực tiếp pdf.worker.min.mjs, cmaps & standard_fonts từ node_modules/pdfjs-dist
+  // (không cần lưu 186 file nhị phân nặng vào thư mục public/ của Git repo, chống lỗi timeout khi Clone repo trên Cloudflare)
+  const pdfjsBasePath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist');
+  app.get('/pdf.worker.min.mjs', (_req, res) => {
+    const legacyWorker = path.join(pdfjsBasePath, 'legacy', 'build', 'pdf.worker.min.mjs');
+    const stdWorker = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    const workerFile = fs.existsSync(legacyWorker) ? legacyWorker : stdWorker;
+    res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(workerFile, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).end();
+      }
+    });
+  });
+
+  app.use('/cmaps', express.static(path.join(pdfjsBasePath, 'cmaps'), {
     fallthrough: false,
     setHeaders: (res) => {
       res.setHeader('Content-Type', 'application/octet-stream');
@@ -708,7 +746,7 @@ async function startServer() {
     },
   }));
 
-  app.use('/standard_fonts', express.static(path.join(publicPath, 'standard_fonts'), {
+  app.use('/standard_fonts', express.static(path.join(pdfjsBasePath, 'standard_fonts'), {
     fallthrough: false,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.ttf')) {
@@ -721,9 +759,9 @@ async function startServer() {
     },
   }));
 
-  // Chặn trả file index.html cho các đuôi mở rộng nhị phân nếu file không tồn tại (trả 404 thay vì 200 HTML)
+  // Chặn trả file index.html cho các đuôi mở rộng nhị phân font/cmap nếu không tồn tại
   app.use((req, res, next) => {
-    if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+    if (/\.(bcmap|pfb|ttf|otf|wasm)$/i.test(req.path)) {
       return res.status(404).end();
     }
     next();
@@ -751,13 +789,16 @@ async function startServer() {
         } else if (filePath.endsWith('.json') || filePath.includes('sw.js')) {
           // Manifest và Service Worker: Revalidate nhanh
           res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-        } else if (filePath.match(/\.(js|css|woff2?|png|jpg|jpeg|gif|ico|svg)$/)) {
+        } else if (filePath.match(/\.(js|mjs|css|woff2?|png|jpg|jpeg|gif|ico|svg)$/)) {
           // File tĩnh (Vite hashed bundles, font, icon): Cache vĩnh viễn 1 năm
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
       }
     }));
     app.get('*all', (req, res) => {
+      if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+        return res.status(404).end();
+      }
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
@@ -43257,7 +43298,6 @@ describe('extractR2Key & PDF Thumbnail Cache', () => {
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutUnitLightboxModal.tsx
-================================================================================
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -43268,6 +43308,7 @@ import {
 import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
 import { LightboxZoomDock } from './LightboxZoomDock';
+import { LightboxIframeViewer } from './LightboxIframeViewer';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null, size: string = 'w1600'): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -43353,8 +43394,12 @@ export function LayoutUnitLightboxModal({
     if (isDriveDoc && driveFileId) {
       return `https://drive.google.com/file/d/${driveFileId}/preview?rm=minimal`;
     }
-    return resolvedUrl || rawUrl;
-  }, [isDriveDoc, driveFileId, resolvedUrl, rawUrl]);
+    const clean = resolvedUrl || rawUrl;
+    if (isDirectPdf && clean && /^https?:\/\//i.test(clean)) {
+      return `https://docs.google.com/viewer?url=${encodeURIComponent(clean)}&embedded=true`;
+    }
+    return clean;
+  }, [isDriveDoc, driveFileId, isDirectPdf, resolvedUrl, rawUrl]);
 
   const releaseIframeMemory = useCallback(() => {
     if (iframeRef.current) {
@@ -43616,26 +43661,15 @@ export function LayoutUnitLightboxModal({
           {isPdf ? (
             useIframeFallback ? (
               <>
-                <TouchPinchZoomStage
-                  ref={zoomStageRef}
-                  initialScale={1}
-                  minScale={0.5}
-                  maxScale={8}
+                <LightboxIframeViewer
+                  embedUrl={effectiveEmbedUrl}
+                  title={enlargedImage.title || 'Document Embed Viewer'}
+                  touchZoomMode={touchZoomMode}
+                  zoomScale={zoomScale}
                   onScaleChange={setZoomScale}
-                  captureOverlay={touchZoomMode === 'pinch'}
-                  allowNativeTouch={touchZoomMode === 'scroll'}
-                  className="w-full h-full flex items-center justify-center"
-                >
-                  <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
-                    <iframe
-                      ref={iframeRef}
-                      src={effectiveEmbedUrl}
-                      className="w-full h-full border-0 bg-white block"
-                      title={enlargedImage.title || 'Document Embed Viewer'}
-                      allow="autoplay; fullscreen"
-                    />
-                  </div>
-                </TouchPinchZoomStage>
+                  zoomStageRef={zoomStageRef}
+                  iframeRef={iframeRef}
+                />
 
                 <LightboxZoomDock
                   zoomScale={zoomScale}
@@ -43654,6 +43688,21 @@ export function LayoutUnitLightboxModal({
                   }}
                   touchZoomMode={touchZoomMode}
                   onToggleTouchZoomMode={handleToggleTouchZoomMode}
+                  onScrollUp={() => {
+                    try {
+                      iframeRef.current?.contentWindow?.scrollBy({ top: -450, behavior: 'smooth' });
+                    } catch {}
+                  }}
+                  onScrollDown={() => {
+                    try {
+                      iframeRef.current?.contentWindow?.scrollBy({ top: 450, behavior: 'smooth' });
+                    } catch {}
+                  }}
+                  onScrollToTop={() => {
+                    try {
+                      iframeRef.current?.contentWindow?.scrollTo({ top: 0, behavior: 'smooth' });
+                    } catch {}
+                  }}
                   isIframeMode={true}
                 />
               </>
@@ -43743,7 +43792,7 @@ export function LayoutUnitLightboxModal({
 
 export default LayoutUnitLightboxModal;
 
-================================================================================
+
 FILE: src/components/LayoutTabParts/LightboxZoomDock.tsx
 ================================================================================
 import React, { useState } from 'react';
@@ -45359,7 +45408,7 @@ export function PdfNativeCanvasViewer({
     (async () => {
       try {
         const [pdfjsLib, binaryData] = await Promise.all([
-          import('pdfjs-dist'),
+          import('pdfjs-dist/legacy/build/pdf.mjs'),
           fetchPdfBinaryUnified(url, (pct) => {
             if (isMounted) setLoadingProgress(pct);
           }),
@@ -45367,14 +45416,14 @@ export function PdfNativeCanvasViewer({
         if (!isMounted) return;
 
         if (pdfjsLib.GlobalWorkerOptions) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://unpkg.com/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs';
         }
 
-        const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
         const docConfig: any = {
-          cMapUrl: `${baseOrigin}/cmaps/`,
+          cMapUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/cmaps/',
           cMapPacked: true,
-          standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
+          standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/standard_fonts/',
           disableAutoFetch: false,
           disableStream: true,
         };
@@ -45382,10 +45431,8 @@ export function PdfNativeCanvasViewer({
         if (binaryData && binaryData.byteLength > 0) {
           docConfig.data = binaryData;
         } else {
-          const normalized = normalizePdfSourceUrl(url);
-          docConfig.url = normalized.startsWith('http')
-            ? `/api/pdf-proxy?url=${encodeURIComponent(normalized)}`
-            : normalized;
+          // Use normalized direct URL (never /api/pdf-proxy which could return SPA index.html)
+          docConfig.url = normalizePdfSourceUrl(url);
         }
 
         const loadingTask = pdfjsLib.getDocument(docConfig);
@@ -45969,7 +46016,6 @@ export const PdfNativeViewerToolbar: React.FC<PdfNativeViewerToolbarProps> = ({
 
 ================================================================================
 FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx
-================================================================================
 import React, { useState, useRef } from 'react';
 import {
   ZoomIn,
@@ -45988,6 +46034,7 @@ import {
   TouchPinchZoomStage,
   TouchPinchZoomStageHandle,
 } from './TouchPinchZoomStage';
+import { LightboxIframeViewer } from './LightboxIframeViewer';
 
 export interface PdfOrImageViewerProps {
   url: string;
@@ -46035,6 +46082,9 @@ export function resolvePdfIframeUrl(
   if (useGdocsFallback) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
+  if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+  }
   return url;
 }
 
@@ -46055,6 +46105,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
   const [touchZoomMode, setTouchZoomMode] = useState<'pinch' | 'scroll'>('pinch');
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const cleanUrl = getCleanUrl(url) || url;
   const isPdf = isPdfOrDocUrl(cleanUrl);
@@ -46232,32 +46283,15 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
             </div>
           </div>
         ) : (
-          <TouchPinchZoomStage
-            ref={zoomStageRef}
-            initialScale={1}
-            minScale={0.5}
-            maxScale={8}
+          <LightboxIframeViewer
+            embedUrl={iframeSrc}
+            title={alt || 'PDF or Document Viewer'}
+            touchZoomMode={touchZoomMode}
+            zoomScale={zoomScale}
             onScaleChange={setZoomScale}
-            captureOverlay={touchZoomMode === 'pinch'}
-            allowNativeTouch={touchZoomMode === 'scroll'}
-            className="w-full h-full"
-          >
-            <iframe
-              key={`${cacheBuster}_${iframeSrc}`}
-              src={iframeSrc}
-              width="100%"
-              height="100%"
-              style={{
-                width: '100%',
-                height: '100%',
-                minHeight: isFullscreen ? '100vh' : '600px',
-                border: 'none',
-              }}
-              allow="autoplay; fullscreen"
-              title="PDF or Document Viewer"
-              onError={() => setHasPdfError(true)}
-            />
-          </TouchPinchZoomStage>
+            zoomStageRef={zoomStageRef}
+            iframeRef={iframeRef}
+          />
         )}
       </div>
     );
@@ -46337,7 +46371,6 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 export default PdfOrImageViewer;
 
 
-================================================================================
 FILE: src/components/LayoutTabParts/PdfScrollablePagesView.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
@@ -47759,7 +47792,6 @@ export default TooltipZoomableThumbnail;
 
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/pdfThumbnailGenerator.ts
-================================================================================
 import {
   fetchPdfBinaryUnified,
   getCachedPageThumbSync,
@@ -47810,19 +47842,19 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
 
     try {
       const [pdfjsLib, binaryData] = await Promise.all([
-        import('pdfjs-dist'),
+        import('pdfjs-dist/legacy/build/pdf.mjs'),
         fetchPdfBinaryUnified(rawUrl),
       ]);
 
       if (pdfjsLib.GlobalWorkerOptions) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://unpkg.com/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs';
       }
 
-      const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
       const docConfig: any = {
-        cMapUrl: `${baseOrigin}/cmaps/`,
+        cMapUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/cmaps/',
         cMapPacked: true,
-        standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
+        standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/standard_fonts/',
         disableAutoFetch: false,
         disableStream: true,
       };
@@ -47864,7 +47896,7 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
 
 export default generatePdfFirstPageThumbnail;
 
-================================================================================
+
 FILE: src/components/LayoutTabParts/TooltipParts/tooltipStoreIsolation.test.ts
 ================================================================================
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -68344,7 +68376,6 @@ export function useDynamicUnitSummary({
 
 ================================================================================
 FILE: src/components/PictureMapping/lib/r2Upload.ts
-================================================================================
 import type { S3Client as S3ClientType } from '@aws-sdk/client-s3';
 import { useAppStore } from '../../../store/useAppStore';
 
@@ -68414,6 +68445,9 @@ export function extractR2Key(url: string | null | undefined): string | null {
     try {
       const parsed = new URL(trimmed);
       const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+      if (parsed.hostname.includes('taka-pm.org')) {
+        return pathname;
+      }
       const takaFolderIdx = pathname.indexOf('Taka-Pm-folder/');
       if (takaFolderIdx !== -1) {
         return pathname.slice(takaFolderIdx);
@@ -69110,7 +69144,6 @@ export async function uploadFilesToR2(
 }
 
 
-================================================================================
 FILE: src/components/PictureMapping/lib/summaryData.ts
 ================================================================================
 import { useShallow } from 'zustand/react/shallow';
@@ -86514,16 +86547,17 @@ describe('ZoomableImageViewer', () => {
 
 ================================================================================
 FILE: src/components/ZoomableImageViewer.tsx
-================================================================================
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Copy, Check,
   Loader2, AlertCircle, Maximize2, FileText, RefreshCw, Hand, Layers,
+  ChevronUp, ChevronDown, ArrowUpToLine,
 } from 'lucide-react';
 import { normalizeImageUrl } from './LayoutTabParts/LayoutUnitLightboxModal';
 import { PdfNativeCanvasViewer } from './LayoutTabParts/PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './LayoutTabParts/TouchPinchZoomStage';
+import { LightboxIframeViewer } from './LayoutTabParts/LightboxIframeViewer';
 import { useAppStore } from '../store/useAppStore';
 
 export interface ZoomableImageViewerProps {
@@ -86567,6 +86601,9 @@ function getPdfIframeUrl(url: string, useGdocsViewer: boolean): string {
     return url;
   }
   if (useGdocsViewer) {
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+  }
+  if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   return url;
@@ -86901,25 +86938,15 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
       <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center p-1 sm:p-2">
         {isPdf ? (
           useEmbedViewer ? (
-            <TouchPinchZoomStage
-              ref={zoomStageRef}
-              initialScale={effectiveInitialScale}
-              minScale={0.5}
-              maxScale={8}
+            <LightboxIframeViewer
+              embedUrl={iframeSrc}
+              title={activeTitle}
+              touchZoomMode={touchZoomMode}
+              zoomScale={zoomScale}
               onScaleChange={setZoomScale}
-              captureOverlay={touchZoomMode === 'pinch'}
-              allowNativeTouch={touchZoomMode === 'scroll'}
-              className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-slate-900"
-            >
-              <iframe
-                ref={iframeRef}
-                src={iframeSrc}
-                onLoad={() => setIsLoading(false)}
-                className="w-full h-full border-0 bg-white"
-                title={activeTitle}
-                allow="autoplay; fullscreen"
-              />
-            </TouchPinchZoomStage>
+              zoomStageRef={zoomStageRef}
+              iframeRef={iframeRef}
+            />
           ) : (
             <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
               <PdfNativeCanvasViewer
@@ -87008,7 +87035,7 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 
 export default ZoomableImageViewer;
 
-================================================================================
+
 FILE: src/hooks/appParts/useAppKeyboardAndTouch.ts
 ================================================================================
 import React, { useEffect, useRef } from 'react';
@@ -120007,11 +120034,38 @@ export async function fetchPdfBinaryUnified(
         } catch {}
       }
 
-      // 5. Fallback for R2 private/signed links: resolve fresh presigned S3 URL + proxy
+      // 5. Fallback for R2 private/signed links or custom domains: direct S3 SDK or fresh presigned URL
       if (!driveId) {
         try {
           onProgress?.(55);
-          const { resolveR2UrlToHttp } = await import('../components/PictureMapping/lib/r2Upload');
+          const { resolveR2UrlToHttp, extractR2Key, getStoredR2CredentialsAsync, getS3Sdk } =
+            await import('../components/PictureMapping/lib/r2Upload');
+          const r2Key = extractR2Key(rawUrl.trim());
+          if (r2Key) {
+            const creds = await getStoredR2CredentialsAsync();
+            if (creds) {
+              try {
+                const { S3Client, GetObjectCommand } = await getS3Sdk();
+                const s3 = new S3Client({
+                  region: 'auto',
+                  endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+                  credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+                });
+                const s3Res = await s3.send(new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }));
+                if (s3Res.Body) {
+                  const bytes = await s3Res.Body.transformToByteArray();
+                  if (isValidPdfBytes(bytes)) {
+                    storePdfBinary(key, bytes);
+                    onProgress?.(90);
+                    return bytes;
+                  }
+                }
+              } catch (s3Err) {
+                console.warn('[PDF Binary Cache] Direct S3 SDK fetch failed, falling back to presigned URL:', s3Err);
+              }
+            }
+          }
+
           const presigned = await resolveR2UrlToHttp(rawUrl.trim());
           if (presigned) {
             const tryUrls = [
@@ -120022,11 +120076,14 @@ export async function fetchPdfBinaryUnified(
               try {
                 const res = await fetch(u);
                 if (res.ok) {
-                  const bytes = new Uint8Array(await res.arrayBuffer());
-                  if (isValidPdfBytes(bytes)) {
-                    storePdfBinary(key, bytes);
-                    onProgress?.(90);
-                    return bytes;
+                  const ct = (res.headers.get('content-type') || '').toLowerCase();
+                  if (!ct.includes('text/html')) {
+                    const bytes = new Uint8Array(await res.arrayBuffer());
+                    if (isValidPdfBytes(bytes)) {
+                      storePdfBinary(key, bytes);
+                      onProgress?.(90);
+                      return bytes;
+                    }
                   }
                 }
               } catch {}
@@ -120784,7 +120841,7 @@ export function LayoutUnitLightboxModal({
     }
     const clean = resolvedUrl || rawUrl;
     if (isDirectPdf && clean && /^https?:\/\//i.test(clean)) {
-      return `/api/pdf-proxy?url=${encodeURIComponent(clean)}`;
+      return `https://docs.google.com/viewer?url=${encodeURIComponent(clean)}&embedded=true`;
     }
     return clean;
   }, [isDriveDoc, driveFileId, isDirectPdf, resolvedUrl, rawUrl]);
@@ -121181,7 +121238,6 @@ export function LayoutUnitLightboxModal({
 export default LayoutUnitLightboxModal;
 
 
-
 // FILE: src/components/LayoutTabParts/PdfOrImageViewer.tsx
 import React, { useState, useRef } from 'react';
 import {
@@ -121250,7 +121306,7 @@ export function resolvePdfIframeUrl(
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
-    return `/api/pdf-proxy?url=${encodeURIComponent(url)}`;
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   return url;
 }
@@ -121272,6 +121328,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
   const [touchZoomMode, setTouchZoomMode] = useState<'pinch' | 'scroll'>('pinch');
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const cleanUrl = getCleanUrl(url) || url;
   const isPdf = isPdfOrDocUrl(cleanUrl);
@@ -121537,7 +121594,6 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
 export default PdfOrImageViewer;
 
 
-
 // FILE: src/components/ZoomableImageViewer.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -121596,7 +121652,7 @@ function getPdfIframeUrl(url: string, useGdocsViewer: boolean): string {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
-    return `/api/pdf-proxy?url=${encodeURIComponent(url)}`;
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   return url;
 }
@@ -122026,7 +122082,6 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
 };
 
 export default ZoomableImageViewer;
-
 
 
 // FILE: src/components/LayoutTabParts/TouchPinchZoomStage.tsx
@@ -122533,6 +122588,7 @@ export const TouchPinchZoomStage = forwardRef<
 
 // FILE: server.ts
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 
@@ -122868,7 +122924,9 @@ async function startServer() {
   // (không cần lưu 186 file nhị phân nặng vào thư mục public/ của Git repo, chống lỗi timeout khi Clone repo trên Cloudflare)
   const pdfjsBasePath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist');
   app.get('/pdf.worker.min.mjs', (_req, res) => {
-    const workerFile = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    const legacyWorker = path.join(pdfjsBasePath, 'legacy', 'build', 'pdf.worker.min.mjs');
+    const stdWorker = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    const workerFile = fs.existsSync(legacyWorker) ? legacyWorker : stdWorker;
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -122956,7 +123014,6 @@ async function startServer() {
 startServer();
 
 
-
 // FILE: src/components/LayoutTabParts/LightboxIframeViewer.tsx
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { ChevronUp, ChevronDown, ArrowUpToLine, ArrowDownToLine, MousePointer } from 'lucide-react';
@@ -122988,6 +123045,40 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
   const touchLastYRef = useRef<number | null>(null);
   const [canScrollUp, setCanScrollUp] = useState(false);
   const [canScrollDown, setCanScrollDown] = useState(true);
+
+  // Guarantee embedUrl never loads /api/pdf-proxy (which serves index.html on static/edge deployments)
+  const safeEmbedUrl = React.useMemo(() => {
+    if (!embedUrl) return '';
+    if (embedUrl.includes('/api/pdf-proxy')) {
+      const match = embedUrl.match(/[?&]url=([^&]+)/);
+      if (match && match[1]) {
+        const decoded = decodeURIComponent(match[1]);
+        if (/^https?:\/\//i.test(decoded)) {
+          return `https://docs.google.com/viewer?url=${encodeURIComponent(decoded)}&embedded=true`;
+        }
+      }
+    }
+    return embedUrl;
+  }, [embedUrl]);
+
+  // Anti-nesting guard: If iframe accidentally loads the SPA itself (e.g. #root or Takashimaya title),
+  // immediately escape and redirect iframe to Google Docs Viewer
+  const handleIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    try {
+      const iframeDoc = e.currentTarget.contentDocument;
+      if (iframeDoc && (iframeDoc.getElementById('root') || iframeDoc.title?.includes('Takashimaya'))) {
+        console.warn('[LightboxIframeViewer] Anti-nesting guard triggered: iframe loaded SPA index.html. Redirecting to Google Docs Viewer fallback.');
+        let target = embedUrl;
+        const m = embedUrl.match(/[?&]url=([^&]+)/);
+        if (m && m[1]) target = decodeURIComponent(m[1]);
+        if (/^https?:\/\//i.test(target)) {
+          e.currentTarget.src = `https://docs.google.com/viewer?url=${encodeURIComponent(target)}&embedded=true`;
+        }
+      }
+    } catch {
+      // Cross-origin iframe is expected for Google Docs Viewer, Google Drive, R2, etc. Cross-origin throws DOMException which is safe.
+    }
+  }, [embedUrl]);
 
   // Helper function to perform scroll up
   const handleScrollUp = useCallback((step: number = 420) => {
@@ -123157,7 +123248,8 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
           <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
             <iframe
               ref={iframeRef}
-              src={embedUrl}
+              src={safeEmbedUrl}
+              onLoad={handleIframeLoad}
               className="w-full h-full border-0 bg-white block"
               title={title}
               allow="autoplay; fullscreen"
@@ -123183,7 +123275,8 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
       >
         <iframe
           ref={iframeRef}
-          src={embedUrl}
+          src={safeEmbedUrl}
+          onLoad={handleIframeLoad}
           scrolling="yes"
           className="w-full h-full border-0 bg-white block"
           title={title}
@@ -123241,4 +123334,5 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
     </div>
   );
 };
+
 

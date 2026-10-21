@@ -84,7 +84,7 @@ export function PdfNativeCanvasViewer({
     (async () => {
       try {
         const [pdfjsLib, binaryData] = await Promise.all([
-          import('pdfjs-dist'),
+          import('pdfjs-dist/legacy/build/pdf.mjs'),
           fetchPdfBinaryUnified(url, (pct) => {
             if (isMounted) setLoadingProgress(pct);
           }),
@@ -92,14 +92,14 @@ export function PdfNativeCanvasViewer({
         if (!isMounted) return;
 
         if (pdfjsLib.GlobalWorkerOptions) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://unpkg.com/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs';
         }
 
-        const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
         const docConfig: any = {
-          cMapUrl: `${baseOrigin}/cmaps/`,
+          cMapUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/cmaps/',
           cMapPacked: true,
-          standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
+          standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/standard_fonts/',
           disableAutoFetch: false,
           disableStream: true,
         };
@@ -107,10 +107,8 @@ export function PdfNativeCanvasViewer({
         if (binaryData && binaryData.byteLength > 0) {
           docConfig.data = binaryData;
         } else {
-          const normalized = normalizePdfSourceUrl(url);
-          docConfig.url = normalized.startsWith('http')
-            ? `/api/pdf-proxy?url=${encodeURIComponent(normalized)}`
-            : normalized;
+          // Use normalized direct URL (never /api/pdf-proxy which could return SPA index.html)
+          docConfig.url = normalizePdfSourceUrl(url);
         }
 
         const loadingTask = pdfjsLib.getDocument(docConfig);

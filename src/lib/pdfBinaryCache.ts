@@ -307,11 +307,38 @@ export async function fetchPdfBinaryUnified(
         } catch {}
       }
 
-      // 5. Fallback for R2 private/signed links: resolve fresh presigned S3 URL + proxy
+      // 5. Fallback for R2 private/signed links or custom domains: direct S3 SDK or fresh presigned URL
       if (!driveId) {
         try {
           onProgress?.(55);
-          const { resolveR2UrlToHttp } = await import('../components/PictureMapping/lib/r2Upload');
+          const { resolveR2UrlToHttp, extractR2Key, getStoredR2CredentialsAsync, getS3Sdk } =
+            await import('../components/PictureMapping/lib/r2Upload');
+          const r2Key = extractR2Key(rawUrl.trim());
+          if (r2Key) {
+            const creds = await getStoredR2CredentialsAsync();
+            if (creds) {
+              try {
+                const { S3Client, GetObjectCommand } = await getS3Sdk();
+                const s3 = new S3Client({
+                  region: 'auto',
+                  endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+                  credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+                });
+                const s3Res = await s3.send(new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }));
+                if (s3Res.Body) {
+                  const bytes = await s3Res.Body.transformToByteArray();
+                  if (isValidPdfBytes(bytes)) {
+                    storePdfBinary(key, bytes);
+                    onProgress?.(90);
+                    return bytes;
+                  }
+                }
+              } catch (s3Err) {
+                console.warn('[PDF Binary Cache] Direct S3 SDK fetch failed, falling back to presigned URL:', s3Err);
+              }
+            }
+          }
+
           const presigned = await resolveR2UrlToHttp(rawUrl.trim());
           if (presigned) {
             const tryUrls = [
@@ -322,11 +349,14 @@ export async function fetchPdfBinaryUnified(
               try {
                 const res = await fetch(u);
                 if (res.ok) {
-                  const bytes = new Uint8Array(await res.arrayBuffer());
-                  if (isValidPdfBytes(bytes)) {
-                    storePdfBinary(key, bytes);
-                    onProgress?.(90);
-                    return bytes;
+                  const ct = (res.headers.get('content-type') || '').toLowerCase();
+                  if (!ct.includes('text/html')) {
+                    const bytes = new Uint8Array(await res.arrayBuffer());
+                    if (isValidPdfBytes(bytes)) {
+                      storePdfBinary(key, bytes);
+                      onProgress?.(90);
+                      return bytes;
+                    }
                   }
                 }
               } catch {}

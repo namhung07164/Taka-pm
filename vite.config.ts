@@ -8,16 +8,13 @@ function pdfjsAssetsPlugin() {
   return {
     name: 'copy-pdfjs-assets',
     closeBundle() {
-      // Only copy the 186 static PDF.js files into dist/ on static cloud builders (Cloudflare Pages / Vercel).
-      // In AI Studio / Node server mode, server.ts serves /pdf.worker.min.mjs, /cmaps, and /standard_fonts
-      // directly from node_modules/pdfjs-dist to avoid flooding the workspace file-sync watcher.
-      if (!process.env.CF_PAGES && !process.env.CF_PAGES_URL && !process.env.VERCEL) return;
-
       const pdfjsDir = path.resolve(__dirname, 'node_modules/pdfjs-dist');
       const outDir = path.resolve(__dirname, 'dist');
       if (!fs.existsSync(pdfjsDir) || !fs.existsSync(outDir)) return;
 
-      const workerSrc = path.join(pdfjsDir, 'build/pdf.worker.min.mjs');
+      const legacyWorker = path.join(pdfjsDir, 'legacy/build/pdf.worker.min.mjs');
+      const stdWorker = path.join(pdfjsDir, 'build/pdf.worker.min.mjs');
+      const workerSrc = fs.existsSync(legacyWorker) ? legacyWorker : stdWorker;
       if (fs.existsSync(workerSrc)) {
         fs.copyFileSync(workerSrc, path.join(outDir, 'pdf.worker.min.mjs'));
       }

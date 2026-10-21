@@ -29,6 +29,40 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
   const [canScrollUp, setCanScrollUp] = useState(false);
   const [canScrollDown, setCanScrollDown] = useState(true);
 
+  // Guarantee embedUrl never loads /api/pdf-proxy (which serves index.html on static/edge deployments)
+  const safeEmbedUrl = React.useMemo(() => {
+    if (!embedUrl) return '';
+    if (embedUrl.includes('/api/pdf-proxy')) {
+      const match = embedUrl.match(/[?&]url=([^&]+)/);
+      if (match && match[1]) {
+        const decoded = decodeURIComponent(match[1]);
+        if (/^https?:\/\//i.test(decoded)) {
+          return `https://docs.google.com/viewer?url=${encodeURIComponent(decoded)}&embedded=true`;
+        }
+      }
+    }
+    return embedUrl;
+  }, [embedUrl]);
+
+  // Anti-nesting guard: If iframe accidentally loads the SPA itself (e.g. #root or Takashimaya title),
+  // immediately escape and redirect iframe to Google Docs Viewer
+  const handleIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    try {
+      const iframeDoc = e.currentTarget.contentDocument;
+      if (iframeDoc && (iframeDoc.getElementById('root') || iframeDoc.title?.includes('Takashimaya'))) {
+        console.warn('[LightboxIframeViewer] Anti-nesting guard triggered: iframe loaded SPA index.html. Redirecting to Google Docs Viewer fallback.');
+        let target = embedUrl;
+        const m = embedUrl.match(/[?&]url=([^&]+)/);
+        if (m && m[1]) target = decodeURIComponent(m[1]);
+        if (/^https?:\/\//i.test(target)) {
+          e.currentTarget.src = `https://docs.google.com/viewer?url=${encodeURIComponent(target)}&embedded=true`;
+        }
+      }
+    } catch {
+      // Cross-origin iframe is expected for Google Docs Viewer, Google Drive, R2, etc. Cross-origin throws DOMException which is safe.
+    }
+  }, [embedUrl]);
+
   // Helper function to perform scroll up
   const handleScrollUp = useCallback((step: number = 420) => {
     // 1. Scroll container directly
@@ -197,7 +231,8 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
           <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
             <iframe
               ref={iframeRef}
-              src={embedUrl}
+              src={safeEmbedUrl}
+              onLoad={handleIframeLoad}
               className="w-full h-full border-0 bg-white block"
               title={title}
               allow="autoplay; fullscreen"
@@ -223,7 +258,8 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
       >
         <iframe
           ref={iframeRef}
-          src={embedUrl}
+          src={safeEmbedUrl}
+          onLoad={handleIframeLoad}
           scrolling="yes"
           className="w-full h-full border-0 bg-white block"
           title={title}

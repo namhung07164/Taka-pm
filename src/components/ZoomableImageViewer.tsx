@@ -55,7 +55,7 @@ function getPdfIframeUrl(url: string, useGdocsViewer: boolean): string {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
-    return `/api/pdf-proxy?url=${encodeURIComponent(url)}`;
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
   return url;
 }

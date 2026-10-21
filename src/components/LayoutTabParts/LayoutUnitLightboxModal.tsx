@@ -96,7 +96,7 @@ export function LayoutUnitLightboxModal({
     }
     const clean = resolvedUrl || rawUrl;
     if (isDirectPdf && clean && /^https?:\/\//i.test(clean)) {
-      return `/api/pdf-proxy?url=${encodeURIComponent(clean)}`;
+      return `https://docs.google.com/viewer?url=${encodeURIComponent(clean)}&embedded=true`;
     }
     return clean;
   }, [isDriveDoc, driveFileId, isDirectPdf, resolvedUrl, rawUrl]);

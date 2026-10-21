@@ -67,6 +67,9 @@ export function extractR2Key(url: string | null | undefined): string | null {
     try {
       const parsed = new URL(trimmed);
       const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+      if (parsed.hostname.includes('taka-pm.org')) {
+        return pathname;
+      }
       const takaFolderIdx = pathname.indexOf('Taka-Pm-folder/');
       if (takaFolderIdx !== -1) {
         return pathname.slice(takaFolderIdx);
