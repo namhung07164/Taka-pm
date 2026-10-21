@@ -128,6 +128,44 @@ async function startServer() {
     mediaMemoryCache.set(key, { buffer, contentType, ts: Date.now() });
   };
 
+  // Helper phục vụ file nhị phân kèm Range Request (HTTP 206 Partial Content) cho PDF viewer & iframe
+  const sendBinaryWithRange = (
+    req: express.Request,
+    res: express.Response,
+    buffer: Buffer,
+    contentType: string,
+    isPdf: boolean = false
+  ) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    if (isPdf) {
+      res.setHeader('Content-Disposition', 'inline; filename="document.pdf"');
+    }
+
+    const total = buffer.length;
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+
+      if (!isNaN(start) && start < total && end < total && start <= end) {
+        const chunk = buffer.subarray(start, end + 1);
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+        res.setHeader('Content-Length', String(chunk.length));
+        res.setHeader('Content-Type', contentType);
+        return res.end(chunk);
+      }
+    }
+
+    res.setHeader('Content-Length', String(total));
+    res.setHeader('Content-Type', contentType);
+    return res.send(buffer);
+  };
+
   // API Proxy tải binary PDF từ Google Drive để đồng bộ hiển thị Native Canvas như R2
   app.get('/api/drive-pdf', async (req, res) => {
     try {
@@ -140,11 +178,7 @@ async function startServer() {
       const cacheKey = `drive-pdf:${cleanId}`;
       const cached = mediaMemoryCache.get(cacheKey);
       if (cached && Date.now() - cached.ts < 3600_000) {
-        res.setHeader('Content-Type', cached.contentType || 'application/pdf');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-        res.setHeader('Accept-Ranges', 'bytes');
-        return res.send(cached.buffer);
+        return sendBinaryWithRange(req, res, cached.buffer, cached.contentType || 'application/pdf', true);
       }
 
       const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&authuser=0`;
@@ -198,11 +232,7 @@ async function startServer() {
       const resolvedMime = finalContentType.includes('image/') ? finalContentType : 'application/pdf';
       setMediaCache(cacheKey, buffer, resolvedMime);
 
-      res.setHeader('Content-Type', resolvedMime);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      res.setHeader('Accept-Ranges', 'bytes');
-      return res.send(buffer);
+      return sendBinaryWithRange(req, res, buffer, resolvedMime, true);
     } catch (error: any) {
       console.error('Drive PDF Proxy Exception:', error);
       res.status(500).json({ success: false, error: error.message });
@@ -273,10 +303,8 @@ async function startServer() {
       const cacheKey = `pdf-proxy:${targetUrl}`;
       const cached = mediaMemoryCache.get(cacheKey);
       if (cached && Date.now() - cached.ts < 3600_000) {
-        res.setHeader('Content-Type', cached.contentType);
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-        return res.send(cached.buffer);
+        const isPdf = cached.contentType.includes('pdf') || /\.pdf($|\?)/i.test(targetUrl);
+        return sendBinaryWithRange(req, res, cached.buffer, cached.contentType, isPdf);
       }
 
       const response = await fetch(targetUrl, {
@@ -295,10 +323,8 @@ async function startServer() {
       const buffer = Buffer.from(await response.arrayBuffer());
       setMediaCache(cacheKey, buffer, ct);
 
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-      return res.send(buffer);
+      const isPdf = ct.includes('pdf') || /\.pdf($|\?)/i.test(targetUrl);
+      return sendBinaryWithRange(req, res, buffer, ct, isPdf);
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });
     }

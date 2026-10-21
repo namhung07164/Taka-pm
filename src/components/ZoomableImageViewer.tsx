@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import {
   X, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Copy, Check,
   Loader2, AlertCircle, Maximize2, FileText, RefreshCw, Hand, Layers,
+  ChevronUp, ChevronDown, ArrowUpToLine,
 } from 'lucide-react';
 import { normalizeImageUrl } from './LayoutTabParts/LayoutUnitLightboxModal';
 import { PdfNativeCanvasViewer } from './LayoutTabParts/PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './LayoutTabParts/TouchPinchZoomStage';
+import { LightboxIframeViewer } from './LayoutTabParts/LightboxIframeViewer';
 import { useAppStore } from '../store/useAppStore';
 
 export interface ZoomableImageViewerProps {
@@ -51,6 +53,9 @@ function getPdfIframeUrl(url: string, useGdocsViewer: boolean): string {
   }
   if (useGdocsViewer) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+  }
+  if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
+    return `/api/pdf-proxy?url=${encodeURIComponent(url)}`;
   }
   return url;
 }
@@ -384,25 +389,15 @@ export const ZoomableImageViewer: React.FC<ZoomableImageViewerProps> = ({
       <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center p-1 sm:p-2">
         {isPdf ? (
           useEmbedViewer ? (
-            <TouchPinchZoomStage
-              ref={zoomStageRef}
-              initialScale={effectiveInitialScale}
-              minScale={0.5}
-              maxScale={8}
+            <LightboxIframeViewer
+              embedUrl={iframeSrc}
+              title={activeTitle}
+              touchZoomMode={touchZoomMode}
+              zoomScale={zoomScale}
               onScaleChange={setZoomScale}
-              captureOverlay={touchZoomMode === 'pinch'}
-              allowNativeTouch={touchZoomMode === 'scroll'}
-              className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-slate-900"
-            >
-              <iframe
-                ref={iframeRef}
-                src={iframeSrc}
-                onLoad={() => setIsLoading(false)}
-                className="w-full h-full border-0 bg-white"
-                title={activeTitle}
-                allow="autoplay; fullscreen"
-              />
-            </TouchPinchZoomStage>
+              zoomStageRef={zoomStageRef}
+              iframeRef={iframeRef}
+            />
           ) : (
             <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
               <PdfNativeCanvasViewer

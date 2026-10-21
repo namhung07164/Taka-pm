@@ -8,6 +8,7 @@ import {
 import { PdfNativeCanvasViewer } from './PdfNativeCanvasViewer';
 import { TouchPinchZoomStage, TouchPinchZoomStageHandle } from './TouchPinchZoomStage';
 import { LightboxZoomDock } from './LightboxZoomDock';
+import { LightboxIframeViewer } from './LightboxIframeViewer';
 
 export function normalizeImageUrl(rawUrl: string | undefined | null, size: string = 'w1600'): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -93,8 +94,12 @@ export function LayoutUnitLightboxModal({
     if (isDriveDoc && driveFileId) {
       return `https://drive.google.com/file/d/${driveFileId}/preview?rm=minimal`;
     }
-    return resolvedUrl || rawUrl;
-  }, [isDriveDoc, driveFileId, resolvedUrl, rawUrl]);
+    const clean = resolvedUrl || rawUrl;
+    if (isDirectPdf && clean && /^https?:\/\//i.test(clean)) {
+      return `/api/pdf-proxy?url=${encodeURIComponent(clean)}`;
+    }
+    return clean;
+  }, [isDriveDoc, driveFileId, isDirectPdf, resolvedUrl, rawUrl]);
 
   const releaseIframeMemory = useCallback(() => {
     if (iframeRef.current) {
@@ -356,26 +361,15 @@ export function LayoutUnitLightboxModal({
           {isPdf ? (
             useIframeFallback ? (
               <>
-                <TouchPinchZoomStage
-                  ref={zoomStageRef}
-                  initialScale={1}
-                  minScale={0.5}
-                  maxScale={8}
+                <LightboxIframeViewer
+                  embedUrl={effectiveEmbedUrl}
+                  title={enlargedImage.title || 'Document Embed Viewer'}
+                  touchZoomMode={touchZoomMode}
+                  zoomScale={zoomScale}
                   onScaleChange={setZoomScale}
-                  captureOverlay={touchZoomMode === 'pinch'}
-                  allowNativeTouch={touchZoomMode === 'scroll'}
-                  className="w-full h-full flex items-center justify-center"
-                >
-                  <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
-                    <iframe
-                      ref={iframeRef}
-                      src={effectiveEmbedUrl}
-                      className="w-full h-full border-0 bg-white block"
-                      title={enlargedImage.title || 'Document Embed Viewer'}
-                      allow="autoplay; fullscreen"
-                    />
-                  </div>
-                </TouchPinchZoomStage>
+                  zoomStageRef={zoomStageRef}
+                  iframeRef={iframeRef}
+                />
 
                 <LightboxZoomDock
                   zoomScale={zoomScale}
@@ -394,6 +388,21 @@ export function LayoutUnitLightboxModal({
                   }}
                   touchZoomMode={touchZoomMode}
                   onToggleTouchZoomMode={handleToggleTouchZoomMode}
+                  onScrollUp={() => {
+                    try {
+                      iframeRef.current?.contentWindow?.scrollBy({ top: -450, behavior: 'smooth' });
+                    } catch {}
+                  }}
+                  onScrollDown={() => {
+                    try {
+                      iframeRef.current?.contentWindow?.scrollBy({ top: 450, behavior: 'smooth' });
+                    } catch {}
+                  }}
+                  onScrollToTop={() => {
+                    try {
+                      iframeRef.current?.contentWindow?.scrollTo({ top: 0, behavior: 'smooth' });
+                    } catch {}
+                  }}
                   isIframeMode={true}
                 />
               </>

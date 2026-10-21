@@ -16,6 +16,7 @@ import {
   TouchPinchZoomStage,
   TouchPinchZoomStageHandle,
 } from './TouchPinchZoomStage';
+import { LightboxIframeViewer } from './LightboxIframeViewer';
 
 export interface PdfOrImageViewerProps {
   url: string;
@@ -62,6 +63,9 @@ export function resolvePdfIframeUrl(
   }
   if (useGdocsFallback) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+  }
+  if (/^https?:\/\//i.test(url) && (/\.pdf($|\?)/i.test(url) || url.includes('taka-pm.org'))) {
+    return `/api/pdf-proxy?url=${encodeURIComponent(url)}`;
   }
   return url;
 }
@@ -260,32 +264,15 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
             </div>
           </div>
         ) : (
-          <TouchPinchZoomStage
-            ref={zoomStageRef}
-            initialScale={1}
-            minScale={0.5}
-            maxScale={8}
+          <LightboxIframeViewer
+            embedUrl={iframeSrc}
+            title={alt || 'PDF or Document Viewer'}
+            touchZoomMode={touchZoomMode}
+            zoomScale={zoomScale}
             onScaleChange={setZoomScale}
-            captureOverlay={touchZoomMode === 'pinch'}
-            allowNativeTouch={touchZoomMode === 'scroll'}
-            className="w-full h-full"
-          >
-            <iframe
-              key={`${cacheBuster}_${iframeSrc}`}
-              src={iframeSrc}
-              width="100%"
-              height="100%"
-              style={{
-                width: '100%',
-                height: '100%',
-                minHeight: isFullscreen ? '100vh' : '600px',
-                border: 'none',
-              }}
-              allow="autoplay; fullscreen"
-              title="PDF or Document Viewer"
-              onError={() => setHasPdfError(true)}
-            />
-          </TouchPinchZoomStage>
+            zoomStageRef={zoomStageRef}
+            iframeRef={iframeRef}
+          />
         )}
       </div>
     );

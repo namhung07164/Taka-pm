@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
+  ArrowUpToLine,
 } from 'lucide-react';
 
 export interface LightboxZoomDockProps {
@@ -18,6 +19,9 @@ export interface LightboxZoomDockProps {
   onSetScale?: (scale: number) => void;
   touchZoomMode: 'pinch' | 'scroll';
   onToggleTouchZoomMode: () => void;
+  onScrollUp?: () => void;
+  onScrollDown?: () => void;
+  onScrollToTop?: () => void;
   isIframeMode?: boolean;
   className?: string;
 }
@@ -30,6 +34,9 @@ export const LightboxZoomDock: React.FC<LightboxZoomDockProps> = ({
   onSetScale,
   touchZoomMode,
   onToggleTouchZoomMode,
+  onScrollUp,
+  onScrollDown,
+  onScrollToTop,
   isIframeMode = true,
   className = '',
 }) => {
@@ -186,6 +193,45 @@ export const LightboxZoomDock: React.FC<LightboxZoomDockProps> = ({
                 </>
               )}
             </button>
+
+            {/* Quick-Scroll Action Buttons when in Scroll Mode */}
+            {touchZoomMode === 'scroll' && (
+              <div className="flex items-center gap-1 border-l border-slate-700 pl-1">
+                {onScrollToTop && (
+                  <button
+                    type="button"
+                    onClick={onScrollToTop}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-blue-300 hover:text-white transition-colors active:scale-95 touch-manipulation cursor-pointer flex items-center gap-0.5 text-[11px] font-bold"
+                    title="Scroll to Top (Lên đầu trang)"
+                  >
+                    <ArrowUpToLine className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="hidden sm:inline">Top</span>
+                  </button>
+                )}
+                {onScrollUp && (
+                  <button
+                    type="button"
+                    onClick={onScrollUp}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-emerald-300 hover:text-white transition-colors active:scale-95 touch-manipulation cursor-pointer flex items-center gap-0.5 text-[11px] font-bold"
+                    title="Scroll Up (Cuộn lên)"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden sm:inline">Up</span>
+                  </button>
+                )}
+                {onScrollDown && (
+                  <button
+                    type="button"
+                    onClick={onScrollDown}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-indigo-300 hover:text-white transition-colors active:scale-95 touch-manipulation cursor-pointer flex items-center gap-0.5 text-[11px] font-bold"
+                    title="Scroll Down (Cuộn xuống)"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="hidden sm:inline">Down</span>
+                  </button>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

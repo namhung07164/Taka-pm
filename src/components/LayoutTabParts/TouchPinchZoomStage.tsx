@@ -468,13 +468,13 @@ export const TouchPinchZoomStage = forwardRef<
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onDoubleClick={handleDoubleClick}
-      className={`relative w-full h-full overflow-hidden flex items-center justify-center select-none ${
-        allowNativeTouch ? '' : 'cursor-grab active:cursor-grabbing'
+      className={`relative w-full h-full flex items-center justify-center ${
+        allowNativeTouch ? 'overflow-auto select-auto' : 'overflow-hidden select-none cursor-grab active:cursor-grabbing'
       } ${className}`}
       style={{
-        touchAction: allowNativeTouch ? 'pan-x pan-y' : 'none',
-        WebkitUserSelect: 'none',
-        userSelect: 'none',
+        touchAction: allowNativeTouch ? 'auto' : 'none',
+        WebkitUserSelect: allowNativeTouch ? 'auto' : 'none',
+        userSelect: allowNativeTouch ? 'auto' : 'none',
       }}
     >
       <div
