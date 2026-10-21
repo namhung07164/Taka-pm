@@ -351,7 +351,7 @@ export async function executeImportTasks({
   allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
   calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
   const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
-  const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc);
+  const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc, undefined, projects);
 
   const tasksToSaveMap = new Map<string, Task>();
   calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));

@@ -184,18 +184,33 @@ export function useGanttDependencies({
         .filter(Boolean);
 
       predCodes.forEach((code) => {
-        const predPos = taskPosMap.get(code);
+        const typeMatch = code.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
+        const cleanCode = typeMatch ? typeMatch[1].trim() : code.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
+        const relType = typeMatch ? typeMatch[2].toUpperCase() : 'FS';
+
+        const predPos = taskPosMap.get(cleanCode) || taskPosMap.get(code);
         if (!predPos) return;
 
-        const x1 = predPos.xEnd;
+        let x1 = predPos.xEnd;
+        let x2 = succPos.xStart;
+        if (relType === 'SS') {
+          x1 = predPos.xStart;
+          x2 = succPos.xStart;
+        } else if (relType === 'FF') {
+          x1 = predPos.xEnd;
+          x2 = succPos.xEnd;
+        } else if (relType === 'SF') {
+          x1 = predPos.xStart;
+          x2 = succPos.xEnd;
+        }
+
         const y1 = predPos.yCenter;
-        const x2 = succPos.xStart;
         const y2 = succPos.yCenter;
 
         const d = generateOrthogonalPath(x1, y1, x2, y2);
 
         lines.push({
-          id: `${predPos.t.id}->${succTask.id}`,
+          id: `${predPos.t.id}->${succTask.id}-${relType}`,
           d,
           fromTaskId: predPos.t.id,
           toTaskId: succTask.id,

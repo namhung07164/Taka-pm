@@ -13,6 +13,7 @@ import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { recordBatchDeltas } from './deltaSyncService';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
+import { applyParentPredecessorsToTaskTree } from './parentTaskPredecessorService';
 
 /**
  * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
@@ -108,21 +109,31 @@ export function calculateDatesFromPredecessorsAndDuration(
  */
 export function rollupParentTaskDates(
   allTasks: Task[],
-  _targetParentIds?: string[]
+  _targetParentIds?: string[],
+  projects: Project[] = []
 ): { updatedParents: Task[]; allTasksMap: Map<string, Task> } {
-  const rolledUpList = rollupParentTaskDatesAndStatus(allTasks);
+  const safeProjects = projects.length > 0 ? projects : (useAppStore.getState?.()?.projects || []);
+  const { updatedTasks: tasksWithParentPreds, updatedParents: parentPredUpdates } =
+    applyParentPredecessorsToTaskTree(allTasks, safeProjects);
+
+  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds);
   const taskMap = new Map<string, Task>();
   const updatedParents: Task[] = [];
+  const parentPredMap = new Map<string, Task>();
+  parentPredUpdates.forEach((p) => parentPredMap.set(p.id, p));
 
   rolledUpList.forEach((t) => {
     taskMap.set(t.id, t);
     const original = allTasks.find((orig) => orig.id === t.id);
+    const hasPredUpdate = parentPredMap.has(t.id);
     if (
-      original &&
-      (original.start !== t.start ||
-        original.finish !== t.finish ||
-        original.duration !== t.duration ||
-        original.runningStatus !== t.runningStatus)
+      hasPredUpdate ||
+      (original &&
+        (original.start !== t.start ||
+          original.finish !== t.finish ||
+          original.duration !== t.duration ||
+          original.runningStatus !== t.runningStatus ||
+          original.predecessor !== t.predecessor))
     ) {
       updatedParents.push(t);
     }

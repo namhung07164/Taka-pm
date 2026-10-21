@@ -151,5 +151,13 @@ describe('taskImportService', () => {
     expect(rolled.finish).toBe('2026-10-15T08:00');
     // Duration in days from 2026-10-05 to 2026-10-15 is 10 days
     expect(rolled.duration).toBe('10');
+    // Multi-predecessor assigned: SS to child1, FF to child2
+    expect(rolled.predecessor).toContain('SS');
+    expect(rolled.predecessor).toContain('FF');
+    expect(rolled.predecessors).toEqual([
+      { taskId: 'child_1', type: 'SS' },
+      { taskId: 'child_2', type: 'FF' },
+    ]);
+    expect(rolled.predecessorTaskIds).toEqual(['child_1', 'child_2']);
   });
 });

@@ -8,6 +8,7 @@ import { recordBatchDeltas, recordDelta } from '../../lib/deltaSyncService';
 import { deleteTaskStateUnified } from '../../lib/taskStateService';
 import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
 import { addPendingUpdate, isPermanentWriteError } from '../../lib/syncQueue';
+import { calculateParentTaskPredecessorsAndDates } from '../../lib/parentTaskPredecessorService';
 
 export interface GanttBatchMutationContext {
   selectedTaskIds: string[];
@@ -47,17 +48,20 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     const childIdSet = new Set(childTaskIds.map(String));
     const parentIdStr = String(parentTaskId);
 
-    // 0ms Optimistic UI update
-    const updatedTasks = prevTasks.map((t) => {
+    const mapped = prevTasks.map((t) => {
       const tIdStr = String(t.id);
-      if (childIdSet.has(tIdStr)) {
-        return { ...t, parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now };
-      }
-      if (tIdStr === parentIdStr) {
-        return { ...t, isModularParent: true, updatedAt: now };
-      }
-      return t;
+      return childIdSet.has(tIdStr)
+        ? { ...t, parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now }
+        : t;
     });
+
+    const parentObj = mapped.find((t) => String(t.id) === parentIdStr);
+    const children = mapped.filter((t) => String(t.parentTaskId) === parentIdStr && String(t.id) !== parentIdStr);
+    const projects = useAppStore.getState().projects;
+    const parentPatch = parentObj ? calculateParentTaskPredecessorsAndDates(parentObj, children, projects, mapped) : null;
+    const finalParentData = { isModularParent: true, ...(parentPatch || {}), updatedAt: now };
+    const updatedTasks = mapped.map((t) => (String(t.id) === parentIdStr ? { ...t, ...finalParentData } : t));
+
     useAppStore.getState().setTasks(updatedTasks);
 
     setExpandedModularTasks(prev => {
@@ -75,13 +79,13 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
       batch.set(docRef, { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now }, { merge: true });
     });
     const parentDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentIdStr);
-    batch.set(parentDocRef, { isModularParent: true, updatedAt: now }, { merge: true });
+    batch.set(parentDocRef, finalParentData, { merge: true });
 
     try {
       const { localDb } = await import('../../lib/localDb');
       await Promise.all([
         ...childTaskIds.map(id => (localDb.tasks.update as any)(String(id), { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now })),
-        (localDb.tasks.update as any)(parentIdStr, { isModularParent: true, updatedAt: now })
+        (localDb.tasks.update as any)(parentIdStr, finalParentData)
       ]);
     } catch (e) {
       console.warn('[useGanttBatchOps] Dexie update on group failed:', e);
@@ -106,7 +110,7 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
           collectionName: 'taka_tasks' as const,
           action: 'update' as const,
           isPatch: true,
-          data: { isModularParent: true, updatedAt: now },
+          data: finalParentData,
         }
       ];
       recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
