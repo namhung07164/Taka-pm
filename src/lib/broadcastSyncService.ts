@@ -125,18 +125,26 @@ export function initBroadcastSyncListener(): () => void {
         return;
       }
 
+      // Tri-Gate Guard: Persist to Dexie, but do not push into unrequested Zustand slices
+      const isGateClosed =
+        (collectionName === 'taka_tasks' && !store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) ||
+        (collectionName === 'taka_costs' && !store.isCostsRequested && (!store.costs || store.costs.length === 0)) ||
+        (collectionName === 'taka_delegations' && !store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0));
+
       const existing = updated.get(docId) || existingMap.get(docId);
       if (action === 'create' && data && Object.keys(data).length > 0) {
         // Bản đầy đủ: hợp nhất lên bản đang có (nếu có) và upsert Dexie
         const merged = existing ? applyFieldPatch(existing, data) : { id: docId, ...data };
-        updated.set(docId, merged);
         upsertLocalRecord(collectionName, merged).catch(() => {});
+        if (!isGateClosed) {
+          updated.set(docId, merged);
+        }
         return;
       }
 
       // action 'update' (bản vá): chỉ vá bản ghi ĐÃ CÓ. Không tạo bản ghi thiếu field.
       patchLocalRecord(collectionName, docId, data || {}).catch(() => {});
-      if (existing && data && Object.keys(data).length > 0) {
+      if (!isGateClosed && existing && data && Object.keys(data).length > 0) {
         updated.set(docId, applyFieldPatch(existing, data));
       }
     };
@@ -175,5 +183,6 @@ export function initBroadcastSyncListener(): () => void {
 
   return () => {
     channel.removeEventListener('message', handleMessage);
+    isListenerInitialized = false;
   };
 }

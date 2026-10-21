@@ -460,7 +460,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
     // Queue auto-delta AFTER commit finishes so recordBatchDeltas cancels it properly
     Promise.resolve(p).then(() => {
       operations.forEach(op => {
-        queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write');
+        queueAutoDelta(op.docRef.path, op.docRef.id, (op.action === 'delete' || op.data?.isDeleted) ? 'delete' : 'write');
       });
     }).catch(() => {});
     return p.catch(error => {

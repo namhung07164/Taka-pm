@@ -282,8 +282,14 @@ export function healProjectsAfterTasksBatch(params: {
 
   const noteTaskTouch = (t: Partial<Task> | undefined) => {
     if (!t) return;
-    if (t.projectId) touchedIds.add(String(t.projectId));
-    if (t.projectCode) touchedCodes.add(String(t.projectCode).trim().toLowerCase());
+    if (t.projectId) {
+      touchedIds.add(String(t.projectId));
+    } else if (t.projectCode) {
+      const cKey = String(t.projectCode).trim().toLowerCase();
+      const sKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '*';
+      const yKey = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '*';
+      touchedCodes.add(`${cKey}|${sKey}|${yKey}`);
+    }
   };
 
   changedTasks.forEach((t) => noteTaskTouch(t));
@@ -384,11 +390,19 @@ export function healProjectsAfterTasksBatch(params: {
       .split(/[,;/]+/)
       .map((s: string) => s.trim())
       .filter(Boolean);
+    const pStoreKey = workingProj.store ? String(workingProj.store).trim().toLowerCase() : '*';
+    const pYearKey = workingProj.year !== undefined && workingProj.year !== null ? String(workingProj.year).trim() : '*';
     const isProjectTouched =
       summaryRemoved ||
       isFullyHydratedProject ||
       touchedIds.has(String(workingProj.id)) ||
-      pCodeParts.some((c) => touchedCodes.has(c));
+      pCodeParts.some(
+        (c) =>
+          touchedCodes.has(`${c}|${pStoreKey}|${pYearKey}`) ||
+          touchedCodes.has(`${c}|*|${pYearKey}`) ||
+          touchedCodes.has(`${c}|${pStoreKey}|*`) ||
+          touchedCodes.has(`${c}|*|*`)
+      );
 
     if (!isProjectTouched) return workingProj;
     if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS && !isFullyHydratedProject) return workingProj;

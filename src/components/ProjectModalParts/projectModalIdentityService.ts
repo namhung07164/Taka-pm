@@ -50,7 +50,11 @@ export async function handleProjectIdentityChange({
   if (relatedTasks.length === 0 && project.code && (project.taskCount || (project.taskSummaries && project.taskSummaries.length > 0))) {
     try {
       const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
-      const loaded: Task[] = await ensureProjectTasksLoaded(project.code);
+      const loaded: Task[] = await ensureProjectTasksLoaded(project.code, {
+        projectId: project.id,
+        store: project.store,
+        year: project.year,
+      });
       if (loaded.length > 0) {
         relatedTasks = loaded.filter(t => {
           const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;

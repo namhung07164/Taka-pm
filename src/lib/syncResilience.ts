@@ -15,7 +15,7 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
 
 const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before cycling network
 const WALL_CLOCK_CHECK_INTERVAL_MS = 20 * 1000;
-const WALL_CLOCK_JUMP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes OS sleep jump
+const WALL_CLOCK_JUMP_THRESHOLD_MS = 60 * 1000; // 60s OS sleep jump per Rule 16.2
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
 const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
 

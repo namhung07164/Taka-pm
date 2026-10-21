@@ -25,13 +25,21 @@ interface UseCostsHydrationProps {
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const secondaryCostsYearsFetched = new Set<string>();
 
-// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+// Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 const tsOf = (v: any): number => {
   if (!v) return 0;
-  const n =
-    typeof v === "string" ? Date.parse(v)
-    : typeof v?.toMillis === "function" ? v.toMillis()
-    : Number(v);
+  if (typeof v === "string") {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === "function") {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === "number") {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 // Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
@@ -111,19 +119,20 @@ export function useCostsHydration({
     }, 80);
   }, []);
 
-  // Sleep/Wake Recovery Listener
+  // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // 1. KHÔNG hủy listener khi thức giấc.
-      
+      // Preserve active onSnapshot listeners in costsPool so Firestore SDK resumes via resumeToken
       if (useAppStore.getState().isCostsRequested) {
         hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
     };
 
     window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    window.addEventListener("taka_network_recovered", handleSleepWakeRecovery);
     return () => {
       window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+      window.removeEventListener("taka_network_recovered", handleSleepWakeRecovery);
     };
   }, []);
 
@@ -225,7 +234,40 @@ export function useCostsHydration({
               usePerformanceStore.getState().trackSnapshot(`taka_costs_${year}`, snapshot);
               setIsCostsLoading(false);
               const fromCache = snapshot.metadata.fromCache;
-              batchCostsUpdate(snapshot.docChanges(), fromCache);
+              let changesToApply: any[] = snapshot.docChanges();
+
+              if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+                const serverIds = new Set<string>();
+                snapshot.docs.forEach((d) => serverIds.add(d.id));
+                const nowMs = Date.now();
+                const allowedLower = allowedStores.map((s) => s.toLowerCase());
+                const isStoreRestricted =
+                  userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+                const currentCostsNow = useAppStore.getState().costs || [];
+                currentCostsNow.forEach((c) => {
+                  const cYr = String(c.projectYear ?? (c as any).year ?? "").trim();
+                  if (c?.id && cYr === String(year).trim() && !serverIds.has(c.id)) {
+                    const cSt = c.projectStore || (c as any).store;
+                    if (
+                      isStoreRestricted &&
+                      cSt &&
+                      !allowedLower.includes(String(cSt).trim().toLowerCase())
+                    ) {
+                      return;
+                    }
+                    const updatedMs = tsOf(c.updatedAt);
+                    if (!updatedMs || nowMs - updatedMs > 30000) {
+                      changesToApply.push({
+                        type: "removed",
+                        doc: { id: c.id, data: () => ({ ...c, isDeleted: true }) },
+                      });
+                    }
+                  }
+                });
+              }
+
+              batchCostsUpdate(changesToApply, fromCache);
+              setCloudStatus("online");
 
               if (!fromCache) {
                 markLoaded('costs_year', year).catch(() => {});

@@ -3,6 +3,7 @@ import { pullAndApplyDeltas } from './deltaPullService';
 import { initNetworkRecovery } from './syncResilience';
 import { startDeltaRealtimeListener, isDeltaRealtimeConnected } from './deltaRealtimeListener';
 import { purgeOldDeltas } from './deltaPurgeService';
+import { initBroadcastSyncListener } from './broadcastSyncService';
 
 let syncIntervalTimer: any = null;
 let isHibernating = false;
@@ -25,6 +26,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   if (typeof window === 'undefined') return () => {};
 
   const stopRealtime = startDeltaRealtimeListener();
+  const stopBroadcast = initBroadcastSyncListener();
 
   let lastTriggerAt = 0;
   const triggerSync = (force: boolean = false) => {
@@ -114,6 +116,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     stopPolling();
     stopNetworkRecovery();
     stopRealtime();
+    stopBroadcast();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
   };

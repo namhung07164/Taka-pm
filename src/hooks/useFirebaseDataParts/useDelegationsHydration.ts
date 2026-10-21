@@ -27,13 +27,21 @@ interface UseDelegationsHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+// Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 const tsOf = (v: any): number => {
   if (!v) return 0;
-  const n =
-    typeof v === "string" ? Date.parse(v)
-    : typeof v?.toMillis === "function" ? v.toMillis()
-    : Number(v);
+  if (typeof v === "string") {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === "function") {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === "number") {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 // Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
@@ -116,18 +124,20 @@ export function useDelegationsHydration({
     }, 100);
   }, []);
 
-  // Sleep/Wake Recovery Listener
+  // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // KHÔNG hủy listener và KHÔNG xóa cache năm khi thức giấc (xem giải thích ở B1).
+      // Preserve active onSnapshot listeners in delegationsPool so Firestore SDK resumes via resumeToken
       if (useAppStore.getState().isDelegationsRequested) {
         hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
     };
 
     window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    window.addEventListener("taka_network_recovered", handleSleepWakeRecovery);
     return () => {
       window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+      window.removeEventListener("taka_network_recovered", handleSleepWakeRecovery);
     };
   }, []);
 
@@ -265,10 +275,47 @@ export function useDelegationsHydration({
               .getState()
               .trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
-            batchDelegationsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+            const fromCache = snapshot.metadata.fromCache;
+            let changesToApply: any[] = snapshot.docChanges();
 
-            if (DELTA_FIRST.delegations && !snapshot.metadata.fromCache) {
+            if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+              const serverIds = new Set<string>();
+              snapshot.docs.forEach((d) => serverIds.add(d.id));
+              const nowMs = Date.now();
+              const allowedLower = allowedStores.map((s) => s.toLowerCase());
+              const isStoreRestricted =
+                userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+              const currentDelegationsNow = useAppStore.getState().delegationGroups || [];
+              currentDelegationsNow.forEach((g) => {
+                const gYr = String(g.projectYear ?? (g as any).year ?? "").trim();
+                if (g?.id && gYr === String(year).trim() && !serverIds.has(g.id)) {
+                  const gSt = g.projectStore || (g as any).store;
+                  if (
+                    isStoreRestricted &&
+                    gSt &&
+                    !allowedLower.includes(String(gSt).trim().toLowerCase())
+                  ) {
+                    return;
+                  }
+                  const updatedMs = tsOf(g.updatedAt);
+                  if (!updatedMs || nowMs - updatedMs > 30000) {
+                    changesToApply.push({
+                      type: "removed",
+                      doc: { id: g.id, data: () => ({ ...g, isDeleted: true }) },
+                    });
+                  }
+                }
+              });
+            }
+
+            batchDelegationsUpdate(changesToApply, fromCache);
+            setCloudStatus("online");
+
+            if (!fromCache) {
               markLoaded('delegations_year', year).catch(() => {});
+            }
+
+            if (DELTA_FIRST.delegations && !fromCache) {
               const u = delegationsPool.current.get(year);
               delegationsPool.current.set(year, () => {});
               u?.();

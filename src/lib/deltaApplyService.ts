@@ -59,8 +59,17 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   const touchedProjectCodes = new Set<string>();
   const noteTouchedProject = (t: any) => {
     if (!t) return;
-    if (t.projectId) touchedProjectIds.add(String(t.projectId));
-    if (t.projectCode) touchedProjectCodes.add(String(t.projectCode).trim().toLowerCase());
+    if (t.projectId) {
+      touchedProjectIds.add(String(t.projectId));
+    } else if (t.projectCode) {
+      const codeKey = String(t.projectCode).trim().toLowerCase();
+      const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '*';
+      const yearKey =
+        t.projectYear !== undefined && t.projectYear !== null
+          ? String(t.projectYear).trim()
+          : '*';
+      touchedProjectCodes.add(`${codeKey}|${storeKey}|${yearKey}`);
+    }
   };
 
   const directlyAppliedDocIds = new Set<string>();
@@ -75,13 +84,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     if (docId) directlyAppliedDocIds.add(docId);
     const collectionName =
       collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
-    if (
-      collectionName === 'taka_delegations' &&
-      !store.isDelegationsRequested &&
-      store.delegationGroups.length === 0
-    ) {
-      return;
-    }
 
     const isDelete = action === 'delete' || data?.isDeleted === true;
 
@@ -141,6 +143,14 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         noteTouchedProject(data);
         if (isDelete || data?.isDeleted) {
           const pIdHint = data?.projectId || existingTask?.projectId;
+          const delProjCodeLower = String(data?.projectCode || existingTask?.projectCode || '')
+            .trim()
+            .toLowerCase();
+          const delProjStoreLower = String(data?.projectStore || existingTask?.projectStore || '')
+            .trim()
+            .toLowerCase();
+          const delProjYearStr = String(data?.projectYear ?? existingTask?.projectYear ?? '').trim();
+
           markTasksDeleted([docId], pIdHint ? String(pIdHint) : undefined);
           localDb.tasks.delete(docId).catch(() => {});
           if (idx !== -1) {
@@ -157,11 +167,23 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
           updatedProjects = updatedProjects.map((p) => {
             if (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
+              const isSameProjectForFallback = pIdHint
+                ? String(p.id) === String(pIdHint)
+                : (!delProjCodeLower ||
+                    String(p.code || '').trim().toLowerCase() === delProjCodeLower) &&
+                  (!delProjStoreLower ||
+                    !p.store ||
+                    String(p.store).trim().toLowerCase() === delProjStoreLower) &&
+                  (!delProjYearStr ||
+                    p.year === undefined ||
+                    String(p.year).trim() === delProjYearStr);
+
               const filteredSummaries = p.taskSummaries.filter((s: any) => {
                 const sId = s?.id ? String(s.id).trim().toLowerCase() : '';
                 if (sId && sId === docIdLower) return false;
                 if (
                   !sId &&
+                  isSameProjectForFallback &&
                   delNameLower &&
                   String(s?.name || '').trim().toLowerCase() === delNameLower
                 ) {
@@ -173,7 +195,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               if (filteredSummaries.length !== p.taskSummaries.length) {
                 projectsChanged = true;
                 markTasksDeleted([docId], p.id ? String(p.id) : undefined);
-                noteTouchedProject({ projectId: p.id, projectCode: p.code });
+                noteTouchedProject({ projectId: p.id, projectCode: p.code, projectStore: p.store, projectYear: p.year });
                 return {
                   ...p,
                   taskSummaries: filteredSummaries,
@@ -214,22 +236,52 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
                 String
               )
             );
-            const tProjId = mergedTask.projectId ? String(mergedTask.projectId) : '';
-            const tCode = mergedTask.projectCode ? String(mergedTask.projectCode) : '';
-            const projInMemory = updatedTasks.some(
-              (t) =>
-                (tProjId && String(t.projectId) === tProjId) ||
-                (tCode && String(t.projectCode || '').toLowerCase() === tCode.toLowerCase())
-            );
-            const matchingIdx =
-              (tProjId ? projectsIndex.byId.get(tProjId) : undefined) ??
-              (tCode ? projectsIndex.byCodePart.get(tCode.toLowerCase())?.[0] : undefined);
+            const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
+            const tCode = mergedTask.projectCode ? String(mergedTask.projectCode).trim() : '';
+            const tStoreLower = mergedTask.projectStore
+              ? String(mergedTask.projectStore).trim().toLowerCase()
+              : '';
+            const tYearStr =
+              mergedTask.projectYear !== undefined && mergedTask.projectYear !== null
+                ? String(mergedTask.projectYear).trim()
+                : '';
+
+            const projInMemory = updatedTasks.some((t) => {
+              if (tProjId && t.projectId) {
+                return String(t.projectId).trim() === tProjId;
+              }
+              if (tProjId || t.projectId) return false;
+              if (!tCode || String(t.projectCode || '').trim().toLowerCase() !== tCode.toLowerCase()) {
+                return false;
+              }
+              if (tStoreLower && t.projectStore && String(t.projectStore).trim().toLowerCase() !== tStoreLower) {
+                return false;
+              }
+              if (tYearStr && t.projectYear !== undefined && String(t.projectYear).trim() !== tYearStr) {
+                return false;
+              }
+              return true;
+            });
+
+            let matchingIdx = tProjId ? projectsIndex.byId.get(tProjId) : undefined;
+            if (matchingIdx === undefined && !tProjId && tCode) {
+              const candidates = projectsIndex.byCodePart.get(tCode.toLowerCase()) || [];
+              matchingIdx = candidates.find((cIdx) => {
+                const cp = updatedProjects[cIdx];
+                if (!cp) return false;
+                if (tStoreLower && cp.store && String(cp.store).trim().toLowerCase() !== tStoreLower) return false;
+                if (tYearStr && cp.year !== undefined && String(cp.year).trim() !== tYearStr) return false;
+                return true;
+              });
+            }
+
             const matchingProj =
               matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
             const isProjExpandedOrEmpty =
               projInMemory ||
               (tProjId && expandedSet.has(tProjId)) ||
-              (tCode && expandedSet.has(tCode)) ||
+              (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||
+              (!tProjId && tCode && expandedSet.has(tCode)) ||
               !matchingProj ||
               (matchingProj.taskSummaries?.length || 0) <= 1;
 
@@ -274,6 +326,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           }
           break;
         }
+        if (!store.isDelegationsRequested && updatedDelegations.length === 0) return;
         if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
 
         delegationsChanged = true;

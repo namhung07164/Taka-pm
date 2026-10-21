@@ -108,9 +108,19 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
         const parts = splitPredecessors(resolved, Array.from(taskNoMap.keys()));
         for (const token of parts) {
           const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-          const matchedProj = projects.find((p) => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
-          if (matchedProj && matchedProj.code !== task.projectCode) {
-            const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+          const matchedProj = projects.find(
+            (p) =>
+              p.code &&
+              cleanToken.toLowerCase().startsWith(p.code.toLowerCase()) &&
+              (!task.projectStore || !p.store || p.store.trim().toLowerCase() === task.projectStore.trim().toLowerCase()) &&
+              (!task.projectYear || !p.year || String(p.year).trim() === String(task.projectYear).trim())
+          ) || projects.find((p) => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+          if (matchedProj && (matchedProj.id !== task.projectId || matchedProj.code !== task.projectCode)) {
+            const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+              projectId: matchedProj.id,
+              store: matchedProj.store,
+              year: matchedProj.year,
+            });
             if (loaded.length > 0) {
               currentTasks = useAppStore.getState().tasks || currentTasks;
               taskNoMap = buildTaskNoMap(projects, currentTasks);

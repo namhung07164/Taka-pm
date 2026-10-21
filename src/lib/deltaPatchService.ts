@@ -106,6 +106,15 @@ export function computeFieldPatch<T extends Record<string, any>>(
   if (current.projectStore && !patch.projectStore) {
     patch.projectStore = current.projectStore;
   }
+  if (current.code && !patch.code) {
+    patch.code = current.code;
+  }
+  if (current.year !== undefined && patch.year === undefined) {
+    patch.year = current.year;
+  }
+  if (current.store && !patch.store) {
+    patch.store = current.store;
+  }
 
   return patch;
 }

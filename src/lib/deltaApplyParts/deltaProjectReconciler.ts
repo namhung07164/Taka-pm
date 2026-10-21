@@ -259,8 +259,18 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
       .split(/[,;/]+/)
       .map((s) => s.trim())
       .filter(Boolean);
+    const pStoreLower = p.store ? String(p.store).trim().toLowerCase() : '*';
+    const pYearStr = p.year !== undefined && p.year !== null ? String(p.year).trim() : '*';
     const isTouched =
-      touchedProjectIds.has(String(p.id)) || codeParts.some((c) => touchedProjectCodes.has(c));
+      touchedProjectIds.has(String(p.id)) ||
+      codeParts.some(
+        (c) =>
+          touchedProjectCodes.has(c) ||
+          touchedProjectCodes.has(`${c}|${pStoreLower}|${pYearStr}`) ||
+          touchedProjectCodes.has(`${c}|*|${pYearStr}`) ||
+          touchedProjectCodes.has(`${c}|${pStoreLower}|*`) ||
+          touchedProjectCodes.has(`${c}|*|*`)
+      );
 
     if (!isTouched) return p;
 

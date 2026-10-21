@@ -1,17 +1,7 @@
 import {
-  localDb,
-  bulkPersistProjects,
-  bulkPersistTasks,
-  bulkPersistCosts,
-  bulkPersistDelegations,
-  upsertLocalRecord,
-  patchLocalRecord,
-  deleteLocalRecord,
-  getLocalProjects,
-  getLocalTasks,
-  getLocalTasksForProjects,
-  getLocalCosts,
-  getLocalDelegations,
+  localDb, bulkPersistProjects, bulkPersistTasks, bulkPersistCosts, bulkPersistDelegations,
+  upsertLocalRecord, patchLocalRecord, deleteLocalRecord,
+  getLocalProjects, getLocalTasks, getLocalTasksForProjects, getLocalCosts, getLocalDelegations,
 } from './localDb';
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
@@ -22,27 +12,13 @@ import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
 import { isTaskBelongsToProject } from './utils';
+import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
 import {
-  getTasksForProject,
-  calculateProjectComputedDates,
-  syncProjectDatesToFirestore,
-} from './projectDatesService';
-import {
-  tsOf,
-  buildZombieProjectIndex,
-  isZombieTaskAgainstProjects,
-  hydrateCostsFromLocal,
-  hydrateDelegationsFromLocal,
-  hydrateDelegationsForProjects,
-  hydrateDelegationsForTasks,
+  tsOf, buildZombieProjectIndex, isZombieTaskAgainstProjects,
+  hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks,
 } from './backgroundSyncParts/localHydrationHelpers';
 
-export {
-  hydrateCostsFromLocal,
-  hydrateDelegationsFromLocal,
-  hydrateDelegationsForProjects,
-  hydrateDelegationsForTasks,
-};
+export { hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks };
 
 /**
  * Làm tươi (refresh) Task của một dự án cụ thể khi có biến động (0ms lag)
@@ -213,14 +189,6 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
   try {
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
-    if (store.tasks && store.tasks.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.tasks.length;
-      const hasForYear = store.tasks.some(
-        (t) => String(t.projectYear || '') === String(targetYear)
-      );
-      if (hasForYear) return store.tasks.length;
-    }
-
     const localTasks = await getLocalTasks(targetYear);
     if (localTasks && localTasks.length > 0) {
       const currentStore = useAppStore.getState();
@@ -238,9 +206,12 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         tMap.set(t.id, t);
       });
 
+      let existingZombieCount = 0;
       existing.forEach((t) => {
         if (!isZombieTaskAgainstProjects(t, projectsNow, zombieIndex)) {
           tMap.set(t.id, t);
+        } else {
+          existingZombieCount++;
         }
       });
 
@@ -248,6 +219,10 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         zombieIdsToDelete.forEach((id) => {
           deleteLocalRecord('taka_tasks', id).catch(() => {});
         });
+      }
+
+      if (tMap.size === existing.length && existingZombieCount === 0) {
+        return existing.length;
       }
 
       const deduped = deduplicateTasks(Array.from(tMap.values()), projectsNow);
@@ -263,7 +238,7 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         );
       return deduped.length;
     }
-    return 0;
+    return store.tasks?.length || 0;
   } catch (err) {
     console.warn('[backgroundSyncWorker] hydrateTasksFromLocal error:', err);
     return 0;
@@ -296,11 +271,18 @@ export async function hydrateTasksForProjects(
       projectIdsOrCodes.map((k) => String(k).trim().toLowerCase()).filter(Boolean)
     );
 
+    const codesCoveredByIdMatch = new Set<string>();
+    currentProjects.forEach((p) => {
+      if (p && !p.isDeleted && p.id && keySet.has(String(p.id).trim()) && p.code) {
+        codesCoveredByIdMatch.add(String(p.code).trim().toLowerCase());
+      }
+    });
+
     const targetProjects = currentProjects.filter((p) => {
       if (!p || p.isDeleted) return false;
       if (p.id && keySet.has(String(p.id).trim())) return true;
       const pCode = String(p.code || '').trim().toLowerCase();
-      if (pCode && lowerKeySet.has(pCode)) {
+      if (pCode && lowerKeySet.has(pCode) && !codesCoveredByIdMatch.has(pCode)) {
         if (normYear && p.year && String(p.year).trim() !== normYear) return false;
         if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore)
           return false;
@@ -309,7 +291,20 @@ export async function hydrateTasksForProjects(
       return false;
     });
 
-    const localTasks = await getLocalTasksForProjects(projectIdsOrCodes, year, storeFilter);
+    const expandedKeys = new Set<string>(keySet);
+    targetProjects.forEach((p) => {
+      if (p.id) expandedKeys.add(String(p.id).trim());
+      if (p.code) expandedKeys.add(String(p.code).trim());
+      if (p.linkCodes) {
+        String(p.linkCodes)
+          .split(/[,;/]+/)
+          .forEach((c) => {
+            if (c.trim()) expandedKeys.add(c.trim());
+          });
+      }
+    });
+
+    const localTasks = await getLocalTasksForProjects(Array.from(expandedKeys), year, storeFilter);
     if (!localTasks || localTasks.length === 0) return 0;
 
     const existingTasks = store.tasks || [];

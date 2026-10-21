@@ -239,12 +239,14 @@ export function useTasksHydration({
         : useAppStore.getState().tasks || [];
 
     const runTasksSync = async () => {
-      const currentProjects = useAppStore.getState().projects || [];
-      const keysToHydrate = extractKeysToHydrate(activeProjectIds, currentProjects);
+      const storeState = useAppStore.getState();
+      const currentProjects = storeState.projects || [];
+      const currentStoreFilter = storeState.globalStoreFilter;
+      const keysToHydrate = extractKeysToHydrate(activeProjectIds, currentProjects, globalYearFilter);
 
       await Promise.all([
-        hydrateTasksForProjects(Array.from(keysToHydrate)),
-        hydrateDelegationsForProjects(activeProjectIds),
+        hydrateTasksForProjects(Array.from(keysToHydrate), globalYearFilter, currentStoreFilter),
+        hydrateDelegationsForProjects(activeProjectIds, globalYearFilter, currentStoreFilter),
       ]);
       if (isCancelled) return;
       const markers = await getLoadedMarkers();
@@ -285,9 +287,15 @@ export function useTasksHydration({
           });
 
           if (!tasksPool.current.has(yearKey)) {
-            const hasLocalYearTasks = currentTasksSnapshot.some(
-              (t) => String(t.projectYear || '') === String(year)
-            );
+            const hasLocalYearTasks =
+              currentTasksSnapshot.some((t) => String(t.projectYear || '') === String(year)) &&
+              projs.every((p) => {
+                const expectedCount = Array.isArray(p.taskSummaries)
+                  ? p.taskSummaries.length
+                  : p.taskCount || 0;
+                if (expectedCount === 0) return true;
+                return getLocalProjectTasksFromIndex(p, tasksLookupIndex).length >= expectedCount;
+              });
             const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
 
             const deltaManaged =

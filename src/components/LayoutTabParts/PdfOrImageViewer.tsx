@@ -87,6 +87,7 @@ export const PdfOrImageViewer: React.FC<PdfOrImageViewerProps> = ({
   const [touchZoomMode, setTouchZoomMode] = useState<'pinch' | 'scroll'>('pinch');
 
   const zoomStageRef = useRef<TouchPinchZoomStageHandle>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const cleanUrl = getCleanUrl(url) || url;
   const isPdf = isPdfOrDocUrl(cleanUrl);

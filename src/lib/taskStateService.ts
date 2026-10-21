@@ -26,37 +26,91 @@ export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): b
   return isTaskBelongsToProjectCore(t, p);
 }
 
+export interface EnsureProjectTasksContext {
+  projectId?: string;
+  store?: string;
+  year?: string | number;
+}
+
 /**
- * Ensures tasks for a specific projectCode are loaded into Zustand store.
+ * Ensures tasks for a specific projectCode (and optional 4-key context) are loaded into Zustand store.
  * Useful when resolving cross-project predecessors dynamically.
  */
-export async function ensureProjectTasksLoaded(projectCode: string): Promise<Task[]> {
-  if (!projectCode) return [];
-  const cleanCode = projectCode.trim();
+export async function ensureProjectTasksLoaded(
+  projectCode: string,
+  context?: EnsureProjectTasksContext
+): Promise<Task[]> {
+  if (!projectCode && !context?.projectId) return [];
+  const cleanCode = (projectCode || '').trim();
+  const cleanCodeLower = cleanCode.toLowerCase();
+  const ctxProjectId = context?.projectId ? String(context.projectId).trim() : '';
+  const ctxStoreLower = context?.store ? String(context.store).trim().toLowerCase() : '';
+  const ctxYearStr =
+    context?.year !== undefined && context?.year !== null ? String(context.year).trim() : '';
+
+  const matchesContext = (t: Partial<Task>): boolean => {
+    if (t.isDeleted || (t.id && isTaskDeletedInTracker(t.id))) return false;
+    if (ctxProjectId && t.projectId) {
+      return String(t.projectId).trim() === ctxProjectId;
+    }
+    if (ctxProjectId && !t.projectId) {
+      if (cleanCodeLower && (!t.projectCode || t.projectCode.trim().toLowerCase() !== cleanCodeLower)) {
+        return false;
+      }
+      if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
+        return false;
+      }
+      if (
+        ctxYearStr &&
+        t.projectYear !== undefined &&
+        t.projectYear !== null &&
+        String(t.projectYear).trim() !== ctxYearStr
+      ) {
+        return false;
+      }
+      return Boolean(cleanCodeLower);
+    }
+    if (cleanCodeLower && (!t.projectCode || t.projectCode.trim().toLowerCase() !== cleanCodeLower)) {
+      return false;
+    }
+    if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
+      return false;
+    }
+    if (
+      ctxYearStr &&
+      t.projectYear !== undefined &&
+      t.projectYear !== null &&
+      String(t.projectYear).trim() !== ctxYearStr
+    ) {
+      return false;
+    }
+    return true;
+  };
+
   const currentTasks = useAppStore.getState().tasks || [];
 
-  // 1. If we already have tasks for this project in memory, return them (0 Read)
-  const existing = currentTasks.filter(
-    (t) =>
-      t.projectCode &&
-      t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase() &&
-      !t.isDeleted
-  );
+  // 1. If we already have tasks for this specific project context in memory, return them (0 Read)
+  const existing = currentTasks.filter(matchesContext);
   if (existing.length > 0) return existing;
 
+  const cacheKey = `${ctxProjectId || '*'}|${cleanCodeLower}|${ctxStoreLower || '*'}|${ctxYearStr || '*'}`;
+
   // If already fetching, return existing promise
-  if (pendingProjectFetches.has(cleanCode.toLowerCase())) {
-    return pendingProjectFetches.get(cleanCode.toLowerCase())!;
+  if (pendingProjectFetches.has(cacheKey)) {
+    return pendingProjectFetches.get(cacheKey)!;
   }
 
   const fetchPromise = (async () => {
     try {
       // 2. Check Dexie Local-First Database before touching Firestore (0 Read)
       const { getLocalTasksForProjects, bulkPersistTasks } = await import('./localDb');
-      const localTasks = await getLocalTasksForProjects([cleanCode]);
-      const validLocal = (localTasks || []).filter(
-        (t) => !t.isDeleted && !isTaskDeletedInTracker(t.id)
+      const lookupKeys = [ctxProjectId, cleanCode].filter(Boolean);
+      const localTasks = await getLocalTasksForProjects(
+        lookupKeys,
+        ctxYearStr || undefined,
+        ctxStoreLower || undefined
       );
+      const validLocal = (localTasks || []).filter(matchesContext);
       if (validLocal.length > 0) {
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map((t) => t.id));
@@ -69,9 +123,14 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
 
       // 3. Check if project has 0 tasks according to project summary (0 Read)
       const projects = useAppStore.getState().projects || [];
-      const matchingProjs = projects.filter(
-        (p) => p.code && p.code.trim().toLowerCase() === cleanCode.toLowerCase()
-      );
+      const matchingProjs = projects.filter((p) => {
+        if (ctxProjectId && p.id === ctxProjectId) return true;
+        if (ctxProjectId && p.id && p.id !== ctxProjectId) return false;
+        if (cleanCodeLower && (!p.code || p.code.trim().toLowerCase() !== cleanCodeLower)) return false;
+        if (ctxStoreLower && p.store && p.store.trim().toLowerCase() !== ctxStoreLower) return false;
+        if (ctxYearStr && p.year !== undefined && String(p.year).trim() !== ctxYearStr) return false;
+        return true;
+      });
       if (
         matchingProjs.length > 0 &&
         matchingProjs.every(
@@ -83,15 +142,15 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       }
 
       // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
-      const q = query(
-        collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-        where('projectCode', '==', cleanCode)
-      );
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+      const q = ctxProjectId
+        ? query(colRef, where('projectId', '==', ctxProjectId))
+        : query(colRef, where('projectCode', '==', cleanCode));
       const snap = await getDocs(q);
       const loaded: Task[] = [];
       snap.forEach((docSnap) => {
         const d = { id: docSnap.id, ...docSnap.data() } as Task;
-        if (!d.isDeleted && !isTaskDeletedInTracker(d.id)) loaded.push(d);
+        if (matchesContext(d)) loaded.push(d);
       });
 
       if (loaded.length > 0) {
@@ -108,11 +167,11 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       console.warn('Failed to fetch tasks for external project:', cleanCode, err);
       return [];
     } finally {
-      pendingProjectFetches.delete(cleanCode.toLowerCase());
+      pendingProjectFetches.delete(cacheKey);
     }
   })();
 
-  pendingProjectFetches.set(cleanCode.toLowerCase(), fetchPromise);
+  pendingProjectFetches.set(cacheKey, fetchPromise);
   return fetchPromise;
 }
 

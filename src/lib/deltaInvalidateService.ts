@@ -28,27 +28,48 @@ const tsOf = (v: any): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const deferredTriGateInvalidations = new Map<string, TakaDeltaItem>();
+const MAX_DEFERRED_INVALIDATIONS = 500;
+
+function queueDeferredInvalidation(item: TakaDeltaItem): void {
+  if (!item?.docId || !item?.collectionName) return;
+  const key = `${item.collectionName}:${item.docId}`;
+  deferredTriGateInvalidations.set(key, item);
+  if (deferredTriGateInvalidations.size > MAX_DEFERRED_INVALIDATIONS) {
+    const oldest = deferredTriGateInvalidations.keys().next().value;
+    if (oldest !== undefined) deferredTriGateInvalidations.delete(oldest);
+  }
+}
+
 /**
  * Checks Tri-Gate flags and skips re-reading documents that were already delivered
- * within the last 10 seconds by an active onSnapshot listener or explicit delta.
+ * within the last 1.5 seconds by an active onSnapshot listener or explicit delta.
+ * Deferred items for closed Tri-Gates are queued and resolved only when the gate opens.
  */
 function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   if (!item || !item.docId || !item.collectionName) return false;
   const store = useAppStore.getState();
-  const RECENT_SNAPSHOT_WINDOW_MS = 10000;
+  const RECENT_SNAPSHOT_WINDOW_MS = 1500;
 
   if (item.collectionName === 'taka_costs') {
-    if (!store.isCostsRequested && (!store.costs || store.costs.length === 0)) return false;
+    if (!store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
+      queueDeferredInvalidation(item);
+      return false;
+    }
     const existing = store.costs?.find((c) => c.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_delegations') {
     if (!store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0)) {
+      queueDeferredInvalidation(item);
       return false;
     }
     const existing = store.delegationGroups?.find((d) => d.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_tasks') {
-    if (!store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) return false;
+    if (!store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
+      queueDeferredInvalidation(item);
+      return false;
+    }
     const existing = store.tasks?.find((t) => t.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_projects') {
@@ -57,6 +78,23 @@ function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   }
 
   return true;
+}
+
+/**
+ * Flushes any deferred invalidations for a specific collection when its Tri-Gate opens.
+ */
+export async function flushDeferredInvalidations(
+  collectionName: TakaDeltaItem['collectionName']
+): Promise<TakaDelta[]> {
+  const toFlush: TakaDeltaItem[] = [];
+  for (const [k, item] of deferredTriGateInvalidations.entries()) {
+    if (item.collectionName === collectionName) {
+      toFlush.push(item);
+      deferredTriGateInvalidations.delete(k);
+    }
+  }
+  if (toFlush.length === 0) return [];
+  return resolveInvalidations(toFlush);
 }
 
 /**

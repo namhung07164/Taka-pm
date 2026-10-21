@@ -159,27 +159,34 @@ export async function hydrateCostsFromLocal(year?: string): Promise<number> {
   try {
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
-    if (store.costs && store.costs.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') return store.costs.length;
-      const hasForYear = store.costs.some((c) => String(c.projectYear || '') === String(targetYear));
-      if (hasForYear) return store.costs.length;
-    }
     const localCosts = await getLocalCosts(targetYear);
     if (localCosts && localCosts.length > 0) {
       const currentStore = useAppStore.getState();
       const existing = currentStore.costs || [];
-      const cMap = new Map<string, Cost>(localCosts.map((c) => [c.id, c]));
-      existing.forEach((c) => cMap.set(c.id, c));
-      const merged = Array.from(cMap.values());
-      currentStore.setCosts(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc(
-          'dexie_costs_hydration',
-          true,
-          localCosts.length,
-          'Instant Local-First Costs Hydration (0ms)'
-        );
+      const cMap = new Map<string, Cost>(existing.map((c) => [c.id, c]));
+      let changed = false;
+      localCosts.forEach((c) => {
+        if (!c?.id) return;
+        const cur = cMap.get(c.id);
+        if (!cur) {
+          cMap.set(c.id, c);
+          changed = true;
+        } else if (tsOf(c.updatedAt) > tsOf(cur.updatedAt)) {
+          cMap.set(c.id, c);
+          changed = true;
+        }
+      });
+      if (changed) {
+        currentStore.setCosts(Array.from(cMap.values()));
+        usePerformanceStore
+          .getState()
+          .trackGetDoc(
+            'dexie_costs_hydration',
+            true,
+            localCosts.length,
+            'Instant Local-First Costs Hydration (0ms)'
+          );
+      }
       return localCosts.length;
     }
     return 0;
@@ -197,34 +204,34 @@ export async function hydrateDelegationsFromLocal(year?: string): Promise<number
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
 
-    if (store.delegationGroups && store.delegationGroups.length > 0) {
-      if (!targetYear || targetYear === 'all' || targetYear === 'ALL') {
-        return store.delegationGroups.length;
-      }
-      const hasForYear = store.delegationGroups.some(
-        (d) => String(d.projectYear || '') === String(targetYear)
-      );
-      if (hasForYear) return store.delegationGroups.length;
-    }
-
     const localDelegations = await getLocalDelegations(targetYear);
     if (localDelegations && localDelegations.length > 0) {
       const currentStore = useAppStore.getState();
       const existing = currentStore.delegationGroups || [];
       const dMap = new Map(existing.map((d) => [d.id, d]));
+      let changed = false;
       localDelegations.forEach((d) => {
-        if (!dMap.has(d.id)) dMap.set(d.id, d);
+        if (!d?.id) return;
+        const cur = dMap.get(d.id);
+        if (!cur) {
+          dMap.set(d.id, d);
+          changed = true;
+        } else if (tsOf(d.updatedAt) > tsOf(cur.updatedAt)) {
+          dMap.set(d.id, d);
+          changed = true;
+        }
       });
-      const merged = Array.from(dMap.values());
-      currentStore.setDelegationGroups(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc(
-          'dexie_delegations_hydration',
-          true,
-          localDelegations.length,
-          `Instant Local-First Delegations Hydration for ${targetYear || 'all'} (0ms, 0 Read)`
-        );
+      if (changed) {
+        currentStore.setDelegationGroups(Array.from(dMap.values()));
+        usePerformanceStore
+          .getState()
+          .trackGetDoc(
+            'dexie_delegations_hydration',
+            true,
+            localDelegations.length,
+            `Instant Local-First Delegations Hydration for ${targetYear || 'all'} (0ms, 0 Read)`
+          );
+      }
       return localDelegations.length;
     }
     return 0;
@@ -257,14 +264,31 @@ export async function hydrateDelegationsForProjects(
 
     const expandedKeys = new Set<string>();
     const targetProjects: Project[] = [];
+    const codesCoveredByIdMatch = new Set<string>();
+
+    projectIdsOrCodes.forEach((key) => {
+      const trimmed = String(key).trim();
+      if (!trimmed) return;
+      const byId = currentProjects.find((p) => !p.isDeleted && String(p.id) === trimmed);
+      if (byId) {
+        if (!targetProjects.some((tp) => tp.id === byId.id)) targetProjects.push(byId);
+        if (byId.code) {
+          codesCoveredByIdMatch.add(String(byId.code).trim().toLowerCase());
+          expandedKeys.add(String(byId.code).trim());
+        }
+        if (byId.id) expandedKeys.add(String(byId.id).trim());
+      }
+    });
 
     projectIdsOrCodes.forEach((key) => {
       const trimmed = String(key).trim();
       if (!trimmed) return;
       expandedKeys.add(trimmed);
+      if (codesCoveredByIdMatch.has(trimmed.toLowerCase())) return;
       const matched =
-        currentProjects.find((p) => String(p.id) === trimmed) ||
+        currentProjects.find((p) => !p.isDeleted && String(p.id) === trimmed) ||
         currentProjects.find((p) => {
+          if (p.isDeleted) return false;
           if (
             String(p.code).trim().toLowerCase() !== trimmed.toLowerCase() &&
             String(p.no) !== trimmed

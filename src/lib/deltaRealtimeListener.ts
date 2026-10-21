@@ -112,7 +112,8 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const onSleepWake = () => {
-    if (document.visibilityState === 'visible' && !unsub) {
+    if (document.visibilityState === 'visible') {
+      detach();
       attach();
     }
   };

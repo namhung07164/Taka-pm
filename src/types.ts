@@ -269,6 +269,7 @@ export interface ActiveNotification {
   projectYear?: string | number;
   location?: string;
   category?: NotificationCategory;
+  ruleId?: string;
   ruleField?: string;
   action?: 'cross_year_rollover' | 'complete_task' | 'approve_delegation';
   actionData?: any;

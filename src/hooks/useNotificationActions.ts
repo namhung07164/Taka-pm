@@ -269,7 +269,7 @@ export function useNotificationActions() {
           return { ...p, taskSummaries: nextSummaries };
         });
 
-      state.setProjects((prev: any[]) => updateProjectSummariesList(prev));
+      state.setProjects(updateProjectSummariesList(state.projects || []));
       if (state.allProjectsForNotifs?.length) {
         state.setAllProjectsForNotifs(updateProjectSummariesList(state.allProjectsForNotifs));
       }

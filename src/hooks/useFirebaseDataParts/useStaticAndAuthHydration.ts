@@ -46,14 +46,8 @@ export function useStaticAndAuthHydration() {
   // 1. Sleep / Wake Guard & 20s Heartbeat Gap Detection (Rule 16.2)
   useEffect(() => {
     const triggerOvernightRecovery = (elapsedSleepMs: number) => {
-      import("../../lib/deltaRealtimeListener")
-        .then(({ isDeltaRealtimeConnected }) => {
-          if (!isDeltaRealtimeConnected() || elapsedSleepMs > 15 * 60 * 1000) {
-            return import("../../lib/deltaOrchestratorService").then((m) =>
-              m.triggerImmediateDeltaSync()
-            );
-          }
-        })
+      import("../../lib/deltaOrchestratorService")
+        .then((m) => m.triggerImmediateDeltaSync())
         .catch(() => {});
 
       if (elapsedSleepMs > 60 * 1000) {
@@ -112,12 +106,14 @@ export function useStaticAndAuthHydration() {
     document.addEventListener("visibilitychange", handleSleepWake);
     window.addEventListener("pageshow", handleSleepWake);
     window.addEventListener("online", handleSleepWake);
+    window.addEventListener("focus", handleSleepWake);
 
     return () => {
       clearInterval(heartbeatTimer);
       document.removeEventListener("visibilitychange", handleSleepWake);
       window.removeEventListener("pageshow", handleSleepWake);
       window.removeEventListener("online", handleSleepWake);
+      window.removeEventListener("focus", handleSleepWake);
     };
   }, []);
 
@@ -145,17 +141,33 @@ export function useStaticAndAuthHydration() {
     const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
     const needsDelegations = tabsRequiringDelegations.includes(activeTab);
 
+    const flushGateInvalidations = (coll: "taka_tasks" | "taka_costs" | "taka_delegations") => {
+      Promise.all([
+        import("../../lib/deltaInvalidateService"),
+        import("../../lib/deltaApplyService"),
+      ])
+        .then(([{ flushDeferredInvalidations }, { applyIncomingDeltas }]) =>
+          flushDeferredInvalidations(coll).then((synthetic) => {
+            if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+          })
+        )
+        .catch(() => {});
+    };
+
     if (needsTasks) {
       setIsTasksRequested(true);
       hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      flushGateInvalidations("taka_tasks");
     }
     if (needsCosts) {
       setIsCostsRequested(true);
       hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      flushGateInvalidations("taka_costs");
     }
     if (needsDelegations) {
       setIsDelegationsRequested(true);
       hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      flushGateInvalidations("taka_delegations");
     } else {
       const store = useAppStore.getState();
       const openProjectKeys: string[] = [];
@@ -164,7 +176,9 @@ export function useStaticAndAuthHydration() {
       if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
       if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
       if (openProjectKeys.length > 0) {
-        hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
+        const targetYr = store.editingProject?.year ?? store.editingTask?.projectYear ?? store.globalYearFilter;
+        const targetSt = store.editingProject?.store ?? store.editingTask?.projectStore ?? store.globalStoreFilter;
+        hydrateDelegationsForProjects(openProjectKeys, targetYr, targetSt).catch(() => {});
       }
     }
   }, [

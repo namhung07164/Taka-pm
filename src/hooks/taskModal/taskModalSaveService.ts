@@ -116,7 +116,11 @@ export async function executeTaskSave({
         const sameIdentity = (x: Task) =>
           String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
           String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim();
-        const loaded: Task[] = await ensureProjectTasksLoaded(currentProject.code);
+        const loaded: Task[] = await ensureProjectTasksLoaded(currentProject.code, {
+          projectId: currentProject.id,
+          store: currentProject.store,
+          year: currentProject.year,
+        });
         const loadedSame = loaded.filter(sameIdentity);
         if (loadedSame.length > 0) {
           realTask = loadedSame.find(t =>
