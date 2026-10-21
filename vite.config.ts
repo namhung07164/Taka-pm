@@ -1,10 +1,40 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+function pdfjsAssetsPlugin() {
+  return {
+    name: 'copy-pdfjs-assets',
+    closeBundle() {
+      // Only copy the 186 static PDF.js files into dist/ on static cloud builders (Cloudflare Pages / Vercel).
+      // In AI Studio / Node server mode, server.ts serves /pdf.worker.min.mjs, /cmaps, and /standard_fonts
+      // directly from node_modules/pdfjs-dist to avoid flooding the workspace file-sync watcher.
+      if (!process.env.CF_PAGES && !process.env.CF_PAGES_URL && !process.env.VERCEL) return;
+
+      const pdfjsDir = path.resolve(__dirname, 'node_modules/pdfjs-dist');
+      const outDir = path.resolve(__dirname, 'dist');
+      if (!fs.existsSync(pdfjsDir) || !fs.existsSync(outDir)) return;
+
+      const workerSrc = path.join(pdfjsDir, 'build/pdf.worker.min.mjs');
+      if (fs.existsSync(workerSrc)) {
+        fs.copyFileSync(workerSrc, path.join(outDir, 'pdf.worker.min.mjs'));
+      }
+      const cmapsSrc = path.join(pdfjsDir, 'cmaps');
+      if (fs.existsSync(cmapsSrc)) {
+        fs.cpSync(cmapsSrc, path.join(outDir, 'cmaps'), { recursive: true });
+      }
+      const fontsSrc = path.join(pdfjsDir, 'standard_fonts');
+      if (fs.existsSync(fontsSrc)) {
+        fs.cpSync(fontsSrc, path.join(outDir, 'standard_fonts'), { recursive: true });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), pdfjsAssetsPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),

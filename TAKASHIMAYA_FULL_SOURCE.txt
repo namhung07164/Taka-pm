@@ -246,7 +246,7 @@ FILE: package.json
   "scripts": {
     "dev": "tsx server.ts",
     "clean:junk": "rm -f bun.lock* yarn.lock pnpm-lock.yaml *.zip *.diff *.patch test_*.js patch_*.js remove_*.sh USER_MANUAL_UPDATE.py",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -309,17 +309,46 @@ FILE: package.json
   }
 }
 
-
 ================================================================================
 FILE: vite.config.ts
 ================================================================================
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+function pdfjsAssetsPlugin() {
+  return {
+    name: 'copy-pdfjs-assets',
+    closeBundle() {
+      // Only copy the 186 static PDF.js files into dist/ on static cloud builders (Cloudflare Pages / Vercel).
+      // In AI Studio / Node server mode, server.ts serves /pdf.worker.min.mjs, /cmaps, and /standard_fonts
+      // directly from node_modules/pdfjs-dist to avoid flooding the workspace file-sync watcher.
+      if (!process.env.CF_PAGES && !process.env.CF_PAGES_URL && !process.env.VERCEL) return;
+
+      const pdfjsDir = path.resolve(__dirname, 'node_modules/pdfjs-dist');
+      const outDir = path.resolve(__dirname, 'dist');
+      if (!fs.existsSync(pdfjsDir) || !fs.existsSync(outDir)) return;
+
+      const workerSrc = path.join(pdfjsDir, 'build/pdf.worker.min.mjs');
+      if (fs.existsSync(workerSrc)) {
+        fs.copyFileSync(workerSrc, path.join(outDir, 'pdf.worker.min.mjs'));
+      }
+      const cmapsSrc = path.join(pdfjsDir, 'cmaps');
+      if (fs.existsSync(cmapsSrc)) {
+        fs.cpSync(cmapsSrc, path.join(outDir, 'cmaps'), { recursive: true });
+      }
+      const fontsSrc = path.join(pdfjsDir, 'standard_fonts');
+      if (fs.existsSync(fontsSrc)) {
+        fs.cpSync(fontsSrc, path.join(outDir, 'standard_fonts'), { recursive: true });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), pdfjsAssetsPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
@@ -47443,20 +47472,26 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
   const [fallbackImgSrc, setFallbackImgSrc] = useState<string | null>(null);
   const [triedProxyFallback, setTriedProxyFallback] = useState(false);
   const [triedPdfFallback, setTriedPdfFallback] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(0);
 
   const driveId = useMemo(() => extractDriveIdFromUrl(img.url), [img.url]);
 
-  // For Google Drive links, use same-origin server proxy (/api/drive-thumb) first to bypass iOS Safari ITP blocks
-  const thumbnailSrc = useMemo(() => {
+  // For Google Drive links, provide multi-tier candidates (Google CDN -> LH3 CDN -> Server Proxy)
+  const thumbnailCandidates = useMemo(() => {
     if (driveId) {
-      return `/api/drive-thumb?id=${driveId}&sz=w400`;
+      return [
+        `https://drive.google.com/thumbnail?id=${driveId}&sz=w400`,
+        `https://lh3.googleusercontent.com/d/${driveId}=w400`,
+        `/api/drive-thumb?id=${driveId}&sz=w400`,
+      ];
     }
-    return normalizeImageUrl(img.url, 'w400');
+    const normalized = normalizeImageUrl(img.url, 'w400');
+    return normalized ? [normalized] : [];
   }, [img.url, driveId]);
 
   const isDirectPdfFile = useMemo(() => {
     const u = (img.url || '').toLowerCase();
-    if (driveId) return false; // Drive uses /api/drive-thumb first, then falls back to PDF generator if needed
+    if (driveId) return false; // Drive uses fast image thumbnail candidates first
     return /\.pdf($|\?|#)/i.test(u) || u.includes('type=pdf') || u.includes('application/pdf');
   }, [img.url, driveId]);
 
@@ -47472,6 +47507,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     setFallbackImgSrc(null);
     setTriedProxyFallback(false);
     setTriedPdfFallback(false);
+    setCandidateIndex(0);
 
     const cached = getCachedPdfThumbnail(img.url);
     if (cached) {
@@ -47592,7 +47628,8 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
     });
   };
 
-  const effectiveImageSrc = pdfThumbSrc || fallbackImgSrc || (isDirectPdfFile ? null : thumbnailSrc);
+  const currentCandidate = thumbnailCandidates[candidateIndex] || null;
+  const effectiveImageSrc = pdfThumbSrc || fallbackImgSrc || (isDirectPdfFile ? null : currentCandidate);
 
   return (
     <div
@@ -47621,6 +47658,12 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
           loading="lazy"
           decoding="async"
           onError={() => {
+            // Stage 0 Fallback for Google Drive: Try next candidate (Google CDN -> LH3 CDN -> Server Proxy)
+            if (driveId && candidateIndex < thumbnailCandidates.length - 1) {
+              setCandidateIndex((prev) => prev + 1);
+              return;
+            }
+
             // Stage 1 Fallback: For non-Drive HTTP URLs, try /api/pdf-proxy in case of CORS/ISP block
             const normalized = normalizeImageUrl(img.url, 'w400');
             if (!triedProxyFallback && !driveId && /^https?:\/\//i.test(normalized)) {
@@ -47628,6 +47671,7 @@ export const TooltipZoomableThumbnail: React.FC<TooltipZoomableThumbnailProps> =
               setFallbackImgSrc(`/api/pdf-proxy?url=${encodeURIComponent(normalized)}`);
               return;
             }
+
             // Stage 2 Fallback: Render Page 1 via PDF.js (handles Drive PDFs without thumb & R2 PDFs)
             if (!triedPdfFallback && !pdfThumbSrc && !isPdfThumbLoading) {
               setTriedPdfFallback(true);
@@ -47715,100 +47759,69 @@ export default TooltipZoomableThumbnail;
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/pdfThumbnailGenerator.ts
 ================================================================================
-import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
+import {
+  fetchPdfBinaryUnified,
+  getCachedPageThumbSync,
+  getCachedPageThumbAsync,
+  setCachedPageThumb,
+  renderPdfPageToThumbDataUrl,
+  canonicalizePdfKey,
+} from '../../../lib/pdfBinaryCache';
 
-/**
- * In-memory LRU cache mapping normalized PDF URLs to lightweight WebP/JPEG data URLs of Page 1.
- * Ensures 0ms instant thumbnail display on subsequent opens without re-fetching or re-decoding the PDF.
- */
-const pdfThumbnailCache = new Map<string, string>();
 const inFlightRequests = new Map<string, Promise<string | null>>();
-
-const MAX_CACHE_ENTRIES = 120;
-const THUMBNAIL_MAX_DIMENSION = 680;
+const THUMBNAIL_MAX_DIMENSION = 640;
 
 export function getCachedPdfThumbnail(rawUrl: string | undefined | null): string | null {
-  if (!rawUrl) return null;
-  const normalized = normalizeImageUrl(rawUrl, 'w600');
-  return pdfThumbnailCache.get(normalized) || pdfThumbnailCache.get(rawUrl) || null;
-}
-
-function setCachedPdfThumbnail(key: string, dataUrl: string): void {
-  if (pdfThumbnailCache.size >= MAX_CACHE_ENTRIES) {
-    const oldestKey = pdfThumbnailCache.keys().next().value;
-    if (oldestKey) pdfThumbnailCache.delete(oldestKey);
-  }
-  pdfThumbnailCache.set(key, dataUrl);
+  return getCachedPageThumbSync(rawUrl, 1);
 }
 
 /**
- * Renders Page 1 of a PDF URL (including Cloudflare R2 and Google Drive links)
- * into a lightweight, crisp WebP/JPEG data URL for instant thumbnail preview inside Quick Image.
+ * Renders Page 1 of ANY PDF URL (R2 Cloud, Google Drive, Firebase Storage, HTTP)
+ * into a lightweight, crisp WebP/JPEG data URL and persists it in both RAM and IndexedDB.
+ * Also caches the PDF binary in memory so opening the full PDF viewer afterwards takes 0ms!
  */
 export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<string | null> {
   if (!rawUrl || typeof window === 'undefined') return null;
 
-  const url = normalizeImageUrl(rawUrl, 'w600') || rawUrl.trim();
-  if (!url) return null;
+  const key = canonicalizePdfKey(rawUrl);
+  if (!key) return null;
 
-  const cached = pdfThumbnailCache.get(url) || pdfThumbnailCache.get(rawUrl);
-  if (cached) return cached;
+  // 1. Check synchronous RAM cache first (0ms)
+  const syncCached = getCachedPageThumbSync(rawUrl, 1);
+  if (syncCached) return syncCached;
 
-  const existingPromise = inFlightRequests.get(url);
+  // 2. Check persistent IndexedDB cache (< 2ms, zero network download)
+  const idbCached = await getCachedPageThumbAsync(rawUrl, 1);
+  if (idbCached) {
+    // Warm up binary cache in background so clicking to open full PDF is instant
+    setTimeout(() => {
+      fetchPdfBinaryUnified(rawUrl).catch(() => {});
+    }, 50);
+    return idbCached;
+  }
+
+  const existingPromise = inFlightRequests.get(key);
   if (existingPromise) return existingPromise;
 
   const taskPromise = (async (): Promise<string | null> => {
     let loadingTask: any = null;
     let pdfDoc: any = null;
-    let page: any = null;
-    let canvas: HTMLCanvasElement | null = null;
 
     try {
-      const pdfjsLib = await import('pdfjs-dist');
+      const [pdfjsLib, binaryData] = await Promise.all([
+        import('pdfjs-dist'),
+        fetchPdfBinaryUnified(rawUrl),
+      ]);
 
       if (pdfjsLib.GlobalWorkerOptions) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
       }
 
       const baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-      const cMapLocal = `${baseOrigin}/cmaps/`;
-      const fontLocal = `${baseOrigin}/standard_fonts/`;
-
-      // If Google Drive link, extract ID and proxy
-      const driveMatch =
-        url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)/i) ||
-        url.match(/[?&]id=([a-zA-Z0-9_-]+)/i);
-      const effectiveUrl = driveMatch?.[1] ? `/api/drive-pdf?id=${driveMatch[1]}` : url;
-
-      // 1. First attempt: fetch binary buffer directly on main thread to avoid worker CORS issues
-      let binaryData: Uint8Array | null = null;
-      try {
-        const res = await fetch(effectiveUrl);
-        if (res.ok) {
-          const buf = await res.arrayBuffer();
-          binaryData = new Uint8Array(buf);
-        }
-      } catch {}
-
-      // Fallback for R2 links: fetch S3 presigned URL
-      if (!binaryData && !driveMatch?.[1]) {
-        try {
-          const { resolveR2UrlToHttp } = await import('../../PictureMapping/lib/r2Upload');
-          const presignedUrl = await resolveR2UrlToHttp(url);
-          if (presignedUrl && presignedUrl !== url) {
-            const res = await fetch(presignedUrl);
-            if (res.ok) {
-              const buf = await res.arrayBuffer();
-              binaryData = new Uint8Array(buf);
-            }
-          }
-        } catch {}
-      }
-
       const docConfig: any = {
-        cMapUrl: cMapLocal,
+        cMapUrl: `${baseOrigin}/cmaps/`,
         cMapPacked: true,
-        standardFontDataUrl: fontLocal,
+        standardFontDataUrl: `${baseOrigin}/standard_fonts/`,
         disableAutoFetch: false,
         disableStream: true,
       };
@@ -47816,62 +47829,23 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
       if (binaryData) {
         docConfig.data = binaryData;
       } else {
-        docConfig.url = effectiveUrl;
+        docConfig.url = rawUrl.trim();
       }
 
       loadingTask = pdfjsLib.getDocument(docConfig);
       pdfDoc = await loadingTask.promise;
-
       if (!pdfDoc) return null;
 
-      page = await pdfDoc.getPage(1);
-      const unscaledViewport = page.getViewport({ scale: 1 });
-      const maxSide = Math.max(unscaledViewport.width, unscaledViewport.height, 1);
-      const scale = Math.min(2.0, Math.max(0.4, THUMBNAIL_MAX_DIMENSION / maxSide));
-      const viewport = page.getViewport({ scale });
-
-      canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.floor(viewport.width));
-      canvas.height = Math.max(1, Math.floor(viewport.height));
-
-      const context = canvas.getContext('2d', { alpha: false });
-      if (!context) return null;
-
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
-
-      await page.render({
-        canvasContext: context,
-        viewport,
-      }).promise;
-
-      let dataUrl = '';
-      try {
-        dataUrl = canvas.toDataURL('image/webp', 0.84);
-        if (!dataUrl.startsWith('data:image/webp')) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch {
-        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      }
-
-      if (dataUrl && dataUrl.length > 64) {
-        setCachedPdfThumbnail(url, dataUrl);
-        if (rawUrl !== url) {
-          setCachedPdfThumbnail(rawUrl, dataUrl);
-        }
+      const dataUrl = await renderPdfPageToThumbDataUrl(pdfDoc, 1, THUMBNAIL_MAX_DIMENSION);
+      if (dataUrl) {
+        setCachedPageThumb(rawUrl, 1, dataUrl);
         return dataUrl;
       }
       return null;
     } catch (err) {
-      console.warn('[PDF Thumbnail] Could not generate thumbnail for PDF URL:', url, err);
+      console.warn('[PDF Thumbnail] Could not generate thumbnail for PDF URL:', rawUrl, err);
       return null;
     } finally {
-      try {
-        page?.cleanup?.();
-      } catch {}
       try {
         pdfDoc?.cleanup?.();
         pdfDoc?.destroy?.();
@@ -47879,20 +47853,15 @@ export async function generatePdfFirstPageThumbnail(rawUrl: string): Promise<str
       try {
         loadingTask?.destroy?.();
       } catch {}
-      if (canvas) {
-        canvas.width = 0;
-        canvas.height = 0;
-      }
-      inFlightRequests.delete(url);
+      inFlightRequests.delete(key);
     }
   })();
 
-  inFlightRequests.set(url, taskPromise);
+  inFlightRequests.set(key, taskPromise);
   return taskPromise;
 }
 
 export default generatePdfFirstPageThumbnail;
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/tooltipStoreIsolation.test.ts
@@ -54061,8 +54030,9 @@ import { useDataStore } from '../PictureMapping/DataContext';
 import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
 import { preloadFloorImages } from '../../lib/imageDBCache';
 import { db, APP_ID } from '../../lib/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { setDoc } from '../../lib/firestoreWrites';
+import { getLocalConfigVersions } from '../../lib/configCacheService';
 
 export interface LiveLayoutR2ConfigState {
   config: any;
@@ -54168,28 +54138,31 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
       let data: any = (downloadRes.success && downloadRes.data) ? downloadRes.data : null;
 
-      // Parallel check with Firestore backup to ensure newest timestamp is used
-      try {
-        const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
-        if (snap.exists()) {
-          const fsData = snap.data() as any;
-          if (fsData?.storeLocationData) {
-            const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
-            const r2Timestamp = data?.timestamp || 0;
-            if (fsTimestamp > r2Timestamp || !data) {
-              data = {
-                ...(data || {}),
-                ...fsData,
-                storeLocationData: {
-                  ...(data?.storeLocationData || {}),
-                  ...fsData.storeLocationData,
-                }
-              };
+      // Only query Firestore backup if R2 failed or if known pictureMappingVersion is strictly newer than R2 timestamp
+      const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
+      const r2Timestamp = data?.timestamp || 0;
+      if (!data || (knownPicMapVer > 0 && knownPicMapVer > r2Timestamp)) {
+        try {
+          const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+          if (snap.exists()) {
+            const fsData = snap.data() as any;
+            if (fsData?.storeLocationData) {
+              const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
+              if (fsTimestamp > r2Timestamp || !data) {
+                data = {
+                  ...(data || {}),
+                  ...fsData,
+                  storeLocationData: {
+                    ...(data?.storeLocationData || {}),
+                    ...fsData.storeLocationData,
+                  }
+                };
+              }
             }
           }
+        } catch (fsErr) {
+          console.warn('Could not check Firestore backup:', fsErr);
         }
-      } catch (fsErr) {
-        console.warn('Could not check Firestore backup:', fsErr);
       }
 
       if (!data) {
@@ -54369,23 +54342,10 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       window.addEventListener('taka_cloud_sync_updated', handleSyncUpdate);
     }
 
-    let lastVersion = -1;
-    // Realtime snapshot listener on taka_config/versions (version-guarded to eliminate duplicate read on mount)
-    const unsubSnapshot = onSnapshot(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), (snap) => {
-      if (snap.exists()) {
-        const remoteVersion = (snap.data() as any)?.pictureMappingVersion ?? 0;
-        if (lastVersion !== -1 && remoteVersion !== lastVersion) {
-          loadConfig();
-        }
-        lastVersion = remoteVersion;
-      }
-    });
-
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('taka_cloud_sync_updated', handleSyncUpdate);
       }
-      unsubSnapshot();
     };
   }, [loadConfig]);
 
@@ -54413,7 +54373,6 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
 }
 
 export default useLiveLayoutR2Config;
-
 
 ================================================================================
 FILE: src/components/LiveLayoutViewer.tsx
@@ -58476,7 +58435,7 @@ export default function CloudSyncManager({
 
           // Also update version timestamp to notify LiveLayoutViewer and other clients
           await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
-            r2Version: configData.timestamp,
+            pictureMappingVersion: configData.timestamp,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         } catch (fsErr) {
@@ -58582,21 +58541,28 @@ export default function CloudSyncManager({
           }
         }
 
-        // Compare or fallback to Firestore backup
+        // Only query Firestore backup if R2 failed or if known pictureMappingVersion is strictly newer
+        let knownPicMapVer = 0;
         try {
-          const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
-          if (snap.exists()) {
-            const fsData = snap.data() as any;
-            if (fsData?.storeLocationData) {
-              // Prefer Firestore if R2 had no data OR Firestore timestamp is strictly newer
-              if (!data || (fsData.timestamp && (!data.timestamp || fsData.timestamp > data.timestamp))) {
-                data = fsData;
-                loadSource = 'Firestore Cloud';
+          const rawVer = localStorage.getItem('taka_cache_config_versions_v1');
+          if (rawVer) knownPicMapVer = JSON.parse(rawVer)?.pictureMappingVersion || 0;
+        } catch {}
+        if (!data || (knownPicMapVer > 0 && knownPicMapVer > (data.timestamp || 0))) {
+          try {
+            const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+            if (snap.exists()) {
+              const fsData = snap.data() as any;
+              if (fsData?.storeLocationData) {
+                // Prefer Firestore if R2 had no data OR Firestore timestamp is strictly newer
+                if (!data || (fsData.timestamp && (!data.timestamp || fsData.timestamp > data.timestamp))) {
+                  data = fsData;
+                  loadSource = 'Firestore Cloud';
+                }
               }
             }
+          } catch (fsErr) {
+            console.warn('[Firestore Fallback] Error reading backup:', fsErr);
           }
-        } catch (fsErr) {
-          console.warn('[Firestore Fallback] Error reading backup:', fsErr);
         }
 
         // Fallback to LocalStorage backup
@@ -59081,7 +59047,6 @@ export default function CloudSyncManager({
     </div>
   );
 }
-
 
 ================================================================================
 FILE: src/components/PictureMapping/components/ColorPicker.tsx
@@ -67596,7 +67561,7 @@ export async function saveStoreToCloudR2(
     
     // Update versions doc to trigger live snapshot listeners
     await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
-      r2Version: configData.timestamp,
+      pictureMappingVersion: configData.timestamp,
       updatedAt: new Date().toISOString()
     }, { merge: true });
 
@@ -67836,7 +67801,6 @@ export async function executeTriggerExportProcess(
     message: `Đã hoàn thành 4 bước: Tải Cloud R2 -> Áp dụng Dynamic Rules -> Lưu Cloud R2 -> Tải lại Cloud R2 cho ${targetStore}!`,
   };
 }
-
 
 ================================================================================
 FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts
@@ -88861,13 +88825,22 @@ export async function resolveStoreAndYearForQuery(
     curProjects.find(matchProject) ||
     curNotifProjects.find(matchProject);
 
+  if (found) {
+    if (!store && found.store) store = String(found.store).trim().toUpperCase();
+    if (!year && found.year) year = String(found.year).trim();
+  }
+
   // 3. Search Dexie localDb
   if (!found || !year || !store) {
     try {
       const { localDb } = await import('../lib/localDb');
       const localProjects = await localDb.projects.toArray();
       const localMatch = localProjects.find(matchProject);
-      if (localMatch) found = localMatch;
+      if (localMatch) {
+        found = localMatch;
+        if (!store && found.store) store = String(found.store).trim().toUpperCase();
+        if (!year && found.year) year = String(found.year).trim();
+      }
     } catch (err) {
       console.warn('[DeepLinkResolver] localDb lookup error:', err);
     }
@@ -88907,7 +88880,6 @@ export async function resolveStoreAndYearForQuery(
 
   return { store, year };
 }
-
 
 ================================================================================
 FILE: src/hooks/taskModal/taskModalSaveService.ts
@@ -90012,7 +89984,10 @@ const checkAccessLocally = useCallback((data: any): boolean => {
       } else if (searchTab === 'cost') {
         useAppStore.getState().setCostTabSearchTerm(searchQuery);
       } else if (searchTab === 'gantt') {
-        useAppStore.getState().setGanttSearchTerm(searchQuery);
+        useAppStore.getState().setGanttTabFilterProjectId(searchQuery);
+        try {
+          sessionStorage.setItem("taka_gantt_search", searchQuery);
+        } catch {}
       }
 
       handleTabChange(searchTab);
@@ -90140,7 +90115,6 @@ const checkAccessLocally = useCallback((data: any): boolean => {
     executeDeepLinkRef
   };
 }
-
 
 ================================================================================
 FILE: src/hooks/useDetailPredecessorSync.ts
@@ -91990,20 +91964,30 @@ export function healProjectsAfterTasksBatch(params: {
           `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.parentTaskId || ''}`
       )
       .join('|');
-    const hasDiscrepancy =
+    const hasStructuralChange =
       workingProj.taskCount !== computed.taskCount ||
       !workingProj.taskSummaries ||
       workingProj.taskSummaries.length !== (computed.taskSummaries?.length || 0) ||
       existingSig !== computedSig ||
       (workingProj.computedTakStart || '') !== (computed.computedTakStart || '') ||
-      (workingProj.computedTakCompl || '') !== (computed.computedTakCompl || '') ||
+      (workingProj.computedTakCompl || '') !== (computed.computedTakCompl || '');
+
+    const hasProgressDiscrepancy =
       (workingProj.computedPlanProgress ?? 0) !== (computed.computedPlanProgress ?? 0) ||
       (workingProj.computedActProgress ?? 0) !== (computed.computedActProgress ?? 0);
+
+    const hasDiscrepancy = hasStructuralChange || hasProgressDiscrepancy;
 
     if (!hasDiscrepancy) return workingProj;
 
     projectsNeedUpdate = true;
-    syncProjectDatesToFirestore(workingProj.id, computed).catch(() => {});
+
+    // RULE: Only sync project dates back to Firestore when there are ACTUAL task mutations,
+    // NEVER from passive viewing, daily progress ticks, or Tri-Gate delegation mismatches!
+    const hasActualMutations = !fromCache && (changedTasks.size > 0 || removedTasks.size > 0);
+    if (hasActualMutations && hasStructuralChange) {
+      syncProjectDatesToFirestore(workingProj.id, computed).catch(() => {});
+    }
 
     return {
       ...workingProj,
@@ -92013,7 +91997,6 @@ export function healProjectsAfterTasksBatch(params: {
 
   return projectsNeedUpdate ? healedProjects : null;
 }
-
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/tasksListenerAttachHelpers.ts
@@ -93919,7 +93902,7 @@ export function useTasksHydration({
     const fetchNotifs = async () => {
       if (isCancelled) return;
       try {
-        const loadedNotifTasks = await loadNotificationTasks();
+        const loadedNotifTasks = await loadNotificationTasks({ skipFirestoreFallback: true });
         if (isCancelled) return;
         setAllTasksForNotifs(loadedNotifTasks);
       } catch (e) {
@@ -94213,6 +94196,7 @@ export function useTasksHydration({
     setCloudStatus,
   ]);
 }
+
 ================================================================================
 FILE: src/hooks/useGanttDragDrop.ts
 ================================================================================
@@ -95090,7 +95074,7 @@ export function usePrintExport(printFilteredData: any) {
     let estimatedGanttHeight = 800;
 
     const ganttElem = document.getElementById('gantt-export-area');
-    if (ganttElem && ganttElem.scrollWidth > 500 && printRangeType === 'all') {
+    if (ganttElem && ganttElem.scrollWidth > 500 && printRangeType === 'entire') {
       estimatedGanttWidth = ganttElem.scrollWidth;
       estimatedGanttHeight = ganttElem.scrollHeight;
     } else {
@@ -98624,6 +98608,7 @@ export interface ConfigVersions {
   permissionsVersion?: number;
   subAppUsersVersion?: number;
   appUsersVersion?: number;
+  pictureMappingVersion?: number;
   globalRestoreCutoff?: number;
   dataFingerprint?: string;
   updatedAt?: string;
@@ -99033,6 +99018,15 @@ export function setupStaticConfigSync(): Unsubscribe {
         }
       }
 
+      const remotePicMapVer = remoteData.pictureMappingVersion || 0;
+      if (
+        localVersions.pictureMappingVersion !== undefined &&
+        localVersions.pictureMappingVersion !== remotePicMapVer &&
+        typeof window !== "undefined"
+      ) {
+        window.dispatchEvent(new Event("taka_cloud_sync_updated"));
+      }
+
       // Cập nhật lại versions vào local cache
       setLocalConfigVersions({
         locationsVersion: remoteLocVer,
@@ -99043,6 +99037,7 @@ export function setupStaticConfigSync(): Unsubscribe {
         permissionsVersion: remotePermsVer,
         subAppUsersVersion: remoteSubUsersVer,
         appUsersVersion: remoteAppUsersVer,
+        pictureMappingVersion: remotePicMapVer,
         globalRestoreCutoff: remoteData.globalRestoreCutoff,
         dataFingerprint: remoteData.dataFingerprint,
         updatedAt: remoteData.updatedAt || new Date().toISOString(),
@@ -99058,6 +99053,7 @@ export function setupStaticConfigSync(): Unsubscribe {
     usePerformanceStore.getState().unregisterListener("taka_config/versions");
   };
 }
+
 ================================================================================
 FILE: src/lib/convertSubtaskToHash.test.ts
 ================================================================================
@@ -99862,6 +99858,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     if (t.projectCode) touchedProjectCodes.add(String(t.projectCode).trim().toLowerCase());
   };
 
+  const directlyAppliedDocIds = new Set<string>();
+
   const applyItem = (
     docId: string,
     collectionNameRaw: string,
@@ -99869,6 +99867,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     data: any,
     _year?: string
   ) => {
+    if (docId) directlyAppliedDocIds.add(docId);
     const collectionName =
       collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
     if (
@@ -100182,8 +100181,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   broadcastAppliedDeltas(deltas);
   safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
 
-  if (invalidations.length > 0) {
-    resolveInvalidations(invalidations)
+  const pendingInvalidations = invalidations.filter(
+    (item) => !directlyAppliedDocIds.has(item.docId)
+  );
+
+  if (pendingInvalidations.length > 0) {
+    resolveInvalidations(pendingInvalidations)
       .then((synthetic) => {
         if (synthetic.length > 0) applyIncomingDeltas(synthetic);
       })
@@ -100192,7 +100195,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   return deltas.length;
 }
-
 
 ================================================================================
 FILE: src/lib/deltaBatchSync.test.ts
@@ -103367,12 +103369,15 @@ export function setDoc(docRef: any, data: any, options?: any) {
   const cleanData = removeUndefinedDeep(data);
   validateFirestoreData(docRef.path, cleanData, options?.merge === true);
   writeAuditLogAsync("CREATE", docRef, cleanData);
-  queueAutoDelta(docRef.path, docRef.id, 'write');
   if (cleanData?.isDeleted) {
     const logical = resolveLogicalCollection(docRef.path);
     if (logical && docRef.id) deleteLocalRecord(logical, docRef.id).catch(() => {});
   }
-  return firestoreSetDoc(docRef, cleanData, options).catch(error => {
+  const p = firestoreSetDoc(docRef, cleanData, options);
+  Promise.resolve(p).then(() => {
+    queueAutoDelta(docRef.path, docRef.id, cleanData?.isDeleted ? 'delete' : 'write');
+  }).catch(() => {});
+  return p.catch(error => {
     console.warn("Network error during setDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('set', docRef, cleanData, error);
     throw error;
@@ -103383,12 +103388,15 @@ export function updateDoc(docRef: any, data: any) {
   const cleanData = removeUndefinedDeep(data);
   validateFirestoreData(docRef.path, cleanData, true);
   writeAuditLogAsync("UPDATE", docRef, cleanData);
-  queueAutoDelta(docRef.path, docRef.id, 'write');
   if (cleanData?.isDeleted) {
     const logical = resolveLogicalCollection(docRef.path);
     if (logical && docRef.id) deleteLocalRecord(logical, docRef.id).catch(() => {});
   }
-  return firestoreUpdateDoc(docRef, cleanData).catch(error => {
+  const p = firestoreUpdateDoc(docRef, cleanData);
+  Promise.resolve(p).then(() => {
+    queueAutoDelta(docRef.path, docRef.id, cleanData?.isDeleted ? 'delete' : 'write');
+  }).catch(() => {});
+  return p.catch(error => {
     console.warn("Network error during updateDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('update', docRef, cleanData, error);
     throw error;
@@ -103397,10 +103405,13 @@ export function updateDoc(docRef: any, data: any) {
 
 export function deleteDoc(docRef: any) {
   writeAuditLogAsync("DELETE", docRef);
-  queueAutoDelta(docRef.path, docRef.id, 'delete');
   const logical = resolveLogicalCollection(docRef.path);
   if (logical && docRef.id) deleteLocalRecord(logical, docRef.id).catch(() => {});
-  return firestoreDeleteDoc(docRef).catch(error => {
+  const p = firestoreDeleteDoc(docRef);
+  Promise.resolve(p).then(() => {
+    queueAutoDelta(docRef.path, docRef.id, 'delete');
+  }).catch(() => {});
+  return p.catch(error => {
     console.warn("Network error during deleteDoc. Saving to local IndexedDB queue.", error);
     handleOfflineQueue('delete', docRef, undefined, error);
     throw error;
@@ -103440,9 +103451,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
   };
 
   (batch as any).commit = () => {
-    // Queue after the ops are handed to the SDK so the delta write is ordered after the data writes
     operations.forEach(op => {
-      queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write');
       if (op.action === 'delete' || op.data?.isDeleted) {
         const logical = resolveLogicalCollection(op.docRef.path);
         if (logical && op.docRef.id) deleteLocalRecord(logical, op.docRef.id).catch(() => {});
@@ -103450,7 +103459,14 @@ export function writeBatch(dbInstance: any): WriteBatch {
     });
     // B3: Batch audit log consolidation into 1 single document write
     writeBatchAuditLogAsync(dbInstance, auditOps);
-    return originalCommit().catch(error => {
+    const p = originalCommit();
+    // Queue auto-delta AFTER commit finishes so recordBatchDeltas cancels it properly
+    Promise.resolve(p).then(() => {
+      operations.forEach(op => {
+        queueAutoDelta(op.docRef.path, op.docRef.id, op.action === 'delete' ? 'delete' : 'write');
+      });
+    }).catch(() => {});
+    return p.catch(error => {
       console.warn("Network error during batch commit. Saving to local IndexedDB queue.", error);
       operations.forEach(op => {
          handleOfflineQueue(op.action, op.docRef, op.data, error);
@@ -103461,7 +103477,6 @@ export function writeBatch(dbInstance: any): WriteBatch {
 
   return batch;
 }
-
 
 ================================================================================
 FILE: src/lib/firestoreSanitizer.ts

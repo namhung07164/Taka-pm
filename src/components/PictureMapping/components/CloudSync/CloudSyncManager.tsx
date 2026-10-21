@@ -553,7 +553,7 @@ export default function CloudSyncManager({
 
           // Also update version timestamp to notify LiveLayoutViewer and other clients
           await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
-            r2Version: configData.timestamp,
+            pictureMappingVersion: configData.timestamp,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         } catch (fsErr) {
@@ -659,21 +659,28 @@ export default function CloudSyncManager({
           }
         }
 
-        // Compare or fallback to Firestore backup
+        // Only query Firestore backup if R2 failed or if known pictureMappingVersion is strictly newer
+        let knownPicMapVer = 0;
         try {
-          const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
-          if (snap.exists()) {
-            const fsData = snap.data() as any;
-            if (fsData?.storeLocationData) {
-              // Prefer Firestore if R2 had no data OR Firestore timestamp is strictly newer
-              if (!data || (fsData.timestamp && (!data.timestamp || fsData.timestamp > data.timestamp))) {
-                data = fsData;
-                loadSource = 'Firestore Cloud';
+          const rawVer = localStorage.getItem('taka_cache_config_versions_v1');
+          if (rawVer) knownPicMapVer = JSON.parse(rawVer)?.pictureMappingVersion || 0;
+        } catch {}
+        if (!data || (knownPicMapVer > 0 && knownPicMapVer > (data.timestamp || 0))) {
+          try {
+            const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+            if (snap.exists()) {
+              const fsData = snap.data() as any;
+              if (fsData?.storeLocationData) {
+                // Prefer Firestore if R2 had no data OR Firestore timestamp is strictly newer
+                if (!data || (fsData.timestamp && (!data.timestamp || fsData.timestamp > data.timestamp))) {
+                  data = fsData;
+                  loadSource = 'Firestore Cloud';
+                }
               }
             }
+          } catch (fsErr) {
+            console.warn('[Firestore Fallback] Error reading backup:', fsErr);
           }
-        } catch (fsErr) {
-          console.warn('[Firestore Fallback] Error reading backup:', fsErr);
         }
 
         // Fallback to LocalStorage backup

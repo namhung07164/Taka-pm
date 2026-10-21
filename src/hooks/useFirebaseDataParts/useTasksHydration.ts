@@ -175,7 +175,7 @@ export function useTasksHydration({
     const fetchNotifs = async () => {
       if (isCancelled) return;
       try {
-        const loadedNotifTasks = await loadNotificationTasks();
+        const loadedNotifTasks = await loadNotificationTasks({ skipFirestoreFallback: true });
         if (isCancelled) return;
         setAllTasksForNotifs(loadedNotifTasks);
       } catch (e) {

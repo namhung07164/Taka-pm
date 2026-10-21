@@ -722,7 +722,7 @@ export async function saveStoreToCloudR2(
     
     // Update versions doc to trigger live snapshot listeners
     await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
-      r2Version: configData.timestamp,
+      pictureMappingVersion: configData.timestamp,
       updatedAt: new Date().toISOString()
     }, { merge: true });
 

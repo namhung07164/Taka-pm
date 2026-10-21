@@ -4,8 +4,9 @@ import { useDataStore } from '../PictureMapping/DataContext';
 import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
 import { preloadFloorImages } from '../../lib/imageDBCache';
 import { db, APP_ID } from '../../lib/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { setDoc } from '../../lib/firestoreWrites';
+import { getLocalConfigVersions } from '../../lib/configCacheService';
 
 export interface LiveLayoutR2ConfigState {
   config: any;
@@ -111,28 +112,31 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
       let data: any = (downloadRes.success && downloadRes.data) ? downloadRes.data : null;
 
-      // Parallel check with Firestore backup to ensure newest timestamp is used
-      try {
-        const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
-        if (snap.exists()) {
-          const fsData = snap.data() as any;
-          if (fsData?.storeLocationData) {
-            const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
-            const r2Timestamp = data?.timestamp || 0;
-            if (fsTimestamp > r2Timestamp || !data) {
-              data = {
-                ...(data || {}),
-                ...fsData,
-                storeLocationData: {
-                  ...(data?.storeLocationData || {}),
-                  ...fsData.storeLocationData,
-                }
-              };
+      // Only query Firestore backup if R2 failed or if known pictureMappingVersion is strictly newer than R2 timestamp
+      const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
+      const r2Timestamp = data?.timestamp || 0;
+      if (!data || (knownPicMapVer > 0 && knownPicMapVer > r2Timestamp)) {
+        try {
+          const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+          if (snap.exists()) {
+            const fsData = snap.data() as any;
+            if (fsData?.storeLocationData) {
+              const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
+              if (fsTimestamp > r2Timestamp || !data) {
+                data = {
+                  ...(data || {}),
+                  ...fsData,
+                  storeLocationData: {
+                    ...(data?.storeLocationData || {}),
+                    ...fsData.storeLocationData,
+                  }
+                };
+              }
             }
           }
+        } catch (fsErr) {
+          console.warn('Could not check Firestore backup:', fsErr);
         }
-      } catch (fsErr) {
-        console.warn('Could not check Firestore backup:', fsErr);
       }
 
       if (!data) {
@@ -312,23 +316,10 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       window.addEventListener('taka_cloud_sync_updated', handleSyncUpdate);
     }
 
-    let lastVersion = -1;
-    // Realtime snapshot listener on taka_config/versions (version-guarded to eliminate duplicate read on mount)
-    const unsubSnapshot = onSnapshot(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), (snap) => {
-      if (snap.exists()) {
-        const remoteVersion = (snap.data() as any)?.pictureMappingVersion ?? 0;
-        if (lastVersion !== -1 && remoteVersion !== lastVersion) {
-          loadConfig();
-        }
-        lastVersion = remoteVersion;
-      }
-    });
-
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('taka_cloud_sync_updated', handleSyncUpdate);
       }
-      unsubSnapshot();
     };
   }, [loadConfig]);
 

@@ -1,9 +1,17 @@
 node_modules/
+dist/
 coverage/
+.aistudio/
 .DS_Store
 *.log
 .env*
 !.env.example
+
+# AI Studio chat attachments & generated PDF.js static copies
+public/assets/aistudio/
+public/cmaps/
+public/standard_fonts/
+public/pdf.worker.min.mjs
 
 # Lockfiles (Enforce NPM only)
 bun.lock*

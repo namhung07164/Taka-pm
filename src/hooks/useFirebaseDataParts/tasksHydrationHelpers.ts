@@ -449,20 +449,30 @@ export function healProjectsAfterTasksBatch(params: {
           `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.parentTaskId || ''}`
       )
       .join('|');
-    const hasDiscrepancy =
+    const hasStructuralChange =
       workingProj.taskCount !== computed.taskCount ||
       !workingProj.taskSummaries ||
       workingProj.taskSummaries.length !== (computed.taskSummaries?.length || 0) ||
       existingSig !== computedSig ||
       (workingProj.computedTakStart || '') !== (computed.computedTakStart || '') ||
-      (workingProj.computedTakCompl || '') !== (computed.computedTakCompl || '') ||
+      (workingProj.computedTakCompl || '') !== (computed.computedTakCompl || '');
+
+    const hasProgressDiscrepancy =
       (workingProj.computedPlanProgress ?? 0) !== (computed.computedPlanProgress ?? 0) ||
       (workingProj.computedActProgress ?? 0) !== (computed.computedActProgress ?? 0);
+
+    const hasDiscrepancy = hasStructuralChange || hasProgressDiscrepancy;
 
     if (!hasDiscrepancy) return workingProj;
 
     projectsNeedUpdate = true;
-    syncProjectDatesToFirestore(workingProj.id, computed).catch(() => {});
+
+    // RULE: Only sync project dates back to Firestore when there are ACTUAL task mutations,
+    // NEVER from passive viewing, daily progress ticks, or Tri-Gate delegation mismatches!
+    const hasActualMutations = !fromCache && (changedTasks.size > 0 || removedTasks.size > 0);
+    if (hasActualMutations && hasStructuralChange) {
+      syncProjectDatesToFirestore(workingProj.id, computed).catch(() => {});
+    }
 
     return {
       ...workingProj,

@@ -56,13 +56,22 @@ export async function resolveStoreAndYearForQuery(
     curProjects.find(matchProject) ||
     curNotifProjects.find(matchProject);
 
+  if (found) {
+    if (!store && found.store) store = String(found.store).trim().toUpperCase();
+    if (!year && found.year) year = String(found.year).trim();
+  }
+
   // 3. Search Dexie localDb
   if (!found || !year || !store) {
     try {
       const { localDb } = await import('../lib/localDb');
       const localProjects = await localDb.projects.toArray();
       const localMatch = localProjects.find(matchProject);
-      if (localMatch) found = localMatch;
+      if (localMatch) {
+        found = localMatch;
+        if (!store && found.store) store = String(found.store).trim().toUpperCase();
+        if (!year && found.year) year = String(found.year).trim();
+      }
     } catch (err) {
       console.warn('[DeepLinkResolver] localDb lookup error:', err);
     }

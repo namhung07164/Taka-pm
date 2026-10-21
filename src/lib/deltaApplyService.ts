@@ -63,6 +63,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     if (t.projectCode) touchedProjectCodes.add(String(t.projectCode).trim().toLowerCase());
   };
 
+  const directlyAppliedDocIds = new Set<string>();
+
   const applyItem = (
     docId: string,
     collectionNameRaw: string,
@@ -70,6 +72,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     data: any,
     _year?: string
   ) => {
+    if (docId) directlyAppliedDocIds.add(docId);
     const collectionName =
       collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
     if (
@@ -383,8 +386,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   broadcastAppliedDeltas(deltas);
   safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
 
-  if (invalidations.length > 0) {
-    resolveInvalidations(invalidations)
+  const pendingInvalidations = invalidations.filter(
+    (item) => !directlyAppliedDocIds.has(item.docId)
+  );
+
+  if (pendingInvalidations.length > 0) {
+    resolveInvalidations(pendingInvalidations)
       .then((synthetic) => {
         if (synthetic.length > 0) applyIncomingDeltas(synthetic);
       })

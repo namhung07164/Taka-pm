@@ -304,9 +304,22 @@ async function startServer() {
     }
   });
 
-  // Phục vụ tĩnh tài nguyên cmaps & standard_fonts của PDF.js (chống trả nhầm file HTML làm crash canvas)
-  const publicPath = path.join(process.cwd(), 'public');
-  app.use('/cmaps', express.static(path.join(publicPath, 'cmaps'), {
+  // Phục vụ trực tiếp pdf.worker.min.mjs, cmaps & standard_fonts từ node_modules/pdfjs-dist
+  // (không cần lưu 186 file nhị phân nặng vào thư mục public/ của Git repo, chống lỗi timeout khi Clone repo trên Cloudflare)
+  const pdfjsBasePath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist');
+  app.get('/pdf.worker.min.mjs', (_req, res) => {
+    const workerFile = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(workerFile, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).end();
+      }
+    });
+  });
+
+  app.use('/cmaps', express.static(path.join(pdfjsBasePath, 'cmaps'), {
     fallthrough: false,
     setHeaders: (res) => {
       res.setHeader('Content-Type', 'application/octet-stream');
@@ -315,7 +328,7 @@ async function startServer() {
     },
   }));
 
-  app.use('/standard_fonts', express.static(path.join(publicPath, 'standard_fonts'), {
+  app.use('/standard_fonts', express.static(path.join(pdfjsBasePath, 'standard_fonts'), {
     fallthrough: false,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.ttf')) {
@@ -328,9 +341,9 @@ async function startServer() {
     },
   }));
 
-  // Chặn trả file index.html cho các đuôi mở rộng nhị phân nếu file không tồn tại (trả 404 thay vì 200 HTML)
+  // Chặn trả file index.html cho các đuôi mở rộng nhị phân font/cmap nếu không tồn tại
   app.use((req, res, next) => {
-    if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+    if (/\.(bcmap|pfb|ttf|otf|wasm)$/i.test(req.path)) {
       return res.status(404).end();
     }
     next();
@@ -358,13 +371,16 @@ async function startServer() {
         } else if (filePath.endsWith('.json') || filePath.includes('sw.js')) {
           // Manifest và Service Worker: Revalidate nhanh
           res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-        } else if (filePath.match(/\.(js|css|woff2?|png|jpg|jpeg|gif|ico|svg)$/)) {
+        } else if (filePath.match(/\.(js|mjs|css|woff2?|png|jpg|jpeg|gif|ico|svg)$/)) {
           // File tĩnh (Vite hashed bundles, font, icon): Cache vĩnh viễn 1 năm
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
       }
     }));
     app.get('*all', (req, res) => {
+      if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+        return res.status(404).end();
+      }
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');

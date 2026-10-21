@@ -14,6 +14,7 @@ export interface ConfigVersions {
   permissionsVersion?: number;
   subAppUsersVersion?: number;
   appUsersVersion?: number;
+  pictureMappingVersion?: number;
   globalRestoreCutoff?: number;
   dataFingerprint?: string;
   updatedAt?: string;
@@ -423,6 +424,15 @@ export function setupStaticConfigSync(): Unsubscribe {
         }
       }
 
+      const remotePicMapVer = remoteData.pictureMappingVersion || 0;
+      if (
+        localVersions.pictureMappingVersion !== undefined &&
+        localVersions.pictureMappingVersion !== remotePicMapVer &&
+        typeof window !== "undefined"
+      ) {
+        window.dispatchEvent(new Event("taka_cloud_sync_updated"));
+      }
+
       // Cập nhật lại versions vào local cache
       setLocalConfigVersions({
         locationsVersion: remoteLocVer,
@@ -433,6 +443,7 @@ export function setupStaticConfigSync(): Unsubscribe {
         permissionsVersion: remotePermsVer,
         subAppUsersVersion: remoteSubUsersVer,
         appUsersVersion: remoteAppUsersVer,
+        pictureMappingVersion: remotePicMapVer,
         globalRestoreCutoff: remoteData.globalRestoreCutoff,
         dataFingerprint: remoteData.dataFingerprint,
         updatedAt: remoteData.updatedAt || new Date().toISOString(),
