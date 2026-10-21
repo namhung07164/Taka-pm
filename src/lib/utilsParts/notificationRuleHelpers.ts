@@ -4,16 +4,17 @@ import {
   NotificationRule,
   ActiveNotification,
   NotificationPriority,
+  NotificationCategory,
   DelegationGroup,
 } from "../../types";
 import { parseDateTime, formatDisplayDateTime } from "./commonAndDateUtils";
 
 const fieldLabels: Record<string, string> = {
   start: "Start",
-  handover: "Pj Compl",
-  opening: "Opening",
-  finish: "Finish",
-  flow_status: "Flow Status Update",
+  handover: "Handover (Pj Compl)",
+  opening: "Grand Opening",
+  finish: "Task Finish",
+  flow_status: "Delegation Status",
   mention: "@mention",
   delegation_party: "@delegation party",
 };
@@ -29,15 +30,15 @@ export function evaluateDelegationNotificationRule(
   notifications: ActiveNotification[]
 ) {
   delegationGroups.forEach((group) => {
-    if (!group.updatedAt) return;
+    if (group.isDeleted || !group.updatedAt) return;
     const targetDate = new Date(group.updatedAt);
     if (isNaN(targetDate.getTime())) return;
 
     let shouldTrigger = false;
     let flowStatus = "";
     let party = "";
-
     let subTaskName = "";
+
     if (rule.field === "flow_status") {
       if (group.subTasks && group.subTasks.length > 0) {
         let recentSt = group.subTasks[0];
@@ -124,55 +125,79 @@ export function evaluateDelegationNotificationRule(
 
       if (diffMs <= thresholdMs && diffMs >= -30 * 24 * 60 * 60 * 1000) {
         let projectName = group.name || "Custom Task";
-        const isLinked = !!group.parentTaskId || !!group.projectCode;
+        const isLinked = !!group.projectId || !!group.parentTaskId || !!group.projectCode;
 
         let parentTask: Task | null = null;
         let parentProject: Project | undefined = undefined;
-        let ps = group.projectStore;
-        let py = group.projectYear;
+        let ps = group.projectStore ? String(group.projectStore).trim().toUpperCase() : "";
+        let py = group.projectYear !== undefined && group.projectYear !== null ? String(group.projectYear).trim() : "";
+        let pId = group.projectId ? String(group.projectId).trim() : "";
 
         if (isLinked) {
           parentTask = group.parentTaskId
             ? tasks.find((t) => t.id === group.parentTaskId) || null
             : null;
 
-          if (!ps && parentTask?.projectStore) ps = parentTask.projectStore;
-          if (!py && parentTask?.projectYear) py = parentTask.projectYear;
+          if (!pId && parentTask?.projectId) pId = String(parentTask.projectId).trim();
+          if (!ps && parentTask?.projectStore) ps = String(parentTask.projectStore).trim().toUpperCase();
+          if (!py && parentTask?.projectYear) py = String(parentTask.projectYear).trim();
 
-          parentProject = projects.find(
-            (p) =>
-              ((group.parentTaskId && p.code === group.parentTaskId) ||
-                (group.projectCode && p.code === group.projectCode) ||
-                (parentTask && p.code === parentTask.projectCode)) &&
-              (ps ? String(p.store) === String(ps) : true) &&
-              (py ? String(p.year) === String(py) : true),
-          );
+          // Rule 16.1: Priority #1 projectId -> #2 store -> #3 year -> #4 projectCode
+          if (pId) {
+            parentProject = projects.find((p) => String(p.id || "").trim() === pId);
+          }
+          if (!parentProject) {
+            const targetCode = String(group.projectCode || parentTask?.projectCode || group.parentTaskId || "").trim().toLowerCase();
+            if (targetCode) {
+              parentProject = projects.find((p) => {
+                if (pId && p.id && String(p.id).trim() !== pId) return false;
+                const pStore = String(p.store || "").trim().toUpperCase();
+                if (ps && pStore && ps !== pStore) return false;
+                const pYear = String(p.year || "").trim();
+                if (py && pYear && py !== pYear) return false;
+                return String(p.code || "").trim().toLowerCase() === targetCode;
+              });
+            }
+          }
+
+          if (parentProject) {
+            if (!pId && parentProject.id) pId = String(parentProject.id);
+            if (!ps && parentProject.store) ps = String(parentProject.store).trim().toUpperCase();
+            if (!py && parentProject.year) py = String(parentProject.year).trim();
+          }
 
           if (parentTask) {
-            projectName = `${parentTask.name}${parentProject?.name ? ` - ${parentProject.name}` : ""}`;
+            projectName = `${parentTask.name}${parentProject?.name ? ` • ${parentProject.name}` : ""}`;
           } else if (parentProject) {
             projectName = parentProject.name || group.name;
           }
         }
 
-        const displayTaskName = subTaskName || group.name || "task";
+        const displayTaskName = subTaskName || group.name || "Delegation Task";
         const isMyDelegation = isMatchUserParty(party) || (rule.field === 'mention') || (rule.field === 'delegation_party');
         const isRejected = String(flowStatus).toLowerCase() === 'rejected';
         const delPriority: NotificationPriority = isRejected ? 'critical' : 'action_required';
+        const resolvedCode = group.projectCode || parentTask?.projectCode || parentProject?.code || "";
 
         notifications.push({
-          id: `${rule.id}_${ps || 'store'}_${group.id}_${targetDate.getTime()}`,
-          title: projectName,
-          subtitle: `Party: ${party} | Status: ${flowStatus}`,
-          message: `Delegation task: ${displayTaskName}, status: ${flowStatus.toLowerCase()}.`,
+          id: `${rule.id}_${ps || 'store'}_${py || 'yr'}_${group.id}_${targetDate.getTime()}`,
+          title: resolvedCode ? `${resolvedCode} - ${projectName}` : projectName,
+          subtitle: `Delegation • Party: ${party} • Status: ${flowStatus}`,
+          message: `Sub-task <strong>${displayTaskName}</strong> updated to <strong>${flowStatus}</strong>.`,
           dateStr: formatDisplayDateTime(group.updatedAt),
           diffMs: diffMs,
           generatedAt: targetDate.getTime() - thresholdMs,
           targetType: "task_delegation",
           targetId: group.id,
-          projectCode: group.projectCode || parentTask?.projectCode || parentProject?.code || "",
-          projectStore: ps || parentProject?.store || "",
-          projectYear: py || parentProject?.year || "",
+          projectId: pId || parentProject?.id,
+          projectCode: resolvedCode,
+          projectName: parentProject?.name || group.name,
+          taskName: displayTaskName,
+          projectStore: ps,
+          projectYear: py,
+          location: parentProject?.location || parentTask?.location || "",
+          category: rule.field === 'mention' ? 'mention' : 'delegation',
+          ruleField: rule.field,
           priority: delPriority,
           isAssignedToMe: isMyDelegation,
           party: party,
@@ -187,18 +212,53 @@ export function evaluateProjectOrTaskNotificationRule(
   projects: Project[],
   effectiveTasks: Task[],
   now: Date,
-  findParentProject: (code?: string, year?: string | number, store?: string) => Project | undefined,
+  findParentProject: (code?: string, year?: string | number, store?: string, projectId?: string) => Project | undefined,
   isMatchUserParty: (partyStr?: string) => boolean,
   notifications: ActiveNotification[]
 ) {
   const targetList = rule.target === "project" ? projects : effectiveTasks;
 
   targetList.forEach((item) => {
+    if ((item as any).isDeleted) return;
+
+    if (rule.target === "project") {
+      const p = item as Project;
+      const pStatus = String(p.computedStatus || "").toLowerCase();
+      const mdStatus = String(p.mdStatus || "").toLowerCase();
+      if (
+        pStatus === "completed" ||
+        pStatus === "canceled" ||
+        mdStatus === "canceled" ||
+        mdStatus === "rejected"
+      ) {
+        return;
+      }
+    } else {
+      const t = item as Task;
+      const tStatus = String(t.runningStatus || (t as any).status || "").toLowerCase();
+      if (tStatus === "completed" || tStatus === "canceled") {
+        return;
+      }
+      const parentP = findParentProject(t.projectCode, t.projectYear, t.projectStore, t.projectId);
+      if (parentP) {
+        const pStatus = String(parentP.computedStatus || "").toLowerCase();
+        const mdStatus = String(parentP.mdStatus || "").toLowerCase();
+        if (
+          parentP.isDeleted ||
+          pStatus === "canceled" ||
+          mdStatus === "canceled" ||
+          mdStatus === "rejected"
+        ) {
+          return;
+        }
+      }
+    }
+
     let dateVal = (item as any)[rule.field];
     if (rule.target === "project") {
       const p = item as Project;
       if (rule.field === "start") dateVal = p.computedTakStart || p.start;
-      if (rule.field === "handover") dateVal = p.computedTakCompl;
+      if (rule.field === "handover") dateVal = p.computedTakCompl || p.handover;
       if (rule.field === "opening") dateVal = p.computedOpening || p.opening;
     }
 
@@ -211,6 +271,12 @@ export function evaluateProjectOrTaskNotificationRule(
           60 *
           60 *
           1000;
+
+        // If rule is for "start" and the item is already On process in the past (>24h ago), skip noisy start overdue alert
+        if (rule.field === "start" && diffMs < -24 * 60 * 60 * 1000) {
+          if (rule.target === "task" && (item as Task).runningStatus === "On process") return;
+          if (rule.target === "project" && (item as Project).computedStatus === "On process") return;
+        }
 
         if (diffMs <= thresholdMs && diffMs >= -30 * 24 * 60 * 60 * 1000) {
           let title = "";
@@ -231,54 +297,71 @@ export function evaluateProjectOrTaskNotificationRule(
               : "Due soon (under 1 hour)";
           else
             timeMsg = isOverdue
-              ? `overdue by ${d > 0 ? d + " days " : ""}${h > 0 ? h + " hours" : ""}`
-              : `in ${d > 0 ? d + " days " : ""}${h > 0 ? h + " hours" : ""}`;
+              ? `Overdue by ${d > 0 ? d + "d " : ""}${h > 0 ? h + "h" : ""}`.trim()
+              : `Due in ${d > 0 ? d + "d " : ""}${h > 0 ? h + "h" : ""}`.trim();
 
           const fName = fieldLabels[rule.field] || rule.field;
+          const formattedTargetDate = formatDisplayDateTime(dateVal);
 
-          let notifId = `${rule.id}_${(item as any).id || (item as any).no}`;
-          let itemProjectCode = (item as any).code || (item as any).projectCode || "";
-          let itemProjectStore = (item as any).store || (item as any).projectStore || "";
-          let itemProjectYear = (item as any).year || (item as any).projectYear || "";
+          let notifId = "";
+          let itemProjectId: string | undefined = undefined;
+          let itemProjectCode = "";
+          let itemProjectName = "";
+          let itemTaskName: string | undefined = undefined;
+          let itemProjectStore = "";
+          let itemProjectYear = "";
+          let itemLocation = "";
 
           if (rule.target === "project") {
             const p = item as Project;
-            title = `${p.code} - ${p.name || "N/A"}`;
-            subtitle = p.name || "N/A";
-            notificationBody = `${fName} deadline ${timeMsg}`;
-            itemProjectCode = p.code || "";
+            itemProjectId = p.id ? String(p.id) : undefined;
+            itemProjectCode = String(p.code || "").trim();
+            itemProjectName = String(p.name || "N/A").trim();
             itemProjectStore = String(p.store || "HCM").toUpperCase().trim();
             itemProjectYear = String(p.year || "").trim();
-            notifId = `${rule.id}_${p.id || p.no}`;
+            itemLocation = String(p.location || "").trim();
+
+            title = `${itemProjectCode} - ${itemProjectName}`;
+            subtitle = `Project Milestone • ${fName}${itemLocation ? ` • Floor ${itemLocation}` : ""}`;
+            notificationBody = `<strong>${fName}</strong>: ${timeMsg} <span class="opacity-75">(${formattedTargetDate})</span>`;
+            notifId = `${rule.id}_${itemProjectStore}_${itemProjectYear}_${p.id || p.code || p.no}`;
           } else {
             const t = item as Task;
-            let projName = "N/A";
-            const p = findParentProject(t.projectCode, t.projectYear, t.projectStore);
+            const p = findParentProject(t.projectCode, t.projectYear, t.projectStore, t.projectId);
 
-            if (p && p.name) projName = p.name;
-
-            title = `${t.projectCode} - ${projName} - ${t.name || "N/A"}`;
-            subtitle = `Project ${t.projectCode} | Party: ${t.party || "N/A"}`;
-            const pParty = t.party ? ` by ${t.party}` : "";
-            notificationBody = `${fName} deadline ${timeMsg}${pParty}`;
-
-            itemProjectCode = t.projectCode || "";
+            itemProjectId = (t.projectId ? String(t.projectId) : undefined) || (p?.id ? String(p.id) : undefined);
+            itemProjectCode = String(t.projectCode || p?.code || "").trim();
+            itemProjectName = String(p?.name || "Project").trim();
+            itemTaskName = String(t.name || "Task").trim();
             itemProjectStore = String(t.projectStore || p?.store || "HCM").toUpperCase().trim();
             itemProjectYear = String(t.projectYear || p?.year || "").trim();
-            notifId = `${rule.id}_${t.id}`;
+            itemLocation = String(t.location || p?.location || "").trim();
+
+            title = `${itemProjectCode} - ${itemProjectName} - ${itemTaskName}`;
+            subtitle = `${itemProjectCode} (${itemProjectName})${itemLocation ? ` • ${itemLocation}` : ""} | Party: ${t.party || p?.party || "N/A"}`;
+            const pParty = t.party ? ` • Assigned: <strong>${t.party}</strong>` : "";
+            notificationBody = `<strong>${fName}</strong>: ${timeMsg} <span class="opacity-75">(${formattedTargetDate})</span>${pParty}`;
+            notifId = `${rule.id}_${itemProjectStore}_${itemProjectYear}_${t.id}`;
           }
 
           const isDueSoon = !isOverdue && diffMs <= 48 * 60 * 60 * 1000;
           const itemPriority: NotificationPriority = isOverdue ? 'critical' : isDueSoon ? 'urgent' : 'info';
-          const isMyItem = rule.target === 'task' ? isMatchUserParty((item as Task).party) : false;
-          const taskParty = rule.target === 'task' ? ((item as Task).party || '') : '';
+          const itemCategory: NotificationCategory = isOverdue ? 'overdue' : isDueSoon ? 'due_soon' : 'milestone';
+          const isMyItem =
+            rule.target === 'task'
+              ? isMatchUserParty((item as Task).party)
+              : isMatchUserParty((item as Project).party);
+          const itemParty =
+            rule.target === 'task'
+              ? ((item as Task).party || '')
+              : ((item as Project).party || '');
 
           notifications.push({
             id: notifId,
             title: title,
             subtitle: subtitle,
             message: notificationBody,
-            dateStr: formatDisplayDateTime(dateVal),
+            dateStr: formattedTargetDate,
             diffMs: diffMs,
             generatedAt: targetDate.getTime() - thresholdMs,
             targetType: rule.target as any,
@@ -286,12 +369,18 @@ export function evaluateProjectOrTaskNotificationRule(
               rule.target === "project"
                 ? ((item as Project).id || (item as Project).no)
                 : (item as Task).id,
+            projectId: itemProjectId,
             projectCode: itemProjectCode,
+            projectName: itemProjectName,
+            taskName: itemTaskName,
             projectStore: itemProjectStore,
             projectYear: itemProjectYear,
+            location: itemLocation,
+            category: itemCategory,
+            ruleField: rule.field,
             priority: itemPriority,
             isAssignedToMe: isMyItem,
-            party: taskParty,
+            party: itemParty,
           });
         }
       }

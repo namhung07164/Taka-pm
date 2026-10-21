@@ -172,16 +172,25 @@ export function useDetailFilterSync({
     setGlobalLocationFilter,
   ]);
 
-  // Auto-clear stale filters when user changes Year / Store in Task Detail
+  // Auto-clear stale filters when user manually changes Year / Store in Task Detail
   const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  const prevTargetNavRef = useRef(
+    `${useAppStore.getState().detailTabFilterCode || ''}_${useAppStore.getState().detailTabFocusTaskId || ''}`
+  );
 
   useEffect(() => {
+    const storeState = useAppStore.getState();
     const currentKey = `${globalYearFilter}_${effectiveStore}`;
+    const currentTargetNav = `${storeState.detailTabFilterCode || ''}_${storeState.detailTabFocusTaskId || ''}`;
+    const didTargetNavJustChange = prevTargetNavRef.current !== currentTargetNav && currentTargetNav !== '_';
+    prevTargetNavRef.current = currentTargetNav;
+
     if (prevYearStoreRef.current !== currentKey) {
       prevYearStoreRef.current = currentKey;
 
-      const storeState = useAppStore.getState();
-      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
+      // Only clear deep-link filter code / focus task if the user manually switched store/year
+      // without a simultaneous deep-link target change
+      if (!didTargetNavJustChange && (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId)) {
         storeState.setDetailTabFilterCode('');
         storeState.setDetailTabFocusTaskId('');
         if (searchTerm && searchTerm === storeState.detailTabFilterCode) {

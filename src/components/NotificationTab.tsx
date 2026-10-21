@@ -30,6 +30,10 @@ export function NotificationTab({
     setPriorityFilter,
     assigneeFilter,
     setAssigneeFilter,
+    categoryFilter,
+    setCategoryFilter,
+    searchQuery,
+    setSearchQuery,
     storeFilter,
     setStoreFilter,
     unreadProjectCount,
@@ -41,6 +45,7 @@ export function NotificationTab({
     unreadUrgentCount,
     unreadActionCount,
     unreadAssignedToMeCount,
+    categoryCounts,
     snoozedCount,
     filteredNotifications,
     tasks,
@@ -66,6 +71,10 @@ export function NotificationTab({
         setPriorityFilter={setPriorityFilter}
         assigneeFilter={assigneeFilter}
         setAssigneeFilter={setAssigneeFilter}
+        categoryFilter={categoryFilter}
+        setCategoryFilter={setCategoryFilter}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
         storeFilter={storeFilter}
         setStoreFilter={setStoreFilter}
         allowedStores={allowedStores}
@@ -78,6 +87,7 @@ export function NotificationTab({
         unreadUrgentCount={unreadUrgentCount}
         unreadActionCount={unreadActionCount}
         unreadAssignedToMeCount={unreadAssignedToMeCount}
+        categoryCounts={categoryCounts}
         snoozedCount={snoozedCount}
         onMarkAllRead={onMarkAllRead}
         onClearStaleNotifs={onClearStaleNotifs}

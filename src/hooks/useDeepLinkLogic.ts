@@ -3,7 +3,16 @@ import { doc, getDoc, getDocs, collection, query, where, limit } from 'firebase/
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
-import { resolveStoreAndYearForQuery } from './deepLinkStoreResolver';
+import { resolveStoreAndYearForQuery, findProjectWithCompositeIsolation } from './deepLinkStoreResolver';
+
+export interface DeepLinkExtraParams {
+  store?: string;
+  year?: string;
+  code?: string;
+  projectId?: string;
+  openChat?: boolean;
+  openModal?: boolean;
+}
 
 export function useDeepLinkLogic(
   handleTabChange: (tab: any) => void,
@@ -13,12 +22,12 @@ export function useDeepLinkLogic(
   const currentUser = useAppStore(state => state.currentUser);
   const setIsLoginModalOpen = useAppStore(state => state.setIsLoginModalOpen);
 
-const pendingDeepLinkRef = useRef<{
+  const pendingDeepLinkRef = useRef<{
     targetType: string;
     targetId: string;
-    extraParams?: { store?: string; year?: string; code?: string };
+    extraParams?: DeepLinkExtraParams;
   } | null>(null);
-  const executeDeepLinkRef = useRef<((targetType: string, targetId: string, extraParams?: { store?: string; year?: string; code?: string }) => Promise<void>) | null>(null);
+  const executeDeepLinkRef = useRef<((targetType: string, targetId: string, extraParams?: DeepLinkExtraParams) => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (currentUser?.id && currentUser.id !== "guest" && pendingDeepLinkRef.current && executeDeepLinkRef.current) {
@@ -28,9 +37,7 @@ const pendingDeepLinkRef = useRef<{
     }
   }, [currentUser?.id]);
 
-  
-
-const checkAccessLocally = useCallback((data: any): boolean => {
+  const checkAccessLocally = useCallback((data: any): boolean => {
     const user = useAppStore.getState().currentUser;
     if (!user || user.role === "admin") return true;
     const store = String(data.store || data.projectStore || "").toUpperCase().trim();
@@ -39,11 +46,33 @@ const checkAccessLocally = useCallback((data: any): boolean => {
     return true;
   }, []);
 
+  const syncProjectScopeFilters = useCallback((pStore?: string, pYear?: string | number, pLocation?: string, pId?: string) => {
+    const state = useAppStore.getState();
+    if (pYear && String(pYear).toLowerCase() !== "all" && String(pYear) !== state.globalYearFilter) {
+      state.setGlobalYearFilter(String(pYear));
+    }
+    if (pStore && pStore.toLowerCase() !== "all") {
+      const normStore = pStore.trim().toUpperCase();
+      if (state.globalStoreFilter.toUpperCase() !== normStore) {
+        state.setGlobalStoreFilter(normStore as any);
+      }
+    }
+    if (state.globalLocationFilter.length > 0 && pLocation && !state.globalLocationFilter.includes(pLocation)) {
+      state.setGlobalLocationFilter([]);
+    }
+    if (pId) {
+      const curExpanded = state.expandedProjectIds || [];
+      if (!curExpanded.includes(String(pId))) {
+        state.setExpandedProjectIds([...curExpanded, String(pId)]);
+      }
+    }
+  }, []);
+
   const executeDeepLink = useCallback(
     async (
       targetType: string,
       targetId: string,
-      extraParams?: { store?: string; year?: string; code?: string }
+      extraParams?: DeepLinkExtraParams
     ) => {
       if (!targetType || !targetId) return;
 
@@ -54,43 +83,29 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         return;
       }
 
-      // If extraParams contains year or store, proactively sync filters
-      if (extraParams?.year && String(extraParams.year) !== useAppStore.getState().globalYearFilter) {
+      // Proactively sync store & year filters from extraParams
+      if (extraParams?.year && String(extraParams.year).toLowerCase() !== "all" && String(extraParams.year) !== useAppStore.getState().globalYearFilter) {
         useAppStore.getState().setGlobalYearFilter(String(extraParams.year));
       }
       if (
         extraParams?.store &&
-        useAppStore.getState().globalStoreFilter.toLowerCase() !== extraParams.store.toLowerCase()
+        extraParams.store.toLowerCase() !== "all" &&
+        useAppStore.getState().globalStoreFilter.toUpperCase() !== extraParams.store.trim().toUpperCase()
       ) {
-        useAppStore.getState().setGlobalStoreFilter(extraParams.store.toUpperCase() as any);
+        useAppStore.getState().setGlobalStoreFilter(extraParams.store.trim().toUpperCase() as any);
       }
 
       // 1. PROJECT TARGET
       if (targetType === "project") {
-        const normId = String(targetId).trim().toLowerCase();
         const curEnriched = enrichedProjectsRef.current || [];
         const curProjects = useAppStore.getState().projects || [];
         const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
 
-        let p: Project | undefined =
-          curEnriched.find(
-            (item) =>
-              String(item.no) === targetId ||
-              String(item.id).toLowerCase() === normId ||
-              String(item.code || "").toLowerCase() === normId
-          ) ||
-          curProjects.find(
-            (item) =>
-              String(item.no) === targetId ||
-              String(item.id).toLowerCase() === normId ||
-              String(item.code || "").toLowerCase() === normId
-          ) ||
-          curNotifProjects.find(
-            (item) =>
-              String(item.no) === targetId ||
-              String(item.id).toLowerCase() === normId ||
-              String(item.code || "").toLowerCase() === normId
-          );
+        const p = findProjectWithCompositeIsolation(
+          [curEnriched, curProjects, curNotifProjects],
+          String(targetId),
+          extraParams
+        );
 
         if (p) {
           if (!checkAccessLocally(p)) {
@@ -101,32 +116,27 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             });
             return;
           }
-          if (p.year && String(p.year) !== useAppStore.getState().globalYearFilter) {
-            useAppStore.getState().setGlobalYearFilter(String(p.year));
-          }
-          if (
-            p.store &&
-            useAppStore.getState().globalStoreFilter !== "all" &&
-            p.store.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-          ) {
-            useAppStore.getState().setGlobalStoreFilter("all");
-          }
+          syncProjectScopeFilters(p.store, p.year, p.location, p.id);
           handleTabChange("detail");
           if (p.code) {
             useAppStore.getState().setDetailTabFilterCode(p.code);
           }
-          useAppStore.getState().setEditingProject(p);
-          useAppStore.getState().setIsReadOnlyModal(true);
-          useAppStore.getState().setIsProjectModalOpen(true);
+          if (extraParams?.openModal !== false) {
+            useAppStore.getState().setEditingProject(p);
+            useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+            useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+            useAppStore.getState().setIsProjectModalOpen(true);
+          }
           window.history.replaceState({}, document.title, window.location.pathname);
           return;
         }
 
-        // Fast Firestore point read (<100ms)
+        // Fast Firestore point read (<100ms) with strict store isolation
         try {
           let fetchedProj: Project | null = null;
-          if (targetId.includes("_") || targetId.length > 8) {
-            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetId);
+          const docIdCandidate = extraParams?.projectId || (String(targetId).includes("_") || String(targetId).length > 8 ? String(targetId) : "");
+          if (docIdCandidate) {
+            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docIdCandidate);
             const snap = await getDoc(docRef);
             if (snap.exists()) {
               fetchedProj = { id: snap.id, ...snap.data() } as Project;
@@ -140,14 +150,19 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             } else {
               constraints.push(where("code", "==", targetId));
             }
+            if (extraParams?.store && extraParams.store.toLowerCase() !== "all") {
+              constraints.push(where("store", "==", extraParams.store.trim().toUpperCase()));
+            }
             const q = query(
               collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"),
               ...constraints,
-              limit(1)
+              limit(5)
             );
             const snap = await getDocs(q);
             if (!snap.empty) {
-              fetchedProj = { id: snap.docs[0].id, ...snap.docs[0].data() } as Project;
+              const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+              fetchedProj =
+                findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
             }
           }
 
@@ -160,23 +175,17 @@ const checkAccessLocally = useCallback((data: any): boolean => {
               });
               return;
             }
-            if (fetchedProj.year && String(fetchedProj.year) !== useAppStore.getState().globalYearFilter) {
-              useAppStore.getState().setGlobalYearFilter(String(fetchedProj.year));
-            }
-            if (
-              fetchedProj.store &&
-              useAppStore.getState().globalStoreFilter !== "all" &&
-              fetchedProj.store.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-            ) {
-              useAppStore.getState().setGlobalStoreFilter("all");
-            }
+            syncProjectScopeFilters(fetchedProj.store, fetchedProj.year, fetchedProj.location, fetchedProj.id);
             handleTabChange("detail");
             if (fetchedProj.code) {
               useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
             }
-            useAppStore.getState().setEditingProject(fetchedProj);
-            useAppStore.getState().setIsReadOnlyModal(true);
-            useAppStore.getState().setIsProjectModalOpen(true);
+            if (extraParams?.openModal !== false) {
+              useAppStore.getState().setEditingProject(fetchedProj);
+              useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+              useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+              useAppStore.getState().setIsProjectModalOpen(true);
+            }
             window.history.replaceState({}, document.title, window.location.pathname);
           } else {
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -204,7 +213,7 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         const curTasks = useAppStore.getState().tasks || [];
         const curNotifTasks = useAppStore.getState().allTasksForNotifs || [];
 
-        let t: Task | undefined =
+        const t: Task | undefined =
           curFilteredTasks.find((item) => item.id && item.id.toLowerCase() === normId) ||
           curTasks.find((item) => item.id && item.id.toLowerCase() === normId) ||
           curNotifTasks.find((item) => item.id && item.id.toLowerCase() === normId);
@@ -218,70 +227,78 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             });
             return;
           }
-          if (t.projectYear && String(t.projectYear) !== useAppStore.getState().globalYearFilter) {
-            useAppStore.getState().setGlobalYearFilter(String(t.projectYear));
-          }
-          if (
-            t.projectStore &&
-            useAppStore.getState().globalStoreFilter !== "all" &&
-            t.projectStore.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-          ) {
-            useAppStore.getState().setGlobalStoreFilter("all");
-          }
+          const resolvedStore = t.projectStore || extraParams?.store;
+          const resolvedYear = t.projectYear || extraParams?.year;
+          const resolvedProjId = t.projectId || extraParams?.projectId;
+          syncProjectScopeFilters(resolvedStore, resolvedYear, t.location, resolvedProjId);
           handleTabChange("detail");
-          if (t.projectCode) {
-            useAppStore.getState().setDetailTabFilterCode(t.projectCode);
+          if (t.projectCode || extraParams?.code) {
+            useAppStore.getState().setDetailTabFilterCode(t.projectCode || extraParams?.code || "");
           }
           useAppStore.getState().setDetailTabFocusTaskId(t.id);
           useAppStore.getState().setGanttTabFocusTaskId(t.id);
-          useAppStore.getState().setEditingTask(t);
-          useAppStore.getState().setIsReadOnlyModal(true);
-          useAppStore.getState().setIsTaskModalOpen(true);
+          if (extraParams?.openModal !== false) {
+            useAppStore.getState().setEditingTask(t);
+            useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+            useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+            useAppStore.getState().setIsTaskModalOpen(true);
+          }
           window.history.replaceState({}, document.title, window.location.pathname);
           return;
         }
 
-        // Fast Firestore point read
+        // Fast Firestore point read (or fallback if virtual summary task ts_...)
         try {
-          const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", String(targetId));
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            const fetchedTask = { id: snap.id, ...snap.data() } as Task;
-            if (!checkAccessLocally(fetchedTask)) {
+          if (!String(targetId).startsWith("ts_")) {
+            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", String(targetId));
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+              const fetchedTask = { id: snap.id, ...snap.data() } as Task;
+              if (!checkAccessLocally(fetchedTask)) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+                useAppStore.getState().setToast({
+                  title: "Access Denied",
+                  message: "You do not have permission to access this task's store.",
+                });
+                return;
+              }
+              syncProjectScopeFilters(
+                fetchedTask.projectStore || extraParams?.store,
+                fetchedTask.projectYear || extraParams?.year,
+                fetchedTask.location,
+                fetchedTask.projectId || extraParams?.projectId
+              );
+              handleTabChange("detail");
+              if (fetchedTask.projectCode || extraParams?.code) {
+                useAppStore.getState().setDetailTabFilterCode(fetchedTask.projectCode || extraParams?.code || "");
+              }
+              useAppStore.getState().setDetailTabFocusTaskId(fetchedTask.id);
+              useAppStore.getState().setGanttTabFocusTaskId(fetchedTask.id);
+              if (extraParams?.openModal !== false) {
+                useAppStore.getState().setEditingTask(fetchedTask);
+                useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+                useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+                useAppStore.getState().setIsTaskModalOpen(true);
+              }
               window.history.replaceState({}, document.title, window.location.pathname);
-              useAppStore.getState().setToast({
-                title: "Access Denied",
-                message: "You do not have permission to access this task's store.",
-              });
               return;
             }
-            if (fetchedTask.projectYear && String(fetchedTask.projectYear) !== useAppStore.getState().globalYearFilter) {
-              useAppStore.getState().setGlobalYearFilter(String(fetchedTask.projectYear));
-            }
-            if (
-              fetchedTask.projectStore &&
-              useAppStore.getState().globalStoreFilter !== "all" &&
-              fetchedTask.projectStore.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-            ) {
-              useAppStore.getState().setGlobalStoreFilter("all");
-            }
-            handleTabChange("detail");
-            if (fetchedTask.projectCode) {
-              useAppStore.getState().setDetailTabFilterCode(fetchedTask.projectCode);
-            }
-            useAppStore.getState().setDetailTabFocusTaskId(fetchedTask.id);
-            useAppStore.getState().setGanttTabFocusTaskId(fetchedTask.id);
-            useAppStore.getState().setEditingTask(fetchedTask);
-            useAppStore.getState().setIsReadOnlyModal(true);
-            useAppStore.getState().setIsTaskModalOpen(true);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({
-              title: "Not Found",
-              message: "This task was not found or data has been deleted.",
-            });
           }
+          // Fallback: if virtual task summary (ts_...) or task not yet hydrated, navigate to parent project in DetailTab
+          if (extraParams?.code || extraParams?.projectId) {
+            syncProjectScopeFilters(extraParams.store, extraParams.year, undefined, extraParams.projectId);
+            handleTabChange("detail");
+            if (extraParams.code) {
+              useAppStore.getState().setDetailTabFilterCode(extraParams.code);
+            }
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+          useAppStore.getState().setToast({
+            title: "Not Found",
+            message: "This task was not found or data has been deleted.",
+          });
         } catch (err) {
           console.error("Error fetching task deep link:", err);
           window.history.replaceState({}, document.title, window.location.pathname);

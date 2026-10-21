@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Project, Task, DelegationGroup } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 import { scrollToElement } from '../../lib/utils';
 import {
   backfillMissingProjectDates,
@@ -39,16 +40,45 @@ export function useDetailInitialScroll({
       setStatusFilter('all');
 
       const filterUpper = String(initialFilterCode).trim().toUpperCase();
+      const storeState = useAppStore.getState();
+      const activeStoreFilter = storeState?.globalStoreFilter
+        ? String(storeState.globalStoreFilter).trim().toUpperCase()
+        : 'ALL';
+      const activeYearFilter = storeState?.globalYearFilter
+        ? String(storeState.globalYearFilter).trim()
+        : 'all';
+
+      const scopedProjects = projects.filter((p) => {
+        if (p.isDeleted) return false;
+        if (
+          activeStoreFilter !== 'ALL' &&
+          String(p.store || '').trim().toUpperCase() !== activeStoreFilter
+        ) {
+          return false;
+        }
+        if (
+          activeYearFilter !== 'all' &&
+          String(p.year || '').trim() !== activeYearFilter
+        ) {
+          return false;
+        }
+        return true;
+      });
+      const candidatePool = scopedProjects.length > 0 ? scopedProjects : projects;
+
       const matchedProj =
-        projects.find(
+        candidatePool.find(
+          (p) => String(p.id || '').trim().toUpperCase() === filterUpper
+        ) ||
+        candidatePool.find(
           (p) => String(p.code || '').trim().toUpperCase() === filterUpper
         ) ||
-        projects.find(
+        candidatePool.find(
           (p) =>
             p.code &&
             filterUpper.startsWith(String(p.code).trim().toUpperCase() + '-')
         ) ||
-        projects.find(
+        candidatePool.find(
           (p) =>
             p.code && filterUpper.includes(String(p.code).trim().toUpperCase())
         );
@@ -71,14 +101,14 @@ export function useDetailInitialScroll({
             const pCode = matchedProj?.code || initialFilterCode;
             const pId = matchedProj?.id;
             el =
+              (pId ? document.querySelector(`[data-project-id="${pId}"]`) : null) ||
               (matchedProj
                 ? document.getElementById(
                     `detail-project-${matchedProj.no ?? matchedProj.code}`
                   )
                 : null) ||
               (pCode ? document.querySelector(`[data-project-code="${pCode}"]`) : null) ||
-              (pCode ? document.querySelector(`[data-project-code="${pCode.toUpperCase()}"]`) : null) ||
-              (pId ? document.querySelector(`[data-project-id="${pId}"]`) : null);
+              (pCode ? document.querySelector(`[data-project-code="${pCode.toUpperCase()}"]`) : null);
           }
           if (el && el instanceof HTMLElement) {
             scrollToElement(el);

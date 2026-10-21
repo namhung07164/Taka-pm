@@ -1,4 +1,4 @@
-import { ActiveNotification, NotificationPriority } from '../../types';
+import { ActiveNotification, NotificationPriority, NotificationCategory } from '../../types';
 
 export interface NotificationTabProps {
   activeNotifications: ActiveNotification[];
@@ -23,3 +23,4 @@ export type NotificationTypeFilter = 'project' | 'task' | 'task_delegation' | 'a
 export type NotificationStoreFilter = 'all' | 'HCM' | 'HN';
 export type NotificationPriorityFilter = 'all' | NotificationPriority;
 export type NotificationAssigneeFilter = 'all' | 'assigned_to_me';
+export type NotificationCategoryFilter = 'all' | NotificationCategory;

@@ -1,6 +1,7 @@
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
+import { Project } from '../types';
 
 export interface ResolvedStoreYear {
   store?: string;
@@ -111,3 +112,66 @@ export async function resolveStoreAndYearForQuery(
 
   return { store, year };
 }
+
+export function findProjectWithCompositeIsolation(
+  lists: Project[][],
+  targetId: string,
+  extraParams?: { store?: string; year?: string; code?: string; projectId?: string }
+): Project | undefined {
+  const normId = String(targetId || '').trim().toLowerCase();
+  const expProjId = extraParams?.projectId ? String(extraParams.projectId).trim() : '';
+  const expStore = extraParams?.store ? String(extraParams.store).trim().toUpperCase() : '';
+  const expYear =
+    extraParams?.year && String(extraParams.year).toLowerCase() !== 'all'
+      ? String(extraParams.year).trim()
+      : '';
+  const expCode = extraParams?.code ? String(extraParams.code).trim().toLowerCase() : '';
+
+  // Pass 1: Strict Composite Match (projectId -> store -> year -> id/code/no)
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    const match = list.find((item) => {
+      if (!item || item.isDeleted) return false;
+      if (expProjId && item.id && String(item.id).trim() !== expProjId) return false;
+      const itemStore = item.store ? String(item.store).trim().toUpperCase() : '';
+      if (expStore && itemStore && itemStore !== expStore) return false;
+      const itemYear = item.year ? String(item.year).trim() : '';
+      if (expYear && itemYear && itemYear !== expYear) return false;
+
+      if (expProjId && item.id && String(item.id).trim() === expProjId) return true;
+      const itemIdLower = item.id ? String(item.id).trim().toLowerCase() : '';
+      const itemCodeLower = item.code ? String(item.code).trim().toLowerCase() : '';
+      return (
+        itemIdLower === normId ||
+        String(item.no) === String(targetId) ||
+        (itemCodeLower && itemCodeLower === normId) ||
+        (expCode && itemCodeLower === expCode)
+      );
+    });
+    if (match) return match;
+  }
+
+  // Pass 2: Relax year if not found, but NEVER violate store or projectId isolation (Rule 16.1)
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    const match = list.find((item) => {
+      if (!item || item.isDeleted) return false;
+      if (expProjId && item.id && String(item.id).trim() !== expProjId) return false;
+      const itemStore = item.store ? String(item.store).trim().toUpperCase() : '';
+      if (expStore && itemStore && itemStore !== expStore) return false;
+
+      const itemIdLower = item.id ? String(item.id).trim().toLowerCase() : '';
+      const itemCodeLower = item.code ? String(item.code).trim().toLowerCase() : '';
+      return (
+        itemIdLower === normId ||
+        String(item.no) === String(targetId) ||
+        (itemCodeLower && itemCodeLower === normId) ||
+        (expCode && itemCodeLower === expCode)
+      );
+    });
+    if (match) return match;
+  }
+
+  return undefined;
+}
+

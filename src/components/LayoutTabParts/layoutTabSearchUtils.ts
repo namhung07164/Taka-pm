@@ -203,39 +203,50 @@ export function resolveInitialTargetLocation(
   projects: any[],
   tasks: any[],
   allStoreVersions: any[],
-  unitInfo: any[]
+  unitInfo: any[],
+  targetStore?: string
 ): string {
   let targetLoc = (initialLocation && initialLocation !== 'all') ? String(initialLocation).trim().toUpperCase() : '';
   if (!initialProjectCode || targetLoc) return targetLoc;
 
   const qCode = String(initialProjectCode).trim().toLowerCase();
+  const normStore = targetStore && targetStore.toLowerCase() !== 'all' ? targetStore.trim().toUpperCase() : '';
 
-  // 1. Search in projects
-  const matched = projects.find(p => 
-    (p.code && String(p.code).trim().toLowerCase() === qCode) ||
-    ((p as any).unit && String((p as any).unit).trim().toLowerCase() === qCode) ||
-    (p.name && String(p.name).trim().toLowerCase() === qCode) ||
-    (p.id && String(p.id).trim().toLowerCase() === qCode)
-  );
+  // 1. Search in projects (strictly scoped by targetStore if provided)
+  const matched = projects.find(p => {
+    if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore) return false;
+    return (
+      (p.code && String(p.code).trim().toLowerCase() === qCode) ||
+      ((p as any).unit && String((p as any).unit).trim().toLowerCase() === qCode) ||
+      (p.name && String(p.name).trim().toLowerCase() === qCode) ||
+      (p.id && String(p.id).trim().toLowerCase() === qCode)
+    );
+  });
   if (matched?.location && matched.location.toLowerCase() !== 'all') {
     return String(matched.location).trim().toUpperCase();
   }
 
-  // 2. Search in project tasks
-  const matchedTask = tasks.find(t => 
-    (t.projectCode && String(t.projectCode).trim().toLowerCase() === qCode) ||
-    (matched?.id && (t as any).projectId === matched.id)
-  );
+  // 2. Search in project tasks (strictly scoped by targetStore if provided)
+  const matchedTask = tasks.find(t => {
+    if (normStore && t.projectStore && String(t.projectStore).trim().toUpperCase() !== normStore) return false;
+    return (
+      (t.projectCode && String(t.projectCode).trim().toLowerCase() === qCode) ||
+      (matched?.id && (t as any).projectId === matched.id)
+    );
+  });
   if ((matchedTask as any)?.location && (matchedTask as any).location.toLowerCase() !== 'all') {
     return String((matchedTask as any).location).trim().toUpperCase();
   }
 
-  // 3. Search in unitInfo
-  const matchedUInfo = unitInfo.find((u: any) => 
-    (u.unit && String(u.unit).trim().toLowerCase() === qCode) ||
-    (u.name && String(u.name).trim().toLowerCase() === qCode) ||
-    (u.unitId && String(u.unitId).trim().toLowerCase() === qCode)
-  );
+  // 3. Search in unitInfo (strictly scoped by targetStore if provided)
+  const matchedUInfo = unitInfo.find((u: any) => {
+    if (normStore && u.store && String(u.store).trim().toUpperCase() !== normStore) return false;
+    return (
+      (u.unit && String(u.unit).trim().toLowerCase() === qCode) ||
+      (u.name && String(u.name).trim().toLowerCase() === qCode) ||
+      (u.unitId && String(u.unitId).trim().toLowerCase() === qCode)
+    );
+  });
   if (matchedUInfo?.floor || matchedUInfo?.location) {
     return String(matchedUInfo.floor || matchedUInfo.location).trim().toUpperCase();
   }
@@ -243,6 +254,7 @@ export function resolveInitialTargetLocation(
   // 4. Search in store versions
   for (const v of allStoreVersions) {
     if (!v.location) continue;
+    if (normStore && v.store && String(v.store).trim().toUpperCase() !== normStore) continue;
     if (v.groupMappings) {
       const hasUnit = Object.values(v.groupMappings).some((arr: any) => 
         Array.isArray(arr) && arr.some(id => String(id).trim().toLowerCase() === qCode)

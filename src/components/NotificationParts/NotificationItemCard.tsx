@@ -1,5 +1,17 @@
-import React, { FC, memo } from 'react';
-import { Bell, Check, RotateCcw, AlertCircle, Clock, Zap, UserCheck, ArrowUpRight } from 'lucide-react';
+import React from 'react';
+import {
+  Bell,
+  Check,
+  RotateCcw,
+  AlertCircle,
+  Clock,
+  Zap,
+  UserCheck,
+  ArrowUpRight,
+  MapPin,
+  MessageSquare,
+  ListChecks,
+} from 'lucide-react';
 import { ActiveNotification, Project, Task, DelegationGroup } from '../../types';
 import { formatDisplayDateTime } from '../../lib/utils';
 
@@ -31,32 +43,64 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
     onQuickCompleteTask,
     onSnoozeNotif,
   }) => {
+    const matchedProject = React.useMemo(() => {
+      if (notif.projectId) {
+        const byId = projects.find((p) => String(p.id) === String(notif.projectId));
+        if (byId) return byId;
+      }
+      if (notif.targetType === 'project') {
+        const byTarget = projects.find(
+          (p) =>
+            String(p.id) === String(notif.targetId) || String(p.no) === String(notif.targetId)
+        );
+        if (byTarget) return byTarget;
+      }
+      if (notif.projectCode) {
+        return projects.find((p) => {
+          if (String(p.code || '').trim().toLowerCase() !== String(notif.projectCode).trim().toLowerCase()) {
+            return false;
+          }
+          if (
+            notif.projectStore &&
+            String(p.store || '').trim().toLowerCase() !== String(notif.projectStore).trim().toLowerCase()
+          ) {
+            return false;
+          }
+          if (
+            notif.projectYear &&
+            String(p.year || '').trim() !== String(notif.projectYear).trim()
+          ) {
+            return false;
+          }
+          return true;
+        });
+      }
+      return undefined;
+    }, [notif, projects]);
+
     const notifStore = (
       notif.projectStore ||
+      matchedProject?.store ||
       (notif.targetType === 'task'
         ? tasks.find((t) => String(t.id) === String(notif.targetId))?.projectStore
-        : '') ||
-      (notif.targetType === 'project'
-        ? projects.find(
-            (p) =>
-              (notif.targetId &&
-                (String(p.id) === String(notif.targetId) ||
-                  String(p.no) === String(notif.targetId))) ||
-              (notif.projectCode && p.code === notif.projectCode)
-          )?.store
         : '') ||
       (notif.targetType === 'task_delegation'
         ? delegationGroups.find((g) => g.id === notif.targetId)?.projectStore
         : '') ||
       ''
-    ).trim();
+    )
+      .trim()
+      .toUpperCase();
 
-    const isHn = notifStore.toUpperCase() === 'HN';
-    const isHcm = notifStore.toUpperCase() === 'HCM';
+    const notifLocation = (notif.location || matchedProject?.location || '').trim();
+    const notifYear = notif.projectYear || matchedProject?.year || '';
+    const isHn = notifStore === 'HN';
+    const isHcm = notifStore === 'HCM';
 
     const isCritical = notif.priority === 'critical';
     const isUrgent = notif.priority === 'urgent';
     const isActionReq = notif.priority === 'action_required';
+    const isMention = notif.category === 'mention' || notif.ruleId === 'mention-notification';
 
     const priorityBorderClass = isCritical
       ? 'border-l-4 border-l-rose-500'
@@ -68,7 +112,7 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
 
     return (
       <div
-        onClick={() => onNotificationClick(notif)}
+        onClick={() => onNotificationClick({ ...notif, _openTarget: 'detail' } as any)}
         className={`bg-white dark:bg-[#1e1e20] p-4 rounded-xl border flex items-start gap-3.5 transition-all cursor-pointer hover:shadow-lg ${priorityBorderClass} ${
           isRead
             ? 'border-slate-100 opacity-60 dark:border-slate-800'
@@ -89,7 +133,9 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
                 : 'bg-blue-50 dark:bg-[#28282a] border-blue-100 dark:border-blue-900/50 text-blue-600 dark:text-[#8ab4f8]'
             }`}
           >
-            {isCritical ? (
+            {isMention ? (
+              <MessageSquare className="w-5 h-5" />
+            ) : isCritical ? (
               <AlertCircle className="w-5 h-5" />
             ) : isUrgent ? (
               <Clock className="w-5 h-5" />
@@ -101,7 +147,7 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
           </div>
           {notifStore && (
             <span
-              className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase text-center min-w-[32px] ${
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase text-center min-w-[34px] ${
                 isHn
                   ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50'
                   : isHcm
@@ -112,14 +158,19 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
               {notifStore}
             </span>
           )}
+          {notifLocation && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-[#28282a] text-slate-600 dark:text-[#a3a3a3] border border-slate-200 dark:border-[#444446]">
+              {notifLocation}
+            </span>
+          )}
         </div>
+
         <div className="flex-grow min-w-0">
           <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-1.5 gap-1 md:gap-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Proposal 1: Priority Badge */}
               {isCritical && (
                 <span className="text-[10px] bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5 uppercase tracking-wider">
-                  <AlertCircle className="w-3 h-3" /> Critical
+                  <AlertCircle className="w-3 h-3" /> Overdue
                 </span>
               )}
               {isUrgent && (
@@ -129,25 +180,32 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
               )}
               {isActionReq && (
                 <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5 uppercase tracking-wider">
-                  <Zap className="w-3 h-3" /> Action Req
+                  <Zap className="w-3 h-3" /> {isMention ? '@Mention' : 'Action Req'}
                 </span>
               )}
 
-              {/* Proposal 2: Personal Assignee / Mention Badge */}
               {notif.isAssignedToMe && (
                 <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5">
                   <UserCheck className="w-3 h-3" /> Assigned to You
                 </span>
               )}
 
+              {notif.projectCode && (
+                <span className="text-[10px] bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-[#8ab4f8] font-mono font-bold px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/50">
+                  {notifStore ? `${notifStore}•` : ''}
+                  {notif.projectCode}
+                  {notifYear ? ` (${notifYear})` : ''}
+                </span>
+              )}
+
               {notif.party && (
                 <span className="text-[10px] bg-slate-100 dark:bg-[#28282a] text-slate-600 dark:text-[#a3a3a3] font-mono font-medium px-1.5 py-0.5 rounded border border-slate-200 dark:border-[#444446]">
-                  {notif.party}
+                  PIC: {notif.party}
                 </span>
               )}
 
               <h4
-                className={`font-bold text-base truncate ${
+                className={`font-bold text-sm sm:text-base truncate ${
                   isRead ? 'text-slate-500 dark:text-[#838383]' : 'text-slate-800 dark:text-[#e3e3e3]'
                 }`}
               >
@@ -160,38 +218,68 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
               ) : null}
             </div>
           </div>
-          {notif.subtitle &&
-            (() => {
-              const parts = notif.subtitle.split(' - ');
-              const textColor = isRead
-                ? 'text-blue-400 dark:text-blue-500/70'
-                : 'text-blue-600 dark:text-[#8ab4f8]';
-              if (parts.length > 1) {
-                const code = parts[0];
-                const rest = parts.slice(1).join(' - ');
-                return (
-                  <p className={`text-xs mb-2 truncate ${textColor}`}>
-                    <span className="font-normal opacity-90">{code}</span>
-                    <span className="font-normal"> - </span>
-                    <span className="font-bold">{rest}</span>
-                  </p>
-                );
-              }
-              return (
-                <p className={`text-xs mb-2 truncate ${textColor}`}>
-                  <span className="font-bold">{notif.subtitle}</span>
-                </p>
-              );
-            })()}
-          <p
-            className={`text-sm bg-slate-50 dark:bg-[#1e1e20] p-2 rounded border border-slate-100 dark:border-[#333336] break-words ${
-              isRead ? 'text-slate-500 dark:text-[#838383]' : 'text-slate-700 dark:text-[#c3c3c3]'
-            }`}
-          >
-            <span dangerouslySetInnerHTML={{ __html: notif.message }} />
-          </p>
 
-          {/* Proposal 3: Inline Quick Actions */}
+          {notif.subtitle && (
+            <p
+              className={`text-xs mb-2 truncate font-semibold ${
+                isRead ? 'text-blue-400 dark:text-blue-500/70' : 'text-blue-600 dark:text-[#8ab4f8]'
+              }`}
+            >
+              {notif.subtitle}
+            </p>
+          )}
+
+          {/* Structured Sub-Items list for batched project task notifications */}
+          {notif.subItems && notif.subItems.length > 1 ? (
+            <div className="space-y-1.5 bg-slate-50 dark:bg-[#18181a] p-2.5 rounded-lg border border-slate-100 dark:border-[#333336]">
+              {notif.subItems.slice(0, 5).map((sub) => (
+                <div
+                  key={sub.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNotificationClick({
+                      ...notif,
+                      targetId: sub.targetId,
+                      taskName: sub.taskName,
+                      _openTarget: 'detail',
+                    } as any);
+                  }}
+                  className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-white dark:hover:bg-[#28282a] transition-colors text-xs border border-transparent hover:border-slate-200 dark:hover:border-[#444446]"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <ListChecks className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <span className="font-bold text-slate-700 dark:text-[#e3e3e3] truncate">
+                      {sub.taskName}
+                    </span>
+                    {sub.party && (
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                        [{sub.party}]
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className="text-[11px] text-slate-500 dark:text-[#a3a3a3] shrink-0"
+                    dangerouslySetInnerHTML={{ __html: sub.message }}
+                  />
+                </div>
+              ))}
+              {notif.subItems.length > 5 && (
+                <div className="text-[11px] text-slate-400 pl-2 pt-0.5 font-medium">
+                  + {notif.subItems.length - 5} more tasks in this project...
+                </div>
+              )}
+            </div>
+          ) : (
+            <p
+              className={`text-sm bg-slate-50 dark:bg-[#1e1e20] p-2 rounded border border-slate-100 dark:border-[#333336] break-words ${
+                isRead ? 'text-slate-500 dark:text-[#838383]' : 'text-slate-700 dark:text-[#c3c3c3]'
+              }`}
+            >
+              <span dangerouslySetInnerHTML={{ __html: notif.message }} />
+            </p>
+          )}
+
+          {/* Inline Project Management Quick Actions */}
           <div className="flex flex-wrap items-center gap-2 mt-2.5">
             {notif.action === 'cross_year_rollover' ? (
               <>
@@ -216,8 +304,7 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
               </>
             ) : (
               <>
-                {/* 1-Click Complete Task for active tasks */}
-                {notif.targetType === 'task' && !isRead && (
+                {notif.targetType === 'task' && !isRead && (!notif.count || notif.count === 1) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -230,7 +317,31 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
                   </button>
                 )}
 
-                {/* Snooze Options */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNotificationClick({ ...notif, _openTarget: 'detail' } as any);
+                  }}
+                  className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-900/50 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation"
+                >
+                  <span>{isMention ? 'Open Chat & Detail' : 'Task Detail'}</span>
+                  <ArrowUpRight className="w-3 h-3" />
+                </button>
+
+                {notif.projectCode && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNotificationClick({ ...notif, _openTarget: 'layout' } as any);
+                    }}
+                    title={`Locate ${notifStore ? notifStore + ' - ' : ''}${notif.projectCode} on 2D Floor Plan`}
+                    className="px-2.5 py-1 bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] text-slate-700 dark:text-[#e3e3e3] border border-slate-200 dark:border-[#444446] text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation"
+                  >
+                    <MapPin className="w-3 h-3 text-rose-500" />
+                    <span>2D Floor Plan</span>
+                  </button>
+                )}
+
                 {!isRead && onSnoozeNotif && (
                   <>
                     <button
@@ -256,17 +367,6 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
                     </button>
                   </>
                 )}
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onNotificationClick(notif);
-                  }}
-                  className="px-2 py-1 text-blue-600 dark:text-[#8ab4f8] hover:bg-blue-50 dark:hover:bg-[#28282a] text-[11px] font-bold rounded-md transition-colors flex items-center gap-0.5 active:scale-95 touch-manipulation"
-                >
-                  <span>Open</span>
-                  <ArrowUpRight className="w-3 h-3" />
-                </button>
               </>
             )}
           </div>
@@ -276,12 +376,13 @@ export const NotificationItemCard: React.FC<NotificationItemCardProps> = React.m
             <span>{formatDisplayDateTime(new Date(notif.generatedAt).toISOString())}</span>
           </div>
         </div>
+
         <button
           onClick={(e) => {
             e.stopPropagation();
             onToggleRead(notif.id);
           }}
-          title={isRead ? "Mark as unread" : "Mark as read"}
+          title={isRead ? 'Mark as unread' : 'Mark as read'}
           className="shrink-0 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors active:scale-95 touch-manipulation"
         >
           {isRead ? (

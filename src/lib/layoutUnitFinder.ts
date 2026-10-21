@@ -45,97 +45,111 @@ export function findProjectLayoutUnit(
 
   const targetType = notif.targetType;
   const targetId = notif.targetId ? String(notif.targetId).trim().toLowerCase() : '';
+  const notifProjId = notif.projectId ? String(notif.projectId).trim() : '';
   const notifProjCode = notif.projectCode ? String(notif.projectCode).trim().toLowerCase() : '';
 
-  // 1. Locate the Project and/or Task objects
+  // 1. Locate the Project and/or Task objects with strict 4-key isolation (Rule 16.1)
   let matchedProject: Project | null = null;
   let matchedTask: Task | null = null;
 
-  const notifStore = notif.projectStore ? String(notif.projectStore).trim().toLowerCase() : '';
-  const notifYear = notif.projectYear ? String(notif.projectYear).trim().toLowerCase() : '';
+  const notifStore = notif.projectStore ? String(notif.projectStore).trim().toUpperCase() : '';
+  const notifYear = notif.projectYear ? String(notif.projectYear).trim() : '';
 
   if (targetType === 'task') {
     matchedTask = tasksList.find((t) => t.id && String(t.id).toLowerCase() === targetId) || null;
+    const taskProjId = (matchedTask?.projectId ? String(matchedTask.projectId).trim() : '') || notifProjId;
     const taskProjCode = (matchedTask?.projectCode || notifProjCode).toLowerCase();
-    const taskStore = (matchedTask?.projectStore || notifStore).toLowerCase();
-    const taskYear = (matchedTask?.projectYear ? String(matchedTask.projectYear) : notifYear).toLowerCase();
+    const taskStore = String(matchedTask?.projectStore || notifStore).trim().toUpperCase();
+    const taskYear = String(matchedTask?.projectYear ? matchedTask.projectYear : notifYear).trim();
 
-    matchedProject =
-      projectsList.find((p) => {
-        const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-        const pYear = p.year ? String(p.year).trim().toLowerCase() : '';
-        if (p.id && matchedTask && (matchedTask as any).projectId === p.id) {
+    if (taskProjId) {
+      matchedProject = projectsList.find((p) => p.id && String(p.id).trim() === taskProjId) || null;
+    }
+
+    if (!matchedProject) {
+      matchedProject =
+        projectsList.find((p) => {
+          if (taskProjId && p.id && String(p.id).trim() !== taskProjId) return false;
+          const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
           if (taskStore && pStore && taskStore !== pStore) return false;
+          const pYear = p.year ? String(p.year).trim() : '';
           if (taskYear && pYear && taskYear !== pYear) return false;
-          return true;
-        }
-        const pCode = String(p.code || '').trim().toLowerCase();
-        if (pCode && pCode === taskProjCode) {
-          if (taskStore && pStore && taskStore !== pStore) return false;
-          if (taskYear && pYear && taskYear !== pYear) return false;
-          return true;
-        }
-        return false;
-      }) || null;
+
+          const pCode = String(p.code || '').trim().toLowerCase();
+          return Boolean(pCode && pCode === taskProjCode);
+        }) || null;
+    }
   } else if (targetType === 'project') {
-    matchedProject =
-      projectsList.find((p) => {
-        const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-        const pYear = p.year ? String(p.year).trim().toLowerCase() : '';
-        const idMatches = (p.id && String(p.id).toLowerCase() === targetId) || (p.no && String(p.no).toLowerCase() === targetId);
-
-        const pCode = String(p.code || '').trim().toLowerCase();
-        const codeMatches =
-          (pCode && pCode === targetId) ||
-          (pCode && notifProjCode && pCode === notifProjCode) ||
-          (p.linkCodes && extractAllProjectCodes(p).includes(targetId)) ||
-          (p.linkCodes && notifProjCode && extractAllProjectCodes(p).includes(notifProjCode));
-
-        if (idMatches || codeMatches) {
+    if (notifProjId) {
+      matchedProject = projectsList.find((p) => p.id && String(p.id).trim() === notifProjId) || null;
+    }
+    if (!matchedProject) {
+      matchedProject =
+        projectsList.find((p) => {
+          if (notifProjId && p.id && String(p.id).trim() !== notifProjId) return false;
+          const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
           if (notifStore && pStore && notifStore !== pStore) return false;
+          const pYear = p.year ? String(p.year).trim() : '';
           if (notifYear && pYear && notifYear !== pYear) return false;
-          return true;
-        }
-        return false;
-      }) || null;
+
+          const idMatches =
+            (p.id && String(p.id).toLowerCase() === targetId) ||
+            (p.no && String(p.no).toLowerCase() === targetId);
+
+          const pCode = String(p.code || '').trim().toLowerCase();
+          const codeMatches =
+            (pCode && pCode === targetId) ||
+            (pCode && notifProjCode && pCode === notifProjCode) ||
+            (p.linkCodes && extractAllProjectCodes(p).includes(targetId)) ||
+            (p.linkCodes && notifProjCode && extractAllProjectCodes(p).includes(notifProjCode));
+
+          return Boolean(idMatches || codeMatches);
+        }) || null;
+    }
   } else if (targetType === 'task_delegation') {
     const delegationGroups = useAppStore.getState().delegationGroups || [];
     const matchedGroup = delegationGroups.find((g) => g.id && String(g.id).toLowerCase() === targetId) || null;
-    
+
     const parentTaskId = matchedGroup?.parentTaskId || (matchedGroup as any)?.taskId;
     if (parentTaskId) {
       matchedTask = tasksList.find((t) => t.id && String(t.id).toLowerCase() === String(parentTaskId).toLowerCase()) || null;
     }
 
+    const groupProjId = String((matchedGroup as any)?.projectId || matchedTask?.projectId || notifProjId || '').trim();
     const groupProjCode = (matchedGroup?.projectCode || matchedTask?.projectCode || notifProjCode).toLowerCase();
-    const groupProjId = (matchedGroup as any)?.projectId;
-    const groupStore = (matchedGroup as any)?.projectStore || matchedTask?.projectStore || notifStore;
-    const groupYear = (matchedGroup as any)?.projectYear || matchedTask?.projectYear || notifYear;
+    const groupStore = String((matchedGroup as any)?.projectStore || matchedTask?.projectStore || notifStore || '').trim().toUpperCase();
+    const groupYear = String((matchedGroup as any)?.projectYear || matchedTask?.projectYear || notifYear || '').trim();
 
-    matchedProject =
-      projectsList.find((p) => {
-        const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
-        const pYear = p.year ? String(p.year).trim().toLowerCase() : '';
+    if (groupProjId) {
+      matchedProject = projectsList.find((p) => p.id && String(p.id).trim() === groupProjId) || null;
+    }
 
-        if (groupProjId && (p.id === groupProjId || String(p.no) === String(groupProjId))) {
+    if (!matchedProject) {
+      matchedProject =
+        projectsList.find((p) => {
+          if (groupProjId && p.id && String(p.id).trim() !== groupProjId) return false;
+          const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
           if (groupStore && pStore && groupStore !== pStore) return false;
-          if (groupYear && pYear && String(groupYear) !== pYear) return false;
-          return true;
-        }
+          const pYear = p.year ? String(p.year).trim() : '';
+          if (groupYear && pYear && groupYear !== pYear) return false;
 
-        const pCode = String(p.code || '').trim().toLowerCase();
-        const codeMatches =
-          (pCode && pCode === groupProjCode) ||
-          (p.linkCodes && groupProjCode && extractAllProjectCodes(p).includes(groupProjCode));
+          const pCode = String(p.code || '').trim().toLowerCase();
+          const codeMatches =
+            (pCode && pCode === groupProjCode) ||
+            (p.linkCodes && groupProjCode && extractAllProjectCodes(p).includes(groupProjCode));
 
-        if (codeMatches) {
-          if (groupStore && pStore && groupStore !== pStore) return false;
-          if (groupYear && pYear && String(groupYear) !== pYear) return false;
-          return true;
-        }
-        return false;
-      }) || null;
+          return Boolean(codeMatches);
+        }) || null;
+    }
   }
+
+  // Strictly resolved store & year (NEVER allow cross-store pollution)
+  const expectedStore = String(
+    notifStore || matchedProject?.store || matchedTask?.projectStore || 'HCM'
+  ).trim().toUpperCase();
+  const targetYear = String(
+    notifYear || matchedProject?.year || matchedTask?.projectYear || '2026'
+  ).trim();
 
   // Detect comment flags
   const notifId = String(notif.id || '');
@@ -144,7 +158,7 @@ export function findProjectLayoutUnit(
     notifId.startsWith('mention_proj_') ||
     (targetType === 'project' && (notifTitle.includes('mention') || notifTitle.includes('comment')));
   const isTaskComment =
-    notifId.startsWith('mention_') && !notifId.startsWith('mention_proj_') ||
+    (notifId.startsWith('mention_') && !notifId.startsWith('mention_proj_')) ||
     (targetType === 'task' && (notifTitle.includes('mention') || notifTitle.includes('comment')));
   const isComment = isProjectComment || isTaskComment;
 
@@ -153,7 +167,7 @@ export function findProjectLayoutUnit(
   if (notifProjCode) candidateKeys.add(notifProjCode);
   if (matchedProject) {
     const allProjCodes = extractAllProjectCodes(matchedProject);
-    allProjCodes.forEach(c => candidateKeys.add(c));
+    allProjCodes.forEach((c) => candidateKeys.add(c));
     if ((matchedProject as any)?.unit) candidateKeys.add(String((matchedProject as any).unit).trim().toLowerCase());
     if (matchedProject?.name) candidateKeys.add(String(matchedProject.name).trim().toLowerCase());
   }
@@ -161,19 +175,24 @@ export function findProjectLayoutUnit(
   if (matchedTask?.projectCode) candidateKeys.add(String(matchedTask.projectCode).trim().toLowerCase());
 
   const candidateArray = Array.from(candidateKeys);
-  const targetYear = String(matchedProject?.year || notif.projectYear || '2026');
 
-  // 3. Search in DataContext mapVersions across HCM & HN
+  // 3. Search in DataContext mapVersions ONLY for expectedStore (Rule 16.1 Store Isolation)
   try {
     const dataState = useDataStore.getState();
-    const allVersions = [
-      ...dataState.getAllStoreVersions('HCM'),
-      ...dataState.getAllStoreVersions('HN'),
-    ];
+    const storesToSearch: ('HCM' | 'HN')[] =
+      expectedStore === 'HN' ? ['HN'] : expectedStore === 'HCM' ? ['HCM'] : ['HCM', 'HN'];
 
-    for (const v of allVersions) {
-      if (!v.location) continue;
-      const vStore = v.store || matchedProject?.store || notif.projectStore || 'HCM';
+    const scopedVersions: Array<{ version: any; storeKey: string }> = [];
+    storesToSearch.forEach((stKey) => {
+      const vers = dataState.getAllStoreVersions(stKey) || [];
+      vers.forEach((v: any) => scopedVersions.push({ version: v, storeKey: stKey }));
+    });
+
+    for (const { version: v, storeKey } of scopedVersions) {
+      if (!v || !v.location) continue;
+      const vStore = String(v.store || storeKey || expectedStore).trim().toUpperCase();
+      if (expectedStore && vStore !== expectedStore) continue;
+
       const vLoc = String(v.location).trim().toUpperCase();
       const vYear = v.year ? String(v.year) : targetYear;
 
@@ -189,9 +208,9 @@ export function findProjectLayoutUnit(
               const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode || unitIds[0];
               return {
                 hasUnit: true,
-                store: vStore,
+                store: expectedStore,
                 location: vLoc,
-                year: vYear,
+                year: targetYear || vYear,
                 unitCode: String(uCode),
                 project: matchedProject,
                 task: matchedTask,
@@ -201,7 +220,7 @@ export function findProjectLayoutUnit(
               };
             }
           }
-          const groupObj = v.groups?.find((g) => g.id === groupId);
+          const groupObj = v.groups?.find((g: any) => g.id === groupId);
           if (groupObj) {
             const gCode = ((groupObj as any).code || '').trim().toLowerCase();
             const gName = (groupObj.name || '').trim().toLowerCase();
@@ -210,9 +229,9 @@ export function findProjectLayoutUnit(
                 const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode || unitIds[0];
                 return {
                   hasUnit: true,
-                  store: vStore,
+                  store: expectedStore,
                   location: vLoc,
-                  year: vYear,
+                  year: targetYear || vYear,
                   unitCode: String(uCode),
                   project: matchedProject,
                   task: matchedTask,
@@ -226,7 +245,7 @@ export function findProjectLayoutUnit(
         }
       }
 
-      // Check mapUnits on the version (or dynamic version payload)
+      // Check mapUnits on the version
       const vUnits = (v as any).mapUnits;
       if (vUnits && Array.isArray(vUnits)) {
         const foundUnit = vUnits.find(
@@ -238,9 +257,9 @@ export function findProjectLayoutUnit(
           const uCode = foundUnit.name || matchedProject?.code || notif.projectCode || foundUnit.id;
           return {
             hasUnit: true,
-            store: vStore,
+            store: expectedStore,
             location: vLoc,
-            year: vYear,
+            year: targetYear || vYear,
             unitCode: String(uCode),
             project: matchedProject,
             task: matchedTask,
@@ -252,24 +271,27 @@ export function findProjectLayoutUnit(
       }
     }
 
-    // 4. Search in unitInfo table
+    // 4. Search in unitInfo table strictly scoped to expectedStore
     const unitInfo = dataState.unitInfo || [];
-    const matchedUInfo = unitInfo.find(
-      (u: any) =>
+    const matchedUInfo = unitInfo.find((u: any) => {
+      if (expectedStore && u.store && String(u.store).trim().toUpperCase() !== expectedStore) {
+        return false;
+      }
+      return (
         (u.unit && (candidateKeys.has(String(u.unit).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.unit)))) ||
         (u.name && (candidateKeys.has(String(u.name).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.name)))) ||
         (u.unitId && (candidateKeys.has(String(u.unitId).trim().toLowerCase()) || projectMatchesUnitCode(candidateArray, String(u.unitId))))
-    );
+      );
+    });
 
     if (matchedUInfo) {
-      const store = matchedUInfo.store || matchedProject?.store || notif.projectStore || 'HCM';
       const location = String(matchedUInfo.floor || matchedUInfo.location || matchedProject?.location || 'L1').trim().toUpperCase();
       const uCode = matchedUInfo.unit || matchedProject?.code || notif.projectCode || matchedUInfo.name;
       return {
         hasUnit: true,
-        store,
+        store: expectedStore,
         location,
-        year: matchedUInfo.year ? String(matchedUInfo.year) : targetYear,
+        year: targetYear || (matchedUInfo.year ? String(matchedUInfo.year) : '2026'),
         unitCode: String(uCode),
         project: matchedProject,
         task: matchedTask,
@@ -279,12 +301,11 @@ export function findProjectLayoutUnit(
       };
     }
 
-    // 5. Search in storeLocationData mapUnits for project location
-    const projLoc = matchedProject?.location || (matchedTask as any)?.location;
+    // 5. Search in storeLocationData mapUnits for project location in expectedStore
+    const projLoc = matchedProject?.location || (matchedTask as any)?.location || notif.location;
     if (projLoc && projLoc.toLowerCase() !== 'all') {
       const cleanLoc = String(projLoc).trim().toUpperCase();
-      const store = matchedProject?.store || notif.projectStore || 'HCM';
-      const partKey = `${store}_${cleanLoc}`;
+      const partKey = `${expectedStore}_${cleanLoc}`;
       const record = dataState.storeLocationData?.[partKey];
       if (record?.mapUnits && Array.isArray(record.mapUnits)) {
         const foundUnit = record.mapUnits.find(
@@ -295,7 +316,7 @@ export function findProjectLayoutUnit(
         if (foundUnit) {
           return {
             hasUnit: true,
-            store,
+            store: expectedStore,
             location: cleanLoc,
             year: targetYear,
             unitCode: String(foundUnit.name || matchedProject?.code || notif.projectCode || foundUnit.id),
@@ -318,12 +339,11 @@ export function findProjectLayoutUnit(
       extractFloorFromCodeOrName(matchedProject?.name);
 
     if (extractedFloor) {
-      const store = String(matchedProject?.store || notif.projectStore || 'HCM').trim().toUpperCase();
       const uCode = matchedProject?.code || (matchedProject as any)?.unit || notif.projectCode || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
       if (uCode) {
         return {
           hasUnit: true,
-          store,
+          store: expectedStore,
           location: extractedFloor,
           year: targetYear,
           unitCode: String(uCode),
@@ -347,15 +367,13 @@ export function findProjectLayoutUnit(
     extractFloorFromCodeOrName(matchedProject?.name) ||
     'L1';
 
-  const rawLoc = String(matchedProject?.location || (matchedTask as any)?.location || fallbackFloor).trim().toUpperCase();
+  const rawLoc = String(matchedProject?.location || (matchedTask as any)?.location || notif.location || fallbackFloor).trim().toUpperCase();
   const finalLocation = (rawLoc && rawLoc !== 'ALL') ? rawLoc : fallbackFloor;
-  const finalStore = String(matchedProject?.store || notif.projectStore || 'HCM').trim().toUpperCase();
   const finalCode = notif.projectCode || matchedProject?.code || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
 
-  // Return project/task info resolved for liveview
   return {
-    hasUnit: true,
-    store: finalStore,
+    hasUnit: Boolean(finalCode),
+    store: expectedStore,
     location: finalLocation,
     year: targetYear,
     unitCode: String(finalCode),

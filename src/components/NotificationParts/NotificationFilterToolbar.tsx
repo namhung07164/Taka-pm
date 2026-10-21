@@ -1,11 +1,23 @@
-import React, { Dispatch, FC, SetStateAction } from 'react';
-import { RotateCcw, Archive, AlertCircle, Clock, Zap, UserCheck } from 'lucide-react';
+import React from 'react';
+import {
+  RotateCcw,
+  Archive,
+  AlertCircle,
+  Clock,
+  Zap,
+  UserCheck,
+  Search,
+  X,
+  MessageSquare,
+  CalendarClock,
+} from 'lucide-react';
 import {
   NotificationStatusFilter,
   NotificationTypeFilter,
   NotificationStoreFilter,
   NotificationPriorityFilter,
   NotificationAssigneeFilter,
+  NotificationCategoryFilter,
 } from './notificationTypes';
 
 interface NotificationFilterToolbarProps {
@@ -19,6 +31,10 @@ interface NotificationFilterToolbarProps {
   setPriorityFilter: React.Dispatch<React.SetStateAction<NotificationPriorityFilter>>;
   assigneeFilter: NotificationAssigneeFilter;
   setAssigneeFilter: React.Dispatch<React.SetStateAction<NotificationAssigneeFilter>>;
+  categoryFilter: NotificationCategoryFilter;
+  setCategoryFilter: React.Dispatch<React.SetStateAction<NotificationCategoryFilter>>;
+  searchQuery: string;
+  setSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   storeFilter: NotificationStoreFilter;
   setStoreFilter: React.Dispatch<React.SetStateAction<NotificationStoreFilter>>;
   allowedStores: string[];
@@ -31,6 +47,15 @@ interface NotificationFilterToolbarProps {
   unreadUrgentCount: number;
   unreadActionCount: number;
   unreadAssignedToMeCount: number;
+  categoryCounts: {
+    all: number;
+    overdue: number;
+    due_soon: number;
+    mention: number;
+    delegation: number;
+    rollover: number;
+    milestone: number;
+  };
   snoozedCount?: number;
   onMarkAllRead?: () => void;
   onClearStaleNotifs?: () => void;
@@ -47,6 +72,10 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
   setPriorityFilter,
   assigneeFilter,
   setAssigneeFilter,
+  categoryFilter,
+  setCategoryFilter,
+  searchQuery,
+  setSearchQuery,
   storeFilter,
   setStoreFilter,
   allowedStores,
@@ -59,17 +88,18 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
   unreadUrgentCount,
   unreadActionCount,
   unreadAssignedToMeCount,
+  categoryCounts,
   snoozedCount,
   onMarkAllRead,
   onClearStaleNotifs,
 }) => {
   return (
     <div className="px-5 py-3.5 border-b border-slate-100 dark:border-[#444446] bg-slate-50 dark:bg-[#28282a] flex flex-col gap-3 shrink-0">
-      {/* Top Row: Title, Clear Filter, Assignee Switch, Status & Archive */}
+      {/* Top Row: Title, Search Input, Assignee Switch, Status & Archive */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 w-full">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto">
           <h2 className="text-base font-bold text-slate-800 dark:text-[#e3e3e3]">
-            Active Notifications
+            Project Notification Center
           </h2>
           {snoozedCount !== undefined && snoozedCount > 0 && (
             <span className="text-[11px] bg-slate-200 dark:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] font-semibold px-2 py-0.5 rounded-full">
@@ -85,6 +115,25 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
               Clear Filter <RotateCcw className="w-3 h-3" />
             </button>
           )}
+          <div className="relative flex-grow sm:flex-grow-0 sm:w-64">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search code, project, task, PIC..."
+              className="w-full pl-8 pr-7 py-1 text-xs rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] text-slate-700 dark:text-[#e3e3e3] placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -177,68 +226,84 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
         </div>
       </div>
 
-      {/* Secondary Row: Priority Chips + Target Types + Stores */}
+      {/* Secondary Row: PM Category Pills + Priority Chips + Target Types + Stores */}
       <div className="flex flex-wrap items-center gap-2 w-full pt-1 border-t border-slate-200/60 dark:border-[#333336]">
-        {/* Proposal 1: Priority Tier Chips */}
-        <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm items-center">
+        {/* Project Management Category Quick Filters */}
+        <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm items-center flex-wrap gap-0.5">
           <button
-            onClick={() => setPriorityFilter('all')}
+            onClick={() => setCategoryFilter('all')}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors active:scale-95 touch-manipulation ${
-              priorityFilter === 'all'
+              categoryFilter === 'all'
                 ? 'bg-slate-200 dark:bg-[#333336] text-slate-800 dark:text-[#e3e3e3]'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
-            All Priorities
+            All Categories
           </button>
           <button
-            onClick={() => setPriorityFilter((prev) => (prev === 'critical' ? 'all' : 'critical'))}
+            onClick={() => setCategoryFilter((prev) => (prev === 'overdue' ? 'all' : 'overdue'))}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
-              priorityFilter === 'critical'
+              categoryFilter === 'overdue'
                 ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
             <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
-            <span>Critical</span>
-            {unreadCriticalCount > 0 && (
+            <span>Overdue</span>
+            {categoryCounts.overdue > 0 && (
               <span className="bg-rose-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
-                {unreadCriticalCount}
+                {categoryCounts.overdue}
               </span>
             )}
           </button>
           <button
-            onClick={() => setPriorityFilter((prev) => (prev === 'urgent' ? 'all' : 'urgent'))}
+            onClick={() => setCategoryFilter((prev) => (prev === 'due_soon' ? 'all' : 'due_soon'))}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
-              priorityFilter === 'urgent'
+              categoryFilter === 'due_soon'
                 ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
             <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-            <span>Due Soon</span>
-            {unreadUrgentCount > 0 && (
+            <span>Upcoming / Due</span>
+            {categoryCounts.due_soon > 0 && (
               <span className="bg-amber-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
-                {unreadUrgentCount}
+                {categoryCounts.due_soon}
               </span>
             )}
           </button>
           <button
-            onClick={() => setPriorityFilter((prev) => (prev === 'action_required' ? 'all' : 'action_required'))}
+            onClick={() => setCategoryFilter((prev) => (prev === 'mention' ? 'all' : 'mention'))}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
-              priorityFilter === 'action_required'
+              categoryFilter === 'mention'
                 ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
-            <Zap className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-            <span>Action Req</span>
-            {unreadActionCount > 0 && (
+            <MessageSquare className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+            <span>@Mentions</span>
+            {categoryCounts.mention > 0 && (
               <span className="bg-indigo-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
-                {unreadActionCount}
+                {categoryCounts.mention}
               </span>
             )}
           </button>
+          {categoryCounts.rollover > 0 && (
+            <button
+              onClick={() => setCategoryFilter((prev) => (prev === 'rollover' ? 'all' : 'rollover'))}
+              className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
+                categoryFilter === 'rollover'
+                  ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300'
+                  : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
+              }`}
+            >
+              <CalendarClock className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+              <span>Rollover</span>
+              <span className="bg-purple-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
+                {categoryCounts.rollover}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Target type filters */}

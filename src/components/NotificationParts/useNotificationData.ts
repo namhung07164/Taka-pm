@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { getUserAllowedStores } from '../../lib/utils';
@@ -9,6 +9,7 @@ import {
   NotificationStoreFilter,
   NotificationPriorityFilter,
   NotificationAssigneeFilter,
+  NotificationCategoryFilter,
 } from './notificationTypes';
 import { safeGetItemLocal } from '../../lib/storage';
 
@@ -40,6 +41,8 @@ export function useNotificationData({
   const [typeFilter, setTypeFilter] = useState<NotificationTypeFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<NotificationPriorityFilter>('all');
   const [assigneeFilter, setAssigneeFilter] = useState<NotificationAssigneeFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState<NotificationCategoryFilter>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [snoozedMap, setSnoozedMap] = useState<Record<string, number>>(() => {
     try {
       const raw = safeGetItemLocal('taka_snoozed_notifs');
@@ -83,6 +86,43 @@ export function useNotificationData({
     }
   }, [globalStoreFilter, allowedStores]);
 
+  // Strict composite store resolver for notifications
+  const resolveNotifStore = useCallback(
+    (n: ActiveNotification): string => {
+      if (n.projectStore) return String(n.projectStore).trim().toUpperCase();
+      if (n.projectId) {
+        const byId = projects.find((p) => String(p.id) === String(n.projectId));
+        if (byId?.store) return String(byId.store).trim().toUpperCase();
+      }
+      if (n.targetType === 'task') {
+        const t = tasks.find((tk) => String(tk.id) === String(n.targetId));
+        if (t?.projectStore) return String(t.projectStore).trim().toUpperCase();
+      }
+      if (n.targetType === 'project') {
+        const p = projects.find(
+          (pr) =>
+            String(pr.id) === String(n.targetId) || String(pr.no) === String(n.targetId)
+        );
+        if (p?.store) return String(p.store).trim().toUpperCase();
+      }
+      if (n.targetType === 'task_delegation') {
+        const g = delegationGroups.find((dg) => String(dg.id) === String(n.targetId));
+        if (g?.projectStore) return String(g.projectStore).trim().toUpperCase();
+      }
+      return '';
+    },
+    [projects, tasks, delegationGroups]
+  );
+
+  const resolveNotifCategory = useCallback((n: ActiveNotification): string => {
+    if (n.category) return n.category;
+    if (n.ruleId === 'mention-notification') return 'mention';
+    if (n.action === 'cross_year_rollover' || n.ruleId === 'cross-year-rollover') return 'rollover';
+    if (n.targetType === 'task_delegation') return 'delegation';
+    if (n.diffMs < 0) return 'overdue';
+    return 'due_soon';
+  }, []);
+
   const unreadProjectCount = useMemo(
     () =>
       activeNotifications.filter(
@@ -109,62 +149,18 @@ export function useNotificationData({
 
   const unreadHcmCount = useMemo(
     () =>
-      activeNotifications.filter((n) => {
-        if (readNotifs.includes(n.id)) return false;
-        const s = (
-          n.projectStore ||
-          (n.targetType === 'task'
-            ? tasks.find((t) => String(t.id) === String(n.targetId))?.projectStore
-            : '') ||
-          (n.targetType === 'project'
-            ? projects.find(
-                (p) =>
-                  (n.targetId &&
-                    (String(p.id) === String(n.targetId) ||
-                      String(p.no) === String(n.targetId))) ||
-                  (n.projectCode && p.code === n.projectCode)
-              )?.store
-            : '') ||
-          (n.targetType === 'task_delegation'
-            ? delegationGroups.find((g) => g.id === n.targetId)?.projectStore
-            : '') ||
-          ''
-        )
-          .trim()
-          .toUpperCase();
-        return s === 'HCM';
-      }).length,
-    [activeNotifications, readNotifs, tasks, projects, delegationGroups]
+      activeNotifications.filter(
+        (n) => !readNotifs.includes(n.id) && resolveNotifStore(n) === 'HCM'
+      ).length,
+    [activeNotifications, readNotifs, resolveNotifStore]
   );
 
   const unreadHnCount = useMemo(
     () =>
-      activeNotifications.filter((n) => {
-        if (readNotifs.includes(n.id)) return false;
-        const s = (
-          n.projectStore ||
-          (n.targetType === 'task'
-            ? tasks.find((t) => String(t.id) === String(n.targetId))?.projectStore
-            : '') ||
-          (n.targetType === 'project'
-            ? projects.find(
-                (p) =>
-                  (n.targetId &&
-                    (String(p.id) === String(n.targetId) ||
-                      String(p.no) === String(n.targetId))) ||
-                  (n.projectCode && p.code === n.projectCode)
-              )?.store
-            : '') ||
-          (n.targetType === 'task_delegation'
-            ? delegationGroups.find((g) => g.id === n.targetId)?.projectStore
-            : '') ||
-          ''
-        )
-          .trim()
-          .toUpperCase();
-        return s === 'HN';
-      }).length,
-    [activeNotifications, readNotifs, tasks, projects, delegationGroups]
+      activeNotifications.filter(
+        (n) => !readNotifs.includes(n.id) && resolveNotifStore(n) === 'HN'
+      ).length,
+    [activeNotifications, readNotifs, resolveNotifStore]
   );
 
   const unreadCriticalCount = useMemo(
@@ -199,6 +195,25 @@ export function useNotificationData({
     [activeNotifications, readNotifs]
   );
 
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      all: 0,
+      overdue: 0,
+      due_soon: 0,
+      mention: 0,
+      delegation: 0,
+      rollover: 0,
+      milestone: 0,
+    };
+    activeNotifications.forEach((n) => {
+      if (readNotifs.includes(n.id)) return;
+      counts.all++;
+      const cat = resolveNotifCategory(n) as keyof typeof counts;
+      if (cat in counts) counts[cat]++;
+    });
+    return counts;
+  }, [activeNotifications, readNotifs, resolveNotifCategory]);
+
   const snoozedCount = useMemo(() => {
     const now = Date.now();
     return Object.values(snoozedMap).filter((ts) => ts > now).length;
@@ -210,54 +225,74 @@ export function useNotificationData({
       result = activeNotifications.filter((notif) => notif.id === filterId);
     } else {
       const now = Date.now();
+      const q = searchQuery.trim().toLowerCase();
+
       result = activeNotifications.filter((notif) => {
-        // Skip snoozed notifications
         const snoozedUntil = snoozedMap[notif.id];
         if (snoozedUntil && snoozedUntil > now) {
           return false;
         }
 
         const isRead = readNotifs.includes(notif.id);
-
         if (statusFilter === 'read' && !isRead) return false;
         if (statusFilter === 'unread' && isRead) return false;
-
         if (typeFilter !== 'all' && notif.targetType !== typeFilter) return false;
-
         if (priorityFilter !== 'all' && notif.priority !== priorityFilter) return false;
-
         if (assigneeFilter === 'assigned_to_me' && !notif.isAssignedToMe) return false;
 
+        if (categoryFilter !== 'all') {
+          const cat = resolveNotifCategory(notif);
+          if (cat !== categoryFilter) return false;
+        }
+
         if (storeFilter !== 'all') {
-          const nStore = (
-            notif.projectStore ||
-            (notif.targetType === 'task'
-              ? tasks.find((t) => String(t.id) === String(notif.targetId))?.projectStore
-              : '') ||
-            (notif.targetType === 'project'
-              ? projects.find(
-                  (p) =>
-                    (notif.targetId &&
-                      (String(p.id) === String(notif.targetId) ||
-                        String(p.no) === String(notif.targetId))) ||
-                    (notif.projectCode && p.code === notif.projectCode)
-                )?.store
-              : '') ||
-            (notif.targetType === 'task_delegation'
-              ? delegationGroups.find((g) => g.id === notif.targetId)?.projectStore
-              : '') ||
-            ''
-          )
-            .trim()
-            .toUpperCase();
+          const nStore = resolveNotifStore(notif);
           if (nStore && nStore !== storeFilter.toUpperCase()) return false;
+        }
+
+        if (q) {
+          const haystack = [
+            notif.title,
+            notif.subtitle,
+            notif.message,
+            notif.projectCode,
+            notif.projectName,
+            notif.taskName,
+            notif.projectStore,
+            notif.location,
+            notif.party,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          if (!haystack.includes(q)) return false;
         }
 
         return true;
       });
     }
 
-    return result.sort((a, b) => b.generatedAt - a.generatedAt);
+    const priorityRank: Record<string, number> = {
+      critical: 0,
+      action_required: 1,
+      urgent: 2,
+      normal: 3,
+    };
+
+    return [...result].sort((a, b) => {
+      const aRead = readNotifs.includes(a.id) ? 1 : 0;
+      const bRead = readNotifs.includes(b.id) ? 1 : 0;
+      if (aRead !== bRead) return aRead - bRead;
+
+      const aPrio = priorityRank[a.priority || 'normal'] ?? 3;
+      const bPrio = priorityRank[b.priority || 'normal'] ?? 3;
+      if (aPrio !== bPrio) return aPrio - bPrio;
+
+      // Sort by schedule urgency (most overdue or closest deadline first)
+      if (a.diffMs !== b.diffMs) return a.diffMs - b.diffMs;
+
+      return b.generatedAt - a.generatedAt;
+    });
   }, [
     activeNotifications,
     readNotifs,
@@ -265,12 +300,13 @@ export function useNotificationData({
     typeFilter,
     priorityFilter,
     assigneeFilter,
+    categoryFilter,
     storeFilter,
+    searchQuery,
     filterId,
     snoozedMap,
-    tasks,
-    projects,
-    delegationGroups,
+    resolveNotifStore,
+    resolveNotifCategory,
   ]);
 
   return {
@@ -283,6 +319,10 @@ export function useNotificationData({
     setPriorityFilter,
     assigneeFilter,
     setAssigneeFilter,
+    categoryFilter,
+    setCategoryFilter,
+    searchQuery,
+    setSearchQuery,
     storeFilter,
     setStoreFilter,
     unreadProjectCount,
@@ -294,6 +334,7 @@ export function useNotificationData({
     unreadUrgentCount,
     unreadActionCount,
     unreadAssignedToMeCount,
+    categoryCounts,
     snoozedCount,
     filteredNotifications,
     tasks,

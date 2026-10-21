@@ -248,6 +248,8 @@ export interface NotificationRule {
 
 export type NotificationPriority = 'critical' | 'urgent' | 'action_required' | 'info';
 
+export type NotificationCategory = 'overdue' | 'due_soon' | 'mention' | 'delegation' | 'rollover' | 'milestone';
+
 export interface ActiveNotification {
   id: string;
   title: string;
@@ -259,14 +261,21 @@ export interface ActiveNotification {
   targetType: 'project' | 'task' | 'task_delegation';
   targetId: string | number;
   count?: number;
+  projectId?: string;
   projectCode?: string;
+  projectName?: string;
+  taskName?: string;
   projectStore?: string;
   projectYear?: string | number;
+  location?: string;
+  category?: NotificationCategory;
+  ruleField?: string;
   action?: 'cross_year_rollover' | 'complete_task' | 'approve_delegation';
   actionData?: any;
   priority?: NotificationPriority;
   isAssignedToMe?: boolean;
   party?: string;
+  subItems?: ActiveNotification[];
 }
 
 export interface DelegationSubTask {

@@ -197,18 +197,74 @@ export function useDetailFocusTracking({
 
   useEffect(() => {
     if (initialFocusTaskId && initialFocusTaskId !== lastFocusedTaskIdRef.current) {
-      const task = tasks.find((t) => t.id === initialFocusTaskId);
-      if (task) {
-        const p = projects.find(
-          (proj) =>
-            String(proj.code || "").trim().toLowerCase() === String(task.projectCode || "").trim().toLowerCase() &&
-            (!task.projectStore || !proj.store || String(proj.store).trim().toLowerCase() === String(task.projectStore).trim().toLowerCase()) &&
-            (!task.projectYear || !proj.year || String(proj.year).trim() === String(task.projectYear).trim())
-        ) || projects.find(
-          (proj) => String(proj.code || "").trim().toLowerCase() === String(task.projectCode || "").trim().toLowerCase()
-        );
+      const focusIdStr = String(initialFocusTaskId);
+      let task = tasks.find((t) => String(t.id) === focusIdStr);
+      let summaryProject: Project | undefined;
+
+      // Support synthetic summary task IDs (summary_<projectId>_<idx>) created when Tri-Gate tasks were not yet hydrated
+      if (!task && focusIdStr.startsWith('summary_')) {
+        const lastUnderscore = focusIdStr.lastIndexOf('_');
+        if (lastUnderscore > 8) {
+          const extractedProjId = focusIdStr.slice(8, lastUnderscore);
+          const extractedIdx = Number(focusIdStr.slice(lastUnderscore + 1));
+          summaryProject = projects.find((proj) => String(proj.id) === extractedProjId);
+          if (summaryProject) {
+            const projTasks = tasks.filter(
+              (t) =>
+                !t.isDeleted &&
+                ((t.projectId && String(t.projectId) === String(summaryProject!.id)) ||
+                  (!t.projectId &&
+                    String(t.projectCode || '').trim().toLowerCase() === String(summaryProject!.code || '').trim().toLowerCase() &&
+                    String(t.projectStore || '').trim().toLowerCase() === String(summaryProject!.store || '').trim().toLowerCase() &&
+                    String(t.projectYear || '').trim() === String(summaryProject!.year || '').trim()))
+            );
+            const summaryItem = summaryProject.taskSummaries?.[extractedIdx];
+            if (summaryItem) {
+              task =
+                projTasks.find((t) => summaryItem.id && String(t.id) === String(summaryItem.id)) ||
+                projTasks.find((t) => t.name === summaryItem.name) ||
+                projTasks[extractedIdx];
+            }
+          }
+        }
+      }
+
+      if (task || summaryProject) {
+        const p =
+          summaryProject ||
+          (task?.projectId
+            ? projects.find((proj) => String(proj.id) === String(task!.projectId))
+            : projects.find((proj) => {
+                if (proj.isDeleted) return false;
+                if (
+                  String(proj.code || '').trim().toLowerCase() !==
+                  String(task?.projectCode || '').trim().toLowerCase()
+                ) {
+                  return false;
+                }
+                const expectedStore = String(
+                  task?.projectStore || (globalStoreFilter !== 'all' ? globalStoreFilter : '')
+                )
+                  .trim()
+                  .toLowerCase();
+                if (expectedStore && String(proj.store || '').trim().toLowerCase() !== expectedStore) {
+                  return false;
+                }
+                const expectedYear = String(
+                  task?.projectYear || (globalYearFilter !== 'all' ? globalYearFilter : '')
+                ).trim();
+                if (expectedYear && String(proj.year || '').trim() !== expectedYear) {
+                  return false;
+                }
+                return true;
+              }));
+
         lastFocusedTaskIdRef.current = initialFocusTaskId;
-        const subTaskCode = task.taskCodePhu || (p ? `${p.code}#${(task.orderIndex !== undefined ? task.orderIndex : 0) + 1}` : '') || task.projectCode;
+        const subTaskCode = task
+          ? task.taskCodePhu ||
+            (p ? `${p.code}#${(task.orderIndex !== undefined ? task.orderIndex : 0) + 1}` : '') ||
+            task.projectCode
+          : p?.code || '';
         if (subTaskCode) {
           setSearchTerm(subTaskCode);
           setDetailTabFilterCode(subTaskCode);
@@ -217,8 +273,12 @@ export function useDetailFocusTracking({
           if (p.year && globalYearFilter !== 'all' && String(p.year) !== String(globalYearFilter)) {
             setGlobalYearFilter(String(p.year));
           }
-          if (p.store && globalStoreFilter !== 'all' && String(p.store) !== String(globalStoreFilter)) {
-            setGlobalStoreFilter(p.store);
+          if (
+            p.store &&
+            globalStoreFilter !== 'all' &&
+            String(p.store).toUpperCase() !== String(globalStoreFilter).toUpperCase()
+          ) {
+            setGlobalStoreFilter(String(p.store).toUpperCase());
           }
           if (statusFilter !== 'all') {
             setStatusFilter('all');
@@ -229,16 +289,19 @@ export function useDetailFocusTracking({
           if (newCodes.size !== expandedCodes.length) {
             setExpandedCodes(Array.from(newCodes));
           }
+          const domTargetId = task ? `detail-task-${task.id}` : `detail-project-${p.no ?? p.code}`;
           const tryScroll = (attempts = 0) => {
-            const el = document.getElementById(`detail-task-${initialFocusTaskId}`);
-            if (el) {
+            const el =
+              document.getElementById(domTargetId) ||
+              (p.id ? document.querySelector(`[data-project-id="${p.id}"]`) : null);
+            if (el && el instanceof HTMLElement) {
               scrollToElement(el);
             } else if (attempts < 15) {
               setTimeout(() => tryScroll(attempts + 1), 80);
             }
           };
           requestAnimationFrame(() => tryScroll(0));
-        } else if (task.projectCode) {
+        } else if (task?.projectCode) {
           if (statusFilter !== 'all') {
             setStatusFilter('all');
           }

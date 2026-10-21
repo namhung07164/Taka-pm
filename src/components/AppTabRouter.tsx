@@ -382,91 +382,155 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
 
                       if (notif.targetId && notif.targetType) {
                         if (notif.targetType === "notification") {
-                          setNotificationFilterId(notif.targetId);
+                          setNotificationFilterId(String(notif.targetId));
                           handleTabChange("notification");
                           return;
                         }
 
-                        const canSeeLayout = currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.layout;
-                        const combinedProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().allProjectsForNotifs || []);
-                        const combinedTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().allTasksForNotifs || []);
-                        const layoutMatch = canSeeLayout ? findProjectLayoutUnit(notif, combinedProjects, combinedTasks) : null;
+                        const storeState = useAppStore.getState();
+                        const projMap = new Map<string, any>();
+                        (storeState.allProjectsForNotifs || []).forEach((p: any) => {
+                          if (p && p.id) projMap.set(String(p.id), p);
+                        });
+                        (projects || []).forEach((p: any) => {
+                          if (p && p.id) projMap.set(String(p.id), p);
+                        });
+                        const combinedProjects = Array.from(projMap.values());
 
-                        if (canSeeLayout && layoutMatch) {
-                          const targetYear = layoutMatch.year || (layoutMatch.project?.year ? String(layoutMatch.project.year) : (notif.projectYear ? String(notif.projectYear) : ''));
-                          if (targetYear && targetYear !== globalYearFilter && targetYear !== 'all') {
+                        const taskMap = new Map<string, any>();
+                        (storeState.allTasksForNotifs || []).forEach((t: any) => {
+                          if (t && t.id) taskMap.set(String(t.id), t);
+                        });
+                        (tasks || []).forEach((t: any) => {
+                          if (t && t.id) taskMap.set(String(t.id), t);
+                        });
+                        const combinedTasks = Array.from(taskMap.values());
+
+                        const canSeeLayout =
+                          currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.layout;
+                        const layoutMatch = findProjectLayoutUnit(
+                          notif,
+                          combinedProjects,
+                          combinedTasks
+                        );
+                        const openTarget = (notif as any)._openTarget as
+                          | "layout"
+                          | "detail"
+                          | undefined;
+
+                        // Open 2D Floor Plan when explicitly requested via "Floor Plan" action button
+                        if (canSeeLayout && layoutMatch && openTarget === "layout") {
+                          const targetYear =
+                            layoutMatch.year ||
+                            (layoutMatch.project?.year
+                              ? String(layoutMatch.project.year)
+                              : notif.projectYear
+                              ? String(notif.projectYear)
+                              : "");
+                          if (
+                            targetYear &&
+                            targetYear !== globalYearFilter &&
+                            targetYear !== "all"
+                          ) {
                             setGlobalYearFilter(targetYear);
                           }
-                          const targetStore = layoutMatch.store || notif.projectStore || 'HCM';
-                          if (targetStore && targetStore !== 'all') {
+                          const targetStore = String(
+                            notif.projectStore ||
+                              layoutMatch.project?.store ||
+                              layoutMatch.store ||
+                              "HCM"
+                          )
+                            .trim()
+                            .toUpperCase();
+                          if (targetStore && targetStore !== "ALL") {
                             setGlobalStoreFilter(targetStore);
                           }
-                          const targetLocation = layoutMatch.location || 'L1';
-                          if (targetLocation && targetLocation !== 'ALL') {
+                          const targetLocation = String(
+                            notif.location ||
+                              layoutMatch.project?.location ||
+                              layoutMatch.location ||
+                              "L1"
+                          )
+                            .trim()
+                            .toUpperCase();
+                          if (targetLocation && targetLocation !== "ALL") {
                             useAppStore.getState().setGlobalLocationFilter([targetLocation]);
                           }
 
-                          const targetUnitCode = layoutMatch.unitCode || layoutMatch.project?.code || notif.projectCode || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
+                          const targetUnitCode =
+                            layoutMatch.unitCode ||
+                            layoutMatch.project?.code ||
+                            notif.projectCode ||
+                            (notif.title && notif.title.includes(" - ")
+                              ? notif.title.split(" - ")[0].trim()
+                              : "");
 
                           setLayoutTabFilters({
                             store: targetStore,
                             location: targetLocation,
                             projectCode: targetUnitCode,
                             sourceTaskId: layoutMatch.task?.id,
-                          });
+                            _ts: Date.now(),
+                          } as any);
 
                           handleTabChange("layout");
-
-                          if (layoutMatch.isComment) {
-                            if (layoutMatch.isTaskComment && layoutMatch.task) {
-                              setEditingTask(layoutMatch.task);
-                              setIsReadOnlyModal(false);
-                              setModalInitialTab("chat");
-                              setIsTaskModalOpen(true);
-                            } else if (layoutMatch.project) {
-                              setEditingProject(layoutMatch.project);
-                              setIsReadOnlyModal(false);
-                              setModalInitialTab("chat");
-                              setIsProjectModalOpen(true);
-                            }
-                          }
                           return;
                         }
 
-                        if (notif.targetType === "task_delegation") {
-                          handleTabChange("detail");
-                          const targetProject =
-                            layoutMatch?.project ||
-                            combinedProjects.find(
-                              (p) =>
-                                (notif.projectCode && p.code?.toLowerCase() === notif.projectCode.toLowerCase()) ||
-                                String(p.id) === String(notif.targetId) ||
-                                String(p.no) === String(notif.targetId)
-                            );
+                        const matchedProject = layoutMatch?.project || null;
+                        const matchedTask = layoutMatch?.task || null;
+                        const isCommentOrDelegation =
+                          !!layoutMatch?.isComment ||
+                          notif.category === "mention" ||
+                          notif.ruleId === "mention-notification" ||
+                          notif.targetType === "task_delegation";
 
-                          if (targetProject) {
-                            setEditingProject(targetProject);
-                            setIsReadOnlyModal(false);
-                            setModalInitialTab("chat");
-                            setIsProjectModalOpen(true);
-                          } else if (layoutMatch?.task) {
-                            setEditingTask(layoutMatch.task);
-                            setIsReadOnlyModal(false);
-                            setModalInitialTab("chat");
-                            setIsTaskModalOpen(true);
-                            return;
-                          }
-                        }
+                        const resolvedStore = String(
+                          notif.projectStore ||
+                            matchedProject?.store ||
+                            matchedTask?.projectStore ||
+                            layoutMatch?.store ||
+                            ""
+                        )
+                          .trim()
+                          .toUpperCase();
+                        const resolvedYear = String(
+                          notif.projectYear ||
+                            matchedProject?.year ||
+                            matchedTask?.projectYear ||
+                            layoutMatch?.year ||
+                            ""
+                        ).trim();
+                        const resolvedCode =
+                          notif.projectCode ||
+                          matchedProject?.code ||
+                          matchedTask?.projectCode ||
+                          layoutMatch?.unitCode ||
+                          "";
+                        const resolvedProjectId =
+                          notif.projectId ||
+                          matchedProject?.id ||
+                          matchedTask?.projectId ||
+                          "";
 
-                        executeDeepLinkRef.current?.(
-                          notif.targetType,
-                          notif.targetId,
-                          {
-                            store: notif.projectStore,
-                            year: String(notif.projectYear),
-                            code: notif.projectCode,
-                          }
-                        );
+                        const effectiveTargetType =
+                          notif.targetType === "task_delegation"
+                            ? matchedTask
+                              ? "task"
+                              : "project"
+                            : notif.targetType;
+                        const effectiveTargetId =
+                          notif.targetType === "task_delegation"
+                            ? matchedTask?.id || matchedProject?.id || notif.targetId
+                            : notif.targetId;
+
+                        executeDeepLinkRef.current?.(effectiveTargetType, effectiveTargetId, {
+                          store: resolvedStore || undefined,
+                          year: resolvedYear || undefined,
+                          code: resolvedCode || undefined,
+                          projectId: resolvedProjectId || undefined,
+                          openChat: isCommentOrDelegation,
+                        });
                       }
                     }}
                   />

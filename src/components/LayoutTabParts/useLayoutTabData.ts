@@ -85,6 +85,9 @@ export function useLayoutTabData({
   const hasSyncedInitialRef = useRef(false);
   const lastInitialPropKeyRef = useRef('');
 
+  // Track whether filter changes came from initial deep-link/notification props
+  const isSyncingInitialPropsRef = useRef(false);
+
   useEffect(() => {
     const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
     const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
@@ -97,37 +100,43 @@ export function useLayoutTabData({
     }
     hasSyncedInitialRef.current = true;
     lastInitialPropKeyRef.current = propKey;
+    isSyncingInitialPropsRef.current = true;
 
-    if (activeStoreParam && activeStoreParam !== 'all') {
-      setGlobalStoreFilter(activeStoreParam);
+    const normalizedStoreParam =
+      activeStoreParam && activeStoreParam !== 'all'
+        ? activeStoreParam.toUpperCase().trim()
+        : '';
+
+    if (normalizedStoreParam) {
+      setGlobalStoreFilter(normalizedStoreParam);
     }
-    
-    if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
+
+    const unitInfo = useDataStore.getState().unitInfo || [];
+    const targetLoc = resolveInitialTargetLocation(
+      activeLocParam,
+      activeCodeParam,
+      projects,
+      tasks,
+      allStoreVersions,
+      unitInfo,
+      normalizedStoreParam || activeStore
+    );
+
+    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+      setIsLiveMapMode(true);
+      setGlobalLocationFilter([targetLoc.toUpperCase().trim()]);
+    } else if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
       setIsLiveMapMode(true);
       setGlobalLocationFilter([activeLocParam.toUpperCase().trim()]);
     }
-    
+
     if (activeCodeParam) {
       setProjectCodeFilter(activeCodeParam);
       setUnitSearchInput(activeCodeParam);
       setTargetUnitSearch(activeCodeParam);
       setIsLiveMapMode(true);
     }
-
-    const unitInfo = useDataStore.getState().unitInfo || [];
-    const targetLoc = resolveInitialTargetLocation(
-      activeLocParam, 
-      activeCodeParam, 
-      projects, 
-      tasks, 
-      allStoreVersions, 
-      unitInfo
-    );
-
-    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
-      setGlobalLocationFilter([targetLoc]);
-    }
-  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
+  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, activeStore, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   // Available years: based on user permissions, projects, tasks, and store versions
   const prevAvailableYearsRef = useRef<string[]>([]);
@@ -409,12 +418,16 @@ export function useLayoutTabData({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  // When activeStore, locFilterStr, or effectiveYear changes, reset search & focus states to default
+  // When activeStore, locFilterStr, or effectiveYear changes manually, reset search & focus states to default
   const prevFilterStateRef = useRef({ store: activeStore, loc: locFilterStr, yr: effectiveYear });
   useEffect(() => {
     const prev = prevFilterStateRef.current;
     if (prev.store !== activeStore || prev.loc !== locFilterStr || prev.yr !== effectiveYear) {
       prevFilterStateRef.current = { store: activeStore, loc: locFilterStr, yr: effectiveYear };
+      if (isSyncingInitialPropsRef.current) {
+        isSyncingInitialPropsRef.current = false;
+        return;
+      }
       setUnitSearchInput('');
       setTargetUnitSearch(null);
       setShowSuggestions(false);
